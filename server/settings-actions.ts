@@ -6,9 +6,11 @@
 // the person's rights, the route's checks, security keys and the audit
 // journal apply exactly as by hand. Nothing here writes a setting itself.
 
+import { createHash } from "node:crypto";
+
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import type { TurnFacts } from "../shared/bot-act.ts";
-import { actorForTurn } from "../shared/bot-act.ts";
+import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
 import { pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
@@ -31,6 +33,8 @@ export type SettingsActionDeps = {
   audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed"; botId: string; actor: string | null }) => void;
   /** A screen command to the person's open app (a device preference). */
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
+  /** A record's name for a card (never its id), or undefined. */
+  targetName?: (kind: string, id: string, botId?: string) => string | undefined;
 };
 
 export type SettingsActionInput = {
@@ -42,13 +46,24 @@ export type SettingsActionInput = {
   botColor: string;
 };
 
-const PERMISSION_RANK: Readonly<Record<string, ApprovalMode>> = { approval: "ask", auto: "auto", bypass: "full" };
+/** Settings whose route asks the always-grant key itself. */
+const STANDING_GRANTS: ReadonlySet<string> = new Set(["bot.alwaysAllow", "rules.commandAllow", "bot.toolGrant"]);
+
+/** A value as a card shows it: whole up to 600 characters, else its keys and
+ * a fingerprint of the whole. */
+function describe(value: unknown): string {
+  const whole = JSON.stringify(value) ?? "null";
+  if (whole.length <= 600) return whole;
+  const keys = value && typeof value === "object" && !Array.isArray(value) ? Object.keys(value).join(", ") : `${whole.length} characters`;
+  return `${keys} (sha256 ${createHash("sha256").update(whole).digest("hex").slice(0, 12)})`;
+}
 
 /** The step-up classes a change belongs to: the act route's own (a write is
  * irreversible, a routine a standing grant, a delete destructive) plus the
  * setting's. Full answers every call, so entering it carries every class. */
-export function settingStepUpClasses(classes: readonly SettingClass[], route: { method: string; path: string }, approvalTo?: ApprovalMode): StepUpClass[] {
+export function settingStepUpClasses(classes: readonly SettingClass[], route: { method: string; path: string }, approvalTo?: ApprovalMode, standingGrant = false): StepUpClass[] {
   const out = new Set<StepUpClass>(botActClasses({ kind: "route", method: route.method, path: route.path }));
+  if (standingGrant) out.add("always-grant");
   if (classes.includes("rule-change")) out.add("rule-change");
   if (classes.includes("delete")) out.add("destructive");
   if (classes.includes("secret") || classes.includes("others") || classes.includes("org") || classes.includes("bulk")) out.add("irreversible");
@@ -79,7 +94,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
   /** Fill the ids a setting needs: this bot or this conversation by default. */
   function resolve(spec: SettingSpec, raw: unknown, input: SettingsActionInput, speaker: string | null): SettingIds | string {
     const given = typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
-    if (given && (given.length > 200 || /[\s/\\?#%]/.test(given) && spec.target !== "section")) return "target is an id.";
+    // an id names one record: never a dot segment or a path; a team name
+    // travels in the query
+    if (given && (given.length > 200 || (spec.target !== "section" && (!/^[\w.:@+-]+$/.test(given) || /^\.+$/.test(given))))) return "target is an id.";
     switch (spec.target) {
       case "bot": return { target: given ?? input.botId, botId: given ?? input.botId };
       case "thread": {
@@ -149,6 +166,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     if (action === "get") {
       if (!spec.read) return text(400, `${spec.key} has no read; see it at ${spec.where}.`);
       const read = spec.read(ids);
+      if (!acceptablePath(read.path)) return text(400, `${spec.key}: that target cannot name a record.`);
       let value: unknown;
       try {
         value = await readValue(facts, input, read.path, read.query, read.list, spec.target === "thread" ? ids.botId : ids.target, read.field, read.match);
@@ -173,21 +191,30 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       built = { ...built, body: { modelSelection: { ...(current as Record<string, unknown>), effort: value } } };
     }
     const organization = deps.organization();
-    const classes = spec.classes ? spec.classes(value, { organization }) : (["own"] as SettingClass[]);
-    const approvalTo = spec.key === "bot.permissionMode"
-      ? PERMISSION_RANK[String(value)]
-      : spec.key === "bot.approvalMode" || spec.key === "thread.approvalMode" ? value as ApprovalMode : undefined;
+    const self = spec.target === "bot" && ids.target === input.botId;
+    const classes = spec.classes ? spec.classes(value, { organization, self }) : (["own"] as SettingClass[]);
+    const approvalTo = spec.approvalTo?.(value) as ApprovalMode | undefined;
     const actingOwner = deps.botOwner(input.botId);
     const targetOwner = ownerOf(spec, ids, speaker);
-    const same = (a: string | null, b: string | null) => Boolean(a) && Boolean(b) && a!.trim().toLowerCase() === b!.trim().toLowerCase();
-    const ownerWork = same(speaker, actingOwner) && same(speaker, targetOwner);
+    // ids compare exactly: a legacy person key is case-sensitive
+    const same = (a: string | null, b: string | null) => Boolean(a) && a === b;
+    // a routine moved to (or created for) a bot is that bot's owner's too
+    const named = spec.family === "routine" ? (spec.key === "routine.bot" ? value : (value as { botId?: unknown } | null)?.botId) : undefined;
+    const namedOwner = typeof named === "string" ? deps.botOwner(named) : undefined;
+    const ownerWork = same(speaker, actingOwner) && same(speaker, targetOwner) && (namedOwner === undefined || same(speaker, namedOwner));
+    const where = ids.target ? deps.targetName?.(spec.target, ids.target, ids.botId) : undefined;
 
     if ("ui" in built) {
       // a preference on the person's device: at Approve for me or Full for
       // the person's own bot it is set at once, otherwise their card
       const decidedUi = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected: false });
       if (decidedUi.effect === "hold") {
-        const held = await deps.acts().handle({ facts, raw: { ui: built.ui, input: built.input }, threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor, mode: "ask" });
+        const held = await deps.acts().handlePlanned({
+          facts,
+          target: { kind: "ui", command: built.ui, input: built.input, action: { type: built.ui, ...built.input }, write: true },
+          plan: { effect: "hold", summary: `${spec.label} (${spec.key}): ${describe(value)}`, stepUpClasses: [], onDone: (how) => deps.audit({ key: spec.key, value, secret: false, how, botId: input.botId, actor: speaker }) },
+          threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
+        });
         return held.status < 400 ? text(200, `${String(held.body.text ?? "")} ${HOLD_TEXT[decidedUi.reason]}`.trim()) : held;
       }
       const result = deps.screen(facts, built.ui, built.input);
@@ -195,13 +222,19 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       return result.status < 400 ? text(200, `${spec.label}: set in the person's open Sagax app.`) : result;
     }
 
+    // the path the server will route, as act requires (no dot segment, no
+    // encoded character, never internal)
+    if (!acceptablePath(built.path)) return text(400, `${spec.key}: that target or value cannot name a record.`);
     const route = { kind: "route" as const, method: built.method, path: built.path, ...(built.query ? { query: built.query } : {}), ...(built.body !== undefined ? { body: built.body } : {}) };
-    const stepUpClasses = settingStepUpClasses(classes, built, approvalTo);
+    const stepUpClasses = settingStepUpClasses(classes, built, approvalTo, STANDING_GRANTS.has(spec.key));
     const person = actor.kind === "person" ? actor.personKey : null;
     const keyProtected = deps.keyRequired(person, stepUpClasses, actingOwner).length > 0;
     const decided = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected, ...(approvalTo ? { approvalTo } : {}) });
     const secret = classes.includes("secret");
-    const summary = `${spec.label} (${spec.key}${ids.target && spec.target !== "self" ? `, ${spec.target}` : ""})${secret ? "" : `: ${JSON.stringify(value).slice(0, 160)}`}`;
+    // the card says what and where (a name, never an id) and the whole value
+    // a person allows, or its keys and fingerprint when it is long; a
+    // secret's value never
+    const summary = `${spec.label} (${spec.key}${where ? `, ${where}` : ""})${secret ? `: ${Object.keys(value && typeof value === "object" ? value : {}).join(", ")}` : `: ${describe(value)}`}`;
     const result = await deps.acts().handlePlanned({
       facts,
       target: route,

@@ -284,6 +284,10 @@ export function decideBotAct(input: {
   } else if (!input.scopes.includes("admin") && !input.scopes.includes("client")) {
     return { ok: false, status: 403, error: "This person cannot call that route." };
   }
+  // a device preference is set by sagax_settings only, with its own classes
+  if (target.kind === "ui" && target.command === "setPreference") {
+    return { ok: false, status: 403, error: "Use sagax_settings to change a preference." };
+  }
   if (escalatesApproval(target)) {
     return { ok: false, status: 403, error: "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, bot.permissionMode, rules.*), which asks the person when it must." };
   }
@@ -457,7 +461,8 @@ function parseActTarget(raw: unknown): { ok: true; target: ActTarget } | { ok: f
   return { ok: true, target: { kind: "route", method, path: record.path, ...(query ? { query } : {}), ...(body !== undefined ? { body } : {}) } };
 }
 
-function acceptablePath(path: string): boolean {
+/** The same path the server routes, under /api, never internal or testing. */
+export function acceptablePath(path: string): boolean {
   if (path.length < 5 || path.length > PATH_MAX) return false;
   if (path.includes("%") || path.includes("?") || path.includes("#") || path.includes("\\") || path.includes("..") || path.includes("//")) return false;
   // 2026-10-16 (security review): the server reads the path through the URL

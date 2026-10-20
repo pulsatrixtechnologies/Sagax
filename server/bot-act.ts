@@ -99,7 +99,7 @@ export type BotActService = {
    * route's scope are checked here as for any act. */
   handlePlanned(input: {
     facts: TurnFacts;
-    target: Extract<ActTarget, { kind: "route" }>;
+    target: ActTarget;
     plan: PlannedAct;
     threadId: string;
     botId: string;
@@ -146,7 +146,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
         performActor = { kind: "operator" };
         scopes = ["admin", "client"];
       }
-      if (!scopes.includes(deps.neededScope(input.target.method, input.target.path))) {
+      if (input.target.kind === "route" && !scopes.includes(deps.neededScope(input.target.method, input.target.path))) {
         return refuse(403, "This person cannot change that setting: it needs rights they do not have.");
       }
       if (input.plan.effect === "run") {

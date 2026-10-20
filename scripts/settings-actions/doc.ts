@@ -23,10 +23,12 @@ function classes(spec: SettingSpec): string {
   const solo = spec.classes ? spec.classes(null, { organization: false }) : ["own"];
   const org = spec.classes ? spec.classes(null, { organization: true }) : ["own"];
   const sample = spec.key === "bot.outbound" ? spec.classes!({ policy: "allow" }, { organization: false })
-    : spec.key === "rules.custom" ? spec.classes!({ behavior: "allow" }, { organization: false }) : solo;
+    : spec.key === "rules.custom" ? spec.classes!({ behavior: "deny" }, { organization: false }) : solo;
   const label = (list: string[]) => list.map((name) => CLASS_FR[name] ?? name).join(" + ");
   let out = label(solo);
-  if (label(sample) !== out) out += ` (${label(sample)} si allow)`;
+  if (label(sample) !== out) out += spec.key === "rules.custom" ? ` (${label(sample)} pour une règle deny ou ask écrite)` : ` (${label(sample)} si allow)`;
+  const self = spec.classes ? spec.classes(null, { organization: false, self: true }) : ["own"];
+  if (label(self) !== label(solo)) out += ` (${label(self)} pour le bot qui parle lui-même)`;
   if (label(org) !== label(solo)) out += `; organisation : ${label(org)}`;
   return out;
 }
@@ -60,9 +62,11 @@ parties hors tableau du script.
   3. pas le travail du propriétaire (la personne ne possède pas le bot qui
      parle ou ce qui change) : carte ;
   4. bot à Ask ou Auto-accept edits : carte ;
-  5. élargit les droits (niveau d'approbation, mode du propriétaire) :
-     appliqué jusqu'au niveau du bot qui parle, jamais Full ni Custom sans
-     carte ;
+  5. élargit les droits (niveau d'approbation, mode du propriétaire,
+     règle allow, valeurs par défaut des nouveaux bots, outils, applis ou
+     coéquipiers du bot qui parle lui-même, où travaillent les bots) :
+     un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
+     Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
 - Journal : chaque changement appliqué (tout de suite ou après Allow) écrit
   une ligne \`setting.change\` (catégorie \`setting\`) dans le journal

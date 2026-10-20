@@ -302,6 +302,7 @@ import { IdleEnginePool, markOomVictim, MemoryWatch, memoryGuardSettings } from 
 import { checkWidgetForTurn, WidgetCheckAttempts, WidgetRenderer } from "./widget-check.ts";
 import { bundledKnowledgeIndex } from "./self-knowledge.ts";
 import { createSelfKnowledgeInternalRoutes } from "./routes/self-knowledge-internal.ts";
+import { createSettingsActionsInternalRoutes } from "./routes/settings-actions-internal.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
@@ -25687,6 +25688,14 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     },
   }),
   createPerspicaxClaimsInternalRoutes({ perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview }),
+  // sagax_settings (server/routes/settings-actions-internal.ts)
+  createSettingsActionsInternalRoutes({
+    speaking: (botId, threadId) => {
+      const bot = store.projectBotForTask(botId, threadId) ?? store.bot(botId);
+      return { name: bot?.name ?? "Bot", color: bot?.color ?? "#888888" };
+    },
+    handle: (input) => settingsActions().handle(input),
+  }),
   // sagax_help (server/routes/self-knowledge-internal.ts)
   createSelfKnowledgeInternalRoutes({
     index: bundledKnowledgeIndex,
@@ -27542,6 +27551,10 @@ function botActs(): BotActService {
   return botActService;
 }
 
+function auditValue(value: unknown): unknown {
+  const whole = JSON.stringify(value) ?? "null";
+  return whole.length <= 2_000 ? value : `${whole.length} characters, sha256 ${createHash("sha256").update(whole).digest("hex").slice(0, 16)}`;
+}
 /** sagax_settings (server/settings-actions.ts, 2026-10-19): every setting
  * a person changes on screen, changed by their bot through the act engine. */
 let settingsActionService: ReturnType<typeof createSettingsActions> | null = null;
@@ -27567,13 +27580,22 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       return bot ? approvalModeForTurn(bot, false, threadId) : "ask";
     },
     keyRequired: (person, classes, fallback) => securityKeys.required(person, classes, fallback),
+    targetName: (kind, id, botId) => {
+      if (kind === "bot") return store.bot(id)?.name;
+      if (kind === "thread") return botId ? `${store.bot(botId)?.name ?? "Bot"}: ${store.taskByThread(botId, id)?.title ?? "conversation"}` : undefined;
+      if (kind === "routine") return routines?.listRoutines().find((routine) => routine.id === id)?.name;
+      if (kind === "group") return store.groups.find((group) => group.id === id)?.name;
+      if (kind === "section") return id;
+      return undefined;
+    },
     audit: ({ key, target, value, secret, how, botId, actor }) => {
       appendAdminAction(DATA_DIR, {
         category: "setting",
         action: "setting.change",
         ...(target ? { target: { kind: key.split(".")[0] ?? "setting", id: target } } : {}),
         changed: [key],
-        after: { [key]: secret ? "[hidden]" : value, how, bot: botId },
+        // a long value is kept as its size and fingerprint, a secret never
+        after: { [key]: secret ? "[hidden]" : auditValue(value), how, bot: botId },
         actor: actor && IDENTITY.kind === "perspicax" ? { kind: "person", principalId: actor, via: "sagax" } : { kind: "loopback" },
       });
     },
@@ -34534,19 +34556,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           botName: acting.name,
           botColor: acting.color,
           mode: approvalModeForTurn(acting, false, internalCapability.threadId),
-        });
-        return json(res, result.status, result.body);
-      }
-      if (path === "/api/internal/settings" && method === "POST") {
-        const body = await readInternalBody();
-        const acting = store.projectBotForTask(internalSender.id, internalCapability.threadId) ?? internalSender;
-        const result = await settingsActions().handle({
-          args: body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : {},
-          botId: internalSender.id,
-          threadId: internalCapability.threadId,
-          generation: internalCapability.generation,
-          botName: acting.name,
-          botColor: acting.color,
         });
         return json(res, result.status, result.body);
       }

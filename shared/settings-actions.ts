@@ -14,6 +14,9 @@
 
 import type { SettingClass } from "./settings-actions-policy.ts";
 
+/** `self`: the change targets the bot that is speaking. */
+export type SettingClassContext = { organization: boolean; self?: boolean };
+
 export const SETTING_FAMILIES = [
   "bot", "thread", "routine", "group", "section", "rules", "account", "appearance",
   "notifications", "models", "connections", "credentials", "server", "organization", "computer",
@@ -64,15 +67,30 @@ export interface SettingSpec {
    * kept on the person's device. A string is a refusal to relay. */
   write: (ids: SettingIds, value: unknown) => SettingRoute | { ui: string; input: Record<string, unknown> } | string;
   /** What makes the change more than a simple application. Default: own. */
-  classes?: (value: unknown, ctx: { organization: boolean }) => SettingClass[];
+  classes?: (value: unknown, ctx: SettingClassContext) => SettingClass[];
+  /** The approval level a change sets, for "up to the bot's own level". */
+  approvalTo?: (value: unknown) => string | undefined;
 }
 
 const always = (...classes: SettingClass[]) => () => classes;
 /** A server setting: the person's own on a personal server; the
  * organization's (other people) on an organization server. */
-const serverWide = (_value: unknown, ctx: { organization: boolean }): SettingClass[] => ctx.organization ? ["org"] : ["own"];
+const serverWide = (_value: unknown, ctx: SettingClassContext): SettingClass[] => ctx.organization ? ["org"] : ["own"];
+/** What widens the reach of the speaking bot itself (its tools, apps,
+ * teammates): the person's Allow, so content read during the turn cannot
+ * widen the bot that read it. Another bot of the owner's: simple. */
+const selfReach = (_value: unknown, ctx: SettingClassContext): SettingClass[] => ctx.self ? ["rule-change"] : ["own"];
+const SECRETISH = /key|token|secret|password|url/i;
+/** A field named like a credential or an address the server connects to. */
+function carriesSecret(value: unknown, depth = 0): boolean {
+  if (!value || typeof value !== "object" || depth > 6) return false;
+  return Object.entries(value as Record<string, unknown>).some(([name, child]) => SECRETISH.test(name) || carriesSecret(child, depth + 1));
+}
+const secretWhenKeyed = (value: unknown, ctx: SettingClassContext): SettingClass[] => carriesSecret(value) ? (ctx.organization ? ["secret", "org"] : ["secret"]) : serverWide(value, ctx);
 
-const enc = encodeURIComponent;
+/** One path segment: a plain id as it is (a grant's `user:pr_…` keeps its
+ * colon), anything else encoded, which act's path check then refuses. */
+const enc = (value: string): string => /^[\w.:@+-]+$/.test(value) ? value : encodeURIComponent(value);
 
 function nest(path: string, value: unknown): Record<string, unknown> {
   const parts = path.split(".");
@@ -117,19 +135,21 @@ add({
 });
 botField("bot.fallback", "fallback", "array", "Fallback models", "Bot editor > Model > Fallback");
 // widening the bots a bot reaches carries the screen's own acknowledgement
-function botReach(key: string, field: string, label: string, where: string): void {
+function botReach(key: string, field: string, label: string, where: string, classes?: SettingSpec["classes"]): void {
   add({
     key, family: "bot", target: "bot", label, where, value: "array",
+    ...(classes ? { classes } : {}),
     read: botRead(field),
     write: (ids, v) => ({ method: "PATCH", path: `/api/bots/${enc(ids.target!)}`, body: { [field]: v, acknowledgePeerScope: true } }),
   });
 }
 botReach("bot.managedSections", "managedSections", "Teams the Primary Bot manages (e.g. Built-in)", "Bot editor > Permissions > Managed teams");
-botField("bot.approvePeerComms", "approvePeerComms", "boolean", "Ask before talking to other bots", "Bot editor > Permissions");
+botField("bot.approvePeerComms", "approvePeerComms", "boolean", "Ask before talking to other bots", "Bot editor > Permissions", (v, ctx) => v === false ? selfReach(v, ctx) : ["own"]);
 botField("bot.outbound", "outbound", "object", "Send on your behalf ({policy: ask|allow, dailyCap})", "Bot editor > Permissions",
   (value) => (value as { policy?: unknown } | null)?.policy === "allow" ? ["rule-change"] : ["own"]);
-botReach("bot.peers", "peers", "Teammates it may reach", "Bot editor > Team");
-botField("bot.visibility", "visibility", "any", "Who sees the bot (everyone, admins, {people})", "Bot editor > Visibility");
+botReach("bot.peers", "peers", "Teammates it may reach", "Bot editor > Team", selfReach);
+botField("bot.visibility", "visibility", "any", "Who sees the bot (everyone, admins, {people})", "Bot editor > Visibility",
+  (v, ctx) => v === "admins" || !ctx.organization ? ["own"] : ["others"]);
 botField("bot.section", "section", "string?", "Team (sidebar section)", "Sidebar, drag the bot; New bot > Team");
 botField("bot.pinned", "pinned", "boolean", "Pinned in the sidebar", "Sidebar > bot menu > Pin");
 botField("bot.hidden", "hidden", "boolean", "Archived (hidden)", "Bot editor > ... > Archive");
@@ -140,10 +160,10 @@ botField("bot.browserProfile", "browserProfile", "string?", "Browser profile", "
 botField("bot.computer", "computer", "enum:auto|off", "Works on (Auto or Off)", "Bot editor > Workspace");
 botField("bot.cloudBackend", "cloudBackend", "enum:box|vps", "Cloud computer kind", "Bot editor > Access");
 botField("bot.cwd", "cwd", "string?", "Working folder", "Bot editor > Access > Folder");
-botField("bot.mcpServers", "mcpServers", "array", "MCP servers it may use (null: all)", "Bot editor > Access > Tools");
-botField("bot.toolScope", "toolScope", "any", "Tool selection", "Bot editor > Access > Tool selection");
-botField("bot.connectorScopes", "connectorScopes", "any", "Connected apps scopes", "Bot editor > Access > Connected apps");
-botField("bot.composio", "composio", "any", "Connected apps (Composio)", "Bot editor > Access > Connected apps");
+botField("bot.mcpServers", "mcpServers", "array", "MCP servers it may use (null: all)", "Bot editor > Access > Tools", selfReach);
+botField("bot.toolScope", "toolScope", "any", "Tool selection", "Bot editor > Access > Tool selection", selfReach);
+botField("bot.connectorScopes", "connectorScopes", "any", "Connected apps scopes", "Bot editor > Access > Connected apps", selfReach);
+botField("bot.composio", "composio", "any", "Connected apps (Composio)", "Bot editor > Access > Connected apps", selfReach);
 botField("bot.parkDirectMessages", "parkDirectMessages", "boolean", "Park direct messages while busy", "Bot editor > Behaviour");
 botField("bot.alwaysAllow", "alwaysAllow", "array", "Always allowed tools", "Bot editor > Access > Always allowed", always("rule-change"));
 add({
@@ -154,6 +174,7 @@ add({
     ? { method: "PATCH", path: `/api/bots/${enc(ids.target!)}`, body: { approvalMode: "full", confirmFullAccess: true } }
     : { method: "PATCH", path: `/api/bots/${enc(ids.target!)}`, body: { approvalMode: v } },
   classes: always("rule-change"),
+  approvalTo: (v) => String(v),
 });
 add({
   key: "bot.permissionMode", family: "bot", target: "bot", value: "enum:approval|auto|bypass",
@@ -161,6 +182,7 @@ add({
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/permission-mode`, field: "mode" }),
   write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/permission-mode`, body: v === "bypass" ? { mode: v, confirmBypass: true } : { mode: v } }),
   classes: always("rule-change"),
+  approvalTo: (v) => (v === "approval" ? "ask" : v === "bypass" ? "full" : String(v)),
 });
 add({
   key: "bot.primary", family: "bot", target: "bot", value: "boolean", label: "Primary Bot", where: "Bot editor > Permissions > Primary Bot",
@@ -179,7 +201,7 @@ add({
   write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/memory`, body: { text: v } }),
 });
 add({
-  key: "bot.perspicaxProfiles", family: "bot", target: "bot", value: "array", label: "Perspicax tools (profiles)", where: "Bot editor > Perspicax",
+  key: "bot.perspicaxProfiles", family: "bot", target: "bot", value: "array", label: "Perspicax tools (profiles)", where: "Bot editor > Perspicax", classes: selfReach,
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/perspicax` }),
   write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/perspicax`, body: { profiles: v } }),
 });
@@ -237,6 +259,7 @@ add({
   read: (ids) => ({ path: "/api/bots", query: { messages: "0" }, list: "bots", match: "id", field: `tasks[threadId=${ids.target}].approvalMode` }),
   write: (ids, v) => ({ method: "PATCH", path: `/api/bots/${enc(ids.botId!)}/tasks/${enc(ids.target!)}`, body: v === "full" ? { approvalMode: v, confirmFullAccess: true } : { approvalMode: v } }),
   classes: always("rule-change"),
+  approvalTo: (v) => String(v),
 });
 add({
   key: "thread.delete", family: "thread", target: "thread", value: "boolean", label: "Delete the conversation (true)", where: "Thread menu > Delete",
@@ -269,6 +292,7 @@ add({
   key: "routine.create", family: "routine", target: "none", value: "object",
   label: "New routine ({name, prompt, botId, schedule, ...})", where: "Automations > New routine",
   write: (_ids, v) => ({ method: "POST", path: "/api/routines", body: v }),
+  classes: (v) => (v as { runAs?: unknown } | null)?.runAs !== undefined ? ["others"] : ["own"],
 });
 add({
   key: "routine.run", family: "routine", target: "routine", value: "boolean", label: "Run now (true)", where: "Automations > routine > Run now",
@@ -307,6 +331,7 @@ add({
 add({
   key: "group.create", family: "group", target: "none", value: "object", label: "New group ({memberIds, name, section})", where: "Sidebar > New group",
   write: (_ids, v) => ({ method: "POST", path: "/api/groups", body: v }),
+  classes: (v) => Array.isArray((v as { humanIds?: unknown } | null)?.humanIds) && ((v as { humanIds: unknown[] }).humanIds.length > 0) ? ["others"] : ["own"],
 });
 add({
   key: "group.delete", family: "group", target: "group", value: "boolean", label: "Delete the group (true)", where: "Group panel > Delete",
@@ -339,7 +364,13 @@ add({
   label: "Add a rule in your words ({when, behavior: allow|ask|deny, botId?, riskScope?})", where: "Bot editor > Permissions > Custom rules",
   read: () => ({ path: "/api/custom-rules" }),
   write: (_ids, v) => ({ method: "POST", path: "/api/custom-rules", body: v }),
-  classes: (v) => (v as { behavior?: unknown } | null)?.behavior === "allow" ? ["rule-change"] : ["own"],
+  // only a deny or ask rule spelled out is a simple change: a sentence
+  // ("toujours permettre ...") or a rule from a card may read as allow
+  classes: (v) => {
+    const rule = v as Record<string, unknown> | null;
+    const tightens = rule && (rule.behavior === "ask" || rule.behavior === "deny") && Object.keys(rule).every((name) => ["when", "behavior", "botId"].includes(name));
+    return tightens ? ["own"] : ["rule-change"];
+  },
 });
 add({
   key: "rules.customUpdate", family: "rules", target: "rule", value: "object", label: "Change a custom rule ({when?, behavior?, enabled?, riskScope?})", where: "Bot editor > Permissions > Custom rules",
@@ -379,6 +410,8 @@ add({
 });
 add({
   key: "account.aboutMe", family: "account", target: "none", value: "text", label: "About me", where: "Settings > General > About me",
+  // the server's profile: on an organization server it is the operator's
+  classes: serverWide,
   read: () => ({ path: "/api/config", field: "profile.aboutMe" }),
   write: (_ids, v) => ({ method: "PUT", path: "/api/config", body: { profile: { aboutMe: v } } }),
 });
@@ -389,9 +422,10 @@ add({
 
 // ── preferences kept on the person's device (and per person on an
 // organization server): the screen command writes them in the app ─────
-function pref(key: string, family: SettingFamily, storage: string, value: SettingValue, label: string, where: string): void {
+function pref(key: string, family: SettingFamily, storage: string, value: SettingValue, label: string, where: string, classes?: SettingSpec["classes"]): void {
   add({
     key, family, target: "none", label, where, value,
+    ...(classes ? { classes } : {}),
     write: (_ids, v) => ({ ui: "setPreference", input: { key: storage, value: typeof v === "string" ? v : JSON.stringify(v) } }),
   });
 }
@@ -423,7 +457,11 @@ pref("notifications.readReceipts", "notifications", "sagax.readReceipts.v1", "bo
 pref("notifications.presence", "notifications", "sagax.presenceVisible.v1", "boolean", "Show when online", "Settings > Notifications > Privacy");
 pref("notifications.analyticsOptOut", "notifications", "omb-analytics-opt-out", "boolean", "Analytics opt-out", "Settings > Privacy");
 pref("models.voiceMode", "models", "omb.voiceMode.v1", "object", "Voice mode (voice, speed, language)", "Settings > Models and voice > Voice mode");
-pref("computer.botWorkplace", "computer", "sagax.botWorkplace.v1", "object", "Where bots work for you", "Settings > Computer > Bot workplace");
+// where bots run for the person (their own computer, routines, network): a
+// widening of where work goes, the person's Allow
+pref("computer.botWorkplace", "computer", "sagax.botWorkplace.v1", "object", "Where bots work for you", "Settings > Computer > Bot workplace", always("rule-change"));
+
+const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio", "composio"]);
 
 // ── server configuration (PATCH /api/config) ──────────────────────────
 function config(key: string, family: SettingFamily, path: string, value: SettingValue, label: string, where: string, classes: SettingSpec["classes"] = serverWide): void {
@@ -434,7 +472,9 @@ function config(key: string, family: SettingFamily, path: string, value: Setting
     classes,
   });
 }
-config("server.newBotDefaults", "server", "newBotDefaults", "object", "New bot defaults", "Settings > General > System > New bots");
+config("server.newBotDefaults", "server", "newBotDefaults", "object", "New bot defaults", "Settings > General > System > New bots",
+  // a default that sets a level, grants or tools for every new bot widens
+  (v, ctx) => /"(approvalMode|alwaysAllow|routines|toolScope|mcpServers|connectorScopes|composio|fullAccess)"/.test(JSON.stringify(v ?? null)) ? ["rule-change"] : serverWide(v, ctx));
 config("server.threads", "server", "threads", "object", "Conversation cleanup", "Settings > General > Advanced > Threads");
 config("server.showToolCalls", "server", "features.showToolCalls", "boolean", "Show tool calls", "Settings > Appearance");
 config("server.feature", "server", "features", "object", "Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker})", "Settings > Experimental");
@@ -444,18 +484,28 @@ config("server.mcpCallTimeout", "server", "mcp.callTimeoutMinutes", "number", "M
 config("server.localVm", "computer", "localVm", "object", "Local VM ({mode, maxInstances, idleTimeoutMinutes})", "Settings > Computer");
 config("models.voiceProvider", "models", "tts.provider", "string", "Voice engine", "Settings > Models and voice > Voice");
 config("models.fishModel", "models", "tts.fishModel", "string", "Fish Audio model", "Settings > Models and voice > Voice");
-config("models.imageGen", "models", "imageGen", "object", "Image generation", "Settings > Models and voice > Images");
-config("models.decider", "models", "decider", "object", "Decision model", "Settings > Models and voice > Decision model");
+config("models.imageGen", "models", "imageGen", "object", "Image generation", "Settings > Models and voice > Images", secretWhenKeyed);
+config("models.decider", "models", "decider", "object", "Decision model", "Settings > Models and voice > Decision model", secretWhenKeyed);
 config("models.everyClaudeBot", "models", "anthropic.everyClaudeBot", "boolean", "Anthropic key for every Claude bot", "Settings > Models and voice > Keys");
 add({
   key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}})", where: "Settings > Models and voice > Keys",
-  write: (_ids, v) => ({ method: "PATCH", path: "/api/config", body: v }),
+  // known providers, each holding its key only: nothing else rides along
+  write: (_ids, v) => {
+    const entries = Object.entries(v as Record<string, unknown>);
+    if (!entries.length) return "value is {<provider>: {key}}.";
+    for (const [provider, block] of entries) {
+      if (!PROVIDER_KEYS.has(provider)) return `${provider} is not a provider key (${[...PROVIDER_KEYS].join(", ")}).`;
+      const fields = block && typeof block === "object" && !Array.isArray(block) ? Object.keys(block) : [];
+      if (fields.length !== 1 || fields[0] !== "key" || typeof (block as { key?: unknown }).key !== "string") return `${provider} takes {key} only.`;
+    }
+    return { method: "PATCH", path: "/api/config", body: v };
+  },
   classes: (_v, ctx) => ctx.organization ? ["secret", "org"] : ["secret"],
 });
 add({
   key: "models.liveCalls", family: "models", target: "none", value: "object", label: "Live call settings", where: "Settings > Models and voice > Live calls",
   read: () => ({ path: "/api/live/settings" }),
-  write: (_ids, v) => ({ method: "PATCH", path: "/api/live/settings", body: v }), classes: serverWide,
+  write: (_ids, v) => ({ method: "PATCH", path: "/api/live/settings", body: v }), classes: secretWhenKeyed,
 });
 
 // ── organization (organization server: PATCH /api/org/settings) ───────

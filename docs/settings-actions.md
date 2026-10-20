@@ -22,9 +22,11 @@ parties hors tableau du script.
   3. pas le travail du propriétaire (la personne ne possède pas le bot qui
      parle ou ce qui change) : carte ;
   4. bot à Ask ou Auto-accept edits : carte ;
-  5. élargit les droits (niveau d'approbation, mode du propriétaire) :
-     appliqué jusqu'au niveau du bot qui parle, jamais Full ni Custom sans
-     carte ;
+  5. élargit les droits (niveau d'approbation, mode du propriétaire,
+     règle allow, valeurs par défaut des nouveaux bots, outils, applis ou
+     coéquipiers du bot qui parle lui-même, où travaillent les bots) :
+     un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
+     Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
 - Journal : chaque changement appliqué (tout de suite ou après Allow) écrit
   une ligne `setting.change` (catégorie `setting`) dans le journal
@@ -67,8 +69,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Teams the Primary Bot manages (e.g. Built-in) | Bot editor > Permissions > Managed teams | `sagax_settings` get, set `bot.managedSections` | simple |
 | Ask before talking to other bots | Bot editor > Permissions | `sagax_settings` get, set `bot.approvePeerComms` | simple |
 | Send on your behalf ({policy: ask/allow, dailyCap}) | Bot editor > Permissions | `sagax_settings` get, set `bot.outbound` | simple (élargit les droits si allow) |
-| Teammates it may reach | Bot editor > Team | `sagax_settings` get, set `bot.peers` | simple |
-| Who sees the bot (everyone, admins, {people}) | Bot editor > Visibility | `sagax_settings` get, set `bot.visibility` | simple |
+| Teammates it may reach | Bot editor > Team | `sagax_settings` get, set `bot.peers` | simple (élargit les droits pour le bot qui parle lui-même) |
+| Who sees the bot (everyone, admins, {people}) | Bot editor > Visibility | `sagax_settings` get, set `bot.visibility` | simple; organisation : autrui |
 | Team (sidebar section) | Sidebar, drag the bot; New bot > Team | `sagax_settings` get, set `bot.section` | simple |
 | Pinned in the sidebar | Sidebar > bot menu > Pin | `sagax_settings` get, set `bot.pinned` | simple |
 | Archived (hidden) | Bot editor > ... > Archive | `sagax_settings` get, set `bot.hidden` | simple |
@@ -79,10 +81,10 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Works on (Auto or Off) | Bot editor > Workspace | `sagax_settings` get, set `bot.computer` | simple |
 | Cloud computer kind | Bot editor > Access | `sagax_settings` get, set `bot.cloudBackend` | simple |
 | Working folder | Bot editor > Access > Folder | `sagax_settings` get, set `bot.cwd` | simple |
-| MCP servers it may use (null: all) | Bot editor > Access > Tools | `sagax_settings` get, set `bot.mcpServers` | simple |
-| Tool selection | Bot editor > Access > Tool selection | `sagax_settings` get, set `bot.toolScope` | simple |
-| Connected apps scopes | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.connectorScopes` | simple |
-| Connected apps (Composio) | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.composio` | simple |
+| MCP servers it may use (null: all) | Bot editor > Access > Tools | `sagax_settings` get, set `bot.mcpServers` | simple (élargit les droits pour le bot qui parle lui-même) |
+| Tool selection | Bot editor > Access > Tool selection | `sagax_settings` get, set `bot.toolScope` | simple (élargit les droits pour le bot qui parle lui-même) |
+| Connected apps scopes | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.connectorScopes` | simple (élargit les droits pour le bot qui parle lui-même) |
+| Connected apps (Composio) | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.composio` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Park direct messages while busy | Bot editor > Behaviour | `sagax_settings` get, set `bot.parkDirectMessages` | simple |
 | Always allowed tools | Bot editor > Access > Always allowed | `sagax_settings` get, set `bot.alwaysAllow` | élargit les droits |
 | Approval level (ask, edits, auto = Approve for me, full) | Bot editor > Permissions > Approval level | `sagax_settings` get, set `bot.approvalMode` | élargit les droits |
@@ -90,7 +92,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Primary Bot | Bot editor > Permissions > Primary Bot | `sagax_settings` get, set `bot.primary` | simple |
 | Parallel work and recovery ({maxConcurrentThreads, maxParallelPerPerson, busySend, automaticRecovery}) | Bot editor > Behaviour > Parallel tasks | `sagax_settings` get, set `bot.runtime` | simple |
 | Memory text | Bot editor > Memory | `sagax_settings` get, set `bot.memory` | simple |
-| Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple |
+| Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple (élargit les droits pour le bot qui parle lui-même) |
 | A skill on or off ({name, enabled}) | Bot editor > Skills | `sagax_settings` get, set `bot.skill` | simple |
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
 | Tool access grant ({scope: area:read/write/admin, expiresAt}) | Bot editor > Tool access | `sagax_settings` set `bot.toolGrant` | élargit les droits |
@@ -161,7 +163,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| Add a rule in your words ({when, behavior: allow/ask/deny, botId?, riskScope?}) | Bot editor > Permissions > Custom rules | `sagax_settings` get, set `rules.custom` | simple (élargit les droits si allow) |
+| Add a rule in your words ({when, behavior: allow/ask/deny, botId?, riskScope?}) | Bot editor > Permissions > Custom rules | `sagax_settings` get, set `rules.custom` | élargit les droits (simple pour une règle deny ou ask écrite) |
 | Change a custom rule ({when?, behavior?, enabled?, riskScope?}) | Bot editor > Permissions > Custom rules | `sagax_settings` set `rules.customUpdate` | élargit les droits |
 | Delete a custom rule (true) | Bot editor > Permissions > Custom rules | `sagax_settings` set `rules.customDelete` | suppression + élargit les droits |
 | Change an owner rule ({behavior, botId?}) | Bot editor > Permissions > Owner permissions | `sagax_settings` get, set `rules.owner` | élargit les droits |
@@ -174,7 +176,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 |---|---|---|---|
 | How people see your name | Settings > General > Account | `sagax_settings` set `account.label` | simple |
 | Your photo (a data URL, null removes) | Settings > General > Account | `sagax_settings` set `account.avatar` | simple |
-| About me | Settings > General > About me | `sagax_settings` get, set `account.aboutMe` | simple |
+| About me | Settings > General > About me | `sagax_settings` get, set `account.aboutMe` | simple; organisation : organisation |
 | Your own model and notifications for a shared bot | Shared bot > Model / Notifications | `sagax_settings` set `account.botOverride` | simple |
 
 ### Apparence
@@ -273,7 +275,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| Where bots work for you | Settings > Computer > Bot workplace | `sagax_settings` set `computer.botWorkplace` | simple |
+| Where bots work for you | Settings > Computer > Bot workplace | `sagax_settings` set `computer.botWorkplace` | élargit les droits |
 | Local VM ({mode, maxInstances, idleTimeoutMinutes}) | Settings > Computer | `sagax_settings` get, set `server.localVm` | simple; organisation : organisation |
 
 ## Hors de sagax_settings

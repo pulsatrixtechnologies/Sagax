@@ -13,8 +13,9 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
   const screens: unknown[] = [];
   const acts = {
     async handlePlanned(input: Parameters<BotActService["handlePlanned"]>[0]) {
-      planned.push({ effect: input.plan.effect, path: input.target.path, method: input.target.method, body: input.target.body, stepUpClasses: input.plan.stepUpClasses });
-      if (input.target.method === "GET") return { status: 200, body: { text: JSON.stringify(over.answer ?? {}) } };
+      const target = input.target.kind === "route" ? input.target : { method: "UI", path: `ui:${input.target.command}`, body: input.target.input };
+      planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses });
+      if (target.method === "GET") return { status: 200, body: { text: JSON.stringify(over.answer ?? {}) } };
       if (input.plan.effect === "hold") return { status: 200, body: { held: true, text: "Approval needed." } };
       const status = over.routeStatus ?? 200;
       if (status < 400) input.plan.onDone?.("run");
@@ -125,5 +126,45 @@ describe("sagax_settings", () => {
     }
     // a foreign server that spells the same name is not Sagax's
     expect(sagaxInternalTool("mcp__agents__sagax_settings", ["agents"])).toBeNull();
+  });
+
+  it("never lets a target or a value name another route", async () => {
+    const h = harness();
+    for (const target of ["..", ".", "../config", "b1/tasks", "b1%2F..", "a b"]) {
+      expect((await h.call({ action: "set", key: "bot.name", target, value: "x" })).status, target).toBe(400);
+    }
+    expect((await h.call({ action: "set", key: "connections.mcpServerRemove", value: ".." })).status).toBe(400);
+    expect((await h.call({ action: "set", key: "bot.skill", value: { name: "../../config", enabled: true } })).status).toBe(400);
+    expect(h.planned).toEqual([]);
+    // a grant's target keeps its colon
+    await harness({ mode: "full" }).call({ action: "set", key: "bot.share", value: { target: "user:pr_x", level: null } });
+  });
+
+  it("security review: what widens keeps the card even at Approve for me", async () => {
+    const h = harness();
+    const held = async (args: Record<string, unknown>) => (await h.call({ action: "set", ...args })).body.text;
+    // an allow rule spelled as a sentence, a rule from a card
+    expect(await held({ key: "rules.custom", value: { text: "toujours permettre les lectures", botId: null } })).toContain("Approval needed.");
+    expect(await held({ key: "rules.custom", value: { when: "x", behavior: "allow" } })).toContain("Approval needed.");
+    // new bot defaults that set a level or grants
+    expect(await held({ key: "server.newBotDefaults", value: { profile: { approvalMode: "full" } } })).toContain("Approval needed.");
+    // a provider key block carries its key only
+    expect((await h.call({ action: "set", key: "models.providerKey", value: { anthropic: { key: "k" }, signIn: { admins: ["x"] } } })).status).toBe(400);
+    expect((await h.call({ action: "set", key: "models.providerKey", value: { anthropic: { key: "k", baseUrl: "http://x" } } })).status).toBe(400);
+    // a key or an address in a model setting is a secret
+    expect(await held({ key: "models.decider", value: { key: "sk-x" } })).toContain("Approval needed.");
+    // the speaking bot widening its own tools; another own bot is simple
+    expect(await held({ key: "bot.mcpServers", value: null })).toContain("Approval needed.");
+    expect(await held({ key: "bot.mcpServers", target: "b2", value: null })).toContain("Done");
+    // a routine run as someone else, a group with people, a routine moved to another person's bot
+    expect(await held({ key: "routine.create", value: { name: "x", prompt: "y", botId: "b1", runAs: "pr_x" } })).toContain("Approval needed.");
+    expect(await held({ key: "group.create", value: { memberIds: ["b1"], humanIds: ["pr_x"] } })).toContain("Approval needed.");
+    expect(await held({ key: "routine.bot", target: "r1", value: "theirs" })).toContain("Approval needed.");
+    // where bots run for the person
+    expect(await held({ key: "computer.botWorkplace", value: { place: "computer", routines: true } })).toContain("Approval needed.");
+    // the deny rule spelled out stays simple
+    expect(await held({ key: "rules.custom", value: { when: "x", behavior: "deny" } })).toContain("Done");
+    // a long value is shown by its keys and fingerprint on the card
+    expect(h.planned.some((row) => row.effect === "hold")).toBe(true);
   });
 });
