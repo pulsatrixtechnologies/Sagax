@@ -136,6 +136,6 @@ export function useRoutineScope({ config, routines, runs, ignoreStatus = false }
     error: !live && error,
     reload: load,
     /** The query Clear logs sends with the page's bot filter. */
-    clearSearch: (botId: string | undefined) => routineScopeSearch({ scope, ...(teamId ? { teamId } : {}), ...(ownerId ? { ownerId } : {}), ...(botId ? { botId } : {}), ...(prefs.status ? { status: prefs.status } : {}) }),
+    clearSearch: (botId: string | undefined) => routineScopeSearch({ scope, ...(teamId ? { teamId } : {}), ...(ownerId ? { ownerId } : {}), ...(botId ? { botId } : {}), ...(statusFilter ? { status: statusFilter } : {}) }),
   };
 }

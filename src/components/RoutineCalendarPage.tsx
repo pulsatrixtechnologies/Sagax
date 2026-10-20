@@ -1201,7 +1201,7 @@ function CalendarEventCard({
   useEffect(() => setPreviewDuration(item.durationMinutes), [item.durationMinutes]);
   const status = run?.status;
   const statusLabel = run ? routineRunLabel(run) : undefined;
-  const canMove = isCall || Boolean(routine && !run && routine.schedule.type !== "cron" && routine.canEdit !== false);
+  const canMove = isCall || Boolean(routine && !run && item.at >= Date.now() && routine.schedule.type !== "cron" && routine.canEdit !== false);
   const schedule = isCall ? item.call.schedule : routine?.schedule;
   const recurring = Boolean(schedule && schedule.type !== "once");
   const intervalCadence = schedule?.type === "interval" ? intervalLabel(schedule.everyMinutes) : null;
@@ -1297,9 +1297,11 @@ function CalendarGrid({
   const [moreOpen, setMoreOpen] = useState<string | null>(null);
   useEffect(() => {
     if (!moreOpen) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMoreOpen(null); };
+    document.addEventListener("keydown", onKey);
     const close = (event: PointerEvent) => { if (!(event.target as HTMLElement | null)?.closest?.("[data-slot-more]")) setMoreOpen(null); };
     document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    return () => { document.removeEventListener("pointerdown", close); document.removeEventListener("keydown", onKey); };
   }, [moreOpen]);
   const today = startOfDay(Date.now());
   const starts = Array.from({ length: days }, (_, index) => addDays(anchor, index));
