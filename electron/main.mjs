@@ -777,6 +777,7 @@ const serverSupervisor = createServerSupervisor({
     serverReady = true;
     serverStartConflictOnly = false;
     slog(`server ready pid=${proc.pid} port=${SERVER_PORT}`);
+    reportOwnListeners(proc);
     // Re-read the latest account credentials; registration may have completed
     // while the replacement child's health probe was pending.
     syncManagedComposioCredentials();
@@ -1012,6 +1013,7 @@ import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from 
 import { readDesktopLanguage, writeDesktopLanguage } from "./desktop-language.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
+import { reportOwnListeners, serverRequestRefusal } from "./server-session.mjs";
 import { isYoutubeEmbedUrl, withYoutubeEmbedReferer } from "./youtube-referer.mjs";
 
 // No request from this app reaches the original OpenMausBot services, the
@@ -1019,7 +1021,11 @@ import { isYoutubeEmbedUrl, withYoutubeEmbedReferer } from "./youtube-referer.mj
 // guarded here, every Electron session (windows, webviews, the updater's net
 // session) on creation and once ready (electron/upstream-hosts.mjs).
 installFetchGuard(globalThis);
-app.on("session-created", (created) => installSessionBlock(created, (line) => slog(`network: ${line}`)));
+// No session but the app window's reaches the local server (OpenMausBot #2930
+// port): a desktop viewer, a bridge browser or a Local VM pane is never the
+// owner. Set once the default session exists (whenReady), before any window.
+let serverSessionGuard = null;
+app.on("session-created", (created) => installSessionBlock(created, (line) => slog(`network: ${line}`), serverRequestRefusal(created, () => serverSessionGuard)));
 
 /** IPC that controls this computer, its files, its logins or its updater is
  * answered only for the local server's UI (electron/local-origin.cjs). A
@@ -1772,7 +1778,9 @@ function installRequestHeaderRules({ mutationHeader }) {
     let ownsTarget = false;
     try {
       const target = new URL(details.url);
-      ownsTarget = mutationHeader && serverReady && target.protocol === "http:" &&
+      // http: and ws: alike: a browser's WebSocket handshake needs the header
+      // too, since the server refuses browsers without it (OpenMausBot #2930).
+      ownsTarget = mutationHeader && serverReady && (target.protocol === "http:" || target.protocol === "ws:") &&
         target.hostname === "127.0.0.1" &&
         Number(target.port || 80) === SERVER_PORT;
     } catch {}
@@ -4789,6 +4797,8 @@ setCuaStateListener((connection) => {
 });
 
 app.whenReady().then(async () => {
+  // First thing once ready: no session but the app window's reaches the server.
+  serverSessionGuard = { defaultSession: session.defaultSession, serverPort: () => SERVER_PORT };
   installSessionBlock(session.defaultSession, (line) => slog(`network: ${line}`));
   // Cached-before-the-fix attachment responses outlive `no-store`: entries
   // stored under the old one-year immutable policy can replay to a second

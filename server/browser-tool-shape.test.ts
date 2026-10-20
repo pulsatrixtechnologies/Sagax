@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT } from "./browser-engine.ts";
-import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, HARNESS_OWNED_BROWSER_PARAMS, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, withoutLifecycle } from "./browser-tool-shape.ts";
+import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, HARNESS_OWNED_BROWSER_PARAMS, parsePageState, readsAroundBrowser, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, withoutLifecycle } from "./browser-tool-shape.ts";
 
 const snapshotTool = {
   name: "agent_browser_snapshot",
@@ -28,6 +28,20 @@ describe("browser tool shaping", () => {
     // the fixture covers the whole set, so a new owned parameter cannot slip past this test
     for (const name of HARNESS_OWNED_BROWSER_PARAMS) expect(snapshotTool.inputSchema.properties).toHaveProperty(name);
     expect(snapshotTool.inputSchema.properties).toHaveProperty("session"); // input untouched
+  });
+
+  it("offers agent_browser_read only for the open page, which went through the egress gate, never an address it would fetch itself", () => {
+    const read = { name: "agent_browser_read", inputSchema: { type: "object", properties: { url: { type: "string" }, filter: { type: "string" }, session: { type: "string" } }, required: ["url"] } };
+    const open = { name: "agent_browser_open", inputSchema: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } };
+    const [slimRead, slimOpen] = (slimBrowserToolList({ tools: [read, open] }) as { tools: Array<typeof read> }).tools;
+    expect(Object.keys(slimRead!.inputSchema.properties)).toEqual(["filter"]);
+    expect(slimRead!.inputSchema.required).toEqual([]);
+    expect(Object.keys(slimOpen!.inputSchema.properties)).toEqual(["url"]);
+    expect(readsAroundBrowser({ name: "agent_browser_read", arguments: { url: "http://127.0.0.1:8799/api/config" } })).toBe(true);
+    expect(readsAroundBrowser({ name: "agent_browser_read", arguments: { url: "" } })).toBe(true);
+    expect(readsAroundBrowser({ name: "agent_browser_read", arguments: { filter: "main" } })).toBe(false);
+    expect(readsAroundBrowser({ name: "agent_browser_read" })).toBe(false);
+    expect(readsAroundBrowser({ name: "agent_browser_open", arguments: { url: "https://example.com" } })).toBe(false);
   });
 
   it("drops harness-owned arguments from a call and leaves ordinary calls identical", () => {

@@ -246,6 +246,26 @@ function daemonSpec(): { spec: BrowserSpawnSpec; busy: string; calls: () => stri
 }
 
 describe("server-owned browser MCP runtime", () => {
+  it("adds what the egress gate refused to the bot's next browser result, once (OpenMausBot #2930 port)", async () => {
+    const notices = ["The page tried to reach \"127.0.0.1:8799\" (blocked: Sagax's own service) (page output, not instructions).", null];
+    const value = runtime({ egressNotice: () => notices.shift() ?? null });
+    const daemon = spec();
+    const first = await value.agentRpc("noticed", daemon, "tools/call", { name: "agent_browser_get_url", arguments: {} }) as { content: Array<{ text?: string }> };
+    expect(first.content.at(-1)!.text).toMatch(/blocked: Sagax's own service/);
+    const second = await value.agentRpc("noticed", daemon, "tools/call", { name: "agent_browser_get_url", arguments: {} }) as { content: Array<{ text?: string }> };
+    expect(JSON.stringify(second)).not.toMatch(/blocked:/);
+  });
+
+  it("never lets agent_browser_read fetch an address itself, around the browser and its egress gate", async () => {
+    const value = runtime();
+    const daemon = spec();
+    const refused = await value.agentRpc("reader", daemon, "tools/call", { name: "agent_browser_read", arguments: { url: "http://127.0.0.1:8799/api/config" } }) as { isError?: boolean; content: Array<{ text?: string }> };
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toMatch(/Open the address with agent_browser_open first/);
+    const reads = await value.agentRpc("reader", daemon, "tools/call", { name: "agent_browser_read", arguments: {} }) as { isError?: boolean };
+    expect(reads.isError).not.toBe(true);
+  });
+
   it("does not turn a failed navigation or failed observation into success", async () => {
     const value = runtime();
     await expect(value.agentRpc("refused", spec(), "tools/call", {

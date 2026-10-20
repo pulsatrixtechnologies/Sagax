@@ -123,7 +123,13 @@ There are three deliberately separate trust surfaces:
 
 The desktop app owns the sidecar lifecycle through
 `electron/companion.mjs`. The renderer only receives narrow IPC operations; it
-does not fetch the control port directly.
+does not fetch the control port directly. Every control route needs a token
+the app makes for each sidecar launch and hands over Electron's private port
+(port of OpenMausBot #2930), so a page served from `127.0.0.1:8811` itself, as
+a bot's browser could open it, cannot start pairing or change a device's
+access. A standalone sidecar prints its pairing page link with that token
+(`http://127.0.0.1:8811/#token=…`); the page reads it from the fragment,
+which never leaves the browser.
 
 ## SQLite compatibility
 

@@ -1,5 +1,5 @@
 import { killCliTree, spawnCli } from "./procs.ts";
-import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
+import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, READ_OPEN_PAGE_ONLY, readsAroundBrowser, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
 import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, parseEvalArray, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript } from "./credential-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
@@ -373,6 +373,13 @@ export type PauseStream = (session: string, spec: BrowserSpawnSpec) => Promise<(
 /** Closes one session's native browser daemon; true only when it is gone. */
 export type CloseBrowser = (session: string, spec: BrowserSpawnSpec) => Promise<boolean>;
 
+/** A tool result with one more text line at its end (an egress refusal). */
+function withNotice(result: unknown, notice: string | null): unknown {
+  if (!notice || !result || typeof result !== "object" || !Array.isArray((result as { content?: unknown }).content)) return result;
+  const shaped = result as { content: unknown[] };
+  return { ...shaped, content: [...shaped.content, { type: "text", text: notice }] };
+}
+
 export class BrowserRuntime {
   private gates = new Map<string, Gate>();
   private clients = new Map<string, ClientEntry>();
@@ -388,10 +395,14 @@ export class BrowserRuntime {
   private closeBrowser: CloseBrowser;
   private applyViewport?: ApplyViewport;
   private pauseStream?: PauseStream;
+  /** What the egress gate refused for a session since the last call, as one
+   * line (server/browser/egress/registry.ts, port of OpenMausBot #2930). */
+  private egressNotice?: (session: string) => string | null;
   /** Values filled into each session, hidden from every later result. */
   readonly redactor = new SecretRedactor();
 
-  constructor({ closeBrowser, applyViewport, pauseStream, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream } = {}) {
+  constructor({ closeBrowser, applyViewport, pauseStream, egressNotice, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream; egressNotice?: (session: string) => string | null } = {}) {
+    this.egressNotice = egressNotice;
     this.options = { requestTimeoutMs: 120_000, takeoverTimeoutMs: 15_000, idleMs: 60_000, maxPending: 16, resultBudget: DEFAULT_BROWSER_RESULT_BUDGET, recoveryCheckMs: 30_000, ...options };
     this.closeBrowser = closeBrowser ?? (async () => false);
     this.applyViewport = applyViewport;
@@ -449,9 +460,13 @@ export class BrowserRuntime {
   }
 
   async agentRpc(session: string, spec: BrowserSpawnSpec, method: "tools/list" | "tools/call", params: unknown, beforeDispatch?: () => void, credentials?: CredentialFillAccess): Promise<unknown> {
+    // agent_browser_read with a `url` fetches around the browser and its
+    // egress gate; it reads the open page only (OpenMausBot #2930 port).
+    if (method === "tools/call" && readsAroundBrowser(params)) return toolText(READ_OPEN_PAGE_ONLY, true);
     try {
       // A value Sagax filled never comes back to a bot, whatever tool reads the page.
-      return this.redactor.redact(session, await this.agentRpcUnredacted(session, spec, method, params, beforeDispatch, credentials));
+      const result = this.redactor.redact(session, await this.agentRpcUnredacted(session, spec, method, params, beforeDispatch, credentials));
+      return method === "tools/call" ? withNotice(result, this.egressNotice?.(session) ?? null) : result;
     } catch (error) {
       if (error instanceof Error) {
         const message = this.redactor.redactText(session, error.message);

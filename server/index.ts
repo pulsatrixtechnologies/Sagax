@@ -627,6 +627,7 @@ import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-r
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "./browser-runtime.ts";
+import { browserEgress } from "./browser/egress/registry.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
@@ -810,6 +811,7 @@ import {
   routePermission,
   readWorkerRelayToken,
   resolveLoopbackTrust,
+  loopbackBrowserRefused,
   resolveRequestAuth,
   parseCookies,
   isSameOrigin,
@@ -1615,8 +1617,8 @@ const sharedWorkspaceFullAccessEnabled = () => SHARED_WORKSPACE_FULL_ACCESS && B
 // An organization server is shared: loopback is a bot's shell, not an owner,
 // unless the operator says otherwise (spec section 8, request-auth.ts).
 const LOOPBACK = IDENTITY.kind === "perspicax" && !DESKTOP_MANAGED && process.env.SAGAX_LOOPBACK_TRUST === undefined
-  ? { trust: "service" as const, reason: "organization server (SAGAX_IDENTITY=perspicax)" as string, warning: undefined as string | undefined }
-  : resolveLoopbackTrust({ desktopManaged: DESKTOP_MANAGED, hostedWorkspace: HOSTED_WORKSPACE, cloudHome: Boolean(CLOUD_HOME) });
+  ? { trust: "service" as const, reason: "organization server (SAGAX_IDENTITY=perspicax)" as string, warning: undefined as string | undefined, localBrowsers: false }
+  : resolveLoopbackTrust({ desktopManaged: DESKTOP_MANAGED, hostedWorkspace: HOSTED_WORKSPACE, cloudHome: Boolean(CLOUD_HOME), fromSource: import.meta.url.endsWith(".ts") });
 // The hosted worker's relay token. Read once, then removed, so an engine
 // this server starts does not inherit it. Never logged.
 const WORKER_RELAY_TOKEN = readWorkerRelayToken();
@@ -4492,7 +4494,21 @@ function cancelDirectTurnDispatch(botId: string, expectedThreadId?: string): Dir
 /** The bot's browser for this turn: agent-browser, one isolated session per
  * browser profile or per bot (docs/plans/browser-engine.md). Null, with the
  * reason logged once, when the engine is not on this machine. */
+// Every Chrome Sagax launches for a bot goes through an egress gate: a SOCKS5
+// server per browser session that resolves names itself and never reaches
+// Sagax's own listeners, cloud metadata, link-local addresses, nor (on a
+// server) the local network (server/browser/egress, port of OpenMausBot #2930).
+// A shared server (organization, hosted workspace, service trust) runs many
+// people's bots side by side: one bot's browser never reaches the servers
+// another bot started, so no bot port is open there without
+// browserEngine.egress.allow (Sagax addition to the port).
+const sharedEgressHost = !DESKTOP_MANAGED && (IDENTITY.kind === "perspicax" || HOSTED_WORKSPACE || LOOPBACK.trust === "service");
+browserEgress.configure({
+  host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
+  ...(sharedEgressHost ? { ownership: { botOwned: async () => false } } : {}),
+});
 const browserRuntime = new BrowserRuntime({
+  egressNotice: (session) => browserEgress.takeNotice(session),
   // The bot's restart_browser tool. An open Browser panel watched the old
   // browser; drop its stream the way the panel's own Restart button does.
   closeBrowser: async (session, spec) => {
@@ -4594,13 +4610,16 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
   const partitionId = confidential || profile === "guest" ? "guest" : (profileTarget?.partitionId ?? "");
   const session = currentBrowserSession(botId, profile, threadForSession);
   const persistent = !confidential && profile !== "guest";
+  const attachCdpUrl = browserEngineAttachCdpUrl(cfg) ?? undefined;
   const spec = agentBrowserIntegration({
       binaryPath: status.binaryPath,
       session,
       encryptionKey: browserEngineEncryptionKey(),
       persistent,
       env: { ...process.env, PATH: augmentedPath() },
-      attachCdpUrl: browserEngineAttachCdpUrl(cfg) ?? undefined,
+      attachCdpUrl,
+      // A Chrome attached over CDP is the person's own: no gate to put it behind.
+      ...(attachCdpUrl ? {} : { egressPort: await browserEgress.open(session) }),
     });
   usedBrowserSessions.set(session, spec);
   await prepareBrowserSessionState(status.binaryPath, session, { env: spec.env, persistent, isCurrent: () => {
@@ -6633,7 +6652,10 @@ function publishedPageViewer(req: IncomingMessage): PageViewer {
     return { principalId: person.id, computerOwner: false };
   }
   const host = typeof req.headers.host === "string" ? req.headers.host : undefined;
-  if (IDENTITY.kind !== "perspicax" && LOOPBACK.trust !== "service" && !isProxied(req) && isLoopbackHost(host)) return { computerOwner: true };
+  // A browser is never the owner by being on this computer (OpenMausBot
+  // #2930 port): the desktop app's window proves itself with its header.
+  if (IDENTITY.kind !== "perspicax" && LOOPBACK.trust !== "service" && !isProxied(req) && isLoopbackHost(host)
+    && !loopbackBrowserRefused(req, { loopbackMutationToken: desktopMutationToken, trustLocalBrowser: LOOPBACK.localBrowsers })) return { computerOwner: true };
   return null;
 }
 
@@ -25125,7 +25147,7 @@ const workspaceBackupAccess = {
     const current = resolveRequestAuth(req, {
       sessions, cookieName: SESSION_COOKIE, streamPath: "/api/events",
       url: new URL(req.url ?? "/", `http://localhost:${PORT}`),
-      loopbackMutationToken: desktopMutationToken, companionMutationToken, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
+      loopbackMutationToken: desktopMutationToken, companionMutationToken, loopbackTrust: LOOPBACK.trust, cliOwnerToken, trustLocalBrowser: LOOPBACK.localBrowsers,
       workerRelayToken: WORKER_RELAY_TOKEN,
       features: { orgDirectory: IDENTITY.kind === "perspicax" },
       permits: sessionPermits,
@@ -25226,6 +25248,8 @@ async function openMeetingBrowser(_botId: string, meetingId: string): Promise<Me
     encryptionKey: browserEngineEncryptionKey(),
     persistent: false,
     env: { ...process.env, PATH: augmentedPath() },
+    egressPort: await browserEgress.open(session),
+    meetingMedia: true,
   });
   usedBrowserSessions.set(session, spec);
   await prepareBrowserSessionState(status.binaryPath, session, { env: spec.env, persistent: false });
@@ -33482,6 +33506,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" },
       loopbackTrust: LOOPBACK.trust,
       cliOwnerToken,
+      trustLocalBrowser: LOOPBACK.localBrowsers,
       workerRelayToken: WORKER_RELAY_TOKEN,
       permits: sessionPermits,
     });
@@ -38619,7 +38644,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const current = resolveRequestAuth(req, {
         sessions, cookieName: SESSION_COOKIE, streamPath: "/api/events", url,
         loopbackMutationToken: desktopMutationToken, companionMutationToken,
-        features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken,
+        features: { sharedComputers: lendingEnabled(), orgPairing: IDENTITY.kind === "perspicax", orgDirectory: IDENTITY.kind === "perspicax", serverCatalogue: IDENTITY.kind !== "perspicax" }, loopbackTrust: LOOPBACK.trust, cliOwnerToken, trustLocalBrowser: LOOPBACK.localBrowsers,
         workerRelayToken: WORKER_RELAY_TOKEN,
       });
       if (!current.auth) return json(res, current.status, { error: current.error });

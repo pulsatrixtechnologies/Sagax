@@ -1123,7 +1123,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           cwd: turn.cwd ?? homedir(),
           env,
           stdio: ["pipe", "pipe", "pipe"],
-        });
+        }, "bot");
 
       let abandoned = false;
       let codexThreadId: string | null = null;

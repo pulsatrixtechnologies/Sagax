@@ -6,7 +6,9 @@ The npm CLI supports a managed public tunnel, Tailscale, or your own proxy.
 
 > **Security first:** by default a self-hosted server trusts loopback as its
 > owner — any process that can reach `127.0.0.1:8799` has full control,
-> including the shell your bots can use. **Never expose that port directly
+> including the shell your bots can use. A browser is the exception: even on
+> this machine it signs in once (see [A browser signs in](#a-browser-signs-in)).
+> **Never expose that port directly
 > and never bind it to a public interface.** Reach it through an SSH tunnel, a
 > private network you trust, or an authenticated remote path below. Requests
 > through the managed tunnel or a correctly configured proxy require a paired
@@ -488,7 +490,8 @@ bots or conversations. If sign-out cannot reach the server, the app warns you;
 revoke its session there when reachable again, or if the device is gone.
 
 What this changes about the trust model: the server still binds loopback
-and still trusts loopback as the owner. A **paired session** is the second
+and still trusts programs on loopback as the owner, though never a browser
+(below). A **paired session** is the second
 way in: a bearer token or the cookie, same-origin only, with a scope (`admin`
 by default, `--client` for a device that may chat but not change settings or
 pair others). Five bad codes from one address lock that address out for ten
@@ -511,12 +514,49 @@ address of its own:
 
 ```sh
 ssh -L 8799:localhost:8799 you@your-server
-# then open http://localhost:8799 — loopback, so no pairing needed
+# then run `openmausbot pair` on the server and open the "this computer:" link it prints
 ```
 
-(With `SAGAX_LOOPBACK_TRUST=service`, below, a tunnel is loopback without a
-session: the page asks you to sign in or pair first, because it no longer
-makes you the owner.)
+The browser signs in once through the tunnel, like any browser on the server
+itself.
+
+### A browser signs in
+
+Port of OpenMausBot #2930 (2026-10-19). A browser never gets loopback trust,
+on any server: a request that carries the `Sec-Fetch-Site` or
+`Sec-Fetch-Dest` header (every browser sends them to a loopback address, and a
+page cannot remove them), or a WebSocket handshake with an `Origin`, needs a
+session. A web page is not the person who owns the server, even when it runs
+on the same machine, and neither is the Chrome a bot drives. Programs are
+unaffected: the CLI, scripts, `curl` and the companion send neither header.
+Published pages follow the same rule: a browser reads a private page only
+signed in.
+
+The first time you open the web UI in a browser on the server's own machine,
+it shows the sign-in page. `openmausbot serve` and `openmausbot pair` print a
+link for it:
+
+```
+this computer: http://127.0.0.1:8799/pair#code=XXXX-XXXX-XXXX
+```
+
+Open it (or type the code on the sign-in page); the browser keeps its session
+cookie from then on. `openmausbot` (the guided start) prints the same link.
+The desktop app is unaffected: its window adds the app's per-launch owner
+header to every request and WebSocket it sends to its server, and no other
+Electron session (desktop viewers, Local VM panes) may reach the server.
+Paired phones (session or companion relay) and organization servers
+(Perspicax sign-in) are unchanged.
+
+For development, `pnpm dev:server` sets `SAGAX_DEV_TRUST_LOCAL_BROWSER=1`,
+so a browser on Vite's dev page (`pnpm dev`) is the owner as before. The
+server honours it only when it runs from source with owner trust, logs a
+warning, and ignores it in a build, the desktop app and a service-trust
+server. Run `SAGAX_DEV_TRUST_LOCAL_BROWSER=0 pnpm dev:server` to try the
+sign-in. An unpackaged desktop run (`electron .`) sends no owner header,
+like upstream: sign its window in with a pairing code, or use a packaged
+build. Verification fixtures (`scripts/control-omb.ts`) set it the same
+way unless the caller passes `0`.
 
 ### Loopback trust: owner or service
 
@@ -1437,7 +1477,7 @@ Older way, still supported, and only useful on a LAN or a tailnet: run the
 companion sidecar next to the harness and pair by its own QR. It advertises
 on your private networks (Tailscale-aware) and issues its own per-device
 credentials, which are **not** `openmausbot sessions` and are revoked from
-its own page on `127.0.0.1:8811`. It also serves phones over cleartext HTTP
+its own page at the `127.0.0.1:8811/#token=…` link it prints. It also serves phones over cleartext HTTP
 on port 8810, so do not expose it from a public server. It ships only in a
 git checkout: neither the npm package nor the Docker image contains it.
 

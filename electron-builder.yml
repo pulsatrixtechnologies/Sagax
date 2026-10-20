@@ -82,6 +82,9 @@ extraResources:
     to: licenses/hpke-core-LICENSE.txt
   - from: third_party/hpke-js/common-LICENSE.txt
     to: licenses/hpke-common-LICENSE.txt
+  # Code adapted from T3 Code (MIT): the bots' browser egress gate, the Antigravity runtime, citations.
+  - from: third_party/t3-code/LICENSE
+    to: licenses/t3-code-LICENSE.txt
   - from: third_party/98.css/LICENSE
     to: licenses/98css-LICENSE.txt
   - from: third_party/geist/OFL.txt
