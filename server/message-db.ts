@@ -564,7 +564,8 @@ function newestAts(threadIds: readonly string[], where: string): Map<string, num
   return out;
 }
 
-export function deleteThread(threadId: string): void {
+/** One transaction; `beforeCommit` throwing keeps the thread's rows. */
+export function deleteThread(threadId: string, beforeCommit?: () => void): void {
   writeFollowups((connection) => {
     connection.prepare("DELETE FROM chat_followups WHERE thread_id = ?").run(threadId);
     connection.prepare("DELETE FROM messages WHERE thread_id = ?").run(threadId);
@@ -574,6 +575,7 @@ export function deleteThread(threadId: string): void {
     // compaction.append), keyed "<thread>:<turn>...": copies of its digest
     // and compaction rows. A key range, so no other thread's id matches.
     connection.prepare("DELETE FROM command_receipts WHERE key >= ? AND key < ?").run(`${threadId}:`, `${threadId};`);
+    beforeCommit?.();
   });
 }
 
