@@ -178,7 +178,7 @@
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 const mode = process.env.FAKE_ACP_MODE ?? "happy";
 
@@ -602,6 +602,8 @@ function emitUsageUpdates(): void {
 }
 function failRpc(msg: { method: string; id: unknown }): boolean {
   if (msg.method !== (process.env.FAKE_ACP_RPC_FAILURE_METHOD ?? "session/prompt")) return false;
+  // The server's own catalog probe is not a turn: the armed failure (and its gate) belongs to turns, so a status read never waits on it.
+  if (process.cwd().endsWith(["", "providers", "opencode", "discovery"].join(sep))) return false;
   const failureFile = process.env.FAKE_ACP_RPC_FAILURE_FILE;
   if (process.env.FAKE_ACP_RPC_FAILURE_WHILE_FILE === "1") rpcFailure = null;
   if (failureFile && existsSync(failureFile)) rpcFailure = JSON.parse(readFileSync(failureFile, "utf8"));

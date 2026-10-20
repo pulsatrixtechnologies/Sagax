@@ -30,6 +30,8 @@ it("names a bot-to-bot conversation waiting on the person and keeps the bot's mo
   try {
     const { bot: asker } = await cli("new-bot", "--name", "Asker");
     const { bot: teammate } = await cli("new-bot", "--name", "Teammate");
+    // New bots start on Approve for me, which decides a read-only call itself: this test needs the person's card.
+    for (const id of [asker.id, teammate.id]) await api("PATCH", `/api/bots/${id}`, { approvalMode: "ask" });
     writeFileSync(join(dataDir, "room-plan.json"), JSON.stringify({
       [asker.id]: { script: [
         { key: "ask", match: ["Ask Teammate to list the folder."], steps: [{ arguments: { bot_ids: [teammate.id], message: "LIST: list the folder." } }], reply: "Asked Teammate." },

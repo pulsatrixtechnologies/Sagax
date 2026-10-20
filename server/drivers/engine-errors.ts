@@ -52,7 +52,11 @@ export function providerReason(text: string): string | null {
   if (/^[{[]/.test(reason)) reason = jsonMessage(reason)?.replace(/\s+/g, " ").trim() ?? "";
   if (!reason || reason.startsWith("<")) return null;
   const first = /^(.{20,}?[.!?])\s/.exec(reason)?.[1];
-  if (first) reason = first;
+  if (first) {
+    // A later sentence naming the reset ("Your plan resets at ...") is what a limit's backup reads, so it stays.
+    const reset = /(?:^|[.!?]\s+)([^.!?]*\bresets?\b[^\s]*(?:\s[^\s]+){0,8})\s*$/i.exec(reason.slice(first.length))?.[1];
+    reason = reset ? `${first} ${reset.trim()}` : first;
+  }
   if (reason.length > REASON_CHARS) reason = `${reason.slice(0, REASON_CHARS - 1).replace(/\s+\S*$/, "")}…`;
   reason = redactSecretsInText(reason).replaceAll('"', "'").replace(/[.\s]+$/, "");
   return reason && !STATUS_PHRASE.test(reason) ? reason : null;
