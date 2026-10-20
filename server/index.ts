@@ -47,7 +47,9 @@ import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntime
 
 import { z } from "zod";
 import { boundedContextText, selectReplay, DEFAULT_REBUILD_BYTES, MAX_SUMMARY_BYTES, type CompactionRecord, type ReplayEntry } from "./context-rebuild.ts";
-import { draftSummary, foldPoint } from "./compaction-summary.ts";
+import { deterministicSummary, draftSummary, foldPoint } from "./compaction-summary.ts";
+import { staleSessionReason, type StaleSessionReason } from "./stale-session.ts";
+import { isSmallTalk, SMALL_TALK_CLOUD_REFUSAL, SMALL_TALK_TURN_NOTE } from "./small-talk.ts";
 import { composeStreamDigest, draftSegmentDigest, extractSegmentDigest, recallTopicPage, streamCandidate, STREAM_FULL_ENTRIES, type SegmentDigest } from "./single-stream.ts";
 import { isStreamSegment } from "../shared/single-stream.ts";
 import { alwaysDenyOffered } from "../shared/approval-rule-card.ts";
@@ -15626,6 +15628,34 @@ function peerReplayText(m: Message, name: string, text: string): string {
   return `${note}\n${JSON.stringify(escapeNotes(text))}`;
 }
 
+/** Why this thread's engine session should not be resumed (left alone for
+ * hours, or its saved file grown too large; server/stale-session.ts), or
+ * null. Only for an engine that resumes a session of its own here: one that
+ * is handed the transcript every turn, a rewound thread or another engine
+ * joining rebuild their context anyway. */
+function staleEngineSession(threadId: string, task: TaskRecord, instance: NonNullable<ReturnType<typeof registry.get>>,
+  messages: readonly Message[], excludedIds: ReadonlySet<string>): StaleSessionReason | null {
+  if (replaysNatively(instance.driverKind) || task.rewound) return null;
+  const cursor = task.resumeCursors?.[instance.instanceId];
+  if (cursor === undefined || (task.lastInstanceId !== undefined && task.lastInstanceId !== instance.instanceId)) return null;
+  const last = messages.findLast((message) => !excludedIds.has(message.id) && isContextMessage(message));
+  return staleSessionReason({
+    now: Date.now(),
+    lastActivityAt: last?.at,
+    sessionBytes: instance.adapter.sessionBytes?.(threadId, cursor),
+    hours: cfg.context?.staleSessionHours,
+    maxBytes: cfg.context?.staleSessionBytes,
+    coldMinutes: cfg.context?.staleSessionColdMinutes,
+  });
+}
+/** Threads whose next dispatch starts a new engine session because the old
+ * one was stale: their replay says the conversation resumes after a pause
+ * (turn-context.ts PAUSED_PREAMBLE). Read once by that dispatch. */
+const staleSessionFolds = new Map<string, StaleSessionReason>();
+/** thread -> the turn (dispatch generation) whose person's message was small
+ * talk alone: its cloud computer tools do not run (SMALL_TALK_CLOUD_REFUSAL). */
+const smallTalkTurns = new Map<string, string>();
+
 /** The existing direct-turn claim owns summarization, including Stop and
  * thread deletion. A durable record is committed only to its original branch. */
 async function compactConversation(input: {
@@ -15648,6 +15678,34 @@ async function compactConversation(input: {
   });
   const history = selected.transcript.filter(entry => entry.id);
   if (!history.length) return;
+  // A stale engine session (JC 2026-10-20) is not resumed: fold now so the
+  // turn starts a new one from the summary and the latest turns. The
+  // summary is the deterministic one: no model call on the person's wait.
+  const stale = manual ? null : staleEngineSession(threadId, task, instance, messages, excludedIds);
+  if (stale) {
+    const fresh = history.some(entry => entry.id !== record?.id);
+    const fold = foldPoint(history) ?? foldPoint(history, 1) ?? { folded: history, firstKeptId: "" };
+    const foldedThroughId = fold.folded.at(-1)?.id;
+    const anchorId = context.at(-1)?.id;
+    if (fresh && foldedThroughId && foldedThroughId !== record?.id && anchorId) {
+      const id = `ctx-${createHash("sha256").update(`${threadId}:${anchorId}:${fold.firstKeptId}`).digest("hex").slice(0, 24)}`;
+      const current = store.taskByThread(bot.id, threadId);
+      if (!current) return;
+      if (!current.contextSummaries?.some(entry => entry.id === id)) {
+        const bytes = history.reduce((n, entry) => n + Buffer.byteLength(entry.text), 0);
+        const entry = { id, at: Date.now(), summary: redactSecretsInText(deterministicSummary(fold.folded)), firstKeptId: fold.firstKeptId,
+          foldedThroughId, anchorId, tokensBefore: Math.ceil(bytes / 4) };
+        store.patchTask(bot.id, threadId, { contextSummaries: [...(current.contextSummaries ?? []), entry].slice(-CONTEXT_SUMMARIES_KEPT) });
+      }
+    } else if (record) {
+      // Nothing new since the last fold: start from that fold again.
+      store.patchTask(bot.id, threadId, { appliedCompactionId: undefined });
+    } else return;
+    staleSessionFolds.set(threadId, stale);
+    if (staleSessionFolds.size > 2_000) staleSessionFolds.delete(staleSessionFolds.keys().next().value!);
+    console.info(`[context] ${bot.id} ${threadId}: engine session not resumed (${stale === "idle" ? "thread quiet for hours" : "session too large"}); new session from the summary`);
+    return;
+  }
   const measurement = task.lastContextModel === `${instance.instanceId}:${model}` && !task.rewound ? task.usage?.context : undefined;
   const window = contextWindowFor(model, instance.models, measurement?.window);
   const bytes = history.reduce((n, entry) => n + Buffer.byteLength(entry.text), 0);
@@ -15756,7 +15814,12 @@ function prewarmRefusal(botId: string, threadId: string): string | null {
   if (idleEngines.has(threadId)) return "warm";
   const bot = store.projectBotForTask(botId, threadId);
   if (!bot) return "no task";
-  if (registry.get(bot.modelSelection.instanceId)?.adapter.capabilities.warmSession !== true) return "engine";
+  const engine = registry.get(bot.modelSelection.instanceId);
+  if (engine?.adapter.capabilities.warmSession !== true) return "engine";
+  // A stale session is not resumed by the next turn (staleEngineSession):
+  // warming it would load the old session only to throw it away.
+  const warmTask = store.taskByThread(botId, threadId);
+  if (warmTask && staleEngineSession(threadId, warmTask, engine, store.activePath(threadId), new Set())) return "stale session";
   // Perspicax profile servers: for Claude their turn capability rides a file
   // the bridge reads on every frame (spawn-contract.ts warmPerspicaxEnv), so
   // the next turn reuses the warm process; the Perspicax tokens stay in
@@ -18122,6 +18185,11 @@ async function startTurn(
   if (userMessage.voiceCall && !opts.cardContinuation && !opts.commsDepth && !userMessage.peerAsk) {
     providerText = voiceCallTurnPrompt(providerText, userMessage.voiceCall);
   }
+  // A greeting, thanks or small talk alone (server/small-talk.ts) asks for
+  // no action: the engine is told so, and the cloud computer is not woken.
+  const smallTalk = !warmOnly && !opts.cardContinuation && !opts.commsDepth && !opts.automationSource && !userMessage.peerAsk
+    && !userMessage.voiceCall && !routineLineage(speaker) && isSmallTalk(userMessage.text, bot.name);
+  if (smallTalk) providerText += SMALL_TALK_TURN_NOTE;
   if (!opts.cardContinuation && !warmOnly) {
     // Pictures ride as image input only on Claude Code, which reads them for
     // sure; another engine gets the saved picture files to read instead.
@@ -18225,6 +18293,10 @@ async function startTurn(
   // in the background — boat provisioning can take ~90s and must never
   // hang the HTTP request
   const dispatchClaimId = randomUUID();
+  if (smallTalk) {
+    smallTalkTurns.set(threadId, dispatchClaimId);
+    if (smallTalkTurns.size > 2_000) smallTalkTurns.delete(smallTalkTurns.keys().next().value!);
+  }
   // Guest-driven for as long as it runs, wherever it runs (cloudGuestDriven).
   if (guestConfined) guestDrivenTurns.set(threadId, dispatchClaimId);
   const resourceOwner: TurnOwner = { threadId, generation: dispatchClaimId };
@@ -18380,6 +18452,9 @@ async function startTurn(
       // The record is durable even if a crash occurs before this bookkeeping.
       // A retry then sees the unapplied record again and rebuilds safely.
       if (contextReset && !warmOnly) store.patchTask(bot.id, threadId, { resumeCursors: {} });
+      // A fold of a stale session reads as a pause, never "continue where you left off".
+      const pausedFold = contextReset && staleSessionFolds.has(threadId);
+      if (!warmOnly) staleSessionFolds.delete(threadId);
 
       // After a rewind (edit / branch switch) the provider's native session
       // still contains the abandoned branch: start a fresh session instead of
@@ -18461,6 +18536,7 @@ async function startTurn(
           rewound,
           fresh,
           compacted: contextReset,
+          paused: pausedFold,
           externallyUpdated: Boolean(externalContextMarker) || handedStale,
           replaysNatively: replaysNatively(instance.driverKind),
         });
@@ -35728,6 +35804,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The capability names whose environment it is (fixed at mount).
         const ownerId = internalCapability.sandboxPrincipalId;
         if (!ownerId) return json(res, 403, { error: "this capability has no server environment" });
+        // A greeting does not wake a sleeping cloud computer: nothing below runs.
+        if (rpcMethod === "tools/call" && smallTalkTurns.get(internalCapability.threadId) === internalCapability.generation) {
+          return json(res, 200, { result: { content: [{ type: "text", text: SMALL_TALK_CLOUD_REFUSAL }], isError: true } });
+        }
         try {
           if (rpcMethod === "tools/call") await stagePendingAttachments(internalCapability.threadId, internalCapability.generation);
           // Their GitHub connection, where gh and git read it (once per turn).

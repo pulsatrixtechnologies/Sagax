@@ -502,6 +502,11 @@ export interface ProviderAdapter {
   /** Close an idle warm process on this thread. A process whose turn is
    * already running is left alone. */
   releaseWarmSession?(threadId: ThreadId): void;
+  /** Size on disk of the saved session a resume of this cursor would load
+   * (Claude's session file), for server/stale-session.ts. Undefined when the
+   * engine cannot tell, or when a live process already holds that session
+   * (nothing would be loaded). */
+  sessionBytes?(threadId: ThreadId, resumeCursor: unknown): number | undefined;
   stopAll(): Promise<void>;
   onEvent(listener: RuntimeEventListener): () => void;
 }

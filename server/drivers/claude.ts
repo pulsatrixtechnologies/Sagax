@@ -15,7 +15,7 @@ import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
 import { isFlowToolsServer } from "./acp/grok-read-only-tools.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
 import { join, dirname, isAbsolute, normalize } from "node:path";
@@ -1640,6 +1640,37 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       closed: Promise<void>;
     }
     const sessions = new Map<string, Session>();
+    /** Where each session's file was written (the config dir of its launch),
+     * for sessionBytes. After a restart the default config dir is searched. */
+    const sessionConfigDirs = new Map<string, string>();
+    const sessionFiles = new Map<string, string>();
+    /** Size of a saved session's file (<config>/projects/<cwd>/<id>.jsonl),
+     * the file a --resume parses and replays. */
+    const sessionFileBytes = (sessionId: string): number | undefined => {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return undefined;
+      const cached = sessionFiles.get(sessionId);
+      if (cached) {
+        try { return statSync(cached).size; } catch { sessionFiles.delete(sessionId); }
+      }
+      const dirs = new Set<string>();
+      const known = sessionConfigDirs.get(sessionId);
+      if (known) dirs.add(known);
+      try { dirs.add(resolveClaudeConfigDir(undefined, environment())); } catch {}
+      for (const dir of dirs) {
+        let entries: string[];
+        try { entries = readdirSync(join(dir, "projects")); } catch { continue; }
+        for (const entry of entries) {
+          const file = join(dir, "projects", entry, `${sessionId}.jsonl`);
+          try {
+            const size = statSync(file).size;
+            sessionFiles.set(sessionId, file);
+            if (sessionFiles.size > 500) sessionFiles.delete(sessionFiles.keys().next().value!);
+            return size;
+          } catch {}
+        }
+      }
+      return undefined;
+    };
     const { idleMs: SESSION_IDLE_MS } = sessionIdlePolicy("CLAUDE");
 
     const stopSession = (session: Session) => {
@@ -2375,6 +2406,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         if (sessionId) args.push("--resume", sessionId);
         else args.push("--session-id", newSessionId!);
+        try {
+          sessionConfigDirs.set(sessionId ?? newSessionId!, resolveClaudeConfigDir(undefined, env));
+          if (sessionConfigDirs.size > 500) sessionConfigDirs.delete(sessionConfigDirs.keys().next().value!);
+        } catch {}
       } catch (error) {
         cleanupUnownedLaunch();
         throw error;
@@ -3397,6 +3432,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           // including the process kept warm between call turns.
           if (!live || live.turn || live.closing) return;
           closeSession(threadId, "call ended");
+        },
+        sessionBytes: (threadId, resumeCursor) => {
+          if (typeof resumeCursor !== "string") return undefined;
+          // A live process already holds this session: a turn writes to it,
+          // nothing is loaded from disk.
+          const live = sessions.get(threadId);
+          if (live && !live.closing && live.child.exitCode === null && live.sessionId === resumeCursor) return undefined;
+          return sessionFileBytes(resumeCursor);
         },
         stopAll: async () => {
           for (const { stop } of active.values()) stop();
