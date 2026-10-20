@@ -347,7 +347,7 @@ export interface AcpSupport {
    * MCP server is mounted through the gate with an approval socket, and
    * only `approvalReadOnly` tools run unasked. Decided once per turn; the
    * same decision reaches spawnArgs as `launch.approvalGate`. */
-  approvalGate?(config: AcpConfig, turn: SendTurnInput): boolean;
+  approvalGate?(config: AcpConfig, turn: SendTurnInput, context?: { env: Record<string, string | undefined>; cwd: string }): boolean;
   /** The reviewed read-only tools of one mounted server (upstream names). */
   approvalReadOnly?(server: { name: string; builtin: boolean; spec?: McpServerSpec }, botId?: string): string[];
   /** Provider credential variables this ACP child is allowed to inherit. */
@@ -1978,7 +1978,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             : turn;
         // One decision per turn, shared by the MCP mounts and spawnArgs: a
         // turn can never get the ungated mode with ungated servers.
-        const approvalGated = support.approvalGate?.(turnConfig, cliTurn) === true;
+        const approvalGated = support.approvalGate?.(turnConfig, cliTurn, { env, cwd }) === true;
         const mcpServers = acpMcpServers(callAgentsEnv ? withAgentsEnv(callAgentsEnv) : turn, approvalGated);
         const sessionServersKey = callAgentsEnv
           ? acpMcpServers(withAgentsEnv({

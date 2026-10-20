@@ -8,7 +8,8 @@ In `--permission-mode auto`, Grok runs its safety classifier before **every** MC
 - **Opt-out:** `DATA_DIR/grok-approval-gate.json`, either `{"off": ["<botId>"]}` or `{"bots": "none"}`. Those bots' Auto turns run Grok's own auto mode. A missing, empty or invalid file means on; the earlier opt-in list `{"bots": [...]}` no longer narrows anything. The file is read on every turn; the next turn of each bot respawns Grok in the new mode.
 - **Scope:** only Auto turns (`approvalMode: "auto"`, not Full access). Ask, Edits and Full access are unchanged.
 - **When the flag is on:**
-  - Grok starts with `--permission-mode default`. Its built-in tools still prompt through ACP, and their cards are unchanged.
+  - Grok starts with `--permission-mode default`. Its built-in tools prompt through ACP and each prompt is a card (the classifier no longer answers them); on an organization server they are withheld anyway.
+  - A solo turn whose Grok config (`$GROK_HOME/config.toml` or the project's `.grok/config.toml`) declares `[mcp_servers.*]` keeps Grok's own auto mode: Sagax does not mount those servers, so the gate could not hold their calls.
   - Every MCP server, built-in or not, is mounted through `mcp-gate` with an approval socket (`server/mcp-gate-approval.ts`).
   - Only reviewed read-only tools run unasked:
     - agents: `READ_ONLY_AGENT_TOOL_NAMES`

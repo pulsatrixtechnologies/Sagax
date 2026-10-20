@@ -21,7 +21,7 @@ import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
-import { GrokAgentDriver, grokAcceptsUnadvertisedImages } from "./grok.ts";
+import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokConfigDeclaresMcp } from "./grok.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
@@ -1649,6 +1649,27 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       }
     });
 
+    it("keeps Grok's own auto mode on a solo turn whose Grok config declares MCP servers Sagax cannot gate", async () => {
+      await create(GrokAgentDriver);
+      const project = mkdtempSync(join(tmpdir(), "grok-project-"));
+      onTestFinished(() => removeTempDir(project));
+      mkdirSync(join(project, ".grok"));
+      writeFileSync(join(project, ".grok", "config.toml"), "[mcp_servers.mine]\ncommand = \"node\"\n");
+      for (const [index, withholdHostTools] of [false, true].entries()) {
+        const dump = join(scratch, `gate-config-mcp-${index}.json`);
+        process.env.FAKE_ACP_DUMP = dump;
+        const { turnId } = await instance.adapter.sendTurn({
+          threadId: `t-gate-config-mcp-${index}`, botId: "bot-gated", text: "go", model: "grok-4.5", approvalMode: "auto", cwd: project,
+          withholdHostTools, integrations: { agents: server("agents") },
+        });
+        await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+        const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
+        const mode = seen.argv[seen.argv.indexOf("--permission-mode") + 1];
+        // an organization turn reaches those servers through use_tool only: still gated
+        expect(mode).toBe(withholdHostTools ? "default" : "auto");
+      }
+    });
+
     it("runs Grok's own auto mode only for an explicit opt-out ({bots: \"none\"})", async () => {
       writeFileSync(flagFile, JSON.stringify({ bots: "none" }));
       await create(GrokAgentDriver);
@@ -3263,6 +3284,31 @@ describe("ACP snapshot", () => {
       expect((await instance.snapshot()).authenticated).toBe(true);
     } finally {
       await instance.dispose();
+    }
+  });
+});
+
+describe("grokConfigDeclaresMcp", () => {
+  it("finds an MCP server table in GROK_HOME's config or the project's, and nothing else", () => {
+    const home = mkdtempSync(join(tmpdir(), "grok-home-"));
+    const project = mkdtempSync(join(tmpdir(), "grok-cwd-"));
+    try {
+      const env = { GROK_HOME: home };
+      expect(grokConfigDeclaresMcp(env, project)).toBe(false);
+      writeFileSync(join(home, "config.toml"), "[models]\ndefault = \"grok-4.5\"\n[model.local]\nmodel = \"x\"\n# [mcp_servers.commented]\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(false);
+      writeFileSync(join(home, "config.toml"), "[models]\n  [mcp_servers.pulsatrix_dispatch]\nurl = \"https://x\"\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(true);
+      writeFileSync(join(home, "config.toml"), "[ \"mcp_servers\" . a ]\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(true);
+      writeFileSync(join(home, "config.toml"), "");
+      mkdirSync(join(project, ".grok"));
+      writeFileSync(join(project, ".grok", "config.toml"), "[mcp_servers]\na = { command = \"node\" }\n");
+      expect(grokConfigDeclaresMcp(env, project)).toBe(true);
+      expect(grokConfigDeclaresMcp(env, undefined)).toBe(false);
+    } finally {
+      removeTempDir(home);
+      removeTempDir(project);
     }
   });
 });
