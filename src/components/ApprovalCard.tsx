@@ -238,7 +238,11 @@ export function toolApprovalView(card: OptionCardData, botName?: string): ToolAp
   // phones show it, not as the slug the bot happened to call.
   const outbound = outboundSummary(card);
   return {
-    title: outbound ? outbound.headline : words.title,
+    // 2026-10-20 (JC, after Grok Bot): one plain line, "Katarina wants to
+    // run a command on your cloud computer", never a question to parse
+    title: outbound ? outbound.headline : botName?.trim()
+      ? t("approval.card.namedWantsTo", { name: botName.trim(), action: words.action })
+      : t("approval.card.wantsTo", { action: words.action }),
     summary: outbound?.summary || described.summary || (words.line !== shown ? words.line : undefined),
     risk: described.risk,
     plain: shown,

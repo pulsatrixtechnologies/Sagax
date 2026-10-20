@@ -86,7 +86,9 @@ struct ApprovalDock: View {
                     .background(Theme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
-                if let held = pending.card.held, !held.isEmpty {
+                // 2026-10-20 (JC): no explanatory paragraph, only the
+                // person's own ask rule keeps its line
+                if pending.card.heldCode == "approval.held.customRule", let held = pending.card.held, !held.isEmpty {
                     Label(held, systemImage: "exclamationmark.shield")
                         .font(.system(size: 12.5))
                         .foregroundStyle(Theme.warning)
@@ -164,7 +166,7 @@ struct ApprovalDock: View {
                 if let detail = Self.desktopDetail(card) {
                     DesktopApprovalBlock(text: detail, size: 12, theme: theme)
                 }
-                if let held = card.held, !held.isEmpty {
+                if card.heldCode == "approval.held.customRule", let held = card.held, !held.isEmpty {
                     Text(verbatim: held)
                         .font(theme.font(12))
                         .foregroundStyle(theme.warning)
@@ -204,16 +206,20 @@ struct ApprovalDock: View {
                                 ink: theme.danger, ring: theme.danger.opacity(0.4), id: "approval-deny") {
                         await session.decide(.deny, on: pending, in: chat)
                     }
-                    if actions.alwaysAllowTool {
+                    if actions.alwaysAllowRule {
+                        desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
+                            await session.decide(.alwaysAllowRule, on: pending, in: chat)
+                        }
+                    } else if actions.alwaysAllowTool {
                         desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
                             await session.decide(.alwaysAllowTool, on: pending, in: chat)
                         }
                     } else if actions.alwaysAllowCommand {
-                        desktopPill(String(localized: "Always allow this command"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-command") {
+                        desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-command") {
                             await session.decide(.alwaysAllowCommand, on: pending, in: chat)
                         }
                     } else if actions.alwaysAllowSession {
-                        desktopPill(String(localized: "Always allow this session"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-session") {
+                        desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-session") {
                             await session.decide(.alwaysAllowSession, on: pending, in: chat)
                         }
                     }
@@ -373,7 +379,7 @@ struct ApprovalDock: View {
                     }
                     .disabled(actions.primaryDisabled)
                 }
-                if actions.alwaysAllowTool || actions.alwaysAllowSession || actions.alwaysAllowCommand {
+                if actions.alwaysAllowRule || actions.alwaysAllowTool || actions.alwaysAllowSession || actions.alwaysAllowCommand {
                     remember(actions, pending)
                 }
             }
@@ -398,19 +404,23 @@ struct ApprovalDock: View {
     /// The remembering choice under the two main buttons: one applies.
     @ViewBuilder
     private func remember(_ actions: ApprovalDockActions, _ pending: PendingApproval) -> some View {
-        if actions.alwaysAllowTool {
+        if actions.alwaysAllowRule {
+            quietButton(String(localized: "Always allow"), id: "approval-always-allow") {
+                await session.decide(.alwaysAllowRule, on: pending, in: chat)
+            }
+        } else if actions.alwaysAllowTool {
             quietButton(String(localized: "Always allow"), id: "approval-always-allow") {
                 await session.decide(.alwaysAllowTool, on: pending, in: chat)
             }
         } else if actions.alwaysAllowCommand {
-            quietButton(String(localized: "Always allow this command"), id: "approval-always-command") {
+            quietButton(String(localized: "Always allow"), id: "approval-always-command") {
                 await session.decide(.alwaysAllowCommand, on: pending, in: chat)
             }
             .accessibilityHint(Text(
                 "Remember this exact command for this bot and provider in \(pending.card.commandAllowlist?.cwd ?? ""), including other threads using that folder"
             ))
         } else if actions.alwaysAllowSession {
-            quietButton(String(localized: "Always allow this session"), id: "approval-always-session") {
+            quietButton(String(localized: "Always allow"), id: "approval-always-session") {
                 await session.decide(.alwaysAllowSession, on: pending, in: chat)
             }
             .accessibilityHint(Text("The provider stops asking about this action until the session ends"))

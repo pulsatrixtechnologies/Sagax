@@ -86,6 +86,8 @@ export const APPROVAL_EN: Readonly<Record<string, string>> = Object.freeze({
   "approval.tool.fetchWebPage": "fetch a web page",
   "approval.tool.readFile": "read a file",
   "approval.tool.runCommand": "run a command",
+  "approval.tool.runCommandCloud": "run a command on your cloud computer",
+  "approval.tool.runCommandComputer": "run a command on your computer",
   "approval.tool.scheduleRoutine": "schedule a routine",
   "approval.tool.searchWeb": "search the web",
   "approval.tool.takeAction": "take an action",
@@ -496,8 +498,10 @@ export function describeApproval(
     ? resourceRaw?.replace(/[/_-]+/g, " ").trim().toLowerCase() || undefined
     : resourcePhrase(resourceRaw, op, words);
   // run_command / exec_shell: "run a command", not "run the command action"
+  // 2026-10-20 (JC): where it runs, in the person's words: their cloud
+  // computer (sagax-environment), their own computer (sagax-desktop)
   const action = op === "run" && resource && RUN_COMMAND_NOUN.test(resource)
-    ? words.t("approval.tool.runCommand")
+    ? words.t(parsed.server === "sagax-environment" ? "approval.tool.runCommandCloud" : parsed.server === "sagax-desktop" ? "approval.tool.runCommandComputer" : "approval.tool.runCommand")
     : resource
     ? words.t(`approval.verb.${op}`, { resource })
     : words.t(`approval.verb.${op}.bare`);

@@ -2429,5 +2429,8 @@
   "chat.inputRequest.placeholder": "Ваша відповідь",
   "chat.inputRequest.send": "Надіслати відповідь",
   "chat.inputRequest.open": "Відкрити розмову",
-  "chat.inputRequest.answered": "Відповідь надіслано: робота триває."
+  "chat.inputRequest.answered": "Відповідь надіслано: робота триває.",
+  "approval.tool.runCommandCloud": "виконати команду на твоєму хмарному комп'ютері",
+  "approval.tool.runCommandComputer": "виконати команду на твоєму комп'ютері",
+  "approval.details.more": "Подробиці"
 }

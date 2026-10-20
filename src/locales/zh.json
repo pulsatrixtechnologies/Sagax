@@ -2713,5 +2713,8 @@
   "chat.inputRequest.placeholder": "你的回答",
   "chat.inputRequest.send": "发送回答",
   "chat.inputRequest.open": "打开对话",
-  "chat.inputRequest.answered": "回答已发送：工作继续进行。"
+  "chat.inputRequest.answered": "回答已发送：工作继续进行。",
+  "approval.tool.runCommandCloud": "在你的云电脑上运行命令",
+  "approval.tool.runCommandComputer": "在你的电脑上运行命令",
+  "approval.details.more": "详情"
 }

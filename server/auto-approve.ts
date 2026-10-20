@@ -178,6 +178,7 @@ export type AutoVerdictSource =
    * coordination lease (claim, claim_renew, claim_release) at any level. */
   | "perspicax-read"
   | "perspicax-lease"
+  | "own-read-only"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -237,6 +238,11 @@ export function autoVerdict(
      * works: answered at any level, after the safety hold and the person's
      * own rules, never when a security key protects it. */
     ownComputerChoice?: boolean;
+    /** 2026-10-20 (JC): a command that only reads (shared/read-only-command.ts)
+     * on the person's own computer (their PC, its Local VM, their cloud
+     * computer). Answered at any level and from any turn, after the safety
+     * hold and the person's own rules, never when a security key protects it. */
+    ownReadOnlyCommand?: boolean;
     /** 2026-10-19 (owner setup, server/owner-autonomy.ts): a Perspicax read
      * or lease on Sagax's own mount that the caller found applies at this
      * level (perspicaxSelfAnswerAt). Answered after the safety hold and the
@@ -295,6 +301,9 @@ export function autoVerdict(
   }
   if (context?.ownAttachmentRead && selfAnswerable) {
     return { approve: `approved ${tool} (your own attachment)`, source: "own-attachment" };
+  }
+  if (context?.ownReadOnlyCommand && selfAnswerable) {
+    return { approve: `approved ${tool} (read-only command on your own computer)`, source: "own-read-only" };
   }
   if (context?.ownComputerChoice && selfAnswerable) {
     return { approve: `approved ${tool} (choosing among your own computers)`, source: "own-computer-choice" };

@@ -1915,5 +1915,8 @@
   "chat.inputRequest.placeholder": "Tu respuesta",
   "chat.inputRequest.send": "Enviar respuesta",
   "chat.inputRequest.open": "Abrir la conversación",
-  "chat.inputRequest.answered": "Respuesta enviada: el trabajo continúa."
+  "chat.inputRequest.answered": "Respuesta enviada: el trabajo continúa.",
+  "approval.tool.runCommandCloud": "ejecutar un comando en tu computadora en la nube",
+  "approval.tool.runCommandComputer": "ejecutar un comando en tu computadora",
+  "approval.details.more": "Detalles"
 }
