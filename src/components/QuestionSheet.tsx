@@ -36,7 +36,7 @@ export function sheetIndexForKey(key: string, count: number): number {
 export function sheetKeyHandler(count: number, pick: (index: number) => void) {
   return (event: KeyboardEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.repeat) return;
     if (target.closest("input, textarea, select, [contenteditable]")) return;
     if (target.closest("button, a") && !target.closest("[data-ask-choice]")) return;
     const index = sheetIndexForKey(event.key, count);
@@ -162,7 +162,7 @@ export function SheetChoices({
         const on = picked.includes(id);
         return (
           <button
-            key={id}
+            key={`${index}-${id}`}
             type="button"
             data-ask-choice=""
             role={multi ? "checkbox" : "radio"}

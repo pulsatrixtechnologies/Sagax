@@ -14,6 +14,9 @@ struct FlatQuestionCardView: View {
     @State private var answering = false
     @State private var other = false
     @State private var custom = ""
+    /// The server settles the card after a round trip; the answer sent is
+    /// held here so a second tap in that gap sends nothing.
+    @State private var sent: String?
     @FocusState private var fieldFocused: Bool
 
     /// Which cards this view draws: a live ask (the first-run quiz, which has
@@ -22,6 +25,7 @@ struct FlatQuestionCardView: View {
     static func draws(_ card: OptionCard) -> Bool {
         card.requestId != nil && card.tool == nil && card.questions.isEmpty && card.skillRequest == nil && card.routineRequest == nil
             && card.profileRequest == nil && card.modelRequest == nil && card.teamSetupRequest == nil
+            && card.tighteningRequest == nil && card.held == nil && card.adminApproval != true
     }
 
     private var hidden: Bool {
@@ -31,15 +35,13 @@ struct FlatQuestionCardView: View {
     var body: some View {
         if let card = message.card, !hidden {
             let colors = QuestionSheetColors(desktop: desktop)
-            let settled = card.requestId != nil && card.answered != nil
-            let closed = settled && card.answeredText == nil && (card.answered == "deny" || card.answered == "unavailable")
-            let given = settled && !closed ? (card.answeredText ?? (card.answered == "answer" || card.answered == "allow" ? "" : card.answered ?? "")) : ""
+            let settled = (card.requestId != nil && card.answered != nil) || sent != nil
+            let closed = card.answered != nil && card.answeredText == nil && (card.answered == "deny" || card.answered == "unavailable")
+            let given = settled && !closed ? (card.answeredText ?? sent ?? (card.answered == "answer" || card.answered == "allow" ? "" : card.answered ?? "")) : ""
             let reading = AskQuestionAnswer.picks(in: given, labels: card.options)
-            QuestionSheet(
-                colors: colors,
-                title: card.title,
-                onDismiss: !settled && card.dismissed != true && card.expired != true ? dismiss : nil
-            ) {
+            // no X: a waiting live question is answered, never silently
+            // dismissed (canDismissOptionCard in OptionCard.tsx)
+            QuestionSheet(colors: colors, title: card.title) {
                 if !card.subtitle.isEmpty {
                     Text(card.subtitle)
                         .font(colors.font(13))
@@ -85,7 +87,8 @@ struct FlatQuestionCardView: View {
 
     private func answer(_ card: OptionCard, _ choice: String) {
         let text = choice.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !answering else { return }
+        guard !text.isEmpty, !answering, sent == nil else { return }
+        sent = text
         answering = true
         fieldFocused = false
         Task {
@@ -94,11 +97,4 @@ struct FlatQuestionCardView: View {
         }
     }
 
-    private func dismiss() {
-        answering = true
-        Task {
-            await session.dismissOptionCard(message, in: chat)
-            answering = false
-        }
-    }
 }
