@@ -622,6 +622,18 @@ public struct CompanionClient: Sendable {
         self.requestTimeout = min(max(requestTimeout, 1), 150)
     }
 
+    /// The same client (route, URL session, timeout) with another bearer:
+    /// a fresher copy of the token found after a 401.
+    public func replacingToken(_ token: String) -> CompanionClient {
+        CompanionClient(connection: connection, token: token, session: session, requestTimeout: requestTimeout)
+    }
+
+    /// Whether this client sends exactly this bearer. Lets a late 401 from a
+    /// replaced token be told apart from one for the token in use.
+    public func sends(token candidate: String?) -> Bool {
+        token == candidate
+    }
+
     // MARK: - Requests
 
     func makeRequest(_ method: String, _ path: String, query: [URLQueryItem] = [], body: [String: Any]? = nil) throws -> URLRequest {
