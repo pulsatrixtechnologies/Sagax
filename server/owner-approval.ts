@@ -95,19 +95,24 @@ export function normalizeRuleTool(tool: string): string {
  * PR #508, server/mcp-permissions.ts resourceKeyForCall): a rule made on a
  * gateway `api_write` card names the same api, resource and verb, so an
  * Always allow for ticket updates never covers ticket creates. */
-const TARGET_KEYS = ["api", "resource", "resource_prefix", "entity", "operation", "method", "verb", "action", "repo", "repository", "server", "domain", "url", "board", "channel", "to"] as const;
-const MAX_SCOPE_KEYS = 4;
+const TARGET_KEYS = ["api", "resource", "resource_prefix", "entity", "operation", "method", "verb", "action", "repo", "repository", "server", "domain", "url", "board", "channel", "to", "cc", "bcc"] as const;
 const MAX_SCOPE_VALUE = 120;
 /** 2026-10-19 (JC: a precise scope on every "Always allow"): keys kept on
  * top of the four above, compared exactly (case included). A shell line is
  * its exact text, a file its exact path: "Always allow" on `npm test` never
  * covers `npm test; rm -rf ~`, and on one file never another. A value too
  * long to keep makes the scope unkeepable (`EXACT_TOO_LONG`), never wider. */
-export const EXACT_KEYS = ["command", "cmd", "path", "file_path", "filePath", "notebook_path"] as const;
+export const EXACT_KEYS = ["command", "cmd", "args", "argv", "path", "file_path", "filePath", "notebook_path"] as const;
 export const MAX_EXACT_VALUE = 4_000;
 const EXACT_TOO_LONG = "\u0000too-long";
 
 function scopeValue(key: string, value: unknown): string | undefined {
+  // recipients as a list: every one of them, sorted, never dropped
+  if ((key === "to" || key === "cc" || key === "bcc") && Array.isArray(value)) {
+    if (!value.every((entry) => typeof entry === "string")) return EXACT_TOO_LONG;
+    const list = JSON.stringify((value as string[]).map((entry) => entry.trim().toLowerCase()).sort());
+    return list.length <= MAX_EXACT_VALUE ? list : EXACT_TOO_LONG;
+  }
   if (typeof value === "number" && Number.isFinite(value)) value = String(value);
   if (typeof value !== "string") return undefined;
   let text = value.trim();
@@ -128,7 +133,8 @@ function scopeValue(key: string, value: unknown): string | undefined {
   }
   if (key === "to" && Array.isArray(value)) return undefined;
   text = text.toLowerCase();
-  return text && text.length <= MAX_SCOPE_VALUE ? text : undefined;
+  // 2026-10-19 (security review): too long to keep is never "any value"
+  return text ? (text.length <= MAX_SCOPE_VALUE ? text : EXACT_TOO_LONG) : undefined;
 }
 
 /** The target of a call: up to four argument values that say where it acts.
@@ -138,16 +144,15 @@ export function ruleScopeFor(input: string | undefined): RuleScope {
   if (!args) return {};
   const scope: RuleScope = {};
   for (const key of TARGET_KEYS) {
-    if (Object.keys(scope).length >= MAX_SCOPE_KEYS) break;
     const value = scopeValue(key, args[key]);
     if (value !== undefined) scope[key === "url" ? "host" : key] = value;
   }
   for (const key of EXACT_KEYS) {
     const raw = args[key];
-    if (Array.isArray(raw) && raw.every((part) => typeof part === "string")) {
-      // an argv array is one line, joined as the card shows it
-      const line = (raw as string[]).join(" ").trim();
-      if (line) scope[key] = line.length <= MAX_EXACT_VALUE ? line : EXACT_TOO_LONG;
+    if (Array.isArray(raw)) {
+      // an argv array is kept as the list itself: ["a b"] and ["a", "b"] differ
+      const list = raw.every((part) => typeof part === "string") ? JSON.stringify(raw) : EXACT_TOO_LONG;
+      if (raw.length) scope[key] = list.length <= MAX_EXACT_VALUE ? list : EXACT_TOO_LONG;
       continue;
     }
     if (typeof raw !== "string") continue;
