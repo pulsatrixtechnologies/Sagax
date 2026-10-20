@@ -84,6 +84,19 @@ describe("computerPrompt", () => {
 });
 
 describe("buildSystemPrompt", () => {
+  it("says the proposal-result paragraph once when routines, skills and the profile are all on", () => {
+    const paragraph = " Follow the tool result: a change to your own routines";
+    const prompt = buildSystemPrompt("persona", "", [
+      { id: "routine", label: "Routines", text: ROUTINE_PROMPT },
+      { id: "profile", label: "Profile changes", text: PROFILE_PROMPT },
+      { id: "learn", label: "Skill authoring", text: LEARN_PROMPT },
+    ]).text;
+    expect(prompt.split(paragraph)).toHaveLength(2);
+    expect(prompt).toContain("use list_routines and propose_routine");
+    expect(prompt).toContain("use propose_profile");
+    expect(prompt).toContain("use skills_list and skill_manage");
+  });
+
   it("keeps shared context stable and omits an empty user profile", () => {
     for (const profile of [undefined, {}, { aboutMe: " \n" }]) {
       expect(userProfileSystemPrompt(profile)).toBe("");

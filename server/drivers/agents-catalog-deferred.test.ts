@@ -19,8 +19,8 @@ const EVERYTHING = {
 
 /** The tools at the heart of a chat turn: never behind a search step. */
 const ALWAYS_LOADED = [
-  "list_bots", "ask_bot", "coordinate_bots", "send_to_bot", "route_message", "post_to_room", "list_rooms", "list_room_targets",
-  "delegate_bot", "check_delegation", "wait_delegation", "start_thread",
+  "list_bots", "ask_bot", "coordinate_bots", "send_to_bot", "route_message", "list_room_targets",
+  "delegate_bot", "check_delegation", "wait_delegation",
   "react_to_message", "show_widget", "update_widget", "check_widget", "attach_file", "select_computer",
   "memory_update", "memory_log", "session_search", "tool_result_read", "answer_approval", "act",
 ];

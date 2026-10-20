@@ -1589,10 +1589,11 @@ const CLOUD_HOME_SURFACE = {
 /** Agents tools a Claude Code turn loads only when the model asks for them
  * (tool search), 2026-10-19 perf parity. They are long or rarely needed in
  * an ordinary chat turn: routines, team and profile setup, cloud agents,
- * artifacts, settings, transcripts. Every name stays callable and listed by
- * name to the model; only its description and schema wait for a ToolSearch
- * step. Coordination, reactions, widgets, memory, files, computer choice and
- * results paging stay loaded, and so does any tool not named here. */
+ * artifacts, settings, transcripts, separate jobs and room posts from a 1:1
+ * chat. Every name stays callable and listed by name to the model; only its
+ * description and schema wait for a ToolSearch step. Coordination,
+ * reactions, widgets, memory, files, computer choice, approvals and results
+ * paging stay loaded, and so does any tool not named here. */
 export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "propose_routine", "propose_routine_action", "list_routines", "run_routine",
   "propose_team_setup", "list_team_setup", "propose_profile", "propose_model", "propose_bot_deletion",
@@ -1607,6 +1608,8 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",
   "workspace_read", "workspace_search", "session_read", "close_thread", "list_threads",
   "request_login", "request_credential",
+  // A separate self-owned job, or a post into a room from a 1:1 chat: rare.
+  "start_thread", "list_rooms", "post_to_room",
 ]);
 
 /** The tools/list a Claude Code engine is served: the same tools, with the

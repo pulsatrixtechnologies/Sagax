@@ -98,7 +98,15 @@ export function buildSystemPrompt(
     ...parts.filter((part) => part.id === "rules"),
     ...parts.filter((part) => part.id !== "rules"),
   ];
+  // Routines, skills and the profile each end with the same paragraph on
+  // following a proposal's result: said once, in the first of them.
+  let proposalSaid = false;
   const sections = ordered
+    .map((part) => {
+      if (!part.text.includes(PROPOSAL_RESULT_PROMPT)) return part;
+      if (!proposalSaid) { proposalSaid = true; return part; }
+      return { ...part, text: part.text.replace(PROPOSAL_RESULT_PROMPT, "") };
+    })
     .filter((part) => part.text.length > 0)
     .map((part) => ({ ...part, bytes: Buffer.byteLength(part.text, "utf8") }));
   const halves = (volatile: boolean) =>
