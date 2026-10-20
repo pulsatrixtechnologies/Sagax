@@ -492,8 +492,12 @@ export function ensureGrokInjectSlug(
 export function grokAcceptsUnadvertisedImages(init: unknown): boolean {
   const meta = (init as { _meta?: { grokShell?: unknown; agentVersion?: unknown } } | null)?._meta;
   if (meta?.grokShell !== true || typeof meta.agentVersion !== "string") return false;
-  const version = /^1\.0\.(\d+)$/.exec(meta.agentVersion);
-  return Boolean(version && Number(version[1]) >= 25);
+  // Any release from 1.0.25 on, 1.1 and 2.x included (grok 1.0.62 on
+  // 2026-10-19): a pre-release suffix stays unknown.
+  const version = /^(\d+)\.(\d+)\.(\d+)$/.exec(meta.agentVersion);
+  if (!version) return false;
+  const [major, minor, patch] = version.slice(1).map(Number) as [number, number, number];
+  return major > 1 || (major === 1 && (minor > 0 || patch >= 25));
 }
 
 /** Organization server: one turn's credentials (SendTurnInput.access). */
