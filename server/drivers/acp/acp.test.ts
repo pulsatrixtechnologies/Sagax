@@ -662,7 +662,11 @@ describe("ACP turns (fake CLI)", () => {
     expect(readFileSync(join(NATIVE_DIR, "t-grok-image.ndjson"), "utf8")).not.toContain(bytes.toString("base64"));
   });
 
-  it.each([null, {}, { _meta: { grokShell: true, agentVersion: "1.0.24" } },
+  it.each(["1.0.25", "1.0.62", "1.1.0", "1.12.3"])("keeps image support on later Grok 1.x releases (%s, engine parity: Grok 4.5 images)", (agentVersion) => {
+    expect(grokAcceptsUnadvertisedImages({ _meta: { grokShell: true, agentVersion } })).toBe(true);
+  });
+
+  it.each([null, {}, { _meta: { grokShell: true, agentVersion: "1.0.24" } }, { _meta: { grokShell: true, agentVersion: "0.9.99" } }, { _meta: { grokShell: true, agentVersion: "2.0.3" } },
     { _meta: { grokShell: true, agentVersion: "1.0.25-preview" } },
     { _meta: { grokShell: false, agentVersion: "1.0.25" } }])("does not assume image support for unknown Grok runtime %j", (init) => {
     expect(grokAcceptsUnadvertisedImages(init)).toBe(false);

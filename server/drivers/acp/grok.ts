@@ -511,14 +511,19 @@ export function ensureGrokInjectSlug(
   return slug;
 }
 
-/** Grok 1.0.25 consumes native image blocks but advertises image:false.
+/** Grok 1.0.25 and later 1.x consume native image blocks but advertise image:false.
  * Verified with the real CLI and a loopback model: scripts/verify-grok-images.ts.
  * Keep unknown/older runtimes on the normal capability negotiation path. */
 export function grokAcceptsUnadvertisedImages(init: unknown): boolean {
   const meta = (init as { _meta?: { grokShell?: unknown; agentVersion?: unknown } } | null)?._meta;
   if (meta?.grokShell !== true || typeof meta.agentVersion !== "string") return false;
-  const version = /^1\.0\.(\d+)$/.exec(meta.agentVersion);
-  return Boolean(version && Number(version[1]) >= 25);
+  // Any 1.x release from 1.0.25 on (grok 1.0.62 on 2026-10-19). A 2.x stays
+  // unknown until scripts/verify-grok-images.ts checks it; so does a
+  // pre-release suffix.
+  const version = /^(\d+)\.(\d+)\.(\d+)$/.exec(meta.agentVersion);
+  if (!version) return false;
+  const [major, minor, patch] = version.slice(1).map(Number) as [number, number, number];
+  return major === 1 && (minor > 0 || patch >= 25);
 }
 
 /** Organization server: one turn's credentials (SendTurnInput.access). */
