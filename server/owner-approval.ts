@@ -23,6 +23,8 @@
 // "card" for them). Pure: the store and the routes live in
 // owner-approval-store.ts and index.ts.
 
+import { createHash } from "node:crypto";
+
 import { approvalAction, describeApproval, parseArgs, parseToolId, type ApprovalWords, ENGLISH_WORDS } from "../shared/approval-describe.ts";
 import { sagaxFolder } from "../shared/human-id.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
@@ -113,16 +115,22 @@ function scopeValue(key: string, value: unknown): string | undefined {
     const list = JSON.stringify((value as string[]).map((entry) => entry.trim().toLowerCase()).sort());
     return list.length <= MAX_EXACT_VALUE ? list : EXACT_TOO_LONG;
   }
+  if (value === undefined || value === null) return undefined;
   if (typeof value === "number" && Number.isFinite(value)) value = String(value);
-  if (typeof value !== "string") return undefined;
+  if (typeof value === "boolean") value = String(value);
+  // 2026-10-20 (security review): a known key whose value cannot be kept
+  // (a list, an object, an unreadable address) makes the scope unkeepable,
+  // never one key fewer
+  if (typeof value !== "string") return EXACT_TOO_LONG;
   let text = value.trim();
   if (!text) return undefined;
   if (key === "url") {
     try {
       text = new URL(text).hostname;
     } catch {
-      return undefined;
+      return EXACT_TOO_LONG;
     }
+    if (!text) return EXACT_TOO_LONG;
   }
   if (key === "resource" || key === "resource_prefix" || key === "entity") {
     // service/tickets/123 and service.tickets are the family service/tickets
@@ -131,7 +139,6 @@ function scopeValue(key: string, value: unknown): string | undefined {
     while (parts.length > 1 && /^\d+$/.test(parts[parts.length - 1]!)) parts.pop();
     text = parts.join("/");
   }
-  if (key === "to" && Array.isArray(value)) return undefined;
   text = text.toLowerCase();
   // 2026-10-19 (security review): too long to keep is never "any value"
   return text ? (text.length <= MAX_SCOPE_VALUE ? text : EXACT_TOO_LONG) : undefined;
@@ -155,7 +162,11 @@ export function ruleScopeFor(input: string | undefined): RuleScope {
       if (raw.length) scope[key] = list.length <= MAX_EXACT_VALUE ? list : EXACT_TOO_LONG;
       continue;
     }
-    if (typeof raw !== "string") continue;
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw !== "string") {
+      scope[key] = EXACT_TOO_LONG;
+      continue;
+    }
     const text = raw.trim();
     if (!text) continue;
     scope[key] = text.length <= MAX_EXACT_VALUE ? text : EXACT_TOO_LONG;
@@ -169,6 +180,28 @@ export function scopeKeepable(scope: RuleScope): boolean {
 }
 
 const EXACT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEYS, "cwd"]);
+/** 2026-10-20 (security review): keys an allow rule must name to cover a
+ * call that has them. A rule on `npm test` never covers it in another
+ * folder, a rule for one recipient never covers a message with a Bcc. */
+const STRICT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEY_SET, "to", "cc", "bcc"]);
+/** The scope key that binds a rule to the whole call (every argument), for
+ * the cards that never had a rule before (an admin's card, a held card, a
+ * turn that is not the person's own): only that very request passes again. */
+export const WHOLE_CALL_KEY = "call";
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
+}
+
+/** A fingerprint of every argument of a call (the rule keeps it, never the
+ * arguments). */
+export function wholeCallDigest(input: string | undefined): string {
+  const args = parseArgs(input);
+  const text = args ? canonicalJson(args) : (input ?? "").trim();
+  return createHash("sha256").update(text).digest("hex").slice(0, 32);
+}
 
 /** The call's scope, its shell folder included when the engine reports one. */
 export function callScopeFor(call: Pick<RuleCall, "input" | "cwd">): RuleScope {
@@ -220,7 +253,16 @@ export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScop
   if (!sameText(rule.ownerId, call.ownerId)) return false;
   if (rule.botId !== null && rule.botId !== call.botId) return false;
   if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
+  if (rule.behavior === "allow" && Object.keys(rule.scope).length) {
+    for (const key of Object.keys(callScope)) {
+      if (STRICT_KEY_SET.has(key) && !(key in rule.scope)) return false;
+    }
+  }
   for (const [key, value] of Object.entries(rule.scope)) {
+    if (key === WHOLE_CALL_KEY) {
+      if (wholeCallDigest(call.input) !== value) return false;
+      continue;
+    }
     const own = callScope[key];
     if (own === undefined || own === EXACT_TOO_LONG) return false;
     if (EXACT_KEY_SET.has(key) ? own !== value : !sameText(own, value)) return false;
@@ -335,12 +377,13 @@ function capitalize(text: string): string {
 export function describeRule(tool: string, scope: RuleScope, words: ApprovalWords = ENGLISH_WORDS, input?: string): string {
   const action = capitalize(approvalAction(tool, input, undefined, words));
   // a Sagax-made folder is the bot's own; any other folder is named
-  const target = Object.entries(scope).filter(([key, value]) => !(key === "cwd" && value.startsWith("sagax:"))).map(([, value]) => value).join(", ");
+  const target = Object.entries(scope).filter(([key, value]) => key !== WHOLE_CALL_KEY && !(key === "cwd" && value.startsWith("sagax:"))).map(([, value]) => value).join(", ");
   return (target ? `${action} (${target})` : action).slice(0, 500);
 }
 
-export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints" | "cwd">, words: ApprovalWords = ENGLISH_WORDS): RuleCandidate {
+export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints" | "cwd">, words: ApprovalWords = ENGLISH_WORDS, options: { wholeCall?: boolean } = {}): RuleCandidate {
   const scope = callScopeFor(call);
+  if (options.wholeCall) scope[WHOLE_CALL_KEY] = wholeCallDigest(call.input);
   const destructive = destructiveKindOf(call);
   return {
     tool: normalizeRuleTool(call.tool),

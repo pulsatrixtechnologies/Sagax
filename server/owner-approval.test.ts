@@ -10,6 +10,7 @@ import {
   ownerDecision,
   ruleCandidateFor,
   ruleCoversExactScope,
+  WHOLE_CALL_KEY,
   ruleScopeFor,
   scopeKeepable,
   type OwnerRule,
@@ -217,6 +218,22 @@ describe("2026-10-19: Toujours permettre on every card", () => {
     expect(ruleScopeFor(JSON.stringify({ to: ["B@x.ca", "a@x.ca"], cc: ["c@x.ca"] }))).toEqual({ to: '["a@x.ca","b@x.ca"]', cc: '["c@x.ca"]' });
     const mail = { ...shellRule("x"), tool: "send_mail", scope: { to: '["a@x.ca"]' } };
     expect(matchOwnerRule([mail], { ownerId: ALICE, botId: "bot-a", tool: "send_mail", input: JSON.stringify({ to: ["a@x.ca", "evil@y.ca"] }) })).toBeUndefined();
+    // 2026-10-20 (security review): a key the rule does not name never rides along
+    const bcc = JSON.stringify({ to: ["a@x.ca"], bcc: ["evil@y.ca"] });
+    expect(matchOwnerRule([mail], { ownerId: ALICE, botId: "bot-a", tool: "send_mail", input: bcc })).toBeUndefined();
+    expect(matchOwnerRule([saved], { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell("npm test"), cwd: "/etc" })).toBeUndefined();
+    // a known key with a value that cannot be kept makes the scope unkeepable
+    for (const bad of [{ url: "not a url" }, { domain: ["a", "b"] }, { command: { x: 1 } }, { resource: { a: 1 } }]) {
+      expect(scopeKeepable(ruleScopeFor(JSON.stringify(bad)))).toBe(false);
+    }
+    // a card that never had a rule keeps the whole request
+    const sql = (q: string) => JSON.stringify({ server: "db", sql: q });
+    const whole = ruleCandidateFor({ tool: "mcp__db__run", input: sql("select 1") }, undefined, { wholeCall: true });
+    expect(whole.scope[WHOLE_CALL_KEY]).toMatch(/^[0-9a-f]{32}$/);
+    expect(whole.description).not.toMatch(/[0-9a-f]{32}/);
+    const wholeRule = { ...shellRule("x"), tool: whole.tool, scope: whole.scope };
+    expect(matchOwnerRule([wholeRule], { ownerId: ALICE, botId: "bot-a", tool: "mcp__db__run", input: sql("select 1") })?.id).toBe("s1");
+    expect(matchOwnerRule([wholeRule], { ownerId: ALICE, botId: "bot-a", tool: "mcp__db__run", input: sql("drop table t") })).toBeUndefined();
     // a target too long to keep never becomes "any value"
     expect(ruleScopeFor(JSON.stringify({ domain: "a".repeat(200) })).domain).toBeDefined();
     expect(ruleScopeFor(JSON.stringify({ file_path: "/Users/a/Notes.md" }))).toEqual({ file_path: "/Users/a/Notes.md" });

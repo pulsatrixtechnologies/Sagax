@@ -14061,7 +14061,10 @@ bus.subscribe((event: RuntimeEvent) => {
           : ownerOriginRefused ? "origin" : undefined;
       const ownerRuleCandidate = (owner?.kind === "card" && owner.reason !== "admin" && owner.reason !== "cross-person") || (strictCall && !baseVerdict?.approve)
         ? (() => {
-          const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language));
+          // 2026-10-20 (security review): a card that never had a rule (an
+          // admin's, a held one, a turn not the person's own) keeps the
+          // whole request, every argument, never only its target
+          const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language), { wholeCall: ruleFrom !== undefined });
           return scopeKeepable(candidate.scope) ? { ...candidate, ...(ruleFrom ? { from: ruleFrom } : {}) } : undefined;
         })()
         : undefined;
