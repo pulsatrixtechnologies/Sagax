@@ -36920,7 +36920,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // bot's hop (whose speaker falls back to the bot's owner), so a code
         // is never bound to someone who did not ask for it.
         const turnSpeaker = turnSpeakers.get(internalCapability.threadId);
-        if (turnSpeaker?.origin !== "person" || turnRoutineLineage.has(internalCapability.threadId)) {
+        const ghThread = internalCapability.threadId;
+        if (turnSpeaker?.origin !== "person" || turnRoutineLineage.has(ghThread) || isInternalTurn(ghThread)
+          || directRequestOwners.get(ghThread)?.automation || isUnattended(internalSender.id, ghThread)) {
           return json(res, 200, { state: "not_person" });
         }
         const speaker = turnSpeaker.principalId || (IDENTITY.kind !== "perspicax" ? localPrincipalId() : "");
