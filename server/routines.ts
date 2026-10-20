@@ -13,10 +13,13 @@ import type { RoutineRequestOperation } from "../shared/routine-request.ts";
 import { normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "../shared/routine-schedule.ts";
 import { isRoutineProblemRun } from "../shared/routines.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
+import { classifyError } from "./drivers/retry.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 
 /** A driver stop reason that is a code, not a sentence (rpc_error, auth_required). */
 const ROUTINE_STOP_CODE = /^[a-z][a-z0-9_]*$/;
+/** A run that failed on a passing provider error before doing anything starts again once, this long after. */
+export const ROUTINE_TRANSIENT_RETRY_MS = 15_000;
 
 export interface RoutineIntervalWindow {
   start: string;
@@ -223,6 +226,8 @@ export interface RoutineRun {
    * time (ms), retried at most ROUTINE_ADMIT_MAX_ATTEMPTS times. */
   admitAfter?: number;
   admitAttempts?: number;
+  /** Set once a transient failure re-queued this run: it starts again in the same thread, and only once. */
+  transientRetried?: boolean;
   /** First tick a queued run was skipped because its target bot or room was
    * busy. Deferral behind a busy target is unbounded, so this timestamp is
    * what surfaces the wait instead of leaving the run looking freshly queued. */
@@ -627,6 +632,11 @@ function cloneRoutine(routine: Routine): Routine {
   };
 }
 
+/** A bot run that failed on a passing provider error before doing anything gets one more try. */
+function retriesTransiently(run: Pick<RoutineRun, "target" | "output" | "transientRetried">, detail: string, didWork: boolean): boolean {
+  return run.target === "bot" && run.transientRetried !== true && !run.output && !didWork && classifyError({ text: detail }).transient;
+}
+
 function cloneRun(run: RoutineRun): RoutineRun {
   return {
     ...run,
@@ -1022,6 +1032,8 @@ export class RoutineManager {
   private paused = false;
   /** Run ids the constructor kept running after a restart (takeRestartResumes). */
   private readonly restartResumes: string[] = [];
+  /** Runs whose turn started a tool call or wrote text: a replay could repeat that work. */
+  private readonly workedRuns = new Set<string>();
   private ticking = false;
   /** routine id -> the occurrence (nextRunAt) already pre-woken. */
   private readonly prewoken = new Map<string, number>();
@@ -2029,7 +2041,7 @@ export class RoutineManager {
         const startedAt = this.now();
         const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
         const title = `${run.routineName.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
-        const joined = joinedEarly;
+        const joined = (run.transientRetried && run.threadId) || joinedEarly;
         const task = joined
           ? { threadId: joined }
           : run.target === "room-goal"
@@ -2178,9 +2190,11 @@ export class RoutineManager {
       run.output = redactSecretsInText(event.text).trim().slice(0, 2_000);
     } else if (event.type === "runtime.error") {
       run.error = redactSecretsInText(event.message).slice(0, 500);
-    } else if (event.type === "turn.retrying") {
-      // the driver will relaunch this same run; a transient blip is not a
-      // receipt-worthy failure, so keep the run running and stay quiet
+    } else if (event.type === "turn.retrying" || event.type === "item.started") {
+      // turn.retrying: the driver will relaunch this same run; a transient blip is not a
+      // receipt-worthy failure, so keep the run running and stay quiet.
+      // item.started: the run began its work, so a later failure is not a clean restart.
+      if (event.type === "item.started") this.workedRuns.add(run.id);
       return null;
     } else if (event.type === "turn.completed") {
       if (event.cost != null) run.cost = (run.cost ?? 0) + event.cost;
@@ -2191,16 +2205,27 @@ export class RoutineManager {
         // words from runtime.error (what refused and what to do) win over
         // it. A stop reason in words still stands as given.
         const codeStopReason = !event.stopReason || ROUTINE_STOP_CODE.test(event.stopReason);
-        this.failRun(
-          run,
-          (codeStopReason ? run.error : undefined) ??
-            event.stopReason ??
-            run.error ??
-            "The bot did not complete this run",
-        );
+        const failure = (codeStopReason ? run.error : undefined) ??
+          event.stopReason ??
+          run.error ??
+          "The bot did not complete this run";
+        const worked = this.workedRuns.delete(run.id);
+        if (retriesTransiently(run, failure, worked)) {
+          run.status = "queued";
+          run.transientRetried = true;
+          run.admitAfter = this.now() + ROUTINE_TRANSIENT_RETRY_MS;
+          run.attention = `Starting again shortly after a temporary error: ${redactSecretsInText(failure)}`.slice(0, 500);
+          run.error = undefined;
+          this.save();
+          this.emitRun(run);
+          queueMicrotask(() => void this.tick());
+          return cloneRun(run);
+        }
+        this.failRun(run, failure);
         queueMicrotask(() => void this.tick());
         return cloneRun(run);
       }
+      this.workedRuns.delete(run.id);
       const pending = this.options.hasPendingDelegations?.(event.threadId) === true;
       run.status = pending ? "waiting" : "completed";
       run.attention = pending ? "Waiting for delegated work to finish" : undefined;
@@ -2400,6 +2425,7 @@ export class RoutineManager {
   }
 
   private failRun(run: RoutineRun, message: string) {
+    this.workedRuns.delete(run.id);
     run.status = "failed";
     run.attention = undefined;
     run.error = redactSecretsInText(message).slice(0, 500);
