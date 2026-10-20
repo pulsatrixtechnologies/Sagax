@@ -511,7 +511,7 @@ import {
 } from "./confidential-threads.ts";
 import { makeCapContinuationSubscriber } from "./turn-continuation.ts";
 import { TurnStops, stoppedTurnOutcome } from "./turn-outcome.ts";
-import { buildRecoveryText, buildTurnContext, engineIsFresh, NATIVELY_REPLAYING_DRIVER_KINDS } from "./turn-context.ts";
+import { buildRecoveryText, buildTurnContext, engineIsFresh, replaysNatively } from "./turn-context.ts";
 import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnseen, sessionStart, unseenMessages, withUnseenMessages, type ContextMessage } from "./delta-context.ts";
 import { extractTurnImages } from "./turn-images.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
@@ -15248,7 +15248,7 @@ async function compactConversation(input: {
   // beside the summary (otherwise two huge latest exchanges would cause a
   // fold on every turn and still not fit).
   const rebuildBytes = cfg.context?.rebuildBytes ?? DEFAULT_REBUILD_BYTES;
-  const replayFold = !manual && NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind)
+  const replayFold = !manual && replaysNatively(instance.driverKind)
     && selectReplay(context, { budgetBytes: rebuildBytes, excludedIds, compaction: record }).dropped > 0
     ? foldPoint(history) : null;
   const keptStart = replayFold ? history.findIndex(entry => entry.id === replayFold.firstKeptId) : -1;
@@ -17835,7 +17835,7 @@ async function startTurn(
           fresh,
           compacted: contextReset,
           externallyUpdated: Boolean(externalContextMarker) || handedStale,
-          replaysNatively: NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind),
+          replaysNatively: replaysNatively(instance.driverKind),
         });
         // Snapshot the cursor alongside the context decision. An external result
         // can arrive during async computer/setup work and clear the task cursor;
@@ -18745,7 +18745,7 @@ async function startTurn(
       // saw the conversation: the next turn must still rebuild it, so the
       // bookkeeping that would mark the context delivered is left for it.
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
-        !NATIVELY_REPLAYING_DRIVER_KINDS.includes(instance.driverKind));
+        !replaysNatively(instance.driverKind));
       if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
       // A call turn (and the warm that prepares its process, so the two share
       // one spawn contract) runs at the engine's low effort: the person is

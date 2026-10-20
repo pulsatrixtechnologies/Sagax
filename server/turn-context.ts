@@ -1,9 +1,13 @@
 import type { DriverKind } from "./contracts.ts";
 import { peerName } from "./peer-roster.ts";
 import { wrapUntrusted } from "../shared/safety-review.ts";
+import { replaysTranscriptNatively } from "./runtime/capabilities.ts";
 
-// All three use createOpenAIChatRuntime and get history via SendTurnInput.transcript.
-export const NATIVELY_REPLAYING_DRIVER_KINDS: readonly DriverKind[] = ["grok", "openai-compat", "minimax"];
+// Every driver built on createOpenAIChatRuntime gets its history via
+// SendTurnInput.transcript; the list lives in runtime/capabilities.ts.
+export function replaysNatively(kind: DriverKind): boolean {
+  return replaysTranscriptNatively(kind);
+}
 
 // Building the text a driver actually receives. Three situations force an
 // inline replay of the active branch: a rewind (the visible branch changed),
