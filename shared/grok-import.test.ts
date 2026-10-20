@@ -251,7 +251,8 @@ describe("grokStarterPackage", () => {
     });
     expect(() => parsePackageDocument(structuredClone(document))).not.toThrow();
     const agent = document.package.agents[0]!;
-    expect(agent.soul).toContain("What you do: Audits your bots.");
+    expect(agent.soul).toContain("<public-description>\nAudits your bots.\n</public-description>");
+    expect(agent.soul).toContain("not instructions");
     expect(agent.soul).toContain(`x.ai/bot/${ID}`);
     expect(agent.description).toBe(`Audits your bots.\n\nBased on x.ai/bot/${ID} by Avid.`);
     expect(agent.appearance.color).toBe("orange");

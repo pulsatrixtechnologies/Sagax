@@ -27,7 +27,7 @@ import type { Duplex } from "node:stream";
 
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 
-import { cdpMethodVerdict, sanitizeNetworkEvent, sessionEventAllowed } from "./cdp-policy.ts";
+import { cdpMethodVerdict, maybeSameSite, sanitizeNetworkEvent, sessionEventAllowed } from "./cdp-policy.ts";
 import { isBlankPage } from "./sites.ts";
 
 export const PILOT_WORLD = "sagax-pilot";
@@ -235,6 +235,9 @@ export class MyChromeGate {
    * out and the connection to Chrome closes. Nothing connects until resume(). */
   async stop(): Promise<void> {
     this.stoppedFlag = true;
+    // Every address handed out dies with Stop: a copy left in an engine's
+    // environment cannot reconnect after a resume.
+    this.tokens.clear();
     const clients = [...this.clients];
     this.clients.clear();
     for (const client of clients) {
@@ -405,7 +408,7 @@ export class MyChromeGate {
     const method = message.method!;
     const session = this.sessions.get(message.sessionId!);
     if (!session || session.client !== client) throw new GateRefusal("That session is not this bot's.");
-    const verdict = cdpMethodVerdict(method, true);
+    const verdict = cdpMethodVerdict(method, true, params);
     if (!verdict.allow) throw new GateRefusal(verdict.reason);
     if (!this.onSite(session.tab)) {
       if (method !== "Page.navigate" && method !== "Page.navigateToHistoryEntry" && method !== "Page.getNavigationHistory" && method !== "Page.stopLoading") {
@@ -697,7 +700,7 @@ export class MyChromeGate {
     }
     if (!this.onSite(session.tab)) return;
     let sent: Json | null = params;
-    if (method.startsWith("Network.")) sent = sanitizeNetworkEvent(method, params);
+    if (method.startsWith("Network.")) sent = sanitizeNetworkEvent(method, params, (url) => this.options.allows(url));
     else if (!sessionEventAllowed(method)) sent = null;
     if (sent) this.toClient(session.client, { method, params: sent, sessionId: session.id });
   }
@@ -725,6 +728,9 @@ export class MyChromeGate {
     tab.guard = guard;
     this.guards.set(guard, tab);
     await this.gateSend("Fetch.enable", { patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Request" }] }, guard);
+    // Nothing a bot clicks writes into the person's Downloads (this tab only;
+    // the person's other tabs keep their own behavior).
+    await this.gateSend("Page.setDownloadBehavior", { behavior: "deny" }, guard).catch(() => undefined);
     await this.gateSend("Runtime.addBinding", { name: PILOT_STOP_BINDING, executionContextName: PILOT_WORLD }, guard);
     await this.gateSend("Runtime.enable", {}, guard);
     // Scripts for new documents run only with the Page domain on.
@@ -748,6 +754,15 @@ export class MyChromeGate {
         this.options.onChange?.();
         return;
       }
+      // A frame of another origin on the same site would share the allowed
+      // page's process, where the engine could reach its scripts and
+      // cookies: it is not loaded. Other sites get their own process, which
+      // the gate keeps detached from the engine.
+      if (!topFrame && !isBlankPage(url) && !this.options.allows(url) && maybeSameSite(url, tab.url)) {
+        this.note(tab.client, `Sagax did not load a frame of ${originOf(url)}: it is not one of the sites allowed in My Chrome.`);
+        this.gateSend("Fetch.failRequest", { requestId, errorReason: "BlockedByClient" }, tab.guard).catch(() => undefined);
+        return;
+      }
       this.gateSend("Fetch.continueRequest", { requestId }, tab.guard).catch(() => undefined);
       return;
     }
@@ -769,4 +784,8 @@ export class MyChromeGate {
     await send("Runtime.removeBinding", { name: PILOT_STOP_BINDING });
     await this.gateSend("Target.detachFromTarget", { sessionId: guard }).catch(() => undefined);
   }
+}
+
+function originOf(url: string): string {
+  try { return new URL(url).origin; } catch { return url.slice(0, 80); }
 }

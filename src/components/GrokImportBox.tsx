@@ -9,6 +9,7 @@ import { useRef, useState } from "react";
 import { Copy, FileUp } from "lucide-react";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { copyText } from "@/lib/copy-text";
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
 import {
   GROK_EXPORT_PROMPT, GrokImportError, grokExportToPackage, grokStarterPackage, isGrokLink, parseGrokExport,
@@ -59,11 +60,9 @@ export function GrokImportBox({ onPreview }: { onPreview: (pending: PendingTeamI
   };
 
   const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(GROK_EXPORT_PROMPT);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2_000);
-    } catch { setError(t("grokImport.copyFailed")); }
+    if (await copyText(GROK_EXPORT_PROMPT) !== "copied") { setError(t("grokImport.copyFailed")); return; }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2_000);
   };
 
   const inputClass = "min-w-0 flex-1 rounded-md border border-hairline/40 bg-inset px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50";

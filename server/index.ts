@@ -25857,7 +25857,17 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
   service: () => myChrome,
-  allowed: (auth) => adminOrDelegate(auth, "server.settings"),
+  // The person, never a bot acting for them: on a headless server a bot's
+  // shell is a loopback caller too and must not grant itself a site or
+  // resume after Stop (security review 2026-10-20, #834). Loopback counts
+  // only on the desktop, whose mutations carry Electron's capability.
+  allowed: (auth) => {
+    if (!adminOrDelegate(auth, "server.settings")) return false;
+    if (auth.kind === "loopback") return DESKTOP_MANAGED && auth.trust !== "service";
+    if (auth.session.ephemeral || isBotActSession(auth.session)) return false;
+    const principalId = auth.session.principalId?.trim();
+    return Boolean(principalId && !principalId.startsWith("anon:"));
+  },
   botFor: (session) => {
     const bot = store.bots.find((candidate) => candidate.browserProfile === MY_CHROME_PROFILE && currentBrowserSession(candidate.id, MY_CHROME_PROFILE) === session);
     return bot ? { id: bot.id, name: bot.name } : null;

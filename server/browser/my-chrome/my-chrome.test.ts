@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { removeTempDir } from "../../testing/cleanup.ts";
-import { cdpMethodVerdict, sanitizeNetworkEvent, sessionEventAllowed } from "./cdp-policy.ts";
+import { cdpMethodVerdict, maybeSameSite, sanitizeNetworkEvent, sessionEventAllowed } from "./cdp-policy.ts";
 import { locateChrome, parseDevToolsActivePort } from "./locate.ts";
 import { MyChromeMemory, myChromeAllowKey, myChromeToolRefusal, refsFromResult, runMyChromeTool, sensitiveAddress, sensitiveElement } from "./pilot.ts";
 import { MyChromeService } from "./service.ts";
@@ -235,5 +235,55 @@ describe("My Chrome tool calls", () => {
     expect(myChromeAllowKey("delete", "")).toBeUndefined();
     expect(myChromeAllowKey("delete", "about:blank")).toBeUndefined();
     expect(myChromeAllowKey("delete", "file:///etc/hosts")).toBeUndefined();
+  });
+
+  it("takes refs only from a snapshot, so page text cannot rename a button", () => {
+    const memory = new MyChromeMemory();
+    memory.remember("s", call("agent_browser_snapshot"), { content: [{ type: "text", text: "- button \"Pay now\" [ref=e12]" }] });
+    memory.remember("s", call("agent_browser_get_text"), { content: [{ type: "text", text: "- button \"Cancel\" [ref=e12]" }] });
+    expect(memory.classify("s", call("agent_browser_click", { selector: "@e12" }))?.kind).toBe("payment");
+    // A snapshot whose page text repeats a ref differently: that ref is carded.
+    memory.remember("s", call("agent_browser_snapshot"), { content: [{ type: "text", text: "- button \"Pay now\" [ref=e12]\n- text: x\n- button \"Cancel\" [ref=e12]" }] });
+    expect(memory.classify("s", call("agent_browser_click", { selector: "@e12" }))?.kind).toBe("unclear");
+    // The JSON refs win over the text.
+    memory.remember("s", call("agent_browser_snapshot"), { content: [{ type: "text", text: JSON.stringify({ data: { refs: { e12: { role: "button", name: "Pay now" } }, snapshot: "- button \"Cancel\" [ref=e12]" } }) }] });
+    expect(memory.classify("s", call("agent_browser_click", { selector: "@e12" }))?.kind).toBe("payment");
+  });
+
+  it("cards Enter or Space with any modifier, even after a search box", () => {
+    const memory = new MyChromeMemory();
+    memory.remember("s", call("agent_browser_snapshot"), { content: [{ type: "text", text: "- searchbox \"Search\" [ref=e1]" }] });
+    memory.remember("s", call("agent_browser_fill", { selector: "@e1", text: "x" }), {});
+    expect(memory.classify("s", call("agent_browser_press", { key: "Enter" }))).toBeNull();
+    for (const key of ["Control+Enter", "Meta+Enter", "Shift+Enter", "Alt+Return", "Control+Shift+Enter", "Shift+Space"]) {
+      expect(memory.classify("s", call("agent_browser_press", { key }))?.kind).toBe("send");
+    }
+    expect(memory.classify("s", call("agent_browser_press", { key: "Control+a" }))).toBeNull();
+  });
+
+  it("closes what reaches frames of another origin on the same site", () => {
+    expect(cdpMethodVerdict("Page.captureSnapshot", true).allow).toBe(false);
+    expect(cdpMethodVerdict("Page.addScriptToEvaluateOnNewDocument", true, { source: "1", runImmediately: true }).allow).toBe(false);
+    expect(cdpMethodVerdict("Page.addScriptToEvaluateOnNewDocument", true, { source: "1" }).allow).toBe(true);
+    expect(maybeSameSite("https://accounts.example.com/x", "https://mail.example.com/")).toBe(true);
+    expect(maybeSameSite("http://localhost:4000/", "http://localhost:3000/")).toBe(true);
+    expect(maybeSameSite("https://a.example.co.uk/", "https://b.other.co.uk/")).toBe(true);
+    expect(maybeSameSite("https://ads.tracker.net/", "https://mail.example.com/")).toBe(false);
+    expect(maybeSameSite("https://x.example.com/", "about:blank")).toBe(true);
+  });
+
+  it("shows only the origin of a request to a site the person did not allow", () => {
+    const allows = (url: string) => url.startsWith("https://shop.example/");
+    const event = sanitizeNetworkEvent("Network.requestWillBeSent", {
+      documentURL: "https://shop.example/cart",
+      request: { url: "https://idp.example/cb?code=SECRET", headers: { a: "b" } },
+      redirectResponse: { url: "https://idp.example/auth?state=1", headers: {} },
+      initiator: { type: "script", url: "https://shop.example/app.js" },
+    }, allows)!;
+    expect((event.request as { url: string }).url).toBe("https://idp.example/");
+    expect((event.redirectResponse as { url: string }).url).toBe("https://idp.example/");
+    expect(event.documentURL).toBe("https://shop.example/cart");
+    expect(event.initiator).toBeUndefined();
+    expect(JSON.stringify(event)).not.toContain("SECRET");
   });
 });

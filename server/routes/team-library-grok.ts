@@ -3,7 +3,7 @@
 // OpenMausBot #3073 without its optional Cursor sign-in. Only x.ai is fetched
 // (redirects must stay there, 20 s, 2 MB; server/team-library.ts). The full
 // setup comes from the person's own Grok Bot (shared/grok-import.ts), read in
-// the app; this route creates nothing. Admin scope, like the GitHub import.
+// the app; this route creates nothing. Same scope as the GitHub import (team-library:write): it only reads x.ai.
 import { fetchGrokTemplateCard } from "../team-library.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 

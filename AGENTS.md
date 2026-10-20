@@ -5024,7 +5024,12 @@ An organization server never offers it unless that file says
   context, download, file upload, permission, autofill. Network events lose
   every header, cookie and body; the `ExtraInfo` events are dropped. Frames
   and workers of another site inside an allowed page are detached from the
-  engine. Unknown methods are refused.
+  engine; a frame of another origin on the same site (it would share the
+  page's process) is not loaded (`maybeSameSite`, errs toward "same").
+  `Page.captureSnapshot` and `addScriptToEvaluateOnNewDocument` with
+  `runImmediately` are refused, downloads are denied in the tab, and a
+  network event toward a site not allowed shows its origin only (no path,
+  query or initiator). Unknown methods are refused.
 - Each driven tab carries a banner (bottom right, "A Sagax bot is driving
   this tab" / "Un bot Sagax pilote cet onglet") in an isolated world, hidden
   from the accessibility tree, with a Stop button whose binding exists only
@@ -5033,7 +5038,16 @@ An organization server never offers it unless that file says
   which site, Stop). Stop (`POST /api/my-chrome/stop`, the tab's button, or
   turning My Chrome off) terminates every engine connection first, then
   removes the guards and banners, closes the Chrome connection and the
-  engines' sessions; `stopped` is saved and holds until Resume.
+  engines' sessions and forgets every gate address handed out (a copy left
+  in an engine's environment cannot reconnect after Resume); `stopped` is
+  saved and holds until Resume.
+- `/api/my-chrome/*` answers the person only (security review 2026-10-20,
+  #834): a session that is not an act/actAs one, or loopback on the desktop
+  (Electron's capability); a headless server's loopback (a bot's shell) is
+  refused. Residual risk, said in the PR: a bot with its own shell on the
+  same computer could still read Chrome's `DevToolsActivePort` and talk to
+  Chrome without the gate; Chrome's own remote-debugging consent is the
+  guard there.
 - The bot's calls (`server/browser/my-chrome/pilot.ts`, from the internal
   browser route): only the page tools (no `agent_browser_eval`, cookies,
   state, profiles, `read` with a URL, screenshot to a file), elements only by
@@ -5044,6 +5058,9 @@ An organization server never offers it unless that file says
   bot's last snapshot, the key (Enter or Space, except after typing in a
   search box), text with a line break, or an address (`/delete`,
   `/checkout`...). An unknown ref or a button with no name is a card too.
+  Refs come only from a snapshot (JSON `data.refs` first; a ref the text
+  names twice differently is dropped), never from page text read by another
+  tool. Enter or Space with any modifier (Control+Enter...) is a send.
   The card offers "Always allow" for one kind (payment, send or delete) on
   one exact origin (`my_chrome:<kind>:<origin>`, `myChromeAllowKey`), saved
   in the bot's `alwaysAllow` through the usual route (step-up, answerer

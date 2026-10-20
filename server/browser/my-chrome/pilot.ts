@@ -148,26 +148,36 @@ export function sensitiveAddress(raw: unknown): SensitiveKind | null {
   return null;
 }
 
-/** The refs a snapshot result named: agent-browser's JSON `data.refs`, or
- * the snapshot text's `- role "name" [ref=eN]` lines. */
+/** The refs a snapshot result named: agent-browser's JSON `data.refs` when
+ * it is there (the page cannot write into it), else the snapshot text's
+ * `- role "name" [ref=eN]` lines. A ref the text names twice, differently,
+ * is dropped: page text that imitates a line cannot rename a real button
+ * (a ref no longer known is carded as unclear). */
 export function refsFromResult(result: unknown): Map<string, RefInfo> {
-  const found = new Map<string, RefInfo>();
+  const fromJson = new Map<string, RefInfo>();
+  const fromText = new Map<string, RefInfo>();
+  const conflicting = new Set<string>();
   const content = (result as { content?: unknown } | null)?.content;
-  if (!Array.isArray(content)) return found;
+  if (!Array.isArray(content)) return fromJson;
   for (const part of content) {
     const text = (part as { text?: unknown } | null)?.text;
     if (typeof text !== "string") continue;
     try {
       const parsed = JSON.parse(text) as { data?: { refs?: Record<string, { role?: unknown; name?: unknown }> } };
       for (const [ref, info] of Object.entries(parsed?.data?.refs ?? {})) {
-        if (/^e\d+$/.test(ref)) found.set(ref, { role: String(info?.role ?? ""), name: String(info?.name ?? "") });
+        if (/^e\d+$/.test(ref)) fromJson.set(ref, { role: String(info?.role ?? ""), name: String(info?.name ?? "") });
       }
     } catch { /* text form below */ }
     for (const match of text.matchAll(/(?:^|\n|\\n)\s*-\s*([A-Za-z]+)(?:\s+"((?:[^"\\]|\\.)*)")?[^\n]*?\[ref=(e\d+)\]/g)) {
-      if (!found.has(match[3]!)) found.set(match[3]!, { role: match[1]!, name: (match[2] ?? "").replace(/\\"/g, "\"") });
+      const info = { role: match[1]!, name: (match[2] ?? "").replace(/\\"/g, "\"") };
+      const seen = fromText.get(match[3]!);
+      if (seen && (seen.role !== info.role || seen.name !== info.name)) conflicting.add(match[3]!);
+      else fromText.set(match[3]!, info);
     }
   }
-  return found;
+  if (fromJson.size) return fromJson;
+  for (const ref of conflicting) fromText.delete(ref);
+  return fromText;
 }
 
 const KIND_WORDS: Record<SensitiveKind, string> = {
@@ -183,15 +193,11 @@ export class MyChromeMemory {
   private readonly lastTyped = new Map<string, RefInfo | undefined>();
 
   remember(session: string, params: unknown, result: unknown): void {
-    const found = refsFromResult(result);
-    if (found.size) {
-      const name = toolName(params);
-      // A full snapshot replaces the map; any other result adds to it.
-      const map = name === "agent_browser_snapshot" ? new Map<string, RefInfo>() : (this.refs.get(session) ?? new Map<string, RefInfo>());
-      for (const [ref, info] of found) map.set(ref, info);
-      this.refs.set(session, map);
-    }
     const name = toolName(params);
+    // Only a snapshot names refs, and it replaces the map: page text read by
+    // get_text or a read result could imitate a ref line (security review
+    // 2026-10-20), so no other result is parsed for refs.
+    if (name === "agent_browser_snapshot") this.refs.set(session, refsFromResult(result));
     if (name === "agent_browser_fill" || name === "agent_browser_type") {
       const ref = refOf(params);
       this.lastTyped.set(session, ref ? this.refs.get(session)?.get(ref) : undefined);
@@ -221,10 +227,14 @@ export class MyChromeMemory {
       return kind ? { kind, action: `click ${named(ref)} (${KIND_WORDS[kind]})` } : null;
     }
     if (name === "agent_browser_press") {
-      const key = String(call.key ?? "").trim().toLowerCase();
+      const combo = String(call.key ?? "").trim().toLowerCase();
+      // The key a combination ends with: Control+Enter, Meta+Enter and
+      // Shift+Enter send in mail and chat apps, so a modifier changes nothing.
+      const key = combo === "+" || combo.endsWith("++") ? "+" : (combo.split("+").pop() ?? "").trim() || (combo.endsWith("+ ") ? " " : "");
+      const modified = combo.includes("+") && key !== combo;
       if (!["enter", "return", "numpadenter", "space", " ", "spacebar"].includes(key)) return null;
       const typed = this.lastTyped.get(session);
-      if (key !== "space" && key !== " " && key !== "spacebar" && typed && (typed.role === "searchbox" || has(words(typed.name), ["search", "rechercher", "recherche"]))) return null;
+      if (!modified && key !== "space" && key !== " " && key !== "spacebar" && typed && (typed.role === "searchbox" || has(words(typed.name), ["search", "rechercher", "recherche"]))) return null;
       return { kind: "send", action: `press ${String(call.key)} (it may submit a form)` };
     }
     if (name === "agent_browser_fill" || name === "agent_browser_type") {
