@@ -172,6 +172,15 @@ describe("protocol", () => {
       .toEqual({ commands: [{ seq: 2, kind: "approve", data: { approval_id: "a", option: "allow" } }], lastSeq: 3 });
   });
 
+  it("parses a duration an admin extended and drops a bad one", () => {
+    expect(parseCommands({ commands: [
+      { seq: 4, kind: "limits", data: { max_duration_sec: 7200 } },
+      { seq: 5, kind: "limits", data: { max_duration_sec: 12 * 3600 + 1 } },
+      { seq: 6, kind: "limits", data: { max_duration_sec: "60" } },
+      { seq: 7, kind: "limits", data: {} },
+    ] })).toEqual({ commands: [{ seq: 4, kind: "limits", data: { max_duration_sec: 7200 } }], lastSeq: 7 });
+  });
+
   it("rebuilds the context of a followup on a relaunched Pod", () => {
     const b = parseBootstrap({
       run_id: "r", env_id: "e", title: "t", prompt: "Fix it", engine: "claude-code", model: null, effort: null,
