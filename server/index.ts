@@ -935,6 +935,7 @@ import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
 import { createMyChromeRoutes } from "./routes/my-chrome.ts";
 import { createTeamLibraryGrokRoutes } from "./routes/team-library-grok.ts";
 import { MyChromeService } from "./browser/my-chrome/service.ts";
+import { hasShellOnThisComputer, MY_CHROME_SHELL_PROMPT } from "./browser/my-chrome/shell.ts";
 import { MY_CHROME_PROFILE, MY_CHROME_SYSTEM_PROMPT, myChromeToolRefusal, runMyChromeTool, toolName as browserToolName } from "./browser/my-chrome/pilot.ts";
 import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSaverTarget, type MaintainedComputer } from "./computer-care.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
@@ -4587,10 +4588,23 @@ const MY_CHROME_SESSION_PREFIX = "mychrome-";
 function isMyChromeSession(session: string): boolean {
   return session.startsWith(MY_CHROME_SESSION_PREFIX);
 }
+/** Whether this bot has a shell on the computer of the person's Chrome. Such
+ * a bot could reach Chrome's DevTools itself, around the per-site agreement,
+ * so it is never given My Chrome (it keeps its own bot browser). */
+function myChromeBotHasShell(botId: string): boolean {
+  const bot = store.bot(botId);
+  if (!bot) return true;
+  return hasShellOnThisComputer({ cloudOnly: cloudOnlyBot(bot.id), teamComputer: Boolean(inheritedTeamComputer(bot)) });
+}
+/** The browser profile a bot really gets: My Chrome only without a shell on this computer. */
+function effectiveBrowserProfile(botId: string, profile: string | undefined): string | undefined {
+  return profile === MY_CHROME_PROFILE && botId && myChromeBotHasShell(botId) ? undefined : profile;
+}
 /** The browser prompt's My Chrome paragraph, for a bot set to it. */
 function myChromePromptFor(bot: { id: string; browserProfile?: string | null }, threadId: string): string {
   const current = store.bot(bot.id) ?? bot;
-  return current.browserProfile === MY_CHROME_PROFILE && !store.isConfidentialThread(threadId) ? MY_CHROME_SYSTEM_PROMPT : "";
+  if (current.browserProfile !== MY_CHROME_PROFILE || store.isConfidentialThread(threadId)) return "";
+  return myChromeBotHasShell(bot.id) ? MY_CHROME_SHELL_PROMPT : MY_CHROME_SYSTEM_PROMPT;
 }
 /** A My Chrome call that would open an address outside the allowed sites. */
 function myChromeNavigationRefusal(params: unknown): string | null {
@@ -4608,7 +4622,8 @@ const temporaryBrowserSessions = new Map<string, string>();
 // throwaway guest session of that thread alone, never the bot's profile nor
 // a shared one, never saved to disk, discarded at the end of each turn.
 const confidentialBrowserSessions = new Map<string, string>();
-function currentBrowserSession(botId: string, profile: string | undefined, threadId?: string): string {
+function currentBrowserSession(botId: string, requestedProfile: string | undefined, threadId?: string): string {
+  const profile = effectiveBrowserProfile(botId, requestedProfile);
   if (threadId && store.isConfidentialThread(threadId)) {
     let session = confidentialBrowserSessions.get(threadId);
     if (!session) {
@@ -4657,7 +4672,8 @@ async function forgetConfidentialBrowser(threadId: string): Promise<void> {
   if (closed) await browserRuntime.close(session);
   else console.warn(`confidential browser ${session}: could not close its session; run agent-browser --session ${session} close on this server`);
 }
-async function browserIntegration(botId: string, profile: string | undefined, turn?: { threadId: string; generation: string }, sessionThreadId?: string) {
+async function browserIntegration(botId: string, requestedProfile: string | undefined, turn?: { threadId: string; generation: string }, sessionThreadId?: string) {
+  const profile = effectiveBrowserProfile(botId, requestedProfile);
   const status = browserEngineStatus();
   if (status.kind !== "ready") {
     if (!engineUnavailableLogged) {
@@ -4678,7 +4694,7 @@ async function browserIntegration(botId: string, profile: string | undefined, tu
   const persistent = !confidential && profile !== "guest" && !ownChrome;
   let attachCdpUrl = browserEngineAttachCdpUrl(cfg) ?? undefined;
   if (ownChrome) {
-    try { attachCdpUrl = await myChrome.urlFor(session); }
+    try { attachCdpUrl = await myChrome.urlFor(session, { hasShell: myChromeBotHasShell(botId) }); }
     catch { return null; }
   }
   const spec = agentBrowserIntegration({
@@ -26092,6 +26108,7 @@ ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: (
 ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
   service: () => myChrome,
+  botsWithShell: () => store.bots.filter((bot) => myChromeBotHasShell(bot.id)).map((bot) => bot.id),
   // The person, never a bot acting for them: on a headless server a bot's
   // shell is a loopback caller too and must not grant itself a site or
   // resume after Stop (security review 2026-10-20, #834). Loopback counts
@@ -35405,7 +35422,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!bot || bot.browser === false || bot.computer === "off" || !builtInBrowserEnabled(cfg)) {
           return json(res, 403, { error: "browser tools are not enabled for this bot" });
         }
-        const ownChrome = bot.browserProfile === MY_CHROME_PROFILE && !store.isConfidentialThread(internalCapability.threadId);
+        const ownChrome = effectiveBrowserProfile(bot.id, bot.browserProfile) === MY_CHROME_PROFILE && !store.isConfidentialThread(internalCapability.threadId);
         const ownChromeOff = ownChrome ? myChrome.unavailable() : null;
         if (ownChromeOff) return json(res, 403, { error: ownChromeOff });
         const browser = await browserIntegration(bot.id, bot.browserProfile, undefined, internalCapability.threadId);

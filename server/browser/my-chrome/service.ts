@@ -3,6 +3,7 @@
 import { MyChromeGate, type MyChromeGateStatus } from "./gate.ts";
 import { locateChrome } from "./locate.ts";
 import { MyChromeMemory } from "./pilot.ts";
+import { MY_CHROME_SHELL_NOTE } from "./shell.ts";
 import { MyChromeSettingsStore, type MyChromeSettings } from "./settings.ts";
 import { myChromeSiteAllows } from "./sites.ts";
 
@@ -74,8 +75,10 @@ export class MyChromeService {
     };
   }
 
-  /** The gate address one engine session connects to. Throws when My Chrome is unavailable. */
-  async urlFor(session: string): Promise<string> {
+  /** The gate address one engine session connects to. Throws when My Chrome is
+   * unavailable, or when the bot has a shell on this computer. */
+  async urlFor(session: string, options: { hasShell?: boolean } = {}): Promise<string> {
+    if (options.hasShell) throw new Error(MY_CHROME_SHELL_NOTE);
     const reason = this.unavailable();
     if (reason) throw new Error(reason);
     const gate = await this.ensureGate();

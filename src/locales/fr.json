@@ -4256,6 +4256,7 @@
   "settings.myChrome.addressHint": "Laissez vide et Sagax trouve Chrome tout seul. Sinon, un port comme 9222, ou une adresse ws:// sur cet ordinateur.",
   "settings.myChrome.error": "Mon Chrome n'a pas pu faire cela.",
   "settings.profiles.myChrome": "Mon Chrome (votre propre Chrome)",
+  "settings.profiles.myChromeShell": "Ce bot a un terminal sur ton ordinateur : il utilise son propre navigateur.",
   "settings.profiles.myChromeHint": "Ce bot travaille dans votre propre Chrome, sur les sites autorisés dans Réglages > Expérimental > Mon Chrome, avec votre approbation pour les paiements, les envois et les suppressions.",
   "myChrome.indicator": "{bot} pilote votre Chrome sur {sites}",
   "myChrome.indicatorSomeBot": "Un bot pilote votre Chrome sur {sites}",

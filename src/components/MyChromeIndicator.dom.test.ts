@@ -15,7 +15,7 @@ import type { MyChromeStatus } from "@/lib/my-chrome";
 
 const base: MyChromeStatus = {
   offered: true, enabled: true, stopped: false, sites: [{ origin: "https://shop.example", addedAt: 1 }], chromeAddress: "",
-  unavailable: null, connected: true, lastActionAt: 1, driving: [],
+  unavailable: null, connected: true, lastActionAt: 1, shellBotIds: [], driving: [],
 };
 
 let root: Root;

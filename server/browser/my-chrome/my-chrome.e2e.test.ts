@@ -8,12 +8,19 @@
 // With SAGAX_TEST_AGENT_BROWSER set to an agent-browser binary, the last
 // suite also drives the bot's real tool path: refusals, approval cards and
 // Stop through the browser runtime.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { removeTempDir } from "../../testing/cleanup.ts";
 import { agentBrowserIntegration, closeBrowserSession, prepareBrowserSessionState } from "../../browser-engine.ts";
 import { BrowserRuntime, browserRuntimeEnv } from "../../browser-runtime.ts";
 import { MyChromeGate, PILOT_BANNER_ID } from "./gate.ts";
 import { MyChromeMemory, runMyChromeTool } from "./pilot.ts";
+import { MyChromeService } from "./service.ts";
+import { hasShellOnThisComputer, MY_CHROME_SHELL_NOTE } from "./shell.ts";
 import { myChromeSiteAllows } from "./sites.ts";
 import { CdpClient, waitFor } from "./testing/cdp-client.ts";
 import { startFakeSites, type FakeSites } from "./testing/fake-sites.ts";
@@ -149,6 +156,47 @@ describe.skipIf(!CHROME)("My Chrome gate on a headless test Chrome", () => {
     expect(sites.allowedHits).toContain("/away");
     expect(gate.takeNotes("bot-a").some((note) => note.includes(sites.other))).toBe(true);
   });
+
+  it("refuses a back step to a site that is no longer allowed, before the page is restored", async () => {
+    allowed = [sites.allowed, sites.other];
+    const { sessionId } = await botTab();
+    await bot.send("Page.navigate", { url: `${sites.other}/?via=history` }, sessionId);
+    await waitFor(async () => (await bot.evaluate<string>(sessionId, "location.href").catch(() => "")).startsWith(sites.other), 10_000, "the other site");
+    await bot.send("Page.navigate", { url: `${sites.allowed}/two` }, sessionId);
+    await waitFor(async () => (await bot.evaluate<string>(sessionId, "location.href").catch(() => "")) === `${sites.allowed}/two`, 10_000, "page two");
+    allowed = [sites.allowed];
+    const history = await bot.send("Page.getNavigationHistory", {}, sessionId) as { entries: Array<{ id: number; url: string }> };
+    const target = history.entries.find((entry) => entry.url.startsWith(sites.other));
+    expect(target).toBeTruthy();
+    const hitsBefore = sites.otherHits.length;
+    await expect(bot.send("Page.navigateToHistoryEntry", { entryId: target!.id }, sessionId)).rejects.toThrow(/blocked/);
+    expect(await bot.evaluate<string>(sessionId, "location.href")).toBe(`${sites.allowed}/two`);
+    expect(sites.otherHits.length).toBe(hitsBefore);
+    // An entry on an allowed site still works.
+    const back = history.entries.find((entry) => entry.url === `${sites.allowed}/`);
+    if (back) await bot.send("Page.navigateToHistoryEntry", { entryId: back.id }, sessionId);
+  }, 60_000);
+
+  it("keeps the banner on screen when the page tries to hide it", async () => {
+    const { sessionId } = await botTab();
+    // The page's own world: a stylesheet and a style change aimed at the banner.
+    await bot.evaluate(sessionId, `(() => {
+      const style = document.createElement("style");
+      style.textContent = "sagax-pilot, #${PILOT_BANNER_ID} { display: none !important; visibility: hidden !important; opacity: 0 !important; }";
+      document.head.appendChild(style);
+      const host = document.getElementById(${JSON.stringify(PILOT_BANNER_ID)});
+      if (host) { host.style.setProperty("display", "none", "important"); host.hidden = true; host.className = "x"; }
+    })()`);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const shown = await bot.evaluate<string>(sessionId, `(() => {
+      const host = document.getElementById(${JSON.stringify(PILOT_BANNER_ID)});
+      if (!host) return "missing";
+      const css = getComputedStyle(host);
+      const box = host.getBoundingClientRect();
+      return [css.display, css.visibility, css.opacity, box.width > 0 && box.height > 0].join(",");
+    })()`);
+    expect(shown).toBe("block,visible,1,true");
+  }, 60_000);
 
   it("keeps frames and workers of another site away from the engine, and strips every header", async () => {
     await bot.send("Target.setDiscoverTargets", { discover: true });
@@ -324,5 +372,36 @@ describe.skipIf(!CHROME || !AGENT_BROWSER)("My Chrome through agent-browser and 
     await gate.stop();
     const after = await call("agent_browser_get_url").catch((error: Error) => ({ content: [{ text: error.message }], isError: true }));
     expect(after.isError).toBe(true);
+  }, 60_000);
+});
+
+describe.skipIf(!CHROME)("My Chrome and a bot with a shell on this computer", () => {
+  it("decides the shell from where the bot works", () => {
+    expect(hasShellOnThisComputer({ cloudOnly: false, teamComputer: false })).toBe(true);
+    expect(hasShellOnThisComputer({ cloudOnly: true, teamComputer: false })).toBe(false);
+    expect(hasShellOnThisComputer({ cloudOnly: false, teamComputer: true })).toBe(false);
+  });
+
+  it("gives the gate address only to a bot without a shell, on the test Chrome", async () => {
+    const chrome = await launchTestChrome(CHROME!);
+    const dataDir = mkdtempSync(join(tmpdir(), "sagax-mychrome-shell-"));
+    const service = new MyChromeService({ dataDir, organization: false, locate: async () => chrome.wsUrl });
+    try {
+      await service.setEnabled(true);
+      service.allowSite("http://localhost:9");
+      await expect(service.urlFor("mychrome-a", { hasShell: true })).rejects.toThrow(MY_CHROME_SHELL_NOTE);
+      const url = await service.urlFor("mychrome-b", { hasShell: false });
+      expect(url).toMatch(/^ws:\/\/127\.0\.0\.1:\d+\//);
+      const client = await CdpClient.connect(url);
+      const { targetInfos } = await client.send("Target.getTargets");
+      expect(targetInfos).toEqual([]);
+      client.close();
+      // The shell bot never reached the gate: no connection of its own.
+      expect(service.status().gate.clients.map((entry) => entry.label)).not.toContain("mychrome-a");
+    } finally {
+      await service.close();
+      await chrome.close();
+      await removeTempDir(dataDir);
+    }
   }, 60_000);
 });

@@ -27,7 +27,7 @@ beforeEach(async () => {
   allowed = true;
   stopped = 0;
   service = new MyChromeService({ dataDir: dir, organization: false, onStopped: () => { stopped += 1; } });
-  const handler = createMyChromeRoutes({ service: () => service, allowed: () => allowed, botFor: () => null });
+  const handler = createMyChromeRoutes({ service: () => service, allowed: () => allowed, botFor: () => null, botsWithShell: () => [] });
   server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     void handler({ req, res, url, path: url.pathname, method: req.method ?? "GET", auth: { kind: "loopback" } as unknown as RequestAuth, json, readBody })
