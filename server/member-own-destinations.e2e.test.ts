@@ -322,13 +322,33 @@ posixOnly("organization server: a member's own destinations", () => {
       await turn.end();
       await prefer("computer");
     }
-    // his real computer: no Always allow offered (security review)
+    // his real computer (2026-10-19, JC: "Toujours permettre" on every
+    // card): offered, bound to the exact command, and his own; another
+    // command keeps its card; revoked, the card comes back
     turn = await heldTurn(bob, sage, "sur mon pc");
     try {
       const desktopCall = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
       const card = await turn.cardOf(desktopCall.id);
       expect(card.adminApproval).not.toBe(true);
-      expect(card.ownerRule).toBeFalsy();
+      expect(card.ownerRule).toMatchObject({ scope: { command: "dir" }, from: "origin" });
+      expect((await turn.respond(bob, desktopCall.id, "allow", "allow")).status).toBe(200);
+      await waitFor(async () => desktopCall.answer()?.behavior === "allow");
+      const rule = ((await api("GET", "/api/approval-rules", bob)).body.rules as Array<{ id: string; botId: string | null; scope: Record<string, string>; from?: string }>)
+        .find((row) => row.botId === sage.id && row.scope.command === "dir");
+      expect(rule?.from).toBe("origin");
+      const again = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
+      await waitFor(async () => again.answer()?.behavior === "allow");
+      expect(await turn.noCard(again.id)).toBe(true);
+      const other = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir & del notes.txt" });
+      expect(await turn.cardOf(other.id)).toBeTruthy();
+      expect(other.answer()).toBeUndefined();
+      // Alice's rules never cover Bob's computer: hers are listed apart
+      expect(((await api("GET", "/api/approval-rules", alice)).body.rules as Array<{ id: string }>).some((row) => row.id === rule!.id)).toBe(false);
+      expect((await api("DELETE", `/api/approval-rules/${rule!.id}`, alice)).status).toBe(404);
+      expect((await api("DELETE", `/api/approval-rules/${rule!.id}`, bob)).status).toBe(200);
+      const revoked = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
+      expect(await turn.cardOf(revoked.id)).toBeTruthy();
+      expect(revoked.answer()).toBeUndefined();
     } finally {
       await turn.end();
     }
@@ -383,10 +403,30 @@ posixOnly("organization server: a member's own destinations", () => {
       // the refusal says what to ask an admin for, and where they give it
       expect(String(refused.body.error)).toContain("Run commands on the organization's server");
       expect(String(refused.body.error)).toContain("Perspicax");
-      // an admin answers it, as before
-      const byAdmin = await turn.respond(alice, shell.id, "allow");
+      // an admin answers it, as before, and (2026-10-19) may keep it: the
+      // card offers Always allow to the admin, never Always deny, never to Bob
+      expect(card.ownerRule).toMatchObject({ scope: { command: "cat /etc/hostname" }, from: "admin" });
+      expect((await turn.respond(bob, shell.id, "allow", "allow")).status).toBe(403);
+      expect((await turn.respond(alice, shell.id, "deny", "deny")).status).toBe(400);
+      const byAdmin = await turn.respond(alice, shell.id, "allow", "allow");
       expect(byAdmin.status, byAdmin.text).toBe(200);
       await waitFor(async () => shell.answer()?.behavior === "allow");
+      const adminRule = ((await api("GET", "/api/approval-rules", alice)).body.rules as Array<{ id: string; botId: string | null; from?: string; botName?: string }>)
+        .find((row) => row.botId === otto.id);
+      expect(adminRule).toMatchObject({ from: "admin", botName: "Otto" });
+      // the same command of Otto: no card; another command: an admin's card
+      const again = await turn.ask("Bash", { command: "cat /etc/hostname" });
+      await waitFor(async () => again.answer()?.behavior === "allow");
+      expect(await turn.noCard(again.id)).toBe(true);
+      const other = await turn.ask("Bash", { command: "cat /etc/passwd" });
+      expect((await turn.cardOf(other.id)).adminApproval).toBe(true);
+      expect(other.answer()).toBeUndefined();
+      // Bob cannot remove the admin's rule; revoked by Alice, the card is back
+      expect((await api("DELETE", `/api/approval-rules/${adminRule!.id}`, bob)).status).toBe(404);
+      expect((await api("DELETE", `/api/approval-rules/${adminRule!.id}`, alice)).status).toBe(200);
+      const revoked = await turn.ask("Bash", { command: "cat /etc/hostname" });
+      expect((await turn.cardOf(revoked.id)).adminApproval).toBe(true);
+      expect(revoked.answer()).toBeUndefined();
     } finally {
       await turn.end();
     }

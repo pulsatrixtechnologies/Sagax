@@ -146,6 +146,54 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
 - Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
   `server/settings-actions.e2e.test.ts`.
 
+## Always allow on every card (2026-10-19)
+
+JC: "On doit avoir des cartes, mais avoir la possibilité de faire TOUJOURS
+le Toujours permettre." Every approval card offers Always allow to the
+person who answers it, with the exact scope written on the card
+(`approval.always.scopeLine`): this bot, this tool or kind of action, this
+target. The rule is an owner rule (`server/owner-approval.ts`, store
+`owner-approvals.json`), the person's own, listed and revocable in
+Settings > Security (`MyApprovalRules`, also `rules.owner` and
+`rules.ownerDelete` in sagax_settings). Rules:
+
+- Scope: an exact shell line (`command`, argv joined), an exact path
+  (`path`, `file_path`...), compared case included; a native shell line is
+  bound to its folder (a folder Sagax made for the bot by its kind,
+  `sagax:conversation`). A value too long to keep offers no rule, never a
+  wider one. Non-engine cards match the whole scope key for key
+  (`ruleCoversExactScope`).
+- Situations (`OwnerRule.from`): a held card (safety hold, sandbox
+  widening) and a turn that is not the person's own words (routine,
+  webhook, another bot, their real computer) are answered only by a rule
+  saved on that same kind of card. An admin's card of a member's bot
+  (`from: admin`) is the answering admin's (or host.shell holder's, or the
+  owner holding host.commands for a holder's card) own rule for that bot,
+  Always allow only, checked again at each use (`strictCardRule`).
+- Never: someone else's environment (`crossPerson`), a guest's turn, a
+  question, a meeting's consent (legal consent stays per meeting).
+- A security key the person chose for one of the call's classes is still
+  asked each time; the rule never answers it (step-up wins). Saving the
+  rule itself is always-grant.
+- Families: engine cards (all engines, the broker decides), act and
+  sagax_settings cards (`server/bot-act.ts`: setting + target, exact value
+  digest when more than a simple change), the ConnectWise widget
+  (`cw_widget:cw_psa__write`, apart from the bot's own calls), native
+  safety holds (exact fingerprint), "Send on your behalf?" (one call, its
+  targets), routine, profile and model proposals, skills (exact content),
+  terminal offers (destination). Always deny only on engine tool cards
+  (`shared/approval-rule-card.ts`).
+- Bulk (Approvals screen): `rule: "allow"` keeps each card's own rule;
+  a card needing a key or with no rule is skipped.
+- Every automatic answer writes a decision row `source: owner-rule` (or
+  `admin-rule`) with the rule id.
+- Not covered yet: email draft send, team memory, confidential memory,
+  team setup cards.
+- Tests: `server/always-allow.e2e.test.ts` (engine card, key, bulk, act,
+  proposal, Codex and ACP engines), `server/member-own-destinations.e2e.test.ts`
+  (real computer, admin card), `server/cw-widgets.e2e.test.ts`,
+  `server/owner-approval.test.ts`.
+
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
 JC: the bots know everything Sagax and Perspicax can do, kept up to date,

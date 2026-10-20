@@ -2,8 +2,44 @@
 // that action as them. The pending body stays in memory. The card stores
 // only the request id.
 
+import { createHash } from "node:crypto";
+
 import type { ActTarget, TurnFacts } from "../shared/bot-act.ts";
 import { actorForTurn, decideBotAct, summaryOf } from "../shared/bot-act.ts";
+import { botActClasses } from "../shared/step-up.ts";
+
+/** 2026-10-19 (JC: "Toujours permettre" on every card): what "Always allow"
+ * on an act card keeps, as the person's own rule for this bot
+ * (server/owner-approval.ts OwnerRule): a setting (its key and target) or a
+ * route (method and exact path), and the exact value when the change is
+ * more than a simple one (a secret, another person, a deletion, a widening,
+ * the organization). Never "anything this bot does". */
+export type ActRuleCandidate = { tool: "sagax_settings" | "sagax_act"; scope: Record<string, string>; description: string };
+
+function canonical(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value ?? null);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonical((value as Record<string, unknown>)[key])}`).join(",")}}`;
+}
+
+/** A short fingerprint of an exact value (a rule keeps it, never the value). */
+export function valueDigest(value: unknown): string {
+  return createHash("sha256").update(canonical(value)).digest("hex").slice(0, 32);
+}
+
+/** The rule "Always allow" would keep for a raw act. A write that is more
+ * than a plain one (any class but irreversible) is bound to its exact body. */
+export function actRuleCandidate(target: ActTarget, classes: readonly string[], describe: (target: ActTarget) => string): ActRuleCandidate {
+  const exact = classes.some((name) => name !== "irreversible");
+  if (target.kind === "ui") {
+    return { tool: "sagax_act", scope: { screen: target.command, ...(exact ? { value: valueDigest(target.input) } : {}) }, description: describe(target) };
+  }
+  return {
+    tool: "sagax_act",
+    scope: { route: `${target.method.toUpperCase()} ${target.path}`, ...(exact ? { value: valueDigest({ query: target.query ?? null, body: target.body ?? null }) } : {}) },
+    description: describe(target),
+  };
+}
 
 const PENDING_CAP = 32;
 const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
@@ -26,6 +62,8 @@ type CardState = { messageId: string; answered?: string; dismissed?: boolean; ex
 type Pending = {
   requestId: string;
   threadId: string;
+  botId: string;
+  rule?: ActRuleCandidate;
   messageId: string;
   actorKey: string;
   actor: PerformActor;
@@ -47,7 +85,9 @@ export type PlannedAct = {
   /** Security key classes the card's Allow must cover. */
   stepUpClasses: readonly string[];
   /** Called once the route answered below 400. */
-  onDone?: (how: "run" | "allowed") => void;
+  onDone?: (how: "run" | "allowed" | "rule") => void;
+  /** What "Always allow" keeps for this change (settings-actions.ts). */
+  rule?: ActRuleCandidate;
 };
 
 export type BotActDeps = {
@@ -60,7 +100,17 @@ export type BotActDeps = {
    * change's card (the card's step-up covered `classes`). */
   performRoute: (actor: PerformActor, target: Extract<ActTarget, { kind: "route" }>, confirmed?: { personKey: string | null; classes: readonly string[] }, maxChars?: number) => Promise<{ status: number; text: string }>;
   broadcastUi: (audience: string, command: string, input: Record<string, unknown>) => void;
-  postCard: (input: { threadId: string; botId: string; botName: string; botColor: string; requestId: string; summary: string }) => { messageId: string };
+  postCard: (input: { threadId: string; botId: string; botName: string; botColor: string; requestId: string; summary: string; rule?: ActRuleCandidate }) => { messageId: string };
+  /** 2026-10-19: the person's saved Always allow that answers this act now
+   * (their own rule for this bot, no security key of theirs protecting the
+   * change's classes), or null. */
+  actRule?: (input: { person: string | null; botId: string; candidate: ActRuleCandidate; classes: readonly string[] }) => { id: string } | null;
+  /** Save the person's Always allow from an act card. Null, or the refusal. */
+  saveActRule?: (input: { person: string | null; botId: string; candidate: ActRuleCandidate }) => { status: number; error: string } | null;
+  /** A route or screen command in plain words for a rule (names, never ids). */
+  describeAct?: (target: ActTarget) => string;
+  /** One journal row for an act a saved rule allowed. */
+  journalRule?: (input: { threadId: string; botId: string; botName: string; summary: string; rule: string }) => void;
   patchCard: (threadId: string, messageId: string, patch: { answered?: "allow" | "deny"; expired?: true }) => void;
   findCard: (threadId: string, requestId: string) => CardState | null;
 };
@@ -89,6 +139,8 @@ export type BotActService = {
     behavior: string;
     answerer: BotActAnswerer;
     sharedServer: boolean;
+    /** "allow": also keep the card's Always allow as the answerer's rule. */
+    rule?: "allow";
   }): Promise<{ handled: false } | { handled: true; status: number; body: Record<string, unknown> }>;
   /** What a waiting act card would do (its route and body), for the
    * security key step-up; undefined once it is gone. */
@@ -157,7 +209,18 @@ export function createBotActService(deps: BotActDeps): BotActService {
         if (result.status < 400) input.plan.onDone?.("run");
         return result;
       }
-      return hold(performActor, input.target, input.plan.summary, input, input.plan);
+      const plannedRule = input.plan.rule ?? actRuleCandidate(input.target, input.plan.stepUpClasses, describeOf);
+      const allowedBy = ruleFor(performActor, input.botId, plannedRule, input.plan.stepUpClasses);
+      if (allowedBy) {
+        const planned = { personKey: performActor.kind === "person" ? performActor.personKey : null, classes: [] as string[] };
+        const result = await run(performActor, input.target, undefined, planned, input.maxChars);
+        if (result.status < 400) {
+          input.plan.onDone?.("rule");
+          deps.journalRule?.({ threadId: input.threadId, botId: input.botId, botName: input.botName, summary: input.plan.summary, rule: allowedBy.id });
+        }
+        return result;
+      }
+      return hold(performActor, input.target, input.plan.summary, input, { ...input.plan, rule: plannedRule });
     },
     async handle(input) {
       sweep();
@@ -177,7 +240,15 @@ export function createBotActService(deps: BotActDeps): BotActService {
       const decision = decideBotAct({ raw: input.raw, mode: input.mode, scopes, neededScope: deps.neededScope });
       if (!decision.ok) return refuse(decision.status, decision.error);
       if (decision.effect === "run") return run(performActor, decision.target);
-      return hold(performActor, decision.target, decision.summary, input);
+      const classes = actClassesOf(decision.target);
+      const candidate = actRuleCandidate(decision.target, classes, describeOf);
+      const allowedBy = ruleFor(performActor, input.botId, candidate, classes);
+      if (allowedBy) {
+        const result = await run(performActor, decision.target);
+        if (result.status < 400) deps.journalRule?.({ threadId: input.threadId, botId: input.botId, botName: input.botName, summary: decision.summary, rule: allowedBy.id });
+        return result;
+      }
+      return hold(performActor, decision.target, decision.summary, input, undefined, candidate);
     },
 
     async confirm(input) {
@@ -207,6 +278,12 @@ export function createBotActService(deps: BotActDeps): BotActService {
       if (input.behavior !== "allow") return { handled: true, status: 400, body: { error: "behavior must be allow or deny." } };
       const replay = replayActor(item, input.answerer, input.sharedServer, deps.neededScope);
       if ("error" in replay) return { handled: true, status: replay.status, body: { error: replay.error } };
+      if (input.rule === "allow") {
+        // kept before the change runs, as the person who answers, for this bot
+        if (!item.rule || !deps.saveActRule) return { handled: true, status: 409, body: { error: "This approval cannot be remembered as a rule." } };
+        const refused = deps.saveActRule({ person: replay.kind === "person" ? replay.personKey : null, botId: item.botId, candidate: item.rule });
+        if (refused) return { handled: true, status: refused.status, body: { error: refused.error } };
+      }
       item.running = true;
       try {
         const confirmed = item.planned
@@ -229,13 +306,24 @@ export function createBotActService(deps: BotActDeps): BotActService {
     },
   };
 
+  function describeOf(target: ActTarget): string {
+    return deps.describeAct ? deps.describeAct(target) : summaryOf(target);
+  }
+
+  function ruleFor(actor: PerformActor, botId: string, candidate: ActRuleCandidate, classes: readonly string[]): { id: string } | null {
+    if (!deps.actRule) return null;
+    return deps.actRule({ person: actor.kind === "person" ? actor.personKey : null, botId, candidate, classes });
+  }
+
   function hold(
     performActor: PerformActor,
     target: ActTarget,
     summary: string,
     where: { threadId: string; botId: string; botName: string; botColor: string },
     planned?: PlannedAct,
+    candidate?: ActRuleCandidate,
   ): BotActResult {
+    const rule = planned?.rule ?? candidate;
     const actorKey = performActor.kind === "person" ? `person:${performActor.personKey}` : "operator";
     let waiting = 0;
     for (const item of pending.values()) if (item.actorKey === actorKey) waiting += 1;
@@ -248,10 +336,13 @@ export function createBotActService(deps: BotActDeps): BotActService {
       botColor: where.botColor,
       requestId,
       summary,
+      ...(rule ? { rule } : {}),
     });
     pending.set(requestId, {
       requestId,
       threadId: where.threadId,
+      botId: where.botId,
+      ...(rule ? { rule } : {}),
       messageId: posted.messageId,
       actorKey,
       actor: performActor,
@@ -308,6 +399,13 @@ function replayActor(
     return { kind: "person", sessionId: answerer.sessionId, personKey: answerer.personKey, scopes: answerer.scopes.filter((scope): scope is "admin" | "client" => scope === "admin" || scope === "client") };
   }
   return { error: "Only the owner can allow this.", status: 403 };
+}
+
+/** The step-up classes of a raw act (shared/step-up.ts botActClasses),
+ * mirrored here so the rule check sees the same classes the card's Allow
+ * would need. */
+function actClassesOf(target: ActTarget): string[] {
+  return botActClasses(target);
 }
 
 export { summaryOf };

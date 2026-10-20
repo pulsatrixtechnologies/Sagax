@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { botLabel } from "@/lib/human-label";
 import { t } from "@/lib/i18n";
 import { api, useStoreOptional } from "@/state/store";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -28,7 +29,7 @@ export function MyApprovalRules() {
   const [rules, setRules] = useState<OwnerRuleRow[] | null>(null);
   const [removing, setRemoving] = useState<OwnerRuleRow | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const botName = useCallback((id: string) => bots.find((bot) => bot.id === id)?.name ?? id, [bots]);
+  const botName = useCallback((id: string) => botLabel(bots.find((bot) => bot.id === id)?.name ?? rules?.find((rule) => rule.botId === id)?.botName), [bots, rules]);
   const load = useCallback(() => api<{ rules: OwnerRuleRow[] }>("/api/approval-rules")
     .then((body) => setRules(body.rules ?? []))
     .catch(() => setRules([])), []);
@@ -59,7 +60,10 @@ export function MyApprovalRules() {
                 <div key={rule.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-3 px-3.5 py-2" data-my-rule-row={rule.behavior}>
                   <div className="min-w-0">
                     <div className="break-words text-[13px] leading-[18px] text-ink">{rule.description}</div>
-                    <div className="mt-0.5 text-[11.5px] text-ink-tertiary">{rule.botId === null ? t("botPanel.rules.allBots") : botName(rule.botId)}</div>
+                    <div className="mt-0.5 text-[11.5px] text-ink-tertiary">
+                      {rule.botId === null ? t("botPanel.rules.allBots") : botName(rule.botId)}
+                      {rule.from && <span data-my-rule-from={rule.from}>{" · "}{t(rule.from === "admin" ? "myRules.from.admin" : rule.from === "hold" ? "myRules.from.hold" : "myRules.from.origin")}</span>}
+                    </div>
                   </div>
                   <span className={cn("whitespace-nowrap text-[12.5px]", rule.behavior === "deny" ? "text-danger" : rule.behavior === "allow" ? "text-success" : "text-ink-secondary")}>
                     {t(rule.behavior === "allow" ? "botPanel.rules.allow" : rule.behavior === "deny" ? "botPanel.rules.deny" : "botPanel.rules.ask")}

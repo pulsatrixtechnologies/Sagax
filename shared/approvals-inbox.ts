@@ -50,6 +50,10 @@ export interface InboxApproval {
   needsKey?: boolean;
   /** may be answered in a bulk Allow or Deny, or why not */
   bulk: true | InboxBulkRefusal;
+  /** 2026-10-19 (JC: "Toujours permettre" in bulk too): what Always allow
+   * would keep for this card, in plain words (the card's own scope), when
+   * a bulk Always allow may keep it. */
+  alwaysRule?: string;
   confidential?: boolean;
   destination?: InboxDestination;
   /** The card's message, exactly as the conversation shows it to the

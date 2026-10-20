@@ -22,7 +22,7 @@ let server: Server;
 let base = "";
 let pending: InboxApproval[] = [];
 let person: string | null = "pr_ada";
-let answered: Array<{ requestId: string; decision: string }> = [];
+let answered: Array<{ requestId: string; decision: string; rule?: string }> = [];
 let historyCalls = 0;
 
 beforeEach(async () => {
@@ -38,8 +38,8 @@ beforeEach(async () => {
       return [{ at: "2026-10-19T12:00:00.000Z", decision: "allow", who: "Ada", botName: "Nova", threadId: "t1" }];
     },
     scopes: () => ({ org: false, team: false }),
-    answer: async (_auth, item, decision) => {
-      answered.push({ requestId: item.requestId, decision });
+    answer: async (_auth, item, decision, rule) => {
+      answered.push({ requestId: item.requestId, decision, ...(rule ? { rule } : {}) });
       pending = pending.filter((row) => row.requestId !== item.requestId);
       return { ok: true };
     },
@@ -110,13 +110,22 @@ describe("POST /api/approvals/bulk", () => {
     expect(answered).toEqual([{ requestId: "k1", decision: "deny" }]);
   });
 
-  it("refuses anything that would remember a grant, whole", async () => {
-    for (const extra of [{ always: true }, { rule: "allow" }, { rememberCommand: true }, { alwaysAllow: { botId: "b1", key: "Bash" } }, { stepUp: "x" }]) {
+  it("refuses anything that would remember a grant, whole, but each card's own Always allow", async () => {
+    for (const extra of [{ always: true }, { rule: "deny" }, { rememberCommand: true }, { alwaysAllow: { botId: "b1", key: "Bash" } }, { stepUp: "x" }]) {
       const out = await post({ decision: "allow", items: [{ threadId: "t1", requestId: "r1" }], ...extra });
       expect(out.status).toBe(400);
       expect(out.body.code).toBe("bulk_once_only");
     }
     expect(answered).toEqual([]);
+  });
+
+  it("2026-10-19: a bulk Always allow passes rule allow to each card's answer, never with a Deny", async () => {
+    const denied = await post({ decision: "deny", items: [{ threadId: "t1", requestId: "r1" }], rule: "allow" });
+    expect(denied.status).toBe(400);
+    expect(answered).toEqual([]);
+    const out = await post({ decision: "allow", items: [{ threadId: "t1", requestId: "r1" }, { threadId: "t1", requestId: "r2" }], rule: "allow" });
+    expect(out.status).toBe(200);
+    expect(answered).toEqual([{ requestId: "r1", decision: "allow", rule: "allow" }, { requestId: "r2", decision: "allow", rule: "allow" }]);
   });
 
   it("refuses a malformed or oversized request", async () => {

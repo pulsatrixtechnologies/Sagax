@@ -152,6 +152,10 @@ export type AutoVerdictSource =
   | "owner-auto"
   | "owner-bypass"
   | "owner-rule-deny"
+  /** 2026-10-19 (JC: "Toujours permettre" on every card): an allow rule an
+   * organization admin (or a holder of host.commands, for their own bot)
+   * saved on an admin card of a member's bot; checked again at each use. */
+  | "admin-rule"
   /** 2026-10-16 (custom auto-review rules, shared/custom-rules.ts): the
    * person's own words allowed it, held it for a card, or refused it. */
   | "custom-rule"

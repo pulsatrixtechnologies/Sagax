@@ -48,6 +48,7 @@ import { DefaultBotSettings } from "./NewBotDialog";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
 import { ImportSettings } from "./settings/ImportSettings";
 import { SecurityKeySettings } from "./SecurityKeySettings";
+import { MyApprovalRules } from "./settings/MyApprovalRules";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
@@ -834,7 +835,13 @@ export function SettingsModal() {
             {section === "backups" && <WorkspaceBackupSettings />}
             {section === "import" && <ImportSettings />}
 
-            {section === "security" && <SecurityKeySettings />}
+            {section === "security" && (
+              <>
+                <SecurityKeySettings />
+                {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
+                <MyApprovalRules />
+              </>
+            )}
 
             {section === "computer" && <LocalComputerSection />}
 

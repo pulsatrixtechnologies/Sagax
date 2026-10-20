@@ -21,6 +21,7 @@ import { reviewedSkillSha256 } from "../../shared/skill-request";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { CustomRuleNoticeLine } from "./CustomRuleNotice";
 import { shellProgram } from "../../shared/custom-rules";
+import { alwaysDenyOffered } from "../../shared/approval-rule-card";
 import { CustomRuleForm, customRuleError } from "./bot-settings/CustomRulesCard";
 
 interface ApprovalLabels {
@@ -333,7 +334,13 @@ export function PendingApprovalActions({
   const durableRequest = isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup;
   // 2026-10-14: the owner's own rule this card can remember (Always allow /
   // Always deny), which replaces the older per-bot grants on the card.
-  const ownerRule = !durableRequest && !pending.message.card?.adminApproval ? pending.message.card?.ownerRule : undefined;
+  // 2026-10-19 (JC: "Toujours permettre" on every card): an admin's card
+  // offers it too, to the admin who answers it (Always allow only).
+  const ownerRule = pending.message.card?.ownerRule;
+  // Always deny is a rule of the engine's own tool calls; an admin's card,
+  // an act, a widget's change, a send, a held action or a proposal keeps
+  // Always allow only (shared/approval-rule-card.ts)
+  const strictRule = ownerRule ? !alwaysDenyOffered(pending.message.card!) : false;
   const canRememberCommand = ownerOrAdmin === true && !durableRequest && !ownerRule && !pending.allowKey && Boolean(pending.commandAllowlist);
   const reviewedSha256 = pending.message.card?.skillRequest
     ? reviewedSkillSha256(pending.message.card.skillRequest)
@@ -393,7 +400,7 @@ export function PendingApprovalActions({
   const denyLabel = isSuggestion ? t("approval.action.notNow") : isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny");
   const widening = (
     <>
-      {ownerRule && (
+      {ownerRule && !strictRule && (
         <button
           type="button"
           onClick={() => decide("deny", false, false, "deny")}
@@ -414,6 +421,12 @@ export function PendingApprovalActions({
         >
           {t("approval.action.alwaysAllow")}
         </button>
+      )}
+      {ownerRule && (
+        // the exact scope "Always allow" keeps, readable on the card itself
+        <p className="order-last w-full basis-full text-[12px] leading-[17px] text-ink-secondary" data-always-scope={ownerRule.from ?? "owner"}>
+          {t("approval.always.scopeLine", { name: bot?.name ?? t("approval.someone"), rule: ownerRule.description })}
+        </p>
       )}
       {!ownerRule && !durableRequest && bot && pending.allowKey && (
         <button

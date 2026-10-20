@@ -854,7 +854,13 @@ export interface OptionCardData {
   /** 2026-10-14 (bot owner permissions): the rule "Always allow" or
    * "Always deny" would save for the bot's owner: the tool, its target
    * read from the arguments, the destructive kind and plain words. */
-  ownerRule?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string };
+  ownerRule?: {
+    tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string;
+    /** 2026-10-19 (JC: "Toujours permettre" on every card): the card's
+     * situation the rule also answers (server/owner-approval.ts `from`):
+     * an admin's card, a held card, a turn that is not the person's own. */
+    from?: "admin" | "hold" | "origin";
+  };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule (an allowKey) the person saved when answering this card:

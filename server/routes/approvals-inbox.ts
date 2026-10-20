@@ -7,8 +7,9 @@
 // The list and the answers come from server/index.ts (deps below): the same
 // cards, owners, refusals and security-key gate as answering one card in a
 // conversation. A bulk answer is a plain Allow once or Deny, nothing more:
-// a body that tries to remember anything (always, a rule, a command, a
-// step-up) is refused whole, and the server decides again, card by card,
+// a body that tries to remember anything else (always, a command, a
+// step-up) is refused whole; `rule: "allow"` keeps each card's own Always
+// allow (2026-10-19), and the server decides again, card by card,
 // which ones a bulk answer may cover (bulkPlan): never a question, a
 // proposal, a card in a confidential thread, a card someone else answers,
 // nor an Allow that needs a security key.
@@ -40,8 +41,9 @@ export interface ApprovalsInboxDeps {
   pending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[];
   history(auth: RequestAuth, viewer: InboxViewer): InboxPayload["history"];
   scopes(auth: RequestAuth, viewer: InboxViewer): InboxPayload["scopes"];
-  /** Answer one card once, allow or deny, as this person. */
-  answer(auth: RequestAuth, item: { threadId: string; requestId: string }, decision: "allow" | "deny"): Promise<InboxAnswer>;
+  /** Answer one card, allow or deny, as this person; `rule` "allow" also
+   * keeps that card's own Always allow (its exact scope). */
+  answer(auth: RequestAuth, item: { threadId: string; requestId: string }, decision: "allow" | "deny", rule?: "allow"): Promise<InboxAnswer>;
 }
 
 /** A card answered on its own only, never in a bulk answer: a send in the
@@ -56,8 +58,10 @@ export function inboxSpecialCard(card: OptionCardData): boolean {
     || approvalTypeOf(card) !== "tool" || liveDecisionRefusal(card));
 }
 
-/** Fields a single card's answer may carry and a bulk answer never does. */
-const WIDENING_FIELDS = ["always", "alwaysAllow", "rememberCommand", "rule", "stepUp", "message", "autoApprove", "refreshPermissions"] as const;
+/** Fields a single card's answer may carry and a bulk answer never does.
+ * 2026-10-19 (JC): `rule: "allow"` is the one widening a bulk Allow takes:
+ * each card keeps its own Always allow, its exact scope, never a wider one. */
+const WIDENING_FIELDS = ["always", "alwaysAllow", "rememberCommand", "stepUp", "message", "autoApprove", "refreshPermissions"] as const;
 const ID = /^[\w-]{1,120}$/;
 const REQUEST_ID = /^[\w:.-]{1,200}$/;
 
@@ -86,11 +90,15 @@ export function createApprovalsInboxRoutes(deps: ApprovalsInboxDeps): RouteHandl
     const body = await readBody(req);
     if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
     const record = body as Record<string, unknown>;
-    // never "always" in bulk: anything that widens a grant is one card at a time
+    // never "always" in bulk but each card's own Always allow (rule), which keeps that card's exact scope
     const widening = WIDENING_FIELDS.find((field) => record[field] !== undefined);
     if (widening) return json(res, 400, { error: `A bulk answer is Allow once or Deny only (${widening} is answered one card at a time).`, code: "bulk_once_only" });
     const decision = record.decision;
     if (decision !== "allow" && decision !== "deny") return json(res, 400, { error: "decision must be allow or deny" });
+    if (record.rule !== undefined && !(record.rule === "allow" && decision === "allow")) {
+      return json(res, 400, { error: "A bulk answer keeps Always allow only, with Allow.", code: "bulk_once_only" });
+    }
+    const rule = record.rule === "allow" ? "allow" as const : undefined;
     const items = record.items;
     if (!Array.isArray(items) || items.length === 0) return json(res, 400, { error: "items must list at least one approval" });
     if (items.length > INBOX_BULK_MAX) return json(res, 400, { error: `At most ${INBOX_BULK_MAX} approvals at once.` });
@@ -121,7 +129,7 @@ export function createApprovalsInboxRoutes(deps: ApprovalsInboxDeps): RouteHandl
     // One after the other, never in parallel: each answer settles its card
     // (and may resume a turn) before the next one is looked at.
     for (const entry of plan.answered) {
-      const answer = await deps.answer(auth, { threadId: entry.threadId, requestId: entry.requestId }, decision);
+      const answer = await deps.answer(auth, { threadId: entry.threadId, requestId: entry.requestId }, decision, rule);
       results.push(answer.ok ? { key: entry.key, ok: true } : { key: entry.key, ok: false, code: answer.code, message: answer.message });
     }
     const answered = results.filter((result) => result.ok).length;

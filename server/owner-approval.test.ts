@@ -9,7 +9,9 @@ import {
   normalizeRuleTool,
   ownerDecision,
   ruleCandidateFor,
+  ruleCoversExactScope,
   ruleScopeFor,
+  scopeKeepable,
   type OwnerRule,
   type RuleCall,
 } from "./owner-approval.ts";
@@ -190,6 +192,80 @@ describe("modes", () => {
       expect(ownerDecision({ mode, rules: [rule({ scope: {} })], call: call(ticketUpdate), adminRoute: true })).toEqual({ kind: "card", reason: "admin" });
       expect(ownerDecision({ mode, rules: [rule({ scope: {} })], call: call(ticketUpdate), personMustAnswer: true })).toEqual({ kind: "card", reason: "hold" });
     }
+  });
+});
+
+describe("2026-10-19: Toujours permettre on every card", () => {
+  const SHELL = "mcp__sagax-desktop__run_command";
+  const shell = (command: string) => JSON.stringify({ command });
+  const shellRule = (command: string, over: Partial<OwnerRule> = {}): OwnerRule => {
+    const candidate = ruleCandidateFor({ tool: SHELL, input: shell(command) });
+    return { id: "s1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description, createdAt: 1, updatedAt: 1, ...over };
+  };
+  it("a shell line is its exact text, a path its exact path, case included", () => {
+    expect(ruleScopeFor(shell("npm test"))).toEqual({ command: "npm test" });
+    const saved = shellRule("npm test");
+    expect(matchOwnerRule([saved], { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell("npm test") })?.id).toBe("s1");
+    for (const other of ["npm test; rm -rf ~", "npm  test", "NPM TEST", "npm test && curl x", "npm"]) {
+      expect(matchOwnerRule([saved], { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell(other) })).toBeUndefined();
+    }
+    // an argv array is one line
+    expect(ruleScopeFor(JSON.stringify({ command: ["git", "status"] }))).toEqual({ command: "git status" });
+    expect(ruleScopeFor(JSON.stringify({ file_path: "/Users/a/Notes.md" }))).toEqual({ file_path: "/Users/a/Notes.md" });
+    const notes = { ...shellRule("x"), tool: "Write", scope: { file_path: "/Users/a/Notes.md" } };
+    expect(matchOwnerRule([notes], { ownerId: ALICE, botId: "bot-a", tool: "Write", input: JSON.stringify({ file_path: "/users/a/notes.md" }) })).toBeUndefined();
+  });
+  it("a native shell line is bound to its folder; a folder Sagax made for the bot by its kind", () => {
+    const bash = (cwd: string) => ({ ownerId: ALICE, botId: "bot-a", tool: "Bash", input: JSON.stringify({ command: "./deploy.sh" }), cwd });
+    const made = "/data/task-workspaces/0b9f6a52-8a4e-4a8b-9d55-5f0f4b8b1c11/1f2e3d4c-5b6a-4789-8abc-def012345678";
+    const other = "/data/task-workspaces/0b9f6a52-8a4e-4a8b-9d55-5f0f4b8b1c11/9a8b7c6d-5e4f-4321-8abc-def012345678";
+    const candidate = ruleCandidateFor(bash(made));
+    expect(candidate.scope).toEqual({ command: "./deploy.sh", cwd: "sagax:conversation" });
+    expect(candidate.description).not.toMatch(/sagax:|0b9f6a52/);
+    const saved: OwnerRule = { id: "c1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description, createdAt: 1, updatedAt: 1 };
+    expect(matchOwnerRule([saved], bash(other))?.id).toBe("c1");
+    expect(matchOwnerRule([saved], bash("/srv/elsewhere"))).toBeUndefined();
+    const elsewhere = ruleCandidateFor(bash("/srv/app"));
+    expect(elsewhere.scope).toEqual({ command: "./deploy.sh", cwd: "/srv/app" });
+    expect(matchOwnerRule([{ ...saved, scope: elsewhere.scope }], bash("/srv/app2"))).toBeUndefined();
+  });
+  it("a value too long to keep makes no rule, never a wider one", () => {
+    const long = ruleScopeFor(shell("x".repeat(5_000)));
+    expect(scopeKeepable(long)).toBe(false);
+    expect(matchOwnerRule([shellRule("npm test", { scope: {} })], { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell("x".repeat(5_000)) })?.id).toBe("s1");
+    expect(matchOwnerRule([shellRule("npm test", { scope: { command: "x" } })], { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell("x".repeat(5_000)) })).toBeUndefined();
+  });
+  it("a held card and a turn that is not the person's own: only a rule saved from that kind of card", () => {
+    const shellCall = { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell("npm test") };
+    for (const mode of ["approval", "auto", "bypass"] as const) {
+      expect(ownerDecision({ mode, rules: [shellRule("npm test")], call: shellCall, personMustAnswer: true })).toEqual({ kind: "card", reason: "hold" });
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "hold" })], call: shellCall, personMustAnswer: true })).toMatchObject({ kind: "allow", source: "owner-rule" });
+      expect(ownerDecision({ mode, rules: [shellRule("npm test")], call: shellCall, autonomyRefused: true })).toEqual({ kind: "card", reason: "origin" });
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "origin" })], call: shellCall, autonomyRefused: true })).toMatchObject({ kind: "allow", source: "owner-rule" });
+      // a hold rule never answers an origin card, nor the reverse
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "hold" })], call: shellCall, autonomyRefused: true }).kind).toBe("card");
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "origin" })], call: shellCall, personMustAnswer: true }).kind).toBe("card");
+      // a security key the person chose still asks, whatever the rule
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "hold" })], call: shellCall, personMustAnswer: true, stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "origin" })], call: shellCall, autonomyRefused: true, stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+      // someone else's environment: no rule of anyone
+      expect(ownerDecision({ mode, rules: [shellRule("npm test", { from: "origin" })], call: shellCall, crossPerson: true })).toEqual({ kind: "card", reason: "cross-person" });
+    }
+    // a deny rule still denies a held card
+    expect(ownerDecision({ mode: "approval", rules: [shellRule("npm test", { behavior: "deny" })], call: shellCall, personMustAnswer: true })).toMatchObject({ kind: "deny" });
+  });
+  it("a rule of one person never answers another's call", () => {
+    const shellCall = { ownerId: BOB, botId: "bot-a", tool: SHELL, input: shell("npm test") };
+    expect(ownerDecision({ mode: "approval", rules: [shellRule("npm test", { from: "origin" })], call: shellCall, autonomyRefused: true }).kind).toBe("card");
+  });
+  it("an act or widget rule covers the very same scope, key for key", () => {
+    const act = { ...rule(), tool: "sagax_settings", scope: { setting: "bot.theme", target: "b1" } };
+    expect(ruleCoversExactScope(act, "sagax_settings", { setting: "bot.theme", target: "b1" })).toBe(true);
+    expect(ruleCoversExactScope(act, "sagax_settings", { setting: "bot.theme", target: "b2" })).toBe(false);
+    // a change bound to its value is never covered by a rule without one
+    expect(ruleCoversExactScope(act, "sagax_settings", { setting: "bot.theme", target: "b1", value: "abc" })).toBe(false);
+    expect(ruleCoversExactScope({ ...act, behavior: "deny" }, "sagax_settings", { setting: "bot.theme", target: "b1" })).toBe(false);
+    expect(ruleCoversExactScope(act, "sagax_act", { setting: "bot.theme", target: "b1" })).toBe(false);
   });
 });
 
