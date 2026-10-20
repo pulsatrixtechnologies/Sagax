@@ -36,7 +36,7 @@ export type SettingsActionDeps = {
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
   /** `quote` (2026-10-20): the person asked their own Primary Bot for this
    * change in this turn's message; true, or why not. */
-  personAsked?: (input: SettingsActionInput, quote: unknown) => { message: string } | string;
+  personAsked?: (input: SettingsActionInput, quote: unknown) => { message: string; primary?: { botId: string; botName: string; messageId: string } } | string;
   /** A rule's own words (its when, its description), for the person's
    * message to name it; undefined when it is not theirs. */
   ruleText?: (person: string | null, kind: "custom" | "owner", id: string) => string | undefined;
@@ -340,6 +340,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         rule,
         // 2026-10-20 (security review): rules and permissions keep their card
         ...(classes.includes("rule-change") || spec.family === "rules" ? { noRule: true } : {}),
+        // 2026-10-20: the person's own request, so the route takes the
+        // change as theirs (a level of a bot that is working included)
+        ...(asked === true && typeof proof === "object" && proof.primary ? { primary: proof.primary } : {}),
         onDone: (how) => deps.audit({ key: spec.key, ...(ids.target ? { target: ids.target } : {}), value, secret, how, botId: input.botId, actor: speaker }),
       },
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
@@ -348,7 +351,9 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       return text(200, `${String(result.body.text ?? "")} ${HOLD_TEXT[decided.reason]}${typeof asked === "string" ? ` (quote: ${asked})` : ""}`.trim());
     }
     if (result.status >= 400) return result;
-    return text(200, `Done: ${spec.label} changed.`);
+    // a level changed for the speaking bot while it answers: its next turn
+    const nextTurn = approvalTo && subjectBot === input.botId ? " It applies from the person's next message." : "";
+    return text(200, `Done: ${spec.label} changed.${nextTurn}`);
   }
 
   return { handle };

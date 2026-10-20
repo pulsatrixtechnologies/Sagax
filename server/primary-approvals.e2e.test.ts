@@ -14,6 +14,9 @@
 //   cards off  "mets Katarina en auto": sagax_settings with the quote runs at
 //              once from a Primary Bot at Ask (no card); Katarina's next call
 //              shows no card. Without the quote it waits on a card.
+//   latest     (JC 2026-10-20) two cards of a confidential thread wait; a long
+//              "oui, vas-y" naming none answers the latest one, listed and
+//              answered without its words; the older one still waits
 import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { connect, type Socket } from "node:net";
@@ -145,14 +148,15 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     expect(always.status, JSON.stringify(always.body)).toBe(200);
     await expect.poll(() => later.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     const rules = (await api("GET", "/api/approval-rules")).rules as any[];
-    expect(rules.find((row) => row.botId === katarina.id && row.scope?.command === "printf primary-later")).toMatchObject({ behavior: "allow" });
+    // the card's own Always allow: the program, as the click keeps it
+    expect(rules.find((row) => row.botId === katarina.id && row.scope?.program === "printf")).toMatchObject({ behavior: "allow" });
     const again = await ask(kat.socket, "printf primary-later");
     await expect.poll(() => again.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     expect(await card(again.id)).toBeUndefined();
     await stop(cryptic.id, cryptic.threadId);
 
     // ── cancel: Katarina's turn stops ───────────────────────────────────
-    const doomed = await ask(kat.socket, "printf primary-doomed");
+    const doomed = await ask(kat.socket, "echo primary-doomed");
     await shown(doomed.id);
     main = await turn(cryptic.id, cryptic.threadId, "Annule la carte de Katarina.");
     const doomedRef = /card (c[0-9a-f]{7})/.exec((await approvals(main.comms, { action: "list" })).body.text)?.[1];
@@ -168,7 +172,7 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     let own = await turn(katarina.id, katarina.threadId, "Rename yourself.");
     expect((await settings(own.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Night shift" })).body.text).toContain("Approval needed.");
     await stop(katarina.id, katarina.threadId);
-    main = await turn(cryptic.id, cryptic.threadId, "Mets Katarina en auto et retire la règle printf primary-later, je ne veux plus de cartes.");
+    main = await turn(cryptic.id, cryptic.threadId, "Mets Katarina en auto et retire la règle printf de la conversation, je ne veux plus de cartes.");
     const held = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: katarina.id, value: "auto" });
     expect(held.body.text, JSON.stringify(held.body)).toContain("Approval needed.");
     const off = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: katarina.id, value: "auto", quote: "Mets Katarina en auto" });
@@ -184,13 +188,38 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     expect(forged.body.text, JSON.stringify(forged.body)).toContain("Approval needed.");
     // the person's Always allow rule removed on request (their message
     // names it), without a card
-    const removed = await settings(main.comms, { action: "set", key: "rules.ownerDelete", target: rules.find((row) => row.botId === katarina.id).id, value: true, quote: "retire la règle printf primary-later" });
+    const removed = await settings(main.comms, { action: "set", key: "rules.ownerDelete", target: rules.find((row) => row.botId === katarina.id).id, value: true, quote: "retire la règle printf de la conversation" });
     expect(removed.body.text, JSON.stringify(removed.body)).toMatch(/^Done/);
     expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.botId === katarina.id)).toBe(false);
     await stop(cryptic.id, cryptic.threadId);
     // Katarina's next change shows no card
     own = await turn(katarina.id, katarina.threadId, "Rename yourself.");
     expect((await settings(own.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Night shift" })).body.text).toMatch(/^Done/);
+    await stop(katarina.id, katarina.threadId);
+
+    // ── latest: a bare yes in a long message, a confidential thread ────
+    await api("PATCH", `/api/bots/${helper.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${helper.id}/tasks/${helper.threadId}`, { approvalMode: "ask", confidential: true, confirmConfidential: true });
+    const helperCard = async (id: string) =>
+      (await api("GET", `/api/threads/${helper.threadId}/messages?limit=200`)).messages.find((message: any) => message.card?.requestId === id)?.card;
+    const hush = await turn(helper.id, helper.threadId, "Run the secret checks.");
+    const older = await ask(hush.socket, "printf secret-older");
+    await expect.poll(async () => Boolean(await helperCard(older.id)), { timeout: 15_000 }).toBe(true);
+    const newer = await ask(hush.socket, "printf secret-newer");
+    await expect.poll(async () => Boolean(await helperCard(newer.id)), { timeout: 15_000 }).toBe(true);
+    main = await turn(cryptic.id, cryptic.threadId, "Oui, vas-y, je te fais confiance pour celle qui attend en ce moment.");
+    const hidden = await approvals(main.comms, { action: "list" });
+    expect(hidden.body.text, JSON.stringify(hidden.body)).toContain("confidential conversation");
+    expect(hidden.body.text).not.toContain("secret-");
+    const yes = await approvals(main.comms, { action: "answer", decision: "allow", quote: "Oui, vas-y" });
+    expect(yes.status, JSON.stringify(yes.body)).toBe(200);
+    expect(yes.body.text).toContain("Helper's card in a confidential conversation");
+    expect(yes.body.text).not.toContain("secret-");
+    await expect.poll(() => newer.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
+    expect(older.answer()).toBeUndefined();
+    expect((await helperCard(newer.id)).answeredBy).toMatchObject({ via: "primary-bot", bot: "Cryptic" });
+    await stop(cryptic.id, cryptic.threadId);
+    await stop(helper.id, helper.threadId);
   } finally {
     for (const socket of sockets) socket.destroy();
     await fixture.close();

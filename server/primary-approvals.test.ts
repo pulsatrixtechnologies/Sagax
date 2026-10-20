@@ -86,12 +86,35 @@ describe("sagax_approvals", () => {
     expect(audits).toEqual(["cancel"]);
   });
 
-  it("a long message names the card even alone, and a bot's name covers one card of it only (security review)", async () => {
-    const long = harness([card()], { ...TURN, message: { ...TURN.message, text: "Valide mon courriel au client puis confirme-moi l'heure de la réunion." } });
-    expect((await long.run({ action: "answer", decision: "allow", quote: "Valide mon courriel" })).body.code).toBe("card_not_named");
-    const twice = harness([card(), card({ requestId: "r2" })], { ...TURN, message: { ...TURN.message, text: "Katarina, approuve." } });
+  it("a bare yes in a long message answers the latest card and says which (JC 2026-10-20)", async () => {
+    const long = harness([card()], { ...TURN, message: { ...TURN.message, text: "Oui vas-y, je te fais confiance, approuve celle qui attend depuis tantôt." } });
+    const answered = await long.run({ action: "answer", decision: "allow", quote: "Oui vas-y" });
+    expect(answered.status).toBe(200);
+    expect(String(answered.body.text)).toContain("Allow Katarina to run a command?");
+    expect(long.calls).toEqual([{ kind: "respond", body: { behavior: "allow" } }]);
+    // a refusal is still a refusal, whatever the length
+    const no = harness([card()], { ...TURN, message: { ...TURN.message, text: "Non, ne l'approuve pas, je veux d'abord relire la commande au complet." } });
+    expect((await no.run({ action: "answer", decision: "allow", quote: "l'approuve pas" })).body.code).toBe("negated");
+    expect(no.calls).toEqual([]);
+  });
+
+  it("a yes for an older card that the message does not name is refused; a bot's name covers one card of it only", async () => {
+    const twice = harness([card(), card({ requestId: "r2", at: 1_500 })], { ...TURN, message: { ...TURN.message, text: "Katarina, approuve." } });
     expect((await twice.run({ action: "answer", card: cardRef("t-kat", "r1"), decision: "allow", quote: "approuve" })).body.code).toBe("card_not_named");
-    expect([...long.calls, ...twice.calls]).toEqual([]);
+    expect(twice.calls).toEqual([]);
+    expect((await twice.run({ action: "answer", card: cardRef("t-kat", "r2"), decision: "allow", quote: "approuve" })).status).toBe(200);
+  });
+
+  it("lists and answers a confidential thread's card without its words", async () => {
+    const secret = card({ confidential: true, line: "cat secret-plan.md", title: "Allow Katarina to read secret-plan.md?" });
+    const { run, calls } = harness([secret], { ...TURN, message: { ...TURN.message, text: "oui" } });
+    const listed = String((await run({ action: "list" })).body.text);
+    expect(listed).toContain("confidential conversation");
+    expect(listed).not.toContain("secret-plan");
+    const answered = await run({ action: "answer", decision: "allow", quote: "oui" });
+    expect(answered.status).toBe(200);
+    expect(String(answered.body.text)).not.toContain("secret-plan");
+    expect(calls).toEqual([{ kind: "respond", body: { behavior: "allow" } }]);
   });
 
   it("answers a question with the person's own words only", async () => {
@@ -108,11 +131,15 @@ describe("sagax_approvals", () => {
     expect(calls).toEqual([{ kind: "rule" }, { kind: "respond", body: { behavior: "allow" } }]);
   });
 
-  it("asks which card when several wait, binds a yes to the named card, and refuses an option the card lacks", async () => {
-    const { run } = harness([card(), card({ requestId: "r2", options: ["allow", "deny"] })]);
-    expect((await run({ action: "answer", decision: "allow", quote: "approuve-la" })).body.code).toBe("card_required");
-    // the message names no bot: a yes for one of several cards is refused
-    const other = harness([card(), card({ requestId: "r2", botName: "Helper" })], { ...TURN, message: { ...TURN.message, text: "Oui vas-y, approuve-la." } });
+  it("several cards: a yes naming none answers the latest the person saw, a named one its own; refuses an option the card lacks", async () => {
+    const latest = harness([card({ at: 1_200 }), card({ requestId: "r2", botName: "Helper", at: 1_800 }), card({ requestId: "r3", botName: "Late", at: 2_500 })]);
+    const yes = await latest.run({ action: "answer", decision: "allow", quote: "approuve-la" });
+    expect(yes.status).toBe(200);
+    // r2: r3 came after the person spoke
+    expect(String(yes.body.text)).toContain("from Helper");
+    expect(latest.calls).toEqual([{ kind: "respond", body: { behavior: "allow" } }]);
+    // the message names no bot: a yes for an older one of several cards is refused
+    const other = harness([card(), card({ requestId: "r2", botName: "Helper", at: 1_500 })], { ...TURN, message: { ...TURN.message, text: "Oui vas-y, approuve-la." } });
     expect((await other.run({ action: "answer", card: cardRef("t-kat", "r1"), decision: "allow", quote: "approuve-la" })).body.code).toBe("card_not_named");
     expect(other.calls).toEqual([]);
     const named = harness([card(), card({ requestId: "r2", botName: "Helper" })], { ...TURN, message: { ...TURN.message, text: "Oui, approuve celle de Katarina." } });
@@ -123,13 +150,14 @@ describe("sagax_approvals", () => {
 });
 
 describe("primaryAnswerable", () => {
-  it("keeps the person's own cards and an admin's card they decide, never a teammate's or a confidential one", () => {
+  it("keeps the person's own cards (their confidential threads' too) and an admin's card they decide, never a teammate's", () => {
     expect(primaryAnswerable({ decidable: true, scope: "mine" })).toBe(true);
     expect(primaryAnswerable({ decidable: true, scope: "org" })).toBe(true);
     // another member's card a team manager watches
     expect(primaryAnswerable({ decidable: false, scope: "team" })).toBe(false);
     // an admin's card the member only waits on
     expect(primaryAnswerable({ decidable: false, scope: "org" })).toBe(false);
-    expect(primaryAnswerable({ decidable: true, scope: "mine", confidential: true })).toBe(false);
+    // 2026-10-20 (JC): the person's own confidential thread's card is theirs
+    expect(primaryAnswerable({ decidable: true, scope: "mine", confidential: true } as { decidable: boolean; scope: string })).toBe(true);
   });
 });

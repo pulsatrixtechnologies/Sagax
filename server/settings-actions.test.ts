@@ -8,13 +8,13 @@ import { createSettingsActions, settingStepUpClasses, type SettingsActionDeps } 
 const PERSON: TurnFacts = { automation: false, guest: false, requestUsable: true, senderUnproven: false, provenPerson: "pr_owner", sharedServer: true };
 
 function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "full"; facts?: TurnFacts; routeStatus?: number; answer?: unknown } = {}) {
-  const planned: Array<{ effect: string; path: string; method: string; body?: unknown; stepUpClasses: readonly string[] }> = [];
+  const planned: Array<{ effect: string; path: string; method: string; body?: unknown; stepUpClasses: readonly string[]; primary?: unknown }> = [];
   const audits: unknown[] = [];
   const screens: unknown[] = [];
   const acts = {
     async handlePlanned(input: Parameters<BotActService["handlePlanned"]>[0]) {
       const target = input.target.kind === "route" ? input.target : { method: "UI", path: `ui:${input.target.command}`, body: input.target.input };
-      planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses });
+      planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses, ...(input.plan.primary ? { primary: input.plan.primary } : {}) });
       if (target.method === "GET") return { status: 200, body: { text: JSON.stringify(over.answer ?? {}) } };
       if (input.plan.effect === "hold") return { status: 200, body: { held: true, text: "Approval needed." } };
       const status = over.routeStatus ?? 200;
@@ -43,6 +43,19 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
 }
 
 describe("sagax_settings", () => {
+  it("Full on the person's own request runs at once and says so to the route (JC 2026-10-20), even for the speaking bot", async () => {
+    const primary = { botId: "b1", botName: "Scout", messageId: "m1" };
+    const h = harness({ mode: "ask", personAsked: () => ({ message: "Mets-toi en Full.", primary }) });
+    const done = await h.call({ action: "set", key: "bot.approvalMode", value: "full", quote: "Mets-toi en Full" });
+    expect(String(done.body.text)).toMatch(/^Done.*next message/);
+    expect(h.planned).toMatchObject([{ effect: "run", method: "PATCH", path: "/api/bots/b1", body: { approvalMode: "full", confirmFullAccess: true }, primary }]);
+    // without the person's words: the card, and no marker
+    const card = harness({ mode: "ask" });
+    await card.call({ action: "set", key: "bot.approvalMode", value: "full" });
+    expect(card.planned[0]).toMatchObject({ effect: "hold" });
+    expect(card.planned[0]!.primary).toBeUndefined();
+  });
+
   it("applies the owner's own bot setting at Approve for me, without a card, and records it", async () => {
     const h = harness();
     const result = await h.call({ action: "set", key: "bot.approvalMode", target: "b2", value: "auto" });

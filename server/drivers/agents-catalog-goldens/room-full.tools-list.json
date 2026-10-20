@@ -690,7 +690,7 @@
           "card": {
             "type": "string",
             "maxLength": 20,
-            "description": "From list; optional when one waits."
+            "description": "From list; omit for the latest."
           },
           "decision": {
             "type": "string",

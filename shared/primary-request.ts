@@ -42,8 +42,9 @@ const WORDS: Readonly<Record<Exclude<PrimaryIntent, "answer">, readonly string[]
 };
 
 /** Words that say yes or no without saying to what ("oui", "ok", "go"):
- * they count only in a short reply, never picked out of a longer message
- * ("ok, résume ce courriel"). */
+ * for a setting they count only in a short reply, never picked out of a
+ * longer message ("ok, résume ce courriel"). A card's answer takes them in
+ * any message (`anyLength`, JC 2026-10-20: "oui" answers the latest card). */
 const WEAK: Readonly<Partial<Record<PrimaryIntent, readonly string[]>>> = {
   allow: ["oui", "ok", "okay", "go", "vas y", "d'accord", "dac", "fais le", "fais la", "lance", "roule", "laisse la", "yes", "yep", "sure", "go ahead", "do it", "proceed"],
   deny: ["non", "no", "nope"],
@@ -69,7 +70,7 @@ function hasWord(normalized: string, words: readonly string[]): boolean {
 export type QuoteCheck = { ok: true } | { ok: false; code: "no_quote" | "not_their_words" | "not_asked" | "negated"; reason: string };
 
 /** Whether `quote` is in the person's message and asks for `intent`. */
-export function checkPersonQuote(input: { quote: unknown; message: string; intent: PrimaryIntent }): QuoteCheck {
+export function checkPersonQuote(input: { quote: unknown; message: string; intent: PrimaryIntent; anyLength?: boolean }): QuoteCheck {
   const raw = typeof input.quote === "string" ? input.quote.trim() : "";
   if (raw.length < 2 || raw.length > 600) {
     return { ok: false, code: "no_quote", reason: "Pass quote: the person's own words, copied from their message, that ask for this." };
@@ -86,7 +87,7 @@ export function checkPersonQuote(input: { quote: unknown; message: string; inten
   if (!hasWord(quote, wanted)) return notAsked;
   // a bare yes or no counts only as a short reply
   const weak = WEAK[input.intent];
-  if (weak && !hasWord(quote, wanted.filter((word) => !weak.includes(word))) && message.trim().split(" ").length > SHORT_REPLY_WORDS) return notAsked;
+  if (weak && !input.anyLength && !hasWord(quote, wanted.filter((word) => !weak.includes(word))) && message.trim().split(" ").length > SHORT_REPLY_WORDS) return notAsked;
   // the three words before the quote and the quote itself: "ne l'approuve pas"
   const before = message.slice(0, at).trim().split(" ").slice(-3).join(" ");
   const window = ` ${before} ${quote.trim()} `;

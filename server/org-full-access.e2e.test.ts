@@ -8,6 +8,10 @@
 //         refused (org_full_access_disabled); Ask still works; members may
 //         not change the policy
 //   FA-3  mode changes and Full turns are in the admin activity log
+//   FA-4  (2026-10-20, JC: "le bot principal doit pouvoir absolument tout
+//         faire") the owner asks their Primary Bot "mets Zed en Full" and
+//         also "mets-toi en Full": sagax_settings with their words turns it
+//         on at once, with their own rights; without their words it waits
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -99,7 +103,11 @@ posixOnly("organization Full access", () => {
     }), { mode: 0o640 });
     dump = join(home, "claude-dump.json");
     writeFileSync(join(data, "config.json"), JSON.stringify({
-      instances: { claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } } },
+      instances: {
+        claude: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+        // a turn that stays open, for the Primary Bot's tool calls (FA-4)
+        waiting: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_MODE: "hang" }, config: { cli: FAKE_CLAUDE, fullAuto: true } },
+      },
     }));
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
@@ -213,4 +221,45 @@ posixOnly("organization Full access", () => {
     expect(listed.status, listed.text).toBe(200);
     expect(listed.text).toContain("approval.full_access_turn");
   });
+
+  it("FA-4: the owner's Primary Bot turns Full on at their request, for another bot and for itself", async () => {
+    const created = await api("POST", "/api/bots", erin, { name: "Ivy" });
+    expect(created.status, created.text).toBe(201);
+    const ivy = created.body.bot as { id: string; threadId: string };
+    expect((await api("PATCH", `/api/bots/${ivy.id}`, erin, { modelSelection: { instanceId: "waiting", model: "fake-model" } })).status).toBe(200);
+    expect((await api("POST", `/api/bots/${ivy.id}/primary`, erin, {})).status).toBe(200);
+    const aliceId = (await api("GET", "/api/auth/session", alice)).body.principalId;
+    expect((await api("POST", `/api/bots/${ivy.id}/direct-grants`, erin, { userId: aliceId })).status).toBe(200);
+    expect((await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string }) => bot.id === zed.id).approvalMode).not.toBe("full");
+    await waitFor(async () => !(await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string; busy?: boolean }) => bot.id === zed.id)?.busy);
+    rmSync(dump, { force: true });
+    const sent = await api("POST", `/api/bots/${ivy.id}/messages`, erin, { text: "Mets Zed en Full et mets-toi en Full aussi." });
+    expect(sent.status, sent.text).toBe(202);
+    const comms = await waitFor(async () => {
+      try { return JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string; } catch { return null; }
+    }, 20_000);
+    const settings = async (args: Record<string, unknown>) => {
+      const res = await fetch(`${BASE}/api/internal/settings`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${comms}` }, body: JSON.stringify(args) });
+      return { status: res.status, body: await res.json() as any };
+    };
+    // without the person's words: their card
+    const held = await settings({ action: "set", key: "bot.approvalMode", target: zed.id, value: "full" });
+    expect(held.body.text, JSON.stringify(held.body)).toContain("Approval needed.");
+    const zedFull = await settings({ action: "set", key: "bot.approvalMode", target: zed.id, value: "full", quote: "Mets Zed en Full" });
+    expect(zedFull.body.text, JSON.stringify(zedFull.body)).toMatch(/^Done/);
+    // the stored level, as the organization's admin reads it
+    const level = async (botId: string) => (await api("GET", `/api/bots`, alice)).body.bots.find((bot: { id: string }) => bot.id === botId)?.approvalMode;
+    expect(await level(zed.id)).toBe("full");
+    // itself, while it answers: applies from its next message
+    const self = await settings({ action: "set", key: "bot.approvalMode", value: "full", quote: "mets-toi en Full" });
+    expect(self.body.text, JSON.stringify(self.body)).toMatch(/^Done/);
+    expect(auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && JSON.stringify(row.target ?? {}).includes(ivy.id))).toBe(true);
+    // and this conversation, which keeps its own level
+    const here = await settings({ action: "set", key: "thread.approvalMode", value: "full", quote: "mets-toi en Full" });
+    expect(here.body.text, JSON.stringify(here.body)).toMatch(/^Done/);
+    const mine = (await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string }) => bot.id === ivy.id);
+    // (a member's message lands in her own conversation with the bot)
+    expect(mine.tasks.map((task: { approvalMode: string }) => task.approvalMode)).toContain("full");
+    await api("POST", `/api/bots/${ivy.id}/interrupt`, erin, { threadId: ivy.threadId });
+  }, 60_000);
 });

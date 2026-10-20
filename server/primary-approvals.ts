@@ -4,8 +4,10 @@
 // absolument tout faire"). Exactly what a click does: the answer is the
 // same POST /api/threads/:id/respond (or Cancel turn's interrupt, or Always
 // allow this's custom rule) replayed with the person's own session, so every
-// check of the click applies (whose card, an admin's card, a security key,
-// a confidential thread). Three rules are this module's:
+// check of the click applies (whose card, an admin's card, a security key).
+// A card of the person's own confidential thread is theirs too (JC
+// 2026-10-20): answered like any other, its content never shown to the
+// Primary Bot. Three rules are this module's:
 // - only the person's own Primary Bot (never a teammate, another bot or a
 //   bot shared by someone else), in a turn the person started themselves;
 // - only on the person's explicit request in that turn's message, proved by
@@ -51,6 +53,8 @@ export type PrimaryCard = {
   kind: "permission" | "question" | "proposal";
   /** an Allow asks for one of the person's security keys */
   needsKey: boolean;
+  /** a card of the person's confidential thread: listed without its words */
+  confidential?: boolean;
   options: PrimaryDecision[];
   /** what Always allow keeps, in plain words */
   alwaysScope?: string;
@@ -82,10 +86,21 @@ export type PrimaryApprovalsDeps = {
 /** Which cards of the person's Approvals screen the Primary Bot may answer:
  * the ones the person answers themselves (`mine`; `org` only when they may
  * decide it, an admin's card for an admin), never one they only watch (a
- * teammate's, an admin's for a member) and never a confidential thread's
- * (answered by its owner in Sagax only). */
-export function primaryAnswerable(item: { decidable: boolean; confidential?: boolean; scope: string }): boolean {
-  return item.decidable && item.confidential !== true && (item.scope === "mine" || item.scope === "org");
+ * teammate's, an admin's for a member). Their own confidential thread's
+ * cards included (JC 2026-10-20): the screen lists those to its owner only. */
+export function primaryAnswerable(item: { decidable: boolean; scope: string }): boolean {
+  return item.decidable && (item.scope === "mine" || item.scope === "org");
+}
+
+/** The card a bare "oui" answers: the latest one the person could see when
+ * they wrote (JC 2026-10-20). */
+function latestSeen(cards: readonly PrimaryCard[], at: number): PrimaryCard | undefined {
+  return cards.filter((card) => card.at <= at).sort((a, b) => b.at - a.at)[0];
+}
+
+/** The card in plain words, for the person: never a confidential thread's words. */
+function cardWords(card: PrimaryCard): string {
+  return card.confidential ? `${card.botName}'s card in a confidential conversation` : `"${card.title}"${card.line ? ` (${card.line})` : ""} from ${card.botName}`;
 }
 
 /** A card's handle for the bot: short, never its id. */
@@ -102,9 +117,6 @@ const INTENTS: Readonly<Record<PrimaryDecision | "cancel", readonly PrimaryInten
   answer: ["answer"],
   cancel: ["cancel"],
 };
-
-/** A message longer than this names the card it answers. */
-const LONE_YES_WORDS = 8;
 
 /** Answers per message of the person: one "yes to all" covers a handful. */
 const ANSWERS_PER_MESSAGE = 20;
@@ -128,19 +140,23 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
   const now = deps.now ?? Date.now;
   const answered = new Map<string, number>();
 
-  function listText(cards: PrimaryCard[]): string {
+  function listText(cards: PrimaryCard[], at: number): string {
     if (!cards.length) return "Nothing is waiting on the person.";
+    const latest = latestSeen(cards, at);
     const lines = cards.map((card) => {
+      if (card.confidential) {
+        return `- card ${cardRef(card.threadId, card.requestId)}: ${card.botName}'s card in a confidential conversation (its words stay there), ${ageOf(card.at, now())}. Options: ${[...card.options, "cancel"].join(", ")}.${card.needsKey ? " Allow needs their security key: they answer it in Sagax." : ""}${card === latest ? " Latest." : ""}`;
+      }
       const where = card.where ? ` in ${card.where}` : "";
       const asked = card.askedBy ? `, asked by ${card.askedBy}` : "";
       const key = card.needsKey ? " Allow needs their security key: they answer it in Sagax." : "";
       const scope = card.alwaysScope ? ` Always allow keeps: ${card.alwaysScope}.` : "";
-      return `- card ${cardRef(card.threadId, card.requestId)}: ${card.title} ${card.line ? `(${card.line}) ` : ""}from ${card.botName}${where}${asked}, ${ageOf(card.at, now())}. Options: ${[...card.options, "cancel"].join(", ")}.${scope}${key}`;
+      return `- card ${cardRef(card.threadId, card.requestId)}: ${card.title} ${card.line ? `(${card.line}) ` : ""}from ${card.botName}${where}${asked}, ${ageOf(card.at, now())}. Options: ${[...card.options, "cancel"].join(", ")}.${scope}${key}${card === latest ? " Latest." : ""}`;
     });
     return [
       `${cards.length} card${cards.length === 1 ? "" : "s"} waiting on the person:`,
       ...lines,
-      "Answer one only when the person asked for it in their message: pass their own words as quote.",
+      "Answer one only when the person asked for it in their message: pass their own words as quote. A bare yes (\"oui\", \"vas-y\", \"approuve\") without naming a card answers the latest one they saw: omit card, then tell them which one it was.",
     ].join("\n").slice(0, 8000);
   }
 
@@ -148,8 +164,10 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
     const cards = deps.pending(turn);
     const wanted = typeof ref === "string" ? ref.trim() : "";
     if (!wanted) {
-      if (cards.length === 1) return { card: cards[0]!, others: [] };
-      return refused(400, "card_required", cards.length ? `Pass card: one of ${cards.map((card) => cardRef(card.threadId, card.requestId)).join(", ")} (action list says which is which).` : "Nothing is waiting on the person.");
+      // no card named: the latest one the person saw (JC 2026-10-20)
+      const card = latestSeen(cards, turn.message.at) ?? (cards.length === 1 ? cards[0] : undefined);
+      if (card) return { card, others: cards.filter((row) => row !== card) };
+      return refused(400, "card_required", cards.length ? `Pass card: one of ${cards.map((row) => cardRef(row.threadId, row.requestId)).join(", ")} (action list says which is which).` : "Nothing is waiting on the person.");
     }
     const card = cards.find((row) => cardRef(row.threadId, row.requestId) === wanted);
     return card ? { card, others: cards.filter((row) => row !== card) } : refused(404, "no_card", "No such card waiting on the person (answered, expired, or not theirs). Call action list.");
@@ -160,23 +178,21 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
     if (card.at > turn.message.at) {
       return refused(403, "card_after_request", "This card appeared after the person's message, so they have not asked for it. Tell them it is waiting and let them say.");
     }
-    // security review 2026-10-20: a yes is bound to its card. With several
-    // cards waiting, the person's message names this one (its bot, the bot
-    // that asked, or its handle); a bare "oui" answers a lone card only.
-    // A long message names it even when it waits alone ("confirme-moi
-    // l'heure" is no answer to a card). A bot's name names its card only
-    // when no other card is that bot's.
-    const long = turn.message.text.trim().split(/\s+/).length > LONE_YES_WORDS;
+    // A yes is bound to its card: the person's message names this one (its
+    // bot, the bot that asked, or its handle), or it is the latest card they
+    // saw (JC 2026-10-20: a bare "oui" answers the latest, whatever the
+    // message's length and however many wait; the answer says which). A
+    // bot's name names its card only when no other card is that bot's.
     const names = [
       others.some((row) => row.botName === card.botName) ? undefined : card.botName,
       card.askedBy && !others.some((row) => row.askedBy === card.askedBy) ? card.askedBy : undefined,
       cardRef(card.threadId, card.requestId),
     ];
-    if ((others.length > 0 || long) && !messageNamesCard(turn.message.text, names)) {
-      return refused(403, "card_not_named", "The person's message does not say which card: ask them (name the bot, or the card), or let them answer it.");
+    if (others.length > 0 && latestSeen([card, ...others], turn.message.at) !== card && !messageNamesCard(turn.message.text, names)) {
+      return refused(403, "card_not_named", "The person's message does not say which card, and this one is not the latest they saw: ask them (name the bot, or the card), or let them answer it.");
     }
     for (const intent of INTENTS[decision]) {
-      const check = checkPersonQuote({ quote, message: turn.message.text, intent });
+      const check = checkPersonQuote({ quote, message: turn.message.text, intent, anyLength: true });
       if (!check.ok) return refused(403, check.code, check.reason);
     }
     const count = answered.get(turn.message.id) ?? 0;
@@ -218,14 +234,14 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
     deps.audit(turn, card, decision);
     const done = decision === "deny" || decision === "always_deny" ? "Denied" : decision === "answer" ? "Answered" : "Allowed";
     const rule = decision === "always_allow" || decision === "always_allow_this" ? ", and the rule is saved in their Settings > Security" : decision === "always_deny" ? ", and the deny rule is saved" : "";
-    return ok(`${done} for the person${rule}. The card reads "via ${turn.botName}".`);
+    return ok(`${done} for the person: ${cardWords(card)}${rule}. The card reads "via ${turn.botName}". Tell the person which card it was.`);
   }
 
   async function handle(input: { args: Record<string, unknown>; botId: string; threadId: string; generation: string }): Promise<PrimaryResult> {
     const gate = deps.turn(input.botId, input.threadId, input.generation);
     if ("error" in gate) return refused(gate.status, gate.code, gate.error);
     const action = input.args.action;
-    if (action === "list") return ok(listText(deps.pending(gate)));
+    if (action === "list") return ok(listText(deps.pending(gate), gate.message.at));
     if (action !== "answer" && action !== "cancel") return refused(400, "action", "action is list, answer or cancel.");
     const found = find(gate, input.args.card);
     if ("status" in found && "body" in found) return found;
@@ -237,7 +253,7 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
       if (result.status >= 400) return result;
       note(gate);
       deps.audit(gate, card, "cancel");
-      return ok(`Stopped ${card.botName}'s turn on that card for the person.`);
+      return ok(`Stopped ${card.botName}'s turn for the person: ${cardWords(card)}.`);
     }
     const decision = input.args.decision;
     if (typeof decision !== "string" || !(PRIMARY_DECISIONS as readonly string[]).includes(decision)) {
