@@ -333,6 +333,7 @@ import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
+import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
@@ -26634,6 +26635,26 @@ ROUTES.push(createSecurityKeyRoutes({
 // 2026-10-16: an email draft's Send: an approval card, then the send on Allow
 // (server/routes/email-drafts.ts, server/email-draft-send.ts).
 ROUTES.push(createEmailDraftRoutes({ ask: requestEmailDraftSend, status: emailDraftStatus }));
+ROUTES.push(createThreadWarmRoutes({ warm: threadWarmRequest }));
+/** POST /api/bots/:id/warm (server/routes/thread-warm.ts): same access as a
+ * send to the thread, a named thread only (an implicit one could open a
+ * viewer's thread). */
+function threadWarmRequest(auth: RequestAuth, botId: string, body: Record<string, unknown>): { status: number; body: Record<string, unknown> } {
+  const bot = store.bot(botId);
+  if (!bot) return { status: 404, body: { error: "no such bot" } };
+  if (delegatedRequest()) routeThreadId(bot, body.threadId);
+  if (typeof body.threadId !== "string" || !/^[\w-]+$/.test(body.threadId)) return { status: 400, body: { error: "threadId must be a task id" } };
+  const threadId = routeThreadId(bot, body.threadId);
+  const notYours = cloudGuestSendRefusal(auth, threadId);
+  if (notYours) return { status: 403, body: { error: notYours } };
+  if (!store.taskByThread(bot.id, threadId)) return { status: 200, body: { warm: "skipped" } };
+  try {
+    assertWithinBudget(cfg, DATA_DIR);
+  } catch {
+    return { status: 200, body: { warm: "skipped" } };
+  }
+  return { status: 200, body: { warm: prewarmThread(bot.id, threadId, actorPrincipalId(auth) || "local", { speaker: speakerFor(auth) }) } };
+}
 // 2026-10-16: a person's custom auto-review rules (server/routes/custom-rules.ts).
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,
@@ -42596,33 +42617,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       handoffs.stoppedByPerson(threadId);
       await interruptDirectThread(m[1], threadId);
       return json(res, 200, { ok: true, outcome: "stopped" });
-    }
-    // Pre-warm (server/thread-prewarm.ts): the person opened this bot's
-    // conversation or started typing. Same access as a send to the thread;
-    // starts nothing visible and answers at once.
-    m = path.match(/^\/api\/bots\/([\w-]+)\/warm$/);
-    if (m && method === "POST") {
-      const body = await readBody(req);
-      if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "body must be a JSON object" });
-      const bot = store.bot(m[1]);
-      if (!bot) return json(res, 404, { error: "no such bot" });
-      requirePinnedClientThread(bot.id, body.threadId);
-      if (delegatedRequest()) routeThreadId(bot, body.threadId);
-      // A named thread only: an implicit one could open a viewer's thread.
-      if (typeof body.threadId !== "string" || !/^[\w-]+$/.test(body.threadId)) {
-        return json(res, 400, { error: "threadId must be a task id" });
-      }
-      const threadId = routeThreadId(bot, body.threadId);
-      const notYours = cloudGuestSendRefusal(auth, threadId);
-      if (notYours) return json(res, 403, { error: notYours });
-      if (!store.taskByThread(bot.id, threadId)) return json(res, 200, { warm: "skipped" });
-      try {
-        assertWithinBudget(cfg, DATA_DIR);
-      } catch {
-        return json(res, 200, { warm: "skipped" });
-      }
-      const outcome = prewarmThread(bot.id, threadId, actorPrincipalId(auth) || "local", { speaker: speakerFor(auth) });
-      return json(res, 200, { warm: outcome });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/messages(?:\/(guarded))?$/);
     if (m && method === "POST") {
