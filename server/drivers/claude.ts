@@ -67,6 +67,7 @@ import { probeClaudeCommands } from "./harness-command-probe.ts";
 import { normalizeClaudeCommands, type HarnessCommand } from "../../shared/harness-commands.ts";
 import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permission-command.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
+import { harnessMcpHttpSpec, loopbackNoProxy } from "../harness-mcp-http.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
 import { sectionFingerprints, volatileSectionsUpdate } from "./prompt-split.ts";
@@ -1896,13 +1897,21 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // acceptEdits run silently denies anything unlisted)
       const mcpServers: Record<string, unknown> = {};
       const allowed: string[] = [];
+      // The harness's browser, cloud computer and Data servers over HTTP
+      // (server/harness-mcp-http.ts) instead of a Node proxy each. A turn
+      // with a tool selection keeps the stdio proxy: its gate wraps a stdio
+      // upstream exactly as before.
+      const harnessHttp = (spec: Parameters<typeof harnessMcpHttpSpec>[0], kind: Parameters<typeof harnessMcpHttpSpec>[1]) =>
+        turn.toolScope === undefined ? harnessMcpHttpSpec(spec, kind) : null;
       if (turn.integrations?.composio) {
         mcpServers.composio = { ...turn.integrations.composio };
         allowed.push("mcp__composio");
       }
       if (turn.integrations?.localComputer) {
         const local = turn.integrations.localComputer;
-        mcpServers.computer = {
+        // The cloud computer's harness proxy is reached over HTTP directly
+        // (server/harness-mcp-http.ts): no Node process per session.
+        mcpServers.computer = harnessHttp(local, "computer") ?? {
           command: local.command,
           args: local.args,
           env: local.env,
@@ -1944,16 +1953,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // the approval path, and the browser route refuses them outright.
         // Behind tool search, the first browser action costs a ToolSearch
         // model step. Load the tools up front when browsing is the point.
+        const browser = harnessHttp(turn.integrations.browser, "browser") ?? turn.integrations.browser;
         mcpServers.browser = turn.preloadBrowserTools
-          ? { ...turn.integrations.browser, alwaysLoad: true }
-          : { ...turn.integrations.browser };
+          ? { ...browser, alwaysLoad: true }
+          : { ...browser };
       }
       if (turn.integrations?.data) {
         // Mounted, not pre-allowed (2026-10-16 security review): each Data
         // call reaches Sagax's approval path, where the person's rules, the
         // safety review and the security keys apply, and a call that stays
         // in the bot's workspace is answered without a card.
-        mcpServers.data = { ...turn.integrations.data };
+        mcpServers.data = { ...(harnessHttp(turn.integrations.data, "data") ?? turn.integrations.data) };
       }
       // dweb network daemon (status / repo / opencode model access) via
       // server/drivers/dweb-proxy.ts — points at the configured dweb instance
@@ -2106,6 +2116,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // Desktop bridge: this turn's own network traffic leaves through the
       // person's computer (never the model traffic: NO_PROXY).
       if (turn.networkProxy) Object.assign(env, networkProxyEnvironment(turn.networkProxy, env));
+      // The harness's own HTTP servers are on loopback: never through a proxy.
+      if (["browser", "computer", "data"].some((name) => (mcpServers[name] as { type?: unknown } | undefined)?.type === "http")) {
+        Object.assign(env, loopbackNoProxy(env));
+      }
       const cwd = turn.cwd ?? homedir();
       const commandCwd = permissionLaunchCwd(cwd);
       // Everything that shapes the process, minus session/turn-specific temp
