@@ -15,12 +15,13 @@
 export type RequestedView = "view" | "video" | "screen";
 
 const ASKS: Record<RequestedView, RegExp> = {
-  // an interactive view, a widget, a chart, a card, a dashboard
-  view: /\b(?:widgets?|vues? interactives?|interactive (?:views?|tables?|cards?)|tableaux? interactifs?|(?:graph|chart|graphique|diagramme|dashboard|tableau de bord)s?|cartes? interactives?|show (?:it |them )?(?:as|in) (?:a )?(?:view|card|widget|table)|affiche[- ](?:le|la|les|moi)? ?(?:en|dans une?) (?:vue|carte|widget|tableau))\b/iu,
-  // a video, a stream, a recording to watch
-  video: /\b(?:vid[ée]os?|videos?|play|plays|joue|jouer|lance la (?:vid[ée]o|diffusion)|regarde[rz]?|watch|stream(?:ing)?|diffusions?|en direct|live stream|enregistrements?|recordings?)\b/iu,
+  // an interactive view, a widget, a chart, a diagram, a card, a dashboard,
+  // a small tool. A plain "table" / "en tableau" is a Markdown table, not a view.
+  view: /\b(?:widgets?|vues? interactives?|interactive (?:views?|tables?|cards?|charts?|lists?)|tableaux? interactifs?|listes? interactives?|cartes? interactives?|charts?|graphiques?|graphe?s? (?:of|des?|du)|diagrams?|diagrammes?|visuali[sz](?:e|er|ez|ation|ations)|dashboards?|tableaux? de bord|plots?|sous forme de (?:carte|graphique|widget|vue)|(?:as|in) (?:a )?(?:card|widget|chart|view)|calculat(?:or|rice)|simulat(?:or|eur))\b/iu,
+  // a video, a stream, a recording to watch (not "regarde le billet")
+  video: /\b(?:vid[ée]os?|videos?|clips?|streams?|livestreams?|diffusions?|recordings?|enregistrements? vid[ée]o|lecteur vid[ée]o|video player)\b/iu,
   // the computer's screen
-  screen: /\b(?:screenshots?|screen ?shots?|captures? d['’]?[ée]cran|capture l['’]?[ée]cran|(?:montre|affiche|show)[- ](?:moi |me )?(?:l['’]|the |ton |your |my |mon )?(?:[ée]cran|screen)|what(?:'s| is) on (?:the |my |your )?screen|(?:voir|see) (?:l['’]|the |ton |your )?(?:[ée]cran|screen))\b/iu,
+  screen: /\b(?:screenshots?|screen ?shots?|captures? (?:d['’]|de l['’]|du |de )?[ée]cran|(?:prends?|prenez|fais|faites) une capture|take a capture|capture (?:it|the screen|l['’]?[ée]cran)|(?:montre|affiche|show)[- ](?:moi |me )?(?:l['’]|the |ton |your |my |mon )?(?:[ée]cran|screen)|what(?:'s| is| does)? (?:on )?(?:the |my |your )?screen|(?:voir|see) (?:l['’]|the |ton |your )?(?:[ée]cran|screen))\b/iu,
 };
 
 /** True when the person's message asks for that kind of view. */

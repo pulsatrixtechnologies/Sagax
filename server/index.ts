@@ -9532,9 +9532,16 @@ function pageSize(raw: string | null): number | null | undefined {
 /** A screen message without its pixels, for live frames and pages alike.
  * The client fetches those from `/api/threads/:threadId/messages/:id/image`
  * when it actually shows one; `mime` stays so it can name a download. */
-/** The person's latest message in the conversation's active path: the
- * message the running turn answers (views on request, shared/requested-views.ts). */
+/** The person's message the running turn answers (views on request,
+ * shared/requested-views.ts): the direct request this turn owns, so a line
+ * sent while it works ("merci") never stands in for it; else the latest
+ * person line of the active path (rooms, older turns). */
 function latestPersonText(threadId: string): string | undefined {
+  const requestId = directRequestOwners.get(threadId)?.messageId;
+  if (requestId) {
+    const request = store.messagesFor(threadId).find((row) => row.id === requestId);
+    if (request?.role === "user" && typeof request.text === "string") return request.text;
+  }
   const path = store.activePath(threadId);
   for (let i = path.length - 1; i >= 0; i -= 1) {
     const row = path[i]!;
