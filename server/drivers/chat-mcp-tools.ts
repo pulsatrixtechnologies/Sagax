@@ -114,7 +114,7 @@ class ChatMcpClient {
       // Claude and Codex drivers do; a PATH the user set on the server wins.
       this.child = spawnCli(server.command, server.args, {
         stdio: ["pipe", "pipe", "pipe"], env: chatMcpEnvironment(server.env),
-      });
+      }, "bot");
     } catch { throw new Error("MCP server could not start; check its command and installation"); }
     this.child.stdout.setEncoding("utf8");
     this.child.stdout.on("data", (chunk: string) => this.onData(chunk));

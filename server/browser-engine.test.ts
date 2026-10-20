@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { credentialStoreFlags } from "./browser/egress/gate.ts";
 import {
   agentBrowserFrame,
   agentBrowserIntegration,
@@ -599,6 +600,26 @@ describe("installing the browser engine", () => {
 });
 
 describe("what a bot gets", () => {
+  // Without a gate the browser connects nowhere: Chrome fails every connection through port 0.
+  const noGate = {
+    AGENT_BROWSER_PROXY: "socks5://127.0.0.1:0", AGENT_BROWSER_PROXY_BYPASS: "<-loopback>",
+    AGENT_BROWSER_ARGS: ["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", ...credentialStoreFlags()].join("\n"),
+  };
+
+  it("launches Chrome only behind its egress gate, off the person's keychain, and never for the person's own Chrome", () => {
+    const gated = agentBrowserIntegration({ binaryPath: "/x/agent-browser", session: "bot-1", encryptionKey: "k", env: { PATH: "/usr/bin" }, egressPort: 45123, platform: "darwin" });
+    expect(gated.env).toMatchObject({ AGENT_BROWSER_PROXY: "socks5://127.0.0.1:45123", AGENT_BROWSER_PROXY_BYPASS: "<-loopback>" });
+    expect(gated.env.AGENT_BROWSER_ARGS!.split("\n")).toEqual(["--webrtc-ip-handling-policy=disable_non_proxied_udp", "--force-webrtc-ip-handling-policy=disable_non_proxied_udp", "--use-mock-keychain"]);
+    expect(agentBrowserIntegration({ binaryPath: "/x", session: "bot-1", encryptionKey: "k", env: {}, egressPort: 45123, platform: "linux" }).env.AGENT_BROWSER_ARGS).toContain("--password-store=basic");
+    expect(agentBrowserIntegration({ binaryPath: "/x", session: "bot-1", encryptionKey: "k", env: {} }).env.AGENT_BROWSER_PROXY).toBe("socks5://127.0.0.1:0");
+    // A meeting browser keeps WebRTC media over UDP; its pages still go through the gate.
+    const meeting = agentBrowserIntegration({ binaryPath: "/x", session: "meeting-1", encryptionKey: "k", env: {}, egressPort: 45123, platform: "darwin", meetingMedia: true });
+    expect(meeting.env.AGENT_BROWSER_PROXY).toBe("socks5://127.0.0.1:45123");
+    expect(meeting.env.AGENT_BROWSER_ARGS).toBe("--use-mock-keychain");
+    const mine = agentBrowserIntegration({ binaryPath: "/x", session: "work", encryptionKey: "k", env: {}, attachCdpUrl: "http://127.0.0.1:9222", egressPort: 45123 });
+    for (const key of ["AGENT_BROWSER_PROXY", "AGENT_BROWSER_PROXY_BYPASS", "AGENT_BROWSER_ARGS"]) expect(mine.env).not.toHaveProperty(key);
+  });
+
   it("forwards the explicit Chrome path without copying arbitrary environment or overriding session isolation", () => {
     vi.stubEnv("AGENT_BROWSER_EXECUTABLE_PATH", "/process/chrome");
     const spec = agentBrowserIntegration({
@@ -616,7 +637,7 @@ describe("what a bot gets", () => {
       AGENT_BROWSER_RESTORE_SAVE: "auto", AGENT_BROWSER_ENCRYPTION_KEY: "session-key",
       AGENT_BROWSER_CONFIG: expect.stringContaining("omb-managed-config.json"),
       AGENT_BROWSER_HEADLESS: "1", AGENT_BROWSER_HEADED: "0", PATH: "/usr/bin",
-      AGENT_BROWSER_EXECUTABLE_PATH: "/opt/trusted chrome/chrome",
+      AGENT_BROWSER_EXECUTABLE_PATH: "/opt/trusted chrome/chrome", ...noGate,
     });
   });
 
@@ -630,7 +651,7 @@ describe("what a bot gets", () => {
       AGENT_BROWSER_RESTORE_SAVE: "auto", AGENT_BROWSER_ENCRYPTION_KEY: "session-key",
       AGENT_BROWSER_CONFIG: expect.stringContaining("omb-managed-config.json"),
       AGENT_BROWSER_HEADLESS: "1", AGENT_BROWSER_HEADED: "0", PATH: "/usr/bin",
-      AGENT_BROWSER_EXECUTABLE_PATH: "/opt/process-chrome/chrome",
+      AGENT_BROWSER_EXECUTABLE_PATH: "/opt/process-chrome/chrome", ...noGate,
     });
     for (const env of [{}, { AGENT_BROWSER_EXECUTABLE_PATH: "" }]) {
       const explicit = agentBrowserIntegration({ binaryPath: "/x", session: "s", encryptionKey: "k", env });

@@ -9,6 +9,13 @@ import { verificationServerEnvironment } from "./control-omb.ts";
 
 const childEnv = (parentEnv: NodeJS.ProcessEnv) => verificationServerEnvironment(parentEnv, join(tmpdir(), "omb-fixture-env"), 9100);
 
+describe("a fixture driven from a real browser", () => {
+  it("trusts this machine's browsers as `pnpm dev` does, unless the caller tests the sign-in", () => {
+    expect(childEnv({}).SAGAX_DEV_TRUST_LOCAL_BROWSER).toBe("1");
+    expect(childEnv({ SAGAX_DEV_TRUST_LOCAL_BROWSER: "0" })).not.toHaveProperty("SAGAX_DEV_TRUST_LOCAL_BROWSER");
+  });
+});
+
 describe("the fixture's Live call environment", () => {
   it("passes a loopback fake GPT-Live and its key through", () => {
     expect(childEnv({ SAGAX_OPENAI_LIVE_URL: " http://127.0.0.1:4100 ", SAGAX_OPENAI_LIVE_KEY: "sk-fake" }))

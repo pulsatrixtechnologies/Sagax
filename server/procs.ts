@@ -112,10 +112,38 @@ const cliGroups = new WeakSet<ChildProcess>();
 const CHILD_OOM_SCORE_ADJ = memoryGuardSettings().childOomScoreAdj;
 const stopping = new WeakMap<ChildProcess, Promise<boolean>>();
 
+const MAX_ENDED_SESSIONS = 4_096;
+const engineSessions = { live: new Set<number>(), ended: new Set<number>() };
+
+/** POSIX session ids of the engines that run bots' turns (each leads its own
+ * session). A server opened by any process in one counts as the bot's, even
+ * after the shell that started it exits: a bot's browser may open it on a
+ * server host (server/browser/egress, port of OpenMausBot #2930). */
+export function botEngineSessions(): { live: ReadonlySet<number>; ended: ReadonlySet<number> } {
+  return engineSessions;
+}
+
+function rememberEngineSession(child: ChildProcess): void {
+  const pid = child.pid;
+  if (!pid) return;
+  engineSessions.live.add(pid);
+  child.once("exit", () => {
+    engineSessions.live.delete(pid);
+    engineSessions.ended.add(pid);
+    if (engineSessions.ended.size > MAX_ENDED_SESSIONS) engineSessions.ended.delete(engineSessions.ended.values().next().value!);
+  });
+}
+
+/** `bot`: an engine running bots' turns, whose own servers that bot's
+ * browser may open on a server host. `sagax`: everything else (logins,
+ * probes, the browser engine itself). */
+export type CliOwner = "bot" | "sagax";
+
 export function spawnCli(
   cli: string,
   args: string[],
   opts: SpawnOptions,
+  owner: CliOwner = "sagax",
 ): ChildProcessByStdio<Writable, Readable, Readable> {
   const resolved = resolveCli(cli, args);
   assertSafeCliArgv(resolved);
@@ -126,6 +154,7 @@ export function spawnCli(
     ...(process.platform === "win32" ? { windowsHide: true } : { detached: true }),
   }) as ChildProcessByStdio<Writable, Readable, Readable>; // callers always pipe all three
   if (process.platform !== "win32") cliGroups.add(child);
+  if (process.platform !== "win32" && owner === "bot") rememberEngineSession(child);
   // An engine dies before the server when the container runs out of memory
   // (server/engine-memory-guard.ts); its MCP proxies inherit the score.
   markOomVictim(child.pid, CHILD_OOM_SCORE_ADJ);

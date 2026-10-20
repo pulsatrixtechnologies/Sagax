@@ -43,6 +43,37 @@ Copier. On desktop, web, iOS and Android:
   with UUID fixtures and fails when a UUID reaches visible text. Add a
   case there for any new screen that names records.
 
+## Local access hardened: port of OpenMausBot #2930 (2026-10-19)
+
+JC: PORT COMPLET of upstream a5f9183bc. Three walls, each with tests:
+
+- **Browsers never get loopback trust** (`server/request-auth.ts`
+  `fromBrowser`): a session-less loopback request carrying `Sec-Fetch-Site`,
+  `Sec-Fetch-Dest`, or a WebSocket `Origin` gets 401 `BROWSER_SIGN_IN` unless
+  it carries the desktop owner header (`x-openmausbot-desktop-owner`, added by
+  the app window on http: and ws:). Same rule for the owner view of a
+  published page (`loopbackBrowserRefused`). Programs (CLI, curl, MCP proxies,
+  the companion relay) are unchanged. `openmausbot serve`/`pair` print a
+  `this computer:` sign-in link (`server/cli-pairing.ts`). Dev only:
+  `SAGAX_DEV_TRUST_LOCAL_BROWSER=1` (set by `pnpm dev:server` via
+  `server/dev-server.ts` and by `scripts/control-omb.ts` fixtures; ignored by
+  builds, the desktop app and service trust). Electron: no session but the
+  default one reaches the server (`electron/server-session.mjs`).
+- **Companion control token**: every route of `127.0.0.1:8811` but the page
+  needs `x-openmausbot-control-token`, minted per sidecar launch by
+  `electron/companion.mjs` (private port) or printed by a standalone sidecar
+  (`/#token=…`).
+- **Egress gate for bots' browsers** (`server/browser/egress/`, adapted from
+  T3 Code, MIT, NOTICE): one SOCKS5 gate per browser session; never Sagax's
+  own ports, metadata (Azure IMDS) or link-local; on a server (organization,
+  AKS sandbox) never the private network unless `browserEngine.egress.allow`.
+  Meeting browsers keep WebRTC UDP. `agent_browser_read` with `url` refused.
+  Refusals are appended to the bot's next browser result.
+- Tests: `server/request-auth.e2e.test.ts` (real headless Chrome page cannot
+  create a bot), `server/browser/egress/hostile-pages.e2e.test.ts`,
+  `companion/test/control.test.ts`. Docs: `docs/self-hosting.md#a-browser-signs-in`,
+  `docs/browser-packaging.md#what-a-bots-browser-can-reach`.
+
 ## Widgets check themselves before they show (2026-10-19)
 
 JC: "Le bot doit être capable de se contre-valider et de l'ajuster

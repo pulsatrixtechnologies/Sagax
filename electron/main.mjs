@@ -777,6 +777,7 @@ const serverSupervisor = createServerSupervisor({
     serverReady = true;
     serverStartConflictOnly = false;
     slog(`server ready pid=${proc.pid} port=${SERVER_PORT}`);
+    reportOwnListeners(proc);
     // Re-read the latest account credentials; registration may have completed
     // while the replacement child's health probe was pending.
     syncManagedComposioCredentials();
@@ -1012,6 +1013,7 @@ import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from 
 import { readDesktopLanguage, writeDesktopLanguage } from "./desktop-language.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
+import { blockServerOutsideDefaultSession, reportOwnListeners } from "./server-session.mjs";
 import { isYoutubeEmbedUrl, withYoutubeEmbedReferer } from "./youtube-referer.mjs";
 
 // No request from this app reaches the original OpenMausBot services, the
@@ -1772,7 +1774,9 @@ function installRequestHeaderRules({ mutationHeader }) {
     let ownsTarget = false;
     try {
       const target = new URL(details.url);
-      ownsTarget = mutationHeader && serverReady && target.protocol === "http:" &&
+      // http: and ws: alike: a browser's WebSocket handshake needs the header
+      // too, since the server refuses browsers without it (OpenMausBot #2930).
+      ownsTarget = mutationHeader && serverReady && (target.protocol === "http:" || target.protocol === "ws:") &&
         target.hostname === "127.0.0.1" &&
         Number(target.port || 80) === SERVER_PORT;
     } catch {}
@@ -4899,6 +4903,10 @@ app.whenReady().then(async () => {
   // Full-access shell using curl cannot impersonate the person operating
   // the desktop app. The YouTube player's Referer rule runs in every build.
   installRequestHeaderRules({ mutationHeader: app.isPackaged });
+  // No session but the app window's reaches the local server (OpenMausBot
+  // #2930 port): a desktop viewer or a Local VM pane is never the owner.
+  // Here, once the default session exists and before any other window.
+  blockServerOutsideDefaultSession({ app, defaultSession: session.defaultSession, serverPort: () => SERVER_PORT });
   // A runtime Dock image overrides the bundle icon with a flat PNG, which
   // on macOS 26 discards the Liquid Glass rendering (build/icon.icon) and
   // drops the icon into the gray "squircle jail". Packaged builds keep the

@@ -20,6 +20,7 @@ import type { McpServerSpec } from "./contracts.ts";
 import type { MailSettings } from "./mail-config.ts";
 import { isRemoteMcpServer, parseStoredMcpServer, reservedMcpServerLog, reservedMcpServerName } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
+import { browserEgressConfigSchema, type BrowserEgressConfig } from "./browser/egress/policy.ts";
 import { currentEnvName, defaultDataDir } from "../electron/legacy-names.mjs";
 
 const optionalText = z.string().optional();
@@ -107,6 +108,9 @@ const browserEngineConfigSchema = z.object({
   attachCdpUrl: z.string().trim().max(2048).refine((value) => value === "" || isValidCdpTarget(value), {
     message: "browserEngine.attachCdpUrl must be a CDP port (1-65535) or an http(s)/ws(s) URL",
   }).optional(),
+  /** What the bots' browsers may reach past the public internet
+   * (server/browser/egress/policy.ts, port of OpenMausBot #2930). */
+  egress: browserEgressConfigSchema.optional(),
 });
 const roomConfigSchema = z.object({
   turnTimeoutMinutes: z
@@ -818,7 +822,7 @@ export interface AppConfig {
   /** CDP target of a Chrome the operator already has running (a bare port,
    * e.g. "9333", or an http(s)/ws(s) URL). When set, a bot's browser
    * attaches to it instead of agent-browser spawning its own (#1396). */
-  browserEngine?: { attachCdpUrl?: string };
+  browserEngine?: { attachCdpUrl?: string; egress?: BrowserEgressConfig };
   instances?: InstanceConfigMap;
 }
 export type BrowserProfile = z.output<typeof browserProfileSchema> & {

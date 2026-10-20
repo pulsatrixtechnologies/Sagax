@@ -19,6 +19,7 @@ import { DATA_DIR } from "./config.ts";
 import { browserBundlePaths } from "./browser-bundle-release.ts";
 import { BROWSER_VIEWPORT_ARGS, browserRuntimeEnv, ownsBrowserViewport } from "./browser-runtime.ts";
 import { SIGN_IN_PROMPT } from "./system-prompt.ts";
+import { gateChromeSettings } from "./browser/egress/gate.ts";
 import {
   AGENT_BROWSER_VERSION,
   agentBrowserReleaseUrl,
@@ -127,6 +128,42 @@ export function browserDaemonPidPath(env: NodeJS.ProcessEnv): string {
   const base = env.XDG_RUNTIME_DIR ? join(env.XDG_RUNTIME_DIR, "agent-browser") : join(home, ".agent-browser");
   const namespace = env.AGENT_BROWSER_NAMESPACE;
   return join(namespace ? join(base, "namespaces", namespace, "run") : base, `${session}.pid`);
+}
+
+function portInFile(path: string): number[] {
+  try {
+    const port = Number(readFileSync(path, "utf8").split("\n", 1)[0]!.trim());
+    return Number.isInteger(port) && port > 0 && port < 65_536 ? [port] : [];
+  } catch { return []; }
+}
+
+/** The stream servers of this machine's agent-browser daemons (they upgrade
+ * a WebSocket from any origin), which no bot's browser may reach (egress
+ * gate, port of OpenMausBot #2930). */
+export function agentBrowserStreamPorts(env: NodeJS.ProcessEnv = browserRuntimeEnv({ AGENT_BROWSER_SESSION: "sagax" })): number[] {
+  const directory = dirname(browserDaemonPidPath(env));
+  try { return readdirSync(directory).filter((name) => name.endsWith(".stream")).flatMap((name) => portInFile(join(directory, name))); }
+  catch { return []; }
+}
+
+/** The DevTools ports of the Chromes agent-browser launched, from the profiles it creates in the temp folder. */
+export function agentBrowserDevToolsPorts(temp = tmpdir()): number[] {
+  try {
+    return readdirSync(temp).filter((name) => name.startsWith("agent-browser-chrome-"))
+      .flatMap((name) => portInFile(join(temp, name, "DevToolsActivePort")));
+  } catch { return []; }
+}
+
+/** agent-browser relaunches a running Chrome when a command's launch
+ * settings differ, so every command for a session carries these same ones.
+ * Chrome fails every connection through port 0 (no gate: no network). */
+function agentBrowserEgressEnv(port: number, platform: NodeJS.Platform, mediaUdp: boolean): Record<string, string> {
+  const gate = gateChromeSettings(port, platform);
+  // A meeting's audio and video need WebRTC over UDP, which a SOCKS5 CONNECT
+  // gate cannot carry: a meeting browser keeps it; every page request (TCP)
+  // still goes through the gate.
+  const args = mediaUdp ? gate.args.filter((arg) => !arg.includes("webrtc-ip-handling-policy")) : gate.args;
+  return { AGENT_BROWSER_PROXY: gate.proxy, AGENT_BROWSER_PROXY_BYPASS: gate.bypass, AGENT_BROWSER_ARGS: args.join("\n") };
 }
 
 function execText(file: string, args: string[]): Promise<string | null> {
@@ -576,6 +613,12 @@ export function agentBrowserIntegration(input: {
    * never from the ambient process environment — the curated env below
    * otherwise never forwards AGENT_BROWSER_CDP at all (#1396). */
   attachCdpUrl?: string;
+  /** The egress gate port a launched Chrome connects through
+   * (server/browser/egress, port of OpenMausBot #2930); without one the
+   * browser connects nowhere. Ignored when attaching to a Chrome over CDP. */
+  egressPort?: number;
+  /** A meeting browser: WebRTC media may use UDP outside the gate. */
+  meetingMedia?: boolean;
 }): { command: string; args: string[]; env: Record<string, string> } {
   const sourceEnv = input.env ?? process.env;
   const env: Record<string, string> = {
@@ -608,6 +651,7 @@ export function agentBrowserIntegration(input: {
     env.AGENT_BROWSER_HEADED = "0";
   }
   if (input.attachCdpUrl) env.AGENT_BROWSER_CDP = input.attachCdpUrl;
+  else Object.assign(env, agentBrowserEgressEnv(input.egressPort ?? 0, input.platform ?? process.platform, input.meetingMedia === true));
   // MCP clients may filter the parent environment. Carry the configured
   // Chrome path explicitly without forwarding unrelated secrets or flags.
   for (const name of ["PATH", "AGENT_BROWSER_EXECUTABLE_PATH"] as const) {

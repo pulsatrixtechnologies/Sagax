@@ -826,7 +826,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
               ...input.environment,
               ...(mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
             }), turn.access),
-          });
+          }, "bot");
         } catch (err) {
           if (mcpTempDir) {
             try {

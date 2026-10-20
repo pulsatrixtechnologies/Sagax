@@ -6,8 +6,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  BROWSER_SIGN_IN,
   clearSessionCookie,
   capabilitiesForAuth,
+  fromBrowser,
+  loopbackBrowserRefused,
   clientBotPatchViolation,
   clientSessionIsComputerOwner,
   companionBotFieldViolation,
@@ -864,9 +867,9 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
   it("defaults to service on a hosted workspace, owner elsewhere, and lets the operator choose", () => {
     const pick = (env: NodeJS.ProcessEnv, flags: { desktopManaged?: boolean; hostedWorkspace?: boolean } = {}) =>
       resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: false, ...flags });
-    expect(pick({})).toEqual({ trust: "owner", reason: "self-hosted default" });
-    expect(pick({}, { hostedWorkspace: true })).toEqual({ trust: "service", reason: "hosted workspace" });
-    expect(pick({ SAGAX_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "SAGAX_LOOPBACK_TRUST" });
+    expect(pick({})).toEqual({ trust: "owner", reason: "self-hosted default", localBrowsers: false });
+    expect(pick({}, { hostedWorkspace: true })).toEqual({ trust: "service", reason: "hosted workspace", localBrowsers: false });
+    expect(pick({ SAGAX_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "SAGAX_LOOPBACK_TRUST", localBrowsers: false });
     expect(pick({ SAGAX_LOOPBACK_TRUST: " Service " }).trust).toBe("service");
     const forced = pick({ SAGAX_LOOPBACK_TRUST: "owner" }, { hostedWorkspace: true });
     expect(forced.trust).toBe("owner");
@@ -883,8 +886,8 @@ describe("loopback trust: owner on one person's machine, service on a shared wor
 
   it("is always service on an OMB Cloud home, where a local request is only ever a process on the machine", () => {
     const pick = (env: NodeJS.ProcessEnv) => resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: false, cloudHome: true });
-    expect(pick({})).toEqual({ trust: "service", reason: "OMB Cloud home" });
-    expect(pick({ SAGAX_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "OMB Cloud home" });
+    expect(pick({})).toEqual({ trust: "service", reason: "OMB Cloud home", localBrowsers: false });
+    expect(pick({ SAGAX_LOOPBACK_TRUST: "service" })).toEqual({ trust: "service", reason: "OMB Cloud home", localBrowsers: false });
     const forced = pick({ SAGAX_LOOPBACK_TRUST: "owner" });
     expect(forced.trust).toBe("service");
     expect(forced.warning).toMatch(/ignored on an OMB Cloud home/);
@@ -984,5 +987,109 @@ describe("organization sharing routes (SAGAX_IDENTITY=perspicax, slice 3)", () =
     expect(requiredScope("DELETE", "/api/bots/aurora/direct-grants/pr_00000000-0000-4000-8000-000000000001")).toBe("client");
     expect(requiredScope("DELETE", "/api/bots/aurora/direct-grants/someone")).toBe("admin");
     expect(requiredScope("POST", "/api/bots/aurora/direct-grants")).toBe("client");
+  });
+});
+
+describe("a browser on this machine is not the owner", () => {
+  let dir: string;
+  let sessions: SessionRegistry;
+  const cookieName = "omb_session_8799_env";
+  // What Chrome sends: Sec-Fetch-* on every request to a loopback address, Origin on every WebSocket handshake.
+  const page = { host: "127.0.0.1:8799", "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", "sec-fetch-dest": "empty" };
+  const navigation = { host: "127.0.0.1:8799", "sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document", "sec-fetch-user": "?1" };
+  const socket = { host: "127.0.0.1:8799", origin: "http://localhost:3000", upgrade: "websocket", connection: "Upgrade" };
+  const ownUi = { host: "127.0.0.1:8799", origin: "http://127.0.0.1:8799", "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" };
+  const check = (headers: Record<string, string>, path = "/api/bots", method = "GET", options: { desktopToken?: string; trust?: "owner" | "service"; localBrowsers?: boolean } = {}) =>
+    resolveRequestAuth(request(headers, method), {
+      sessions, cookieName, streamPath: "/api/events", url: new URL(path, "http://x"),
+      ...(options.desktopToken !== undefined ? { loopbackMutationToken: options.desktopToken, companionMutationToken: "relay-secret" } : {}),
+      ...(options.trust ? { loopbackTrust: options.trust } : {}),
+      ...(options.localBrowsers ? { trustLocalBrowser: true } : {}),
+    });
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "omb-auth-browser-"));
+    sessions = new SessionRegistry({ file: join(dir, "sessions.json") });
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("tells a browser request from a command-line one", () => {
+    for (const headers of [page, navigation, socket, ownUi, { host: "localhost", "sec-fetch-dest": "image" }]) expect(fromBrowser(request(headers)), JSON.stringify(headers)).toBe(true);
+    const programs: Record<string, string>[] = [
+      { host: "127.0.0.1:8799" }, { host: "127.0.0.1:8799", origin: "http://127.0.0.1:8799" }, { host: "127.0.0.1:8799", upgrade: "websocket" },
+      { host: "127.0.0.1:8799", "x-openmausbot-cli": "1" },
+      // Node's fetch.
+      { host: "127.0.0.1:8799", "sec-fetch-mode": "cors", "accept-language": "*", "user-agent": "node" },
+    ];
+    for (const headers of programs) {
+      expect(fromBrowser(request(headers)), JSON.stringify(headers)).toBe(false);
+    }
+  });
+
+  it("refuses a self-hosted server's browser on loopback, reads included, and says how to sign in", () => {
+    for (const headers of [page, navigation, socket, ownUi]) {
+      for (const [method, path] of [["GET", "/api/bots"], ["GET", "/api/config"], ["GET", "/api/auth/session"], ["POST", "/api/auth/pairing"], ["GET", "/api/desktop-viewer/local/shared/websockify"]]) {
+        const refused = check(headers, path, method);
+        expect(refused.auth, `${method} ${path}`).toBeNull();
+        expect(refused.status).toBe(401);
+        expect(refused.error).toBe(BROWSER_SIGN_IN);
+      }
+    }
+    expect(check({ host: "127.0.0.1:8799" }).auth).toEqual({ kind: "loopback", scopes: ["admin", "client"] });
+  });
+
+  it("refuses it under service trust too, where it would otherwise get the service routes", () => {
+    expect(check(page, "/api/health", "GET", { trust: "service" }).auth).toBeNull();
+    expect(check({ host: "127.0.0.1:8799" }, "/api/health", "GET", { trust: "service" }).auth?.kind).toBe("loopback");
+  });
+
+  it("lets the desktop app's own window in with its owner header, on http and WebSocket alike", () => {
+    const desktop = { desktopToken: "owner-token-123" };
+    const owner = { "x-openmausbot-desktop-owner": "owner-token-123" };
+    expect(check({ ...ownUi, ...owner }, "/api/bots", "GET", desktop).auth?.kind).toBe("loopback");
+    expect(check({ ...ownUi, ...owner }, "/api/bots/bot-1", "PATCH", desktop).auth?.kind).toBe("loopback");
+    expect(check({ ...socket, origin: "http://127.0.0.1:8799", ...owner }, "/api/desktop-viewer/local/shared/websockify", "GET", desktop).auth?.kind).toBe("loopback");
+    for (const headers of [ownUi, page, socket, { ...ownUi, "x-openmausbot-desktop-owner": "owner-token-999" }]) {
+      expect(check(headers, "/api/bots", "GET", desktop).status, JSON.stringify(headers)).toBe(401);
+    }
+    // Before the desktop app has sent its capability, nothing a browser sends matches.
+    expect(check({ ...ownUi, "x-openmausbot-desktop-owner": "" }, "/api/bots", "GET", { desktopToken: "" }).auth).toBeNull();
+    // The app's main process and the companion send no Sec-Fetch-*.
+    expect(check({ host: "127.0.0.1:8799" }, "/api/bots", "GET", desktop).auth?.kind).toBe("loopback");
+    const relay = { host: "127.0.0.1:8799", "x-openmausbot-companion": "1", "x-openmausbot-companion-device": "phone-1", "x-openmausbot-companion-auth": "relay-secret" };
+    expect(check(relay, "/api/bots/b/messages", "POST", desktop).auth?.kind).toBe("loopback");
+  });
+
+  it("refuses a browser the owner view of a published page, unless it is the desktop window or a dev server", () => {
+    expect(loopbackBrowserRefused(request(ownUi), {})).toBe(true);
+    expect(loopbackBrowserRefused(request(page), { loopbackMutationToken: "owner-token-123" })).toBe(true);
+    expect(loopbackBrowserRefused(request({ ...ownUi, "x-openmausbot-desktop-owner": "owner-token-123" }), { loopbackMutationToken: "owner-token-123" })).toBe(false);
+    expect(loopbackBrowserRefused(request({ ...ownUi, "x-openmausbot-desktop-owner": "" }), { loopbackMutationToken: "" })).toBe(true);
+    expect(loopbackBrowserRefused(request(page), { trustLocalBrowser: true })).toBe(false);
+    expect(loopbackBrowserRefused(request({ host: "127.0.0.1:8799" }), {})).toBe(false);
+  });
+
+  it("still admits a browser that signed in", () => {
+    const { code } = sessions.openPairing({ scopes: ["admin", "client"] });
+    const paired = sessions.exchange({ code, label: "This browser", source: "127.0.0.1" });
+    if (!paired.ok) throw new Error(paired.error);
+    const signedIn = check({ ...ownUi, cookie: `${cookieName}=${paired.token}` });
+    expect(signedIn.auth?.kind).toBe("session");
+  });
+
+  it("trusts local browsers only on a development server that asked for it", () => {
+    expect(check(page, "/api/bots", "GET", { localBrowsers: true }).auth).toEqual({ kind: "loopback", scopes: ["admin", "client"] });
+    // The desktop owner header is still required for desktop mutations.
+    expect(check(page, "/api/bots/bot-1", "PATCH", { localBrowsers: true, desktopToken: "owner-token-123" }).status).toBe(403);
+    const pick = (env: NodeJS.ProcessEnv, flags: { fromSource?: boolean; desktopManaged?: boolean; hostedWorkspace?: boolean } = {}) =>
+      resolveLoopbackTrust({ env, desktopManaged: false, hostedWorkspace: false, ...flags });
+    const dev = { SAGAX_DEV_TRUST_LOCAL_BROWSER: "1" };
+    expect(pick(dev, { fromSource: true })).toMatchObject({ trust: "owner", localBrowsers: true, warning: expect.stringMatching(/development only/) });
+    expect(pick(dev, { fromSource: false })).toMatchObject({ localBrowsers: false, warning: expect.stringMatching(/ignored/) });
+    expect(pick(dev, { fromSource: true, desktopManaged: true })).toMatchObject({ localBrowsers: false, warning: expect.stringMatching(/ignored/) });
+    expect(pick(dev, { fromSource: true, hostedWorkspace: true })).toMatchObject({ trust: "service", localBrowsers: false });
+    expect(pick({ ...dev, SAGAX_LOOPBACK_TRUST: "service" }, { fromSource: true }).localBrowsers).toBe(false);
+    expect(pick({ SAGAX_DEV_TRUST_LOCAL_BROWSER: "true" }, { fromSource: true })).toEqual({ trust: "owner", reason: "self-hosted default", localBrowsers: false });
+    expect(resolveLoopbackTrust({ env: dev, desktopManaged: false, hostedWorkspace: false, cloudHome: true, fromSource: true }).localBrowsers).toBe(false);
   });
 });
