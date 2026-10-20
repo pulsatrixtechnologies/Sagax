@@ -2567,6 +2567,61 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     });
   });
 
+  describe("an engine's account and HTTP failures", () => {
+    /** The provider's refusal as the CLI answers session/prompt: JSON-RPC's internal error around its own line. */
+    const refuse = (details: string) => {
+      const failureFile = join(scratch, "prompt-failure.json");
+      process.env.FAKE_ACP_RPC_FAILURE_FILE = failureFile;
+      writeFileSync(failureFile, JSON.stringify({ code: -32603, message: "Internal error", data: { details, service: "session", errorName: "APIError" } }));
+    };
+    const failed = async (threadId: string) => {
+      const ack = await instance.adapter.sendTurn({ threadId, text: "Run the morning report" });
+      const completed = await recorder.until((e) => e.type === "turn.completed" && e.turnId === ack.turnId);
+      const errors = recorder.events.filter((e) => e.type === "runtime.error" && e.turnId === ack.turnId);
+      return { completed, errors };
+    };
+
+    it("names a Grok account out of credits as the account failure it is, in Grok's own account wording", async () => {
+      // what Cloud routine runs recorded, as far as the aggregate kept it
+      refuse("API error (status 402 Payment Required): Grok Build us…");
+      await create(GrokAgentDriver);
+      const { completed, errors } = await failed("t-grok-402");
+      // Grok's driver words its own 402 (describeAccountError); the shared wording covers the other engines.
+      expect(errors).toEqual([expect.objectContaining({
+        message: expect.stringContaining("the usage balance of the Grok account it runs on is used up"),
+        setup: true,
+      })]);
+      expect(completed).toMatchObject({ ok: false, stopReason: "auth_required" });
+    });
+
+    it("names any other ACP engine out of credits the same way", async () => {
+      refuse("API error (status 402 Payment Required): Your plan has no credits left. Ask an admin to add more.");
+      await create(GeminiAgentDriver);
+      const { errors } = await failed("t-gemini-402");
+      expect(errors).toEqual([expect.objectContaining({
+        message: 'Your Gemini account is out of credits (Gemini says: "Your plan has no credits left"). Add credits with Gemini, then run it again.',
+      })]);
+    });
+
+    it("puts another HTTP failure in plain words that keep its class, and leaves an unknown one as it was", async () => {
+      refuse("API error (status 503 Service Unavailable): upstream connect error");
+      await create(GrokAgentDriver);
+      const outage = await failed("t-grok-503");
+      expect(outage.errors).toEqual([expect.objectContaining({
+        message: 'Grok had a temporary server problem (HTTP 503; Grok says: "upstream connect error"). Try again in a few minutes.',
+      })]);
+      expect(outage.errors[0]).not.toHaveProperty("setup");
+      expect(outage.completed).toMatchObject({ ok: false, stopReason: "rpc_error" });
+
+      refuse("Grok could not finish the session");
+      await create(GrokAgentDriver);
+      const unknown = await failed("t-grok-unknown");
+      expect(unknown.errors).toEqual([expect.objectContaining({
+        message: "Internal error: Grok could not finish the session (session/prompt, service: session, APIError)",
+      })]);
+    });
+  });
+
   describe("ACP session pool (persistent child)", () => {
     let countFile: string;
     let rpcFile: string;

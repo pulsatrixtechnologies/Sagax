@@ -23,6 +23,9 @@
 //                        call: the api-error frame and result 2.1.295 sends,
 //                        code usage_limit_reached, carrying the refused window)
 //   A prompt carrying [fake:api-error] plays that one turn as api-error.
+//   FAKE_CLAUDE_API_ERROR_KIND the api-error frame's `error` (default: unknown); FAKE_CLAUDE_API_ERROR_STATUS its
+//                      result's api_error_status; FAKE_CLAUDE_NO_TERMINAL_REASON=1: the result has no terminal_reason,
+//                      only stop_reason "stop_sequence".
 //   FAKE_CLAUDE_API_ERROR text for the api-error frame (default: overloaded;
 //                      for usage-limit, the weekly limit's words).
 //   FAKE_CLAUDE_RATE_LIMIT JSON rate_limit_info: each turn reports it in a
@@ -30,6 +33,8 @@
 //                      API's headers ({status, rateLimitType, resetsAt, …}).
 //   FAKE_CLAUDE_GATE_DIR with slow: a prompt carrying [gate:NAME] holds its
 //                      reply until <dir>/NAME exists (its last marker).
+//   FAKE_CLAUDE_AUTH_AFTER_TURN  1: from the second turn, answer as not-logged-in; FAKE_CLAUDE_AUTH_AFTER_WORK  1: not-logged-in
+//     calls a tool first
 //   FAKE_CLAUDE_RELEASE with hang: the turn ends normally once this file exists.
 //   FAKE_CLAUDE_DUMP   path to write {argv, env, cwd, prompt, systemPrompt,
 //                      mcpConfig} as JSON at each turn this process is given
@@ -810,8 +815,9 @@ const playTurn = (prompt: JsonValue, late = false) => {
   // a prompt carrying [fake:api-error] fails like api-error, whatever the mode
   if (mode === "api-error" || resumedError || promptText(prompt).includes("[fake:api-error]")) {
     const text = process.env.FAKE_CLAUDE_API_ERROR ?? "API Error: 529 Overloaded. This is a server-side issue, usually temporary.";
-    out({ type: "assistant", message: { model: "<synthetic>", content: [{ type: "text", text }] }, error: "unknown", is_api_error_message: true });
-    out({ type: "result", is_error: true, stop_reason: "stop_sequence", terminal_reason: "api_error", result: text });
+    out({ type: "assistant", message: { model: "<synthetic>", stop_reason: "stop_sequence", content: [{ type: "text", text }] }, error: process.env.FAKE_CLAUDE_API_ERROR_KIND ?? "unknown", is_api_error_message: true });
+    const status = Number(process.env.FAKE_CLAUDE_API_ERROR_STATUS) || undefined;
+    out({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", ...(process.env.FAKE_CLAUDE_NO_TERMINAL_REASON === "1" ? {} : { terminal_reason: "api_error" }), ...(status ? { api_error_status: status } : {}), result: text });
     turnRunning = false;
     finishIfDone();
     return;
@@ -862,7 +868,11 @@ const playTurn = (prompt: JsonValue, late = false) => {
   // A signed-out CLI answers every prompt with this, verbatim: the login
   // instruction arrives as assistant text, and only the frame's own error
   // fields say it is a failure at all.
-  if (mode === "not-logged-in") {
+  if (mode === "not-logged-in" || process.env.FAKE_CLAUDE_AUTH_AFTER_TURN === "1" && turnsPlayed > 0) {
+    if (process.env.FAKE_CLAUDE_AUTH_AFTER_WORK === "1") out({
+      type: "assistant", message: { model: "claude-fixture", content: [{ type: "tool_use", id: "before-sign-out", name: "Bash", input: { command: "pwd" } }] },
+    });
+    out({ type: "system", subtype: "status", status: "requesting" });
     out({
       type: "assistant",
       message: { model: "<synthetic>", content: [{ type: "text", text: "Not logged in \u00b7 Please run /login" }] },
@@ -875,6 +885,7 @@ const playTurn = (prompt: JsonValue, late = false) => {
       stop_reason: "stop_sequence",
       terminal_reason: "api_error",
       result: "Not logged in \u00b7 Please run /login",
+      total_cost_usd: runningCost.total,
     });
     turnRunning = false;
     finishIfDone();

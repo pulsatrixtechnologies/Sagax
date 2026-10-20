@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "../testing/voice-call-turns.ts";
 
 import { DATA_DIR, ensureDirs, instanceConfigs, NATIVE_DIR } from "../config.ts";
-import type { ProviderInstance } from "../contracts.ts";
+import { TurnAuthenticationRefusedError, type ProviderInstance } from "../contracts.ts";
 import { recordEvents, type EventRecorder } from "../testing/events.ts";
 import {
   autoCompactWindow,
@@ -901,6 +901,38 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     }, { timeout: 7_000 }).toBe(true);
   });
 
+  it("reports a synthetic sign-out refusal for recovery only after its process has stopped", async () => {
+    const dump = join(scratch, "recover-signed-out-session.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("not-logged-in");
+    await expect(instance.adapter.sendTurn({ threadId: "t-auth-recovery", text: "hi", startupRecovery: true }))
+      .rejects.toBeInstanceOf(TurnAuthenticationRefusedError);
+    expect(() => process.kill(dumpedPid(dump), 0)).toThrow();
+    expect(recorder.events.some(event => event.type === "runtime.error" || event.type === "turn.completed")).toBe(false);
+  });
+
+  it("keeps a sign-out after model activity as an ordinary failed turn", async () => {
+    await create("not-logged-in", { FAKE_CLAUDE_AUTH_AFTER_WORK: "1" });
+    await expect(instance.adapter.sendTurn({ threadId: "t-auth-work", text: "hi", startupRecovery: true })).resolves.toHaveProperty("turnId");
+    expect(await recorder.until(event => event.type === "turn.completed"))
+      .toMatchObject({ ok: false, stopReason: "auth_required" });
+    expect(recorder.events.find(event => event.type === "runtime.error"))
+      .toMatchObject({ message: "Not logged in · Please run /login", setup: true });
+  });
+
+  it("recovers a later sign-out in a retained process without counting earlier turns as new work", async () => {
+    const dump = join(scratch, "retained-sign-out.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("happy", { FAKE_CLAUDE_AUTH_AFTER_TURN: "1" });
+    const turn = { threadId: "t-auth-retained", text: "hi", startupRecovery: true };
+    const first = await instance.adapter.sendTurn(turn);
+    await recorder.until(event => event.type === "turn.completed" && event.turnId === first.turnId);
+    const pid = dumpedPid(dump);
+    await expect(instance.adapter.sendTurn({ ...turn, text: "again" })).rejects.toBeInstanceOf(TurnAuthenticationRefusedError);
+    expect(dumpedPid(dump)).toBe(pid);
+    expect(() => process.kill(pid, 0)).toThrow();
+  });
+
   it("settles an outdated CLI as update_required without emitting an assistant reply", async () => {
     const message = "API Error: 400 Claude Code 2.1.268 does not support this model; version 2.1.280 or newer is required. Run 'claude update'.";
     await create("api-error", { FAKE_CLAUDE_API_ERROR: message });
@@ -963,6 +995,26 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       expect.objectContaining({ message, setup: true, claudeUpdate: true }),
     ]);
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "update_required" });
+  });
+
+  it.each([
+    // 2.1.295 on Cloud: no terminal_reason, so the result's only stop token is its synthetic message's "stop_sequence"
+    [{ FAKE_CLAUDE_API_ERROR: "Credit balance is too low", FAKE_CLAUDE_API_ERROR_KIND: "billing_error", FAKE_CLAUDE_API_ERROR_STATUS: "402", FAKE_CLAUDE_NO_TERMINAL_REASON: "1" },
+      'Your Claude account is out of credits (Claude says: "Credit balance is too low"). Add credits with Claude, then run it again.', "stop_sequence"],
+    [{ FAKE_CLAUDE_API_ERROR: "API Error: Repeated 529 Overloaded errors. The API is at capacity — this is usually temporary. Try again in a moment.", FAKE_CLAUDE_API_ERROR_KIND: "overloaded" },
+      'Claude is overloaded right now (Claude says: "Repeated 529 Overloaded errors"). This is usually temporary, so try again in a few minutes.', "api_error"],
+    [{ FAKE_CLAUDE_API_ERROR: "There's an issue with the selected model (claude-fixture). It may not exist or you may not have access to it.", FAKE_CLAUDE_API_ERROR_KIND: "model_not_found", FAKE_CLAUDE_NO_TERMINAL_REASON: "1" },
+      "There's an issue with the selected model (claude-fixture). It may not exist or you may not have access to it.", "stop_sequence"],
+  ])("shows an api-error frame as one plain error row in Claude's real cause, never a reply or a bare stop token (%#)", async (environment, message, stopReason) => {
+    await create("api-error", environment);
+    await instance.adapter.sendTurn({ threadId: "t-api-error-words", text: "hi" });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(recorder.events.filter((event) => event.type === "runtime.error")).toEqual([expect.objectContaining({ message })]);
+    expect(recorder.events.filter((event) => event.type === "runtime.error")[0]).not.toHaveProperty("setup");
+    expect(recorder.events.some((event) => event.type === "item.completed" && event.itemType === "assistant_text")).toBe(false);
+    expect(recorder.events.some((event) => event.type === "content.delta")).toBe(false);
+    expect(recorder.events.some((event) => event.type === "thread.token-usage.updated" && event.contextTokens === 0)).toBe(false);
+    expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason });
   });
 
   it("retires an outdated child before retry while preserving a healthy pooled session", async () => {

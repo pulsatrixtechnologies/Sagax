@@ -7,6 +7,7 @@ import { DATA_DIR } from "./config.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { stopCause } from "./drivers/engine-errors.ts";
 import { awayDecision, awayReportDue, loadAwaySkips, recordAwaySkip, type AwayVerdict, type RoutineAwaySkips } from "./routine-away.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
@@ -2214,7 +2215,7 @@ export class RoutineManager {
         // it. A stop reason in words still stands as given.
         const codeStopReason = !event.stopReason || ROUTINE_STOP_CODE.test(event.stopReason);
         const failure = (codeStopReason ? run.error : undefined) ??
-          event.stopReason ??
+          stopCause(event.stopReason) ??
           run.error ??
           "The bot did not complete this run";
         const worked = this.workedRuns.delete(run.id);

@@ -98,6 +98,7 @@ import { recoveryPromptFor } from "../../resume-recovery.ts";
 import { sessionIdlePolicy } from "../session-idle.ts";
 import { newTurnLatency, noteTurnActivity, turnLatencyLine, type TurnLatency } from "./turn-latency.ts";
 import { classifyError } from "../retry.ts";
+import { engineFailureKind, engineFailureMessage } from "../engine-errors.ts";
 import { canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { gateServer, mcpStdioServer } from "../../mcp-gate-config.ts";
 import type { GateAnswer, GateAsk } from "../../mcp-gate-approval.ts";
@@ -2814,7 +2815,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               emit({
                 ...base(threadId, turnId),
                 type: "runtime.error",
-                message: errorMessage,
+                message: engineFailureMessage(support.displayName, errorMessage) ?? errorMessage,
               });
               settle(threadId, session, false, reason ?? "failed");
             }
@@ -2834,7 +2835,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 settle(threadId, session, true, "cancelled");
                 return;
               }
-              const code = support.classifyError?.(e);
+              const code = support.classifyError?.(e) ?? (engineFailureKind(message) === "credits" ? "insufficient_funds" : undefined);
               // Authentication setup is a user action, not a retry. The
               // classifier is preferred; loginNote remains a compatibility
               // fallback for existing ACP supports.
@@ -2874,7 +2875,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                   return;
                 }
                 acknowledge();
-                if (!state.stopped) emit({ ...base(threadId, turnId), type: "runtime.error", message });
+                if (!state.stopped) emit({ ...base(threadId, turnId), type: "runtime.error", message: engineFailureMessage(support.displayName, message) ?? message });
                 emit({ ...base(threadId, turnId), type: "turn.completed", ok: state.stopped,
                   stopReason: state.stopped ? "cancelled" : "rpc_error", cost: null });
                 return;
@@ -2882,7 +2883,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               emit({
                 ...base(threadId, turnId),
                 type: "runtime.error",
-                message: accountError ? support.describeAccountError?.(code, cliTurn.model) ?? message : message,
+                message: (accountError ? support.describeAccountError?.(code, cliTurn.model) : undefined) ?? engineFailureMessage(support.displayName, message) ?? message,
                 ...(needsAuth ? { setup: true } : {}),
               });
               // Internal RPC failures can leave a live child poisoned just
