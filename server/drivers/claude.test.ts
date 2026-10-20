@@ -4068,10 +4068,24 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(after("--setting-sources")).toBe("");
     expect(after("--system-prompt")).toBe(ONE_SHOT_SYSTEM_PROMPT);
     expect(seen.cwd).not.toBe(process.cwd());
-    expect(seen.cwd).toMatch(/sagax-oneshot-/);
-    expect(existsSync(seen.cwd)).toBe(false);
+    expect(seen.cwd).toMatch(/claude-one-shot$/);
+    expect(seen.env.ENABLE_CLAUDEAI_MCP_SERVERS).toBe("false");
     await expect(instance.reviewPermission?.("review this request")).resolves.toBe("fake generated text");
     expect(JSON.parse(readFileSync(dump, "utf8")).argv).toContain("--strict-mcp-config");
+  });
+
+  it("keeps the plain one-shot call when settings.json carries the login", async () => {
+    const configDir = join(scratch, "claude-config-helper");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "settings.json"), JSON.stringify({ apiKeyHelper: "/usr/local/bin/key-helper" }));
+    await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284", CLAUDE_CONFIG_DIR: configDir });
+    await instance.snapshot();
+    const dump = join(scratch, "one-shot-helper.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await expect(instance.generateText?.("capture this")).resolves.toBe("fake generated text");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).not.toContain("--setting-sources");
+    expect(seen.argv).not.toContain("--tools");
   });
 
   it("keeps the plain one-shot call on a CLI too old for the isolation flags", async () => {

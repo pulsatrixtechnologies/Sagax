@@ -3123,15 +3123,27 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return;
         }
         const model = config.managedModels?.[0] ?? "claude-haiku-4-5";
-        const isolation = oneShotIsolationArgs(cliVersion);
-        // An empty private folder: no project CLAUDE.md or .mcp.json above it.
-        const cwd = isolation.length ? mkdtempSync(join(tmpdir(), "sagax-oneshot-")) : undefined;
+        const env = environment(model);
+        // Isolated unless this machine's own setup must come along: the
+        // inherit escape hatch, or a login kept in settings.json (an
+        // apiKeyHelper, Bedrock or Vertex variables) that --setting-sources ""
+        // would drop.
+        const authInSettings = Object.keys(readClaudeAuthSettings(env, input.environment)).length > 0;
+        const isolation = inheritsUserConfig(env) || authInSettings ? [] : oneShotIsolationArgs(cliVersion);
+        let cwd: string | undefined;
+        if (isolation.length) {
+          env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
+          // One fixed empty private folder: no project CLAUDE.md or .mcp.json
+          // above it, and one projects/ entry for every one-shot call.
+          cwd = join(DATA_DIR, "claude-one-shot");
+          try { mkdirSync(cwd, { recursive: true, mode: 0o700 }); } catch { cwd = undefined; }
+        }
         const child = spawnCli(
           config.cli,
           ["-p", "--model", model, "--output-format", onUsage ? "json" : "text", ...isolation],
           {
             stdio: ["pipe", "pipe", "pipe"],
-            env: environment(model),
+            env,
             ...(cwd ? { cwd } : {}),
           },
         );
@@ -3143,7 +3155,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           settled = true;
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
-          if (cwd) rmSync(cwd, { recursive: true, force: true });
           if (error) reject(error);
           else resolve(stdout.trim());
         };
