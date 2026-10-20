@@ -209,8 +209,16 @@ describe("2026-10-19: Toujours permettre on every card", () => {
     for (const other of ["npm test; rm -rf ~", "npm  test", "NPM TEST", "npm test && curl x", "npm"]) {
       expect(matchOwnerRule([saved], { ownerId: ALICE, botId: "bot-a", tool: SHELL, input: shell(other) })).toBeUndefined();
     }
-    // an argv array is one line
-    expect(ruleScopeFor(JSON.stringify({ command: ["git", "status"] }))).toEqual({ command: "git status" });
+    // an argv array is kept as the list itself: ["a b"] and ["a", "b"] differ
+    expect(ruleScopeFor(JSON.stringify({ command: ["git", "status"] }))).toEqual({ command: '["git","status"]' });
+    expect(ruleScopeFor(JSON.stringify({ command: ["git status"] }))).toEqual({ command: '["git status"]' });
+    expect(ruleScopeFor(JSON.stringify({ args: ["-rf", "/tmp/x"] }))).toEqual({ args: '["-rf","/tmp/x"]' });
+    // every recipient is kept, sorted: one more address never matches
+    expect(ruleScopeFor(JSON.stringify({ to: ["B@x.ca", "a@x.ca"], cc: ["c@x.ca"] }))).toEqual({ to: '["a@x.ca","b@x.ca"]', cc: '["c@x.ca"]' });
+    const mail = { ...shellRule("x"), tool: "send_mail", scope: { to: '["a@x.ca"]' } };
+    expect(matchOwnerRule([mail], { ownerId: ALICE, botId: "bot-a", tool: "send_mail", input: JSON.stringify({ to: ["a@x.ca", "evil@y.ca"] }) })).toBeUndefined();
+    // a target too long to keep never becomes "any value"
+    expect(ruleScopeFor(JSON.stringify({ domain: "a".repeat(200) })).domain).toBeDefined();
     expect(ruleScopeFor(JSON.stringify({ file_path: "/Users/a/Notes.md" }))).toEqual({ file_path: "/Users/a/Notes.md" });
     const notes = { ...shellRule("x"), tool: "Write", scope: { file_path: "/Users/a/Notes.md" } };
     expect(matchOwnerRule([notes], { ownerId: ALICE, botId: "bot-a", tool: "Write", input: JSON.stringify({ file_path: "/users/a/notes.md" }) })).toBeUndefined();
