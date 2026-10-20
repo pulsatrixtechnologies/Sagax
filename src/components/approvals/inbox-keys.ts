@@ -20,7 +20,7 @@ interface KeyLike {
 const OWN_ENTER = "button, a, [role='button'], [role='tab']";
 
 /** Where a key belongs to the control, not the screen. */
-const OWN_KEYS = "input, textarea, select, [contenteditable=''], [contenteditable='true'], [data-ask-choice], [role='dialog'], [role='menu']";
+const OWN_KEYS = "input, textarea, select, [contenteditable=''], [contenteditable='true'], [data-ask-choice], [data-question-sheet], [role='dialog'], [role='menu']";
 
 export function inboxKeyAction(event: KeyLike): InboxKeyAction | null {
   if (event.defaultPrevented || event.isComposing) return null;

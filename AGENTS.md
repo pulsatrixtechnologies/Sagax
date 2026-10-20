@@ -1675,6 +1675,34 @@ draft shows the status and a send error inline; Retry asks again.
   `decision: "expired"` with `by` null (`server/org-admin-routines.test.ts`).
   The bot activity log reads it as denied (nothing ran).
 
+## One look for every interactive question (2026-10-20)
+
+JC's capture: every question a bot asks looks the same. Under the bot's
+bubble, a separate card in the bubble's own fill (`bg-card`), 16px corners
+and padding, the bubble's width; the question in bold; one row per answer:
+a 22px rounded key (A, B, C, a lighter fill and a hairline) then the label
+in plain text. No outline, no filled buttons, no technical header, no Send
+for a one-pick question. A row lights up under the pointer, a click is the
+answer, the letter keys answer once the card has focus. Choose several:
+boxes in place of keys and a quiet send. An answer in words: one plain
+field (the "Other" row opens it). Once answered the card stays, the chosen
+row marked and the others dimmed (never folded into a line).
+
+- Web/desktop: `src/components/QuestionSheet.tsx` (`QuestionSheet`,
+  `SheetChoices`, `SheetKey`, `SheetField`, `picksInAnswer`). Used by
+  `QuestionCard` (AskUserQuestion and the engines' asks, also on the
+  Approvals screen), `OptionCard` (ask_person and flat asks, in a chat, a
+  room or a bot-to-bot thread) and a widget's one choice (`ChoiceRows` in
+  `widget/WidgetBody.tsx` shows the key in place of a radio ring).
+- iOS/iPad: `ios/App/Cards/QuestionSheet.swift`, used by
+  `QuestionCardView` and `FlatQuestionCardView` (a live flat ask; a
+  permission or a proposal keeps `CardView`). `AskQuestionAnswer.byQuestion`
+  and `.picks(in:labels:)` mirror `picksInAnswer`.
+- Gallery: `dev/previews/question-preview.html` (`?lang=fr&skin=midnight`);
+  the phone's `ios/parity/capture.sh cards` shows the same variants.
+- Tests: `QuestionSheet.test.ts`, `QuestionCard*.test.ts`,
+  `OptionCard.test.ts`, `WidgetChoiceList.test.ts`, `AskQuestionTests.swift`.
+
 ## Settled approvals in the chat (2026-10-05)
 
 A permission ask stays in the chat only while it is still waiting. Once it
