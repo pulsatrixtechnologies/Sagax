@@ -9,8 +9,9 @@
 // recorded with its start time, so a pid the system has since given to
 // another program is never signalled.
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
-import { basename, isAbsolute } from "node:path";
+import { readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, unlinkSync } from "node:fs";
+import { hostname } from "node:os";
+import { basename, isAbsolute, join, sep } from "node:path";
 
 /** A process as the system lists it; `started` tells it apart from a later
  * process that reused its pid. A zombie has exited and only waits for its
@@ -43,6 +44,9 @@ function temporaryProfile(args: string | undefined): string | null {
   return dir && isAbsolute(dir) && TEMPORARY_PROFILE.test(basename(dir)) ? dir : null;
 }
 
+/** macOS keeps ps at /bin/ps; a server started with a bare PATH (a service, a test fixture) still finds it there. */
+const PS = process.platform === "darwin" ? "/bin/ps" : "ps";
+
 /** A tool's output, or null when it failed. The C locale keeps `ps` start
  * times in one fixed five-word form. */
 function execText(file: string, args: string[]): Promise<string | null> {
@@ -69,7 +73,7 @@ function linuxArgs(pid: number): string {
 /** One process's command line, or null when it cannot be read (POSIX). */
 async function processArgs(pid: number): Promise<string | null> {
   if (process.platform === "linux") return linuxArgs(pid) || null;
-  return (await execText("ps", ["-ww", "-o", "args=", "-p", String(pid)]))?.trim() || null;
+  return (await execText(PS, ["-ww", "-o", "args=", "-p", String(pid)]))?.trim() || null;
 }
 
 /** Every process on this machine, or null where none can be listed (Windows).
@@ -93,7 +97,7 @@ async function processTable(withArgs = false): Promise<Map<number, ListedProcess
     return table;
   }
   // lstart is always five words (Tue Oct 13 23:48:58 2026); args follow.
-  const listing = await execText("ps", ["-A", "-ww", "-o", `pid=,ppid=,pgid=,stat=,lstart=${withArgs ? ",args=" : ""}`]);
+  const listing = await execText(PS, ["-A", "-ww", "-o", `pid=,ppid=,pgid=,stat=,lstart=${withArgs ? ",args=" : ""}`]);
   if (listing === null) return null;
   for (const line of listing.split("\n")) {
     const [pid, ppid, pgid, stat, ...rest] = line.trim().split(/\s+/);
@@ -110,7 +114,7 @@ async function processEnvironment(pid: number): Promise<Map<string, string> | nu
     try { entries = readFileSync(`/proc/${pid}/environ`, "utf8").split("\0"); } catch { return null; }
   } else {
     // ps -E appends the environment to the arguments, space separated.
-    const listing = await execText("ps", ["-E", "-ww", "-o", "command=", "-p", String(pid)]);
+    const listing = await execText(PS, ["-E", "-ww", "-o", "command=", "-p", String(pid)]);
     if (listing === null) return null;
     entries = listing.trim().split(/\s+/);
   }
@@ -170,6 +174,11 @@ export async function browserProcessTree(binaryPath: string, daemon: number, ses
   return { daemon, members, groups, profiles };
 }
 
+/** Whether a Chrome's arguments name a profile folder inside `root`. */
+function profileUnder(args: string, root: string): boolean {
+  return args.includes(`--user-data-dir=${root.replace(/[\\/]+$/, "")}${sep}`);
+}
+
 /** Each Chrome an agent-browser daemon started that has outlived it (the
  * daemon was killed: by the OOM killer, by hand, or by the engine's own
  * restart of a stuck daemon), with the session it served. agent-browser
@@ -178,13 +187,15 @@ export async function browserProcessTree(binaryPath: string, daemon: number, ses
  * daemon's environment: AGENT_BROWSER_DAEMON=1 and the session's name. A
  * Chrome whose parent is still a daemon is not one. POSIX only: Windows lists
  * no environments to tell them by. */
-export async function orphanedBrowsers(home: string | undefined): Promise<Array<{ session: string; tree: BrowserProcessTree }>> {
+export async function orphanedBrowsers(home: string | undefined, profiles?: string): Promise<Array<{ session: string; tree: BrowserProcessTree }>> {
   const table = await processTable(true);
   if (!table) return [];
   const found: Array<{ session: string; tree: BrowserProcessTree }> = [];
   for (const [pid, entry] of table) {
     const args = entry.args?.split(" ") ?? [];
-    if (entry.zombie || entry.pgid !== pid || !args.includes("--remote-debugging-port=0") || !args.some((arg) => arg.startsWith("--user-data-dir=") && arg.includes("agent-browser-chrome-"))) continue;
+    // On a temporary profile, or on a saved session's own profile under `profiles` (found, never removed).
+    const onProfile = args.some((arg) => arg.startsWith("--user-data-dir=") && arg.includes("agent-browser-chrome-")) || (!!profiles && profileUnder(entry.args ?? "", profiles));
+    if (entry.zombie || entry.pgid !== pid || !args.includes("--remote-debugging-port=0") || !onProfile) continue;
     // A daemon runs as agent-browser (or its platform build) with no
     // arguments; anything else is asked whether it is one.
     const parent = table.get(entry.ppid);
@@ -200,6 +211,49 @@ export async function orphanedBrowsers(home: string | undefined): Promise<Array<
 
 /** Whether `pid` is still the member of the tree it was when read: the same
  * start time, and not a zombie (exited, waiting to be collected). */
+/** The lock a daemon's own Chrome held when last checked, and that daemon: while both live, a call lists no processes. */
+const heldProfiles = new Map<string, { target: string; daemon: number }>();
+
+function namesProfile(args: string, dir: string): boolean {
+  const flag = `--user-data-dir=${dir}`;
+  for (let at = args.indexOf(flag); at >= 0; at = args.indexOf(flag, at + 1)) {
+    if (at + flag.length === args.length || args[at + flag.length] === " ") return true;
+  }
+  return false;
+}
+
+async function daemonOf(pid: number, table: Map<number, ListedProcess>): Promise<number | null> {
+  for (let parent = table.get(pid)?.ppid ?? 0, depth = 0; parent > 1 && depth < 3; parent = table.get(parent)?.ppid ?? 0, depth++) {
+    if (table.get(parent)?.zombie) return null;
+    if ((await processEnvironment(parent))?.get("AGENT_BROWSER_DAEMON") === "1") return parent;
+  }
+  return null;
+}
+
+/** POSIX Chrome locks its profile with a SingletonLock symlink to `<host>-<pid>`. A later launch on the profile hands itself
+ * to the Chrome the lock names and exits, and refuses a lock that names another host (a renamed Mac, a moved volume). A
+ * Chrome whose daemon was killed keeps running, re-parented, and would take every later launch, so it is stopped; then the
+ * stale lock goes. A daemon's own Chrome keeps its lock. The profile's contents are never touched. Windows: no lock handling. */
+export async function releaseBrowserProfile(dir: string | undefined): Promise<void> {
+  if (!dir || process.platform === "win32") return;
+  let target: string;
+  try { target = readlinkSync(join(dir, "SingletonLock")); }
+  catch { heldProfiles.delete(dir); return; }
+  const match = /^(.*)-(\d+)$/.exec(target);
+  const held = heldProfiles.get(dir);
+  if (held?.target === target && match?.[1] === hostname() && processAlive(Number(match[2])) && processAlive(held.daemon)) return;
+  heldProfiles.delete(dir);
+  const table = await processTable(true);
+  if (!table) return;
+  const browsers = [...table].filter(([, entry]) => !entry.zombie && namesProfile(entry.args ?? "", dir) && !/(?:^|\s)--type=/.test(entry.args ?? ""));
+  for (const [pid, entry] of browsers) {
+    const daemon = await daemonOf(pid, table);
+    if (daemon !== null) { heldProfiles.set(dir, { target, daemon }); return; }
+    if (!await stopBrowserProcesses({ daemon: pid, members: new Map([[pid, entry.started]]), groups: entry.pgid === pid ? [pid] : [] })) return;
+  }
+  for (const name of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) { try { unlinkSync(join(dir, name)); } catch { /* already gone */ } }
+}
+
 function stillRuns(tree: BrowserProcessTree, table: Map<number, ListedProcess>, pid: number): boolean {
   const entry = table.get(pid);
   return !!entry && !entry.zombie && entry.started === tree.members.get(pid);

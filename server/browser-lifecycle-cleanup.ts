@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 
 import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
-import { browserDaemonPidPath, closeBrowserSession, runningBrowserSessionNames } from "./browser-engine.ts";
+import { browserDaemonPidPath, browserProfilesRoot, closeBrowserSession, runningBrowserSessionNames } from "./browser-engine.ts";
 import { orphanedBrowsers, stopBrowserProcesses } from "./browser-processes.ts";
 import { browserRuntimeEnv } from "./browser-runtime.ts";
 
@@ -492,7 +492,7 @@ export class BrowserSweep {
     // A Chrome outlives its daemon only once a daemon ran: look at boot, while
     // daemons run, and once more after the last of them is gone.
     if (boot || owned || this.#hadDaemons) {
-      for (const { session, tree } of await orphanedBrowsers(browserRuntimeEnv({}).HOME)) {
+      for (const { session, tree } of await orphanedBrowsers(browserRuntimeEnv({}).HOME, browserProfilesRoot())) {
         if (!this.#owns(session)) continue;
         if (await stopBrowserProcesses(tree)) console.info(`browser ${session}: stopped a browser whose engine had been killed under it`);
         else console.warn(`browser ${session}: could not stop a browser whose engine had been killed under it`);
