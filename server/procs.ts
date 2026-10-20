@@ -174,6 +174,8 @@ export function spawnCli(
   return child;
 }
 
+const EXEC_KILL_GRACE_MS = 2_000;
+
 export function execCli(
   cli: string,
   args: string[],
@@ -188,10 +190,18 @@ export function execCli(
     return;
   }
   const run = (done: () => void = () => {}) => {
-    execFile(resolved.command, resolved.args, { ...opts, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
+    let escalate: NodeJS.Timeout | undefined;
+    const child = execFile(resolved.command, resolved.args, { ...opts, windowsHide: true, encoding: "utf8" }, (err, stdout, stderr) => {
+      clearTimeout(escalate);
       done();
       cb(err, stdout, stderr);
     });
+    // Node calls back only once the child exits, and a CLI wrapper that traps SIGTERM outlives the timeout's signal.
+    // Only the child is stopped: execFile starts no process group, so a grandchild that ignores SIGTERM can outlive it.
+    if (opts.timeout) {
+      escalate = setTimeout(() => void killCliTree(child, 0), opts.timeout + EXEC_KILL_GRACE_MS);
+      escalate.unref?.();
+    }
   };
   // A known engine CLI boots a whole runtime even to print its version:
   // while the server boots, those probes share the engine start limit

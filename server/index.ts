@@ -3325,7 +3325,7 @@ const managedPolicy = new ManagedDesktopPolicy({ onChange: () => {
 }, hostComputersAllowed: () => IDENTITY.kind !== "perspicax" });
 // A key the provider refused, or accepted again, changes what Model
 // providers and the picker show; the config event refreshes /api/instances.
-onKeyRejectionChange(() => broadcast({ kind: "config", ...configStatus() }));
+onKeyRejectionChange(() => { registry.forgetSnapshots(); broadcast({ kind: "config", ...configStatus() }); });
 /** Why this server may not set up a desktop on itself (an organization
  * server), or undefined. */
 function hostComputerRefusal(): string | undefined {
@@ -16566,6 +16566,8 @@ async function acceptDirectSend(
       const profile = store.bot(botId);
       if (profile && !profile.modelSelection.instanceId && !profile.modelSelection.model) {
         if (enginesRead) await enginesRead;
+        // Probes afresh for an engine installed or signed in since.
+        registry.forgetSnapshots();
         await refreshUnsetModelSelections();
       }
       const currentAtStart = store.projectBotForTask(botId, threadId);
@@ -41807,6 +41809,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const profile = store.bot(bot.id);
           if (profile && !profile.modelSelection.instanceId && !profile.modelSelection.model) {
             if (enginesRead) await enginesRead;
+            registry.forgetSnapshots();
             await refreshUnsetModelSelections();
           }
           const currentAtStart = store.projectBotForTask(bot.id, threadId);
@@ -43842,6 +43845,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && authStatus) {
       res.setHeader("cache-control", "no-store");
       const state = await providerAuthSessions.status(authStatus[1], auth.kind === "session" ? auth.session.id : "loopback", url.searchParams.get("flowId") ?? "");
+      // A finished device sign-in changed what the engine reports; the page reads the engines next.
+      if (state.phase !== "waiting") registry.forgetSnapshots();
       return json(res, 200, { auth: state });
     }
     const instanceAction = /^\/api\/instances\/([\w.-]+)\/(refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out)$/.exec(path);
@@ -43871,6 +43876,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return json(res, 403, { error: "Continue with ChatGPT on the computer running Sagax. Hosted Pro sign-in requires OpenAI's hosted-app approval." });
           }
           const started = await providerAuthSessions.start(instance, owner);
+          if (started.phase === "succeeded") registry.forgetSnapshots();
           // Revocation can arrive while the CLI is obtaining a device code.
           if (auth.kind === "session" && !sessions.isLive(auth.session.id)) {
             providerAuthSessions.revokeOwner(owner);
@@ -43882,6 +43888,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const instance = registry.get(instanceId);
           if (!instance) return json(res, 404, { error: "unknown instance" });
           await providerAuthSessions.signOut(instance, owner);
+          registry.forgetSnapshots();
           return json(res, 200, { instances: await instancesForViewer(auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null) });
         }
         if (action === "auth/complete") {
@@ -43891,6 +43898,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const callbackUrl = typeof body?.callbackUrl === "string" ? body.callbackUrl : typeof body?.code === "string" ? body.code : "";
           if (!flowId || !callbackUrl) return json(res, 400, { error: "flowId and a code or callbackUrl are required" });
           await providerAuthSessions.complete(instanceId, owner, flowId, callbackUrl);
+          registry.forgetSnapshots();
           return json(res, 200, { ok: true });
         }
         const body = await readBody(req, 4096);
@@ -43982,6 +43990,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 500, { error: error instanceof Error ? error.message : String(error) });
       } finally {
         claudeUpdatesInFlight.delete(target.cli);
+        // Even a failed update may have replaced the executable.
+        registry.forgetSnapshots();
       }
     }
 
@@ -44804,6 +44814,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         recordAchievements(localPrincipalId(), [{ type: "claude.linked" }]);
       }
       for (const key of resetKeys) if (key) forgetKey(key);
+      // A saved key reaches an engine through the environment its status read uses, often with no reload.
+      registry.forgetSnapshots();
       // Desktops already counting down move to the new window at once, in
       // every isolation mode; busy work still defers its expiry.
       if (patch.localVm?.idleTimeoutMinutes !== undefined) {

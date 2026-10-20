@@ -108,7 +108,9 @@
 //   FAKE_CLAUDE_CONTEXT_TOKENS report this latest-prompt size in a scripted
 //                      room-plan reply, for automatic compaction fixtures.
 //   FAKE_CLAUDE_AUTH   in (default) | out | unsupported | malformed |
-//                      inherited-api-key — what `auth status` reports
+//                      inherited-api-key | file (signed in while fake-auth.json
+//                      exists in the Claude config dir; `auth logout` removes it)
+//                      - what `auth status` reports
 //   FAKE_CLAUDE_AUTO_UNAVAILABLE_MODELS comma-separated --model values for
 //                      which `--permission-mode auto` starts in "default",
 //                      the way the real CLI (2.1.266) does for Haiku 4.5 and
@@ -206,7 +208,8 @@
 //
 // Keep this file dependency-free — it runs as a bare `node` subprocess.
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { runRoomHandoffAgent } from "./room-handoff-agent.ts";
 
@@ -381,8 +384,25 @@ if (argv[0] === "update") {
   process.exit(0);
 }
 
+const fakeAuthFile = () => join(process.env.CLAUDE_CONFIG_DIR || join(process.env.HOME || homedir(), ".claude"), "fake-auth.json");
+
+if (argv[0] === "auth" && argv[1] === "logout" && process.env.FAKE_CLAUDE_AUTH === "file") {
+  rmSync(fakeAuthFile(), { force: true });
+  process.stdout.write("Successfully logged out from your Anthropic account.\n", () => process.exit(0));
+  await new Promise(() => {});
+}
+
 if (argv[0] === "auth" && argv[1] === "status") {
   const auth = process.env.FAKE_CLAUDE_AUTH ?? "in";
+  if (auth === "file") {
+    let email: string | undefined;
+    try { email = (JSON.parse(readFileSync(fakeAuthFile(), "utf8")) as { email?: string }).email; } catch {}
+    process.stdout.write(
+      JSON.stringify(email ? { loggedIn: true, authMethod: "claude.ai", apiProvider: "firstParty", email } : { loggedIn: false, authMethod: "none", apiProvider: "firstParty" }) + "\n",
+      () => process.exit(email ? 0 : 1),
+    );
+    await new Promise(() => {});
+  }
   if (auth === "unsupported") {
     process.stderr.write("error: unknown command 'auth'\n");
     process.exit(1);
