@@ -277,9 +277,10 @@ export interface TurnRunner {
   /** Run one turn of the assignee. Resolves when the engine settles. The
    * signal aborts the turn (a cancel or a stop). */
   run(a: Assignment, input: RunInput, signal: AbortSignal): Promise<RunResult>;
-  /** The assignment is parked on the person; show (or re-show after a
-   * restart) what it needs. */
-  park(a: Assignment, question: string): void;
+  /** The assignment is parked on the person; show what it needs.
+   * `restored` is the restart's re-park: show it again only if it never got
+   * shown (or its card is gone). */
+  park(a: Assignment, question: string, restored?: boolean): void;
   /** Still parked after inputRemindMs (then daily): remind the person, the
    * same question in full. Optional: a host without it reminds nobody. */
   remind?(a: Assignment, question: string, waitedMs: number): void;

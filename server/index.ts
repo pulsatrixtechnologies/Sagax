@@ -8717,7 +8717,7 @@ const coordinator: Coordinator = createCoordinator({
     // never showed it) and answers it in place (WireMessage.inputRequest);
     // when the requester's conversation is itself a bot-to-bot one, the
     // conversation the person started the work in gets it too.
-    park: (node, question) => postInputRequest(node, question, false),
+    park: (node, question, restored) => postInputRequest(node, question, false, restored),
     remind: (node, question) => postInputRequest(node, question, true),
     // The level the target thread really runs with (invariant I6): the same
     // decision a coordinated turn makes at dispatch — the thread's own bot
@@ -8739,12 +8739,13 @@ activeCoordinationForThread = threadId => coordinator.activeDirect(threadId);
  * marks them answered (in memory: a restart parks again and re-posts). */
 const openInputRequests = new Map<string, Array<{ threadId: string; messageId: string }>>();
 /** A parked teammate's question as a card (park, and its reminders). */
-function postInputRequest(node: HandoffView, question: string, reminder: boolean): void {
+function postInputRequest(node: HandoffView, question: string, reminder: boolean, restored = false): void {
   const bot = store.bot(node.botId);
   if (!bot) return;
   const full = question.trim() || "Your answer is needed to continue.";
   const title = store.taskByThread(bot.id, node.threadId)?.title ?? "Teammate work";
   const posted: Array<{ threadId: string; messageId: string }> = [];
+  let fresh = 0;
   const postTo = (target: HandoffView | undefined) => {
     if (!target || posted.some((row) => row.threadId === target.threadId)) return;
     // Never into a room (its members may not read the waiting thread) nor a
@@ -8753,6 +8754,18 @@ function postInputRequest(node: HandoffView, question: string, reminder: boolean
     const group = target.groupId ? store.group(target.groupId) : undefined;
     const live = target.groupId ? Boolean(group && store.groupTaskByThread(group.id, target.threadId)) : Boolean(store.taskByThread(target.botId, target.threadId));
     if (!live) return;
+    // A restart re-parks every open question: one whose card the person was
+    // already shown stays as it is (a relaunch neither repeats it nor marks
+    // unread what they had read) and is only tracked again, so the answer
+    // still marks it answered.
+    if (restored) {
+      const shown = newestQuestionCard(target.threadId, node.threadId);
+      if (shown && !shown.inputRequest?.answered && shown.tool?.name.endsWith(`: ${full}`)) {
+        posted.push({ threadId: target.threadId, messageId: shown.id });
+        return;
+      }
+    }
+    fresh++;
     const message = store.appendMessage(target.threadId, {
       role: "bot", kind: "activity",
       from: { botId: bot.id, name: bot.name, color: bot.color },
@@ -8773,9 +8786,17 @@ function postInputRequest(node: HandoffView, question: string, reminder: boolean
   if (parent && node.rootId !== parent.id) postTo(coordinator.node(node.rootId));
   if (posted.length) openInputRequests.set(node.threadId, [...(openInputRequests.get(node.threadId) ?? []), ...posted].slice(-10));
   if (openInputRequests.size > 2_000) openInputRequests.delete(openInputRequests.keys().next().value!);
+  if (restored && fresh === 0) return;
   if (node.groupId) store.patchGroup(node.groupId, { unread: true });
   else store.patchTask(bot.id, node.threadId, { unread: true });
   notify(deliverableNotification("delegation-settled", bot, node.threadId, full, { avatarUrl: bot.avatarUrl }));
+}
+/** The newest "needs your input" or reminder card in `threadId` about the
+ * teammate thread `aboutThreadId`, if any (see postInputRequest). */
+function newestQuestionCard(threadId: string, aboutThreadId: string): Message | undefined {
+  return store.activePath(threadId).findLast((message) =>
+    message.kind === "activity" && (message.threadRef?.threadId ?? message.comm?.threadId) === aboutThreadId
+    && (message.tool?.name.includes(" needs your input: ") === true || message.tool?.name.includes(" is still waiting for your answer: ") === true));
 }
 /** The person answered in the waiting thread: its cards say so. */
 function settleInputRequests(threadId: string): void {
@@ -35215,7 +35236,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           unread: boolean; openedAt: number; delegationId?: string; own: boolean;
         }> = [];
         const stateOf = (bot: BotRecord, task: TaskRecord) => {
-          if (task.activity === "waiting-on-you") return "waiting-on-you" as const;
+          // A teammate that ended on a NEEDS INPUT question waits on the
+          // person too, though its turn is over and nothing marks the task.
+          if (task.activity === "waiting-on-you" || coordinator.awaitingAnswer(task.threadId)) return "waiting-on-you" as const;
           if (threadBusy(bot.id, task.threadId)) return "running" as const;
           if (queuedThreadPosition(bot.id, task.threadId) !== null) return "queued" as const;
           if (coordinator.activeDirect(task.threadId)) return "queued" as const;
@@ -35268,6 +35291,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "that thread is not yours to close — only the bot that opened it, or its own bot, can" });
         }
         if (threadId === fromThreadId) return json(res, 400, { error: "you cannot close the thread you are speaking in — finish your turn instead" });
+        if (coordinator.awaitingAnswer(threadId)) {
+          return json(res, 409, { error: `#${task.title} is waiting on the person's answer to its question; it continues once they reply there, so leave it open` });
+        }
         if (threadBusy(owner.id, threadId) || queuedThreadPosition(owner.id, threadId) !== null || coordinator.activeDirect(threadId)) {
           return json(res, 409, { error: `#${task.title} is still running — wait for it to finish (list_threads), or the person can stop it from the app` });
         }
