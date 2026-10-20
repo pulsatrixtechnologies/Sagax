@@ -15,6 +15,8 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import type { Routine } from "@/lib/routines";
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
+import { isGrokExport } from "../../../shared/grok-import";
+import { grokPreviewFrom } from "../GrokImportBox";
 import { api, useStore, type Bot, type Group } from "@/state/store";
 import { MAX_TEAM_BACKUP_BYTES } from "../../../shared/team-backup";
 import { takeImportName } from "../../../shared/import-name";
@@ -33,7 +35,7 @@ export const TEMPLATE_TOOL_LABEL: Record<TemplateTool, LocaleKey> = {
 };
 
 /** Where an import came from, for analytics (as the library reported it). */
-export type ImportSource = "library" | "file" | "github";
+export type ImportSource = "library" | "file" | "github" | "grok";
 
 /** the scout endpoint's answer, as far as this pane renders it: the
  * manifest itself stays opaque and goes back to the server verbatim */
@@ -220,6 +222,11 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
     if (file.size > MAX_TEAM_BACKUP_BYTES) throw new Error("That file exceeds the 50 MB import limit.");
     const raw = await file.text();
     let manifest: unknown = raw;
+    // A shared Grok Bot's export (port of OpenMausBot #3073) becomes a package.
+    if (isGrokExport(raw)) {
+      preview(grokPreviewFrom(raw).pending, "grok");
+      return;
+    }
     if (!file.name.toLowerCase().endsWith(".md")) {
       try {
         manifest = JSON.parse(raw);

@@ -5068,6 +5068,35 @@ banner's Stop (a trusted click) and Sagax's Stop cut at once. With
 `SAGAX_TEST_AGENT_BROWSER=<agent-browser binary>` the last suite drives the
 real tool path: cards for delete, payment and send, refusals, Stop.
 
+## Import a shared Grok Bot (2026-10-19)
+
+Port of OpenMausBot #3073, without its optional Cursor sign-in (a third-party
+account token Sagax does not keep). Settings > Import
+(`src/components/settings/ImportSettings.tsx`, section `import`, hidden like
+Backups for whoever cannot manage backups, and in Simple mode), and a Grok
+Bot export dropped on Bot templates > Import (`TemplateTools` readFile).
+`src/components/GrokImportBox.tsx` reads an `https://x.ai/bot/<id>` link or a
+marketplace page through `POST /api/team-library/grok`
+(`server/routes/team-library-grok.ts`, admin scope; `server/team-library.ts`
+`fetchGrokTemplateCard` fetches only x.ai, redirects must stay there, 20 s,
+2 MB) and shows the public card (name, creator, description) with Start
+from the description (`grokStarterPackage`). The full setup comes from the
+person's own Grok Bot: Copy export prompt (`GROK_EXPORT_PROMPT`), then paste
+its JSON reply or choose it saved as a `.json` file (`openmaus.grok/1`, or
+pi-grokbot-import's `grokbot-bundle/v1`; the format ids stay upstream's).
+`shared/grok-import.ts` turns it into an `openmaus.package` v2 with one bot:
+instructions (cut at the soul limit, with a note), skills off, routines with
+a cron or a plain time paused, apps as connector requirements (Composio
+slugs when known), memories only when exported, key-shaped text redacted.
+Event routines and unreadable schedules are listed under Left out with their
+original text. The preview and Add are the templates' own
+(`TeamImportPreview`, `POST /api/teams/import?mode=add`). Tests:
+`shared/grok-import.test.ts`, `server/team-library.test.ts` (fixtures
+`server/fixtures/grok-share-page*.html`),
+`server/routes/team-library-grok.test.ts`,
+`src/components/settings/ImportSettings.dom.test.ts` (the export fixture
+`shared/fixtures/grok-import/shared-grok-bot.json`).
+
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
 A bot shows a card, list, form, table or chart with the agents tool

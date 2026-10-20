@@ -272,6 +272,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"exact","route":"/api/team-computers","tier":"read","readOnly":true,"scope":"team-computers:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/team-library/catalog","tier":"read","readOnly":true,"scope":"team-library:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/team-library/github","tier":"write","readOnly":false,"scope":"team-library:write","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/team-library/grok","tier":"write","readOnly":false,"scope":"team-library:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/team-map","tier":"read","readOnly":true,"scope":"team-map:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/team-memory","tier":"read","readOnly":true,"scope":"team-memory:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/team-memory","tier":"write","readOnly":false,"scope":"team-memory:write","defaultEnabled":true},

@@ -929,6 +929,7 @@ import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
 import { createMyChromeRoutes } from "./routes/my-chrome.ts";
+import { createTeamLibraryGrokRoutes } from "./routes/team-library-grok.ts";
 import { MyChromeService } from "./browser/my-chrome/service.ts";
 import { MY_CHROME_PROFILE, MY_CHROME_SYSTEM_PROMPT, myChromeToolRefusal, runMyChromeTool, toolName as browserToolName } from "./browser/my-chrome/pilot.ts";
 import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSaverTarget, type MaintainedComputer } from "./computer-care.ts";
@@ -25851,6 +25852,8 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
+// A shared Grok Bot's public card (port of OpenMausBot #3073).
+ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
   service: () => myChrome,
   allowed: (auth) => adminOrDelegate(auth, "server.settings"),

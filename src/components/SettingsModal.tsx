@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, Bell, Check, Coins, Download, ExternalLink, FileText, FlaskConical, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, ExternalLink, FileText, FlaskConical, Import, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection, type ConfigStatus } from "@/state/store";
 import { connectedAppsEnabled, decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -46,6 +46,7 @@ import { SettingsSubPage, SettingsSubPageRow } from "./SettingsSubPage";
 import { AccountCard } from "./settings/AccountCard";
 import { DefaultBotSettings } from "./NewBotDialog";
 import { WorkspaceBackupSettings } from "./WorkspaceBackupSettings";
+import { ImportSettings } from "./settings/ImportSettings";
 import { SecurityKeySettings } from "./SecurityKeySettings";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
@@ -114,6 +115,8 @@ export const SECTIONS: Array<{
   // 2026-10-16: pages a bot proposed and the person published (Grok Bot's canvases).
   { id: "pages", group: "workspace", labelKey: "settings.section.pages", icon: FileText, keywords: ["pages", "published", "publiées", "canvas", "canevas", "share", "partager", "link", "lien", "revoke", "révoquer", "expiry", "expiration", "site", "html", "markdown"] },
   { id: "backups", group: "workspace", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
+  // 2026-10-19: a shared Grok Bot comes in here (port of OpenMausBot #3073).
+  { id: "import", group: "workspace", labelKey: "settings.section.import", icon: Import, keywords: ["import", "importer", "grok", "grok bot", "x.ai", "share link", "lien de partage", "template", "modèle"] },
   // 0.5.6: this app's updates and the pre-release channel (were in General
   // and General > Advanced). Shown where the desktop app answers.
   { id: "updates", group: "app", labelKey: "settings.updates.title", icon: Download, keywords: ["updates", "update", "version", "mise à jour", "mises à jour", "prerelease", "pre-release", "beta", "bêta", "restart"] },
@@ -178,7 +181,7 @@ export function memberHidesSection(id: AppSettingsSection, input: {
   organization: boolean;
 }): boolean {
   if (id === "experimental" || id === "connectedApps" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
-  if (id === "backups") return !input.manageBackups;
+  if (id === "backups" || id === "import") return !input.manageBackups;
   if (id === "computer") return !input.manageComputers && !input.organization;
   return false;
 }
@@ -829,6 +832,7 @@ export function SettingsModal() {
             )}
 
             {section === "backups" && <WorkspaceBackupSettings />}
+            {section === "import" && <ImportSettings />}
 
             {section === "security" && <SecurityKeySettings />}
 
