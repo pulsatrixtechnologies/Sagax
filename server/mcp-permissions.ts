@@ -86,6 +86,7 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("groupmemory:save", "own", "group_memory_update"),
   p("files:attach", "own", "attach_file"),
   p("widgets:check", "read", "check_widget"),
+  p("help:read", "read", "sagax_help"),
   p("widgets:show", "own", "show_widget"),
   p("widgets:update", "own", "update_widget"),
   p("artifacts:save", "own", "save_artifact"),

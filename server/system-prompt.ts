@@ -67,7 +67,10 @@ export const VERIFY_FIRST_PROMPT =
   + " If you could not see something (an image, a file, a page, a tool result), say \"I could not see X\" and ask for it; never assume what it contains."
   + " Never invent names, people, tools, commands, IDs or results: a person's name comes from the source you read this turn, a tool from your own tool list."
   + " Ask the person only when a real decision is needed, once, through your question card (ask_user or its equivalent), or the `NEEDS INPUT:` line when your task asks for it; never guess and then act on the guess."
-  + " Keeping replies short limits their length, never how far you check.";
+  + " Keeping replies short limits their length, never how far you check."
+  // 2026-10-19 (self-knowledge, JC): the app's own capabilities come from
+  // sagax_help (server/self-knowledge.ts), never from memory.
+  + " For any question about what Sagax or Perspicax can do or how, call sagax_help before you answer or say it is impossible.";
 
 export function buildSystemPrompt(
   persona: string,

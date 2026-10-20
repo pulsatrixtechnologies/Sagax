@@ -17,6 +17,7 @@ import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
+import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
 /** Which tools a turn is shown. The harness decides each of these when it
@@ -466,6 +467,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   ...WIDGET_TOOL_DEFINITIONS,
   ...ARTIFACT_TOOL_DEFINITIONS,
   ...PAGE_TOOL_DEFINITIONS,
+  ...HELP_TOOL_DEFINITIONS,
   {
     name: "post_to_room",
     description:

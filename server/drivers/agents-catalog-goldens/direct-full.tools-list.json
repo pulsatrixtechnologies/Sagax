@@ -647,6 +647,29 @@
       }
     },
     {
+      "name": "sagax_help",
+      "description": "What Sagax and Perspicax can do, where it is in the app and how, who may do it: features, settings, your tools, permissions, engines, release notes. Call it before you answer a question about the app or say something is impossible. Returns a few short sections.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The person's question, in their words."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "post_to_room",
       "description": "Put one message into a shared room you belong to, for example when the user asks you to tell the team something. Get group_id from list_rooms. This posts and returns: no room member's turn starts, nobody replies, and nothing comes back except confirmation — so never use it to ask a question or hand out work (use ask_bot or delegate_bot for those). Post once, say it in full, and tell the user what you posted. Set attach_voice_note true to attach this turn's voice note. If a post is refused, do not retry it: say what you wanted to post in your reply instead.",
       "inputSchema": {

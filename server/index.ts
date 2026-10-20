@@ -299,6 +299,7 @@ import { EngineSelfCheck, readEngineManifest, runEngineSelfCheck, type EngineChe
 import { engineStartGate, routineEngineGate, type EngineSlot } from "./engine-start-gate.ts";
 import { IdleEnginePool, markOomVictim, MemoryWatch, memoryGuardSettings } from "./engine-memory-guard.ts";
 import { checkWidgetForTurn, WidgetCheckAttempts, WidgetRenderer } from "./widget-check.ts";
+import { bundledKnowledgeIndex, helpAnswer } from "./self-knowledge.ts";
 import { sessionIdlePolicy } from "./drivers/session-idle.ts";
 import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
@@ -34174,6 +34175,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const result = toolResults.read(internalCapability, id, offset);
         return result ? json(res, 200, result) : json(res, 404, { error: "Saved result unavailable in this bot's conversation, expired, or offset out of range. Do not repeat an action to retrieve its output." });
+      }
+      // sagax_help (server/self-knowledge.ts): the generated knowledge base,
+      // read on the first question. Reads nothing of the person's data.
+      if (method === "POST" && path === "/api/internal/self-knowledge") {
+        const body = await readInternalBody() as { question?: unknown } | null;
+        requireActiveInternalCapability();
+        const question = typeof body?.question === "string" ? body.question.trim().slice(0, 500) : "";
+        if (!question) return json(res, 400, { error: "question: what the person wants to know about Sagax or Perspicax." });
+        const index = bundledKnowledgeIndex();
+        if (!index) return json(res, 503, { error: "The knowledge base is not in this build; check your own tool list before you answer." });
+        const organization = IDENTITY.kind === "perspicax";
+        const speaker = turnSpeakerPrincipals.get(internalCapability.threadId);
+        const person = speaker ? principals.byId(speaker) : null;
+        const role = !organization || !person ? null : person.local === true || person.orgRole === "admin" ? "admin" as const : "member" as const;
+        return json(res, 200, { text: helpAnswer(index, question, { organization, role, perspicaxTools: organization && Boolean(speaker) }).text });
       }
       if (method === "POST" && path === "/api/internal/widget-check") {
         const body = await readInternalBody();

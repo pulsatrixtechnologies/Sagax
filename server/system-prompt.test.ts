@@ -413,6 +413,7 @@ describe("verify-first rule (2026-10-19)", () => {
     expect(VERIFY_FIRST_PROMPT).toContain("Never invent names, people, tools, commands, IDs or results");
     expect(VERIFY_FIRST_PROMPT).toContain("question card (ask_user or its equivalent)");
     expect(VERIFY_FIRST_PROMPT).toContain("never how far you check");
+    expect(VERIFY_FIRST_PROMPT).toContain("call sagax_help before you answer or say it is impossible");
     expect(VERIFY_FIRST_PROMPT).not.toMatch(/[\u2013\u2014]/);
     expect(built.stable).toContain(VERIFY_FIRST_PROMPT);
   });

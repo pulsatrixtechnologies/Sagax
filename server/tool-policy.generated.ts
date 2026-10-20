@@ -130,6 +130,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"exact","route":"/api/internal/routines","tier":"read","readOnly":true,"scope":"internal:read","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/sandbox/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/sandbox/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
+  {"method":"POST","kind":"exact","route":"/api/internal/self-knowledge","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/internal/session-read","tier":"read","readOnly":true,"scope":"internal:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/internal/session-search","tier":"read","readOnly":true,"scope":"internal:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/internal/shared-computers","tier":"read","readOnly":true,"scope":"internal:read","defaultEnabled":true},
