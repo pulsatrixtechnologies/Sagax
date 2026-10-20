@@ -49,6 +49,12 @@ export interface CredentialVaultRouteDeps {
   browser?: {
     armForPerson(botId: string, threadId: string): Promise<string | null>;
     clearAfterPerson(botId: string, threadId: string): Promise<string | null>;
+    /** Whether self-start armed that browser and it still is (a restart
+     * re-arms it; nothing else may end it before Done). */
+    armedForPerson(botId: string, threadId: string): Promise<boolean>;
+    /** Done or declined: the sign-in under way ends (the browser stays armed
+     * until its next restart). */
+    endForPerson(botId: string, threadId: string): Promise<void>;
   };
   cards: {
     /** The pending vault card a bot posted in this conversation, or null. */
@@ -151,6 +157,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         if (secret.vault.principalId !== principalId) return json(res, 403, { error: "Only the person this request was made for can answer it.", code: "not_yours" });
         if (secret.provided || secret.dismissed || secret.superseded) return json(res, 409, { error: "this login request was already answered" });
         if (action === "dismiss") {
+          await deps.browser?.endForPerson(botId!, threadId);
           if (!deps.cards.resume(botId!, threadId, messageId!, "dismissed", declinedNote())) return json(res, 409, { error: "this login request is no longer available" });
           return json(res, 200, { dismissed: true });
         }
@@ -168,11 +175,15 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         }
         if (action === "signed-in") {
           if (!deps.browser) return json(res, 409, { error: "The bot's browser is not available here.", code: "no_browser" });
+          if (!await deps.browser.armedForPerson(botId!, threadId)) {
+            return json(res, 409, { error: "This browser was not prepared for your sign-in. Press \"I'll sign in myself instead\" again, sign in, then press Done.", code: "not_armed" });
+          }
           const unclear = await deps.browser.clearAfterPerson(botId!, threadId);
           if (unclear) return json(res, 409, { error: unclear, code: "browser_busy" });
           if (!deps.cards.resume(botId!, threadId, messageId!, "dismissed", signedInNote(secret.vault.domain ?? secret.vault.name ?? "the site"))) {
             return json(res, 409, { error: "this login request is no longer available" });
           }
+          await deps.browser.endForPerson(botId!, threadId);
           const settled = deps.cards.find(botId!, threadId, messageId!) ?? secret;
           if (settled.vault) deps.cards.patch(botId!, threadId, messageId!, { ...settled, vault: { ...settled.vault, signedInSelf: true } });
           deps.audit?.("credentials.signed_in", auth, { botId });

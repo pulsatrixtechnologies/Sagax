@@ -4910,7 +4910,10 @@ true` with no site name). The card also lets the person sign in themselves
 in the bot's browser: `self-start` arms that browser first
 (`BrowserRuntime.armForPerson`: refused where a bot ran a script in it,
 then scripts, screenshots, preview frames and CSS selectors are off until a
-restart), and Done (`signed-in`) empties its password and code fields
+restart; until Done the sign-in under way survives any restart or close,
+`forgetSession` arms the new browser again and the bot's `restart_browser`
+is refused), and Done (`signed-in`, 409 `not_armed` when the browser was
+not armed) empties its password and code fields
 (`clearAfterPerson`; refused while the person still holds the browser),
 resumes the bot (`signedInNote`: no handle, no value), then marks the card
 and writes `credentials.signed_in` (no site). The submit checks again, in

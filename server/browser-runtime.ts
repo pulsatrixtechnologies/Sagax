@@ -140,6 +140,8 @@ return JSON.stringify(Array.from(document.querySelectorAll('[data-sagax-filled]'
 })()`;
 /** The taint a person's own sign-in leaves (armForPerson): not an origin. */
 const PERSON_SIGN_IN = "person-sign-in";
+const PERSON_SIGNING_IN = "The person is signing in themselves in this browser; it cannot be restarted until they press Done on the login card.";
+export const NOT_ARMED_FOR_PERSON = "This browser was not prepared for your sign-in. Press \"I'll sign in myself instead\" on the card again, sign in, then press Done.";
 /** Empty every password and one-time code field of the top document. */
 const CLEAR_SIGN_IN_FIELDS_SCRIPT = `(() => {'use strict';
 let cleared = 0;
@@ -433,6 +435,9 @@ export class BrowserRuntime {
   private egressNotice?: (session: string) => string | null;
   /** Values filled into each session, hidden from every later result. */
   readonly redactor = new SecretRedactor();
+  /** Sessions where a person is signing in themselves (armForPerson until
+   * Done): kept apart from the redactor, which a restart forgets. */
+  private personSignIns = new Set<string>();
 
   constructor({ closeBrowser, applyViewport, pauseStream, egressNotice, ...options }: Partial<BrowserRuntime["options"]> & { closeBrowser?: CloseBrowser; applyViewport?: ApplyViewport; pauseStream?: PauseStream; egressNotice?: (session: string) => string | null } = {}) {
     this.egressNotice = egressNotice;
@@ -1021,15 +1026,37 @@ export class BrowserRuntime {
    * screenshots, preview frames and CSS selectors are off until a restart.
    * Null when armed, else the refusal. */
   armForPerson(session: string): string | null {
+    if (this.personSignIns.has(session)) { this.redactor.taint(session, PERSON_SIGN_IN); return null; }
     if (this.redactor.everScripted(session)) return "A bot ran a script in this browser, so it is not clean for a sign-in. Press Restart in the Browser panel (or ask the bot to call restart_browser), then try again.";
     this.redactor.taint(session, PERSON_SIGN_IN);
+    this.personSignIns.add(session);
     return null;
+  }
+
+  /** Whether a person's own sign-in is under way in this session. */
+  armedForPerson(session: string): boolean {
+    return this.personSignIns.has(session) && this.redactor.isTainted(session, PERSON_SIGN_IN);
+  }
+
+  /** The person's sign-in ended (Done, or the card declined): the browser
+   * stays armed until its next restart, as after a fill. */
+  endPersonSignIn(session: string): void {
+    this.personSignIns.delete(session);
+  }
+
+  /** Forget what a session's browser held (a restart, a close, an idle
+   * close). A person's sign-in under way survives it: the session is armed
+   * again at once, so no script of the bot runs in the new browser either. */
+  private forgetSession(session: string): void {
+    this.redactor.forget(session);
+    if (this.personSignIns.has(session)) this.redactor.taint(session, PERSON_SIGN_IN);
   }
 
   /** After the person signed in themselves: empty the page's password and
    * code fields, so the bot never reads them back. Null when done (or no
    * browser runs), else why not (the person still holds the browser). */
   async clearAfterPerson(session: string): Promise<string | null> {
+    if (!this.armedForPerson(session)) return NOT_ARMED_FOR_PERSON;
     const entry = this.clients.get(session);
     if (!entry) return null;
     try {
@@ -1233,7 +1260,7 @@ export class BrowserRuntime {
     this.changed(gate);
     try {
       if (!await this.closeBrowser(session, launch)) return false;
-      this.redactor.forget(session);
+      this.forgetSession(session);
       await this.clients.get(session)?.client.stop();
       await this.clients.get(session)?.client.stop(); // see restart()
       gate.uncertain = false;
@@ -1263,7 +1290,7 @@ export class BrowserRuntime {
     this.changed(gate);
     try {
       await closeBrowser();
-      this.redactor.forget(session);
+      this.forgetSession(session);
       await this.clients.get(session)?.client.stop();
       // A tools/list admitted before closing set in can register a client
       // while that stop awaits; registration is synchronous, so one re-check
@@ -1289,6 +1316,9 @@ export class BrowserRuntime {
    * close — but it never takes a person's hold, and a failed close leaves no
    * owner behind that would lock a person out of the panel. */
   async agentRestart(session: string, closeBrowser: () => Promise<boolean>): Promise<void> {
+    // A person is signing in themselves here: a bot's restart would wipe
+    // what keeps its scripts off (armForPerson), so it waits for Done.
+    if (this.personSignIns.has(session)) throw new Error(PERSON_SIGNING_IN);
     const gate = this.gate(session);
     if (gate.owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
     if (gate.closing || gate.releasing || gate.agents || gate.humans) throw new Error("The browser is busy. Wait for current work to finish before restarting.");
@@ -1297,7 +1327,7 @@ export class BrowserRuntime {
     this.changed(gate);
     try {
       if (!await closeBrowser()) throw new Error("The browser could not be closed. Ask the person to press Restart in the Browser panel of Sagax on their computer, or to restart Sagax.");
-      this.redactor.forget(session);
+      this.forgetSession(session);
       await this.clients.get(session)?.client.stop();
       await this.clients.get(session)?.client.stop(); // see restart()
       gate.uncertain = false;
@@ -1325,7 +1355,7 @@ export class BrowserRuntime {
     await this.clients.get(session)?.client.stop();
     gate.closing = false;
     this.changed(gate);
-    if (!gate.owner && !gate.agents && !gate.humans && !gate.watchers && !gate.calls) { this.gates.delete(session); this.toolLists.delete(session); this.redactor.forget(session); }
+    if (!gate.owner && !gate.agents && !gate.humans && !gate.watchers && !gate.calls) { this.gates.delete(session); this.toolLists.delete(session); this.forgetSession(session); }
   }
 
   async closeAll(): Promise<void> {

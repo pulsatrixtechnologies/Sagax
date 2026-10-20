@@ -243,8 +243,31 @@ describe("hardening after the security review", () => {
     await expect(runtime.previewFrame("person", async () => "frame")).rejects.toThrow();
     expect(await runtime.clearAfterPerson("person")).toBeNull();
     expect(site.state().values.pass).toBe("");
-    // No browser running: nothing to empty.
-    expect(await runtime.clearAfterPerson("never-started")).toBeNull();
+    // A browser never prepared for a person's sign-in: Done is refused.
+    expect(await runtime.clearAfterPerson("never-started")).toContain("not prepared");
+  });
+
+  it("keeps a person's sign-in armed across a browser restart or close: the bot cannot restart it, and scripts stay off", async () => {
+    const { runtime } = setup();
+    const site = engine("https://portal.example.test/login", ONE_STEP, ONE_STEP_SITE);
+    expect(await runtime.clearAfterPerson("signin")).toContain("not prepared");
+    await call(runtime, "signin", site.spec, "agent_browser_snapshot", {});
+    expect(runtime.armForPerson("signin")).toBeNull();
+    // The bot's own restart_browser waits for Done.
+    let closed = 0;
+    await expect(runtime.agentRestart("signin", async () => { closed++; return true; })).rejects.toThrow(/signing in themselves/);
+    expect(closed).toBe(0);
+    // A close (idle, reopen) forgets the redactor, never the sign-in under way.
+    await runtime.close("signin");
+    expect(runtime.armedForPerson("signin")).toBe(true);
+    const again = engine("https://portal.example.test/login", ONE_STEP, ONE_STEP_SITE);
+    expect((await call(runtime, "signin", again.spec, "agent_browser_eval", { script: "1" })).isError).toBe(true);
+    expect((await call(runtime, "signin", again.spec, "agent_browser_screenshot", {})).isError).toBe(true);
+    // Done ends it; the next restart starts a clean browser.
+    expect(await runtime.clearAfterPerson("signin")).toBeNull();
+    runtime.endPersonSignIn("signin");
+    await runtime.agentRestart("signin", async () => true);
+    expect(runtime.armedForPerson("signin")).toBe(false);
   });
 
   it("checks the form again in the submit itself: a form retargeted after the fill is not sent, and the password is emptied", async () => {

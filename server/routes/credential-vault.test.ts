@@ -183,9 +183,12 @@ describe("credential vault routes", () => {
     const calls: string[] = [];
     let armRefusal: string | null = "A bot ran a script in this browser";
     let clearRefusal: string | null = "Give the browser back to the bot";
+    let armed = false;
     const browser = {
-      armForPerson: async (botId: string, threadId: string) => { calls.push(`arm:${botId}:${threadId}`); return armRefusal; },
+      armForPerson: async (botId: string, threadId: string) => { calls.push(`arm:${botId}:${threadId}`); if (!armRefusal) armed = true; return armRefusal; },
       clearAfterPerson: async (botId: string, threadId: string) => { calls.push(`clear:${botId}:${threadId}`); return clearRefusal; },
+      armedForPerson: async () => armed,
+      endForPerson: async (botId: string, threadId: string) => { calls.push(`end:${botId}:${threadId}`); armed = false; },
     };
     const { call, cards, resumed, vault, audits } = await serve({ browser });
     const id = (await call("POST", "/api/me/credentials", login)).body.item.id as string;
@@ -193,6 +196,8 @@ describe("credential vault routes", () => {
     cards.set("t1:p2", vaultRequestCard({ principalId: "pr_someone_else", botName: "Ada", domain: "example.test" }));
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p2/self-start", { threadId: "t1" })).status).toBe(403);
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p2/signed-in", { threadId: "t1" })).status).toBe(403);
+    // Done before the browser was armed: refused, nothing settles.
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/signed-in", { threadId: "t1" })).body).toMatchObject({ code: "not_armed" });
     // A browser where a bot ran a script is refused until it restarts.
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/self-start", { threadId: "t1" })).body).toMatchObject({ code: "browser_not_clean" });
     armRefusal = null;
@@ -202,7 +207,7 @@ describe("credential vault routes", () => {
     expect(resumed).toHaveLength(0);
     clearRefusal = null;
     expect((await call("POST", "/api/bots/bot-a/vault-cards/p1/signed-in", { threadId: "t1" })).body).toEqual({ signedIn: true });
-    expect(calls).toEqual(["arm:bot-a:t1", "arm:bot-a:t1", "clear:bot-a:t1", "clear:bot-a:t1"]);
+    expect(calls).toEqual(["arm:bot-a:t1", "arm:bot-a:t1", "clear:bot-a:t1", "clear:bot-a:t1", "end:bot-a:t1"]);
     expect(cards.get("t1:p1")).toMatchObject({ dismissed: true, resumed: true, vault: { signedInSelf: true } });
     expect(resumed.at(-1)!.prompt).toContain("signed in to example.test themselves");
     expect(resumed.at(-1)!.prompt).not.toContain("cred_");
@@ -212,7 +217,7 @@ describe("credential vault routes", () => {
   });
 
   it("marks a card signed in only once the bot was resumed, and refuses without a browser", async () => {
-    const failing = await serve({ resumeFails: true, browser: { armForPerson: async () => null, clearAfterPerson: async () => null } });
+    const failing = await serve({ resumeFails: true, browser: { armForPerson: async () => null, clearAfterPerson: async () => null, armedForPerson: async () => true, endForPerson: async () => {} } });
     failing.cards.set("t1:q1", vaultRequestCard({ principalId: LOCAL_VAULT_PRINCIPAL, botName: "Ada", domain: "example.test" }));
     expect((await failing.call("POST", "/api/bots/bot-a/vault-cards/q1/signed-in", { threadId: "t1" })).status).toBe(409);
     expect(failing.cards.get("t1:q1")!.vault!.signedInSelf).toBeUndefined();

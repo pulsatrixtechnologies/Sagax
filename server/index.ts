@@ -6371,6 +6371,13 @@ function credentialVaultPersonRefusal(auth: RequestAuth): { status: number; body
   if (!principalId || principalId.startsWith("anon:")) return refusal;
   return null;
 }
+/** The bot's own browser session for a conversation (the vault card's
+ * "I'll sign in myself"), or null when it has none here. */
+async function personBrowserSession(botId: string, threadId: string): Promise<string | null> {
+  const bot = store.bot(botId);
+  const browser = bot && bot.browser !== false && builtInBrowserEnabled(cfg) ? await browserIntegration(bot.id, bot.browserProfile, undefined, threadId) : null;
+  return browser?.session ?? null;
+}
 ROUTES.push(createCredentialVaultRoutes({
   vault: credentialVault,
   onePassword,
@@ -6385,9 +6392,16 @@ ROUTES.push(createCredentialVaultRoutes({
       return browser ? browserRuntime.armForPerson(browser.session) : "This bot has no browser here.";
     },
     clearAfterPerson: async (botId, threadId) => {
-      const bot = store.bot(botId);
-      const browser = bot && bot.browser !== false && builtInBrowserEnabled(cfg) ? await browserIntegration(bot.id, bot.browserProfile, undefined, threadId) : null;
-      return browser ? browserRuntime.clearAfterPerson(browser.session) : null;
+      const session = await personBrowserSession(botId, threadId);
+      return session ? browserRuntime.clearAfterPerson(session) : null;
+    },
+    armedForPerson: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      return session ? browserRuntime.armedForPerson(session) : false;
+    },
+    endForPerson: async (botId, threadId) => {
+      const session = await personBrowserSession(botId, threadId);
+      if (session) browserRuntime.endPersonSignIn(session);
     },
   },
   // Counts and ids only (server/routes/credential-vault.ts): never a name,
