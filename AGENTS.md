@@ -3858,6 +3858,46 @@ exported and read by older builds, no client reads it). Rules, covered by
   `server/context-compaction-replay.e2e.test.ts`, the compaction block of
   `server/hooks.e2e.test.ts` (mid tool call), `server/context-budget.test.ts`.
 
+## Stale engine sessions and small talk (2026-10-20)
+
+JC: "Hello Cryptic" resumed a 6.4 MB Claude session whose last turn, 15 h
+earlier, had stopped on a pending `gh auth login -w`: the bot picked it back
+up (cloud computer woken, three commands, text at +67 s). Rules:
+
+- A thread's engine session is not resumed when the thread's last message is
+  older than `context.staleSessionHours` (default 6, 0 off), or, once quiet
+  for `context.staleSessionColdMinutes` (default 60: the prompt cache is
+  cold), the engine reports a saved session larger than
+  `context.staleSessionBytes` (default 2 MB, about the largest 10% of Claude
+  sessions, 0 off; `ProviderAdapter.sessionBytes`, Claude only: the
+  `projects/<cwd>/<id>.jsonl` file, never while a live process holds it).
+  An active task keeps its session however large.
+  `server/stale-session.ts`, `staleEngineSession` in `server/index.ts`.
+  Engines handed the transcript every turn, a rewound thread or another
+  engine joining are not concerned (they rebuild anyway). Routine, teammate
+  and room threads are judged the same way. `context.autoCompact: false`
+  (debugging) turns this off too.
+- Then `compactConversation` folds at once with the deterministic summary
+  (no model call on the person's wait), keeping the latest two exchanges
+  (one, or none, on a short thread); with nothing new since the last fold it
+  re-applies that fold. The record is marked `stale` (kept across a retry or
+  a restart). The turn starts a new session under
+  `PAUSED_PREAMBLE` (`server/turn-context.ts`): "resumed after a pause",
+  unfinished work only if the new message asks for it. No chat row. A
+  prewarm of a stale thread is skipped (`prewarmRefusal` "stale session").
+- Small talk (`server/small-talk.ts` `isSmallTalk`: a greeting, thanks, a
+  goodbye or how-are-you alone, FR/EN, at most the bot's name around it;
+  never "ok", "oui", "vas-y", "ça va", "quoi de neuf"): the person's turn carries
+  `SMALL_TALK_TURN_NOTE`, and its cloud computer tools answer
+  `SMALL_TALK_CLOUD_REFUSAL` without waking it (`/api/internal/sandbox/mcp`)
+  while that message is the latest (a request steered in lifts it).
+  The standing rule rides `RUN_YOURSELF_PROMPT`: small talk calls no tool and
+  never resumes earlier work; one line may name it and ask.
+- Tests: `server/stale-session.test.ts`, `server/small-talk.test.ts`,
+  `server/turn-context.test.ts`, the stale case of
+  `server/context-compaction.e2e.test.ts`, `sessionBytes` in
+  `server/drivers/claude.test.ts`.
+
 ## Single stream when threads are off (2026-10-17)
 
 With Show threads off, a bot is one continuous conversation; each topic runs

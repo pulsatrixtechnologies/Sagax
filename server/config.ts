@@ -680,6 +680,16 @@ const appConfigSchema = z.object({
      * fold on its own. Their engines then compact the way they would
      * without Sagax, and the person may notice it. */
     autoCompactOffBots: z.array(z.string().min(1).max(200)).max(1_000).optional(),
+    /** Hours of quiet after which a thread's engine session is not resumed
+     * but rebuilt from Sagax's summary (server/stale-session.ts; default 6,
+     * 0 turns the check off). */
+    staleSessionHours: z.number().min(0).max(24 * 365).optional(),
+    /** Saved engine session size (bytes) past which it is not resumed
+     * (default 2 MB, 0 off), once quiet for staleSessionColdMinutes.
+     * Engines that report no size: time only. */
+    staleSessionBytes: z.number().int().min(0).max(10_000_000_000).optional(),
+    /** Minutes of quiet before the size check applies (default 60). */
+    staleSessionColdMinutes: z.number().min(0).max(24 * 60 * 30).optional(),
   }).optional(),
   /** Memory upkeep timing, for bots with Memory upkeep switched on. */
   memory: z.object({
@@ -808,7 +818,7 @@ export interface AppConfig {
   rooms?: { turnTimeoutMinutes: number };
   mcp?: { callTimeoutMinutes?: number };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
-  context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[] };
+  context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[]; staleSessionHours?: number; staleSessionBytes?: number; staleSessionColdMinutes?: number };
   memory?: { captureQuietMs?: number; tidyHour?: number };
   /** Shared preserves the historical singleton. Per-bot gives every bot a
    * separate container, durable workspace, viewer and lease. Pool runs N

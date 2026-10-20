@@ -777,6 +777,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((event) => event.type === "turn.completed" && event.turnId === running.turnId);
   });
 
+  it("sessionBytes reads the saved session file a resume would load", async () => {
+    const account = join(scratch, "claude-stale-account");
+    const id = "0b5c2f0e-1d3a-4c8e-9b7f-2a6d4e8f1c3b";
+    mkdirSync(join(account, "projects", "-some-cwd"), { recursive: true });
+    writeFileSync(join(account, "projects", "-some-cwd", `${id}.jsonl`), "x".repeat(4_321));
+    await create(undefined, {}, { configDir: account });
+    expect(instance.adapter.sessionBytes?.("t-stale", id)).toBe(4_321);
+    // Unknown, malformed or non-string cursors: nothing to report.
+    expect(instance.adapter.sessionBytes?.("t-stale", "1f0e0e0e-0000-4000-8000-000000000000")).toBeUndefined();
+    expect(instance.adapter.sessionBytes?.("t-stale", "../../etc/passwd")).toBeUndefined();
+    expect(instance.adapter.sessionBytes?.("t-stale", 42)).toBeUndefined();
+  });
+
   it("normalizes a full turn into the canonical event sequence", async () => {
     await create();
     const { turnId } = await instance.adapter.sendTurn({ threadId: "t-happy", text: "hi", model: "claude-sonnet-5" });

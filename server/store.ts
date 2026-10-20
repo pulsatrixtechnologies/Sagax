@@ -120,7 +120,9 @@ export interface TaskRecord extends Omit<WireTask, TaskWireDerivedKeys> {
    * last (server/context-rebuild.ts CompactionRecord with an anchorId). They
    * are the thread's memory of its older turns and stay off the chat: the
    * person never sees a fold, only the bot's next session reads it. */
-  contextSummaries?: Array<{ id: string; at: number; summary: string; firstKeptId: string; foldedThroughId: string; anchorId: string; tokensBefore: number }>;
+  /** stale: written (or re-applied) for a stale engine session
+   * (server/stale-session.ts): the new session reads it as a pause. */
+  contextSummaries?: Array<{ id: string; at: number; summary: string; firstKeptId: string; foldedThroughId: string; anchorId: string; tokensBefore: number; stale?: true }>;
   contextFloor?: number;
   lastContextModel?: string;
   /** Who pinned this conversation's surface: "user" when a person chose it
