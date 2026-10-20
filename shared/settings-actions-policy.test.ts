@@ -39,4 +39,19 @@ describe("every setting is an action (sagax_settings policy)", () => {
     // a standing grant with no level to compare
     expect(decideSettingEffect({ ...owner, classes: ["rule-change"], mode: "full" })).toEqual({ effect: "hold", reason: "above-level" });
   });
+
+  it("runs what the person asked their Primary Bot for, at any level, and keeps the rest's card (2026-10-20)", () => {
+    const asked = { classes: ["rule-change"] as const, mode: "ask" as const, ownerWork: true, keyProtected: false, personAsked: true };
+    expect(decideSettingEffect({ ...asked, classes: ["rule-change"], approvalTo: "auto" })).toEqual({ effect: "run" });
+    expect(decideSettingEffect({ ...asked, classes: ["rule-change"], approvalTo: "full" })).toEqual({ effect: "run" });
+    // an Always allow rule removed
+    expect(decideSettingEffect({ ...asked, classes: ["delete", "rule-change"] })).toEqual({ effect: "run" });
+    // a key the person chose, a secret, another person, the organization
+    expect(decideSettingEffect({ ...asked, keyProtected: true })).toEqual({ effect: "hold", reason: "security-key" });
+    expect(decideSettingEffect({ ...asked, classes: ["secret"] })).toEqual({ effect: "hold", reason: "sensitive" });
+    expect(decideSettingEffect({ ...asked, classes: ["org"] })).toEqual({ effect: "hold", reason: "sensitive" });
+    expect(decideSettingEffect({ ...asked, ownerWork: false })).toEqual({ effect: "hold", reason: "not-own" });
+    // without the person's request: the card, as before
+    expect(decideSettingEffect({ ...asked, personAsked: false, approvalTo: "auto" })).toEqual({ effect: "hold", reason: "level" });
+  });
 });

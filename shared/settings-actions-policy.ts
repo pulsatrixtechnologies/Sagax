@@ -31,6 +31,15 @@
 // 5. rule-change: runs only up to the speaking bot's own level, never to
 //    Full or Custom (those need the owner's explicit consent on a card).
 // 6. Otherwise it runs, and the audit journal records it.
+//
+// 2026-10-20 (JC: "le bot principal doit pouvoir absolument tout faire"):
+// when the person's own Primary Bot makes the change because the person
+// asked for it in this turn's message (`personAsked`, proved by a quote of
+// their words, server/primary-approvals.ts), rules 4 and 5 do not apply and
+// a deletion runs too: approval levels (Full included), Always allow rules
+// and their removal run at once, on any of the person's own bots. A key the
+// person chose, a secret, another person, several records and the
+// organization keep their card.
 
 import type { ApprovalMode } from "./approval-mode.ts";
 
@@ -58,10 +67,14 @@ export function decideSettingEffect(input: {
   keyProtected: boolean;
   /** For an approval level change: the level asked. */
   approvalTo?: ApprovalMode;
+  /** The person asked their Primary Bot for this change in this turn. */
+  personAsked?: boolean;
 }): SettingEffect {
   if (input.keyProtected) return { effect: "hold", reason: "security-key" };
-  if (input.classes.some((name) => CARD_CLASSES.has(name))) return { effect: "hold", reason: "sensitive" };
+  const asked = input.personAsked === true && input.ownerWork;
+  if (input.classes.some((name) => CARD_CLASSES.has(name) && !(asked && name === "delete"))) return { effect: "hold", reason: "sensitive" };
   if (!input.ownerWork) return { effect: "hold", reason: "not-own" };
+  if (asked) return { effect: "run" };
   const mode = input.mode ?? "ask";
   if (mode !== "auto" && mode !== "full") return { effect: "hold", reason: "level" };
   if (input.classes.includes("rule-change")) {

@@ -168,3 +168,31 @@ describe("sagax_settings", () => {
     expect(h.planned.some((row) => row.effect === "hold")).toBe(true);
   });
 });
+
+describe("askedChange (a Primary Bot's change on the person's words, security review 2026-10-20)", () => {
+  it("turns cards off only, with the level, the bot and the rule's own words named", async () => {
+    const { askedChange } = await import("./settings-actions.ts");
+    expect(askedChange("Mets Katarina en auto", "bot.approvalMode", "auto", "Katarina", false)).toBe(true);
+    expect(askedChange("Mets Katarina en auto", "bot.approvalMode", "full", "Katarina", false)).toMatch(/level full/);
+    expect(askedChange("Fais-moi un rapport complet", "bot.approvalMode", "full", "Katarina", false)).not.toBe(true);
+    expect(askedChange("Mets-la en auto", "bot.approvalMode", "auto", "Katarina", false)).toMatch(/Katarina/);
+    // anything that is not an approval level or a rule keeps its card
+    expect(askedChange("Mets Katarina en auto", "bot.title", "x", "Katarina", false)).not.toBe(true);
+    expect(askedChange("Mets Katarina en auto", "bot.alwaysAllow", ["Bash"], "Katarina", false)).not.toBe(true);
+    // a new rule's words and an exact command are the person's own
+    expect(askedChange("Ajoute une note au billet", "rules.custom", { when: "toute commande", behavior: "allow" }, undefined, true)).not.toBe(true);
+    expect(askedChange("Toujours permettre la commande npm test pour Katarina", "rules.custom", { when: "la commande npm test", behavior: "allow", botId: "kat" }, undefined, true)).toBe(true);
+    // the behavior and "every bot" are said too; a one-word when is no rule
+    expect(askedChange("mets une règle qui bloque les paiements", "rules.custom", { when: "les paiements", behavior: "allow" }, undefined, true)).not.toBe(true);
+    expect(askedChange("mets une règle qui bloque les paiements par carte", "rules.custom", { when: "les paiements par carte", behavior: "allow", botId: "kat" }, undefined, true)).not.toBe(true);
+    expect(askedChange("mets une règle qui bloque les paiements par carte", "rules.custom", { when: "les paiements par carte", behavior: "deny", botId: "kat" }, undefined, true)).toBe(true);
+    expect(askedChange("Toujours permettre la commande npm test", "rules.custom", { when: "la commande npm test", behavior: "allow" }, undefined, true)).not.toBe(true);
+    expect(askedChange("Toujours permettre la commande npm test pour tous les bots", "rules.custom", { when: "la commande npm test", behavior: "allow" }, undefined, true)).toBe(true);
+    expect(askedChange("ajoute tout au rapport", "rules.custom", { when: "tout", behavior: "allow", botId: "kat" }, undefined, true)).not.toBe(true);
+    expect(askedChange("Ajoute une note au billet", "rules.commandAllow", { command: "rm -rf /", cwd: "/", providerInstanceId: "claude" }, "Katarina", true)).not.toBe(true);
+    // a rule removed is one the message names
+    expect(askedChange("Retire la règle", "rules.ownerDelete", true, undefined, true, "Run a command (printf primary-later)")).not.toBe(true);
+    expect(askedChange("Retire la règle printf", "rules.ownerDelete", true, undefined, true, "Run a command (printf primary-later)")).not.toBe(true);
+    expect(askedChange("Retire la règle printf primary-later", "rules.ownerDelete", true, undefined, true, "Run a command (printf primary-later)")).toBe(true);
+  });
+});

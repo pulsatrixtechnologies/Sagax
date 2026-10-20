@@ -19,6 +19,7 @@ import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
+import { APPROVALS_TOOL_NAMES } from "./agents-approvals-tools.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, PERSPICAX_TOOL_NAMES, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
 import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
@@ -500,6 +501,14 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const { status, body } = await apiResponse("/api/internal/settings", { method: "POST", body: JSON.stringify(args ?? {}) });
     const text = String(body.text ?? body.error ?? "").slice(0, 12000);
     if (status >= 400 || body.error) return { text: text || "The change was refused.", isError: true };
+    return { text: text || "Done." };
+  }
+  // sagax_approvals (server/primary-approvals.ts): the person's cards, at their request
+  if (APPROVALS_TOOL_NAMES.has(name)) {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    const { status, body } = await apiResponse("/api/internal/approvals", { method: "POST", body: JSON.stringify(args ?? {}) });
+    const text = String(body.text ?? body.error ?? "").slice(0, 8000);
+    if (status >= 400 || body.error) return { text: text || "The answer was refused.", isError: true };
     return { text: text || "Done." };
   }
   if (name === "answer_approval" || name === "nudge_person" || name === "manage_pairing" || name === "manage_settings" || PERSPICAX_TOOL_NAMES.has(name)) {

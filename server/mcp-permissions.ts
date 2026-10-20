@@ -189,6 +189,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   // every setting as the person (server/settings-actions.ts): the person's
   // own rights decide on the route, like act
   p("settings:change", "own", "sagax_settings"),
+  // a Primary Bot answers its person's cards at their request
+  // (server/primary-approvals.ts): the click's own checks decide
+  p("approvals:primary", "own", "sagax_approvals"),
 ];
 
 const BY_TOOL = new Map<string, McpPermission>(MCP_PERMISSIONS.filter((x) => x.tool && !x.profileKind).flatMap((x) => [x.tool as string, ...(x.aliases ?? [])].map((name) => [name, x] as const)));

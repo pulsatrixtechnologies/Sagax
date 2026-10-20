@@ -68,6 +68,15 @@ parties hors tableau du script.
      un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
      Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
+- Demande de la personne au bot principal (2026-10-20) : quand le bot
+  principal de la personne fait le changement parce qu'elle l'a demandé
+  dans son message du tour (\`quote\`, ses propres mots, vérifiés dans ce
+  message par \`shared/primary-request.ts\`), les règles 4 et 5 ne
+  s'appliquent pas et une suppression passe aussi : niveaux d'approbation,
+  règles « toujours permettre » et leur retrait, sur n'importe quel bot de
+  la personne. Une clé de sécurité choisie, un secret, autrui, un lot et
+  l'organisation gardent la carte. Les cartes en attente se répondent avec
+  \`sagax_approvals\` (\`server/primary-approvals.ts\`).
 - Journal : chaque changement appliqué (tout de suite ou après Allow) écrit
   une ligne \`setting.change\` (catégorie \`setting\`) dans le journal
   d'administration ; la valeur d'un secret est \`[hidden]\`.
