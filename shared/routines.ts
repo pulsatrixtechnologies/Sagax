@@ -71,6 +71,11 @@ export type RoutineRunStatus =
   | "cancelled"
   | "missed";
 
+/** Why a run started a second time by itself: its engine stalled, Sagax
+ * restarted while it ran, the provider rate-limited it or failed for a moment,
+ * or it waited for its engine's usage limit to reset. A run gets one. */
+export type RoutineRetryCause = "stalled" | "restarted" | "rate_limited" | "provider" | "usage_limit";
+
 /** The statuses both failure indicators count: a run that went wrong and has
  * not been acknowledged. One home so the sidebar dot, the errors pill, the
  * logs filter and the bulk-seen sweep cannot drift apart. */
@@ -103,6 +108,8 @@ export interface Routine {
   skippedRuns?: number;
   lastSkippedAt?: number;
   failureStreak?: number;
+  /** Runs that finished in the last seven days, and how many of them completed. */
+  weekRuns?: { ok: number; total: number };
   attachments?: RoutineContextAttachment[];
   sourceThreadId?: string;
   resultsThreadId?: string;
@@ -166,7 +173,12 @@ export interface RoutineRun {
   finishedAt?: number;
   output?: string;
   error?: string;
-  /** Concise, redacted question or approval reason while status is waiting. */
+  /** Set when the run used its one automatic second start, and why. */
+  retried?: RoutineRetryCause;
+  /** A queued run starts no earlier than this. */
+  retryAt?: number;
+  /** Concise, redacted question or approval reason while status is waiting,
+   * or why a queued run starts later. */
   attention?: string;
   cost?: number | null;
   denials?: string[];
@@ -176,8 +188,6 @@ export interface RoutineRun {
   admitAfter?: number;
   /** Slice 6: how many times admission was retried after a rate limit. */
   admitAttempts?: number;
-  /** A transient failure re-queued this run once; it starts again in the same thread. */
-  transientRetried?: boolean;
   /** Someone else's run seen through a wider scope: output, instructions
    * and threads withheld (server/routine-scope.ts). */
   redacted?: true;

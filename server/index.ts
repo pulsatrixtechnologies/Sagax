@@ -11651,7 +11651,7 @@ const watchdog = new TurnWatchdog({
     const minutes = Math.round(TURN_STALL_MS / 60_000);
     const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), STALL_CAUSE);
     if (routineRun?.target === "bot") {
-      routines?.failThread(turn.threadId, `No activity for ${minutes} minutes — the routine was stopped`);
+      routines?.failThread(turn.threadId, `No activity for ${minutes} minutes — the routine was stopped`, { cause: "stalled" });
       pendingDelegationWakes.delete(turn.threadId);
       discardDelegations(commsBus, turn.threadId);
     }
@@ -17374,7 +17374,7 @@ async function startTurn(
   // carry an exact node id rather than inheriting a routine's lifetime.
   const boundedCoordination = !opts?.automationSource && (!opts?.commsDepth || Boolean(opts?.coordination));
   if (bot.approvalGrant) {
-    throw Object.assign(new Error("this bot's approval level is still being confirmed — try again"), { status: 409 });
+    throw Object.assign(new Error("this bot's approval level is still being confirmed — try again"), { status: 409, code: "settling" });
   }
   // A turn answering a Team incidents report needs no computer: one it
   // cannot have right now — mid-change here, unpaid or missing at dispatch —
@@ -17388,14 +17388,14 @@ async function startTurn(
   if (transitionError) computerSkipped = transitionError;
   // Only a turn on an engine being replaced waits; the others run on.
   if (providerInstancesChanging.has(bot.modelSelection.instanceId)) {
-    throw Object.assign(new Error("this provider account is being updated — try again shortly"), { status: 409 });
+    throw Object.assign(new Error("this provider account is being updated — try again shortly"), { status: 409, code: "settling" });
   }
   // A workspace at its monthly spend limit starts no turn of any kind: a
   // person's message, a routine, a peer hop or a webhook all stop here.
   assertWithinBudget(cfg, DATA_DIR);
   if (boatLifecycleBusyBots.has(botId)) {
     const changing = "this bot's cloud computer is being changed — wait for it to finish";
-    if (!answer.incident) throw Object.assign(new Error(changing), { status: 409 });
+    if (!answer.incident) throw Object.assign(new Error(changing), { status: 409, code: "settling" });
     computerSkipped ??= changing;
   }
   const warmOnly = opts?.warmOnly === true;
@@ -19736,7 +19736,7 @@ routines = new RoutineManager({
   },
   interruptGoal: interruptRoutineGroupGoal,
   onRunChanged: syncRoutineRunToSource,
-  onRunFailed: (run) => {
+  onRunFailed: (run, alert) => {
     if (run.threadId) {
       pendingDelegationWakes.delete(run.threadId);
       discardDelegations(commsBus, run.threadId);
@@ -19749,19 +19749,21 @@ routines = new RoutineManager({
       }
     }
     const bot = store.bot(run.botId);
-    if (!bot) return;
-    const detail = run.error ? `${run.routineName}: ${run.error}` : run.routineName;
+    // null: the owner was already told about this cause for this bot.
+    if (!bot || alert === null) return;
+    const said = alert?.detail ?? run.error;
+    const detail = said ? `${run.routineName}: ${said}` : run.routineName;
     const notificationBot = routineSourceOwner(run)?.bot ?? bot;
     notify(deliverableNotification("routine-failed", notificationBot, routineSourceThread(run) ?? run.threadId ?? bot.threadId, detail));
     reportIncident({ kind: "routine-failed", bot, threadId: run.threadId ?? bot.threadId, detail, routine: { routineId: run.routineId, ...(run.runAs ? { runAs: run.runAs } : {}) } });
   },
-  onRunDeferred: (run) => {
+  onRunDeferred: (run, alert) => {
     const bot = store.bot(run.botId);
     if (!bot) return;
     const minutes = run.deferredAt != null && run.deferredNoticeAt != null
       ? Math.max(1, Math.round((run.deferredNoticeAt - run.deferredAt) / 60_000))
       : null;
-    const detail = `${redactSecretsInText(run.routineName)}: target busy${minutes != null ? ` for ${minutes} minutes` : ""}`;
+    const detail = `${redactSecretsInText(run.routineName)}: ${alert?.detail ?? `target busy${minutes != null ? ` for ${minutes} minutes` : ""}`}`;
     const notificationBot = routineSourceOwner(run)?.bot ?? bot;
     notify(deliverableNotification("routine-deferred", notificationBot, routineSourceThread(run) ?? bot.threadId, detail));
   },

@@ -2149,6 +2149,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     const err = recorder.events.find((e) => e.type === "runtime.error");
     expect(err?.message).toMatch(/no tool running/i);
     expect(err?.message).toContain("SAGAX_ACP_PROMPT_IDLE_TIMEOUT_MS");
+    expect(err).toMatchObject({ stalled: true });
     // the streamed chunk reached the UI before the child went silent
     expect(recorder.events.some((e) => e.type === "content.delta")).toBe(true);
     expect(instance.adapter.hasSession("t-stall")).toBe(false);

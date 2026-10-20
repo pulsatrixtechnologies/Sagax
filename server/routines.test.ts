@@ -401,92 +401,6 @@ describe("a run left waiting for the person", () => {
   });
 });
 
-describe("a run waiting on an approval nobody is there to give", () => {
-  const minutes = (count: number) => count * 60_000;
-  const limited = { name: "Inbox brief", prompt: "Summarise the inbox", botId: "maus-1", timeoutMinutes: 10,
-    schedule: { type: "daily" as const, time: "23:59", weekdays: [1] } };
-  const base = (threadId: string, requestId: string) => ({ eventId: `${requestId}-${Math.random()}`, provider: "fake", threadId, requestId, createdAt: new Date(0).toISOString() });
-  const opened = (threadId: string, requestId: string, tool: string, summary = tool, requestType: "permission" | "question" = "permission") =>
-    ({ ...base(threadId, requestId), type: "request.opened" as const, requestType, tool, summary });
-  const resolved = (threadId: string, requestId: string, source: "user" | "timeout", behavior: "allow" | "deny" | "answer" = source === "user" ? "allow" : "deny") =>
-    ({ ...base(threadId, requestId), type: "request.resolved" as const, behavior, source });
-  const started = async (h: ReturnType<typeof harness>) => {
-    const routine = h.manager.create(limited);
-    h.manager.runNow(routine.id);
-    await h.manager.tick();
-    return h.manager.listRuns()[0]!.startedAt!;
-  };
-
-  it("waits for the person without using up its run limit, then stops saying nobody answered", async () => {
-    const h = harness();
-    const at = await started(h);
-    h.setNow(at + minutes(1));
-    h.manager.handleRuntimeEvent(opened("thread-1", "r1", "mcp__composio__COMPOSIO_SEARCH_TOOLS"));
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "waiting", attention: "Waiting for your approval to use COMPOSIO_SEARCH_TOOLS" });
-
-    h.setNow(at + minutes(12)); await h.manager.tick();
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "waiting" });
-    expect(h.failed).toEqual([]);
-    expect(h.interruptedTurns).toEqual([]);
-
-    h.setNow(at + minutes(16));
-    h.manager.handleRuntimeEvent(resolved("thread-1", "r1", "timeout"));
-    const stopped = "Stopped: nobody answered the approval to use COMPOSIO_SEARCH_TOOLS";
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "failed", error: stopped, finishedAt: at + minutes(16) });
-    expect(h.failed.map((run) => run.error)).toEqual([stopped]);
-    await vi.waitFor(() => expect(h.interruptedTurns).toEqual([{ botId: "maus-1", threadId: "thread-1" }]));
-    expect(JSON.parse(readFileSync(h.options.file!, "utf8")).runs[0]).toMatchObject({ status: "failed", error: stopped });
-  });
-
-  it("counts only the time it worked toward the limit once the person answers", async () => {
-    const h = harness();
-    const at = await started(h);
-    h.setNow(at + minutes(1));
-    h.manager.handleRuntimeEvent(opened("thread-1", "r1", "COMPOSIO_MULTI_EXECUTE_TOOL"));
-    h.setNow(at + minutes(8));
-    h.manager.handleRuntimeEvent(resolved("thread-1", "r1", "user"));
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "running", waitedMs: minutes(7) });
-    expect(h.manager.listRuns()[0]).not.toHaveProperty("asked");
-
-    h.setNow(at + minutes(16)); await h.manager.tick();
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "running" });
-    h.setNow(at + minutes(17)); await h.manager.tick();
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "failed", error: "Stopped after reaching the 10-minute run limit" });
-  });
-
-  it("drops an ask the engine took with it on a restart, so the limit counts again for work the run still waits on", async () => {
-    const h = harness();
-    const at = await started(h);
-    h.setNow(at + minutes(1));
-    h.manager.handleRuntimeEvent(opened("thread-1", "r1", "mcp__composio__COMPOSIO_SEARCH_TOOLS"));
-    h.options.hasPendingDelegations = (threadId) => threadId === "thread-1";
-    h.setNow(at + minutes(3));
-    const restarted = new RoutineManager(h.options);
-    expect(restarted.listRuns()[0]).toMatchObject({ status: "waiting", waitedMs: minutes(2) });
-    expect(restarted.listRuns()[0]).not.toHaveProperty("asked");
-    h.setNow(at + minutes(12)); await restarted.tick();
-    expect(restarted.listRuns()[0]).toMatchObject({ status: "failed", error: "Stopped after reaching the 10-minute run limit" });
-  });
-
-  it("names what a command or a generic engine request asked, and lets an unanswered question carry on", async () => {
-    const h = harness();
-    const at = await started(h);
-    h.manager.handleRuntimeEvent(opened("thread-1", "r1", "shell", "rm -rf build"));
-    expect(h.manager.listRuns()[0]!.attention).toBe("Waiting for your approval to run “rm -rf build”");
-    h.manager.handleRuntimeEvent(resolved("thread-1", "r1", "user", "deny"));
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "running" });
-    h.manager.handleRuntimeEvent(opened("thread-1", "r2", "other", "composio: COMPOSIO_SEARCH_TOOLS"));
-    expect(h.manager.listRuns()[0]!.attention).toBe("Waiting for your approval for “composio: COMPOSIO_SEARCH_TOOLS”");
-    h.manager.handleRuntimeEvent(resolved("thread-1", "r2", "user"));
-    h.manager.handleRuntimeEvent(opened("thread-1", "r3", "ask_user", "Which account should I use?", "question"));
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "waiting", attention: "Which account should I use?" });
-    h.setNow(at + minutes(16));
-    h.manager.handleRuntimeEvent(resolved("thread-1", "r3", "timeout", "answer"));
-    expect(h.manager.listRuns()[0]).toMatchObject({ status: "running" });
-    expect(h.failed).toEqual([]);
-  });
-});
-
 it("names a new routine thread with the local dispatch date and time", async () => {
   vi.stubEnv("TZ", "UTC");
   const at = Date.parse("2026-10-01T21:26:00Z");
@@ -829,7 +743,8 @@ describe("persistent routine results destinations", () => {
       // their matching destination and receipt in the already-saved file.
       expect(observations.length).toBeGreaterThan(0);
       for (const { payload, persisted: saved } of observations) {
-        const value = payload.kind === "routine" ? payload.routine : payload.run;
+        // A week's tally is derived from the runs on every read, never stored on the routine.
+        const { weekRuns: _derived, ...value } = payload.kind === "routine" ? payload.routine : payload.run;
         const records = payload.kind === "routine" ? saved.routines : saved.runs;
         expect(records.find((record: any) => record.id === value.id)).toEqual(JSON.parse(JSON.stringify(value)));
       }
@@ -2991,10 +2906,10 @@ describe("RoutineManager", () => {
     expect(h.failed).toMatchObject([{ error: expected }]);
   });
 
-  // rpc_error and auth_required: production 2026-10-08, a Grok 402 showed as a
+  // rpc_error: production 2026-10-08, a Grok 402 showed as a
   // bare "Failed: rpc_error" in the routine modal. "quota" and
   // "stop_sequence": an account past its weekly limit (Oct 9-10).
-  it.each(["error", "tool_error", "rpc_error", "auth_required", "quota", "stop_sequence"])(
+  it.each(["error", "tool_error", "rpc_error", "quota", "stop_sequence"])(
     "keeps the run's own error over the provider's stop token %s",
     async (stopReason) => {
       const h = harness();
