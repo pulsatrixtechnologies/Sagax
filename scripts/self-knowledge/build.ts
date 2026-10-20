@@ -337,6 +337,11 @@ const DOCS_LEFT_OUT = new Set([
   "docs/media-proxy.md", "docs/no-phone-home.md", "docs/grok-latency.md",
 ]);
 
+/** AGENTS.md sections left out: the misuse policy's internals (the bots
+ * already get the policy itself), whose older text names a product the
+ * public repository's term scan refuses in a new file. */
+const NOTES_LEFT_OUT = new Set(["doc:AGENTS.md#misuse-guardrails-2026-10-12"]);
+
 function versionKey(version: string): number[] { return version.split(".").map((part) => Number(part) || 0); }
 function newerFirst(a: string, b: string): number {
   const [x, y] = [versionKey(a), versionKey(b)];
@@ -370,7 +375,8 @@ function docsSections(root: string): KnowledgeSection[] {
     if (DOCS_LEFT_OUT.has(path)) continue;
     out.push(...docSections({ path, markdown: read(root, path), kind: "doc", fallbackTitle: path.replace(/^docs\//, "").replace(/\.md$/, ""), maxLevel: 2 }));
   }
-  out.push(...docSections({ path: "AGENTS.md", markdown: read(root, "AGENTS.md"), kind: "notes", fallbackTitle: "Sagax", maxLevel: 2 }));
+  out.push(...docSections({ path: "AGENTS.md", markdown: read(root, "AGENTS.md"), kind: "notes", fallbackTitle: "Sagax", maxLevel: 2 })
+    .filter((section) => !NOTES_LEFT_OUT.has(section.id)));
   return out;
 }
 
