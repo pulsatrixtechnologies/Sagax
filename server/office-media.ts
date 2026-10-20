@@ -169,7 +169,7 @@ function documentPieces(buffer: Buffer, entries: Map<string, ZipEntry>, kind: Of
       return [{ text: `Slide ${index + 1}` }, ...pieces(xml, "a:p", "a:t", relationships(buffer, entries, part)), ...pieces(xml, "p:pic", "a:t", relationships(buffer, entries, part)).filter((piece) => "image" in piece)];
     });
   }
-  return [...entries.keys()].filter((name) => /^xl\/media\//.test(name)).sort().map((image) => ({ image }));
+  return [...entries.keys()].filter((name) => name.startsWith("xl/media/")).sort().map((image) => ({ image }));
 }
 
 function imageMime(bytes: Buffer): TurnImageInput["mime"] | null {
