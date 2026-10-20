@@ -124,7 +124,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "description": "A teammate's id exactly as list_bots or your roster prints it ([id: …]). A teammate's unique display name also resolves; a name shared by two reachable teammates is refused."
+              "description": "A teammate's name as your roster prints it, or its id ([id: …]) when the roster or list_bots shows one. A name shared by two reachable teammates is refused: use the id."
             },
             "minItems": 1,
             "maxItems": 4,

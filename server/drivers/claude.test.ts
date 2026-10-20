@@ -143,6 +143,8 @@ describe("ClaudeDriver.decodeConfig", () => {
 
   it("hooks failed tool calls too, so a timed-out command can be given a hint", () => {
     expect(Object.keys(claudeHookSettings("/tmp/helper.ts"))).toContain("PostToolUseFailure");
+    // nothing observes Stop, and the CLI would wait for the helper on every turn
+    expect(Object.keys(claudeHookSettings("/tmp/helper.ts"))).not.toContain("Stop");
   });
 
   it("keeps the per-turn hook token where workspace backups never look", () => {

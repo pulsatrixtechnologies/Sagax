@@ -409,9 +409,25 @@ describe("teammate availability stays out of the cached prompt half", () => {
 
   it("still gives every roster line the id the comms tools take", () => {
     const { peer, chief } = prompts({ busy: true });
-    expect(peer.stable).toContain("- Quill — Writer [id: writer]");
+    // the bounded coordinator's roster names a unique teammate without it
+    expect(peer.stable).toContain("- Quill — Writer\n");
+    expect(peerRosterSystemPrompt(team({ busy: true }), false)).toContain("- Quill — Writer [id: writer]");
     expect(chief.stable).toContain("- Quill — Writer: Drafts concise copy [id: writer]");
     expect(chief.stable).toContain("- Patch — Engineer [id: coder]");
+  });
+
+  it("lets coordinate_bots take a unique name: the id only where the name is ambiguous (perf round 4)", () => {
+    const bots: RosterMember[] = [
+      { id: "writer", name: "Quill", title: "Writer" },
+      { id: "coder", name: "Patch", title: "Engineer" },
+      { id: "coder2", name: "patch", title: "Engineer" },
+    ];
+    const text = peerRosterSystemPrompt(bots, true);
+    expect(text).toContain("- Quill — Writer\n");
+    expect(text).not.toContain("[id: writer]");
+    expect(text).toContain("- Patch — Engineer [id: coder]");
+    expect(text).toContain("- patch — Engineer [id: coder2]");
+    expect(text).toContain("Use coordinate_bots with a teammate's name as the roster shows it (its id when the roster shows one)");
   });
 
   it("says nothing for an empty team and caps the names it lists", () => {

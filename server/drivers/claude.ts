@@ -857,7 +857,10 @@ export function claudeHookSettings(helperPath: string): Record<string, unknown> 
     ? '"%SAGAX_HOOK_NODE%" "%SAGAX_HOOK_HELPER%"'
     : [process.execPath, helperPath].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" ");
   const entry = [{ matcher: "", hooks: [{ type: "command", command, timeout: 5 }] }];
-  return { PostToolUse: entry, PostToolUseFailure: entry, PreCompact: entry, SessionStart: entry, Stop: entry };
+  // No Stop hook: the harness did nothing with it, and Claude Code waits for
+  // the helper (a Node start plus a loopback POST, ~180 ms) before it
+  // reports the result, on every turn (2026-10-20 perf parity, round 4).
+  return { PostToolUse: entry, PostToolUseFailure: entry, PreCompact: entry, SessionStart: entry };
 }
 
 export function permissionSocketPath(threadId: string, botId?: string) {

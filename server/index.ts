@@ -799,6 +799,7 @@ import { callTurnEffort } from "./voice-call-effort.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
 import { VoiceLatencyLog } from "./voice-latency.ts";
+import { turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
@@ -1124,7 +1125,7 @@ import { setDesktopInjectModels } from "./drivers/local-inject.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
 import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
-import { AUTO_COMPUTER_MCP_NAME, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, autoStartLine, autoStartTarget, parseAutoComputerTarget, selectAutoComputer, type AutoComputerState, type AutoComputerTarget, type AutoStart, type FixedWorksOn } from "./auto-computer.ts";
+import { AUTO_COMPUTER_MCP_NAME, AUTO_COMPUTER_RULES, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, autoStartLine, autoStartTarget, parseAutoComputerTarget, selectAutoComputer, type AutoComputerState, type AutoComputerTarget, type AutoStart, type FixedWorksOn } from "./auto-computer.ts";
 import { parseWorkspaceLine, workspaceLineName } from "../shared/workspace-line.ts";
 import { computerSelectTarget } from "../shared/execution-target.ts";
 import { attachDesktopTerminal, attachDesktopTunnel, createBridgeAudit, createDesktopBridgeRoutes } from "./desktop-bridge-routes.ts";
@@ -11923,6 +11924,7 @@ async function holdBootEngineSlot(threadId: string, label: string, instance: Pro
     // turn never waits here.
     if (memoryWatch.current() === "critical") console.log(`[memory] routine ${label} waits: memory critical`);
     await memoryWatch.whenBelowCritical(ROUTINE_MEMORY_WAIT_MS);
+    turnTrace(threadId, "memory-guard");
     // During boot the boot gate; after it, the steady routine limit.
     const gate = engineStartGate.booting ? engineStartGate : routineEngineGate;
     const slot = await gate.acquire("turn", label);
@@ -12194,7 +12196,8 @@ const TOOL_RESULT_SPILL_MAX = 512 * 1024;
  * the activity row the fold already wrote for that call, which flips the
  * turn's evidence to "full" for the digest. Idempotent on the tool_use_id
  * (a re-delivered hook never double-writes). Other events are accepted and
- * ignored here; item 0.4 gives PreCompact/SessionStart/Stop their meaning. */
+ * ignored here; item 0.4 gives PreCompact/SessionStart their meaning (Stop is
+ * no longer registered: nothing used it, perf round 4). */
 const DIGESTS_AFTER_COMPACTION = 2;
 function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: boolean; ignored?: string; context?: string; hookSpecificOutput?: unknown } {
   const event = body && typeof body === "object" ? (body as { event?: unknown; payload?: unknown }) : {};
@@ -12229,7 +12232,6 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
     ];
     return lines.length ? { ok: true, context: lines.join("\n") } : { ok: true };
   }
-  if (name === "Stop") return { ok: true };
   if (name === "PostToolUseFailure") return shellTimeoutHookResult(payload);
   if (name !== "PostToolUse") return { ok: true, ignored: name || "unknown" };
   const toolUseId = typeof payload.tool_use_id === "string" ? payload.tool_use_id : "";
@@ -17756,12 +17758,14 @@ async function startTurn(
     computerSkipped ??= changing;
   }
   const warmOnly = opts?.warmOnly === true;
+  if (!warmOnly) turnTrace(threadId, opts?.automationSource ? `start:${opts.automationSource}` : opts?.cardContinuation ? "start:continuation" : "start", !opts?.automationSource);
   // The engine for a live call is already starting. This turn waits for it
   // and reuses the process. The warm itself must not wait.
   if (!warmOnly && voiceCalls.active(threadId)) await voiceWarmup.join(threadId);
   // A pre-warm (opened conversation, composer, routine) still starting: this
   // turn waits for it and takes its process over.
   if (!warmOnly && threadPrewarm.has(threadId)) await joinPrewarm(threadId);
+  if (!warmOnly) turnTrace(threadId, "prewarm-joined");
   if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
@@ -18238,6 +18242,7 @@ async function startTurn(
       }
       await compactConversation({ bot, threadId, generation: dispatchClaimId, instance, model,
         excludedIds: new Set([userMessage.id, ...(opts?.excludeMessageIds ?? [])]), manual: opts?.compactOnly === true });
+      turnTrace(threadId, "compacted");
       if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during context setup");
       if (opts?.compactOnly) {
         clearDirectTurnDispatch(threadId, dispatchClaimId);
@@ -18451,6 +18456,7 @@ async function startTurn(
         if (Object.keys(perspicax.custom).length) integrations.custom = { ...integrations.custom, ...perspicax.custom };
         perspicaxPrompt = perspicax.prompt;
       }
+      if (!warmOnly) turnTrace(threadId, "integrations");
       // a call's tools should not come and go between its turns: say so when they do
       const callMcp = voiceCalls.noteMcp(threadId, Object.keys(integrations.custom ?? {}));
       if (callMcp.added.length || callMcp.removed.length) {
@@ -19165,6 +19171,9 @@ async function startTurn(
         { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
+        // Auto's standing rules, volatile: a reused session gets them once;
+        // each message carries only where it starts (withWorkplaceNote)
+        { id: "workplace", label: "Workspace", text: turnAuto?.auto ? `\n${AUTO_COMPUTER_RULES}` : "" },
         { id: "plan", label: "Surface", text: surfacePrompt({ computer: mountedComputer, browser: Boolean(integrations.browser) }, { pinned: plan.pinned, note: plan.note + vpsUnavailableNote + (computerSkipped && plan.computer !== "off" ? computerSkippedNote(redactSecretsInText(computerSkipped)) : ""), canSelect: computerSelectionTurns.has(threadId) || (warmOnly && maySelectComputer), cloudHome: Boolean(CLOUD_HOME) }) },
         { id: "cloud-home", label: "OMB Cloud", text: CLOUD_HOME ? cloudHomePrompt(Boolean(integrations.agents) && lendingEnabled()) : "" },
         // gated on the integration, not the key: the hint only goes to a
@@ -19215,6 +19224,7 @@ async function startTurn(
         { id: "voice-call", label: "Phone call", text: voiceCallText },
       ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
+      if (!warmOnly) turnTrace(threadId, "prompt-built");
       // the Files list's "last used": what this turn's prompt carried
       markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
       // Automatic recall rides in front of THIS turn's message, never in the
@@ -19264,6 +19274,7 @@ async function startTurn(
       // Slice 4: this turn's credentials (an owner key is read now).
       // (solo mode takes no extra await: its dispatch timing is unchanged)
       const turnAccess = IDENTITY.kind === "perspicax" ? await orgTurnAccess(threadId, bot, instance, speaker) : undefined;
+      if (!warmOnly) turnTrace(threadId, "access");
       // An engine slash command typed by a person (or set in a routine)
       // reaches the engine verbatim (server/harness-commands.ts); a peer hop
       // or a card continuation never runs one.
@@ -19280,6 +19291,7 @@ async function startTurn(
         }), harnessCommands)
         : { kind: "none" as const };
       if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during command lookup");
+      if (!warmOnly) turnTrace(threadId, "command");
       const engineCommand = typedCommand.kind === "engine" ? typedCommand : null;
       // With no session to resume, the command runs in a new one that never
       // saw the conversation: the next turn must still rebuild it, so the
@@ -19304,8 +19316,10 @@ async function startTurn(
       // may be the peer a slot holder waits on (no deadlock).
       if (opts?.automationSource && !warmOnly && !onCall && (engineStartGate.booting || !opts?.cardContinuation)) {
         await holdBootEngineSlot(threadId, `${bot.name} (${instance.driverKind})`, instance);
+        turnTrace(threadId, "engine-slot");
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
       }
+      if (!warmOnly) turnTrace(threadId, "send");
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
