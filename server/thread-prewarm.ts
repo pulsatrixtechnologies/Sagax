@@ -56,6 +56,9 @@ export class ThreadPrewarm {
   begin(threadId: string, person: string, run: (signal: AbortSignal) => Promise<void>, windowMs = this.windowMs): PrewarmBegin {
     const existing = this.jobs.get(threadId);
     if (existing) {
+      // the newest use moves to the back of the eviction order
+      this.jobs.delete(threadId);
+      this.jobs.set(threadId, existing);
       this.arm(threadId, existing, windowMs);
       return "extended";
     }

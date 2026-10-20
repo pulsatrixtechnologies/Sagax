@@ -31,6 +31,18 @@ describe("ThreadPrewarm", () => {
     expect(warm.has("t1")).toBe(false);
   });
 
+  it("evicts the warm used longest ago, not the one the person keeps refreshing", () => {
+    const warm = new ThreadPrewarm({ windowMs: 60_000, maxWaiting: 2 });
+    const aborted: string[] = [];
+    const run = (id: string) => async (s: AbortSignal) => { s.addEventListener("abort", () => aborted.push(id)); };
+    warm.begin("a", "p1", run("a"));
+    warm.begin("b", "p2", run("b"));
+    expect(warm.begin("a", "p1", run("a"))).toBe("extended");
+    warm.begin("c", "p3", run("c"));
+    expect(aborted).toEqual(["b"]);
+    expect(warm.has("a")).toBe(true);
+  });
+
   it("limits new warms per person per minute; refreshes are free", () => {
     let now = 0;
     const warm = new ThreadPrewarm({ windowMs: 1_000, perPersonPerMinute: 2, now: () => now });

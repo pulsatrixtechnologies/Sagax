@@ -1070,7 +1070,7 @@ export class RoutineManager {
   /** routine id -> the occurrence (nextRunAt) already pre-woken. */
   private readonly prewoken = new Map<string, number>();
   /** routine id -> the task reserved and warmed for its next occurrence. */
-  private readonly reserved = new Map<string, { dueAt: number; botId: string; threadId: string }>();
+  private readonly reserved = new Map<string, { dueAt: number; botId: string; threadId: string; runAs?: string }>();
   /** The file existed but could not be read (corrupt JSON or a schema
    * failure). Saves are refused while set so a fresh empty state can never
    * overwrite whatever is on disk. Missing means a first run. */
@@ -1896,7 +1896,7 @@ export class RoutineManager {
     const prewarm = this.options.prewarmEngine;
     for (const [routineId, entry] of Array.from(this.reserved)) {
       const routine = this.routines.find((candidate) => candidate.id === routineId);
-      const stale = now > entry.dueAt + PREWARM_RESERVE_GRACE_MS || !routine || !routine.enabled || routine.suspended || routine.botId !== entry.botId
+      const stale = now > entry.dueAt + PREWARM_RESERVE_GRACE_MS || !routine || !routine.enabled || routine.suspended || routine.botId !== entry.botId || routine.runAs !== entry.runAs
         || (routine.nextRunAt !== entry.dueAt && !this.runs.some((run) => run.routineId === routineId && run.status === "queued" && !run.manual));
       if (!stale) continue;
       this.reserved.delete(routineId);
@@ -1932,7 +1932,7 @@ export class RoutineManager {
         try { this.options.releaseReservedTask?.(previous.botId, previous.threadId); } catch { /* best effort */ }
       }
       // A joined conversation is not ours to release: only remember the occurrence.
-      this.reserved.set(routine.id, { dueAt, botId: routine.botId, threadId: reserved ? threadId : "" });
+      this.reserved.set(routine.id, { dueAt, botId: routine.botId, threadId: reserved ? threadId : "", ...(routine.runAs ? { runAs: routine.runAs } : {}) });
       try { prewarm(cloneRoutine(routine), dueAt, threadId); } catch { /* best effort */ }
     }
   }

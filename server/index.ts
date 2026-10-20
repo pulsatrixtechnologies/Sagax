@@ -15644,7 +15644,25 @@ function prewarmRefusal(botId: string, threadId: string): string | null {
   const bot = store.projectBotForTask(botId, threadId);
   if (!bot) return "no task";
   if (registry.get(bot.modelSelection.instanceId)?.adapter.capabilities.warmSession !== true) return "engine";
+  // Perspicax profile servers carry tokens exchanged per turn: the next
+  // turn's contract would differ and relaunch, so a warm would only cost.
+  if (IDENTITY.kind === "perspicax" && perspicaxMcp && (store.bot(botId)?.perspicax?.profiles.length ?? 0) > 0) return "perspicax";
   return null;
+}
+/** A real turn takes a warm over: wait for its setup, at most
+ * PREWARM_JOIN_MS (a stalled warm must not hold the person's message),
+ * then claim its process, or close the warm and start cold. */
+const PREWARM_JOIN_MS = 5_000;
+async function joinPrewarm(threadId: string): Promise<void> {
+  if (!threadPrewarm.has(threadId)) return;
+  let timer: NodeJS.Timeout | undefined;
+  const ready = await Promise.race([
+    threadPrewarm.join(threadId).then(() => true),
+    new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), PREWARM_JOIN_MS); }),
+  ]);
+  if (timer) clearTimeout(timer);
+  if (ready) threadPrewarm.claim(threadId);
+  else threadPrewarm.cancel(threadId);
 }
 function prewarmThread(botId: string, threadId: string, person: string, opts: PrewarmTurnOpts, windowMs?: number): PrewarmOutcome {
   if (threadPrewarm.has(threadId)) return threadPrewarm.begin(threadId, person, async () => {}, windowMs);
@@ -16343,7 +16361,30 @@ async function startDuplexCallTurn(
 
 /** Keep a person's words off the transcript until a direct-thread slot is
  * available. Reuse the existing cancellable, idempotent composer queue. */
-async function startOrQueueDirectMessage(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker, voiceCall?: Message["voiceCall"], via?: "call", callId?: string, dataContext?: DataContext) {
+/** Sends that arrived while a pre-warm of their thread was starting: the
+ * first one takes the warm process; the others wait for it, so they queue
+ * behind its turn instead of racing it into a 409 (server/thread-prewarm.ts). */
+const prewarmSends = new Map<string, Promise<unknown>>();
+async function startOrQueueDirectMessage(...args: Parameters<typeof startOrQueueDirectMessageNow>) {
+  const threadId = args[1];
+  const ahead = prewarmSends.get(threadId);
+  if (ahead) {
+    await ahead.catch(() => {});
+    return startOrQueueDirectMessageNow(...args);
+  }
+  if (!threadPrewarm.has(threadId)) return startOrQueueDirectMessageNow(...args);
+  const run = (async () => {
+    await joinPrewarm(threadId);
+    return startOrQueueDirectMessageNow(...args);
+  })();
+  prewarmSends.set(threadId, run);
+  try {
+    return await run;
+  } finally {
+    if (prewarmSends.get(threadId) === run) prewarmSends.delete(threadId);
+  }
+}
+async function startOrQueueDirectMessageNow(botId: string, threadId: string, text: string, replyTo?: Message, sendId?: string, sender?: ResolvedSender, trigger?: UsageTrigger, speaker?: TurnSpeaker, voiceCall?: Message["voiceCall"], via?: "call", callId?: string, dataContext?: DataContext) {
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
@@ -17629,10 +17670,7 @@ async function startTurn(
   if (!warmOnly && voiceCalls.active(threadId)) await voiceWarmup.join(threadId);
   // A pre-warm (opened conversation, composer, routine) still starting: this
   // turn waits for it and takes its process over.
-  if (!warmOnly && threadPrewarm.has(threadId)) {
-    await threadPrewarm.join(threadId);
-    threadPrewarm.claim(threadId);
-  }
+  if (!warmOnly && threadPrewarm.has(threadId)) await joinPrewarm(threadId);
   if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
@@ -19521,8 +19559,10 @@ async function startTurn(
           clearDirectTurnDispatch(threadId, dispatchClaimId);
           await revokeInternalCapabilityGeneration(threadId, dispatchClaimId);
           releaseTurnResources(resourceOwner);
-          if (runningTurnEngines.get(threadId) === instance) runningTurnEngines.delete(threadId);
-          if (directTurnBots.get(threadId) === bot) directTurnBots.delete(threadId);
+          // a real turn that started meanwhile owns these now (its own generation)
+          const ownGeneration = (directTurnGenerationByThread.get(threadId) ?? dispatchClaimId) === dispatchClaimId;
+          if (ownGeneration && runningTurnEngines.get(threadId) === instance) runningTurnEngines.delete(threadId);
+          if (ownGeneration && directTurnBots.get(threadId) === bot) directTurnBots.delete(threadId);
           if (directTurnGenerationByThread.get(threadId) === dispatchClaimId) directTurnGenerationByThread.delete(threadId);
           if (directRequestOwners.get(threadId)?.generation === dispatchClaimId) directRequestOwners.delete(threadId);
           if (computerSelectionTurns.get(threadId)?.generation === dispatchClaimId) computerSelectionTurns.delete(threadId);
