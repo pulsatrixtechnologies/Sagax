@@ -39,6 +39,8 @@ import {
   sumNativeTurnResults,
   turnCostFromRunningTotal,
   type ClaudeConfig,
+  ONE_SHOT_SYSTEM_PROMPT,
+  oneShotIsolationArgs,
 } from "./claude.ts";
 import { AUTO_ALLOWLIST_COPY, claudeLaunchLevel } from "../testing/claude-level.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
@@ -4051,6 +4053,31 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await expect(instance.reviewPermission?.("review this request")).resolves.toBe("fake generated text");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.argv[seen.argv.indexOf("--output-format") + 1]).toBe("text");
+  });
+
+  it("runs one-shot helpers without tools, MCP servers, settings or the agent prompt, in an empty folder", async () => {
+    await create(undefined, { FAKE_CLAUDE_VERSION: "2.1.284" });
+    await instance.snapshot();
+    const dump = join(scratch, "one-shot-isolated.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await expect(instance.generateText?.("capture this")).resolves.toBe("fake generated text");
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    const after = (flag: string) => seen.argv[seen.argv.indexOf(flag) + 1];
+    expect(seen.argv).toContain("--strict-mcp-config");
+    expect(after("--tools")).toBe("");
+    expect(after("--setting-sources")).toBe("");
+    expect(after("--system-prompt")).toBe(ONE_SHOT_SYSTEM_PROMPT);
+    expect(seen.cwd).not.toBe(process.cwd());
+    expect(seen.cwd).toMatch(/sagax-oneshot-/);
+    expect(existsSync(seen.cwd)).toBe(false);
+    await expect(instance.reviewPermission?.("review this request")).resolves.toBe("fake generated text");
+    expect(JSON.parse(readFileSync(dump, "utf8")).argv).toContain("--strict-mcp-config");
+  });
+
+  it("keeps the plain one-shot call on a CLI too old for the isolation flags", async () => {
+    expect(oneShotIsolationArgs(null)).toEqual([]);
+    expect(oneShotIsolationArgs([2, 0, 99])).toEqual([]);
+    expect(oneShotIsolationArgs([2, 1, 0])).toContain("--strict-mcp-config");
   });
 
   it("never falls back to personal authentication for API-key-only helper calls", async () => {

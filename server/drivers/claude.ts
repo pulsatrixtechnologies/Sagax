@@ -161,6 +161,24 @@ export function resolveClaudeConfigDir(configDir?: string, env: NodeJS.ProcessEn
   return normalize(expanded);
 }
 
+/** The system prompt of a one-shot helper call (memory capture, safety
+ * review, busy routing, compaction summary): each prompt carries its own
+ * instructions, so the CLI's coding-agent prompt is not needed. */
+export const ONE_SHOT_SYSTEM_PROMPT = "Answer the request in the user message exactly as it instructs. You have no tools: reply with text only.";
+
+/** Flags that make a one-shot helper call what its comment always said it
+ * was: no built-in tool, no MCP server (none from the user's config and no
+ * claude.ai connector), no user or project settings and no CLAUDE.md, and a
+ * one-line system prompt. Without them `claude -p` loads the whole agent
+ * (about 30,000 tokens of tools and prompt before the request, 115,000 on a
+ * machine with connectors) for a call that reads one prompt (2026-10-19
+ * bench: memory capture 114,760 cache-write tokens and 12.3 s before, about
+ * 600 tokens after). An older or unknown CLI keeps the plain call. */
+export function oneShotIsolationArgs(version: ClaudeCliVersion | null): string[] {
+  if (!version || !claudeCliSupports(version, "--tools") || !claudeCliSupports(version, "--setting-sources") || !claudeCliSupports(version, "--strict-mcp-config")) return [];
+  return ["--tools", "", "--strict-mcp-config", "--setting-sources", "", "--system-prompt", ONE_SHOT_SYSTEM_PROMPT];
+}
+
 /** What Approve for me pre-allows on Claude Code instead of the CLI's auto
  * classifier (2026-10-19): tools that only read or that never leave the
  * turn. Reads of files need no rule (the CLI never asks for Read, Glob or
@@ -462,6 +480,9 @@ export const CLAUDE_FLAG_FLOORS = {
   "--restricted": [2, 1, 257],
   // A bot's Claude Code plugins (server/bot-plugins.ts).
   "--plugin-dir": [2, 0, 0],
+  // A one-shot helper with no built-in tool (oneShotIsolationArgs). Placed
+  // conservatively: an older CLI keeps the plain one-shot it always had.
+  "--tools": [2, 1, 0],
 } as const satisfies Record<string, ClaudeCliVersion>;
 
 /** The only built-in tools a guest's turn on a Cloud home gets
@@ -3102,12 +3123,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return;
         }
         const model = config.managedModels?.[0] ?? "claude-haiku-4-5";
+        const isolation = oneShotIsolationArgs(cliVersion);
+        // An empty private folder: no project CLAUDE.md or .mcp.json above it.
+        const cwd = isolation.length ? mkdtempSync(join(tmpdir(), "sagax-oneshot-")) : undefined;
         const child = spawnCli(
           config.cli,
-          ["-p", "--model", model, "--output-format", onUsage ? "json" : "text"],
+          ["-p", "--model", model, "--output-format", onUsage ? "json" : "text", ...isolation],
           {
             stdio: ["pipe", "pipe", "pipe"],
             env: environment(model),
+            ...(cwd ? { cwd } : {}),
           },
         );
         let stdout = "";
@@ -3118,6 +3143,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           settled = true;
           clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
+          if (cwd) rmSync(cwd, { recursive: true, force: true });
           if (error) reject(error);
           else resolve(stdout.trim());
         };

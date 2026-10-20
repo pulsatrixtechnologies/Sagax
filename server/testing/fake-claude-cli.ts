@@ -415,7 +415,7 @@ if (["text", "json"].includes(argAfter("--output-format") ?? "")) {
   if (oneShotDump) {
     writeDumpAtomic(
       oneShotDump,
-      JSON.stringify({ pid: process.pid, argv, env: process.env, prompt, mcpConfig: null }, null, 2),
+      JSON.stringify({ pid: process.pid, argv, env: process.env, cwd: process.cwd(), prompt, mcpConfig: null }, null, 2),
     );
   }
   if (process.env.FAKE_CLAUDE_TEXT_HANG) {
