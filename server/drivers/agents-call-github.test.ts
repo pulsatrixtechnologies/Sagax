@@ -30,6 +30,8 @@ describe("connect_github", () => {
   it("says what to do in every other state, never asking for a token", () => {
     expect(githubConnectText({ state: "connected", login: "jc", orgAccessUrl: "https://github.com/settings/connections/applications/Iv1" })).toContain("settings/connections/applications/Iv1");
     expect(githubConnectText({ state: "group" })).toContain("never in a group");
+    expect(githubConnectText({ state: "not_person" })).toContain("never from a routine");
+    expect(githubConnectText({ state: "admin_only" })).toContain("administrator");
     expect(githubConnectText({ state: "no_device_flow" })).toContain("read:org");
     expect(githubConnectText({ state: "error", message: "GitHub could not be reached from the server." })).toContain("could not be reached");
   });
