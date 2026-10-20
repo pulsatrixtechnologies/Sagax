@@ -65,7 +65,7 @@ import {
 import { appendNative } from "./native.ts";
 import { probeClaudeCommands } from "./harness-command-probe.ts";
 import { normalizeClaudeCommands, type HarnessCommand } from "../../shared/harness-commands.ts";
-import { permissionCommand, permissionLaunchCwd, permissionPaths } from "./permission-command.ts";
+import { permissionCommand, permissionLaunchCwd, permissionPaths, withAbsolutePaths } from "./permission-command.ts";
 import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { harnessMcpHttpSpec, loopbackNoProxy } from "../harness-mcp-http.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
@@ -2299,7 +2299,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 requestType: ask.kind,
                 tool: ask.tool,
                 summary: askSummary(ask),
-                input: ask.kind === "permission" ? askInputDetail(ask.input) : undefined,
+                input: ask.kind === "permission" ? askInputDetail(withAbsolutePaths(ask.tool, ask.input, cwd) as typeof ask.input) : undefined,
                 command: ask.kind === "permission" && ask.tool === "Bash"
                   ? permissionCommand(ask.input.command, commandCwd) : undefined,
                 paths: ask.kind === "permission" ? permissionPaths(ask.tool, ask.input, cwd) : undefined,
@@ -2673,7 +2673,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   title: b.name,
                   summary: commandSummary(b.input),
                   input: toolDetailPreview(b.input),
-                  ...filesField(writtenFilesFromToolInput(b.name, b.input)),
+                  ...filesField(writtenFilesFromToolInput(b.name, withAbsolutePaths(b.name, b.input, cwd))),
                   // a sub-agent's call: nested under the Agent call that started it
                   ...(typeof o.parent_tool_use_id === "string" && o.parent_tool_use_id ? { parentItemId: o.parent_tool_use_id } : {}),
                 });
