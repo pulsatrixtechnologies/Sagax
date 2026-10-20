@@ -5,7 +5,7 @@ import {
   BROWSER_SIGN_IN_FAILED, previewBrowserSignIn, readSessionState, SERVICE_TRUST_REASON, takeBrowserSignInFromLocation, takePairingFromLocation, takeInvitedEmailFromLocation,
 } from "./lib/session";
 import { bootstrapBrand } from "./lib/brand";
-import { applySkin, installSkinAutoFollow, readSkin } from "./lib/skins";
+import { applySkin, applySkinDepth, applySkinTexture, installSkinAutoFollow, readSkin, readSkinDepth, readSkinTexture } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
 import { migrateInterfaceModeToAdvancedOnce, retireLegacyInterfaceMode } from "./lib/interface-mode";
 import { BrowserSignInPage } from "./pair/BrowserSignInPage";
@@ -48,6 +48,8 @@ rememberOpenThreadHash();
 // The old always-on key is not a choice. Drop it before the first paint.
 retireLegacyInterfaceMode();
 applySkin(readSkin());
+applySkinDepth(readSkinDepth());
+applySkinTexture(readSkinTexture());
 // Auto (Settings > Appearance > Skin): the system's light or dark, live.
 installSkinAutoFollow();
 applyFont(readFont());
@@ -102,6 +104,8 @@ async function chooseRoot(): Promise<React.ReactNode> {
   if (session.kind === "session") {
     await syncUserPreferences();
     applySkin(readSkin());
+    applySkinDepth(readSkinDepth());
+    applySkinTexture(readSkinTexture());
     applyFont(readFont());
     // online, away, offline (organization server; elsewhere the route answers
     // 404). The main window reports it; a Data window beside it does not.
