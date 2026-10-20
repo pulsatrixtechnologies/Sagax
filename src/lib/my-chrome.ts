@@ -14,6 +14,8 @@ export interface MyChromeStatus {
   unavailable: string | null;
   connected: boolean;
   lastActionAt: number;
+  /** Bots with a terminal on this computer: they keep their own browser. */
+  shellBotIds: string[];
   driving: Array<{ botId: string; botName: string; tabs: Array<{ url: string; title: string }> }>;
 }
 

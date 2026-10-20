@@ -23,20 +23,25 @@ export interface MyChromeRouteDeps {
   allowed(auth: RequestAuth): boolean;
   /** The bot an engine session belongs to, for the status. */
   botFor(session: string): { id: string; name: string } | null;
+  /** Ids of the bots with a shell on this computer: they never get My Chrome. */
+  botsWithShell(): string[];
 }
 
 export type MyChromeStatusBody = Omit<MyChromeStatus, "gate"> & {
   connected: boolean;
   lastActionAt: number;
+  /** Bots with a terminal on this computer: they keep their own browser. */
+  shellBotIds: string[];
   driving: Array<{ botId: string; botName: string; tabs: Array<{ url: string; title: string }> }>;
 };
 
-export function myChromeStatusBody(status: MyChromeStatus, botFor: MyChromeRouteDeps["botFor"]): MyChromeStatusBody {
+export function myChromeStatusBody(status: MyChromeStatus, botFor: MyChromeRouteDeps["botFor"], shellBotIds: string[] = []): MyChromeStatusBody {
   const { gate, ...rest } = status;
   return {
     ...rest,
     connected: gate.connected,
     lastActionAt: gate.lastActionAt,
+    shellBotIds,
     driving: gate.clients.map((client) => {
       const bot = botFor(client.label);
       return { botId: bot?.id ?? "", botName: bot?.name ?? "", tabs: client.tabs };
@@ -76,7 +81,7 @@ export function createMyChromeRoutes(deps: MyChromeRouteDeps): RouteHandler {
         case "resume": status = service.resume(); break;
         default: return json(res, 404, { error: "unknown My Chrome action" });
       }
-      return json(res, 200, myChromeStatusBody(status, deps.botFor));
+      return json(res, 200, myChromeStatusBody(status, deps.botFor, deps.botsWithShell()));
     } catch (error) {
       if (error instanceof MyChromeSettingsError) return json(res, 400, { error: error.message });
       return json(res, 409, { error: error instanceof Error ? error.message : "My Chrome could not do that." });

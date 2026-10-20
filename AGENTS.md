@@ -5092,10 +5092,25 @@ An organization server never offers it unless that file says
 - `/api/my-chrome/*` answers the person only (security review 2026-10-20,
   #834): a session that is not an act/actAs one, or loopback on the desktop
   (Electron's capability); a headless server's loopback (a bot's shell) is
-  refused. Residual risk, said in the PR: a bot with its own shell on the
-  same computer could still read Chrome's `DevToolsActivePort` and talk to
-  Chrome without the gate; Chrome's own remote-debugging consent is the
-  guard there.
+  refused.
+- A bot with a shell (command tool) on the same computer as the person's
+  Chrome is never given My Chrome (JC 2026-10-20, after #838): it could read
+  Chrome's `DevToolsActivePort` and talk to Chrome without the gate. It keeps
+  its own bot browser. `server/browser/my-chrome/shell.ts`
+  (`hasShellOnThisComputer`: every engine has a shell, so only a cloud-only
+  or team-computer bot has none here); `effectiveBrowserProfile` in
+  server/index.ts maps "my-chrome" to the bot's own session for a bot with a
+  shell (session, integration, internal browser route), `MyChromeService.urlFor`
+  refuses it too, the prompt says so (`MY_CHROME_SHELL_PROMPT`) and the
+  profile picker's hint says "This bot has a terminal on your computer: it
+  uses its own browser" (`shellBotIds` in the status). The saved profile
+  stays "my-chrome" and applies again if the shell goes away.
+- Gate hardening (2026-10-20): `Page.navigateToHistoryEntry` reads the
+  entry's address first and refuses one off the allowed sites (the
+  back/forward cache restores a page with no request for the Fetch guard to
+  see; an unreadable entry is refused); the banner host carries `!important`
+  inline styles and a MutationObserver that restores them (a page stylesheet
+  or `host.style` cannot hide it).
 - The bot's calls (`server/browser/my-chrome/pilot.ts`, from the internal
   browser route): only the page tools (no `agent_browser_eval`, cookies,
   state, profiles, `read` with a URL, screenshot to a file), elements only by

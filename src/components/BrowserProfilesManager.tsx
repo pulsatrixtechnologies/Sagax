@@ -34,11 +34,12 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
   }, []);
   // My Chrome is a choice only where the server offers it (the desktop).
   const [myChromeOffered, setMyChromeOffered] = useState(false);
+  const [shellBotIds, setShellBotIds] = useState<string[]>([]);
   const hasBot = Boolean(bot);
   useEffect(() => {
     if (!hasBot) return;
     let alive = true;
-    myChromeCall("status").then((status) => { if (alive) setMyChromeOffered(status.offered); }, () => {});
+    myChromeCall("status").then((status) => { if (alive) setMyChromeOffered(status.offered); setShellBotIds(status.shellBotIds ?? []); }, () => {});
     return () => { alive = false; };
   }, [hasBot]);
 
@@ -164,7 +165,7 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
               ? <option value={selected} disabled>{t("settings.profiles.removed")}</option> : null}
           </select>
           <p className="text-[11px] leading-relaxed text-ink-secondary">
-            {currentBot.busy ? t("settings.profiles.stopToSwitch") : selected === "guest" ? t("settings.profiles.temporaryHint") : selected === MY_CHROME_PROFILE ? t("settings.profiles.myChromeHint") : t("settings.profiles.sharedHint")}
+            {currentBot.busy ? t("settings.profiles.stopToSwitch") : selected === "guest" ? t("settings.profiles.temporaryHint") : selected === MY_CHROME_PROFILE ? (shellBotIds.includes(currentBot.id) ? t("settings.profiles.myChromeShell") : t("settings.profiles.myChromeHint")) : t("settings.profiles.sharedHint")}
           </p>
         </div>
       )}

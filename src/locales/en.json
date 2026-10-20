@@ -5649,6 +5649,7 @@
   "settings.myChrome.addressHint": "Leave empty and Sagax finds Chrome by itself. Otherwise a port such as 9222, or a ws:// address on this computer.",
   "settings.myChrome.error": "My Chrome could not do that.",
   "settings.profiles.myChrome": "My Chrome (your own Chrome)",
+  "settings.profiles.myChromeShell": "This bot has a terminal on your computer: it uses its own browser.",
   "settings.profiles.myChromeHint": "This bot works in your own Chrome, on the sites allowed in Settings > Experimental > My Chrome, with your approval for payments, sends and deletes.",
   "myChrome.indicator": "{bot} is driving your Chrome on {sites}",
   "myChrome.indicatorSomeBot": "A bot is driving your Chrome on {sites}",

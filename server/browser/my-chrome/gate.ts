@@ -116,7 +116,9 @@ export function pilotBannerScript(): string {
     const host = document.createElement("sagax-pilot");
     host.id = ${JSON.stringify(PILOT_BANNER_ID)};
     host.setAttribute("aria-hidden", "true");
-    host.style.cssText = "all:initial;position:fixed;z-index:2147483647;right:12px;bottom:12px;";
+    const hostStyle = "all:initial !important;position:fixed !important;z-index:2147483647 !important;right:12px !important;bottom:12px !important;display:block !important;visibility:visible !important;opacity:1 !important;transform:none !important;clip-path:none !important;pointer-events:auto !important;";
+    host.style.cssText = hostStyle;
+    const hostStyleSet = host.getAttribute("style");
     const shadow = host.attachShadow({ mode: "closed" });
     const bar = document.createElement("div");
     bar.style.cssText = "display:flex;gap:8px;align-items:center;font:13px/18px -apple-system,system-ui,sans-serif;background:#1f2937;color:#fff;padding:6px 8px 6px 12px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.35);";
@@ -138,6 +140,15 @@ export function pilotBannerScript(): string {
       if (!host.isConnected && document.documentElement) document.documentElement.appendChild(host);
     });
     observer.observe(root, { childList: true });
+    // A page that hides or restyles the banner (its own stylesheet, the
+    // host's attributes) gets it put back at once.
+    const restore = new MutationObserver(() => {
+      if (host.hasAttribute("data-sagax-gone")) { restore.disconnect(); return; }
+      if (host.getAttribute("style") !== hostStyleSet) host.style.cssText = hostStyle;
+      if (host.hasAttribute("hidden")) host.removeAttribute("hidden");
+      if (host.hasAttribute("class")) host.removeAttribute("class");
+    });
+    restore.observe(host, { attributes: true });
   };
   mount();
 })();`;
@@ -422,12 +433,36 @@ export class MyChromeGate {
         throw new GateRefusal(this.offSiteText(url));
       }
     }
+    if (method === "Page.navigateToHistoryEntry") {
+      // Back and forward can restore a page without a request the guard sees
+      // (the back/forward cache): check where the entry leads before going.
+      // An entry that cannot be read is refused.
+      const entry = await this.historyEntry(session.tab, params.entryId);
+      if (entry === null) throw new GateRefusal("Sagax could not check where that history entry leads, so it did not go there.");
+      if (!isBlankPage(entry) && !this.options.allows(entry)) {
+        this.note(client, this.offSiteText(entry));
+        throw new GateRefusal(this.offSiteText(entry));
+      }
+    }
     if (method === "Target.setAutoAttach") params.flatten = true;
     if (method.startsWith("Input.") || method.startsWith("Page.navigate") || method === "Page.reload") {
       this.lastActionAt = Date.now();
       this.options.onChange?.();
     }
     return this.forward(client, message, params);
+  }
+
+  /** The address a history entry of the tab leads to, or null when unreadable. */
+  private async historyEntry(tab: Tab, entryId: unknown): Promise<string | null> {
+    if (!tab.guard) return null;
+    try {
+      const history = await this.gateSend("Page.getNavigationHistory", {}, tab.guard);
+      const entries = Array.isArray(history.entries) ? history.entries as Array<{ id?: unknown; url?: unknown }> : [];
+      const found = entries.find((entry) => entry.id === entryId);
+      return found && typeof found.url === "string" ? found.url : null;
+    } catch {
+      return null;
+    }
   }
 
   private onSite(tab: Tab): boolean {
