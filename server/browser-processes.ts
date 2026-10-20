@@ -209,8 +209,6 @@ export async function orphanedBrowsers(home: string | undefined, profiles?: stri
   return found;
 }
 
-/** Whether `pid` is still the member of the tree it was when read: the same
- * start time, and not a zombie (exited, waiting to be collected). */
 /** The lock a daemon's own Chrome held when last checked, and that daemon: while both live, a call lists no processes. */
 const heldProfiles = new Map<string, { target: string; daemon: number }>();
 
@@ -254,6 +252,8 @@ export async function releaseBrowserProfile(dir: string | undefined): Promise<vo
   for (const name of ["SingletonLock", "SingletonSocket", "SingletonCookie"]) { try { unlinkSync(join(dir, name)); } catch { /* already gone */ } }
 }
 
+/** Whether `pid` is still the member of the tree it was when read: the same
+ * start time, and not a zombie (exited, waiting to be collected). */
 function stillRuns(tree: BrowserProcessTree, table: Map<number, ListedProcess>, pid: number): boolean {
   const entry = table.get(pid);
   return !!entry && !entry.zombie && entry.started === tree.members.get(pid);
