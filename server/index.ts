@@ -465,6 +465,7 @@ import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
+import { NO_ENGINE_MESSAGE, engineProblem, namesEngine } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { offeredEngines, orgEngineMoveLine } from "../shared/offered-engines.ts";
@@ -5132,6 +5133,7 @@ async function stagePendingAttachments(threadId: string, generation: string): Pr
 /** An engine in an error a person reads: `provider instance "ghost"` for a
  * readable id, "The selected engine" for an opaque one (no GUID on screen). */
 function engineReference(instanceId: string): string {
+  if (!instanceId.trim()) return "The bot's engine";
   const quoted = quotedIdOr(instanceId, "");
   return quoted ? `provider instance ${quoted}` : "The selected engine";
 }
@@ -5523,12 +5525,40 @@ function refreshUnsetModelSelections(instances?: readonly SelectableInstance[]):
 async function refreshUnsetModelSelectionsFrom(instances?: readonly SelectableInstance[]): Promise<void> {
   const selectable = selectableInstances<SelectableInstance>(instances ?? await registry.describe());
   bootSelection = await defaultSelection(undefined, selectable.filter(instance => readyToRun(instance, selectionContext)));
-  if (hostedModels || !bootSelection.instanceId || !bootSelection.model) return;
+  if (hostedModels) {
+    for (const bot of store.bots) healBotEngine(bot);
+    return;
+  }
+  if (!bootSelection.instanceId || !bootSelection.model) return;
   const selection = withNewBotEffort(bootSelection, cfg.newBotDefaults?.profile.modelSelection?.effort,
     registry.get(bootSelection.instanceId)?.adapter.capabilities.effortLevels);
   for (const bot of store.bots) {
-    if (!bot.modelSelection.instanceId && !bot.modelSelection.model) store.applyModelDefault(bot.id, selection);
+    if (!namesEngine(bot.modelSelection)) store.applyModelDefault(bot.id, bot.modelSelection.auto === true ? { ...selection, auto: true } : selection);
   }
+}
+
+/** A bot with no engine gets the person's default one now (the same pick as
+ * a new bot and Auto), or stays as it is when none is available. Returns the
+ * bot as it is after. Solo and organization servers alike. */
+/** A teammate that cannot run (no engine): refused before any work is sent,
+ * with what to do instead, so the caller never waits on it. */
+function engineEligibility(bot: BotRecord): string | undefined {
+  const problem = teammateEngineProblem(bot);
+  return problem ? `${bot.name} ne peut pas travailler : ${problem}. Choisis un autre coéquipier (list_bots) ou fais le travail toi-même, sans attendre.` : undefined;
+}
+function healBotEngine(bot: BotRecord): BotRecord {
+  if (namesEngine(bot.modelSelection)) return bot;
+  const fallback = hostedModels ? hostedModels.select(cfg.defaultModelSelection ?? undefined) : bootSelection;
+  if (!fallback.instanceId || !fallback.model) return bot;
+  const selection = withNewBotEffort(fallback, cfg.newBotDefaults?.profile.modelSelection?.effort,
+    registry.get(fallback.instanceId)?.adapter.capabilities.effortLevels);
+  return store.applyModelDefault(bot.id, bot.modelSelection.auto === true ? { ...selection, auto: true } : selection) ?? bot;
+}
+/** Why a teammate's engine cannot take work now (after trying to give it the
+ * default), or undefined when it can. Orchestration asks before delegating. */
+function teammateEngineProblem(bot: BotRecord): string | undefined {
+  const healed = healBotEngine(bot);
+  return engineProblem(healed.modelSelection, (id) => registry.get(id)?.enabled !== false && Boolean(registry.get(id)));
 }
 
 /** The Computer engine was removed: it ran a whole turn on Boat's own agent.
@@ -17126,6 +17156,12 @@ async function startTurn(
     computerSelectionMoves.delete(threadId);
   }
   const plan = turnSurfacePlan(bot, opts?.runOn, threadId);
+  if (!namesEngine(bot.modelSelection)) {
+    // No engine at all: the default one, or a plain sentence, never `provider instance ""`.
+    const healed = healBotEngine(bot);
+    if (!namesEngine(healed.modelSelection)) throw Object.assign(new Error(NO_ENGINE_MESSAGE), { status: 409 });
+    bot = healed;
+  }
   const instance = registry.get(bot.modelSelection.instanceId);
   if (!instance) {
     // Still on the removed Computer engine: its move failed or found no
@@ -19578,6 +19614,7 @@ async function cloudRoutineReadiness(botId: string, threadId?: string): Promise<
   const bot = projected && selection ? { ...projected, modelSelection: selection } : projected;
   if (!bot || bot.hidden) return { ready: false, reason: "The routine's target bot no longer exists." };
   const instance = registry.get(bot.modelSelection.instanceId);
+  if (!namesEngine(bot.modelSelection)) return { ready: false, reason: NO_ENGINE_MESSAGE };
   if (!instance) return { ready: false, reason: "The target bot's model is unavailable. Choose another model in the bot's settings." };
   // Organization server: a cloud routine runs in the bot owner's server
   // environment. It does not need a remote computer account.
@@ -20816,7 +20853,7 @@ async function runGroupMemberTurn(
   const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId);
   const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined" ? guestEngineRefusal(threadId) : undefined;
   if (!instance || roomPolicyRefusal || roomGuestRefusal) {
-    const message = roomPolicyRefusal ?? roomGuestRefusal ?? `${bot.name}'s model is unavailable`;
+    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_MESSAGE);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "activity",
@@ -34700,7 +34737,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               id: b.id,
               name: b.name,
               section: b.section?.trim() || "",
-              model: b.modelSelection.model,
+              model: b.modelSelection.model || "aucun moteur",
               busy: !!b.busy,
               status,
               statusText: peerStatusWords(status),
@@ -35467,6 +35504,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!peerAllowed(from, target)) {
           return json(res, 403, { error: `that bot is not on this bot's allowed peers. ${PEER_ACCESS_HELP}` });
         }
+        // No usable engine: fall back at once, never queue work that cannot run.
+        const noEngine = engineEligibility(target);
+        if (noEngine) return json(res, 409, { error: noEngine });
         const fromThreadId = internalCapability.threadId;
         // Rooms are conversations too. The task-only lookup here refused every
         // ask made from a room turn — the bot could see its teammates and not
@@ -35875,6 +35915,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!peerAllowed(from, target)) {
           return json(res, 403, { error: `that bot is not on this bot's allowed peers. ${PEER_ACCESS_HELP}` });
         }
+        // No usable engine: fall back at once, never queue work that cannot run.
+        const noEngine = engineEligibility(target);
+        if (noEngine) return json(res, 409, { error: noEngine });
         const fromThreadId = internalCapability.threadId;
         if (!connectorThread(from.id, fromThreadId)) {
           return json(res, 403, { error: "source thread does not belong to sender" });
@@ -36001,7 +36044,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               target.botId === internalSender.id ? "Choose a teammate, not yourself"
               : !addressed ? `No bot with id "${target.botId}" — call list_bots and copy the exact id from the result`
               : addressed.hidden ? `The bot with id "${target.botId}" is no longer available — call list_bots for the ones you can reach`
-              : roomHandoffProblem(target, address);
+              : roomHandoffProblem(target, address) ?? engineEligibility(addressed);
             if (eligibility) return json(res, 403, { error: eligibility });
           }
           let approvalGranted = false;

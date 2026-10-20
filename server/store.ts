@@ -51,6 +51,7 @@ import type {
 } from "../shared/wire.ts";
 import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN, type WireBotGrant } from "../shared/wire.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
+import { namesEngine } from "./bot-engine.ts";
 // Re-exported under their historical names so server-side importers keep working.
 export type {
   BotActivity, ConnectorCardData, GroupDefaultResponder, OptionCardData,
@@ -2161,7 +2162,9 @@ export class Store {
   /** The one place a new bot's selection is decided: the caller's choice, or
    * the workspace default, completed with the workspace's new-bot defaults. */
   private newBotSelection(requested?: ModelSelection): ModelSelection {
-    return this.completeNewBotSelection(requested ?? this.defaultSelection());
+    // A choice with no engine (create_bot, an import, Auto before any engine
+    // was ready) is no choice: the workspace default, never an empty id.
+    return this.completeNewBotSelection(requested && namesEngine(requested) ? requested : this.defaultSelection());
   }
 
   createBot(
