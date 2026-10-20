@@ -18,6 +18,17 @@ function sandboxChart(file) {
 }
 
 describe("production image sources", () => {
+  // The bots' browsers (docs/browser-packaging.md, "Process hygiene"): an
+  // init collects the browser processes whose parents exit, and Chrome gets
+  // shared memory.
+  it("runs every compose service of the server image with an init and Chrome's shared memory", () => {
+    for (const file of ["compose.yaml", "deploy/docker-compose.yml", "deploy/podman/compose.yaml"]) {
+      const text = read(file);
+      expect(text, file).toMatch(/^\s+init: true$/m);
+      expect(text, file).toMatch(/^\s+shm_size: 512m$/m);
+    }
+  });
+
   it("defaults the image to the full set and exports the build args", () => {
     const dockerfile = read("Dockerfile");
     expect(dockerfile).toContain("ARG ENGINE_SET=all");
