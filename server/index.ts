@@ -593,6 +593,7 @@ import {
   computerPrompt,
   composioSystemPrompt,
   customMcpPrompt,
+  CLAUDE_REUSE_VOLATILE_SECTIONS,
   CREDENTIAL_PROMPT,
   longCommandsPrompt,
   REACTION_PROMPT,
@@ -7166,7 +7167,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "memory", label: "Memory", text: memorySystemPrompt(bot.id, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace), enabled: bot.memoryEnabled !== false }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
     { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
-  ]);
+  ], instance?.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
   return {
     sections: built.sections,
@@ -18823,7 +18824,7 @@ async function startTurn(
         { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
-      ]);
+      ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       // the Files list's "last used": what this turn's prompt carried
       markWorkspaceUse(bot.id, promptSectionPaths(prompt.sections));
@@ -21832,7 +21833,7 @@ async function runGroupMemberTurn(
     { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
-  ]);
+  ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
 
   // The engines read at start is part of setup (it learns what this engine
   // supports): wait for it before the claim below.
@@ -42161,7 +42162,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             const steerId = randomUUID();
             // Auto (server/busy-routing.ts): the bot routes the words it
             // reads, through the handle the note in front of them names.
-            const routable = busyMode === "auto" && autoRoutableThread(bot.id, threadId);
+            // Only a person's own running turn (depth 0) may route: a resumed
+            // teammate reply now runs in that turn's process and still sees
+            // route_message, which the route refuses at depth 1.
+            const routable = busyMode === "auto" && autoRoutableThread(bot.id, threadId) && !isInternalTurn(threadId);
             const routeContext: AutoRouteContext = {
               replyTo, sendId, sender: messageSender(auth), trigger, speaker: speakerFor(auth),
               principalId: auth.kind === "session" ? personKey(auth.session) : undefined, auth,

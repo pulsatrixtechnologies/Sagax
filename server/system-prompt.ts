@@ -38,6 +38,12 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * The phone-call section (server/voice-call-prompt.ts) rides only on the
  * turns of a voice call and the first written turn after it. */
 const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream"]);
+/** Claude Code keeps its process across turns and tells a reused process
+ * what changed in its volatile half: the surface paragraph changes when a
+ * teammate's reply resumes a person's turn (no computer choice there), and
+ * relaunching the engine for that one paragraph cost 1.3 to 2.4 s and about
+ * 26,000 cache-write tokens, twice (2026-10-19 perf parity). */
+export const CLAUDE_REUSE_VOLATILE_SECTIONS: ReadonlySet<string> = new Set(["plan"]);
 
 /** The team availability section, defined once for the direct turn, the room
  * turn and the preview. Its id is what puts it in the volatile half: a call
@@ -85,7 +91,9 @@ export function buildSystemPrompt(
   persona: string,
   soul: string,
   parts: PromptPart[],
+  extraVolatile?: ReadonlySet<string>,
 ): { text: string; sections: PromptSection[]; stable: string; volatile: string; volatileSections: Array<{ id: string; text: string }> } {
+  const isVolatile = (id: string) => VOLATILE_SECTIONS.has(id) || extraVolatile?.has(id) === true;
   // RULES.md (server/workspace-files.ts) rides right after the soul and
   // before everything else, wherever a call site lists it: hard constraints
   // belong next to the standing instructions, ahead of memory.
@@ -110,13 +118,13 @@ export function buildSystemPrompt(
     .filter((part) => part.text.length > 0)
     .map((part) => ({ ...part, bytes: Buffer.byteLength(part.text, "utf8") }));
   const halves = (volatile: boolean) =>
-    sections.filter((section) => VOLATILE_SECTIONS.has(section.id) === volatile).map((section) => section.text).join("");
+    sections.filter((section) => isVolatile(section.id) === volatile).map((section) => section.text).join("");
   return {
     text: sections.map((section) => section.text).join(""),
     sections,
     stable: halves(false),
     volatile: halves(true),
-    volatileSections: sections.filter((section) => VOLATILE_SECTIONS.has(section.id)).map(({ id, text }) => ({ id, text })),
+    volatileSections: sections.filter((section) => isVolatile(section.id)).map(({ id, text }) => ({ id, text })),
   };
 }
 
