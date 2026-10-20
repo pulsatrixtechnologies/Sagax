@@ -1905,5 +1905,8 @@
   "chat.inputRequest.placeholder": "आपका जवाब",
   "chat.inputRequest.send": "जवाब भेजें",
   "chat.inputRequest.open": "बातचीत खोलें",
-  "chat.inputRequest.answered": "जवाब भेजा गया: काम जारी है।"
+  "chat.inputRequest.answered": "जवाब भेजा गया: काम जारी है।",
+  "approval.tool.runCommandCloud": "आपके क्लाउड कंप्यूटर पर एक कमांड चलाना",
+  "approval.tool.runCommandComputer": "आपके कंप्यूटर पर एक कमांड चलाना",
+  "approval.details.more": "विवरण"
 }

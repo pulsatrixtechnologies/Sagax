@@ -64,6 +64,12 @@ public struct ApprovalPlainWords: Codable, Hashable, Sendable {
     }
 }
 
+/// The rule a permission card can keep (`OptionCardData.ownerRule`).
+public struct OwnerRuleCandidate: Codable, Hashable, Sendable {
+    public var description: String
+    public var from: String? = nil
+}
+
 public struct OptionCard: Codable, Hashable, Sendable {
     public var title: String
     public var subtitle: String
@@ -113,6 +119,10 @@ public struct OptionCard: Codable, Hashable, Sendable {
     /// The exact native command an owner or admin may remember
     /// ("Always allow this command").
     public var commandAllowlist: CommandAllowlistCandidate? = nil
+    /// 2026-10-20: the owner's rule this card keeps in one click ("Always
+    /// allow": this bot, this kind of action or this program). Nil on older
+    /// servers.
+    public var ownerRule: OwnerRuleCandidate? = nil
     /// Organization server: a server command of a member's bot that only an
     /// organization admin answers. Never remembered.
     public var adminApproval: Bool? = nil

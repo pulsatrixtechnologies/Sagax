@@ -220,6 +220,8 @@ public struct ApprovalDockActions: Hashable, Sendable {
     public var denyIsCancel = false
     /// Remember the server's `allowKey` for the bot ("Always allow").
     public var alwaysAllowTool = false
+    /// Keep the card's owner rule (`OptionCard.ownerRule`).
+    public var alwaysAllowRule = false
     /// The provider keeps the allow for its session.
     public var alwaysAllowSession = false
     /// Remember the exact command ("Always allow this command").
@@ -243,6 +245,8 @@ public struct ApprovalDecision: Hashable, Sendable {
     public var alwaysAllowKey: String?
     /// A verified security key step-up for this answer (Client+StepUp.swift).
     public var stepUp: String?
+    /// "Always allow" on a card with an owner rule: keep that rule ("allow").
+    public var rule: String? = nil
 
     public init(
         requestId: String, behavior: String, message: String? = nil, reviewedSha256: String? = nil,
@@ -313,12 +317,17 @@ public enum ApprovalDockRules {
         let profile = card.profileRequest != nil
         let teamSetup = card.teamSetupRequest != nil
         let durable = routine || skill || profile || teamSetup
-        let canRememberCommand = ownerOrAdmin && !durable && card.allowKey == nil && card.commandAllowlist != nil
-        actions.cancelTurn = !durable
+        let canRememberCommand = ownerOrAdmin && !durable && card.allowKey == nil && card.commandAllowlist != nil && card.ownerRule == nil
+        // 2026-10-20 (JC): the card offers Deny, Always allow, Allow once;
+        // the composer's stop button ends a turn
+        actions.cancelTurn = false
         actions.denyIsCancel = routine || profile || teamSetup
-        actions.alwaysAllowTool = !durable && hasBot && card.allowKey != nil
-        actions.alwaysAllowSession = !durable && card.allowKey == nil && !canRememberCommand && card.allowSession == true
-        actions.alwaysAllowCommand = canRememberCommand
+        // 2026-10-20 (JC): one "Always allow", one click; the card's owner
+        // rule first (every card since #855), then the older grants
+        actions.alwaysAllowRule = card.ownerRule != nil
+        actions.alwaysAllowTool = !actions.alwaysAllowRule && !durable && hasBot && card.allowKey != nil
+        actions.alwaysAllowSession = !actions.alwaysAllowRule && !durable && card.allowKey == nil && !canRememberCommand && card.allowSession == true
+        actions.alwaysAllowCommand = !actions.alwaysAllowRule && canRememberCommand
         if teamSetup {
             actions.primary = .option(card.options.first ?? "")
         } else if skill {
@@ -330,13 +339,13 @@ public enum ApprovalDockRules {
         return actions
     }
 
-    public enum Choice: Sendable { case allowOnce, deny, alwaysAllowTool, alwaysAllowSession, alwaysAllowCommand }
+    public enum Choice: Sendable { case allowOnce, deny, alwaysAllowTool, alwaysAllowSession, alwaysAllowCommand, alwaysAllowRule }
 
     /// The respond body for one dock button (`decideRequest` in the store).
     public static func decision(_ choice: Choice, for pending: PendingApproval) -> ApprovalDecision {
         let card = pending.card
         let allow = choice != .deny
-        return ApprovalDecision(
+        var decision = ApprovalDecision(
             requestId: pending.requestId,
             behavior: allow ? "allow" : "deny",
             message: allow ? nil : "Denied by the user.",
@@ -345,6 +354,8 @@ public enum ApprovalDockRules {
             rememberCommand: choice == .alwaysAllowCommand,
             alwaysAllowKey: choice == .alwaysAllowTool ? card.allowKey : nil
         )
+        if choice == .alwaysAllowRule, card.ownerRule != nil { decision.rule = "allow" }
+        return decision
     }
 
     /// The parallel tasks of `threadId` that wait on the person: their

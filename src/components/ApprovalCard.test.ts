@@ -411,7 +411,7 @@ describe("ApprovalCard tool-call kinds", () => {
 
   it("speaks a verb phrase when the driver only knows the ACP kind", () => {
     const html = openRequestHtml(kindMessage("other"), bot);
-    expect(html).toContain("Allow Scout to take an action?");
+    expect(html).toContain("Scout wants to take an action");
     expect(html).not.toContain("wants to other");
   });
 
@@ -429,13 +429,13 @@ describe("ApprovalCard tool-call kinds", () => {
     ];
     for (const [tool, phrase] of cases) {
       const html = openRequestHtml(kindMessage(tool), bot);
-      expect(html).toContain(`Allow Scout to ${phrase}?`);
+      expect(html).toContain(`Scout wants to ${phrase}`);
     }
   });
 
   it("reads grammatically when no tool is known", () => {
     const html = openRequestHtml(kindMessage(undefined));
-    expect(html).toContain("Allow this bot to take an action?");
+    expect(html).toContain("Wants to take an action");
     expect(html).not.toContain("Allow this bot to an action");
   });
 
@@ -563,7 +563,7 @@ describe("ApprovalCard outbound holds", () => {
     message.card!.outboundRequest = undefined;
     message.card!.tool = "mcp__composio__LINEAR_CREATE_LINEAR_COMMENT";
     const html = openRequestHtml(message, bot);
-    expect(html).toContain("Allow Kiwi to create linear comment?");
+    expect(html).toContain("Kiwi wants to create linear comment");
   });
 });
 

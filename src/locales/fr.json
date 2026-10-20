@@ -138,8 +138,8 @@
   "appearance.use": "Utiliser {name}",
   "approval.action.allowAllReadOnly": "Tout autoriser en lecture seule ({count})",
   "approval.action.allowAllReadOnlyHint": "Autorise seulement les demandes en attente qui ne font que lire des données",
-  "approval.action.allowOnce": "Autoriser une fois",
-  "approval.action.alwaysAllow": "Toujours autoriser",
+  "approval.action.allowOnce": "Permettre une fois",
+  "approval.action.alwaysAllow": "Toujours permettre",
   "approval.action.alwaysAllowCommand": "Toujours autoriser cette commande",
   "approval.action.alwaysAllowCommandHint": "Retenir cette commande exacte pour ce bot et ce fournisseur dans {cwd}, y compris les autres fils qui utilisent ce dossier",
   "approval.action.alwaysAllowSession": "Toujours autoriser pour cette session",
@@ -9337,5 +9337,8 @@
   "myRules.from.hold": "aussi quand une vérification de sécurité la retient",
   "myRules.from.origin": "aussi pour les routines, les autres bots et votre propre ordinateur",
   "approvals.bulk.always": "Toujours autoriser ces demandes : chaque carte garde sa propre portée exacte",
-  "approvals.bulk.alwaysNote": "Chaque demande est autorisée, et la même action sur le même type de cible passera sans carte pour ce bot. Chaque règle est listée dans Réglages > Sécurité, où vous pouvez la révoquer."
+  "approvals.bulk.alwaysNote": "Chaque demande est autorisée, et la même action sur le même type de cible passera sans carte pour ce bot. Chaque règle est listée dans Réglages > Sécurité, où vous pouvez la révoquer.",
+  "approval.tool.runCommandCloud": "lancer une commande sur ton ordinateur cloud",
+  "approval.tool.runCommandComputer": "lancer une commande sur ton ordinateur",
+  "approval.details.more": "Détails"
 }

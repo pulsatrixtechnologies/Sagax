@@ -9337,5 +9337,8 @@
   "myRules.from.hold": "also when a safety check holds it",
   "myRules.from.origin": "also for routines, other bots and your own computer",
   "approvals.bulk.always": "Always allow these: each card keeps its own exact scope",
-  "approvals.bulk.alwaysNote": "Each request is allowed, and the same action on the same kind of target will pass without a card for that bot. Each rule is listed in Settings > Security, where you can revoke it."
+  "approvals.bulk.alwaysNote": "Each request is allowed, and the same action on the same kind of target will pass without a card for that bot. Each rule is listed in Settings > Security, where you can revoke it.",
+  "approval.tool.runCommandCloud": "run a command on your cloud computer",
+  "approval.tool.runCommandComputer": "run a command on your computer",
+  "approval.details.more": "Details"
 }

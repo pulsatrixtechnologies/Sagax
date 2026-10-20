@@ -25,6 +25,7 @@ extension CompanionClient {
         if let hash = decision.reviewedSha256 { body["reviewedSha256"] = hash }
         if decision.always { body["always"] = true }
         if decision.rememberCommand { body["rememberCommand"] = true }
+        if let rule = decision.rule { body["rule"] = rule }
         if let stepUp = decision.stepUp { body["stepUp"] = stepUp }
         let (data, response) = try await perform(try makeRequest("POST", "/api/threads/\(threadId)/respond", body: body))
         try Self.checkStepUp(response, data)

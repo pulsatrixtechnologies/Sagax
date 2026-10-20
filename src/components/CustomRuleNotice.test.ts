@@ -56,14 +56,17 @@ describe("Toujours permettre ceci", () => {
     return renderToStaticMarkup(PendingApprovalActions({ pending, bot, threadId: "thread-1", onCancelTurn: vi.fn() }));
   };
 
-  it("is offered when the server proposes a rule for this card", () => {
+  // 2026-10-20 (JC): one "Always allow", one click, no editor on the card
+  it("is offered as the one Always allow when the server proposes a rule for this card", () => {
     const html = render({ customRuleCandidate: { when: notice.when, risks: [] } });
-    expect(html).toContain("Always allow this");
-    expect(html).toContain("data-always-allow-this-button");
+    expect(html).toContain(">Always allow<");
+    expect(html).toContain("data-always-allow");
+    expect(html).not.toContain("Always allow this");
+    expect(html).not.toContain("Save and allow");
   });
 
   it("is never offered without a proposal or on an admin card", () => {
-    expect(render()).not.toContain("Always allow this");
-    expect(render({ adminApproval: true, customRuleCandidate: { when: notice.when, risks: [] } })).not.toContain("Always allow this");
+    expect(render()).not.toContain("data-always-allow");
+    expect(render({ adminApproval: true, customRuleCandidate: { when: notice.when, risks: [] } })).not.toContain("data-always-allow");
   });
 });

@@ -3771,5 +3771,8 @@
   "chat.inputRequest.placeholder": "你的回答",
   "chat.inputRequest.send": "傳送回答",
   "chat.inputRequest.open": "開啟對話",
-  "chat.inputRequest.answered": "回答已傳送：工作繼續進行。"
+  "chat.inputRequest.answered": "回答已傳送：工作繼續進行。",
+  "approval.tool.runCommandCloud": "在你的雲端電腦上執行指令",
+  "approval.tool.runCommandComputer": "在你的電腦上執行指令",
+  "approval.details.more": "詳細資料"
 }

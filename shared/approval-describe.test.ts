@@ -29,7 +29,9 @@ describe("approvalPlain", () => {
   });
   it("says 'run a command' for a run_command tool, not 'run the command action'", () => {
     const plain = approvalPlain({ botName: "Cryptic", tool: "sagax-environment__run_command", toolInput: '{"command":"echo hi"}', detail: 'sagax-environment__run_command {"command":"echo hi"}' });
-    expect(plain.title).toBe("Allow Cryptic to run a command?");
+    expect(plain.title).toBe("Allow Cryptic to run a command on your cloud computer?");
+    expect(approvalPlain({ botName: "Cryptic", tool: "sagax-desktop__run_command", toolInput: '{"command":"ls"}' }).action).toBe("run a command on your computer");
+    expect(approvalPlain({ botName: "Cryptic", tool: "acme__run_command", toolInput: '{"command":"ls"}' }).action).not.toMatch(/your/);
     const isolate = approvalPlain({ botName: "Cryptic", tool: "s1__isolate_action", detail: "s1__isolate_action {}" });
     expect(isolate.title).not.toMatch(/run a command/);
   });

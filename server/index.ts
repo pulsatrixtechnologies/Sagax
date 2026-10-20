@@ -3,6 +3,7 @@
 // folds one SSE event stream; every provider process runs here.
 // First of all, SAGAX_* settings onto the names the code reads (step 1 of
 // the rename, electron/legacy-names.mjs).
+import { isReadOnlyCommand, runCommandOf } from "../shared/read-only-command.ts";
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 import { healthzBody } from "./healthz.ts";
@@ -13960,6 +13961,14 @@ bus.subscribe((event: RuntimeEvent) => {
         input: typeof event.input === "string" ? event.input : undefined,
         roots: ownAttachmentRoots(asker, event.threadId),
       }));
+      // 2026-10-20 (JC): a command that only reads (ls, cat, grep, git
+      // status...) on the person's own computer (their PC, its Local VM,
+      // their cloud computer) never asks, whatever the engine, the level or
+      // the bot that asked; deny and ask rules, a safety hold and a security
+      // key still come first (auto-approve.ts).
+      const readOnlyCommand = Boolean(ownDestination && asker && !strictCard && !guestDriven && !foreignDestination
+        && /^(?:mcp__)?(?:sagax-environment|sagax-desktop)__run_command$/.test((event.mcpTool ?? event.tool ?? "").trim())
+        && isReadOnlyCommand(event.command?.command ?? runCommandOf(typeof event.input === "string" ? event.input : undefined)));
       // Security review 2026-10-19: no saved Allow key (the Sagax gate's
       // Always allow) answers or is offered for a call no rule may answer:
       // someone else's environment, or a destination outside an isolated
@@ -14056,10 +14065,11 @@ bus.subscribe((event: RuntimeEvent) => {
           }),
           ownAttachmentRead: attachmentRead,
           ownComputerChoice: ownComputerChoice && !strictCard,
+          ownReadOnlyCommand: readOnlyCommand,
           ...(perspicaxSelfKind && !strictCard && !foreignDestination && perspicaxSelfAnswerAt(perspicaxSelfKind, effectiveApprovalMode)
             ? { perspicaxSelf: perspicaxSelfKind } : {}),
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
-          stepUpRequired: attachmentRead && !selfAnswerStepUp.length && asker
+          stepUpRequired: (attachmentRead || readOnlyCommand) && !selfAnswerStepUp.length && asker
             ? autoAnswerStepUp(asker, event.threadId, {
               tool: event.tool,
               ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
@@ -14204,7 +14214,12 @@ bus.subscribe((event: RuntimeEvent) => {
           // 2026-10-20 (security review): a card that never had a rule (an
           // admin's, a held one, a turn not the person's own) keeps the
           // whole request, every argument, never only its target
-          const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language), { wholeCall: ruleFrom !== undefined });
+          const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language), {
+            wholeCall: ruleFrom !== undefined,
+            // 2026-10-20 (JC): a command is kept as its one program, except
+            // on an admin's card or a held one, which keep the very request
+            programScope: ruleFrom !== "admin" && ruleFrom !== "hold",
+          });
           return scopeKeepable(candidate.scope) ? { ...candidate, ...(ruleFrom ? { from: ruleFrom } : {}) } : undefined;
         })()
         : undefined;

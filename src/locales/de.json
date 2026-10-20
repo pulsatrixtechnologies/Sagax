@@ -1933,5 +1933,8 @@
   "chat.inputRequest.placeholder": "Deine Antwort",
   "chat.inputRequest.send": "Antwort senden",
   "chat.inputRequest.open": "Unterhaltung öffnen",
-  "chat.inputRequest.answered": "Antwort gesendet: Die Arbeit geht weiter."
+  "chat.inputRequest.answered": "Antwort gesendet: Die Arbeit geht weiter.",
+  "approval.tool.runCommandCloud": "einen Befehl auf deinem Cloud-Computer ausführen",
+  "approval.tool.runCommandComputer": "einen Befehl auf deinem Computer ausführen",
+  "approval.details.more": "Details"
 }

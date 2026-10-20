@@ -27,6 +27,7 @@ import { createHash } from "node:crypto";
 
 import { approvalAction, describeApproval, parseArgs, parseToolId, type ApprovalWords, ENGLISH_WORDS } from "../shared/approval-describe.ts";
 import { sagaxFolder } from "../shared/human-id.ts";
+import { singleProgramOf } from "../shared/read-only-command.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
 
 export const BOT_PERMISSION_MODES = ["approval", "auto", "bypass"] as const;
@@ -214,8 +215,17 @@ export function callScopeFor(call: Pick<RuleCall, "input" | "cwd">): RuleScope {
     const made = sagaxFolder(cwd);
     scope.cwd = made && made.rest.length === 0 ? `sagax:${made.kind}` : cwd.length <= MAX_EXACT_VALUE ? cwd : EXACT_TOO_LONG;
   }
+  // 2026-10-20 (JC): the one program a plain command line runs, which a
+  // "Toujours permettre" rule saved for that program matches
+  const program = singleProgramOf(scope.command ?? scope.cmd);
+  if (program) scope[PROGRAM_KEY] = program;
   return scope;
 }
+
+/** The scope key of a rule kept for one program (`git`, `npm`): it covers
+ * a command line that runs only that program (shared/read-only-command.ts
+ * singleProgramOf), in the same folder, never a chain with another one. */
+export const PROGRAM_KEY = "program";
 
 const BULK_TOOL = /(^|[_.:-])(bulk|batch|mass|many)([_.:-]|$)/i;
 const ID_LIST_KEYS = ["ids", "id", "records", "items", "tickets", "entries", "targets", "recordIds", "ticketIds"];
@@ -255,7 +265,7 @@ export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScop
   if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
   if (rule.behavior === "allow" && Object.keys(rule.scope).length) {
     for (const key of Object.keys(callScope)) {
-      if (STRICT_KEY_SET.has(key) && !(key in rule.scope)) return false;
+      if (STRICT_KEY_SET.has(key) && !(key in rule.scope) && !(PROGRAM_KEY in rule.scope && (key === "command" || key === "cmd"))) return false;
     }
   }
   for (const [key, value] of Object.entries(rule.scope)) {
@@ -381,8 +391,24 @@ export function describeRule(tool: string, scope: RuleScope, words: ApprovalWord
   return (target ? `${action} (${target})` : action).slice(0, 500);
 }
 
-export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints" | "cwd">, words: ApprovalWords = ENGLISH_WORDS, options: { wholeCall?: boolean } = {}): RuleCandidate {
-  const scope = callScopeFor(call);
+export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints" | "cwd">, words: ApprovalWords = ENGLISH_WORDS, options: { wholeCall?: boolean; programScope?: boolean } = {}): RuleCandidate {
+  const full = callScopeFor(call);
+  // 2026-10-20 (JC: "Toujours permettre" in one click, this program and not
+  // the exact string): a plain command line of one program is kept as that
+  // program (and its folder); anything else keeps the exact command.
+  const program = options.programScope ? full[PROGRAM_KEY] : undefined;
+  if (program) {
+    const scope: RuleScope = { [PROGRAM_KEY]: program, ...(full.cwd !== undefined ? { cwd: full.cwd } : {}) };
+    const destructive = destructiveKindOf(call);
+    return {
+      tool: normalizeRuleTool(call.tool),
+      scope,
+      ...(destructive ? { destructive } : {}),
+      description: describeRule(call.tool, scope, words, call.input),
+    };
+  }
+  const scope: RuleScope = { ...full };
+  delete scope[PROGRAM_KEY];
   // 2026-10-20 (security review): a call with arguments but no target the
   // scope reads (a query, a body, recipients under another key) keeps the
   // whole request, never the whole tool

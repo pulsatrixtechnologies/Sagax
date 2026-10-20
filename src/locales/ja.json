@@ -3917,5 +3917,8 @@
   "chat.inputRequest.placeholder": "あなたの回答",
   "chat.inputRequest.send": "回答を送信",
   "chat.inputRequest.open": "会話を開く",
-  "chat.inputRequest.answered": "回答を送信しました。作業を続けます。"
+  "chat.inputRequest.answered": "回答を送信しました。作業を続けます。",
+  "approval.tool.runCommandCloud": "クラウドコンピューターでコマンドを実行",
+  "approval.tool.runCommandComputer": "あなたのコンピューターでコマンドを実行",
+  "approval.details.more": "詳細"
 }

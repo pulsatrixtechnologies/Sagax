@@ -41,27 +41,30 @@ const click = (result: ReturnType<typeof view>, label: string) => result.buttons
 beforeEach(() => { fixture.admin = false; fixture.dispatch.mockReset(); });
 
 describe("owner rule buttons", () => {
-  it("offers Deny, Always deny, Always allow and Allow once, and no older grant", () => {
+  // 2026-10-20 (JC, after Grok Bot): Deny, Always allow, Allow once; Always
+  // deny and the rule's scope live in Settings > Security
+  it("offers exactly Deny, Always allow and Allow once", () => {
     const result = view();
     const labels = result.buttons.map((button) => button.props.children);
-    expect(labels).toEqual(expect.arrayContaining(["Deny", "Always deny", "Always allow", "Allow once"]));
-    expect(result.buttons.filter((button) => button.props.children === "Always allow")).toHaveLength(1);
+    expect(labels).toEqual(["Deny", "Always allow", "Allow once"]);
+    expect(result.html).not.toContain("Always allow keeps exactly");
+    expect(result.html).not.toContain("Cancel turn");
   });
 
-  it("Always allow and Always deny save the rule with the answer; Allow once and Deny save nothing", () => {
+  it("Always allow saves the rule with the answer in one click; Allow once and Deny save nothing", () => {
     const result = view();
     click(result, "Always allow");
     expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "allow", rule: "allow", alwaysAllow: undefined }));
-    click(result, "Always deny");
-    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "deny", rule: "deny" }));
     click(result, "Allow once");
     expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "allow", rule: undefined }));
     click(result, "Deny");
     expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "deny", rule: undefined }));
   });
 
-  it("says a destructive call needs a rule of its own", () => {
-    expect(view({ ownerRule: { ...ownerRule, destructive: "delete" } }).html).toContain("only a rule made for it can allow it");
+  it("keeps the same three buttons on a destructive call, with no paragraph", () => {
+    const result = view({ ownerRule: { ...ownerRule, destructive: "delete" } });
+    expect(result.buttons.map((button) => button.props.children)).toEqual(["Deny", "Always allow", "Allow once"]);
+    expect(result.html).not.toContain("only a rule made for it can allow it");
   });
 
   it("an admin card offers no rule, and its owner only waits", () => {

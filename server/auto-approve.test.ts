@@ -38,6 +38,17 @@ describe("Full access delivery", () => {
 });
 
 describe("autoVerdict", () => {
+  it("answers a read-only command on the person's own computer at every level (JC 2026-10-20)", () => {
+    const tool = "mcp__sagax-environment__run_command";
+    for (const mode of ["ask", "edits", "auto", "custom"] as const) {
+      expect(autoVerdict(mode, tool, { ownReadOnlyCommand: true }).source).toBe("own-read-only");
+      // the person's own words, a safety hold and a security key come first
+      expect(autoVerdict(mode, tool, { ownReadOnlyCommand: true, customRule: { behavior: "ask", id: "r" } }).approve).toBeNull();
+      expect(autoVerdict(mode, tool, { ownReadOnlyCommand: true, safetyHold: true }).approve).toBeNull();
+      expect(autoVerdict(mode, tool, { ownReadOnlyCommand: true, stepUpRequired: ["shell"] }).approve).toBeNull();
+      expect(autoVerdict(mode, tool, { ownReadOnlyCommand: true, requiresExplicitApproval: true }).approve).toBeNull();
+    }
+  });
   it("never uses a saved command grant to silently send on the person's behalf", () => {
     for (const mode of ["ask", "edits", "auto", "custom"] as const) {
       expect(autoVerdict(mode, "mcp__composio__GMAIL_SEND_DRAFT", { commandAllowed: true })).toEqual({ approve: null, source: "outbound-guard" });

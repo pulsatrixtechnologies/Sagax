@@ -17976,7 +17976,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toujours autoriser"
+            "value": "Toujours permettre"
           }
         },
         "pt-BR": {
@@ -18086,7 +18086,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Autoriser une fois"
+            "value": "Permettre une fois"
           }
         },
         "pt-BR": {
