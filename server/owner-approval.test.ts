@@ -234,6 +234,9 @@ describe("2026-10-19: Toujours permettre on every card", () => {
     const wholeRule = { ...shellRule("x"), tool: whole.tool, scope: whole.scope };
     expect(matchOwnerRule([wholeRule], { ownerId: ALICE, botId: "bot-a", tool: "mcp__db__run", input: sql("select 1") })?.id).toBe("s1");
     expect(matchOwnerRule([wholeRule], { ownerId: ALICE, botId: "bot-a", tool: "mcp__db__run", input: sql("drop table t") })).toBeUndefined();
+    // arguments the scope does not read keep the whole request, never the whole tool
+    expect(ruleCandidateFor({ tool: "mcp__mail__send", input: JSON.stringify({ message: { toRecipients: ["a@x.ca"] } }) }).scope[WHOLE_CALL_KEY]).toMatch(/^[0-9a-f]{32}$/);
+    expect(ruleCandidateFor({ tool: "mcp__mail__list", input: "{}" }).scope).toEqual({});
     // a target too long to keep never becomes "any value"
     expect(ruleScopeFor(JSON.stringify({ domain: "a".repeat(200) })).domain).toBeDefined();
     expect(ruleScopeFor(JSON.stringify({ file_path: "/Users/a/Notes.md" }))).toEqual({ file_path: "/Users/a/Notes.md" });

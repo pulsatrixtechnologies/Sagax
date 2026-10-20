@@ -14021,7 +14021,7 @@ bus.subscribe((event: RuntimeEvent) => {
         : null;
       // 2026-10-20 (security review): never on a turn that is not the
       // person's own (a routine, a webhook, another bot)
-      const strictRule = strictCall && asker && !baseVerdict?.approve && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true && !ownerOriginRefused
+      const strictRule = strictCall && asker && !baseVerdict?.approve && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true && ownEnvironmentOrigin(asker, event.threadId) === "owner"
         ? strictCardRule(asker, event.threadId, strictCall, adminApproval ? "admin" : "holder", {
           tool: event.tool,
           ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),

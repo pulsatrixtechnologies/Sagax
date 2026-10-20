@@ -383,7 +383,11 @@ export function describeRule(tool: string, scope: RuleScope, words: ApprovalWord
 
 export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints" | "cwd">, words: ApprovalWords = ENGLISH_WORDS, options: { wholeCall?: boolean } = {}): RuleCandidate {
   const scope = callScopeFor(call);
-  if (options.wholeCall) scope[WHOLE_CALL_KEY] = wholeCallDigest(call.input);
+  // 2026-10-20 (security review): a call with arguments but no target the
+  // scope reads (a query, a body, recipients under another key) keeps the
+  // whole request, never the whole tool
+  const args = parseArgs(call.input);
+  if (options.wholeCall || (Object.keys(scope).length === 0 && args && Object.keys(args).length > 0)) scope[WHOLE_CALL_KEY] = wholeCallDigest(call.input);
   const destructive = destructiveKindOf(call);
   return {
     tool: normalizeRuleTool(call.tool),
