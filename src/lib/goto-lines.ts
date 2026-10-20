@@ -8,6 +8,7 @@ import type { ExchangeParty, ExchangeRun } from "@/lib/bot-exchange";
 import { isStatusActivity } from "@/lib/activity-runs";
 import { failedTurnCause } from "@/lib/failed-turn";
 import { isCancelledTranscriptRow } from "../../shared/client-cancel";
+import { shownCwWidget } from "../../shared/cw-widgets/tool-call";
 
 export type GotoTarget =
   | { kind: "exchange"; key: string; run: ExchangeRun }
@@ -194,7 +195,7 @@ export function gotoAgents(
 export function silentChatItem(item: AnyItem, showToolCalls: boolean): boolean {
   if (showToolCalls) return false;
   // a group with a turn's narration still shows that narration
-  if (item.kind === "run" && "messages" in item) return !item.messages.some((message) => message.tool?.widget || message.kind !== "activity");
+  if (item.kind === "run" && "messages" in item) return !item.messages.some((message) => shownCwWidget(message.tool) || message.kind !== "activity");
   if (item.kind !== "message" || !("message" in item)) return false;
   const message = item.message;
   if (message.kind !== "activity" || !message.tool || message.state) return false;
