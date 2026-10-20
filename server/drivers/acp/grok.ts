@@ -109,14 +109,25 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
   return env.GROK_HOME || harnessHome("grok", env);
 }
 
-/** Whether Grok's own config (GROK_HOME's config.toml, or the project's
- * `.grok/config.toml` under the turn's folder) declares MCP servers of its
- * own. An unreadable file declares none. */
+/** Whether Grok may load MCP servers Sagax did not mount: a config override
+ * (GROK_CONFIG, GROK_CONFIG_PATH), or an `mcp_servers` table, dotted key or
+ * assignment in GROK_HOME's config.toml or any `.grok/config.toml` from the
+ * turn's folder up (the files grokInheritedProfile reads). Errs toward yes:
+ * any line that starts with mcp_servers counts. */
 export function grokConfigDeclaresMcp(env: Record<string, string | undefined>, cwd?: string): boolean {
-  const files = [join(grokHome(env), "config.toml"), ...(cwd ? [join(cwd, ".grok", "config.toml")] : [])];
+  if (env.GROK_CONFIG || env.GROK_CONFIG_PATH) return true;
+  const files = [join(grokHome(env), "config.toml")];
+  if (cwd) {
+    for (let directory = resolve(cwd);;) {
+      files.push(join(directory, ".grok", "config.toml"));
+      const parent = dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
   return files.some((file) => {
     try {
-      return /^\s*\[\[?\s*["']?mcp_servers["']?\s*[.\]]/m.test(readFileSync(file, "utf8"));
+      return /^\s*(?:\[\[?\s*)?["']?mcp_servers\b/m.test(readFileSync(file, "utf8"));
     } catch {
       return false;
     }
@@ -935,8 +946,10 @@ const support: AcpSupport = {
   transformEnv: (env) => {
     delete env.XAI_API_KEY;
   },
-  applyTurnEnv: (env, { toolScope, withholdHostTools }) => {
-    if (toolScope !== undefined || withholdHostTools === true) {
+  applyTurnEnv: (env, { toolScope, withholdHostTools, approvalGated }) => {
+    // A gated turn too: account-level MCPs are not mounted by Sagax, so the
+    // gate could not hold their calls.
+    if (toolScope !== undefined || withholdHostTools === true || approvalGated === true) {
       // The verified runtime gives these local env switches priority over
       // account defaults, preventing an unfiltered managed gateway fallback.
       env.GROK_MANAGED_MCPS_ENABLED = "false";

@@ -1646,6 +1646,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
         expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "default"]);
         expect(seen.argv).not.toContain("--allow");
+        // account-level MCPs are not mounted by Sagax: off on a gated turn
+        expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
+        expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
       }
     });
 
@@ -3306,6 +3309,21 @@ describe("grokConfigDeclaresMcp", () => {
       writeFileSync(join(project, ".grok", "config.toml"), "[mcp_servers]\na = { command = \"node\" }\n");
       expect(grokConfigDeclaresMcp(env, project)).toBe(true);
       expect(grokConfigDeclaresMcp(env, undefined)).toBe(false);
+      // a parent folder's config counts, as Grok reads it
+      const sub = join(project, "a", "b");
+      mkdirSync(sub, { recursive: true });
+      expect(grokConfigDeclaresMcp(env, sub)).toBe(true);
+      // a dotted key or an assignment counts too
+      writeFileSync(join(project, ".grok", "config.toml"), "");
+      expect(grokConfigDeclaresMcp(env, sub)).toBe(false);
+      for (const text of ["mcp_servers.x.command = \"node\"\n", "mcp_servers = { x = { command = \"node\" } }\n"]) {
+        writeFileSync(join(project, ".grok", "config.toml"), text);
+        expect(grokConfigDeclaresMcp(env, sub)).toBe(true);
+      }
+      // a config override is never read here: it counts as declaring
+      writeFileSync(join(project, ".grok", "config.toml"), "");
+      expect(grokConfigDeclaresMcp({ ...env, GROK_CONFIG: "/elsewhere.toml" }, sub)).toBe(true);
+      expect(grokConfigDeclaresMcp({ ...env, GROK_CONFIG_PATH: "/elsewhere.toml" }, sub)).toBe(true);
     } finally {
       removeTempDir(home);
       removeTempDir(project);
