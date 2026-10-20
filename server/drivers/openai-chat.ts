@@ -749,6 +749,9 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         // ask_user, added below, keeps its place within the limit.
         const toolLimit = (options.toolLimit ?? providerToolLimit(options.driverKind)) - (questionAllowed ? 1 : 0);
         tools = await mountChatTools(options.tools === false ? undefined : turn.integrations, abort.signal, options.computerUse, scope, turn.mcpCallTimeoutMs, toolLimit);
+        for (const { server, reason } of tools.skipped) {
+          emit({ ...base(turn.threadId, turnId), type: "runtime.notice", message: `MCP server "${server}" was skipped for this turn: ${safeText(reason)}` });
+        }
         let optionalQuestionOnly = questionAllowed && tools.definitions.length === 0;
         // The runtime's one built-in tool rides the same list: ask_user is
         // how a chat-completions engine reaches a person. An MCP server that
