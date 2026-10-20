@@ -2974,6 +2974,7 @@
   "myConnections.github.uses": "Vos bots l'utilisent pour le serveur MCP de GitHub et les dépôts privés.",
   "myConnections.github.usesEnvironment": "Le gh et le git de vos bots l'utilisent dans votre environnement serveur.",
   "myConnections.github.waiting": "En attente de GitHub…",
+  "myConnections.github.fineGrained": "Ce jeton fine-grained ne couvre qu'un seul propriétaire (@{login}) : vos bots ne verront pas les dépôts de vos organisations. Reconnectez GitHub avec l'accès aux organisations (Connecter GitHub, ou un jeton classique avec les portées repo et read:org).",
   "myConnections.intro": "Vos propres comptes et serveurs MCP. Seules vos conversations et vos routines les utilisent; aucun tour d'une autre personne ne les reçoit.",
   "cloudAgentProviders.intro": "Les clés enregistrées ici sont chiffrées sur ce serveur et servent lorsque vous lancez des agents cloud (Cursor, Claude Code, Codex). Elles ne sont plus affichées après l'enregistrement.",
   "cloudAgentProviders.loading": "Chargement des clés cloud…",

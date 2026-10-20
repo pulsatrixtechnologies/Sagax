@@ -8,7 +8,7 @@ import { api } from "@/state/store";
 export type GithubStatus =
   | { state: "none"; deviceFlow: boolean }
   | { state: "pending"; deviceFlow: true; userCode: string; verificationUri: string; expiresAt: number }
-  | { state: "connected"; deviceFlow: boolean; login: string; name?: string; scopes?: string[]; via: "device" | "token"; connectedAt: number }
+  | { state: "connected"; deviceFlow: boolean; login: string; name?: string; scopes?: string[]; via: "device" | "token"; connectedAt: number; fineGrained?: boolean }
   | { state: "error"; deviceFlow: boolean; error: string };
 
 export type PersonalAuthState = "connected" | "ready" | "needs_sign_in" | "needs_github" | "needs_token" | "expired" | "error" | "no_environment";
@@ -145,7 +145,7 @@ export const removeMarketplaceToken = (botId: string, name: string) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/token`, { method: "DELETE" });
 
 /** Refusals of a private repository that a token (or a GitHub connection) fixes. */
-export const MARKETPLACE_ACCESS_CODES = new Set(["private_needs_token", "not_found_or_no_access", "bad_token", "forbidden", "sso_required", "repository_unreadable"]);
+export const MARKETPLACE_ACCESS_CODES = new Set(["private_needs_token", "not_found_or_no_access", "bad_token", "forbidden", "sso_required", "repository_unreadable", "org_not_covered"]);
 export const updateMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/update`, { method: "POST", timeoutMs: 180_000 });
 export const removeMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}`, { method: "DELETE" });
 export const installPlugin = (botId: string, marketplace: string, plugin: string) =>
