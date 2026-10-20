@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as atomic from "./atomic.ts";
 
 import {
+  ENDED_SESSION_MEMORY_MS,
   EXCHANGE_REPLAY_MS,
   formatPairingCode,
   generatePairingCode,
@@ -893,5 +894,40 @@ describe("a pairing window lost to a restart (2026-10-13)", () => {
     clock += PAIRING_RESTART_HINT_MS;
     const later = restarted.exchange({ code: credential, label: "Mac", source: "b" });
     expect(later).toEqual({ ok: false, status: 401, error: "pairing code is wrong or has expired; create a new one on the server" });
+  });
+});
+
+// 2026-10-20: a refused token says why (the 401 code), across restarts.
+describe("why a session token stopped working", () => {
+  it("remembers revoked, expired and provider-ended sessions by token hash, bounded, and says unknown otherwise", () => {
+    const dir = mkdtempSync(join(tmpdir(), "omb-sessions-ended-"));
+    try {
+      let now = 1_000_000;
+      const file = join(dir, "sessions.json");
+      const registry = new SessionRegistry({ file, now: () => now });
+      const a = registry.issue({ label: "a", scopes: ["client"] });
+      const b = registry.issue({ label: "b", scopes: ["client"] });
+      const c = registry.issue({ label: "c", scopes: ["client"] });
+      registry.revoke(a.session.id);
+      registry.revokeWhere((s) => s.id === b.session.id, "idp_session_ended");
+      expect(registry.explainRefusal(a.token)).toEqual({ code: "session_revoked", sessionId: a.session.id });
+      expect(registry.explainRefusal(b.token)).toEqual({ code: "idp_session_ended", sessionId: b.session.id });
+      expect(registry.explainRefusal("sgx_sess_never")).toEqual({ code: "session_unknown" });
+      expect(registry.explainRefusal(undefined)).toEqual({ code: "session_unknown" });
+      now += SESSION_TTL_MS + 1;
+      expect(registry.explainRefusal(c.token).code).toBe("session_expired");
+      registry.list(); // prunes
+      expect(registry.explainRefusal(c.token).code).toBe("session_expired");
+      registry.close();
+      const raw = readFileSync(file, "utf8");
+      for (const token of [a.token, b.token, c.token]) expect(raw).not.toContain(token);
+      const reopened = new SessionRegistry({ file, now: () => now });
+      expect(reopened.explainRefusal(b.token).code).toBe("idp_session_ended");
+      now += ENDED_SESSION_MEMORY_MS;
+      expect(reopened.explainRefusal(b.token).code).toBe("session_unknown");
+      reopened.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

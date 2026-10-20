@@ -206,8 +206,13 @@ export type CallbackOutcome =
   /** `client` (and `purpose`, `returnTo`) are known once the pending flow was found. */
   | { ok: false; code: string; error: string; client?: OidcClientKind; purpose?: OidcFlowPurpose; returnTo?: string };
 
-/** OAuth errors that mean the grant is gone for good (RFC 6749 5.2, RFC 8707). */
-const REJECTED_GRANT_ERRORS = new Set(["invalid_grant", "invalid_client", "unauthorized_client", "invalid_target", "unsupported_grant_type"]);
+/** OAuth errors that mean this grant is gone for good (RFC 6749 5.2). Only
+ * `invalid_grant` names the grant itself; `invalid_client`,
+ * `unauthorized_client`, `invalid_target` and `unsupported_grant_type` name
+ * this server's client registration, the same for every person, and come
+ * from a provider being redeployed or reconfigured: they are transient
+ * (2026-10-20, JC: no sign-out for a Perspicax deploy). */
+const REJECTED_GRANT_ERRORS = new Set(["invalid_grant"]);
 
 /** Default and cap of an access token's life when `expires_in` is missing or
  * out of range (seconds). */
@@ -224,7 +229,7 @@ export function accessExpiresIn(value: unknown): number {
 export type RefreshOutcome =
   /** `accessToken` (memory only, never kept on disk) and its `expiresIn` in
    * seconds: slice 5 exchanges it for per-turn Perspicax MCP tokens. */
-  | { ok: true; refreshToken: string; identity?: OidcIdentity; accessToken?: string; expiresIn?: number }
+  | { ok: true; refreshToken: string; identity?: OidcIdentity; accessToken?: string; expiresIn?: number; note?: string }
   /** `rejected`: the provider ended the grant (or answered something that
    * cannot be trusted); `transient`: try again later. */
   | { ok: false; kind: "rejected" | "transient"; error: string; rateLimited?: true; retryAfterMs?: number };
@@ -974,9 +979,13 @@ export class OidcRelyingParty {
       }
       return { ok: false, kind: "transient", error: `the identity provider answered HTTP ${got.status}${oauthError ? ` (${oauthError})` : ""}` };
     }
-    const next = typeof got.body?.refresh_token === "string" && got.body.refresh_token ? got.body.refresh_token : undefined;
-    if (!next) return { ok: false, kind: "rejected", error: "the identity provider returned no refresh token" };
+    const rotated = typeof got.body?.refresh_token === "string" && got.body.refresh_token ? got.body.refresh_token : undefined;
     const accessToken = typeof got.body?.access_token === "string" && got.body.access_token ? got.body.access_token : undefined;
+    // A 200 that is not a token answer (a proxy's page while the provider is
+    // redeployed) is no refusal: try again later. A token answer without a
+    // new refresh token keeps the one sent (RFC 6749 6: rotation is optional).
+    if (!rotated && !accessToken) return { ok: false, kind: "transient", error: "the identity provider answered without a token" };
+    const next = rotated ?? refreshToken;
     const access = accessToken ? { accessToken, expiresIn: accessExpiresIn(got.body?.expires_in) } : {};
     const idToken = got.body?.id_token;
     if (idToken === undefined) return { ok: true, refreshToken: next, ...access };
@@ -993,9 +1002,17 @@ export class OidcRelyingParty {
       if (identity.sub !== expect.sub) throw new OidcError("id_token_sub", "The refreshed id_token names another subject.");
       return { ok: true, refreshToken: next, identity, ...access };
     } catch (error) {
-      // The rotation already happened: the new token must not live on.
-      if (discovery.revocationEndpoint) this.revoke(next, "refresh_token", "a refreshed id_token that did not verify");
-      return { ok: false, kind: "rejected", error: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      if (error instanceof OidcError && error.code === "id_token_sub") {
+        // Another person's identity on this grant: never kept.
+        if (rotated && discovery.revocationEndpoint) this.revoke(rotated, "refresh_token", "a refreshed id_token that named another subject");
+        return { ok: false, kind: "rejected", error: message };
+      }
+      // 2026-10-20: the id_token on a refresh is optional; the refresh token
+      // came from the token endpoint itself. One that does not verify (a
+      // signing key Perspicax rotated during a deploy, its keys unreachable
+      // for a moment) costs this refresh its claims, never the session.
+      return { ok: true, refreshToken: next, ...access, note: `the refreshed id_token was ignored (${message})` };
     }
   }
 

@@ -276,13 +276,17 @@ describe("OIDC relying party: refresh (slice 2)", () => {
     expect(refreshed.ok && refreshed.identity).toBeUndefined();
   });
 
-  it("rejects a refreshed id_token for another subject, one carrying a nonce, and a disabled person", async () => {
+  it("rejects a refreshed id_token for another subject and a disabled person; keeps the rotation but not the claims of an id_token that does not verify", async () => {
     const party = rp();
     let token = await signedInGrant(party);
     expect(await party.refresh(token, { sub: "someone-else" })).toMatchObject({ ok: false, kind: "rejected" });
     token = await signedInGrant(party);
     idp.tamper = { claims: (c) => ({ ...c, nonce: "n" }) };
-    expect(await party.refresh(token, { sub: idp.user.sub })).toMatchObject({ ok: false, kind: "rejected", error: expect.stringMatching(/nonce/) });
+    // 2026-10-20: a signing key rotated mid-deploy, a stray claim: the
+    // session keeps its rotated token, the claims are not applied
+    const unverified = await party.refresh(token, { sub: idp.user.sub });
+    expect(unverified).toMatchObject({ ok: true, note: expect.stringMatching(/nonce/) });
+    expect(unverified.ok && unverified.identity).toBeFalsy();
     idp.tamper = {};
     token = await signedInGrant(party);
     idp.disable(idp.user.sub);
@@ -307,6 +311,16 @@ describe("OIDC relying party: refresh (slice 2)", () => {
     expect((await party.refresh(token, { sub: idp.user.sub })).ok).toBe(true);
     const offline = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, fetch: () => Promise.reject(new Error("ECONNREFUSED")) });
     expect(await offline.refresh("pxlr1.x", { sub: "s" })).toMatchObject({ ok: false, kind: "transient" });
+    // a page that is not a token answer, and errors about this client rather
+    // than the grant (a provider being redeployed): transient
+    for (const answer of [{ status: 200, body: "<html>maintenance</html>" }, { status: 400, body: JSON.stringify({ error: "invalid_client" }) }, { status: 401, body: JSON.stringify({ error: "unauthorized_client" }) }]) {
+      const party2 = new OidcRelyingParty({ issuer: idp.issuer, clientId: "pulsa-bot", redirectUri: REDIRECT, fetch: async (input, init) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.endsWith("/token")) return new Response(answer.body, { status: answer.status, headers: { "content-type": answer.body.startsWith("{") ? "application/json" : "text/html" } });
+        return fetch(input, init);
+      } });
+      expect(await party2.refresh("pxlr1.x", { sub: "s" })).toMatchObject({ ok: false, kind: "transient" });
+    }
   });
 
   it("revokes a token at the provider and never throws", async () => {
