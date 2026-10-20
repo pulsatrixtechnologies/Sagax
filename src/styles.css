@@ -1926,6 +1926,12 @@ body {
   outline: none;
 }
 
+/* A question card takes focus only so A, B, C answer it once clicked
+   (src/components/QuestionSheet.tsx); its rows keep their own ring. */
+[data-question-sheet]:focus-visible {
+  outline: none;
+}
+
 /* Text fields already sit in a bordered card (the composer pill especially).
    Chromium treats a pointer click as :focus-visible on inputs, so the
    global ring above becomes a sharp blue rectangle inside the rounded

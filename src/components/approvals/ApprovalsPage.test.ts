@@ -178,7 +178,7 @@ describe("ApprovalsPage", () => {
     expect(host.querySelector("[data-destination=computer]")).not.toBeNull();
     await key("j");
     const choices = [...host.querySelectorAll("[data-inbox-question] [data-ask-choice]")].map((node) => node.textContent);
-    expect(choices).toEqual(["AStaging", "BProduction"]);
+    expect(choices).toEqual(["AStaging", "BProduction", "COther"]);
     // Y on a question does nothing: its letters are its own
     await key("y");
     expect(fixture.dispatch.some((action) => (action as { type: string }).type === "decideRequest")).toBe(false);
