@@ -8602,6 +8602,15 @@ function noteQueuedBehindPerson(node: HandoffView): void {
 // (server/runtime/, docs/runtime-contract.md). Every call site below talks
 // to the seam; the host hooks are what the server does for it: addresses,
 // admission, turns, chips, names, parking and the level a thread runs with.
+/** Teammate thread -> requester thread, while a relayed reply streams
+ * (coordinate_bots relay, CoordinatorHost.relay). */
+const relayStreams = new Map<string, { to: string; held: string; shown: boolean }>();
+/** Drop a relayed stream no bubble will replace: a thread frame on the
+ * current leaf is what clients already clear a stream on. */
+function clearRelayedStream(threadId: string): void {
+  const leaf = store.activePath(threadId).at(-1)?.id;
+  if (leaf) broadcast({ kind: "thread", threadId, activeLeafId: leaf });
+}
 const coordinator: Coordinator = createCoordinator({
   dataDir: DATA_DIR,
   // threads that turned confidential before their teammate work was
@@ -8694,6 +8703,29 @@ const coordinator: Coordinator = createCoordinator({
           { botId: parent.botId, name: store.bot(parent.botId)?.name ?? childTask.openedBy.name, at: Date.now() });
       }
     },
+    // coordinate_bots relay: the teammate's reply IS the answer, so it goes
+    // to the person as it is instead of a resume turn that would only say
+    // it again (perf parity round 5: one model generation off the path).
+    // The "<teammate> replied" chip just above names who said it. A thread
+    // a routine, a call or an unattended run owns keeps its resume turn.
+    relay: (node, replies) => {
+      const bot = store.bot(node.botId);
+      const texts = replies.map(reply => redactSecretsInText(reply.result.trim()));
+      if (node.groupId || !bot || !store.taskByThread(node.botId, node.threadId) || isUnattended(bot.id, node.threadId) ||
+        directRequestOwners.get(node.threadId)?.voiceCall || !texts.length || texts.some(text => !text)) {
+        // the resume turn answers instead, from a clean slate
+        clearRelayedStream(node.threadId);
+        return false;
+      }
+      for (const text of texts) store.appendMessage(node.threadId, { role: "bot", kind: "text", text });
+      const quiet = turnAnswers(node.threadId, { cardContinuation: true, coordination: node }).quiet;
+      if (!quiet) {
+        const who = [...new Set(replies.map(reply => store.bot(reply.botId)?.name ?? "Teammate"))].join(", ");
+        notify(deliverableNotification("delegation-settled", bot, node.threadId, `Results in from ${who}`, { avatarUrl: bot.avatarUrl }));
+      }
+      store.patchTask(bot.id, node.threadId, { unread: true });
+      return true;
+    },
     run: async (node, resumed, signal, composed: ComposedTurn) => {
       const group = node.groupId ? store.group(node.groupId) : undefined;
       const bot = store.bot(node.botId)!;
@@ -8745,11 +8777,25 @@ const coordinator: Coordinator = createCoordinator({
         tool: { name: `${bot.name} was cut off by a restart; resuming`, ok: true },
         threadRef: { botId: bot.id, threadId: node.threadId, title: store.taskByThread(bot.id, node.threadId)?.title ?? "Teammate work" } });
       if (sender && parent && isUnattended(sender.id, parent.threadId)) markUnattended(bot.id, node.threadId);
+      // A relayed reply streams where the person reads it (coordinate_bots
+      // relay): its text deltas are copied to the requester's conversation,
+      // and the settled bubble the relay posts replaces them.
+      const relayTo = !group && !resumed && node.relay && parent && !parent.groupId ? parent.threadId : undefined;
+      const relayStream = relayTo ? { to: relayTo, held: "", shown: false } : undefined;
+      if (relayStream) relayStreams.set(node.threadId, relayStream);
       if (!group) return new Promise<{ ok: boolean; text: string }>(resolve => {
         let done = false;
         const finish = (outcome: { ok: boolean; text: string }) => {
           if (done) return;
-          done = true; signal.removeEventListener("abort", abort); resolve(outcome);
+          done = true; signal.removeEventListener("abort", abort);
+          if (relayStream && relayStreams.get(node.threadId) === relayStream) {
+            relayStreams.delete(node.threadId);
+            // No bubble follows a failed reply or a question for the person:
+            // the half stream goes, so the requester's resume does not
+            // stream after it.
+            if (relayStream.shown && (!outcome.ok || /^\s*NEEDS INPUT:/im.test(outcome.text))) clearRelayedStream(relayStream.to);
+          }
+          resolve(outcome);
         };
         const abort = () => {
           void interruptDirectThread(bot.id, node.threadId).catch(() => {});
@@ -13516,6 +13562,19 @@ bus.subscribe((event: RuntimeEvent) => {
     // The event bus's persistence redactor does not scrub its live event.
     const publicEvent = event.type === "request.opened" ? { ...event, command: undefined } : withoutPrivateFields(event);
     broadcast({ kind: "runtime", event: publicEvent });
+    // A relayed teammate reply (coordinate_bots relay) streams in the
+    // requester's conversation too; only its visible text, never reasoning.
+    // It waits for the requester's own turn to end (its "I asked …" line runs
+    // beside the teammate), then sends what it held as one delta.
+    const relay = event.type === "content.delta" && event.streamKind === "assistant_text" ? relayStreams.get(event.threadId) : undefined;
+    if (relay && event.type === "content.delta") {
+      relay.held += event.delta;
+      if (!liveTurnByThread.has(relay.to)) {
+        broadcast({ kind: "runtime", event: { ...publicEvent, threadId: relay.to, eventId: `${event.eventId}-relay`, delta: relay.held } as RuntimeEvent });
+        relay.held = "";
+        relay.shown = true;
+      }
+    }
   }
   const routineRun = privateImageEvent ? null : (routines?.handleRuntimeEvent(event) ?? null);
   const ownerBot = store.botByThread(event.threadId);
@@ -19219,7 +19278,7 @@ async function startTurn(
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
         { id: "playbooks", label: "Playbooks", text: packagePlaybooks },
         { id: "webhook", label: "Webhook provenance", text: opts?.automationSource === "webhook" ? WEBHOOK_PROMPT : "" },
-        { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => uniquePeerName(b, sectionPeers) ? peerName(b.name) : `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed (a unique name works as its bot_ids entry); do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
+        { id: "mentions", label: "Mentions", text: boundedCoordination && tagged.length ? `The user named these existing teammates: ${tagged.map(b => uniquePeerName(b, sectionPeers) ? peerName(b.name) : `${peerName(b.name)} (${b.id})`).join(", ")}. Use coordinate_bots when their contribution is needed (a unique name works as its bot_ids entry), with relay=true when the user only wants one teammate's own answer passed back; do not substitute native helper agents for these bots.` : mentionPrompt(tagged) },
         // a voice call: the phone-call instruction (server/voice-call-prompt.ts)
         { id: "voice-call", label: "Phone call", text: voiceCallText },
       ], instance.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
@@ -37269,6 +37328,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             message: z.string().trim().min(1).max(4000),
             rework: z.boolean().default(false),
             mode: z.enum(["work", "consult"]).optional(),
+            relay: z.boolean().default(false),
           }).safeParse(await readInternalBody());
           if (!parsed.success) return json(res, 400, { error: "Provide 1-4 distinct botIds and a message of 1-4000 characters." });
           const groupId = parsed.data.groupId ?? source?.id;
@@ -37352,7 +37412,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               // ancestor) is a consultation, anything else is work.
               const { node, duplicate, joined } = coordinator.enqueue(address, internalCapability.generation, internalCapability.roomHandoffId,
                 target, target.botId, parsed.data.message, approvalGranted, parsed.data.rework, [...store.messagesFor(address.threadId)].reverse().find(m => m.role === "user" && m.kind === "text")?.text ?? "",
-                requestBatchKey, origin, parsed.data.mode ?? "auto", joinPerson(address.threadId));
+                requestBatchKey, origin, parsed.data.mode ?? "auto", joinPerson(address.threadId),
+                // One teammate, outside a room: several replies need combining.
+                parsed.data.relay && !destination && targets.length === 1);
               // A repeat lands on the request already made, possibly in a
               // thread the person archived meanwhile; a thread opened for it
               // is never used.

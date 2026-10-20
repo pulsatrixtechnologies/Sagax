@@ -16,6 +16,7 @@ This replaces the two delegation systems, the six wake lanes, the dozen clocks a
 | `assignee` | Which bot, in which thread (a work thread, the standing thread, a room thread). |
 | `mode` | `work`, `consult` (answer, act on nothing), `notify` (one-way). |
 | `reply` | `resume` (wake the requester), `poll` (inbox only), `none`. |
+| `relay` | Optional, direct threads only (coordinate_bots `relay`): the requester only passes the request on. When every settled child of a resume relays and completed, the host shows the replies in the requester's conversation and the resume completes without a model turn. |
 | `status`, `outcome`, `outcomeDetail` | Section 2. |
 | `level`, `levelSource` | Section 3. Computed at enqueue, recorded, never patched onto a thread. |
 | `executions`, `restarts`, `restart` | Turns started; restart bookkeeping (section 5). |

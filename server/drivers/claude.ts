@@ -856,11 +856,26 @@ export function claudeHookSettings(helperPath: string): Record<string, unknown> 
   const command = process.platform === "win32"
     ? '"%SAGAX_HOOK_NODE%" "%SAGAX_HOOK_HELPER%"'
     : [process.execPath, helperPath].map(path => `'${path.replace(/'/g, "'\\''")}'`).join(" ");
-  const entry = [{ matcher: "", hooks: [{ type: "command", command, timeout: 5 }] }];
-  // No Stop hook: the harness did nothing with it, and Claude Code waits for
-  // the helper (a Node start plus a loopback POST, ~180 ms) before it
-  // reports the result, on every turn (2026-10-20 perf parity, round 4).
-  return { PostToolUse: entry, PostToolUseFailure: entry, PreCompact: entry, SessionStart: entry };
+  const hook = { type: "command", command, timeout: 5 };
+  const entry = [{ matcher: "", hooks: [hook] }];
+  // Claude Code waits for a synchronous helper (a Node start plus a loopback
+  // POST, ~180 ms) before its next step. Only the events whose answer the
+  // engine needs stay synchronous (perf parity, rounds 4 and 5):
+  // - no Stop hook: the harness did nothing with it;
+  // - PostToolUse and PreCompact only record (full result spill, log line):
+  //   they run in the background (`async`), the model continues meanwhile.
+  //   The turn always has at least one more generation after a tool, so the
+  //   spill lands while the turn is still live;
+  // - PostToolUseFailure answers a shell timeout hint: synchronous, rare;
+  // - SessionStart only matters after a compaction (it re-sends digests):
+  //   matched on `compact`, so a fresh or resumed session never waits on it.
+  const background = [{ matcher: "", hooks: [{ ...hook, async: true }] }];
+  return {
+    PostToolUse: background,
+    PostToolUseFailure: entry,
+    PreCompact: background,
+    SessionStart: [{ matcher: "compact", hooks: [hook] }],
+  };
 }
 
 export function permissionSocketPath(threadId: string, botId?: string) {

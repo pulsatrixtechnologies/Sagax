@@ -37,6 +37,8 @@ export interface HandoffView {
   restarts: number;
   /** Its next turn, or the one running now, follows a restart (runtime types.ts). */
   restart?: "rerun" | "cut" | "teammates";
+  /** The requester only passes it on: its reply goes to the person as is (Assignment.relay). */
+  relay?: boolean;
 }
 
 export type RoomAddress = Pick<HandoffView, "groupId" | "threadId" | "botId">;
@@ -68,6 +70,11 @@ export interface CoordinatorHost {
   busy(node: HandoffView): boolean;
   /** Run one turn of the assignee with the composed text; resolves when the engine settles. */
   run(node: HandoffView, resumed: boolean, signal: AbortSignal, composed: ComposedTurn): Promise<{ ok: boolean; text: string }>;
+  /** A resume whose settled children all only relay (HandoffView.relay):
+   * show their replies to the person as the answer, in the requester's
+   * conversation, and return true; the requester then runs no turn. False
+   * (or absent) runs the resume as usual. */
+  relay?(node: HandoffView, replies: HandoffView[]): boolean;
   /** A settled child, to its requester; a root the runtime ended, alone. */
   report(child: HandoffView, parent?: HandoffView): void;
   changed(groupIds: ReadonlySet<string>, directThreadIds: ReadonlySet<string>): void;
@@ -99,7 +106,7 @@ export interface Coordinator {
   /** Throws an Error whose message is the typed refusal the caller shows the model. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, key: string, text: string,
     approvalGranted?: boolean, rework?: boolean, sourceText?: string, requestBatchKey?: string, origin?: WorkOrigin,
-    mode?: "work" | "consult" | "auto", person?: string): { node: HandoffView; duplicate: boolean; joined?: boolean };
+    mode?: "work" | "consult" | "auto", person?: string, relay?: boolean): { node: HandoffView; duplicate: boolean; joined?: boolean };
   sharedRequest(node: HandoffView): { id: string; botIds: string[] };
   sourceSettled(generation: string, ok: boolean): void;
   cancelRoom(groupId: string, threadId?: string, reason?: string, status?: "failed" | "cancelled"): void;

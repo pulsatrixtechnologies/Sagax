@@ -78,6 +78,7 @@ const assignmentSchema = z.object({
   budgets: z.object({ since: z.number(), requests: z.number(), executions: z.number(), wakes: z.number() }).optional(),
   approved: z.boolean().optional(),
   batchKey: z.string().optional(),
+  relay: z.boolean().optional(),
   version: z.literal(1),
 });
 

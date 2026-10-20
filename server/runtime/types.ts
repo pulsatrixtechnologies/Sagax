@@ -150,6 +150,9 @@ export interface Assignment {
   approved?: boolean;
   /** A room brief shown once per call: every recipient of that call shares it. */
   batchKey?: string;
+  /** The requester only passes this request on: its reply is the answer the
+   * person sees, and a resume carrying only such replies runs no turn. */
+  relay?: boolean;
   /** Schema version of the row. */
   version: 1;
 }
@@ -213,6 +216,8 @@ export interface EnqueueRequest {
   approved?: boolean;
   /** A room brief shown once per call. */
   batchKey?: string;
+  /** Assignment.relay. */
+  relay?: boolean;
   /** Who a new root acts for (Assignment.person); a child inherits its root's. */
   person?: string;
 }

@@ -3863,3 +3863,24 @@ describe("pre-warming a scheduled run's engine (2026-10-19 perf parity)", () => 
     expect(warmed).toEqual([]);
   });
 });
+
+it("starts a routine at its due time, not at the next 10 s tick", async () => {
+  vi.useFakeTimers();
+  try {
+    const at = Date.parse("2026-10-20T15:00:00Z");
+    const h = harness(at - 60_000);
+    h.manager.create({ name: "On time", prompt: "Go", botId: "maus-1", schedule: { type: "once", at } });
+    h.manager.start();
+    await vi.advanceTimersByTimeAsync(0);
+    // the regular tick 3 s before it is due arms a wake at its time
+    h.setNow(at - 3_000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.started).toHaveLength(0);
+    h.setNow(at);
+    await vi.advanceTimersByTimeAsync(3_005);
+    expect(h.started).toHaveLength(1);
+    h.manager.stop();
+  } finally {
+    vi.useRealTimers();
+  }
+});
