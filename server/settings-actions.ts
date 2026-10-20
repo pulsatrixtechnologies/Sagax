@@ -31,7 +31,7 @@ export type SettingsActionDeps = {
   turnMode: (botId: string, threadId: string) => ApprovalMode;
   /** The step-up classes the person protects among these (security keys). */
   keyRequired: (person: string | null, classes: StepUpClass[], fallback: string | null) => StepUpClass[];
-  audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed" | "rule"; botId: string; actor: string | null }) => void;
+  audit: (row: { key: string; target?: string; value: unknown; secret: boolean; how: "run" | "allowed" | "rule"; botId: string; actor: string | null; primary?: { botName: string; messageId: string } }) => void;
   /** A screen command to the person's open app (a device preference). */
   screen: (facts: TurnFacts, command: string, input: Record<string, unknown>) => BotActResult;
   /** `quote` (2026-10-20): the person asked their own Primary Bot for this
@@ -40,6 +40,8 @@ export type SettingsActionDeps = {
   /** A rule's own words (its when, its description), for the person's
    * message to name it; undefined when it is not theirs. */
   ruleText?: (person: string | null, kind: "custom" | "owner", id: string) => string | undefined;
+  /** An engine instance's label ("Claude API"), for the person's words. */
+  instanceName?: (instanceId: string) => string | undefined;
   /** A record's name for a card (never its id), or undefined. */
   targetName?: (kind: string, id: string, botId?: string) => string | undefined;
 };
@@ -133,6 +135,54 @@ export function askedChange(message: string, key: string, value: unknown, botNam
   return true;
 }
 
+/** 2026-10-20 (JC: "le bot principal fait tout"): beyond levels and rules,
+ * a Primary Bot changes any setting of the person's own bots and routines
+ * at once when the person asks for it in their message (model, engine,
+ * effort, persona, routines, managed teams, archive, delete). Standing tool
+ * grants and sharing keep their card. */
+const PERSON_ASKED_FAMILIES: ReadonlySet<string> = new Set(["bot", "routine"]);
+const KEEP_CARD_ON_WORDS: ReadonlySet<string> = new Set(["bot.alwaysAllow", "bot.toolGrant", "bot.share", "bot.visibility", "routine.runAs"]);
+const WORDS_VALUE_KEYS: ReadonlySet<string> = new Set(["bot.name", "bot.title", "routine.name"]);
+/** Words the quote carries for a deletion or an archive. */
+const DELETE_WORDS = /(?:^| )(?:supprim|efface|detrui|delete|remove|destroy|erase)/;
+const ARCHIVE_WORDS = /(?:^| )(?:archiv|range|cache|masque|hide)/;
+const RESTORE_WORDS = /(?:^| )(?:desarchiv|unarchiv|restaur|retabli|reaffiche|unhide|show)/;
+
+/** Whether the person's words (quote, already proved in their message) ask
+ * for this change of their own bot or routine: the bot or routine named (or
+ * "toi" for the speaking bot), the new engine or model named for a model
+ * change, the effort for an effort, the word for a deletion or an archive.
+ * True, or why not. */
+export function askedBotChange(input: {
+  key: string;
+  family: string;
+  value: unknown;
+  quote: string;
+  /** The bot the change touches, or the routine and its bot. */
+  names: readonly (string | undefined)[];
+  speakingBot: boolean;
+  speakingName?: string;
+  /** The engine's names (instance id and label, model id) for bot.model. */
+  valueNames?: readonly (string | undefined)[];
+}): true | string {
+  if (!PERSON_ASKED_FAMILIES.has(input.family) || KEEP_CARD_ON_WORDS.has(input.key)) return "only approval levels, rules and the person's own bots and routines change at once on the person's words";
+  const said = normalizeWords(input.quote);
+  if (input.speakingBot) {
+    if (!REFLEXIVE.test(said) && !messageNamesCard(input.quote, [input.speakingName, ...input.names])) return "the person's words (quote) do not say this bot itself (\"toi\", or its name)";
+  } else if (!messageNamesCard(input.quote, input.names)) {
+    return `the person's words (quote) do not name ${input.names.find(Boolean) ?? "that bot or routine"}`;
+  }
+  if ((input.key === "bot.delete" || input.key === "routine.delete") && !DELETE_WORDS.test(said)) return "the person's words (quote) do not ask to delete it";
+  if (input.key === "bot.hidden" && !(input.value === false ? RESTORE_WORDS : ARCHIVE_WORDS).test(said)) return `the person's words (quote) do not ask to ${input.value === false ? "restore" : "archive"} it`;
+  if (input.key === "bot.model" && !(input.valueNames ?? []).some((name) => name && personWrote(input.quote, name))) return "the person's words (quote) do not name the new engine or model";
+  // a new name or title is the person's own words
+  if (WORDS_VALUE_KEYS.has(input.key) && !(typeof input.value === "string" && input.value.trim() && personWrote(input.quote, input.value))) return "the person's words (quote) do not hold the new text";
+  if (input.key === "bot.effort" && !(typeof input.value === "string" && personWrote(input.quote, input.value))) return "the person's words (quote) do not name the effort";
+  if (input.key === "bot.managedSections" && Array.isArray(input.value) && input.value.length
+    && !input.value.some((name) => typeof name === "string" && name && personWrote(input.quote, name))) return "the person's words (quote) do not name the team";
+  return true;
+}
+
 /** Settings whose route asks the always-grant key itself. */
 const STANDING_GRANTS: ReadonlySet<string> = new Set(["bot.alwaysAllow", "rules.commandAllow", "bot.toolGrant"]);
 
@@ -156,6 +206,14 @@ export function settingStepUpClasses(classes: readonly SettingClass[], route: { 
   if (classes.includes("secret") || classes.includes("others") || classes.includes("org") || classes.includes("bulk")) out.add("irreversible");
   if (approvalTo === "full" || approvalTo === "custom") for (const name of STEP_UP_CLASSES) out.add(name);
   return STEP_UP_CLASSES.filter((name) => out.has(name));
+}
+
+/** The names a person uses for a model selection: its instance id and
+ * label, its model id. */
+function modelNames(value: unknown, instanceName?: (id: string) => string | undefined): string[] {
+  const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const instance = typeof record.instanceId === "string" ? record.instanceId : "";
+  return [instance, instance ? instanceName?.(instance) ?? "" : "", typeof record.model === "string" ? record.model : ""].filter(Boolean);
 }
 
 function text(status: number, body: string): BotActResult {
@@ -320,7 +378,15 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // 2026-10-20: the person asked their own Primary Bot for this change
     const proof = args.quote !== undefined && deps.personAsked ? deps.personAsked(input, args.quote) : undefined;
     const subjectBot = spec.target === "bot" || spec.target === "thread" ? ids.botId : undefined;
+    // 2026-10-20: any setting of the person's own bot or routine
+    const changedBot = spec.family === "routine" ? (typeof named === "string" ? named : ids.botId) : subjectBot;
     const asked: boolean | string = proof === undefined ? false : typeof proof === "string" ? proof
+      : !PERSON_ASKED_KEYS.has(spec.key) ? askedBotChange({
+        key: spec.key, family: spec.family, value, quote: typeof args.quote === "string" ? args.quote : proof.message,
+        names: [changedBot ? deps.targetName?.("bot", changedBot) : undefined, ...(spec.target === "routine" && ids.target ? [deps.targetName?.("routine", ids.target)] : [])],
+        speakingBot: !changedBot || changedBot === input.botId, speakingName: input.botName,
+        ...(spec.key === "bot.model" ? { valueNames: modelNames(value, deps.instanceName) } : {}),
+      })
       : askedChange(proof.message, spec.key, value, subjectBot ? deps.targetName?.("bot", subjectBot) : undefined, !subjectBot || subjectBot === input.botId,
         spec.target === "rule" && ids.target ? deps.ruleText?.(speaker, spec.key.startsWith("rules.custom") ? "custom" : "owner", ids.target) : undefined,
         typeof args.quote === "string" ? args.quote : proof.message, input.botName);
@@ -352,7 +418,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         // 2026-10-20: the person's own request, so the route takes the
         // change as theirs (a level of a bot that is working included)
         ...(asked === true && typeof proof === "object" && proof.primary ? { primary: proof.primary } : {}),
-        onDone: (how) => deps.audit({ key: spec.key, ...(ids.target ? { target: ids.target } : {}), value, secret, how, botId: input.botId, actor: speaker }),
+        onDone: (how) => deps.audit({ key: spec.key, ...(ids.target ? { target: ids.target } : {}), value, secret, how, botId: input.botId, actor: speaker,
+          ...(asked === true && typeof proof === "object" && proof.primary ? { primary: { botName: proof.primary.botName, messageId: proof.primary.messageId } } : {}) }),
       },
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
     });
@@ -362,7 +429,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     if (result.status >= 400) return result;
     // a level changed for the speaking bot while it answers: its next turn
     const nextTurn = approvalTo && subjectBot === input.botId ? " It applies from the person's next message." : "";
-    return text(200, `Done: ${spec.label} changed.${nextTurn}`);
+    const via = asked === true && typeof proof === "object" && proof.primary ? ` (via ${proof.primary.botName}, at the person's request; no card)` : "";
+    return text(200, `Done: ${spec.label} changed${via}.${nextTurn}`);
   }
 
   return { handle };

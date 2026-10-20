@@ -259,6 +259,31 @@ approval cards that wait on that person, when the person asks for it:
 - Tests: `shared/primary-request.test.ts`, `server/primary-approvals.test.ts`,
   `shared/settings-actions-policy.test.ts`, `server/primary-approvals.e2e.test.ts`.
 
+## The Primary Bot changes the person's bots at once (2026-10-20)
+
+JC: "le bot principal fait tout". Asked by the person in their message
+(same `quote` proof), the Primary Bot changes any of the person's bots or
+routines at once, no card, several bots in one order (one call per bot):
+
+- `sagax_settings`: beyond `PERSON_ASKED_KEYS`, every key of the bot and
+  routine families (`askedBotChange`, `server/settings-actions.ts`): the
+  quote names each bot (or "toi"), the engine or model for `bot.model`, the
+  effort, a new name or title, "archive"/"supprime". Kept on a card:
+  `bot.alwaysAllow`, `bot.toolGrant`, `bot.share`, `bot.visibility`,
+  `routine.runAs`.
+- `propose_model`, `propose_profile`, `propose_routine`,
+  `propose_routine_action` take `quote`: the endpoint proves it
+  (`primaryAskedProposal`, `server/index.ts`) and submits with the grant
+  `primary-bot` (`DirectApply`), journaled `setting.change` `via:
+  primary-bot`. `propose_bot_deletion` with `quote` and the new
+  `archive_bot` go through `sagax_settings` (`bot.delete`, `bot.hidden`).
+- A Primary Bot targets every bot of its person (`chiefPeerTargetRule`,
+  routine `for_bot_id`): managed teams no longer refuse.
+- A waiting proposal never blocks: past eight open cards the oldest is
+  replaced (`proposalPersistence`), nothing applied.
+- Without the person's request (a tool, a page, a teammate) the quote fails
+  and the proposal stays a card. Test: `server/primary-applies.e2e.test.ts`.
+
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
 JC: the bots know everything Sagax and Perspicax can do, kept up to date,

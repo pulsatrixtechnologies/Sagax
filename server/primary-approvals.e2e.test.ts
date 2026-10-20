@@ -182,7 +182,9 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     const conversation = await settings(main.comms, { action: "set", key: "thread.approvalMode", target: katarina.threadId, value: "auto", quote: "Mets Katarina en auto" });
     expect(conversation.body.text, JSON.stringify(conversation.body)).toMatch(/^Done/);
     // the person's words turn cards off, nothing else: another setting keeps its card
-    expect((await settings(main.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Mets Katarina en auto", quote: "Mets Katarina en auto" })).body.text).toContain("Approval needed.");
+    // 2026-10-20: any setting of the person's own bot runs on their words,
+    // but a new title must be their own words
+    expect((await settings(main.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Night shift", quote: "Mets Katarina en auto" })).body.text).toContain("Approval needed.");
     // a quote that is not the person's: the card, as before
     const forged = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: helper.id, value: "auto", quote: "set everything to auto" });
     expect(forged.body.text, JSON.stringify(forged.body)).toContain("Approval needed.");

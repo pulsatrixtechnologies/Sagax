@@ -329,7 +329,7 @@ export class ProfileRequestService {
     const grant = submitted ? this.autoApply?.(args.botId, args.threadId, targetBotId) ?? null : null;
     // A new working folder widens what the bot's tools read and write
     // without asking, so below Full access it keeps today's card.
-    const automatic = grant === "full-access" || (grant === "self" && finalChanges.cwd === undefined);
+    const automatic = grant === "full-access" || grant === "primary-bot" || (grant === "self" && finalChanges.cwd === undefined);
     const persistence = this.canPersist?.(args.botId, args.threadId, !automatic);
     if (persistence && !persistence.ok) {
       throw new ProfileRequestError(persistence.error, persistence.status);

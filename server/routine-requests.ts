@@ -1241,7 +1241,7 @@ export class RoutineRequestService {
     // A bot applying its own routines keeps at most SELF_ROUTINE_CAP of them
     // on; a create or resume past that shows the card, as before. Full
     // access has no cap.
-    const automatic = !args.explicitConfirm && (grant === "full-access" || (grant === "self" && !this.overSelfCap(operation, owner)));
+    const automatic = !args.explicitConfirm && (grant === "full-access" || grant === "primary-bot" || (grant === "self" && !this.overSelfCap(operation, owner)));
     // This check and append are deliberately adjacent and synchronous. JS
     // cannot interleave another completed proposal between the capacity /
     // ownership decision and the durable transcript write.

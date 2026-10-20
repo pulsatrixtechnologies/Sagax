@@ -68,6 +68,8 @@ export type DecisionSource =
   /** an approval left open when Sagax restarted: its request died with the process */
   | "restart"
   | "self"
+  /** the person asked their own Primary Bot for this change now (2026-10-20) */
+  | "primary-bot"
   | "question"
   | "auto-fallback"
   | "routine"
