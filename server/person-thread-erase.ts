@@ -115,7 +115,7 @@ export function erasePersonThreadFiles(plan: PersonThreadErasurePlan, attachment
   for (const name of plan.attachments) {
     remove(join(attachmentsDir, name), "a stored file", false);
     // the pictures read out of an Office document (server/office-media.ts)
-    if (officeKind(name)) remove(officeMediaFolder(attachmentsDir, name), "a stored file's pictures", true);
+    if (officeKind(name) && existsSync(officeMediaFolder(attachmentsDir, name))) remove(officeMediaFolder(attachmentsDir, name), "a stored file's pictures", true);
   }
   return { removed };
 }
