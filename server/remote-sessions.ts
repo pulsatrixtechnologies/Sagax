@@ -23,6 +23,7 @@ import type { TerminalAccess } from "./terminal-resources/types.ts";
 import type { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 import type { createTerminalSessionManager } from "./terminal-sessions.ts";
 import { createTailcatAdapter } from "./terminal-resources/adapters/tailcat.ts";
+import { resolveTailcatBinary } from "./tailcat-bin.ts";
 import {
   deleteRemoteCommand,
   flowHome as defaultFlowHome,
@@ -175,10 +176,12 @@ export function createRemoteSessionService(deps: {
 
   const hostLabel = (session: StoredSession) => session.hostname || session.code;
 
+  const tailcatBin = () => resolveTailcatBinary() ?? "tailcat";
+
   async function ssh(session: StoredSession, command: string, timeoutMs: number) {
     const tunnel = readTunnel(home(), session.id);
     if (!tunnel) return null;
-    return run(tailcatSshArgv("tailcat", tunnel.keyPath, tunnel.address, command), timeoutMs);
+    return run(tailcatSshArgv(tailcatBin(), tunnel.keyPath, tunnel.address, command), timeoutMs);
   }
 
   async function probe(session: StoredSession) {
@@ -371,7 +374,7 @@ export function createRemoteSessionService(deps: {
       try {
         const tunnel = readTunnel(home(), session.id);
         if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
-        const copied = await run(tailcatCopyArgv("tailcat", tunnel.keyPath, local, `${tunnel.address}:${remotePath}`), 60_000);
+        const copied = await run(tailcatCopyArgv(tailcatBin(), tunnel.keyPath, local, `${tunnel.address}:${remotePath}`), 60_000);
         if (copied.code !== 0) return { error: "The file did not arrive on the remote computer." };
         return { name: safeName };
       } finally {
@@ -389,7 +392,7 @@ export function createRemoteSessionService(deps: {
       mkdirSync(localDir, { recursive: true, mode: 0o700 });
       const name = safe.split(/[\\/]/).pop() || "download";
       const local = path.join(localDir, `${randomBytes(8).toString("hex")}`);
-      const copied = await run(tailcatCopyArgv("tailcat", tunnel.keyPath, `${tunnel.address}:${safe}`, local), 60_000);
+      const copied = await run(tailcatCopyArgv(tailcatBin(), tunnel.keyPath, `${tunnel.address}:${safe}`, local), 60_000);
       try {
         if (copied.code !== 0) return { error: "That file could not be read on the remote computer." };
         const bytes = readFileSync(local);

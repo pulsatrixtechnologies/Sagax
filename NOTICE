@@ -49,6 +49,12 @@ third_party/onnxruntime-web, third_party/silero-vad, third_party/3d-speaker
 and third_party/sherpa-onnx; details and checksums in
 src/lib/voice-mode/models/NOTICE.txt.
 
+Remote support ships Tailcat 0.7.0 as a separate executable, Copyright (c)
+2020 Tailscale Inc & contributors, used under the BSD 3-Clause License
+(third_party/tailcat/LICENSE). Linux and Windows binaries are the upstream
+release assets. macOS binaries are built from that tag, which publishes no
+darwin asset.
+
 The browser desktop viewer bundles the unmodified noVNC 1.7.0 library,
 Copyright the noVNC authors, under MPL-2.0 and its accompanying licenses.
 Attribution, license terms and the corresponding source location are in

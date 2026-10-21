@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { resolveTailcatBinary } from "./tailcat-bin.ts";
 
 /** Frozen template Perspicax renders (gateway remote_support::template). */
 export const REMOTE_SUPPORT_TEMPLATE = "tailcat-0.7.0/2";
@@ -19,7 +20,7 @@ const DEFAULT_MS = 2 * 60 * 60 * 1000;
 const MAX_MS = 24 * 60 * 60 * 1000;
 const KEY_FILE = "technician.private.json";
 const PUB_FILE = "technician.nodekey";
-const MISSING = "tailcat is not installed on this computer, so the technician key cannot be created. Install tailcat on the computer this bot connects from (the desktop PC, or the bot's cloud computer), then ask again.";
+const MISSING = "tailcat is not installed with this Sagax, so the technician key cannot be created. The private key was not sent. Do not download tailcat and do not copy it into a system directory.";
 const CREATE_FAILED = "The technician key could not be created on this computer. The private key was not sent.";
 
 export interface TailcatRunResult {
@@ -29,7 +30,7 @@ export interface TailcatRunResult {
   error?: "missing";
 }
 
-/** One tailcat invocation. Tests pass a fake. The default spawns `tailcat` and kills only that child. */
+/** One tailcat invocation. Tests pass a fake. The default spawns the binary Sagax ships and kills only that child. */
 export type TailcatRun = (args: readonly string[], opts: { timeoutMs: number }) => Promise<TailcatRunResult>;
 
 export interface RemoteSupportContext {
@@ -66,10 +67,11 @@ export function newSessionId(): string {
   return randomBytes(6).toString("hex");
 }
 
-/** Spawn tailcat and stop that child only. No shell. */
-export function spawnTailcat(bin = "tailcat"): TailcatRun {
+/** Spawn tailcat and stop that child only. No shell. The command is an absolute path when Sagax can see its own copy. */
+export function spawnTailcat(bin?: string): TailcatRun {
   return (args, { timeoutMs }) => new Promise((resolve) => {
-    const child = spawn(bin, [...args], { stdio: ["ignore", "pipe", "pipe"] });
+    const command = bin ?? resolveTailcatBinary() ?? "tailcat";
+    const child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;

@@ -78,6 +78,9 @@ extraResources:
     to: licenses/cloudflared-LICENSE.txt
   - from: third_party/cloudflared/README.md
     to: licenses/cloudflared-README.md
+  # Tailcat is a separate executable (BSD 3-Clause). Ship its notice with the app.
+  - from: third_party/tailcat/LICENSE
+    to: licenses/tailcat-LICENSE.txt
   - from: third_party/hpke-js/core-LICENSE.txt
     to: licenses/hpke-core-LICENSE.txt
   - from: third_party/hpke-js/common-LICENSE.txt
@@ -140,6 +143,8 @@ mac:
       to: cua-sdk
     - from: dist-native/cloudflared/darwin-${arch}/cloudflared
       to: cloudflared/cloudflared
+    - from: dist-native/tailcat/darwin-${arch}/tailcat
+      to: tailcat/tailcat
     - from: dist-native/browser/darwin-${arch}
       to: browser-engine
     # The Data engine's native modules (DuckDB, resvg; server/data/engine.ts)
@@ -186,6 +191,8 @@ win:
     # the pinned amd64 executable as win32-arm64 too (x64 emulation).
     - from: dist-native/cloudflared/win32-${arch}/cloudflared.exe
       to: cloudflared/cloudflared.exe
+    - from: dist-native/tailcat/win32-${arch}/tailcat.exe
+      to: tailcat/tailcat.exe
     # No Windows arm64 browser bundle exists (Chrome for Testing, agent-browser
     # vendor build): both packages ship the x64 one, which Windows on Arm runs
     # under x64 emulation (server/browser-engine.ts packagedBrowser).
@@ -268,6 +275,8 @@ linux:
       to: cua-linux-x64
     - from: dist-native/cloudflared/linux-x64/cloudflared
       to: cloudflared/cloudflared
+    - from: dist-native/tailcat/linux-x64/tailcat
+      to: tailcat/tailcat
     - from: dist-native/browser/linux-x64
       to: browser-engine
     - from: dist-native/duckdb/linux-x64/node_modules

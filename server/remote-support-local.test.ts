@@ -88,7 +88,11 @@ describe("remote support on this computer", () => {
     const { run } = fakeRun({ missing: true });
     const created = await ensureTechnicianNodekey(dir, run);
     expect(created.ok).toBe(false);
-    if (!created.ok) expect(created.error).toContain("not installed");
+    if (!created.ok) {
+      expect(created.error).toContain("not installed");
+      expect(created.error).not.toContain("Install tailcat");
+      expect(created.error).not.toContain("/usr/bin");
+    }
     expect(created.ok === false && created.error.includes(PRIVATE)).toBe(false);
   });
 
@@ -224,6 +228,8 @@ describe("remote support on this computer", () => {
     const guide = GUIDES.find((entry) => entry.id === "remote-support");
     expect(guide?.text).not.toContain("tailcat_session.py");
     expect(guide?.text).toContain("creates the technician key once");
+    expect(open?.description).toContain("Do not download tailcat");
+    expect(guide?.text).toContain("Do not download tailcat");
     expect(guide?.text).toContain("donne-moi le lien");
     expect(guide?.text).not.toMatch(/[–—]/);
   });
