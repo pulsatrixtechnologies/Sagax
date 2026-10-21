@@ -2585,7 +2585,7 @@
   "connectApps.providers.apiKey": "API key",
   "connectApps.providers.connectors": "Connectors of your claude.ai account",
   "connectApps.providers.gemini": "Gemini: Google's extensions do not reach bots in Sagax.",
-  "connectApps.providers.grok": "Grok bots on this xAI account see its cloud connectors. A call still asks before it runs.",
+  "connectApps.providers.grok": "Grok bots on an organization server see the cloud connectors of this xAI account. A call still asks before it runs.",
   "connectApps.providers.intro": "The engine accounts on this installation, and the connectors each one brings to bots. A provider's connectors act as that account.",
   "connectApps.providers.manage": "Manage on {provider}",
   "connectApps.providers.none": "No engine account on this installation yet. Add one in Settings > Model providers.",

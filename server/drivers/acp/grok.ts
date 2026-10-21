@@ -110,15 +110,17 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
 }
 
 /** Env for the xAI account's cloud connectors (hosted and managed MCP).
- * A tool selection cannot accept servers Sagax did not list, so those turns
- * keep both switches off. Every other turn lets the account fetch its
- * connectors. Gateway tools stay off: that path is not held by the approval
- * gate, and a call to a connector Sagax did not mount keeps its card. */
-export function grokCloudConnectorEnv(toolScope: unknown): {
+ * Only an organization turn loads them: host tools are withheld, so Grok
+ * reaches every MCP tool through use_tool, and a server Sagax did not mount
+ * keeps its card. A solo turn in `--permission-mode default` can call those
+ * servers with no prompt, so they stay off. A tool selection stays off too:
+ * that turn refuses any MCP server it did not list. Gateway tools stay off
+ * on every turn. */
+export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean): {
   GROK_MANAGED_MCPS_ENABLED?: "false";
   GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false";
 } {
-  if (toolScope !== undefined) {
+  if (toolScope !== undefined || withholdHostTools !== true) {
     return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
   }
   return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
@@ -970,7 +972,7 @@ const support: AcpSupport = {
     // Cloud connectors of the signed-in xAI account reach this bot. A tool
     // selection still turns them off (grokCloudConnectorEnv). Gateway tools
     // stay off on every turn.
-    const cloud = grokCloudConnectorEnv(toolScope);
+    const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true);
     if (cloud.GROK_MANAGED_MCPS_ENABLED) env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
     else delete env.GROK_MANAGED_MCPS_ENABLED;
     env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = cloud.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED;

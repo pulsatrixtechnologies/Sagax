@@ -3633,11 +3633,13 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   rules, see docs/self-hosting.md) and stays.
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
-- Grok: a bot running on an xAI account sees that account's cloud connectors
-  (`GROK_MANAGED_MCPS_ENABLED` is left to the account, `server/drivers/acp/grok.ts`
-  `grokCloudConnectorEnv`). Gateway tools stay off. A tool selection turns the
-  connectors off, because that turn refuses any MCP server it did not list.
-  A call to a connector Sagax did not mount keeps its approval card.
+- Grok: only an organization turn (host tools withheld) loads the xAI
+  account's cloud connectors (`grokCloudConnectorEnv` in
+  `server/drivers/acp/grok.ts`). Grok reaches them through `use_tool`, and a
+  server Sagax did not mount keeps its card. A solo turn forces
+  `GROK_MANAGED_MCPS_ENABLED=false`: in `--permission-mode default` Grok can
+  call those servers with no prompt. Gateway tools stay off. A tool
+  selection turns the connectors off too.
 
 ## Engine slash commands in the chat
 

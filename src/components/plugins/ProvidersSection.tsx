@@ -1,8 +1,8 @@
 // Plugins > Manage > Providers: per provider (Claude, ChatGPT / Codex, Grok,
 // Gemini and every other engine on this installation), its accounts and the
 // connectors it brings to bots. Claude's are read from the account
-// (HarnessConnectorsSection's request). A Grok bot sees the cloud connectors
-// of the xAI account it runs on. Codex and Gemini still have none to pass.
+// (HarnessConnectorsSection's request). A Grok bot on an organization server
+// sees the cloud connectors of the xAI account it runs on. Codex and Gemini still have none to pass.
 import { ExternalLink } from "lucide-react";
 
 import { openExternalLink } from "@/lib/app-links";

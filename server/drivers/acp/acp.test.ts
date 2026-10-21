@@ -1650,8 +1650,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
         expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "default"]);
         expect(seen.argv).not.toContain("--allow");
-        // the xAI account's cloud connectors stay available; gateway tools do not
-        expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCPS_ENABLED).toBeUndefined();
+        // a solo Auto turn can call account connectors with no prompt: they stay off
+        expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
         expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
       }
     });
@@ -3405,8 +3405,15 @@ describe("ACP snapshot", () => {
 });
 
 describe("grokCloudConnectorEnv", () => {
-  it("lets an ordinary or organization turn fetch the xAI account connectors", () => {
-    expect(grokCloudConnectorEnv(undefined)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" });
+  it("keeps cloud connectors off on a solo turn, where default mode can call them unasked", () => {
+    expect(grokCloudConnectorEnv(undefined)).toEqual({
+      GROK_MANAGED_MCPS_ENABLED: "false",
+      GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
+    });
+  });
+
+  it("lets an organization turn fetch the xAI account connectors", () => {
+    expect(grokCloudConnectorEnv(undefined, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" });
   });
 
   it("turns cloud connectors off when a tool selection cannot list them", () => {
