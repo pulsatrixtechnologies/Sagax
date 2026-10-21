@@ -179,6 +179,13 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("flow:read", "read", "flow", "perspicax"),
   p("flow:action", "dispatch", "flow_action", "perspicax"),
   p("review:write", "admin", "review_write", "perspicax"),
+  // Remote support (Perspicax 1.8.43, connector mcp/remote_support_tools.rs):
+  // Perspicax serves them only to a person holding its permission. Opening
+  // one reaches an end user, as a dispatch does; status and close stay on
+  // the caller's own session.
+  p("remotesupport:open", "dispatch", "remote_support_open", "perspicax"),
+  p("remotesupport:status", "own", "remote_support_status", "perspicax"),
+  p("remotesupport:close", "own", "remote_support_close", "perspicax"),
   // Per-profile Perspicax tools, matched by name (profileToolCall). An
   // operation's own tool is not known to be a read, so it needs dispatch.
   profileTool("api:query", "read", "query", "<profile>__query"),
