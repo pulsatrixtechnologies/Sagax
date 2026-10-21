@@ -508,7 +508,7 @@ export function useNetworkOnline(): boolean {
  * that failed with no network is always queued (never put back in the box),
  * so it can be labelled and sent when the connection returns. */
 export function recoverFailedComposerSend(sent: ComposerSendSnapshot): "restored" | "outbox" {
-  if (isNetworkOffline() || draftRevision(sent.draftId) !== sent.revision) {
+  if ((isNetworkOffline() && sent.attachments.length === 0) || draftRevision(sent.draftId) !== sent.revision) {
     rememberFailedComposerSend(sent.draftId, {
       sendId: sent.sendId,
       text: sent.text,

@@ -853,7 +853,10 @@ export function Composer({
   useEffect(() => {
     if (!online) return;
     for (const queued of failedComposerSends(draftId)) {
-      if (queued.offline) retryFailedSendRef.current(queued);
+      if (!queued.offline) continue;
+      // Hand it to the manual retry first, so a refusal never loops on reconnect.
+      queued.offline = false;
+      retryFailedSendRef.current(queued);
     }
   }, [online, draftId]);
   const send = () => {
