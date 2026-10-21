@@ -210,6 +210,8 @@ export interface OptionCardData {
   cwActionRequest?: import("../../shared/wire").OptionCardData["cwActionRequest"];
   /** 2026-10-16: custom rules (shared/custom-rules.ts) and email draft sends. */
   customRule?: import("../../shared/wire").OptionCardData["customRule"];
+  /** The model reviewer is still judging this card (lot A1b). */
+  reviewing?: boolean;
   customRuleCandidate?: import("../../shared/wire").OptionCardData["customRuleCandidate"];
   customRuleSaved?: import("../../shared/wire").OptionCardData["customRuleSaved"];
   emailSendRequest?: import("../../shared/wire").OptionCardData["emailSendRequest"];

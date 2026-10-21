@@ -331,6 +331,9 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
       )}
       {card?.skillRequest && <SkillRequestPreview request={card.skillRequest} />}
       {heldNote && <div className="mt-2 text-[12px] text-warning">{heldNote}</div>}
+      {card?.reviewing && !card.answered && (
+        <div data-auto-review="pending" className="mt-2 text-[12.5px] text-ink-secondary">{t("customRules.notice.reviewing")}</div>
+      )}
       {card?.customRule && <CustomRuleNoticeLine notice={card.customRule} botId={bot?.id} />}
     </div>
   );

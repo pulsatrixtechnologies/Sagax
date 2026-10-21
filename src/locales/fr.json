@@ -9451,6 +9451,7 @@
   "customRules.notice.modelApproved": "Approuvé par l'examen automatique selon votre règle",
   "customRules.notice.modelDenied": "Refusé par l'examen automatique selon votre règle",
   "customRules.notice.modelHeld": "L'examen automatique vous laisse décider selon votre règle « Demander d'abord »",
+  "customRules.notice.reviewing": "Examen automatique en cours",
   "customRules.notice.modelOrgDenied": "Refusé par l'examen automatique selon la règle de votre organisation",
   "customRules.notice.modelOrgHeld": "L'examen automatique vous laisse décider selon la règle de votre organisation",
   "approval.status.byAutoReview": "par l'examen automatique",
