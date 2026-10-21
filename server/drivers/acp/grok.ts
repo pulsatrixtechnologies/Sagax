@@ -109,6 +109,23 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
   return env.GROK_HOME || harnessHome("grok", env);
 }
 
+/** Env for the xAI account's cloud connectors (hosted and managed MCP).
+ * Only an organization turn loads them: host tools are withheld, so Grok
+ * reaches every MCP tool through use_tool, and a server Sagax did not mount
+ * keeps its card. A solo turn in `--permission-mode default` can call those
+ * servers with no prompt, so they stay off. A tool selection stays off too:
+ * that turn refuses any MCP server it did not list. Gateway tools stay off
+ * on every turn. */
+export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean): {
+  GROK_MANAGED_MCPS_ENABLED?: "false";
+  GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false";
+} {
+  if (toolScope !== undefined || withholdHostTools !== true) {
+    return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
+  }
+  return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
+}
+
 /** Whether Grok may load MCP servers Sagax did not mount: a config override
  * (GROK_CONFIG, GROK_CONFIG_PATH), or an `mcp_servers` table, dotted key or
  * assignment in GROK_HOME's config.toml or any `.grok/config.toml` from the
@@ -951,15 +968,14 @@ const support: AcpSupport = {
   transformEnv: (env) => {
     delete env.XAI_API_KEY;
   },
-  applyTurnEnv: (env, { toolScope, withholdHostTools, approvalGated }) => {
-    // A gated turn too: account-level MCPs are not mounted by Sagax, so the
-    // gate could not hold their calls.
-    if (toolScope !== undefined || withholdHostTools === true || approvalGated === true) {
-      // The verified runtime gives these local env switches priority over
-      // account defaults, preventing an unfiltered managed gateway fallback.
-      env.GROK_MANAGED_MCPS_ENABLED = "false";
-      env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = "false";
-    }
+  applyTurnEnv: (env, { toolScope, withholdHostTools }) => {
+    // Cloud connectors of the signed-in xAI account reach this bot. A tool
+    // selection still turns them off (grokCloudConnectorEnv). Gateway tools
+    // stay off on every turn.
+    const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true);
+    if (cloud.GROK_MANAGED_MCPS_ENABLED) env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
+    else delete env.GROK_MANAGED_MCPS_ENABLED;
+    env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = cloud.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED;
     if (withholdHostTools === true || (toolScope !== undefined && narrowsNativeTools(toolScope))) {
       if (env.GROK_AGENT && env.GROK_AGENT !== "grok-build") {
         throw new Error(withholdHostTools === true

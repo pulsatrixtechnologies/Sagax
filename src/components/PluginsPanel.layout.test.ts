@@ -26,27 +26,27 @@ beforeEach(() => vi.stubGlobal("window", { addEventListener: noop, removeEventLi
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Plugins panel views", () => {
-  it("main view: Browse Bots' layout: title and subtitle, category pills, the search with N connected, sections of two-column rows", () => {
+  it("main view: Grok's layout: title with N connected, category pills, the search, sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(ConnectAppsView, {
       items, loading: false, search: "", onSearch: noop, filter: "all", onFilter: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop, extraConnected: 1,
       renderAction: (item) => item.action ? createElement("button", { type: "button" }, item.action === "connect" ? "Connect" : "Add") : null,
     }));
-    expect(html).toContain("Connect apps");
-    expect(html).toMatch(/id="plugins-title"[^>]*>Connect apps<\/h2><p class="[^"]*text-ink-secondary[^"]*">Apps, MCP servers and skills your bots can use\.</);
+    expect(html).toContain("Connect Apps");
+    expect(html).not.toContain("Apps, MCP servers and skills your bots can use.");
+    expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>[\s\S]*?data-plugins-connected/);
     // the home page has no breadcrumb
     expect(html).not.toContain("data-breadcrumb");
     // Slack, the glitcho server and one Claude connector
     expect(html).toContain("3 connected");
     expect(html).toContain('placeholder="Search across apps and skills"');
     expect(html).not.toContain("Browse Bots");
-    // pills first, then the search with the connected count at its right
-    expect(html).toMatch(/data-plugins-chips[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
-    // All, then a pill per category that has a row; no Category menu any more
+    // connected sits in the title row, above the pills and the search
+    expect(html).toMatch(/data-plugins-connected[\s\S]*?data-plugins-chips[\s\S]*?placeholder="Search across apps and skills"/);
     const chips = [...html.matchAll(/aria-pressed="(?:true|false)"[^>]*>([^<]+)</g)].map((match) => match[1]);
     expect(chips[0]).toBe("All");
-    expect(chips.length).toBeGreaterThan(1);
-    expect(html).not.toContain('aria-haspopup="menu"');
+    expect(chips).toContain("More");
+    expect(html).toContain('aria-haspopup="menu"');
     expect(html).not.toContain('aria-label="Refresh');
     expect(html).not.toContain('role="tab"');
     expect(html).toContain('data-plugins-section="recommended"');
@@ -58,7 +58,7 @@ describe("Plugins panel views", () => {
     expect(html).toMatch(/data-plugin-row="app:slack"[\s\S]*?data-plugin-status="connected"/);
   });
 
-  it("main view: Browse Bots sits top right by the title, above N connected (2026-10-16)", () => {
+  it("main view: Bot templates sits beside the search, and N connected stays in the title row", () => {
     const props = {
       items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any" as const, onType: noop,
@@ -66,8 +66,9 @@ describe("Plugins panel views", () => {
     };
     expect(renderToStaticMarkup(createElement(ConnectAppsView, props))).not.toContain("data-plugins-browse-bots");
     const html = renderToStaticMarkup(createElement(ConnectAppsView, { ...props, onBrowseBots: noop }));
-    expect(html).toMatch(/<header[\s\S]*?id="plugins-title"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse Bots[\s\S]*?<\/header>/);
-    expect(html).toMatch(/data-plugins-browse-bots[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-connected/);
+    expect(html).toMatch(/data-plugins-connected[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Bot templates/);
+    const header = html.slice(0, html.indexOf("</header>"));
+    expect(header).not.toContain("data-plugins-browse-bots");
   });
 
   it("a section opened alone: breadcrumb Connect apps > the section, its title, no pills, no Browse Bots", () => {
@@ -90,8 +91,10 @@ describe("Plugins panel views", () => {
       onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop,
     }));
     expect(html).toContain("Manage plugins and skills");
-    // breadcrumb: back, Connect apps, then this page
-    expect(html).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Connect apps<[\s\S]*?aria-current="page"[^>]*>Manage plugins and skills</);
+    // Grok's manage page: chevron and Connect Apps, then the title. No crumb for this page.
+    expect(html).toMatch(/data-plugins-back[\s\S]*?>[\s\S]*?Connect Apps</);
+    expect(html).not.toContain("data-breadcrumb");
+    expect(html).toMatch(/id="plugins-title"[^>]*>Manage plugins and skills</);
     expect(html).toMatch(/data-plugin-card="app:slack"[\s\S]*?1 connector[\s\S]*?Connected/);
     expect(html).toContain('data-plugin-card="mcp:glitcho"');
     // Add manually, Paste config and the rest wait in a collapsed Advanced zone, after the skills
@@ -166,7 +169,7 @@ describe("Plugins panel views", () => {
     expect(providers).toContain("jc@example.com");
     expect(providers).toContain('data-harness-connectors="provider"');
     expect(providers).toContain("Codex: ChatGPT connectors do not reach bots in Sagax.");
-    expect(providers).toContain("Grok: its connectors do not reach bots in Sagax.");
+    expect(providers).toContain("Grok bots on an organization server see the cloud connectors of this xAI account. A call still asks before it runs.");
     expect(providers).toContain("Gemini: Google&#x27;s extensions do not reach bots in Sagax.");
     expect(providers).toContain("Manage on ChatGPT / Codex");
   });
