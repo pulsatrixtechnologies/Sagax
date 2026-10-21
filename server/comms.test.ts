@@ -1487,12 +1487,13 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
   );
 
   it(
-    "mirrors a delegation that could not start into the channel",
+    "refuses a delegation whose engine is gone before a channel exists",
     async () => {
       const seeded = (await api("GET", "/api/bots")).body.bots[0];
       await api("PATCH", `/api/bots/${seeded.id}`, { hidden: true });
       const helper = (await api("POST", "/api/bots")).body.bot;
-      // no such instance — startTurn rejects, so B's turn never starts
+      // no such instance: delegate_bot refuses before queueing, so no
+      // channel is opened and Helper's turn never starts
       await api("PATCH", `/api/bots/${helper.id}`, {
         name: "Helper",
         modelSelection: { instanceId: "missing-instance", model: "fake-model" },
@@ -1507,32 +1508,25 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
       expect(send.status).toBe(201);
 
       const deadline = Date.now() + 30_000;
-      let channel: any;
-      let sourceChip: any;
+      let askerBot: any;
       for (;;) {
         const state = (await api("GET", "/api/bots")).body;
-        const askerBot = state.bots.find((b: any) => b.id === asker.id);
-        const note = askerBot.messages.find(
-          (m: any) => m.kind === "activity" && m.tool?.name === "Messaged @Helper",
-        );
-        sourceChip = askerBot.messages.find(
-          (m: any) => m.kind === "activity" && m.tool?.ok === false && m.tool?.name?.includes("could not start"),
-        );
-        channel = note?.comm?.groupId
-          ? state.groups.find((g: any) => g.id === note.comm.groupId)
-          : undefined;
-        const terminal = channel?.messages.some(
-          (m: any) => m.kind === "activity" && m.tool?.ok === false && m.tool?.name?.includes("could not start"),
-        );
-        if (sourceChip && terminal) break;
+        askerBot = state.bots.find((b: any) => b.id === asker.id);
+        const said = (askerBot.messages as Array<{ text?: string; tool?: { name?: string } }>)
+          .map((m) => `${m.text ?? ""}\n${m.tool?.name ?? ""}`)
+          .join("\n");
+        if (/n'est plus disponible|ne peut pas travailler|could not start/.test(said) && !askerBot.busy) break;
         if (Date.now() > deadline) {
           throw new Error(
-            `could-not-start not mirrored. sourceChip=${JSON.stringify(sourceChip)}\n` +
-              `channel tail: ${JSON.stringify(channel?.messages?.slice(-6))}\nstderr: ${stderr.slice(-2000)}`,
+            `engine refusal not shown. tail=${JSON.stringify(askerBot.messages?.slice(-6))}\nstderr: ${stderr.slice(-2000)}`,
           );
         }
         await new Promise((r) => setTimeout(r, 250));
       }
+      expect(askerBot.messages.some((m: any) => m.tool?.name === "Messaged @Helper")).toBe(false);
+      const helperBot = (await api("GET", "/api/bots")).body.bots.find((b: any) => b.id === helper.id);
+      expect(helperBot.busy ?? false).toBe(false);
+      expect((helperBot.messages as Array<{ text?: string }>).some((m) => /delegated task/.test(m.text ?? ""))).toBe(false);
     },
     45_000,
   );

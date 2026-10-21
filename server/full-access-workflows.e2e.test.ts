@@ -183,8 +183,11 @@ it("applies requested Full Access workflows through MCP without duplicate approv
       step("list_routines", {}), step("propose_routine_action", { action: "pause", routine_id: routine.id }),
       step("propose_team_setup", { reason: "Requested Mira update", operations: [{ action: "update", botId: mira.id, fields: { title: "Verified research specialist" } }] }),
       step("propose_bot_deletion", { bot_id: mira.id, reason: "User explicitly requested removal after the fixture check" }),
-      step("propose_team_setup", { reason: "Out-of-scope fixture check", operations: [{ action: "update", botId: inverse.id, fields: { title: "Must not apply" } }] }, true),
+      // 2026-10-20: a Primary Bot covers every bot its person owns, so a
+      // teammate in another section is in scope on a solo server.
+      step("propose_team_setup", { reason: "Primary Bot covers every owned bot", operations: [{ action: "update", botId: inverse.id, fields: { title: "Covered by the Primary Bot" } }] }),
     ]);
+    expect((await bots()).find(bot => bot.id === inverse.id).title).toBe("Covered by the Primary Bot");
     expect((await bots()).some(bot => bot.id === mira.id)).toBe(false);
     expect((await api("GET", "/api/routines")).routines.find((item: any) => item.id === routine.id)).toMatchObject({ enabled: false, nextRunAt: null, schedule });
     expect((await api("GET", `/api/bots/${chief.id}/skills/monthly-fixture-review`)).text).toContain("verify totals");

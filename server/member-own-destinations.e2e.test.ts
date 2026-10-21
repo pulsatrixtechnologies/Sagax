@@ -177,6 +177,10 @@ posixOnly("organization server: a member's own destinations", () => {
     rmSync(holdDump(), { force: true });
     const sent = await api("POST", `/api/bots/${bot.id}/messages`, auth, { text });
     expect(sent.status, sent.text).toBe(202);
+    // A shared bot starts the speaker's private thread on this send. The id
+    // captured before the send is empty or someone else's, so the card would
+    // be polled on the wrong transcript.
+    const threadId = (typeof sent.body.threadId === "string" && sent.body.threadId) || bot.threadId;
     await waitFor(async () => existsSync(holdDump()), 20_000);
     const mcp = (JSON.parse(readFileSync(holdDump(), "utf8")) as { mcpConfig: any }).mcpConfig.mcpServers;
     const socketPath = mcp.ogb.args.at(-1) as string;
@@ -193,15 +197,15 @@ posixOnly("organization server: a member's own destinations", () => {
       return { id, answer: () => answer };
     };
     const cardOf = async (id: string) => waitFor(async () => {
-      const got = await api("GET", `/api/threads/${bot.threadId}/messages?limit=200`, auth);
+      const got = await api("GET", `/api/threads/${threadId}/messages?limit=200`, auth);
       return (got.body.messages as Array<{ card?: any }> | undefined)?.find((m) => m.card?.requestId === id)?.card ?? null;
     });
     const noCard = async (id: string) => {
-      const rows = (await api("GET", `/api/threads/${bot.threadId}/messages?limit=200`, auth)).body.messages as Array<{ card?: any }>;
+      const rows = (await api("GET", `/api/threads/${threadId}/messages?limit=200`, auth)).body.messages as Array<{ card?: any }>;
       return !rows.some((m) => m.card?.requestId === id);
     };
     const respond = (who: Auth, requestId: string, behavior: "allow" | "deny", rule?: "allow" | "deny") =>
-      api("POST", `/api/threads/${bot.threadId}/respond`, who, { requestId, behavior, ...(rule ? { rule } : {}) });
+      api("POST", `/api/threads/${threadId}/respond`, who, { requestId, behavior, ...(rule ? { rule } : {}) });
     const end = async () => {
       for (const socket of sockets) socket.destroy();
       await api("POST", `/api/bots/${bot.id}/interrupt`, auth, {});
@@ -236,7 +240,7 @@ posixOnly("organization server: a member's own destinations", () => {
       expect(escapeCard.adminApproval).not.toBe(true);
       expect(escape.answer()).toBeUndefined();
       // a command on his own computer: his card at his level, never an admin's
-      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "echo ok; whoami", timeout_seconds: 20 });
+      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "ipconfig", timeout_seconds: 20 });
       const commandCard = await turn.cardOf(command.id);
       expect(commandCard.adminApproval).not.toBe(true);
       const allowed = await turn.respond(bob, command.id, "allow");
@@ -368,7 +372,7 @@ posixOnly("organization server: a member's own destinations", () => {
     const turn = await heldTurn(bob, atlas, "ouvre mon pc");
     try {
       expect(turn.mcpServers).toContain("sagax-desktop");
-      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "whoami" });
+      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "ipconfig" });
       const card = await turn.cardOf(command.id);
       expect(card.adminApproval).not.toBe(true);
       expect(card.destinationAnswerer).toBe(bobId);

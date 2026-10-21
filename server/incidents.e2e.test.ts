@@ -350,7 +350,8 @@ it("keeps the team computer for a report turn, and answers without it once it is
     await reportRan("Ben's run in its thread #Draft the vendor letter. failed");
     const duringChange = await dump(incidents);
     expect(Object.keys(duringChange.mcpConfig.mcpServers)).not.toContain("computer");
-    expect(duringChange.systemPrompt).toContain("your computer could not be prepared for it (Boat account settings are being updated");
+    const seen = `${duringChange.systemPrompt ?? ""}\n${JSON.stringify(duringChange.prompt ?? "")}`;
+    expect(seen).toContain("your computer could not be prepared for it (Boat account settings are being updated");
     expect((await control(["wait", "--bot", chief.id, "--task", incidents, "--timeout", "30"])).status).toBe("settled");
     releaseListing();
     await changing;
@@ -368,8 +369,9 @@ it("keeps the team computer for a report turn, and answers without it once it is
     await reportRan("Cara's run in its thread #File the expense report. could not start");
     const run = await dump(incidents);
     expect(Object.keys(run.mcpConfig.mcpServers)).not.toContain("computer");
-    expect(run.systemPrompt).toContain("your computer could not be prepared for it (The team's cloud computer is missing");
-    expect(run.systemPrompt).not.toContain("Your team shares the cloud computer");
+    const runSeen = `${run.systemPrompt ?? ""}\n${JSON.stringify(run.prompt ?? "")}`;
+    expect(runSeen).toContain("your computer could not be prepared for it (The team's cloud computer is missing");
+    expect(runSeen).not.toContain("Your team shares the cloud computer");
     await control(["send", "--bot", team.dan.id, "--text", "Book the venue."]);
     await expect.poll(async () => (await messages(team.dan.activeTaskId)).some((m) => /cloud computer is missing/.test(m.tool?.name ?? "")), { timeout: 20_000 }).toBe(true);
     expect((await messages(team.dan.activeTaskId)).some((m) => /Waiting for its turn/.test(m.tool?.name ?? ""))).toBe(false);

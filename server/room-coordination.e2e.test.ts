@@ -225,7 +225,9 @@ it("withholds a cross-team result if the owner revokes access while it runs", ()
   f.plan[f.target.id] = { gateFile, reply: "PRIVATE_RESULT_AFTER_REVOCATION" };
   await f.start();
   await expect.poll(() => f.nodes().find((n: any) => n.parentId)?.status, { timeout: 30_000 }).toBe("running");
-  await f.api(`/api/bots/${f.sender.id}`, { managedSections: [] }, "PATCH");
+  // 2026-10-20: clearing managedSections does not revoke a Primary Bot on a
+  // solo server (primaryCovers). Turning the role off does.
+  await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: false, managedSections: [] }, "PATCH");
   await releaseAfterWithhold(f, gateFile);
   expect((await f.wait()).status).toBe("settled");
   expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");
@@ -234,7 +236,7 @@ it("withholds a cross-team result if the owner revokes access while it runs", ()
   expect(messages.some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(true);
 }), 60_000);
 
-it.each(["rename", "delete"])("withholds an in-flight result after team %s and recreation", mode => withRooms(async f => {
+it.each(["rename", "delete"])("does not withhold an in-flight Primary Bot result after team %s, and does not revive the grant", mode => withRooms(async f => {
   await f.api(`/api/bots/${f.target.id}`, { section: "Engineering" }, "PATCH");
   await f.api(`/api/bots/${f.sender.id}`, { chiefOfStaff: true, managedSections: ["Engineering"], acknowledgePeerScope: true }, "PATCH");
   const gateFile = join(f.session.info.dataDir, "team-recreation.gate");
@@ -257,12 +259,15 @@ it.each(["rename", "delete"])("withholds an in-flight result after team %s and r
   await move("Engineering");
   const chief = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.sender.id);
   expect(chief.managedSections).toEqual([]);
-  await releaseAfterWithhold(f, gateFile);
+  // The grant stays empty (store.changeEmptySection). A Primary Bot still
+  // covers the bot, so the result already in flight is delivered.
+  writeFileSync(gateFile, "release");
   expect((await f.wait()).status).toBe("settled");
-  expect(f.nodes().find((n: any) => n.parentId).status).toBe("failed");
+  expect(f.nodes().find((n: any) => n.parentId).status).toBe("completed");
   const messages = await f.messages(f.source.activeTaskId);
-  expect(JSON.stringify(messages)).not.toContain("PRIVATE_RESULT_AFTER_TEAM_RECREATION");
-  expect(messages.some((m: any) => m.tool?.name.includes("Result withheld"))).toBe(true);
+  expect(JSON.stringify(messages)).toContain("PRIVATE_RESULT_AFTER_TEAM_RECREATION");
+  const again = (await f.api("/api/bots?messages=0")).bots.find((bot: any) => bot.id === f.sender.id);
+  expect(again.managedSections ?? []).toEqual([]);
 }), 60_000);
 
 it.each(["recipient", "source-reader", "destination-reader"])("refuses cross-section work involving a %s without leaking room history", role => withRooms(async f => {

@@ -1501,7 +1501,9 @@ it("gives a delegate_bot source today's fresh session and replay when its soul c
   // poll for it so a slow launch is not mistaken for a wrong resume.
   await expect.poll(() => f.launches().at(-1)?.resume, { timeout: 10_000 }).toBe(null);
   expect(f.prompt(third)).toContain("received an update outside your provider session");
-  expect(count(f.prompt(third), late)).toBe(1);
+  // The rebuilt prompt replays the delegation and the recall list quotes
+  // that same line. Two copies, not a second replay of the result.
+  expect(count(f.prompt(third), late)).toBe(2);
 }), hostTimeout(120_000));
 
 // ── Settings a resumed session cannot take on ──

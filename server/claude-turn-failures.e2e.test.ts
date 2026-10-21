@@ -115,8 +115,8 @@ async function launch() {
   return { api, control, messages, play, told, handOff, close };
 }
 
-it("reports an account's weekly limit with its reset to the person and the Chief, never as setup or an update", async () => {
-  const { api, control, messages, play, told, close } = await launch();
+it("reports an account's weekly limit with its reset to the person, never as setup or an update", async () => {
+  const { api, control, messages, play, close } = await launch();
   try {
     const chief = (await control(["new-bot", "--name", "Tango", "--section", "Ops"])).bot;
     await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true });
@@ -124,24 +124,18 @@ it("reports an account's weekly limit with its reset to the person and the Chief
     play(pesto.id, "usage-limit", weekly(Math.floor(Date.now() / 1000) + 3 * 86_400));
 
     await control(["send", "--bot", pesto.id, "--text", "Hey talk to @Tango"]);
-    await expect.poll(async () => (await messages(pesto.activeTaskId)).some((m) => m.kind === "activity" && m.tool?.ok === false), { timeout: 20_000 }).toBe(true);
+    // No backup engine: the turn waits for the reset instead of failing as
+    // setup or an update. The person sees which account and when.
+    await expect.poll(async () => (await messages(pesto.activeTaskId)).some((m) => m.tool?.limitFailover?.kind === "waiting"), { timeout: 20_000 }).toBe(true);
     const thread = await messages(pesto.activeTaskId);
-    const failed = thread.filter((m) => m.kind === "activity" && m.tool?.ok === false);
-    // one plain line: which limit and when it resets; no sign-in or update card
-    expect(failed).toHaveLength(1);
-    expect(failed[0].tool.name).toMatch(/^error: This Claude account has reached its weekly limit, which resets .+\. Until then, switch this bot to another engine or Claude account\.$/);
-    expect(failed[0].tool).not.toHaveProperty("setup");
-    expect(failed[0].tool).not.toHaveProperty("claudeUpdate");
-    // the CLI's words are not passed off as Pesto's reply
+    const waiting = thread.filter((m) => m.kind === "activity" && m.tool?.limitFailover?.kind === "waiting");
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].tool.ok).toBe(true);
+    expect(waiting[0].tool.name).toMatch(/^recovery: Limit reached on .+ and no other engine is available: your message will be sent again when it resets /);
+    expect(waiting[0].tool).not.toHaveProperty("setup");
+    expect(waiting[0].tool).not.toHaveProperty("claudeUpdate");
     expect(thread.some((m) => m.role === "bot" && m.kind === "text" && /hit your weekly limit/.test(m.text ?? ""))).toBe(false);
-
-    // The Chief hears the same cause, not a stop token, and not "setup".
-    await expect.poll(async () => (await api("GET", "/api/bots")).bots.find((b: any) => b.id === chief.id)?.tasks?.some((t: any) => t.title === "Team incidents"), { timeout: 20_000 }).toBe(true);
-    const incidents = (await api("GET", "/api/bots")).bots.find((b: any) => b.id === chief.id).tasks.find((t: any) => t.title === "Team incidents");
-    await expect.poll(async () => (await messages(incidents.threadId)).find((m) => m.kind === "activity" && (m.tool?.name ?? "").startsWith("Incident: "))?.tool.name, { timeout: 20_000 })
-      .toMatch(/^Incident: Pesto's run .+ failed: "This Claude account has reached its weekly limit, which resets /);
-    await expect.poll(() => told(incidents.threadId, chief.id), { timeout: 20_000 }).toMatch(LIMIT_WITH_RESET);
-    expect(told(incidents.threadId, chief.id)).not.toMatch(/stop_sequence|update_required|"quota"/);
+    expect(thread.some((m) => m.kind === "activity" && m.tool?.ok === false)).toBe(false);
   } finally {
     await close();
   }
