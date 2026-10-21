@@ -280,6 +280,8 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
   // Flushed threads wait here, also through a backup. One worker drains it
   // for the whole server, one capture call at a time.
   const queue: Waiting[] = [];
+  /** The batches of the call out now, kept for a stop before it answers. */
+  let calling: CaptureBatch[] = [];
   let worker: Promise<void> | null = null;
 
   const record = (botId: string, patch: { lastTidy?: TidyReport; lastCapture?: CaptureReport }) => {
@@ -417,6 +419,13 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     if (!upkeepEnabled(deps.bot(bot.id))) return off;
     const still = conversations.map((conversation) => allowed(conversation.threadId));
     if (!still.some(Boolean)) return refused;
+    // A thread turned confidential while the model read it beside others:
+    // the model may have filed its facts under another conversation, so the
+    // whole answer goes and the others are read again without it.
+    if (!still.every(Boolean)) {
+      for (const [i, conversation] of conversations.entries()) if (still[i]) queue.push({ batch: conversation });
+      return refused;
+    }
     const filed = attribute(parseCandidates(answer, today, captureItemLimit(conversations.length)), conversations, still);
     const { added, topics } = writing(bot.id, () => {
       let added = 0;
@@ -444,6 +453,8 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     return report;
   }
 
+  const ownedBy = (batch: CaptureBatch) => batch.turns.every((turn) => turn.owner !== false);
+
   /** The first waiting batch, with its bot's other waiting batches that fit
    * in the same call. */
   function takeCall(): Waiting[] {
@@ -454,7 +465,9 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     for (let i = 0; i < queue.length;) {
       const next = queue[i]!;
       const size = callBytes(next.batch);
-      if (next.batch.botId === first.batch.botId && turns + next.batch.turns.length <= CAPTURE_CALL_MAX_TURNS && bytes + size <= CAPTURE_CALL_MAX_BYTES) {
+      // Only threads of one ownership share a call: a fact from someone
+      // else's thread must never be filed under the owner's (About me).
+      if (next.batch.botId === first.batch.botId && ownedBy(next.batch) === ownedBy(first.batch) && turns + next.batch.turns.length <= CAPTURE_CALL_MAX_TURNS && bytes + size <= CAPTURE_CALL_MAX_BYTES) {
         call.push(...queue.splice(i, 1));
         turns += next.batch.turns.length;
         bytes += size;
@@ -469,12 +482,15 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       await Promise.resolve();
       while (!paused && queue.length) {
         const call = takeCall();
+        calling = call.map((entry) => entry.batch);
         try {
           const report = await captureCall(call.map((entry) => entry.batch));
           for (const entry of call) entry.done?.resolve(report);
         } catch (error) {
           log(`memory upkeep: capture failed for ${call[0]!.batch.botId}: ${(error as Error).message}`);
           for (const entry of call) entry.done?.reject(error);
+        } finally {
+          calling = [];
         }
       }
     } finally {
@@ -492,6 +508,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
   }
 
   function dropQueued(match: (batch: CaptureBatch) => boolean): void {
+    calling = calling.filter((batch) => !match(batch));
     for (let index = queue.length - 1; index >= 0; index -= 1) {
       if (!match(queue[index]!.batch)) continue;
       const [entry] = queue.splice(index, 1);
@@ -743,7 +760,8 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       timer = null;
       const queued = queue.splice(0);
       for (const entry of queued) entry.done?.resolve({ at: now().getTime(), added: 0, topics: 0, aboutMe: 0, note: "kept for the next start" });
-      const waiting = [...queued.map((entry) => entry.batch), ...buffer.drain()];
+      // the call out now may never answer before exit: its turns are kept too
+      const waiting = [...calling, ...queued.map((entry) => entry.batch), ...buffer.drain()];
       if (deps.restoreTurn) savePending(waiting);
     },
     pause() {

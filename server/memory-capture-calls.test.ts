@@ -283,29 +283,31 @@ describe("capture calls", () => {
     expect(aboutMe).toEqual(["The person is vegetarian"]);
   });
 
-  it("adds to About me only from the owner's own conversations, also when one call reads both", async () => {
-    answer = () => JSON.stringify([
-      { from: 1, text: "The person is vegetarian", kind: "preference", aboutUser: true },
-      { from: 2, text: "The person is allergic to peanuts", kind: "fact", aboutUser: true },
-    ]);
+  it("adds to About me only from the owner's own conversations, never reading the owner's and someone else's in one call", async () => {
+    // a model that files every item under conversation 1 (or is told to by a
+    // forged line) cannot move another person's fact into About me
+    answer = (prompt) => JSON.stringify(prompt.includes("I'm vegetarian")
+      ? [{ from: 1, text: "The person is vegetarian", kind: "preference", aboutUser: true }]
+      : [{ from: 1, text: "The person is allergic to peanuts", kind: "fact", aboutUser: true }]);
     const upkeep = loop();
     upkeep.noteTurn(LEAD.id, "mine", { person: "Just so you know, I'm vegetarian.", bot: ACK });
     upkeep.noteTurn(LEAD.id, "theirs", { person: "I'm allergic to peanuts, by the way.", bot: ACK, owner: false });
     upkeep.flushThread("mine");
     upkeep.flushThread("theirs");
     await upkeep.idle();
-    expect(captures).toHaveLength(1);
+    expect(captures).toHaveLength(2);
+    expect(captures.some((call) => call.prompt.includes("I'm vegetarian") && call.prompt.includes("allergic to peanuts, by the way"))).toBe(false);
     expect(aboutMe).toEqual(["The person is vegetarian"]);
     expect(memory(LEAD.id)).toContain('from chat "theirs" (noticed) · The person is allergic to peanuts');
   });
 
-  it("without a valid from, files an item under the conversation with the most said, and lets a guess reach About me only when every conversation is the owner's", async () => {
+  it("without a valid from, files an item under the conversation with the most said", async () => {
     answer = () => JSON.stringify([
-      { text: "The person lives in Lyon", kind: "fact", aboutUser: true },
-      { from: 7, text: "The person has a dog named Biscuit", kind: "fact", aboutUser: true },
+      { text: "The person lives in Lyon", kind: "fact" },
+      { from: 7, text: "The person has a dog named Biscuit", kind: "fact" },
     ]);
     const upkeep = loop();
-    upkeep.noteTurn(LEAD.id, "short", { person: "Thanks a lot for that!", bot: ACK, owner: false });
+    upkeep.noteTurn(LEAD.id, "short", { person: "Thanks a lot for that!", bot: ACK });
     upkeep.noteTurn(LEAD.id, "long", { person: "I moved to Lyon last spring and my dog Biscuit came along.", bot: ACK });
     upkeep.flushThread("short");
     upkeep.flushThread("long");
@@ -313,8 +315,6 @@ describe("capture calls", () => {
     expect(memory(LEAD.id)).toContain('from chat "long" (noticed) · The person lives in Lyon');
     expect(memory(LEAD.id)).toContain('from chat "long" (noticed) · The person has a dog named Biscuit');
     expect(memory(LEAD.id)).not.toContain('chat "short"');
-    // one of the two was another person's, and the guess may be wrong
-    expect(aboutMe).toEqual([]);
 
     answer = () => JSON.stringify([{ text: "The person plays the cello", kind: "fact", aboutUser: true }]);
     upkeep.noteTurn(LEAD.id, "a", { person: "Thanks a lot for that!", bot: ACK });
@@ -327,13 +327,13 @@ describe("capture calls", () => {
   });
 
   it("drops what a thread turned confidential during the call gave, and a guess that might be its", async () => {
-    answer = () => {
+    answer = (prompt) => {
       confidential.add("secret");
-      return JSON.stringify([
+      return JSON.stringify(prompt.includes("Kestrel, keep it quiet") ? [
         { from: 1, text: "The person keeps bees", kind: "fact" },
         { from: 2, text: "The merger target is Kestrel", kind: "decision" },
         { text: "The person has an unsure origin", kind: "fact" },
-      ]);
+      ] : [{ from: 1, text: "The person keeps bees", kind: "fact" }]);
     };
     const upkeep = loop();
     upkeep.noteTurn(LEAD.id, "chat", { person: note(1), bot: ACK });
@@ -341,7 +341,9 @@ describe("capture calls", () => {
     upkeep.flushThread("chat");
     upkeep.flushThread("secret");
     await upkeep.idle();
-    expect(captures).toHaveLength(1);
+    // the whole answer goes; "chat" is read again on its own
+    expect(captures).toHaveLength(2);
+    expect(captures[1]!.prompt).not.toContain("Kestrel");
     expect(memory(LEAD.id)).toContain('from chat "chat" (noticed) · The person keeps bees');
     expect(memory(LEAD.id)).not.toContain("Kestrel");
     expect(memory(LEAD.id)).not.toContain("unsure");
@@ -407,7 +409,7 @@ describe("capture calls", () => {
     expect(memory(LEAD.id)).toContain("The person likes jazz");
   });
 
-  it("keeps threads still queued behind a call at shutdown as ids, and reads them together after the next start", async () => {
+  it("keeps the call out and the threads queued behind it at shutdown as ids, and reads them together after the next start", async () => {
     const pending = join(DATA_DIR, "memory-capture-pending.json");
     const held = gate();
     answer = async () => {
@@ -430,7 +432,9 @@ describe("capture calls", () => {
     held.open();
     await first.idle();
     expect(captures).toHaveLength(1);
+    // the call still out at the stop is kept too: it may never answer before exit
     expect(JSON.parse(readFileSync(pending, "utf8"))).toEqual({ batches: [
+      { botId: HELPER.id, threadId: "t1", turnIds: ["turn-1"] },
       { botId: LEAD.id, threadId: "t2", turnIds: ["turn-2"] },
       { botId: LEAD.id, threadId: "t3", turnIds: ["turn-3"] },
     ] });
