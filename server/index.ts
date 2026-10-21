@@ -530,6 +530,7 @@ import {
 import { makeCapContinuationSubscriber } from "./turn-continuation.ts";
 import { TurnStops, stoppedTurnOutcome } from "./turn-outcome.ts";
 import { buildRecoveryText, buildTurnContext, engineIsFresh, replaysNatively } from "./turn-context.ts";
+import { ReplayBuffer } from "./sse-replay.ts";
 import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnseen, sessionStart, unseenMessages, withUnseenMessages, type ContextMessage } from "./delta-context.ts";
 import { extractTurnImages } from "./turn-images.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
@@ -4406,7 +4407,8 @@ function noteTeammatesLeftRunning(botId: string, threadId: string, running: Hand
 }
 
 async function interruptAllDirectThreads(botId: string): Promise<void> {
-  const threads = store.tasks(botId).filter((task) => task.busy || directTurnDispatchClaims.has(task.threadId) || coordinator.activeDirect(task.threadId) || pendingComputerResumes.has(task.threadId));
+  const coordinated = coordinator.activeDirectThreads();
+  const threads = store.tasks(botId).filter((task) => task.busy || directTurnDispatchClaims.has(task.threadId) || coordinated.has(task.threadId) || pendingComputerResumes.has(task.threadId));
   // Revoke every sibling before yielding to any provider teardown.
   for (const task of threads) {
     cancelDirectTurnDispatch(botId, task.threadId);
@@ -7130,17 +7132,21 @@ if (!cfg.identityMigratedAt) { cfg.identityMigratedAt = Date.now(); saveConfig({
  * paired phone has even less business holding provider session identifiers
  * than the desktop window did. Stripped here rather than at each call site
  * so a new broadcast cannot forget. */
-let activeCoordinationForThread = (_threadId: string): boolean => false;
+/** The threads with direct coordinated work running, read once per bot
+ * (port de OpenMausBot #3126): one store read per thread was a SQLite query
+ * and a JSON parse of every live assignment, for every task of every bot on
+ * every broadcast. */
+let threadsWithActiveCoordination = (): ReadonlySet<string> => new Set<string>();
 /** One thread as a client sees it. `botModel` is its bot's model: a thread
  * without a model of its own runs on it (toWireTask). */
-const wireTask = (task: TaskRecord, botModel: ModelSelection): WireTask => {
+const wireTask = (task: TaskRecord, botModel: ModelSelection, coordinated: ReadonlySet<string> = threadsWithActiveCoordination()): WireTask => {
   // Time-based snoozes heal on read against the server clock — no client
   // timer, no device skew. The 0 sentinel ("until new activity") is not a
   // time and survives reads; only a wake event in the store clears it.
   const { snoozedUntil, ...base } = toWireTask(task, botModel);
-  const coordinated = { ...base, waitingForTeammates: activeCoordinationForThread(task.threadId) && !task.busy };
+  const wired = { ...base, waitingForTeammates: coordinated.has(task.threadId) && !task.busy };
   const asleep = snoozedUntil === 0 || (snoozedUntil !== undefined && snoozedUntil > Date.now());
-  return asleep ? { ...coordinated, snoozedUntil } : coordinated;
+  return asleep ? { ...wired, snoozedUntil } : wired;
 };
 
 /** The threads a client lists for a bot. An AI client's hidden
@@ -7182,11 +7188,12 @@ const wireBot = (bot: BotRecord): WireBot => {
   // Both ends of a bot-to-bot conversation show it (inter-bot-conversations.ts);
   // an organization viewer gets the readable ones only (botForViewer).
   const botConversations = interBotConversations(bot.id, store.bots, undefined, (ownerId, threadId) => threadBusy(ownerId, threadId));
-  return { ...visible, waitingForTeammates: activeCoordinationForThread(bot.threadId) && !threadBusy(bot.id, bot.threadId),
+  const coordinated = threadsWithActiveCoordination();
+  return { ...visible, waitingForTeammates: coordinated.has(bot.threadId) && !threadBusy(bot.id, bot.threadId),
     ...(waitingApprovals.length ? { waitingApprovals } : {}),
     ...(botConversations.length ? { botConversations } : {}),
     mainThreadId: botMainThread(bot.id),
-    avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
+    avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection, coordinated)) } : {}) };
 };
 
 function toolScopeForTurn(botId: string) {
@@ -7202,7 +7209,8 @@ function toolScopeForTurn(botId: string) {
 const wireTrustedApprovalBot = (bot: NonNullable<ReturnType<typeof store.bot>>) => {
   const { resumeCursors: _resumeCursors, tasks: allTasks, approvalGrant: _approvalGrant, lastProfileRequestId: _lastProfileRequestId, lastTeamSetupReceipt: _lastTeamSetupReceipt, packageBase: _packageBase, perspicax: _perspicax, assignedSkills: _assignedSkills, temporary: _temporary, createdByBot: _createdByBot, ...rest } = bot;
   const tasks = allTasks ? listedTasks(bot.threadId, allTasks) : undefined;
-  return { ...rest, approvalMode: approvalModeFor(rest), mainThreadId: botMainThread(bot.id), avatarUrl: rest.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection)) } : {}) };
+  const coordinated = threadsWithActiveCoordination();
+  return { ...rest, approvalMode: approvalModeFor(rest), mainThreadId: botMainThread(bot.id), avatarUrl: rest.avatarUrl ?? null, ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection, coordinated)) } : {}) };
 };
 
 /** A settings-based preview, not a receipt of a dispatched turn. No
@@ -8001,11 +8009,14 @@ const storedAvatarExists = (avatarUrl: string): boolean =>
  * member stream's first frame of it. With a viewer the page is the one that
  * person may read; without one it is the whole page, and the caller projects
  * it (projectBotTranscript) or the frame layer does. */
-const publicBot = (bot: NonNullable<ReturnType<typeof store.bot>>, viewer?: ApprovalViewer) => ({
-  ...wireBot(bot),
-  ...(viewer ? messagePage(bot.threadId, DEFAULT_PAGE, null, viewer) : transcriptPage(bot.threadId, DEFAULT_PAGE)),
-  tasks: listedTasks(bot.threadId, store.tasks(bot.id)).map((task) => wireTask(task, bot.modelSelection)),
-});
+const publicBot = (bot: NonNullable<ReturnType<typeof store.bot>>, viewer?: ApprovalViewer) => {
+  const coordinated = threadsWithActiveCoordination();
+  return {
+    ...wireBot(bot),
+    ...(viewer ? messagePage(bot.threadId, DEFAULT_PAGE, null, viewer) : transcriptPage(bot.threadId, DEFAULT_PAGE)),
+    tasks: listedTasks(bot.threadId, store.tasks(bot.id)).map((task) => wireTask(task, bot.modelSelection, coordinated)),
+  };
+};
 const publicBotQueuedMessages = () => queuedSteerSnapshot((botId, threadId) => Boolean(store.taskByThread(botId, threadId)));
 
 type GroupTurnOperation = {
@@ -8966,7 +8977,7 @@ const coordinator: Coordinator = createCoordinator({
     chiefOf: address => Boolean(store.bot(address.botId)?.chiefOfStaff),
   },
 });
-activeCoordinationForThread = threadId => coordinator.activeDirect(threadId);
+threadsWithActiveCoordination = () => coordinator.activeDirectThreads();
 /** The input-request cards still open per waiting work thread, so the answer
  * marks them answered (in memory: a restart parks again and re-posts). */
 const openInputRequests = new Map<string, Array<{ threadId: string; messageId: string }>>();
@@ -10058,14 +10069,14 @@ if (lendingMemory) {
  * inside the SSE `id:` field, which means a browser EventSource resumes
  * correctly through its own Last-Event-ID with no client code at all. */
 const STREAM_ID = randomUUID().slice(0, 8);
-const REPLAY_MAX = 500;
 const configuredSseHeartbeatMs = Number(process.env.SAGAX_SSE_HEARTBEAT_MS);
 const SSE_HEARTBEAT_MS =
   Number.isFinite(configuredSseHeartbeatMs) && configuredSseHeartbeatMs > 0
     ? configuredSseHeartbeatMs
     : 15_000;
 let lastSeq = 0;
-const replayBuffer: Array<{ seq: number; kind: string; frame: string | null; clientFrame: string | null; payload: Record<string, unknown> | null }> = [];
+// Capped by count and by size (port de OpenMausBot #3127).
+const replayBuffer = new ReplayBuffer();
 
 /** Screen frames are the only kind a client can decline. */
 const wants = (client: SseClient, kind: string) => kind !== "screen" || client.screens;
@@ -10103,7 +10114,6 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
   // as soon as the next one arrives. Keep their sequence slots so resume-gap
   // detection stays honest, but never retain their base64 payloads.
   replayBuffer.push({ seq, kind, frame: kind === "screen" ? null : frame, clientFrame: kind === "screen" ? null : clientFrame, payload: kind === "screen" ? null : payload });
-  if (replayBuffer.length > REPLAY_MAX) replayBuffer.shift();
   for (const client of Array.from(sseClients)) {
     if (!wants(client, kind)) continue;
     // Admin-only frames (clientFrame null) never reach members, and a member never falls back to the admin frame.
@@ -39719,7 +39729,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const resumed =
         since !== null &&
         since <= lastSeq &&
-        (replayBuffer.length === 0 ? since === lastSeq : replayBuffer[0].seq <= since + 1) &&
+        replayBuffer.covers(since, lastSeq) &&
         // A member whose cursor predates a bot's audience change gets a fresh
         // snapshot: a replay is judged by today's audience and could neither
         // withdraw what the change hid nor bring back whole what it showed.
@@ -39794,6 +39804,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Temporary agents (create_agent) are never listed in the app.
       const shownBots = store.bots.filter((bot) => !bot.temporary && visible.bot(bot.id) && listedBotVisible(bot, viewerId));
       const queued = publicBotQueuedMessages();
+      const coordinated = threadsWithActiveCoordination();
       // Organization server: each person opens a bot on their own thread
       // (started for them the first time) and lists only their threads.
       const listed = shownBots.map((bot) => {
@@ -39803,7 +39814,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ...wireBot(record),
           // busy while any of the viewer's threads works, not only the one shown
           ...(viewerId && privateThreads() ? viewerBotActivity(bot, viewerId) : {}),
-          tasks: listedTasks(record.threadId, threadsShownTo(bot, store.tasks(bot.id), viewerId)).map((task) => wireTask(task, bot.modelSelection)),
+          tasks: listedTasks(record.threadId, threadsShownTo(bot, store.tasks(bot.id), viewerId)).map((task) => wireTask(task, bot.modelSelection, coordinated)),
           ...messagePage(record.threadId, limit, null, viewerForApproval(auth)),
         }, visible);
       });
@@ -44411,7 +44422,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? store.projectBotForTask(bot.id, m[2])
         : store.switchTask(bot.id, m[2]);
       if (!switched) return json(res, 404, { error: "no such task" });
-      const switchedSettings = { ...wireBot(switched), tasks: listedTasks(switched.threadId, store.tasks(switched.id)).map((task) => wireTask(task, switched.modelSelection)) };
+      const switchCoordinated = threadsWithActiveCoordination();
+      const switchedSettings = { ...wireBot(switched), tasks: listedTasks(switched.threadId, store.tasks(switched.id)).map((task) => wireTask(task, switched.modelSelection, switchCoordinated)) };
       // "0" is settings only, a positive page is a bounded transcript, and no
       // parameter is the whole thread — the one branch that materialises it.
       // Search results land through that branch (src/lib/focus-message.ts):

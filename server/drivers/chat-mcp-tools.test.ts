@@ -9,6 +9,21 @@ import type { ToolScope } from "../../shared/tool-scope.ts";
 import { startFakeHttpMcp } from "../testing/fake-http-mcp-server.ts";
 import { whopLikeCatalog } from "../testing/whop-like-catalog.ts";
 
+// Port de OpenMausBot #3150 : the real kill always runs (cleanup); the probe
+// can only force its verdict and records the budget it was given.
+const killProbe = vi.hoisted(() => ({ override: false, stopped: false, budgets: [] as number[] }));
+vi.mock("../procs.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../procs.ts")>();
+  return {
+    ...actual,
+    killCliTree: (child: Parameters<typeof actual.killCliTree>[0], budget = 5_000) => {
+      killProbe.budgets.push(budget);
+      const run = actual.killCliTree(child, budget);
+      return killProbe.override ? run.then(() => killProbe.stopped) : run;
+    },
+  };
+});
+
 const dirs: string[] = [];
 const sessions: ChatToolSession[] = [];
 const controllers: AbortController[] = [];
@@ -390,6 +405,59 @@ describe("Chat MCP session", () => {
 
 /** "Always allow this session" names the tool on its server as launched. */
 const grantFor = (server: string, tool: string) => expect.stringMatching(new RegExp(`^\\["${server}","[0-9a-f]{64}","${tool}"\\]$`));
+
+describe("Chat MCP shutdown verdict (port de OpenMausBot #3150)", () => {
+  afterEach(() => {
+    killProbe.override = false;
+    killProbe.stopped = false;
+    killProbe.budgets.length = 0;
+  });
+
+  it("a slow shutdown with no call in flight closes with a warning, not an error", async () => {
+    const f = fixture();
+    const session = await f.mount();
+    killProbe.override = true;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(session.close()).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("no call was in flight"));
+    } finally { warn.mockRestore(); }
+  });
+
+  it("an unconfirmed shutdown still fails when a call was in flight", async () => {
+    const f = fixture(`if (message.method === "tools/call") continue;`);
+    const session = await mountChatTools({ custom: { audit: f.server } }, f.controller.signal);
+    const executing = session.execute("audit_write", { value: "in flight" }, f.controller.signal).catch(() => {});
+    await vi.waitFor(() => { expect(f.read().calls.some((call) => call.method === "tools/call")).toBe(true); });
+    killProbe.override = true;
+    await expect(session.close()).rejects.toThrow("MCP server shutdown could not be confirmed; execution outcome may be uncertain");
+    await executing;
+  });
+
+  it("gives Windows 15 seconds to reap the tree and every other system 5", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(process, "platform")!;
+    for (const [platform, budget] of [["win32", 15_000], ["darwin", 5_000], ["linux", 5_000]] as const) {
+      const f = fixture();
+      const session = await f.mount();
+      killProbe.budgets.length = 0;
+      Object.defineProperty(process, "platform", { ...descriptor, value: platform });
+      try { await session.close(); }
+      finally { Object.defineProperty(process, "platform", descriptor); }
+      expect(killProbe.budgets.at(-1), platform).toBe(budget);
+    }
+  });
+});
+
+describe("Chat MCP x-mcp-header (port de OpenMausBot #3169)", () => {
+  it("mounts a GitHub MCP style schema that tags header-routed arguments", async () => {
+    const f = fixture("", { type: "object", properties: { value: { type: "string", "x-mcp-header": "X-MCP-Toolsets" } }, required: ["value"], additionalProperties: false });
+    const session = await f.mount();
+    expect(session.skipped).toEqual([]);
+    expect(session.definitions.map((d) => d.function.name)).toEqual(["audit_write"]);
+    expect(() => session.validate("audit_write", { value: "repos" })).not.toThrow();
+    expect(() => session.validate("audit_write", {})).toThrow("input schema");
+  });
+});
 
 describe("Chat MCP approvals by server", () => {
   it("asks nothing for Sagax's agents server, and grants no session-wide allow on the person's computer", async () => {

@@ -26,7 +26,7 @@ import { serverVersion } from "../environment.ts";
 import { ChatGptPlanAuthController } from "./chatgpt-plan-auth.ts";
 import { describeSpawnFailure, execCli, killCliTree, spawnCli, waitForExit } from "../procs.ts";
 import { codexLaunch, codexLaunchesStarting, codexLaunchSlot, codexRpcTimeoutMs, keepStopping, RELAUNCH_EXIT_WAIT_MS, spawnHoldingSlot, tryCodexLaunchSlot } from "./codex-process.ts";
-import { isHarnessOwnedMcpEnvName } from "../mcp-registry.ts";
+import { isReservedMcpEnvEntry } from "../mcp-registry.ts";
 import { USER_SANDBOX_MCP_NAME } from "../user-sandbox-routing.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
@@ -904,7 +904,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       const approvalMode: ApprovalMode = turn.approvalMode ?? (config.fullAuto ? "full" : "ask");
       for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) {
         if ("url" in server || isSagaxWorkplaceProxy(name, server)) continue;
-        const reserved = Object.keys(server.env).find(isHarnessOwnedMcpEnvName);
+        const reserved = Object.entries(server.env).find(([key, value]) => isReservedMcpEnvEntry(key, value))?.[0];
         if (reserved) {
           throw new Error(`Custom MCP server “${name}” cannot set reserved environment variable “${reserved}”`);
         }

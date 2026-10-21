@@ -89,9 +89,22 @@ export function journalFile(botId: string): string {
 
 type Op = { tag: " " | "-" | "+"; line: string };
 
-function editScript(a: string[], b: string[]): Op[] {
+/** Port de OpenMausBot #3131 : the lines both versions share at the start
+ * and at the end are context as they are; only the middle that changed
+ * goes through the LCS table (a memory file usually gains or loses a few
+ * lines, so the table shrinks from the whole file squared to almost
+ * nothing). The cell cap is judged on that middle. */
+function editScript(fullA: string[], fullB: string[]): Op[] {
+  let head = 0;
+  while (head < fullA.length && head < fullB.length && fullA[head] === fullB[head]) head++;
+  let tail = 0;
+  while (tail < fullA.length - head && tail < fullB.length - head && fullA[fullA.length - 1 - tail] === fullB[fullB.length - 1 - tail]) tail++;
+  const a = fullA.slice(head, fullA.length - tail);
+  const b = fullB.slice(head, fullB.length - tail);
+  const ops: Op[] = fullA.slice(0, head).map((line) => ({ tag: " ", line }));
+  const after: Op[] = fullA.slice(fullA.length - tail).map((line) => ({ tag: " ", line }));
   if (a.length * b.length > LCS_CELL_CAP) {
-    return [...a.map((line) => ({ tag: "-" as const, line })), ...b.map((line) => ({ tag: "+" as const, line }))];
+    return [...ops, ...a.map((line) => ({ tag: "-" as const, line })), ...b.map((line) => ({ tag: "+" as const, line })), ...after];
   }
   // classic LCS lengths table, then walk back from the corner
   const rows = a.length + 1;
@@ -104,7 +117,6 @@ function editScript(a: string[], b: string[]): Op[] {
         : Math.max(table[(i + 1) * cols + j], table[i * cols + j + 1]);
     }
   }
-  const ops: Op[] = [];
   let i = 0;
   let j = 0;
   while (i < a.length && j < b.length) {
@@ -120,7 +132,7 @@ function editScript(a: string[], b: string[]): Op[] {
   }
   while (i < a.length) ops.push({ tag: "-", line: a[i++] });
   while (j < b.length) ops.push({ tag: "+", line: b[j++] });
-  return ops;
+  return ops.concat(after);
 }
 
 function splitLines(text: string): string[] {
