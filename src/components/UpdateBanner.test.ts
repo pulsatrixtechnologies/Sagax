@@ -175,6 +175,27 @@ describe("the person's own check, followed in the dialog", () => {
     expect(html).toMatch(/disabled=""[^>]*>Later<\/button>/);
   });
 
+  it("warns about the bots a restart would interrupt and offers to wait for them", () => {
+    vi.stubGlobal("window", { ogb: { updater: {} } });
+    const html = renderToStaticMarkup(createElement(UpdateNotesDialog, {
+      state: { status: "downloaded", version: "0.5.24", activeBots: 2, notes: "## Fixes" },
+      pending: null, onDismiss: noop, onUpdate: noop, onWaitForBots: noop,
+    }));
+    expect(html).toContain("Bots working: 2. Restarting now interrupts them.");
+    expect(html).toContain("Restart when bots finish");
+    expect(html).toContain(">Restart to install</button>");
+    expect(html).toContain("What&#x27;s new in 0.5.24");
+    const waiting = renderToStaticMarkup(createElement(UpdateNotesDialog, {
+      state: { status: "downloaded", version: "0.5.24", activeBots: 1, waitingForBots: true },
+      pending: null, onDismiss: noop, onUpdate: noop, onWaitForBots: noop,
+    }));
+    expect(waiting).toContain("restarts by itself once no bot is working");
+    const calm = renderToStaticMarkup(createElement(UpdateNotesDialog, {
+      state: { status: "downloaded", version: "0.5.24", activeBots: 0 }, pending: null, onDismiss: noop, onUpdate: noop, onWaitForBots: noop,
+    }));
+    expect(calm).not.toContain("data-update-bots");
+  });
+
   it("shows a failed check clearly, with Try again", () => {
     vi.stubGlobal("window", { ogb: { updater: {} } });
     const html = renderToStaticMarkup(createElement(UpdateProblemDialog, {

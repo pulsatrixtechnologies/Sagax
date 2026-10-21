@@ -9348,5 +9348,16 @@
   "approvals.bulk.alwaysNote": "Chaque demande est autorisée, et la même action sur le même type de cible passera sans carte pour ce bot. Chaque règle est listée dans Réglages > Sécurité, où vous pouvez la révoquer.",
   "approval.tool.runCommandCloud": "lancer une commande sur ton ordinateur cloud",
   "approval.tool.runCommandComputer": "lancer une commande sur ton ordinateur",
-  "approval.details.more": "Détails"
+  "approval.details.more": "Détails",
+  "settings.updates.channel.title": "Canal de mise à jour",
+  "settings.updates.channel.short": "Stable, ou Nightly pour les versions encore en essai.",
+  "settings.updates.channel.stable": "Stable",
+  "settings.updates.channel.nightly": "Nightly",
+  "settings.updates.away.title": "Mettre à jour pendant mon absence",
+  "settings.updates.away.short": "Installer une mise à jour téléchargée quand vous êtes absent et qu'aucun bot ne travaille.",
+  "settings.updates.away.help": "Sagax redémarre seul seulement après 15 minutes sans activité (ou écran verrouillé), une fois la mise à jour téléchargée et si aucun bot ne travaille. Les notes de version s'affichent après la mise à jour.",
+  "updates.dialog.botsWorking": "Bots au travail : {count}. Redémarrer maintenant les interrompt.",
+  "updates.dialog.waitingBots": "Sagax redémarre seul dès qu'aucun bot ne travaille.",
+  "updates.dialog.waitForBots": "Redémarrer quand les bots auront fini",
+  "updates.dialog.waitCancel": "Annuler"
 }

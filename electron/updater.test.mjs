@@ -8,7 +8,7 @@ import localOriginModule from "./local-origin.cjs";
 const LOCAL = "http://127.0.0.1:8799";
 const OTHER = "https://bots.example.test";
 
-const fixture = vi.hoisted(() => ({ autoUpdater: null, handlers: new Map(), fetch: null, answer: 1, asked: [] }));
+const fixture = vi.hoisted(() => ({ autoUpdater: null, handlers: new Map(), fetch: null, answer: 1, asked: [], idle: "active" }));
 
 vi.mock("electron", () => ({
   app: { isPackaged: true, getPath: () => "/unused-updater-test-log", getLocale: () => "fr-CA" },
@@ -21,6 +21,7 @@ vi.mock("electron", () => ({
   },
   ipcMain: { handle: (name, handler) => fixture.handlers.set(name, handler) },
   net: { fetch: (...args) => fixture.fetch(...args) },
+  powerMonitor: { getSystemIdleState: () => fixture.idle, getSystemIdleTime: () => 0 },
 }));
 vi.mock("node:module", () => ({
   createRequire: () => () => ({ autoUpdater: fixture.autoUpdater }),
@@ -160,7 +161,7 @@ it("an update found without notes shows our release body, read from GitHub's API
 
 it("this app's own page reads and drives the update channels; another server's page is refused", async () => {
   const { handlers } = await load();
-  expect([...handlers.keys()].sort()).toEqual(["update:check", "update:download", "update:get-state", "update:install", "update:set-prereleases"]);
+  expect([...handlers.keys()].sort()).toEqual(["update:check", "update:download", "update:get-state", "update:install", "update:install-when-idle", "update:report-activity", "update:set-auto-install-away", "update:set-channel", "update:set-prereleases"]);
   const local = page(LOCAL);
   expect(() => handlers.get("update:get-state")(local.event)).not.toThrow();
   const other = page(OTHER);
@@ -257,5 +258,50 @@ it.each([["win32", false], ["darwin", true], ["linux", true]])("%s: Restart to i
     await settle();
     expect(fixture.asked).toHaveLength(0);
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(silent, true);
+  });
+});
+
+it.each(["win32", "darwin"])("%s: away install waits for a known, empty bot count and an away person; the native question names bots at work", async (os) => {
+  fixture.asked = [];
+  fixture.idle = "active";
+  await downloadedOn(os, async ({ autoUpdater, handlers, local }) => {
+    await handlers.get("update:set-auto-install-away")(local.event, true);
+    // never reported: unknown, nothing installs even when away
+    fixture.idle = "idle";
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    // a bot works: nothing installs
+    await handlers.get("update:report-activity")(local.event, 2);
+    await settle();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(handlers.get("update:get-state")(local.event)).toMatchObject({ activeBots: 2, autoInstallWhenAway: true });
+    // the person is back: nothing installs
+    fixture.idle = "active";
+    await handlers.get("update:report-activity")(local.event, 0);
+    await settle();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    // away and no bot: installs through the same path (Windows keeps its visible installer)
+    fixture.idle = "locked";
+    await vi.advanceTimersByTimeAsync(61_000);
+    await handlers.get("update:report-activity")(local.event, 0);
+    await settle();
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(os !== "win32", true);
+  });
+});
+
+it("waiting for the bots restarts once none works, without needing the person away; the channel is named", async () => {
+  fixture.idle = "active";
+  await downloadedOn("darwin", async ({ autoUpdater, handlers, local }) => {
+    await handlers.get("update:report-activity")(local.event, 1);
+    await handlers.get("update:install-when-idle")(local.event, true);
+    await settle();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    await handlers.get("update:report-activity")(local.event, 0);
+    await settle();
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(true, true);
+    expect((await handlers.get("update:set-channel")(local.event, "nightly")).channel).toBe("nightly");
+    expect(autoUpdater.allowPrerelease).toBe(true);
+    expect((await handlers.get("update:set-channel")(local.event, "stable")).channel).toBe("stable");
   });
 });

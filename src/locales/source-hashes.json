@@ -13213,7 +13213,18 @@
       "chat.unknownMessage": "5caa5c1a56050915e8bd1614f8927fb30d57e87f78721760453207f78604a2cb",
       "composer.failed.offline": "3916050a3562745657cc7f26d620aee1fe813952ae5cdf9cef2d059b7173744c",
       "limitFailover.ownerSwitched": "a7769cabd2a71e1e2109e1f98977d4200edd6b292779d52c0fc562548179a694",
-      "limitFailover.ownerWaiting": "f1a8b15537d1d0b0f2097c961cf43701555fc00cb70af4d6fb723a73d333c7c7"
+      "limitFailover.ownerWaiting": "f1a8b15537d1d0b0f2097c961cf43701555fc00cb70af4d6fb723a73d333c7c7",
+      "settings.updates.channel.title": "d4fc4230730665f7ebdf52d3ae8071025bd92e41eb56efc7a0d8200d665addf4",
+      "settings.updates.channel.short": "db33798ae8f60ef239cb045b6f327657b20c00bb90eaa57cfc64257254f2bff6",
+      "settings.updates.channel.stable": "90ee305714d7103317705bfffd734c654b78807e5a0f51fcc61bc1d81105ebd1",
+      "settings.updates.channel.nightly": "ab6b5a4d586bafebcff63e5e391bba6c0032cd73c2f7ac2fe0b292f6d33985ac",
+      "settings.updates.away.title": "d5afb7347bf3b5cbc8859a50bbd7cc1507f3363d0108ebfde1281b99bd598d3e",
+      "settings.updates.away.short": "f37033082ac18d77b34a4101e954a62f0780cca91cbe2c59cc1dbba8a27dbdfc",
+      "settings.updates.away.help": "47baac4e18b75693aa6ae1247b323e17a8ff603df2a6789c0302baac20dd1e9c",
+      "updates.dialog.botsWorking": "9165535e78fdc0e83ab9b6ba523162dc268bf8606494eab1b61aba11399340c7",
+      "updates.dialog.waitingBots": "ca1c0459fd111da4f3a706cb5ed75d4cf96b8e1aef52db2a764c3eb6956c0c3d",
+      "updates.dialog.waitForBots": "9215160a2c595f47c0da0fcd4ffb4bb5579a3e5f3a538c3c2355aea7ec4650c9",
+      "updates.dialog.waitCancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

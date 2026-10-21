@@ -20,6 +20,7 @@ import { brand } from "@/lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { useUpdaterState, type UpdaterState } from "@/lib/updater";
+import { useReportUpdateActivity } from "@/lib/update-activity";
 import { useUpdateCheckRequests, useUpdatePromptRequests } from "@/lib/update-prompt";
 import { ReleaseNotesBody } from "./ReleaseNotesMarkdown";
 import { CountPill, DialogFrame, DialogLayer, GROUP_CARD, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
@@ -99,6 +100,8 @@ export function updateView(s: UpdaterState | null, follow: UpdateFollow): Update
 }
 
 export function UpdateBanner() {
+  // The updater learns how many bots work: a restart warns or waits for them.
+  useReportUpdateActivity();
   const s = useUpdaterState();
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [pending, setPending] = useState<"install" | "check" | null>(null);
@@ -154,6 +157,8 @@ export function UpdateBanner() {
     // The person chose "Restart to install" here: that is the confirmation.
     void updater.install({ confirmed: true });
   };
+  // "Restart once the bots have finished" (one time), or take it back.
+  const waitForBots = (on: boolean) => void window.ogb?.updater?.installWhenIdle?.(on);
   const retry = () => {
     setPending("check");
     runCheck();
@@ -163,7 +168,7 @@ export function UpdateBanner() {
     return <UpdateCheckDialog checking={view === "checking"} onDismiss={dismiss} />;
   }
   if (view === "notes") {
-    return <UpdateNotesDialog state={s} pending={pending} onDismiss={dismiss} onUpdate={beginUpdate} />;
+    return <UpdateNotesDialog state={s} pending={pending} onDismiss={dismiss} onUpdate={beginUpdate} onWaitForBots={waitForBots} />;
   }
   if (view === "problem-dialog") {
     return <UpdateProblemDialog state={s} pending={pending} onDismiss={dismiss} onRetry={retry} />;
@@ -226,11 +231,13 @@ export function UpdateNotesDialog({
   pending,
   onDismiss,
   onUpdate,
+  onWaitForBots,
 }: {
   state: UpdaterState;
   pending: "install" | "check" | null;
   onDismiss: () => void;
   onUpdate: () => void;
+  onWaitForBots?: (on: boolean) => void;
 }) {
   const primaryRef = useRef<HTMLButtonElement>(null);
   const laterRef = useRef<HTMLButtonElement>(null);
@@ -250,6 +257,11 @@ export function UpdateNotesDialog({
   }, [s.status]);
 
   useEscape(onDismiss, locked);
+
+  // Bots at work would be cut short by the restart: say so, and offer to
+  // wait for them (the notes and the Windows flow stay as they are).
+  const activeBots = s.status === "downloaded" && !handoff ? s.activeBots ?? 0 : 0;
+  const waiting = s.waitingForBots === true && s.status === "downloaded";
 
   const primaryLabel = handoff ? t("settings.updates.install") : t("releaseNotes.restartToInstall");
 
@@ -294,6 +306,17 @@ export function UpdateNotesDialog({
                     ? t("updates.dialog.windowsInstallingBody", { app: brand().name })
                     : null}
         </p>
+
+        {activeBots > 0 && (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-2 text-[12.5px] leading-[18px] text-ink-secondary" data-update-bots="">
+            <span>{waiting ? t("updates.dialog.waitingBots") : t("updates.dialog.botsWorking", { count: activeBots })}</span>
+            {onWaitForBots && (
+              <button type="button" onClick={() => onWaitForBots(!waiting)} className={PILL} disabled={busy}>
+                {waiting ? t("updates.dialog.waitCancel") : t("updates.dialog.waitForBots")}
+              </button>
+            )}
+          </div>
+        )}
 
         {downloading && (
           <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={s.percent == null ? undefined : Math.round(s.percent)} aria-label={t("releaseNotes.downloading", { version: s.version ?? "" })}>
