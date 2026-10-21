@@ -67,6 +67,26 @@ describe("flexible timing windows", () => {
     expect(kept).toMatchObject({ windowEarlyMinutes: 600, windowLateMinutes: 600 });
   });
 
+  it("caps a day-restricted cron from its shortest gap, at any start", () => {
+    const weekday = { type: "cron" as const, expression: "0 0,8,23 * * 3,4", timeZone: "UTC" };
+    const wednesday = Date.parse("2026-06-03T12:00:00Z");
+    const thursday = Date.parse("2026-06-04T00:01:00Z");
+    expect(nominalGapMs(weekday, wednesday)).toBe(60 * MINUTE);
+    expect(nominalGapMs(weekday, thursday)).toBe(60 * MINUTE);
+    const wide = { ...weekday, windowEarlyMinutes: 120, windowLateMinutes: 120 };
+    const fromWednesday = cappedWindow(wide, wednesday);
+    const fromThursday = cappedWindow(wide, thursday);
+    expect(fromWednesday).toEqual(fromThursday);
+    expect(fromWednesday.early + fromWednesday.late).toBe(30);
+
+    const monthDay = { type: "cron" as const, expression: "0 0,8,23 3,4 * *", timeZone: "UTC" };
+    const third = Date.parse("2026-06-03T22:00:00Z");
+    const fourth = Date.parse("2026-06-04T00:01:00Z");
+    expect(nominalGapMs(monthDay, third)).toBe(60 * MINUTE);
+    expect(nominalGapMs(monthDay, fourth)).toBe(60 * MINUTE);
+    expect(nominalGapMs(monthDay, Date.parse("2026-01-04T00:01:00Z"))).toBe(60 * MINUTE);
+  });
+
   it("jumps to the first open slot and skips a slot that already fired", () => {
     const start = Date.parse("2026-01-01T00:00:00Z");
     const now = start + 72 * 60 * MINUTE;

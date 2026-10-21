@@ -162,21 +162,42 @@ function analyticalCronGapMs(expression: string): number | null {
   return min * 60_000;
 }
 
-/** Shortest gap across a full cycle, for expressions the grid above does not cover. */
+/**
+ * How far past the first hit a restricted cron must be walked so every
+ * consecutive gap, including the wrap onto the next restricted day, is seen.
+ * A weekday-only expression repeats every week. A day-of-month or month
+ * expression needs a year. The span starts at the first hit, not at `after`,
+ * so the result does not depend on when it is computed.
+ */
+function restrictedCronCycleMs(expression: string): number {
+  const fields = expression.trim().split(/\s+/);
+  if (fields.length !== 5) return 366 * DAY_MS;
+  const dayField = fields[2]!;
+  const monthField = fields[3]!;
+  const weekdayField = fields[4]!;
+  const dayRestricted = dayField !== "*";
+  const monthRestricted = monthField !== "*";
+  const weekdayRestricted = weekdayField !== "*" && weekdayField !== "?";
+  if (!dayRestricted && !monthRestricted && weekdayRestricted) return 7 * DAY_MS;
+  return 366 * DAY_MS;
+}
+
+/** Shortest gap across one full cycle, for expressions the grid above does not cover. */
 function walkedCronGapMs(expression: string, timeZone: string, after: number): number {
   const schedule = { type: "cron" as const, expression, timeZone };
+  const cycle = restrictedCronCycleMs(expression);
   let cursor = after;
+  let first: number | undefined;
   let previous: number | undefined;
   let min = Number.POSITIVE_INFINITY;
   const deadline = after + 8 * 366 * DAY_MS;
   for (let step = 0; step < 2500; step++) {
     const next = nextCronRuns(schedule, cursor, 1)[0];
     if (next == null || next > deadline) break;
+    if (first == null) first = next;
     if (previous != null) {
       min = Math.min(min, next - previous);
-      const covered = next - after;
-      if (min < 12 * HOUR_MS && covered >= 36 * HOUR_MS) break;
-      if (covered >= 366 * DAY_MS) break;
+      if (next - first >= cycle) break;
     }
     previous = next;
     cursor = next;

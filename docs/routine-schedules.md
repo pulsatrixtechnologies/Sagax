@@ -111,8 +111,10 @@ When neither is given, both are 15. The minutes are stored as written.
 When a start is placed they are capped at half the gap between consecutive
 scheduled times, so two windows cannot overlap. A daily gap is the shortest
 distance between the selected weekdays. An interval gap is its cadence. A
-cron gap is the shortest gap in the expression, including the step back to
-the next hour. A late window of 0 means the run is ready by the scheduled
+cron gap is the shortest gap in the expression over a full cycle of its
+days, including the step back to the next hour and the step from the last
+restricted day onto the next one. The cycle does not depend on when the gap
+is measured. A late window of 0 means the run is ready by the scheduled
 time.
 
 The start inside the window is chosen from the routine and the scheduled
@@ -123,6 +125,9 @@ while its window is still open.
 
 The editor offers Exact or Flexible on a repeating routine. A flexible
 schedule reads "around HH:MM (-E/+L min)".
+
+An older build does not know these fields. The first time that build saves
+the routine, it drops the timing settings.
 
 ## Webhooks: always a bearer token
 

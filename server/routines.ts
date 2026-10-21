@@ -1028,6 +1028,19 @@ function keepTiming(
 ): RoutineScheduleInput {
   if (base.type === "once" || incoming.type === "once" || current.type === "once") return base;
   if (Object.hasOwn(incoming, "timing") || !isFlexibleSchedule(current)) return base;
+  const sentEarly = Object.hasOwn(incoming, "windowEarlyMinutes");
+  const sentLate = Object.hasOwn(incoming, "windowLateMinutes");
+  // Minutes without a timing choice update the stored flexible window.
+  // An exact routine has already returned above, so the same input is rejected
+  // later, as it is on create.
+  if (sentEarly || sentLate) {
+    return {
+      ...base,
+      timing: "flexible",
+      windowEarlyMinutes: sentEarly ? incoming.windowEarlyMinutes : current.windowEarlyMinutes,
+      windowLateMinutes: sentLate ? incoming.windowLateMinutes : current.windowLateMinutes,
+    };
+  }
   return {
     ...base,
     timing: "flexible",
@@ -2798,7 +2811,14 @@ export class RoutineManager {
     now: number,
     routine?: { botId?: string; runAs?: string; lastFiredNominalAt?: number },
   ): { start: number | null; nominal?: number } {
-    if (!isFlexibleSchedule(schedule)) return { start: this.initialOccurrence(schedule, now, routine) };
+    if (!isFlexibleSchedule(schedule)) {
+      // A slot at or before the last fired nominal is already consumed. That
+      // includes a switch from flexible to exact while the fired slot's
+      // window is still open: exact placement must not put that slot back.
+      const fired = routine?.lastFiredNominalAt;
+      const after = schedule.type !== "once" && fired != null ? Math.max(now, fired) : now;
+      return { start: this.initialOccurrence(schedule, after, routine) };
+    }
     const placed = planFlexibleStart({
       routineId: id,
       schedule,

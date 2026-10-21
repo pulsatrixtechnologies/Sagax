@@ -283,6 +283,84 @@ describe("flexible routine timing", () => {
     });
   });
 
+  it("does not fire a slot again when flexible timing becomes exact before that slot", async () => {
+    const h = harness();
+    open.push(h);
+    const routine = h.manager.create({
+      name: "Morning",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily({ timing: "flexible", windowEarlyMinutes: 30, windowLateMinutes: 0 }),
+    });
+    const fired = routine.nominalRunAt!;
+    expect(routine.nextRunAt).toBeLessThan(fired);
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    expect(h.manager.getRoutine(routine.id)!.lastFiredNominalAt).toBe(fired);
+    expect(h.now).toBeLessThan(fired);
+
+    const exact = h.manager.update(routine.id, { schedule: daily({ timing: "exact" }) });
+    expect(exact?.schedule).not.toHaveProperty("timing");
+    expect(exact?.lastFiredNominalAt).toBe(fired);
+    expect(exact?.nominalRunAt).toBeUndefined();
+    expect(exact?.nextRunAt).toBe(nextOccurrence(daily(), fired));
+    expect(exact!.nextRunAt).toBeGreaterThan(fired);
+
+    h.setNow(fired);
+    await h.manager.tick();
+    expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+  });
+
+  it("still places the upcoming slot when exact timing becomes flexible", () => {
+    const h = harness();
+    open.push(h);
+    const exact = h.manager.create({
+      name: "Morning",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily(),
+    });
+    const slot = exact.nextRunAt!;
+    const flexible = h.manager.update(exact.id, {
+      schedule: daily({ timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 0 }),
+    });
+    expect(flexible?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 0 });
+    expect(flexible?.nominalRunAt).toBe(slot);
+    expect(flexible?.nextRunAt).toBeLessThanOrEqual(slot);
+    expect(flexible!.nextRunAt).toBeGreaterThanOrEqual(slot - 15 * MINUTE);
+    expect(flexible?.lastFiredNominalAt).toBeUndefined();
+  });
+
+  it("applies window minutes sent without a timing choice, and rejects them on an exact routine", () => {
+    const h = harness();
+    open.push(h);
+    const routine = h.manager.create({
+      name: "Morning",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily({ timing: "flexible", windowEarlyMinutes: 12, windowLateMinutes: 4 }),
+    });
+    const lateOnly = h.manager.update(routine.id, { schedule: daily({ windowLateMinutes: 9 }) });
+    expect(lateOnly?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 12, windowLateMinutes: 9 });
+    const both = h.manager.update(routine.id, { schedule: daily({ windowEarlyMinutes: 30, windowLateMinutes: 0 }) });
+    expect(both?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 30, windowLateMinutes: 0 });
+
+    const exact = h.manager.create({
+      name: "Exact",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily(),
+    });
+    expect(() => h.manager.update(exact.id, { schedule: daily({ windowEarlyMinutes: 5 }) })).toThrow(/window/i);
+    expect(() => h.manager.create({
+      name: "Create",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily({ windowEarlyMinutes: 5 }),
+    })).toThrow(/window/i);
+    expect(h.manager.getRoutine(exact.id)?.schedule).not.toHaveProperty("windowEarlyMinutes");
+  });
+
   it("does not fire a slot again after pause and resume, or after an edit that keeps it", async () => {
     const h = harness();
     open.push(h);
