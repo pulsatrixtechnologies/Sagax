@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -63,6 +63,7 @@ import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
 import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 import { navigate } from "@/lib/view-transitions";
+import { MAUS_COLORS } from "@/lib/mascot";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -278,6 +279,32 @@ function Shell() {
   useEffect(() => {
     window.ogb?.setUnreadCount?.(badgeCount(unreadCount, { badge: showBadge }));
   }, [unreadCount, showBadge]);
+  // The menu bar's bot list (macOS, Windows): the visible bots in the order
+  // of the Cmd+1..9 shortcuts, with their mascot color, whether they work and
+  // how many conversations are unread. A pick there opens the bot.
+  const trayRoster = useMemo(
+    () => state.bots.filter((bot) => !bot.hidden).slice(0, 9).map((bot) => ({
+      id: bot.id,
+      name: bot.name,
+      color: MAUS_COLORS[bot.color as keyof typeof MAUS_COLORS] ?? "#8E8E93",
+      working: Boolean(bot.busy),
+      unread: botShowsUnread(bot) ? 1 : 0,
+    })),
+    [state.bots],
+  );
+  const trayKey = JSON.stringify(trayRoster);
+  useEffect(() => {
+    window.ogb?.setTrayRoster?.(trayRoster);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trayKey]);
+  const botsRef = useRef(state.bots);
+  botsRef.current = state.bots;
+  useEffect(() => {
+    return window.ogb?.onOpenBot?.((botId) => {
+      const target = botsRef.current.find((bot) => bot.id === botId);
+      if (target) navigate(() => openBot(dispatch, target, showThreads));
+    });
+  }, [dispatch, showThreads]);
   // Load the nudge sound now: the first nudge rings at once, even before
   // any click in the page.
   useEffect(() => {
