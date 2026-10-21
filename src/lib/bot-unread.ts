@@ -27,3 +27,40 @@ export function botShowsUnread(bot: {
   if (!bot.tasks?.length) return Boolean(bot.unread);
   return bot.tasks.some((task) => Boolean(task.unread) && task.archivedAt === undefined && !taskHiddenFromSidebar(task, bot.id ?? ""));
 }
+
+/** One sidebar row's place in the list, for the "more unread" pills. */
+export interface UnreadRowBox {
+  top: number;
+  bottom: number;
+  unread: boolean;
+}
+
+/** Unread rows scrolled out of the list's window: the count above and below,
+ * and the row to jump to for each (the nearest one). A row cut by the edge
+ * counts as seen once at least half of it shows. Rows are in list order. */
+export function offscreenUnread(
+  rows: readonly UnreadRowBox[],
+  viewport: { top: number; bottom: number },
+): { above: number; below: number; nearestAbove: number | null; nearestBelow: number | null } {
+  let above = 0;
+  let below = 0;
+  let nearestAbove: number | null = null;
+  let nearestBelow: number | null = null;
+  rows.forEach((row, index) => {
+    if (!row.unread) return;
+    const middle = (row.top + row.bottom) / 2;
+    if (middle < viewport.top) {
+      above += 1;
+      nearestAbove = index;
+    } else if (middle > viewport.bottom) {
+      below += 1;
+      if (nearestBelow === null) nearestBelow = index;
+    }
+  });
+  return { above, below, nearestAbove, nearestBelow };
+}
+
+/** Adds or removes one id from a selection, keeping its order. */
+export function toggleSelected(selection: readonly string[], id: string): string[] {
+  return selection.includes(id) ? selection.filter((entry) => entry !== id) : [...selection, id];
+}

@@ -5,7 +5,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { createPortal } from "react-dom";
 import {
   Archive,
+  ArrowDown,
+  ArrowUp,
   BellDot,
+  CheckCheck,
+  ListChecks,
   Check,
   ChevronRight,
   ClipboardCopy,
@@ -107,7 +111,7 @@ import { newThreadChoices, type NewThreadChoice } from "@/lib/confidential-threa
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { draggedFolder, draggedThread, FOLDER_DRAG_TYPE, THREAD_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
 import { addBotCalendarDrag } from "@/lib/bot-drag";
-import { folderUnreadThreadIds, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
+import { folderUnreadThreadIds, markBotRead, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
 import { personPickerThreads } from "@/lib/person-threads";
 import { approvalModeFor } from "../../shared/approval-mode";
 import { liveActivityLabel } from "@/lib/live-activity";
@@ -166,7 +170,7 @@ import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
-import { botShowsUnread, isInterBotThread } from "@/lib/bot-unread";
+import { botShowsUnread, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
 import { groupMemberBots } from "@/lib/group-members";
@@ -1159,7 +1163,10 @@ export function BotContextMenu({
   onReplacePrimary,
   variant = "sidebar",
   onEditPersona,
+  onSelect,
 }: {
+  /** Starts a multi-selection with this bot (the sidebar row menu only). */
+  onSelect?: (botId: string) => void;
   menu: MenuState | null;
   onClose: () => void;
   onArchive?: (bot: Bot) => void;
@@ -1390,6 +1397,7 @@ export function BotContextMenu({
       { id: "pin" },
     ),
     ...(moveItem ? [moveItem] : []),
+    ...(onSelect && variant === "sidebar" ? [item(<ListChecks size={16} className="text-ink" />, t("sidebar.select.start"), () => onSelect(bot.id), { id: "select" })] : []),
     divider("d-name"),
     ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
     editItem,
@@ -1917,9 +1925,12 @@ export function BotListItem({
   onMenu,
   startRename = false,
   onRenameStarted,
+  selection,
 }: {
   bot: Bot;
   density: SidebarDensity;
+  /** Multi-select: while `active`, a click toggles the row instead of opening it. */
+  selection?: { active: boolean; selected: boolean; onToggle: () => void };
   query?: string;
   /** Quiet rows: name and status only (see sidebar-preferences). */
   quiet?: boolean;
@@ -1962,10 +1973,12 @@ export function BotListItem({
         ? "h-[54px] gap-2 rounded-[10px] py-2 pl-2 pr-2"
         : "gap-2 rounded-lg py-1.5 pl-2 pr-9",
     // room for New thread and the "..." while they show (hover, focus, touch)
-    !iconOnly && "group-hover:pr-[64px] group-focus-within:pr-[64px] max-md:pr-[64px] touch:pr-[64px]",
+    !iconOnly && !selection?.active && "group-hover:pr-[64px] group-focus-within:pr-[64px] max-md:pr-[64px] touch:pr-[64px]",
+    // room for the selection check
+    !iconOnly && selection?.active && "pr-9",
     // The Primary Bot is called out by the star on its avatar, not by
     // tinting the whole row.
-    selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
+    selected || selection?.selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
   );
   const activityTasks = sidebarBotActivityTasks(bot, pendingQueued);
   const waiting = bot.activity === "waiting-on-you" || activityTasks.some((task) => task.activity === "waiting-on-you");
@@ -1989,7 +2002,7 @@ export function BotListItem({
   const dotCorner = primary ? "-top-0.5" : "-bottom-0.5";
   // Grok Bot marks an unread bot with a blue dot at the row's end, the name
   // keeps its weight.
-  const trailingDot = !iconOnly && unread && !renaming && !deleting;
+  const trailingDot = !iconOnly && unread && !renaming && !deleting && !selection?.active;
   const body = (
     <>
       {/* flex, not inline: an inline wrapper adds a baseline gap under the
@@ -2082,6 +2095,12 @@ export function BotListItem({
   });
   const onSelect = (event: React.MouseEvent) => {
     if (renaming) return;
+    // Cmd/Ctrl-click starts a selection; once one is open, a click joins it.
+    if (selection && (selection.active || event.metaKey || event.ctrlKey || event.shiftKey)) {
+      event.preventDefault();
+      selection.onToggle();
+      return;
+    }
     const insideRenameInput = event.target instanceof HTMLInputElement;
     if (botListItemPointerIntent(event.type, insideRenameInput) === "select") openConversation();
   };
@@ -2107,8 +2126,10 @@ export function BotListItem({
             : undefined
         }
         aria-busy={deleting || undefined}
-        aria-current={selected && !renaming ? "page" : undefined}
+        aria-current={selected && !renaming && !selection?.active ? "page" : undefined}
+        aria-pressed={selection?.active ? selection.selected : undefined}
         data-sidebar-bot-row={bot.id}
+        data-sidebar-unread={unread ? "" : undefined}
         onClick={onSelect}
         onKeyDown={(event) => {
           if (renaming) return;
@@ -2125,10 +2146,15 @@ export function BotListItem({
       {trailingDot && (
         <span data-sidebar-unread-dot aria-hidden="true" className="absolute right-2 top-1/2 size-2 -translate-y-1/2 rounded-full bg-unread pointer-events-none transition-opacity group-hover:opacity-0 group-focus-within:opacity-0 max-md:opacity-0 touch:opacity-0" />
       )}
+      {selection?.active && !renaming && (
+        <span data-sidebar-select-mark aria-hidden="true" className={cn("pointer-events-none absolute top-1/2 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-full border", iconOnly ? "right-1 top-3" : "right-3", selection.selected ? "border-accent bg-accent text-accent-ink" : "border-sidebar-ink-secondary/60")}>
+          {selection.selected && <Check size={12} strokeWidth={3} />}
+        </span>
+      )}
       {!renaming && iconOnly && unread && (
         <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-unread" />
       )}
-      {!renaming && !deleting && !iconOnly && <>
+      {!renaming && !deleting && !iconOnly && !selection?.active && <>
         {/* direct New thread, beside the "..." (JC, 2026-10-15) */}
         {showThreads && <button type="button" data-sidebar-bot-new-thread={bot.id} aria-label={t("task.newShort")} title={t("task.newShort")}
           onClick={() => dispatch({ type: "newTask", botId: bot.id })}
@@ -2479,6 +2505,71 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameBotId, setRenameBotId] = useState<string | null>(null);
   const [sectionPicker, setSectionPicker] = useState<MenuState | null>(null);
+  // Multi-select (Cmd/Ctrl-click or "Select" in a row's menu): grouped actions
+  // on bots. `selecting` stays on while the bar is open, even at zero.
+  const [selecting, setSelecting] = useState(false);
+  const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
+  const [batchSectionPicker, setBatchSectionPicker] = useState<MenuState | null>(null);
+  const [batchArchiveConfirm, setBatchArchiveConfirm] = useState(false);
+  const clearSelection = () => {
+    setSelecting(false);
+    setSelectedBotIds([]);
+    setBatchSectionPicker(null);
+  };
+  // Unread bots scrolled out of the list: the "more unread" pills.
+  const [moreUnread, setMoreUnread] = useState({ above: 0, below: 0 });
+  const measureUnread = useCallback(() => {
+    const list = listFade.ref.current;
+    if (!list) return;
+    const view = list.getBoundingClientRect();
+    const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-sidebar-bot-row]")).map((row) => {
+      const box = row.getBoundingClientRect();
+      return { top: box.top, bottom: box.bottom, unread: row.hasAttribute("data-sidebar-unread") };
+    });
+    const { above, below } = offscreenUnread(rows, { top: view.top, bottom: view.bottom });
+    setMoreUnread((prev) => (prev.above === above && prev.below === below ? prev : { above, below }));
+  }, [listFade.ref]);
+  const jumpToUnread = (direction: "above" | "below") => {
+    const list = listFade.ref.current;
+    if (!list) return;
+    const view = list.getBoundingClientRect();
+    const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-sidebar-bot-row][data-sidebar-unread]"));
+    const offscreen = rows.filter((row) => {
+      const box = row.getBoundingClientRect();
+      const middle = (box.top + box.bottom) / 2;
+      return direction === "above" ? middle < view.top : middle > view.bottom;
+    });
+    const target = direction === "above" ? offscreen[offscreen.length - 1] : offscreen[0];
+    target?.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+  const selectionFor = (botId: string) => ({
+    active: selecting,
+    selected: selectedBotIds.includes(botId),
+    onToggle: () => {
+      setSelecting(true);
+      setSelectedBotIds((current) => toggleSelected(current, botId));
+    },
+  });
+  // The pills follow the list: bots changing, the window resizing, a row
+  // opening or closing. Plain scrolling is measured by the list's onScroll.
+  useLayoutEffect(() => {
+    measureUnread();
+    const list = listFade.ref.current;
+    if (!list || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measureUnread);
+    observer.observe(list);
+    for (const child of Array.from(list.children)) observer.observe(child);
+    return () => observer.disconnect();
+  }, [measureUnread, state.bots, state.groups, selecting]);
+  // Escape leaves the selection (unless a menu or dialog already took it).
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role=dialog], [role=menu], [data-section-picker]")) clearSelection();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
 
   const [teamMenu, setTeamMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   const teamMotion = useHeldMenuMotion(teamMenu);
@@ -3079,8 +3170,17 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         )}
       </div>
 
+      {density !== "icons" && moreUnread.above > 0 && (
+        <div className="relative z-10 h-0">
+          <button type="button" data-sidebar-more-unread="above" onClick={() => jumpToUnread("above")}
+            aria-label={t("sidebar.unreadAbove", { count: moreUnread.above })}
+            className="absolute left-1/2 top-1 flex whitespace-nowrap -translate-x-1/2 items-center gap-1 rounded-full bg-unread px-2.5 py-1 text-[12px] font-medium leading-4 text-accent-ink shadow-md hover:brightness-110">
+            <ArrowUp size={12} aria-hidden="true" />{t("sidebar.unreadAbove", { count: moreUnread.above })}
+          </button>
+        </div>
+      )}
       {/* Bot list. GET /api/org 404 keeps this roster. */}
-      <div ref={listFade.ref} onScroll={listFade.onScroll} style={listFade.style} className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-6 pt-1", density === "icons" ? "px-2" : "pl-3 pr-[13px]")}
+      <div ref={listFade.ref} onScroll={() => { listFade.onScroll(); measureUnread(); }} style={listFade.style} className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-6 pt-1", density === "icons" ? "px-2" : "pl-3 pr-[13px]")}
         data-sidebar-rail={density === "icons" ? "" : undefined}
         onKeyDown={density === "icons" ? moveRailFocus : undefined}
         onContextMenu={orgMode ? (event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).dataset?.sidebarEmpty !== undefined) openOrgMenu(event, null, null); } : undefined}>
@@ -3211,6 +3311,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                           onMenu={setMenu}
                           startRename={renameBotId === bot.id}
                           onRenameStarted={() => setRenameBotId(null)}
+                          selection={selectionFor(bot.id)}
                         />
                       </div>
                     ))}
@@ -3235,6 +3336,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                           onMenu={setMenu}
                           startRename={renameBotId === bot.id}
                           onRenameStarted={() => setRenameBotId(null)}
+                          selection={selectionFor(bot.id)}
                         />
                       </div>
                     ))}
@@ -3272,6 +3374,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                           onMenu={setMenu}
                           startRename={renameBotId === bot.id}
                           onRenameStarted={() => setRenameBotId(null)}
+                          selection={selectionFor(bot.id)}
                         />
                       </div>
                     ))}
@@ -3284,9 +3387,49 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           {density !== "icons" && <HiddenEntriesRow rows={hiddenSidebarRows(sidebarHidden.items, { bots: state.bots, groups: state.groups, viewerId, people: sidebarPeople })} />}
         </div>
       </div>
+      {density !== "icons" && moreUnread.below > 0 && (
+        <div className="relative z-10 h-0">
+          <button type="button" data-sidebar-more-unread="below" onClick={() => jumpToUnread("below")}
+            aria-label={t("sidebar.unreadBelow", { count: moreUnread.below })}
+            className="absolute bottom-2 left-1/2 flex whitespace-nowrap -translate-x-1/2 items-center gap-1 rounded-full bg-unread px-2.5 py-1 text-[12px] font-medium leading-4 text-accent-ink shadow-md hover:brightness-110">
+            <ArrowDown size={12} aria-hidden="true" />{t("sidebar.unreadBelow", { count: moreUnread.below })}
+          </button>
+        </div>
+      )}
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {reorderAnnouncement}
       </p>
+      {selecting && density !== "icons" && (() => {
+        const chosen = selectedBotIds.flatMap((id) => state.bots.filter((bot) => bot.id === id));
+        const count = chosen.length;
+        const allPinned = count > 0 && chosen.every((bot) => bot.pinned);
+        const canMove = showServerSectionMove(state.config, personal !== null);
+        const archivable = chosen.filter((bot) => currentArchivableBot(state.bots, bot.id));
+        const button = "flex size-8 items-center justify-center rounded-md text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink disabled:pointer-events-none disabled:opacity-40";
+        return (
+          <div data-sidebar-select-bar role="toolbar" aria-label={t("sidebar.select.bar")} className="mx-3 mb-2 flex items-center gap-0.5 rounded-xl border-[0.5px] border-hairline-weak bg-sidebar-hover px-2 py-1">
+            <span className="min-w-0 flex-1 truncate pl-1 text-[13px] text-sidebar-ink" aria-live="polite">{t("sidebar.select.count", { count })}</span>
+            <button type="button" className={button} disabled={count === 0} title={t("sidebar.select.markRead")} aria-label={t("sidebar.select.markRead")}
+              onClick={() => {
+                for (const bot of chosen) {
+                  void markBotRead(bot, api, (updated) => dispatch({ type: "botPatched", bot: updated }))
+                    .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+                }
+                clearSelection();
+              }}><CheckCheck size={16} /></button>
+            <button type="button" className={button} disabled={count === 0} title={allPinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")} aria-label={allPinned ? t("sidebar.bot.unpin") : t("sidebar.bot.pin")}
+              onClick={() => {
+                for (const bot of chosen) dispatch({ type: "updateBot", botId: bot.id, patch: { pinned: !allPinned } });
+                clearSelection();
+              }}>{allPinned ? <PinOff size={16} /> : <Pin size={16} />}</button>
+            {canMove && <button type="button" className={button} disabled={count === 0} title={t("sidebar.select.move", { count })} aria-label={t("sidebar.select.move", { count })} aria-haspopup="menu"
+              onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setBatchSectionPicker({ botId: "", x: rect.left, y: rect.top - 260 }); }}><FolderInput size={16} /></button>}
+            {showBotArchive(state.config) && <button type="button" className={button} disabled={archivable.length === 0} title={t("sidebar.bot.archive")} aria-label={t("sidebar.bot.archive")}
+              onClick={() => setBatchArchiveConfirm(true)}><Archive size={16} /></button>}
+            <button type="button" className={button} title={t("sidebar.select.clear")} aria-label={t("sidebar.select.clear")} onClick={clearSelection}><X size={16} /></button>
+          </div>
+        );
+      })()}
 
       {/* Footer. Collapsing the sidebar keeps the places and the avatar at
           the same y: the same bottom padding, the same row metrics
@@ -3364,6 +3507,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             setSectionPicker({ botId, x: menu.x, y: menu.y });
           }}
           onRename={(botId) => setRenameBotId(botId)}
+          onSelect={(botId) => { setSelecting(true); setSelectedBotIds((current) => current.includes(botId) ? current : [...current, botId]); }}
           // Edit bot opens the bot editor (JC, 2026-10-16: it did nothing
           // visible since the panel fallback lost its settings view)
           onEditPersona={(target) => dispatch({ type: "openPersonaEditor", botId: target.id })}
@@ -3460,6 +3604,31 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         }} />
       {moveToTeam && <TeamDialog section={moveToTeam} onClose={() => setMoveToTeam(null)} />}
       {shareTeam !== null && <ShareTeamDialog team={shareTeam} onClose={() => setShareTeam(null)} />}
+      <SectionPicker
+          current={undefined}
+          names={personal ? personalSectionNames(personal) : undefined}
+          anchor={batchSectionPicker}
+          onClose={() => setBatchSectionPicker(null)}
+          onAssign={(section) => {
+            for (const id of selectedBotIds) assignSection("bot", id, section);
+            clearSelection();
+          }}
+        />
+      <ConfirmDialog
+        open={batchArchiveConfirm}
+        title={t("sidebar.select.archiveTitle", { count: selectedBotIds.filter((id) => currentArchivableBot(state.bots, id)).length })}
+        body={t("sidebar.select.archiveBody")}
+        confirmLabel={t("sidebar.bot.archive")}
+        icon={<Archive size={18} />}
+        onCancel={() => setBatchArchiveConfirm(false)}
+        returnFocusRef={sidebarRef}
+        onConfirm={() => {
+          setBatchArchiveConfirm(false);
+          const ids = selectedBotIds;
+          clearSelection();
+          void (async () => { for (const id of ids) await archiveBot({ id }); })();
+        }}
+      />
       <SectionPicker
           current={sectionPicker ? layoutBots.find((b) => b.id === sectionPicker.botId)?.section : undefined}
           names={personal ? personalSectionNames(personal) : undefined}
