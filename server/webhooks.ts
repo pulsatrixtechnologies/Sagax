@@ -529,43 +529,48 @@ export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, s
  * and maps look-alike dashes, slashes, square brackets and letters. A run of
  * backslashes that is not one of those escapes is skipped in one step, so a
  * long run stays linear. A match needs an opening bracket, then the marker
- * word. Separators may sit between the letters of a square-bracket match.
- * After the word, "_" (including U+FF3F), a digit, or more letters in the
- * same identifier still match.
+ * word. A backslash between the bracket and the word is a separator. Other
+ * separators may sit between the letters of a square-bracket match. After
+ * UNTRUSTED or USER-CONFIGURED, "_" (including U+FF3F), a digit, or more
+ * letters in the same identifier still match.
  *
- * Two shapes stay unquoted. A marker word written entirely in lowercase
- * English, with no "/", and continued by an English letter, as in
- * "defaultValue". Full-width lowercase (U+FF41–U+FF5A) counts as an English
- * letter: the skeleton folds it to ASCII lowercase, and the continuation
- * check on the original text does too. Invisibles and combining marks
- * between them are joiners, not a break. And a plain suffix on the generic
- * words DEFAULT, OWNER and AUTHENTICATED: more letters directly attached
- * ("OWNERSHIP", "DEFAULTS", "Owners", "Defaults") or a bare "_id"
- * ("[owner_id=5]"). A "_" or a digit that is not that bare id still matches
- * ("[DEFAULT_TIMEOUT]", "[DEFAULT2]", "[owner_identity]").
+ * UNTRUSTED and USER-CONFIGURED stay unquoted when the word is entirely
+ * lowercase English, has no "/", and is continued by an English letter, as
+ * in "defaultValue". Full-width lowercase (U+FF41–U+FF5A) counts as an
+ * English letter. Invisibles and combining marks between them are joiners,
+ * not a break.
  *
- * Parentheses, angle brackets and braces match only when the full word in
- * uppercase or snake case follows them directly, with at most one "/".
- * DEFAULT, OWNER and AUTHENTICATED also need the rest of the phrase
- * (WEBHOOK INSTRUCTIONS, CONDITIONS, WEBHOOK TASK), with a space, "_" or
- * "-" between the words. "(DEFAULT)", "<OWNER_ID>", "{DEFAULT_TIMEOUT}",
- * "${OWNER}", "{{AUTHENTICATED_USER}}" and "(OWNERSHIP)" do not.
+ * DEFAULT, OWNER and AUTHENTICATED never use that word-boundary exemption.
+ * They quote only the whole phrase, read on the skeleton with case folded
+ * and every separator, joiner, filler, tab, ".", "_", "-" and space removed:
+ * OWNER+CONDITIONS, DEFAULT+WEBHOOK+INSTRUCTIONS, AUTHENTICATED+WEBHOOK+TASK.
+ * Any word of the phrase may carry a trailing "S" or "ID". A slash after the
+ * bracket is optional. DEFAULT+WEBHOOK with the letters ending there also
+ * matches, so a glued "defaultwebhook" is not a bare word. A slash plus
+ * OWNER, DEFAULT or AUTHENTICATED plus "ID" and a closing bracket matches
+ * too. A bare word, or one that is not followed by the rest of its phrase,
+ * does not: "[OWNERSHIP]", "[DEFAULTS]", "[Owners]", "[owner_id=5]",
+ * "(DEFAULT)", "<OWNER_ID>", "{DEFAULT_TIMEOUT}", "${OWNER}",
+ * "{{AUTHENTICATED_USER}}".
  *
- * The close scan looks ahead at most CLOSE_LOOKAHEAD characters and stops at
- * a newline, a "[", or the next match, so one pass stays linear. U+FE5D, the
- * small left tortoise-shell bracket, is an opening look-alike. U+FE5E, the
- * right one, is a close.
+ * Parentheses, angle brackets and braces still match UNTRUSTED and
+ * USER-CONFIGURED only when the full word in uppercase or snake case follows
+ * them directly, with at most one "/". The generic phrases above match there
+ * too, in any case, once the letters collapse to the phrase.
+ *
+ * A quoted phrase keeps the original slice, spaces included, and the
+ * brackets come back balanced. The close scan looks ahead at most
+ * CLOSE_LOOKAHEAD characters and stops at a newline, a "[", or the next
+ * match, so one pass stays linear. U+FE5D, the small left tortoise-shell
+ * bracket, is an opening look-alike. U+FE5E, the right one, is a close.
  *
  * Still not quoted: a "*" or "," between letters; ᴜ (U+1D1C) and Cyrillic
  * Ѕ (U+0405); « » and ‹ ›; no bracket at all; `&#91;` or `%5B`; a space or a
- * lowercase word after "(" "<" "{"; a generic word there without the rest of
- * its phrase; a plain letter or "_id" suffix on those generic words. Quoted
- * even when the words are ordinary labels: "[default]", "[default, owner]",
- * markdown "[Default branch](…)", "[USER-CONFIGURED-ish …]",
- * "[DEFAULT] starting", "[OWNER] alice", "[authenticated] user=bob",
- * "[DEFAULT_TIMEOUT]", "[OWNER_NAME]", "[owner_identity]". A closing
- * look-alike more than CLOSE_LOOKAHEAD characters after the word is left in
- * place; the opening bracket is still quoted. */
+ * lowercase word after "(" "<" "{" for UNTRUSTED and USER-CONFIGURED; a
+ * bare DEFAULT, OWNER or AUTHENTICATED. Quoted even as an ordinary label:
+ * "[USER-CONFIGURED-ish …]". A closing look-alike more than
+ * CLOSE_LOOKAHEAD characters after the word is left in place; the opening
+ * bracket is still quoted. */
 const STRIP_MARK = /[\p{Cc}\p{Cf}\p{Mn}\p{Me}]/u;
 /** Invisible letters that are not format characters. */
 const FILLER = new Set([0x115f, 0x1160, 0x3164, 0xffa0]);
@@ -744,19 +749,6 @@ function isLatinLetter(cp: number): boolean {
   return (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a) || (cp >= 0xff21 && cp <= 0xff3a) || (cp >= 0xff41 && cp <= 0xff5a);
 }
 
-function latinLowerAscii(cp: number): number {
-  if (cp >= 0x41 && cp <= 0x5a) return cp + 32;
-  if (cp >= 0x61 && cp <= 0x7a) return cp;
-  if (cp >= 0xff21 && cp <= 0xff3a) return cp - 0xff21 + 0x61;
-  if (cp >= 0xff41 && cp <= 0xff5a) return cp - 0xff41 + 0x61;
-  return -1;
-}
-
-/** A space or a line break ends the word. A letter after one is a new word, not a suffix. */
-function isWordBreak(cp: number): boolean {
-  return cp === 0x09 || cp === 0x0a || cp === 0x0b || cp === 0x0c || cp === 0x0d || cp === 0x20 || cp === 0x85 || cp === 0x2028 || cp === 0x2029;
-}
-
 /** True when the original text continues the word the way "defaultValue" does.
  * "_", a digit, a slash, or any other continuation is still a match.
  * Full-width lowercase counts as an English letter. */
@@ -776,122 +768,172 @@ function isProseContinuation(text: string, from: number, lowerEnglish: boolean, 
   return false;
 }
 
-/** The rest of the phrase a generic word needs after "(" "<" "{". */
-const GENERIC_TAIL: Readonly<Record<string, readonly string[]>> = {
+/** The words that follow a generic marker word. INSTRUCTIONS may be absent when the letters end. */
+const GENERIC_REST: Readonly<Record<string, readonly string[]>> = {
   DEFAULT: ["WEBHOOK", "INSTRUCTIONS"],
   OWNER: ["CONDITIONS"],
   AUTHENTICATED: ["WEBHOOK", "TASK"],
 };
 
+const PHRASE_TAILS = ["S", "ID"] as const;
+
 function isGenericWord(word: string): boolean {
-  return Object.prototype.hasOwnProperty.call(GENERIC_TAIL, word);
+  return Object.prototype.hasOwnProperty.call(GENERIC_REST, word);
 }
 
-function isAltSep(code: number): boolean {
-  return code === 32 || code === 9 || code === 95 || code === 45;
+/** Space, ".", "_", "-" and "\". Tab is already gone from the skeleton. */
+function isPhraseSep(code: number): boolean {
+  return code === 32 || code === 46 || code === 95 || code === 45 || code === 92;
 }
 
-/** Skeleton index after WEBHOOK INSTRUCTIONS, CONDITIONS or WEBHOOK TASK, or -1. */
-function matchAltTail(skeleton: string, at: number, word: string): number {
-  const tail = GENERIC_TAIL[word];
-  if (!tail) return -1;
-  let j = at;
-  for (const letters of tail) {
-    if (j >= skeleton.length || !isAltSep(skeleton.charCodeAt(j))) return -1;
-    while (j < skeleton.length && isAltSep(skeleton.charCodeAt(j))) j += 1;
-    const end = matchLetters(skeleton, j, letters, "alt");
-    if (end < 0) return -1;
-    j = end;
+function skipPhraseSep(skeleton: string, j: number): number {
+  while (j < skeleton.length && isPhraseSep(skeleton.charCodeAt(j))) j += 1;
+  return j;
+}
+
+function isSkeletonLetter(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+/** One phrase word. Separators between its letters are skipped, not required. */
+function matchCollapsedWord(skeleton: string, j: number, word: string): number {
+  let p = j;
+  for (let k = 0; k < word.length; k++) {
+    if (k > 0) p = skipPhraseSep(skeleton, p);
+    if (p >= skeleton.length || !sameLetter(skeleton.charCodeAt(p), word.charCodeAt(k))) return -1;
+    p += 1;
+  }
+  return p;
+}
+
+function lettersEnd(skeleton: string, j: number): boolean {
+  const p = skipPhraseSep(skeleton, j);
+  return p >= skeleton.length || !isSkeletonLetter(skeleton.charCodeAt(p));
+}
+
+/** An optional trailing "S" or "ID" that does not eat the next word. */
+function matchTailThenWord(skeleton: string, j: number, word: string): number {
+  for (const tail of PHRASE_TAILS) {
+    const afterTail = matchCollapsedWord(skeleton, skipPhraseSep(skeleton, j), tail);
+    if (afterTail < 0) continue;
+    const afterWord = matchCollapsedWord(skeleton, skipPhraseSep(skeleton, afterTail), word);
+    if (afterWord >= 0) return afterWord;
+  }
+  return -1;
+}
+
+function applyLastTail(skeleton: string, j: number): number {
+  for (const tail of PHRASE_TAILS) {
+    const after = matchCollapsedWord(skeleton, skipPhraseSep(skeleton, j), tail);
+    if (after >= 0 && lettersEnd(skeleton, after)) return after;
   }
   return j;
 }
 
-/** "_id" / "_ID" / "_Id" not followed by another Latin letter. */
-function isBareIdSuffix(text: string, from: number): boolean {
-  let i = from;
-  const letters: number[] = [];
-  while (i < text.length && letters.length < 3) {
-    const cp = text.codePointAt(i)!;
-    const len = cp > 0xffff ? 2 : 1;
-    if (isJoiner(cp) && !isWordBreak(cp)) {
-      i += len;
+/** Skeleton index after the collapsed phrase, or -1. */
+function matchFullPhrase(skeleton: string, at: number, head: string): number {
+  const rest = GENERIC_REST[head];
+  if (!rest) return -1;
+  let j = matchCollapsedWord(skeleton, at, head);
+  if (j < 0) return -1;
+  const lastOptional = head === "DEFAULT";
+  for (let w = 0; w < rest.length; w++) {
+    const word = rest[w]!;
+    const direct = matchCollapsedWord(skeleton, skipPhraseSep(skeleton, j), word);
+    if (direct >= 0) {
+      j = direct;
       continue;
     }
-    const lower = latinLowerAscii(cp);
-    if (lower < 0) break;
-    letters.push(lower);
-    i += len;
+    const tailed = matchTailThenWord(skeleton, j, word);
+    if (tailed >= 0) {
+      j = tailed;
+      continue;
+    }
+    if (w === rest.length - 1 && lastOptional && lettersEnd(skeleton, j)) return applyLastTail(skeleton, j);
+    return -1;
   }
-  return letters.length === 2 && letters[0] === 0x69 && letters[1] === 0x64;
+  return applyLastTail(skeleton, j);
 }
 
-/** A plain suffix on DEFAULT, OWNER or AUTHENTICATED: attached letters, or a bare "_id". */
-function isGenericPlainSuffix(text: string, from: number): boolean {
-  let i = from;
-  let broke = false;
-  while (i < text.length) {
-    const cp = text.codePointAt(i)!;
-    const len = cp > 0xffff ? 2 : 1;
-    if (isWordBreak(cp)) {
-      broke = true;
-      i += len;
-      continue;
-    }
-    if (isJoiner(cp)) {
-      i += len;
-      continue;
-    }
-    if (broke) return false;
-    if (isLatinLetter(cp)) return true;
-    if (cp === 0x5f || cp === 0xff3f) return isBareIdSuffix(text, i + len);
-    return false;
-  }
-  return false;
+function isSkeletonCloser(code: number): boolean {
+  return code === 0x5d || CLOSE_CHARS.has(code);
 }
 
-type MarkerHit = { skStart: number; skEnd: number; slash: boolean; word: string };
+/** "[/OWNER_ID]" and the same shape for the other generic words. An assignment is not this. */
+function matchSlashId(skeleton: string, at: number, head: string): number {
+  const j = matchCollapsedWord(skeleton, at, head);
+  if (j < 0) return -1;
+  const afterId = matchCollapsedWord(skeleton, skipPhraseSep(skeleton, j), "ID");
+  if (afterId < 0 || !lettersEnd(skeleton, afterId)) return -1;
+  const p = skipPhraseSep(skeleton, afterId);
+  if (p >= skeleton.length || isSkeletonCloser(skeleton.charCodeAt(p))) return afterId;
+  return -1;
+}
+
+function matchGenericPhrase(skeleton: string, at: number, head: string, slash: boolean, mode: MarkerMode): number {
+  const phrase = matchFullPhrase(skeleton, at, head);
+  if (phrase >= 0) return phrase;
+  if (slash && mode === "square") return matchSlashId(skeleton, at, head);
+  return -1;
+}
+
+type MarkerHit = { skStart: number; skEnd: number; slash: boolean; word: string; phrase: boolean; opener: number };
+
+/** Spaces, and a backslash, between the bracket and the word. Alt openers still refuse a space. */
+function skipGap(skeleton: string, j: number, mode: MarkerMode): number {
+  while (j < skeleton.length) {
+    const code = skeleton.charCodeAt(j);
+    if (code === 0x5c || (mode === "square" && isSpaceUnit(code))) {
+      j += 1;
+      continue;
+    }
+    break;
+  }
+  return j;
+}
 
 /** Longest marker at `i`. One forward pass, no retry. The boundary is read on `text`. */
 function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[], mode: MarkerMode): MarkerHit | null {
-  let j = i + 1;
+  let j = skipGap(skeleton, i + 1, mode);
   const len = skeleton.length;
   let slash = false;
-  if (mode === "square") {
-    while (j < len && isSpaceUnit(skeleton.charCodeAt(j))) j += 1;
-    if (j < len && skeleton.charCodeAt(j) === 0x2f) {
-      slash = true;
-      j += 1;
-      while (j < len && isSpaceUnit(skeleton.charCodeAt(j))) j += 1;
-    }
-  } else if (j < len && skeleton.charCodeAt(j) === 0x2f) {
+  if (j < len && skeleton.charCodeAt(j) === 0x2f) {
     slash = true;
-    j += 1;
+    j = skipGap(skeleton, j + 1, mode);
   }
   const wordAt = j;
   let best = -1;
   let word = "";
+  let phrase = false;
   for (const letters of MARKER_WORDS) {
-    const end = matchLetters(skeleton, wordAt, letters, mode);
-    if (end < 0) continue;
-    let phraseEnd = end;
-    if (mode === "alt" && isGenericWord(letters)) {
-      const tailEnd = matchAltTail(skeleton, end, letters);
-      if (tailEnd < 0) continue;
-      phraseEnd = tailEnd;
+    if (isGenericWord(letters)) {
+      const phraseEnd = matchGenericPhrase(skeleton, wordAt, letters, slash, mode);
+      if (phraseEnd <= best) continue;
+      best = phraseEnd;
+      word = letters;
+      phrase = true;
+      continue;
     }
-    if (phraseEnd <= best) continue;
+    const end = matchLetters(skeleton, wordAt, letters, mode);
+    if (end <= best) continue;
     const letterEnd = spans[end - 1]!.end;
     if (isProseContinuation(text, letterEnd, wordIsLowerEnglish(skeleton, wordAt, end), slash)) continue;
-    if (mode === "square" && isGenericWord(letters) && isGenericPlainSuffix(text, letterEnd)) continue;
-    best = phraseEnd;
+    best = end;
     word = letters;
+    phrase = false;
   }
   if (best < 0) return null;
+  const opener = skeleton.charCodeAt(i);
+  if (phrase) {
+    const from = spans[wordAt]!.start;
+    const to = spans[best - 1]!.end;
+    return { skStart: i, skEnd: best, slash, word: text.slice(from, to), phrase: true, opener };
+  }
   let shown = "";
   for (let k = wordAt; k < best; k++) {
     if (!isSpaceUnit(skeleton.charCodeAt(k))) shown += skeleton[k];
   }
-  return { skStart: i, skEnd: best, slash, word: shown || word };
+  return { skStart: i, skEnd: best, slash, word: shown || word, phrase: false, opener };
 }
 
 function findMarkers(skeleton: string, text: string, spans: MarkerSpan[]): MarkerHit[] {
@@ -928,6 +970,26 @@ function absorbClose(text: string, from: number, stopAt: number): { end: number;
   return null;
 }
 
+function isPhraseCloser(cp: number, opener: number): boolean {
+  if (opener === 0x28) return cp === 0x29;
+  if (opener === 0x3c) return cp === 0x3e || cp === 0xff1e || cp === 0x232a || cp === 0x3009 || cp === 0x27e9;
+  if (opener === 0x7b) return cp === 0x7d;
+  return cp === 0x5d || CLOSE_CHARS.has(cp);
+}
+
+/** The original closer, if it sits within the lookahead. The caller adds one "]". */
+function balancePhrase(text: string, from: number, stopAt: number, opener: number): { end: number; middle: string } {
+  const limit = Math.min(text.length, from + CLOSE_LOOKAHEAD, stopAt);
+  for (let i = from; i < limit; ) {
+    const cp = text.codePointAt(i)!;
+    const len = cp > 0xffff ? 2 : 1;
+    if (cp === 0x0a || cp === 0x0d || cp === 0x5b) break;
+    if (isPhraseCloser(cp, opener)) return { end: i + len, middle: text.slice(from, i) };
+    i += len;
+  }
+  return { end: from, middle: "" };
+}
+
 /** ASCII with no bracket and no backslash cannot contain a marker or a JSON escape of one. */
 function needsScan(text: string): boolean {
   for (let i = 0; i < text.length; i++) {
@@ -960,10 +1022,16 @@ export function defang(text: string): string {
     let end = skeletonEnd(spans, hit.skEnd, text.length);
     let replacement = `[${hit.slash ? "/" : ""}(quoted) ${hit.word}`;
     const nextStart = n + 1 < hits.length ? spans[hits[n + 1]!.skStart]!.start : text.length;
-    const closed = absorbClose(text, end, nextStart);
-    if (closed) {
-      replacement += closed.middle;
-      end = closed.end;
+    if (hit.phrase) {
+      const balanced = balancePhrase(text, end, nextStart, hit.opener);
+      replacement += `${balanced.middle}]`;
+      end = balanced.end;
+    } else {
+      const closed = absorbClose(text, end, nextStart);
+      if (closed) {
+        replacement += closed.middle;
+        end = closed.end;
+      }
     }
     parts.push(text.slice(cursor, start), replacement);
     cursor = end;
