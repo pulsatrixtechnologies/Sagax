@@ -1966,12 +1966,13 @@ export function BotListItem({
   const title = bot.title.trim();
   const unreadThreads = !iconOnly && showThreads ? sidebarUnreadThreads(bot, selected ? bot.threadId : null) : [];
   const rowClass = cn(
-    "flex w-full items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
+    "flex items-center text-left outline-none focus-visible:ring-1 focus-visible:ring-accent/60",
     iconOnly
-      ? "justify-center rounded-lg px-1 py-1.5"
-      : comfortable
+      // Grok Bot's rail: a 54px square, 9px around the 36px portrait
+      ? "mx-auto h-[54px] w-[54px] shrink-0 justify-center rounded-[10px] p-[9px]"
+      : cn("w-full", comfortable
         ? "h-[54px] gap-2 rounded-[10px] py-2 pl-2 pr-2"
-        : "gap-2 rounded-lg py-1.5 pl-2 pr-9",
+        : "gap-2 rounded-lg py-1.5 pl-2 pr-9"),
     // room for New thread and the "..." while they show (hover, focus, touch)
     !iconOnly && !selection?.active && "group-hover:pr-[64px] group-focus-within:pr-[64px] max-md:pr-[64px] touch:pr-[64px]",
     // room for the selection check
@@ -3211,19 +3212,22 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                   className={cn(
                     density === "icons"
                       ? "mx-auto flex w-full min-w-0 flex-col items-center gap-1.5 rounded-xl px-1 pb-1 pt-1.5"
-                      // the selected tile is a neutral lighter card with a
-                      // 16px radius
-                      // Grok Bot's pinned tile: 6px over a 60px portrait, 6px
-                      // between portrait, name and role, 4px under, 8px aside
-                      : "flex w-[95px] shrink-0 flex-col items-center gap-1.5 rounded-2xl px-1 pb-1 pt-1.5",
+                      // Grok Bot's pinned tile: 95px wide, 10px corners,
+                      // 6px over a 60px portrait, 6px to the name, 4px
+                      // between name and role, 4px under, 8px aside
+                      : "flex w-[95px] shrink-0 flex-col items-center gap-1.5 rounded-[10px] px-2 pb-1 pt-1.5",
                     density === "icons"
                       ? selected ? "bg-sidebar-selected" : "hover:bg-sidebar-hover"
                       : selected ? "bg-sidebar-card" : "hover:bg-sidebar-hover/60",
                   )}
                 >
                   <SidebarMascotAvatar botId={bot.id} bot={bot} primary={isViewersPrimaryBot(bot, viewerId)} primaryRingClassName={selected && density !== "icons" ? "ring-sidebar-card" : "ring-sidebar"} state="idle" size={density === "icons" ? 36 : 60} animated={false} />
-                  {density !== "icons" && <span className="w-full truncate text-center text-[12px] leading-4 text-sidebar-ink">{bot.name}</span>}
-                  {density !== "icons" && title ? <BotRoleTag text={title} tile /> : null}
+                  {density !== "icons" && (
+                    <span data-sidebar-tile-labels="" className="flex w-full min-w-0 flex-col items-center gap-1">
+                      <span className="w-full truncate text-center text-[12px] leading-4 text-sidebar-ink">{bot.name}</span>
+                      {title ? <BotRoleTag text={title} tile /> : null}
+                    </span>
+                  )}
                 </button>
               );
             })}
