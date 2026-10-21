@@ -446,7 +446,8 @@ export function parseMcpServerMutation(
 
 /** The fields POST /api/mcp/servers keeps (`mcpServerBody` in server/index.ts),
  * minus `enabled`. A bot is not allowed to send that switch at all. */
-const BOT_MCP_SERVER_KEYS = ["command", "args", "env", "type", "url", "headers", "oauth", "resultBudget"] as const;
+// No resultBudget: a bot never lifts the trim on a server it adds; the person sets it in the editor.
+const BOT_MCP_SERVER_KEYS = ["command", "args", "env", "type", "url", "headers", "oauth"] as const;
 
 function pickMcpServerFields(record: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
