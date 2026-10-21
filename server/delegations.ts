@@ -21,7 +21,7 @@ import { failedTurnTool } from "../shared/failed-turn.ts";
 import { newId } from "./contracts.ts";
 import { peerApprovalFailure, requestPeerApproval, type ApprovalBus, type PeerApprovalFailure } from "./peer-approval.ts";
 import { OUTSIDE, workOriginSchema, type WorkOrigin } from "./peer-provenance.ts";
-import { canAccessTeam, peerAllowed, peerInScope } from "./peer-roster.ts";
+import { archivedAgent, canAccessBot, peerAllowed, peerInScope } from "./peer-roster.ts";
 import { type BotRecord, type GroupRecord, type Message, type Store } from "./store.ts";
 
 export interface DelegationItem {
@@ -956,8 +956,8 @@ function dropIfUnreachable(
   sourceThreadId: string,
   item: PendingDelegationItem,
 ): boolean {
-  const sectionsDiffer = !canAccessTeam(sender, target.section);
-  if (!sectionsDiffer && !target.hidden && peerAllowed(sender, target) && peerInScope(sender, target)) return false;
+  const sectionsDiffer = !canAccessBot(sender, target);
+  if (!sectionsDiffer && !target.hidden && !archivedAgent(target) && peerAllowed(sender, target) && peerInScope(sender, target)) return false;
   const reason = sectionsDiffer
     ? "bots now belong to different sections"
     : `@${target.name} is no longer an allowed peer`;
