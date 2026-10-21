@@ -92,13 +92,25 @@ const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
  * a custom server must never request one of these names or it could redirect
  * a built-in proxy or receive that proxy's bearer. */
 export function isHarnessOwnedMcpEnvName(name: string): boolean {
-  return name === "ELECTRON_RUN_AS_NODE" || name.startsWith("SAGAX_") || name.startsWith("SAGAX_") || name.startsWith("OGB_");
+  return name === "ELECTRON_RUN_AS_NODE" || name.startsWith("SAGAX_") || name.startsWith("OGB_");
 }
 
-function environmentNameError(name: string): string | null {
+/** Port de OpenMausBot #2865 : a server bundled inside an Electron app (its
+ * binary as the command) needs ELECTRON_RUN_AS_NODE=1 to run as node. That
+ * value is the one the built-in proxies use, so it is accepted; any other
+ * value would overwrite what they need. The other harness names stay
+ * reserved whatever their value. */
+export function isReservedMcpEnvEntry(name: string, value: string): boolean {
+  if (name === "ELECTRON_RUN_AS_NODE") return value !== "1";
+  return isHarnessOwnedMcpEnvName(name);
+}
+
+function environmentEntryError(name: string, value: string): string | null {
   if (!ENV_NAME.test(name)) return `Environment variable “${name}” is not valid.`;
-  if (isHarnessOwnedMcpEnvName(name)) {
-    return `Environment variable “${name}” is reserved by Sagax.`;
+  if (isReservedMcpEnvEntry(name, value)) {
+    return name === "ELECTRON_RUN_AS_NODE"
+      ? `Environment variable “${name}” is reserved by Sagax; a custom server may set it to “1” only.`
+      : `Environment variable “${name}” is reserved by Sagax.`;
   }
   return null;
 }
@@ -333,13 +345,16 @@ function parseStdio(raw: unknown, mutation: boolean, existing?: StoredMcpServer)
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid MCP server." };
   }
   const incoming = parsed.data.env ?? {};
-  const invalidEnv = Object.keys(incoming).map(environmentNameError).find((error) => error !== null);
-  if (invalidEnv) return { ok: false, error: invalidEnv };
+  const invalidName = Object.keys(incoming).find((name) => !ENV_NAME.test(name));
+  if (invalidName !== undefined) return { ok: false, error: `Environment variable “${invalidName}” is not valid.` };
   if (Object.keys(incoming).length > MAX_ENV) {
     return { ok: false, error: `Use at most ${MAX_ENV} environment variables.` };
   }
   const env = resolveSecrets(incoming, existing && !isRemoteMcpServer(existing) ? existing.env : undefined);
   if (!env.ok) return env;
+  // Judged after resolving, so a kept write-only value counts as what would run.
+  const invalidEnv = Object.entries(env.values).map(([name, value]) => environmentEntryError(name, value)).find((error) => error !== null);
+  if (invalidEnv) return { ok: false, error: invalidEnv };
   return {
     ok: true,
     server: {

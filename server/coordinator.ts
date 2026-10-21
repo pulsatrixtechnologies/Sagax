@@ -112,6 +112,9 @@ export interface Coordinator {
   cancelRoom(groupId: string, threadId?: string, reason?: string, status?: "failed" | "cancelled"): void;
   cancelDirect(threadId: string, reason?: string): void;
   activeDirect(threadId: string): boolean;
+  /** Every thread activeDirect is true for, read once: a bot's whole thread
+   * list asks this instead of one store read per thread (port de OpenMausBot #3126). */
+  activeDirectThreads(): Set<string>;
   assignerOf(threadId: string): HandoffView | undefined;
   outstandingDirect(threadId: string): HandoffView[];
   liveEdges(): LiveHandoffEdge[];

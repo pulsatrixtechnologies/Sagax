@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addDisabledMcpServer,
+  isReservedMcpEnvEntry,
   listMcpServers,
   MAX_MCP_SERVERS,
   mcpServerNameError,
@@ -92,14 +93,11 @@ describe("custom MCP registry", () => {
 
   it("refuses harness-owned environment names in stored and renderer entries", () => {
     for (const key of ["SAGAX_HARNESS_URL", "OGB_BOX_TOKEN", "ELECTRON_RUN_AS_NODE"]) {
-      expect(parseStoredMcpServer("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({
-        ok: false,
-        error: `Environment variable “${key}” is reserved by Sagax.`,
-      });
-      expect(parseMcpServerMutation("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({
-        ok: false,
-        error: `Environment variable “${key}” is reserved by Sagax.`,
-      });
+      const error = key === "ELECTRON_RUN_AS_NODE"
+        ? `Environment variable “${key}” is reserved by Sagax; a custom server may set it to “1” only.`
+        : `Environment variable “${key}” is reserved by Sagax.`;
+      expect(parseStoredMcpServer("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({ ok: false, error });
+      expect(parseMcpServerMutation("notes", { command: "notes-mcp", env: { [key]: "bad" } })).toEqual({ ok: false, error });
     }
   });
 
@@ -353,5 +351,24 @@ describe("a url server's sign-in app", () => {
       ok: false, error: "Scopes are single words, like offline_access or api://my-app/mcp.read.",
     });
     expect(parseStoredMcpServer("docs", { url, oauth: { clientId: "a", callbackPort: 8080 } })).toMatchObject({ ok: false });
+  });
+});
+
+describe("custom MCP environment names (port de OpenMausBot #2865)", () => {
+  it("accepts ELECTRON_RUN_AS_NODE=1 for an Electron binary and refuses any other value", () => {
+    expect(parseMcpServerMutation("app", { command: "/Applications/App.app/Contents/MacOS/App", env: { ELECTRON_RUN_AS_NODE: "1" } }))
+      .toMatchObject({ ok: true, server: { env: { ELECTRON_RUN_AS_NODE: "1" } } });
+    expect(parseMcpServerMutation("app", { command: "app", env: { ELECTRON_RUN_AS_NODE: "0" } }))
+      .toMatchObject({ ok: false, error: expect.stringMatching(/“1” only/) });
+    expect(parseStoredMcpServer("app", { command: "app", env: { ELECTRON_RUN_AS_NODE: "" } })).toMatchObject({ ok: false });
+  });
+
+  it("keeps the harness names reserved whatever their value", () => {
+    for (const name of ["SAGAX_TOOL_SERVER", "OGB_BOX_TOKEN"]) {
+      expect(isReservedMcpEnvEntry(name, "1"), name).toBe(true);
+      expect(parseMcpServerMutation("app", { command: "app", env: { [name]: "1" } })).toMatchObject({ ok: false, error: expect.stringMatching(/reserved/) });
+    }
+    expect(isReservedMcpEnvEntry("ELECTRON_RUN_AS_NODE", "1")).toBe(false);
+    expect(isReservedMcpEnvEntry("NOTES_TOKEN", "x")).toBe(false);
   });
 });

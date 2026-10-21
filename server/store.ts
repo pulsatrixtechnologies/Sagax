@@ -20,6 +20,7 @@ import type { BotProfilePatch } from "./bot-profile.ts";
 import { peerAllowKey, type PeerAction } from "./peer-approval-key.ts";
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from "./config.ts";
 import * as mdb from "./message-db.ts";
+import { ThreadCache, type ThreadState } from "./thread-cache.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
 import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
@@ -737,12 +738,6 @@ export function taskHiddenFromPerson(task: { routineRunId?: string; hidden?: tru
   return Boolean(task.routineRunId) || task.hidden === true;
 }
 
-/** Messages form a tree (forks appear when a message is edited); the
- * visible conversation is the path from the root to activeLeafId. */
-interface ThreadState {
-  messages: Message[];
-  activeLeafId: string | null;
-}
 
 /** A stored grant (slice 4); see server/authz.ts. */
 export type BotGrant = WireBotGrant;
@@ -774,7 +769,7 @@ export function directFromGrants(grants: readonly BotGrant[]): string[] {
 export class Store {
   bots: BotRecord[] = [];
   groups: GroupRecord[] = [];
-  private threads = new Map<string, ThreadState>();
+  private threads = new ThreadCache(() => this.busyThreadIds());
   private defaultSelection: () => ModelSelection;
   private completeNewBotSelection: (selection: ModelSelection) => ModelSelection;
   /** The approval level every new bot and its first thread start on. */
@@ -1847,31 +1842,25 @@ export class Store {
   }
 
   private thread(threadId: string): ThreadState {
-    const t = this.threads.get(threadId);
-    if (t) return t;
     // SQLite is the source of truth; a thread with no rows imports its
     // legacy messages-<threadId>.json once, inside readThread
-    return this.cacheThread(threadId, mdb.readThread(threadId, messagesFile(threadId)));
+    return this.threads.get(threadId) ?? this.threads.load(threadId, mdb.readThread(threadId, messagesFile(threadId)));
   }
 
-  /** Finish hydrating a full set of thread rows into the cache: chain any
-   * legacy (pre-branching) rows' parentId in array order, default the
-   * active leaf to the newest message, and store it. Shared by a full load
-   * and by messagesTail() when its bounded read turns out to be the whole
-   * thread anyway. */
-  private cacheThread(threadId: string, rows: mdb.ThreadRows): ThreadState {
-    const { messages, activeLeafId: storedLeaf } = rows;
-    let activeLeafId = storedLeaf;
-    // legacy rows carry no parentId — chain them in array order
-    let prev: string | null = null;
-    for (const m of messages) {
-      if (m.parentId === undefined) m.parentId = prev;
-      prev = m.id;
+  /** The conversations with a turn running, whose cached transcript stays
+   * however long ago it was read (server/thread-cache.ts). */
+  private busyThreadIds(): Set<string> {
+    const busy = new Set<string>();
+    for (const bot of this.bots) {
+      if (bot.busy) busy.add(bot.threadId);
+      for (const task of bot.tasks ?? []) if (task.busy) busy.add(task.threadId);
     }
-    if (!activeLeafId) activeLeafId = messages.at(-1)?.id ?? null;
-    const t = { messages, activeLeafId };
-    this.threads.set(threadId, t);
-    return t;
+    for (const group of this.groups) {
+      if (!group.busyBotId) continue;
+      busy.add(group.threadId);
+      for (const task of group.tasks ?? []) busy.add(task.threadId);
+    }
+    return busy;
   }
 
   messagesFor(threadId: string): Message[] {
@@ -1895,7 +1884,7 @@ export class Store {
       const tail = mdb.readThreadTail(threadId, messagesFile(threadId), limit);
       const legacyRows = tail.hasMore !== undefined && tail.messages.some((m) => m.parentId === undefined);
       if (tail.hasMore !== true || legacyRows) {
-        state = this.cacheThread(threadId, legacyRows ? mdb.readThread(threadId, messagesFile(threadId)) : tail);
+        state = this.threads.load(threadId, legacyRows ? mdb.readThread(threadId, messagesFile(threadId)) : tail);
       } else {
         return {
           messages: tail.messages,

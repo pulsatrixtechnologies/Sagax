@@ -311,6 +311,13 @@ export class RuntimeCoordinator implements Coordinator {
     return this.live().some(n => this.direct(n, threadId));
   }
 
+  activeDirectThreads(): Set<string> {
+    this.ready();
+    const threads = new Set<string>();
+    for (const n of this.live()) if (n.assignee.destination.groupId === undefined) threads.add(n.assignee.destination.threadId);
+    return threads;
+  }
+
   /** The conversation that assigned the unsettled direct work running in
    * this thread, or undefined when nothing it does is awaited. */
   assignerOf(threadId: string): HandoffView | undefined {

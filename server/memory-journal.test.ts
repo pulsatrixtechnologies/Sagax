@@ -33,6 +33,43 @@ beforeEach(resetMemoryJournalState);
 afterEach(resetMemoryJournalState);
 
 describe("unifiedDiff", () => {
+  it("diffs a shared head and tail exactly as the whole line table does (port de OpenMausBot #3131)", () => {
+    const fullTableOps = (a: string[], b: string[]) => {
+      const cols = b.length + 1;
+      const table = new Uint32Array((a.length + 1) * cols);
+      for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) {
+        table[i * cols + j] = a[i] === b[j] ? table[(i + 1) * cols + j + 1] + 1 : Math.max(table[(i + 1) * cols + j], table[i * cols + j + 1]);
+      }
+      return table[0];
+    };
+    let seed = 11;
+    const next = (n: number) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+    const pick = (n: number) => Array.from({ length: next(n) }, () => "xyz"[next(3)]!);
+    for (let round = 0; round < 400; round++) {
+      const head = pick(6), tail = pick(6);
+      const a = [...head, ...pick(6), ...tail];
+      const b = [...head, ...pick(6), ...tail];
+      const diff = unifiedDiff(a.map((line) => `${line}\n`).join(""), b.map((line) => `${line}\n`).join(""), "MEMORY.md", 1_000_000);
+      // An edit script of minimal length keeps a longest common subsequence.
+      const kept = a.length - diff.removed;
+      expect({ a, b, kept }).toEqual({ a, b, kept: fullTableOps(a, b) });
+      expect(b.length - diff.added).toBe(kept);
+      // Applying the hunks' sides gives back each version.
+      if (a.join() !== b.join()) {
+        const body = diff.text.split("\n").slice(2).filter((line) => !line.startsWith("@@"));
+        expect(body.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("diffs a few changed lines of a file too large for the whole table", () => {
+    const lines = Array.from({ length: 3_000 }, (_, i) => `line ${i}`);
+    const after = [...lines.slice(0, 1_500), "inserted", ...lines.slice(1_500)];
+    const diff = unifiedDiff(`${lines.join("\n")}\n`, `${after.join("\n")}\n`, "MEMORY.md", 1_000_000);
+    expect(diff).toMatchObject({ added: 1, removed: 0, truncated: false });
+    expect(diff.text).toContain("@@ -1499,4 +1499,5 @@");
+  });
+
   it("is empty when nothing changed", () => {
     expect(unifiedDiff("a\nb\n", "a\nb\n", "MEMORY.md")).toEqual({ text: "", added: 0, removed: 0, truncated: false });
   });

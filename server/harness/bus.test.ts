@@ -10,6 +10,18 @@ import type { RuntimeEvent } from "../contracts.ts";
 import { makeFakeDriver } from "../testing/fake-driver.ts";
 import { EventBus } from "./bus.ts";
 
+const redactCalls = vi.hoisted(() => ({ texts: [] as string[] }));
+vi.mock("../redact.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../redact.ts")>();
+  return {
+    ...actual,
+    redactSecrets: (input: unknown, depth?: number) => {
+      if (depth === undefined) redactCalls.texts.push(JSON.stringify(input));
+      return actual.redactSecrets(input, depth);
+    },
+  };
+});
+
 const testEvent = (over: Partial<RuntimeEvent> = {}): RuntimeEvent =>
   ({
     eventId: "ev-1",
@@ -88,6 +100,18 @@ describe("EventBus", () => {
     const logged = readFileSync(join(EVENTS_DIR, "redacted-log.ndjson"), "utf8");
     expect(logged).not.toContain(key);
     expect(logged).toContain("«redacted");
+  });
+
+  it("redacts and serializes each event once on its way to the log (port de OpenMausBot #3130)", async () => {
+    const key = "sk-ant-api03-" + "z".repeat(48);
+    const bus = new EventBus();
+    redactCalls.texts.length = 0;
+    bus.publish(testEvent({ threadId: "once-log", type: "runtime.error", message: `login failed with ${key}` } as Partial<RuntimeEvent>));
+    await bus.flush();
+    expect(redactCalls.texts.filter((text) => text.includes("login failed"))).toHaveLength(1);
+    const logged = readFileSync(join(EVENTS_DIR, "once-log.ndjson"), "utf8");
+    expect(logged).toContain("login failed with");
+    expect(logged).not.toContain(key);
   });
 
   it("reports an incomplete log once while continuing live delivery", async () => {

@@ -554,6 +554,8 @@ describe("RuntimeCoordinator: read models", () => {
     expect(w.coordinator.activeDirect("builder-work")).toBe(true);
     expect(w.coordinator.activeDirect("chief-chat")).toBe(true);
     expect(w.coordinator.activeDirect("room-1")).toBe(false);
+    // one read for every thread (port de OpenMausBot #3126) agrees with the per-thread read
+    expect([...w.coordinator.activeDirectThreads()].sort()).toEqual(["builder-work", "chief-chat"]);
     expect(w.coordinator.assignerOf("builder-work")).toMatchObject({ id: "gen-1", status: "source" });
     expect(w.coordinator.assignerOf("chief-chat")).toBeUndefined();
     expect(w.coordinator.outstandingDirect("chief-chat").map(n => n.id).sort()).toEqual([b.id, r.id].sort());
@@ -582,6 +584,9 @@ describe("RuntimeCoordinator: read models", () => {
     ]);
     expect(w.coordinator.activeDirect("builder-work")).toBe(true);
     expect(w.coordinator.assignerOf("tester-work")).toMatchObject({ id: b.id, status: "waiting" });
+    for (const thread of ["builder-work", "chief-chat", "tester-work", "room-1"]) {
+      expect(w.coordinator.activeDirectThreads().has(thread), thread).toBe(w.coordinator.activeDirect(thread));
+    }
   });
 
   it("sharedRequest batches one call's room recipients and nothing else", () => {
