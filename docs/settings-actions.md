@@ -71,6 +71,25 @@ parties hors tableau du script.
   remplacée (rien n'est appliqué, journalisé ; jamais une carte sous
   retenue de sécurité). Une citation refusée écrit `setting.refused`. Journal : `setting.change` avec
   `via: primary-bot`, le bot et le message.
+- Portée du bot principal (2026-10-20, constat prod 0.6.4) : il voit et
+  gère TOUS les bots que sa personne possède (et, en organisation, ceux
+  qu'elle peut gérer), quelle que soit leur équipe : `list_bots`,
+  `list_team_setup`, délégations et réglages, sans toucher à
+  `bot.managedSections` (qui n'élargit plus que la coordination d'autres
+  équipes). Un bot archivé ou un agent temporaire archivé n'apparaît dans
+  aucune liste.
+- Archivage idempotent : `archive_bot` (ou `bot.hidden`) sur un bot
+  déjà archivé répond « already archived, nothing changed » ; sur un agent
+  temporaire (`create_agent`), l'archivage est la marque de l'agent,
+  relisible par `get bot.hidden` (`temporaryAgent: true`) ; un agent
+  temporaire archivé ne se restaure pas (en créer un autre).
+- Devenir bot principal : `bot.primary` (« fais de Melonie mon bot
+  principal ») passe tout de suite sur les mots de la personne au bot
+  principal actuel ; sinon une carte.
+- Changement de modèle ou d'instance d'un bot : chaque fil qui suit le bot
+  (fil principal, fils de routine, et tout fil dont le modèle n'était
+  qu'une copie de l'ancien défaut) prend le nouveau réglage au prochain
+  tour ; seul un fil où la personne a choisi un autre modèle garde le sien.
 - Journal : chaque changement appliqué (tout de suite ou après Allow) écrit
   une ligne `setting.change` (catégorie `setting`) dans le journal
   d'administration ; la valeur d'un secret est `[hidden]`.
