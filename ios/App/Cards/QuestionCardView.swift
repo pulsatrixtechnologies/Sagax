@@ -126,6 +126,10 @@ struct QuestionCardView: View {
             if !oneTap && (current.allowsMultiple || !single) {
                 QuestionSheetSend(colors: colors, label: single ? "Submit answer" : "Submit answers", enabled: complete && !answering, action: send)
             }
+            if QuestionIgnore.canIgnore(card) {
+                QuestionIgnoreControl(colors: colors, expiresAt: card.expiresAt, disabled: answering, action: ignore)
+                    .accessibilityIdentifier("question-ignore-\(message.id)")
+            }
         }
         .accessibilityIdentifier("question-card-\(message.id)")
     }
@@ -161,8 +165,10 @@ struct QuestionCardView: View {
     /// rest dimmed, an answer in words under its rows.
     private func settledCard(_ card: OptionCard) -> some View {
         let answer = card.answeredText ?? sent
-        let closed = answer == nil && card.answered != nil && card.answered != "answer"
-        let read = answer.map { AskQuestionAnswer.byQuestion($0, questions: questions) } ?? [:]
+        let skipped = QuestionIgnore.isSkip(answer)
+        let closed = skipped || (answer == nil && card.answered != nil && card.answered != "answer")
+        let readable = skipped ? nil : answer
+        let read = readable.map { AskQuestionAnswer.byQuestion($0, questions: questions) } ?? [:]
         let single = questions.count == 1
         let parts = questions.map { question in
             AskQuestionAnswer.picks(in: read[question.question] ?? "", labels: question.options.map(\.label))
@@ -190,8 +196,8 @@ struct QuestionCardView: View {
                     }
                 }
             }
-            if unreadable, let answer {
-                QuestionSheetNote(colors: colors, text: AskQuestionAnswer.withoutPreamble(answer))
+            if unreadable, let readable {
+                QuestionSheetNote(colors: colors, text: AskQuestionAnswer.withoutPreamble(readable))
             }
             if closed {
                 QuestionSheetNote(colors: colors, text: String(localized: "Closed without an answer"), closed: true)
@@ -239,6 +245,22 @@ struct QuestionCardView: View {
         other.insert(index)
         if !question.allowsMultiple { picked[index] = [] }
         otherFocused = true
+    }
+
+    private func ignore() {
+        guard !settled, let card, let requestId = card.requestId, QuestionIgnore.canIgnore(card) else { return }
+        sent = QuestionIgnore.answer
+        answering = true
+        otherFocused = false
+        Task {
+            await session.answer(
+                threadId: chat.threadId,
+                requestId: requestId,
+                choice: QuestionIgnore.answer,
+                isPermission: false
+            )
+            answering = false
+        }
     }
 
     private func send() {

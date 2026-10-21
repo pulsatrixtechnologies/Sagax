@@ -42,6 +42,9 @@ public struct CommandAllowlistCandidate: Codable, Hashable, Sendable {
 public struct ProposalRequestMarker: Codable, Hashable, Sendable {
     public struct Operation: Codable, Hashable, Sendable {
         public var action: String?
+        /// Set when a new routine was proposed to start paused (#898).
+        /// Absent on older cards: those start live.
+        public var paused: Bool? = nil
     }
 
     public var operation: Operation?
@@ -380,7 +383,7 @@ public enum ApprovalDockRules {
 /// What a settled approval card says happened (`approvalCardOutcome`).
 public enum ApprovalOutcome: Hashable, Sendable {
     case expired, allowed, alwaysAllowed, denied, cancelled
-    case routineScheduled, routineUpdated, routinePaused, routineResumed, routineRunQueued, routineDeleted
+    case routineScheduled, routineCreatedPaused, routineUpdated, routinePaused, routineResumed, routineRunQueued, routineDeleted
     case skillEnabled, skillUpdated, profileUpdated
     case teamSetupApplied, botDeleted
 
@@ -393,7 +396,8 @@ public enum ApprovalOutcome: Hashable, Sendable {
         if !proposal, card.alwaysAllowed?.isEmpty == false { return .alwaysAllowed }
         if let setup = card.teamSetupRequest { return setup.deletion == true ? .botDeleted : .teamSetupApplied }
         switch card.routineRequest?.operation?.action {
-        case "create": return .routineScheduled
+        case "create":
+            return card.routineRequest?.operation?.paused == true ? .routineCreatedPaused : .routineScheduled
         case "update": return .routineUpdated
         case "pause": return .routinePaused
         case "resume": return .routineResumed
@@ -437,6 +441,53 @@ public enum OptionCardRules {
             behavior: "answer",
             message: "The user closed this question without answering. Use your best judgment and continue."
         )
+    }
+}
+
+/// "Ignore the question" on a live ask (parity Q2).
+///
+/// The silent X is not this. The server refuses the canned dismiss sentence
+/// until the question is already answered, so a tap here is an explicit
+/// answer: the person chose not to pick an option, and the bot continues.
+/// The sentence is English because the model reads it, and it is not the
+/// canned dismiss sentence the server rejects.
+public enum QuestionIgnore {
+    public static let answer = "The user skipped this question without choosing an option. Continue with your best judgment."
+
+    public enum Face: Equatable, Sendable {
+        case ignore
+        /// Seconds left before the server declines the card on its own.
+        case closesAutomatically(remaining: Int)
+    }
+
+    public static func canIgnore(_ card: OptionCard) -> Bool {
+        guard card.isPending, !card.isPermission else { return false }
+        if card.routineRequest != nil || card.skillRequest != nil || card.profileRequest != nil
+            || card.modelRequest != nil || card.teamSetupRequest != nil || card.tighteningRequest != nil
+            || card.adminApproval == true { return false }
+        return true
+    }
+
+    /// `expiresAt` is milliseconds. No deadline, or one already past, is a
+    /// plain Ignore. A countdown only while the card will close by itself.
+    public static func face(expiresAt: Double?, now: Date = Date()) -> Face {
+        guard let expiresAt, expiresAt.isFinite else { return .ignore }
+        let remaining = expiresAt / 1_000 - now.timeIntervalSince1970
+        guard remaining > 0, remaining < 24 * 60 * 60 else { return .ignore }
+        return .closesAutomatically(remaining: Int(remaining.rounded(.down)))
+    }
+
+    /// `m:ss`, or `h:mm:ss` once an hour is left.
+    public static func clock(_ seconds: Int) -> String {
+        let left = max(0, seconds)
+        if left >= 3_600 {
+            return String(format: "%d:%02d:%02d", left / 3_600, (left % 3_600) / 60, left % 60)
+        }
+        return String(format: "%d:%02d", left / 60, left % 60)
+    }
+
+    public static func isSkip(_ text: String?) -> Bool {
+        text?.trimmingCharacters(in: .whitespacesAndNewlines) == answer
     }
 }
 
@@ -734,7 +785,7 @@ public enum AllowRuleText {
 /// the action; a proposal says what is being confirmed.
 public enum ApprovalHeading: Hashable, Sendable {
     case wantsTo(ApprovalToolAction)
-    case confirmRoutine, confirmRoutineChange, enableSkill, updateSkill, confirmProfileChange
+    case confirmRoutine, confirmPausedRoutine, confirmRoutineChange, enableSkill, updateSkill, confirmProfileChange
     case teamSetup(String)
 
     public static func of(_ card: OptionCard) -> ApprovalHeading {
@@ -742,7 +793,10 @@ public enum ApprovalHeading: Hashable, Sendable {
         if let skill = card.skillRequest { return skill.action == "update" ? .updateSkill : .enableSkill }
         if card.profileRequest != nil { return .confirmProfileChange }
         if let routine = card.routineRequest {
-            return routine.operation?.action == "create" ? .confirmRoutine : .confirmRoutineChange
+            if routine.operation?.action == "create" {
+                return routine.operation?.paused == true ? .confirmPausedRoutine : .confirmRoutine
+            }
+            return .confirmRoutineChange
         }
         return .wantsTo(.of(tool: card.tool))
     }

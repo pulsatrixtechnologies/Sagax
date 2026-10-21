@@ -3027,6 +3027,30 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return nil }
     }
 
+    /// `present`, `away` or `unknown`. Nil when the computer did not answer.
+    func loadRoutineAwayState() async -> String? {
+        guard let client else { return nil }
+        return try? await client.routineAwayState()
+    }
+
+    func markRoutineAwaySeen(_ routine: Routine) async -> Routine? {
+        guard let client else { return nil }
+        do { return try await client.markRoutineAwaySeen(id: routine.id) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    func loadTriggers() async -> (hooks: [WebhookListing], baseURL: String?) {
+        guard let client else { return ([], nil) }
+        guard let list = try? await client.webhooks() else { return ([], nil) }
+        return (list.webhooks, list.ingress?.baseUrl)
+    }
+
+    func setWebhookEnabled(id: String, enabled: Bool) async -> WebhookListing? {
+        guard let client else { return nil }
+        do { return try await client.setWebhookEnabled(id: id, enabled: enabled) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
     func runRoutine(_ routine: Routine) async -> RoutineRun? {
         guard let client else { return nil }
         do { return try await client.runRoutine(id: routine.id) }

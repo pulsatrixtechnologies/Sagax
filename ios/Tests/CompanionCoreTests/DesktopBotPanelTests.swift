@@ -130,7 +130,7 @@ final class DesktopBotPanelTests: XCTestCase {
     func testWebhooksListKeepsOneBotsTriggers() throws {
         let json = #"{"webhooks":[{"id":"w1","endpointId":"e","name":"Build","prompt":"p","botId":"b1","runOn":"maus","enabled":true,"createdAt":1,"updatedAt":2,"deliveryCount":3},{"id":"w2","name":"Other","botId":"b2","enabled":false,"deliveryCount":0}],"attempts":[]}"#
         let list = try JSONDecoder().decode(WebhooksResponse.self, from: Data(json.utf8))
-        XCTAssertEqual(list.of(botId: "b1"), [WebhookListing(id: "w1", name: "Build", botId: "b1", enabled: true, deliveryCount: 3)])
+        XCTAssertEqual(list.of(botId: "b1"), [WebhookListing(id: "w1", name: "Build", botId: "b1", enabled: true, deliveryCount: 3, endpointId: "e")])
     }
 
     func testPlacementDocksFrom1024() {
