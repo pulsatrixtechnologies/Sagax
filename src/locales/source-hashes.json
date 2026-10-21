@@ -3864,6 +3864,16 @@
       "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "fr": {
+      "sidebar.select.start": "2a78025de6aae5e7ff88e5a951bb3a78ddd67388913529cf9e2dd9653e62b02d",
+      "sidebar.select.bar": "358f3ee1cc5e2b89f3efd36b58300caadf60c9a09d1774030db2567d7431f48f",
+      "sidebar.select.count": "529aacfdfd2b17bf9fe56ebad9a24339a2d1151327dd420c52c5f163aeb9acc6",
+      "sidebar.select.markRead": "50c8b81faf51e7d1433c62086339c8eed71f7577278b1b797e684b3da3465b73",
+      "sidebar.select.move": "60f940f27aa30f5e7402a56090f20f155c6d33bc16718d3bbac675432d0bed3a",
+      "sidebar.select.clear": "cea4d2e010b8fd52bc28a66eca24ff0d616b2c7d982545757780c196c5cc04c7",
+      "sidebar.select.archiveTitle": "d64d1f163497047ceee61f42677f92e8be82a3f542dae84edf40fd8fb7d06445",
+      "sidebar.select.archiveBody": "5cacedb275c7ab2d5ab4d51c4853cb704d9addcf933ec3846e32ce0a9b2f1f28",
+      "sidebar.unreadAbove": "2b3d70ee431cf96cf8fffb387cb906b5c3229995dae1c2c0c9bb9e9528ce8318",
+      "sidebar.unreadBelow": "6ef368a46d40080871661680892abf2288f27c4bda7fd27d964270d0c2d3f7b3",
       "backup.reconnect.title": "fa22b372e8c38e784c7d9abed8cec00f8b07db26674f24cbe17e3ce01ac6fb12",
       "backup.reconnect.intro": "6aff3365b4ca7207ba176bd3f717a7cffdcbb70faafdffea0e2e13e19b888042",
       "backup.reconnect.lastTitle": "5164bb48eb6b8348e737f421e4ee9967d5a9939df36d3dbd1206d6595c685570",

@@ -9407,5 +9407,15 @@
   "computer.remove.body": "{name} quitte votre liste. Il revient si l'app Sagax s'y reconnecte.",
   "computer.remove.online": "Impossible de le retirer tant qu'il est en ligne",
   "computer.remove.rate": "Trop de retraits. Réessayez dans une minute.",
-  "computer.change.failed": "Impossible de modifier cet ordinateur."
+  "computer.change.failed": "Impossible de modifier cet ordinateur.",
+  "sidebar.select.start": "Sélectionner",
+  "sidebar.select.bar": "Actions sur les Bots sélectionnés",
+  "sidebar.select.count": "{count} sélectionné(s)",
+  "sidebar.select.markRead": "Marquer comme lu",
+  "sidebar.select.move": "Déplacer {count} Bot(s) vers une équipe",
+  "sidebar.select.clear": "Effacer la sélection",
+  "sidebar.select.archiveTitle": "Archiver {count} Bot(s) sélectionné(s) ?",
+  "sidebar.select.archiveBody": "Ils quittent la barre latérale et gardent tout. Restaurez-les quand vous voulez depuis les Bots archivés.",
+  "sidebar.unreadAbove": "{count} non lu(s) de plus au-dessus",
+  "sidebar.unreadBelow": "{count} non lu(s) de plus en dessous"
 }

@@ -9407,5 +9407,15 @@
   "computer.remove.body": "{name} leaves your list. It comes back if the Sagax app on it connects again.",
   "computer.remove.online": "Cannot be removed while it is online",
   "computer.remove.rate": "Too many removals. Try again in a minute.",
-  "computer.change.failed": "Could not change this computer."
+  "computer.change.failed": "Could not change this computer.",
+  "sidebar.select.start": "Select",
+  "sidebar.select.bar": "Actions for the selected bots",
+  "sidebar.select.count": "{count} selected",
+  "sidebar.select.markRead": "Mark as read",
+  "sidebar.select.move": "Move {count} selected to a team",
+  "sidebar.select.clear": "Clear selection",
+  "sidebar.select.archiveTitle": "Archive {count} selected bots?",
+  "sidebar.select.archiveBody": "They leave the sidebar and keep everything. Restore them any time from Archived bots.",
+  "sidebar.unreadAbove": "{count} more unread above",
+  "sidebar.unreadBelow": "{count} more unread below"
 }
