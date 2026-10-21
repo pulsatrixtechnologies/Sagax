@@ -3935,6 +3935,17 @@ function agentsIntegration(
       // The Perspicax gateway tools on an organization server linked to Perspicax;
       // /api/internal/perspicax/tool re-checks that a profile is mounted.
       SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
+      // Technician key for remote support: this computer only (desktop PC or
+      // the bot's cloud computer). The private file never goes in the env.
+      SAGAX_REMOTE_SUPPORT_DIR: join(DATA_DIR, "remote-support"),
+      ...(() => {
+        const speakerId = safetyPrincipal(threadId).principalId;
+        const speaker = speakerId ? principals.byId(speakerId) : undefined;
+        return {
+          SAGAX_TECHNICIAN_NAME: (personDisplayName(speaker) || cfg.profile?.name?.trim() || "").slice(0, 80),
+          SAGAX_ORG_NAME: (process.env.SAGAX_ORG_NAME?.trim() || "Pulsatrix").slice(0, 80),
+        };
+      })(),
       // Who the permission layer judges (server/mcp-permissions.ts).
       ...mcpIdentityEnv(mcpIdentityOf(botId, threadId)),
       ...mcpPolicyEnv(process.env),

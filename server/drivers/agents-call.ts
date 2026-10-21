@@ -25,6 +25,7 @@ import { harnessClientFromEnv } from "./agents-client.ts";
 import type { HarnessClient, Json } from "./agents-client.ts";
 import { boundedAgentResult } from "./agents-result.ts";
 import { isClaimTool } from "../perspicax-claims.ts";
+import { handleRemoteSupportCall, remoteSupportFromEnv, type RemoteSupportContext } from "../remote-support-local.ts";
 
 export interface ToolCallContext {
   /** The calling bot's id (excluded from list_bots; the sender). */
@@ -37,6 +38,8 @@ export interface ToolCallContext {
   coordinating: boolean;
   sharedComputers: boolean;
   client: HarnessClient;
+  /** Local technician key for remote support. Absent: the tool refuses rather than invent a key elsewhere. */
+  remoteSupport?: RemoteSupportContext;
 }
 
 export interface ToolCallResult {
@@ -71,6 +74,7 @@ export function toolCallContextFromEnv(env: NodeJS.ProcessEnv): ToolCallContext 
     coordinating: profile.coordinating,
     sharedComputers: profile.sharedComputers,
     client: harnessClientFromEnv(env),
+    remoteSupport: remoteSupportFromEnv(env),
   };
 }
 
@@ -532,6 +536,19 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (name === "answer_approval" || name === "nudge_person" || name === "manage_pairing" || name === "manage_settings" || PERSPICAX_TOOL_NAMES.has(name)) {
     if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
     if (PERSPICAX_TOOL_NAMES.has(name)) {
+      if (name === "remote_support_open" || name === "remote_support_status" || name === "remote_support_close") {
+        if (!context.remoteSupport?.dir) return { text: "Remote support runs on this computer, and this turn has no local directory for the technician key.", isError: true };
+        const record = args && typeof args === "object" && !Array.isArray(args) ? args : {};
+        return handleRemoteSupportCall({
+          name,
+          args: record,
+          local: context.remoteSupport,
+          post: async (tool, toolArgs) => {
+            const { status, body } = await apiResponse("/api/internal/perspicax/tool", { method: "POST", body: JSON.stringify({ tool, args: toolArgs }) });
+            return { status, body: body && typeof body === "object" ? body : {} };
+          },
+        });
+      }
       const { status, body } = await apiResponse("/api/internal/perspicax/tool", { method: "POST", body: JSON.stringify({ tool: name, args }) });
       const text = String(body.text ?? body.error ?? "").slice(0, 12000);
       if (status >= 400 || body.error || body.isError) return { text: text || "Perspicax refused the call.", isError: true };
