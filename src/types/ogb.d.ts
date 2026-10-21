@@ -321,6 +321,13 @@ const __BASE_VERSION__: string;
         get(): string | null;
         set(language: string): Promise<string | null>;
       };
+      /** Hardware acceleration and the spell checker (kept by main). */
+      shellPreferences?: {
+        get(): { hardwareAcceleration: boolean; spellcheck: boolean } | null;
+        set(patch: { hardwareAcceleration?: boolean; spellcheck?: boolean }): Promise<{ hardwareAcceleration: boolean; spellcheck: boolean } | null>;
+        /** The window's own zoom for the Text size choice (1 to 1.5). */
+        setZoom?(factor: number): boolean;
+      };
       appIcon?: {
         get(): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;
         set(request: { id: string; images: Array<{ size: number; png: string }> }): Promise<{ platform: string; id: string | null; updatedAt: number | null }>;

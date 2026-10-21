@@ -7,6 +7,8 @@ import {
 import { bootstrapBrand } from "./lib/brand";
 import { applySkin, applySkinDepth, applySkinTexture, installSkinAutoFollow, readSkin, readSkinDepth, readSkinTexture } from "./lib/skins";
 import { applyFont, readFont } from "./lib/fonts";
+import { applyAccessibility, installAccessibility } from "./lib/accessibility-preferences";
+import { installDesktopShellPreferences } from "./lib/desktop-shell-preferences";
 import { migrateInterfaceModeToAdvancedOnce, retireLegacyInterfaceMode } from "./lib/interface-mode";
 import { BrowserSignInPage } from "./pair/BrowserSignInPage";
 import { PairPage } from "./pair/PairPage";
@@ -53,6 +55,10 @@ applySkinTexture(readSkinTexture());
 // Auto (Settings > Appearance > Skin): the system's light or dark, live.
 installSkinAutoFollow();
 applyFont(readFont());
+// Settings > Appearance > Accessibility: motion, contrast, text size.
+installAccessibility();
+// Hardware acceleration and spell checking, handed to the desktop shell.
+installDesktopShellPreferences();
 
 /** A pairing link lands on /pair. A remote browser without a session lands
  * there too, because every API call would otherwise fail with "pair this
@@ -109,6 +115,7 @@ async function chooseRoot(): Promise<React.ReactNode> {
     applySkinDepth(readSkinDepth());
     applySkinTexture(readSkinTexture());
     applyFont(readFont());
+    applyAccessibility();
     // online, away, offline (organization server; elsewhere the route answers
     // 404). The main window reports it; a Data window beside it does not.
     if (!dataWindow) void startPresence();

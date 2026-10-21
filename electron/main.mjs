@@ -283,6 +283,13 @@ if (process.platform === "linux") {
   app.disableHardwareAcceleration();
   app.setDesktopName("com.openmausbot.app.desktop");
 }
+// Settings > Appearance > Desktop: "Use hardware acceleration" (on by
+// default). It can only be decided before ready, so a change made in the app
+// is kept in userData (desktop-shell-preferences.mjs) and applies at the
+// next launch.
+try {
+  if (!readShellPreferences(app.getPath("userData")).hardwareAcceleration) app.disableHardwareAcceleration();
+} catch { /* the default stays */ }
 
 // One instance per user: without this lock a second launch forks a second
 // harness server on a fallback port and splits data dirs in two. The loser
@@ -1014,6 +1021,7 @@ import {
 } from "./companion.mjs";
 import { createRoutineWakeHold, rememberRoutineWake, routineWakeSettings } from "./routine-wake.mjs";
 import { readDesktopLanguage, writeDesktopLanguage } from "./desktop-language.mjs";
+import { readShellPreferences, writeShellPreferences } from "./desktop-shell-preferences.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { installFetchGuard, installSessionBlock } from "./upstream-hosts.mjs";
 import { reportOwnListeners, serverRequestRefusal } from "./server-session.mjs";
@@ -3405,6 +3413,9 @@ function createWindow({ deferNavigation = false } = {}) {
       // from the second launch on (Grok Bot does the same).
       v8CacheOptions: "bypassHeatCheck",
       preload: path.join(__dirname, "preload.cjs"),
+      // Settings > Appearance > Desktop: the spell checker (on by default);
+      // macOS reads this when the window opens, the others also change live.
+      spellcheck: readShellPreferences(app.getPath("userData")).spellcheck,
       // The preload exposes the full bridge only to this origin (see preload.cjs).
       // Companion client mode still serves the bundled UI from its own
       // loopback relay, so it is a trusted local page while also needing the
@@ -4010,6 +4021,24 @@ ipcMain.on("desktop-language:get", (event) => {
 });
 ipcMain.handle("desktop-language:set", desktopUiOnly("desktop-language:set", (_event, language) =>
   writeDesktopLanguage(app.getPath("userData"), language)));
+// Hardware acceleration (next launch) and the spell checker (now, where the
+// platform lets it change live), from Settings > Appearance > Desktop.
+ipcMain.on("desktop-shell-preferences:get", (event) => {
+  let value = null;
+  try {
+    if (isDesktopUiSender(event)) value = readShellPreferences(app.getPath("userData"));
+  } catch {
+    value = null;
+  }
+  event.returnValue = value;
+});
+ipcMain.handle("desktop-shell-preferences:set", desktopUiOnly("desktop-shell-preferences:set", (_event, patch) => {
+  const saved = writeShellPreferences(app.getPath("userData"), patch);
+  if (saved) {
+    try { session.defaultSession.setSpellCheckerEnabled(saved.spellcheck); } catch { /* no spell checker here */ }
+  }
+  return saved;
+}));
 ipcMain.handle("app-icon:get", desktopUiOnly("app-icon:get", () => {
   const saved = savedAppIcon();
   return { platform: process.platform, id: saved?.id ?? null, updatedAt: saved?.updatedAt ?? null };
