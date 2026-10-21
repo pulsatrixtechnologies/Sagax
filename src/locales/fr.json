@@ -2047,7 +2047,7 @@
   "connectApps.providers.apiKey": "Clé API",
   "connectApps.providers.connectors": "Connecteurs de votre compte claude.ai",
   "connectApps.providers.gemini": "Gemini : les extensions de Google n'atteignent pas les bots dans Sagax.",
-  "connectApps.providers.grok": "Grok : ses connecteurs n'atteignent pas les bots dans Sagax.",
+  "connectApps.providers.grok": "Les bots Grok de ce compte xAI voient ses connecteurs du nuage. Un appel demande encore avant de partir.",
   "connectApps.providers.intro": "Les comptes de moteurs de cette installation, et les connecteurs que chacun apporte aux bots. Les connecteurs d'un fournisseur agissent au nom de ce compte.",
   "connectApps.providers.manage": "Gérer sur {provider}",
   "connectApps.providers.none": "Aucun compte de moteur sur cette installation pour l'instant. Ajoutez-en un dans Réglages > Fournisseurs de modèles.",

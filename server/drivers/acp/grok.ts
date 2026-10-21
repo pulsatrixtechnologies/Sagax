@@ -109,6 +109,21 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
   return env.GROK_HOME || harnessHome("grok", env);
 }
 
+/** Env for the xAI account's cloud connectors (hosted and managed MCP).
+ * A tool selection cannot accept servers Sagax did not list, so those turns
+ * keep both switches off. Every other turn lets the account fetch its
+ * connectors. Gateway tools stay off: that path is not held by the approval
+ * gate, and a call to a connector Sagax did not mount keeps its card. */
+export function grokCloudConnectorEnv(toolScope: unknown): {
+  GROK_MANAGED_MCPS_ENABLED?: "false";
+  GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false";
+} {
+  if (toolScope !== undefined) {
+    return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
+  }
+  return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
+}
+
 /** Whether Grok may load MCP servers Sagax did not mount: a config override
  * (GROK_CONFIG, GROK_CONFIG_PATH), or an `mcp_servers` table, dotted key or
  * assignment in GROK_HOME's config.toml or any `.grok/config.toml` from the
@@ -951,15 +966,14 @@ const support: AcpSupport = {
   transformEnv: (env) => {
     delete env.XAI_API_KEY;
   },
-  applyTurnEnv: (env, { toolScope, withholdHostTools, approvalGated }) => {
-    // A gated turn too: account-level MCPs are not mounted by Sagax, so the
-    // gate could not hold their calls.
-    if (toolScope !== undefined || withholdHostTools === true || approvalGated === true) {
-      // The verified runtime gives these local env switches priority over
-      // account defaults, preventing an unfiltered managed gateway fallback.
-      env.GROK_MANAGED_MCPS_ENABLED = "false";
-      env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = "false";
-    }
+  applyTurnEnv: (env, { toolScope, withholdHostTools }) => {
+    // Cloud connectors of the signed-in xAI account reach this bot. A tool
+    // selection still turns them off (grokCloudConnectorEnv). Gateway tools
+    // stay off on every turn.
+    const cloud = grokCloudConnectorEnv(toolScope);
+    if (cloud.GROK_MANAGED_MCPS_ENABLED) env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
+    else delete env.GROK_MANAGED_MCPS_ENABLED;
+    env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = cloud.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED;
     if (withholdHostTools === true || (toolScope !== undefined && narrowsNativeTools(toolScope))) {
       if (env.GROK_AGENT && env.GROK_AGENT !== "grok-build") {
         throw new Error(withholdHostTools === true
