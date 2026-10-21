@@ -86,6 +86,12 @@ describe("threads follow their bot's model", () => {
     expect(ownModel(store, bot.id, copy.threadId)).toBeUndefined();
     expect(runsOn(store, bot.id, copy.threadId)).toEqual(sonnet);
     expect(ownModel(store, bot.id, picked.threadId)).toEqual(opus);
+    // the same from a thread's "make it the bot's model", in memory too
+    store.switchTaskModel(bot.id, copy.threadId, codex, false);
+    store.patchBot(bot.id, { modelSelection: codex });
+    store.switchTaskModel(bot.id, picked.threadId, opus, true);
+    expect(ownModel(store, bot.id, copy.threadId)).toBeUndefined();
+    expect(runsOn(store, bot.id, copy.threadId)).toEqual(opus);
   });
 
   it("picking the bot's own model in a thread is following the bot", () => {

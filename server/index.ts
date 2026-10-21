@@ -8594,7 +8594,7 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
   // cannot silently give a specialist access to another team's transcript.
   const outsideSection = (room: GroupRecord, speaker: BotRecord) => room.memberIds.some(id => {
     const member = store.bot(id);
-    return member && !canAccessTeam(speaker, member.section) && !coordinatorSupervises(member, speaker);
+    return member && !canAccessBot(speaker, member) && !coordinatorSupervises(member, speaker);
   });
   if (group && outsideSection(group, bot)) return "Destination room includes a member outside the agent's section";
   if (parent) {
@@ -8604,7 +8604,7 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
     // A specialist may address its supervisor in their shared conversation;
     // supervision alone never grants a direct chat or another room's access.
     const sharedSupervisor = source && group && source.id === group.id && parent.threadId === node.threadId && coordinatorSupervises(bot, from);
-    if ((!canAccessTeam(from, bot.section) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
+    if ((!canAccessBot(from, bot) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
     if (source && group && source.id === group.id && parent.threadId !== node.threadId) return "Same-room work must stay in the originating conversation";
     if (!peerAllowed(from, bot)) return "The recipient is not an allowed peer of the sender";
     // A room the sender sits in keeps its own rule: people chose its
@@ -24017,7 +24017,7 @@ function roomPostEligibility(
   }
   const outsider = group.memberIds
     .map((id) => store.bot(id))
-    .find((member) => member && !canAccessTeam(bot, member.section) && !coordinatorSupervises(member, bot));
+    .find((member) => member && !canAccessBot(bot, member) && !coordinatorSupervises(member, bot));
   if (outsider) {
     return {
       ok: false,
@@ -34074,6 +34074,7 @@ async function temporaryAgentSetting(input: { args: Record<string, unknown>; bot
   const archived = Boolean(temporary.archived);
   if (args.action === "get") return reply(200, JSON.stringify({ key, value: archived || bot.hidden === true, temporaryAgent: true }));
   const archive = args.value !== false;
+  if (key === "bot.delete" && !archive) return reply(200, `@${bot.name}: nothing to delete. Nothing changed.`);
   if (key === "bot.hidden" && !archive) {
     return archived
       ? reply(409, `@${bot.name} is a temporary agent and was archived; it cannot be restored. Create a new one with create_agent if the person still needs it.`)

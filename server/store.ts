@@ -3395,7 +3395,11 @@ export class Store {
     const nextTasks = bot.tasks!.map((candidate, index) => candidate === task ? nextTask : others[index]!);
     const botPatch = updateBotDefault ? { modelSelection: structuredClone(selection) } : {};
     this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...botPatch, tasks: nextTasks } : candidate));
-    bot.tasks!.forEach((candidate, index) => Object.assign(candidate, nextTasks[index]));
+    bot.tasks!.forEach((candidate, index) => {
+      Object.assign(candidate, nextTasks[index]);
+      // a copy of the old default was dropped (withDefaultModel): drop it here too
+      if (!("modelSelection" in nextTasks[index]!)) delete candidate.modelSelection;
+    });
     Object.assign(bot, botPatch);
     this.emit({ type: "bot", botId });
     return task;

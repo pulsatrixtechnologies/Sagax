@@ -36,7 +36,7 @@ const WORDS: Readonly<Record<Exclude<PrimaryIntent, "answer">, readonly string[]
   deny: ["non", "refus", "rejet", "decline", "interdi", "bloque", "no", "nope", "deny", "reject", "refuse", "block"],
   cancel: ["annul", "arret", "stop", "laisse tomber", "abandon", "oublie", "cancel", "abort", "halt", "drop it", "never mind", "nevermind", "kill="],
   setting: [
-    "mets", "met ", "mettre", "passe", "change", "modifi", "activ", "desactiv", "enleve", "retire", "supprim", "efface", "ajout", "cree", "creer", "regle", "ferme", "coupe", "archiv", "desarchiv", "restaur", "renomm", "bascule", "utilise", "deplace", "toujours", "auto=", "plus de carte", "plus demander", "demande plus", "ne me demande", "permet", "autoris", "approuv", "fais de", "nomme", "design", "promeu", "promouv",
+    "mets", "met ", "mettre", "passe", "change", "modifi", "activ", "desactiv", "enleve", "retire", "supprim", "efface", "ajout", "cree", "creer", "regle", "ferme", "coupe", "archiv", "desarchiv", "restaur", "renomm", "bascule", "utilise", "deplace", "toujours", "auto=", "plus de carte", "plus demander", "demande plus", "ne me demande", "permet", "autoris", "approuv", "fais de ", "nomme ", "designe ", "promeu", "promouv",
     "set", "turn", "switch", "move", "use", "rename", "archive", "unarchive", "restore", "disable", "enable", "remove", "delete", "add", "create", "make", "stop asking", "always", "allow", "approve", "full",
   ],
 };

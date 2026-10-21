@@ -155,7 +155,7 @@ const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" |
   "bot.voiceNotes": WORD("note vocale|notes vocales|voice note"), "bot.pinned": WORD("epingl|pin"),
   "bot.managedSections": "teams", "bot.section": "teams", "bot.hidden": "archive", "bot.delete": "delete",
   // 2026-10-20: "fais de Melonie mon bot principal"
-  "bot.primary": WORD("principal|principale|primary|main bot|chief|bras droit"),
+  "bot.primary": WORD("bot principal|robot principal|bot principale|primary bot|main bot|chief of staff|bras droit"),
   "routine.enabled": WORD("pause|suspend|desactiv|arret|stop|reprend|resume|reactiv|activ|enable|disable|coupe"),
   "routine.run": WORD("lance|roule|execute|run|demarre|start"), "routine.delete": "delete", "routine.name": "value",
   "routine.schedule": WORD("horaire|heure|chaque|tous les|toutes les|quotidien|hebdo|schedule|daily|weekly|every|cron|minute|matin|soir|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"),
