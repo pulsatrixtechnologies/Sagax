@@ -70,7 +70,7 @@ import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { harnessMcpHttpSpec, loopbackNoProxy } from "../harness-mcp-http.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
-import { sectionFingerprints, volatileSectionsUpdate } from "./prompt-split.ts";
+import { promptHalves, sectionFingerprints, volatileSectionsUpdate } from "./prompt-split.ts";
 import {
   ASK_USER_QUESTION_TOOL,
   ASK_USER_TOOL,
@@ -1323,15 +1323,21 @@ type ClaudeUserMessage = {
 /** A value no real volatile half can equal: after the CLI compacts its
  * session, the next turn's volatile half always counts as changed. */
 const COMPACTED_VOLATILE = "\u0000compacted";
+/** A process launched with the stable half only whose first message has not
+ * gone out yet (a warm process): its next turn carries the whole volatile
+ * half, in the launch wording. */
+const UNDELIVERED_VOLATILE = "\u0000undelivered";
 
 /** How a mid-session change to the volatile half of the system prompt
  * reaches a model whose process was launched with the old copy. The CLI's
  * own out-of-band convention inside a user turn, and it costs one short
  * append rather than a relaunch that re-uploads the whole prompt cache. */
-function withVolatileNote(text: string, volatile: string): string {
-  const body = volatile.trim()
-    ? `This part of your instructions changed since this session started. It replaces the earlier copy:\n\n${volatile.trim()}`
-    : "The notes that were in your instructions when this session started have been cleared.";
+function withVolatileNote(text: string, volatile: string, launch = false): string {
+  const body = !volatile.trim()
+    ? "The notes that were in your instructions when this session started have been cleared."
+    : launch
+      ? `This part of your instructions changes from turn to turn, so it arrives here instead of in the system prompt. It replaces any earlier copy:\n\n${volatile.trim()}`
+      : `This part of your instructions changed since this session started. It replaces the earlier copy:\n\n${volatile.trim()}`;
   return withReminder(text, body);
 }
 
@@ -2256,16 +2262,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           emit({ ...base(threadId, turnId), type: "session.started", sessionId: live.sessionId, model: live.sessionModel ?? null });
         }
         const volatile = turn.systemVolatile ?? "";
-        const unchanged = volatile === live.volatile || (live.volatile === COMPACTED_VOLATILE && !volatile.trim());
+        const notHeld = live.volatile === COMPACTED_VOLATILE || live.volatile === UNDELIVERED_VOLATILE;
+        const unchanged = volatile === live.volatile || (notHeld && !volatile.trim());
         // Only the sections that changed ride (2026-10-19 perf parity,
         // point 4): one recent-work line moving no longer re-sends the whole
         // memory notebook into the session every turn.
         const sectionsNote = unchanged && !turn.mentionTurn ? ""
-          : volatileSectionsUpdate(turn.systemVolatileSections, live.volatile === COMPACTED_VOLATILE ? undefined : live.volatileSections, Boolean(turn.mentionTurn));
+          : volatileSectionsUpdate(turn.systemVolatileSections, notHeld ? undefined : live.volatileSections, Boolean(turn.mentionTurn));
         const message = unchanged && !turn.mentionTurn
           ? promptMsg
           : sectionsNote === null
-            ? claudeUserMessage(withVolatileNote(turn.text, volatile), turn.images)
+            ? claudeUserMessage(withVolatileNote(turn.text, volatile, live.volatile === UNDELIVERED_VOLATILE), turn.images)
             : sectionsNote ? claudeUserMessage(withReminder(turn.text, sectionsNote), turn.images) : promptMsg;
         live.volatile = volatile;
         live.volatileSections = turn.systemVolatileSections ? sectionFingerprints(turn.systemVolatileSections) : undefined;
@@ -2312,6 +2319,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         closeSession(threadId, turn.sessionReset ? "context reset" : "spawn contract changed");
       }
 
+      // A new process gets the stable half only and its first message the
+      // volatile half (memory, recent work, roster...): the prompt file stays
+      // byte-identical while those change, so a relaunch of this thread
+      // (idle close, restart, a contract change) reads the conversation from
+      // the provider's cache instead of writing it again (port of
+      // OpenMausBot #3164). A legacy unsplit turn keeps its whole prompt.
+      const halves = promptHalves(turn);
+      const launchSystem = halves.stable ?? turn.system;
+      const launchVolatile = halves.stable !== null ? halves.volatile.trim() : "";
+
       // Until sessions.set() below, this turn owns every launch resource.
       // Any bind, private-config or synchronous spawn failure must release
       // them here rather than leave a live listener or credential temp file.
@@ -2334,9 +2351,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       try {
         // Create the prompt file only for a new process. A compatible live
         // session has already consumed the same system prompt at launch.
-        if (turn.system) {
+        if (launchSystem) {
           systemPromptPath = join(mkdtempSync(join(tmpdir(), "omb-system-")), "prompt.txt");
-          writeFileSync(systemPromptPath, turn.system, { mode: 0o600 });
+          writeFileSync(systemPromptPath, launchSystem, { mode: 0o600 });
           args.push("--append-system-prompt-file", systemPromptPath);
         }
         // Only create a broker for a new process. A compatible retained
@@ -2459,8 +2476,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         turnFiles: turnFiles(mcpServers),
         contract,
         mcpNames: Object.keys(mcpServers),
-        volatile: turn.systemVolatile ?? "",
-        ...(turn.systemVolatileSections ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}),
+        // Launched with the stable half only, a warm process holds no
+        // volatile half until its first real turn delivers it.
+        volatile: launchVolatile && turn.warmOnly === true ? UNDELIVERED_VOLATILE : turn.systemVolatile ?? "",
+        ...(turn.systemVolatileSections && !(launchVolatile && turn.warmOnly === true) ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}),
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
         nativePermissionMode: null,
@@ -3196,7 +3215,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // prompt over stdin as a stream-json message — never argv (ARG_MAX).
       // stdin stays OPEN: that is what keeps the session alive for a
       // mid-turn steer or the next turn; closeSession() ends it.
-      if (!(await writeUser(session, threadId, promptMsg))) {
+      if (!(await writeUser(session, threadId, launchVolatile ? claudeUserMessage(withVolatileNote(turn.text, launchVolatile, true), turn.images) : promptMsg))) {
         if (!session.turn?.stopRequested) settle(false, "stdin_write_failed");
         closeSession(threadId, "stdin write failed");
       }

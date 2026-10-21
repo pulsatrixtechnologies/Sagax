@@ -220,6 +220,7 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, readFileSync, renameS
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { runRoomHandoffAgent } from "./room-handoff-agent.ts";
+import { splitLaunchNote, volatileNoteIn } from "./launch-note.ts";
 
 const mode = process.env.FAKE_CLAUDE_MODE ?? "happy";
 
@@ -582,7 +583,8 @@ const armSteerGate = () => {
   }, 10);
 };
 
-const promptText = (prompt: JsonValue): string => {
+const promptText = (raw: JsonValue): string => {
+  const prompt = splitLaunchNote(raw).prompt;
   const m = prompt && typeof prompt === "object" && !Array.isArray(prompt) ? (prompt as { message?: { content?: unknown } }).message : undefined;
   return typeof m?.content === "string" ? m.content : "";
 };
@@ -713,6 +715,9 @@ function recordTranscript(prompt: JsonValue): void {
   appendFileSync(join(claudeConfigDir(), "history.jsonl"), `${JSON.stringify({ display: text.slice(0, 20_000), project: process.cwd(), sessionId })}\n`);
 }
 
+/** The volatile half of the instructions this process last received. */
+let volatileNote: string | null = null;
+
 const playTurn = (prompt: JsonValue, late = false) => {
   recordTranscript(prompt);
   turnRunning = true;
@@ -722,11 +727,17 @@ const playTurn = (prompt: JsonValue, late = false) => {
   // Every prompt this process receives, one JSON object per line.
   // FAKE_CLAUDE_DUMP keeps only the latest turn's.
   if (process.env.FAKE_CLAUDE_PROMPTS) appendFileSync(process.env.FAKE_CLAUDE_PROMPTS, `${JSON.stringify(prompt)}\n`);
+  volatileNote = volatileNoteIn(prompt) ?? volatileNote;
   if (!late && process.env.FAKE_CLAUDE_DUMP) {
     launchFiles ??= readLaunchFiles();
+    // systemPrompt: what the model is instructed with, the prompt file plus
+    // the volatile half a user message carried (claude.ts keeps the file
+    // stable for the cache); systemPromptFile: the file alone.
+    const file = launchFiles.systemPrompt;
+    const systemPrompt = volatileNote && typeof file === "string" ? `${file}\n\n${volatileNote}` : volatileNote && !file ? volatileNote : file;
     writeDumpAtomic(
       process.env.FAKE_CLAUDE_DUMP,
-      JSON.stringify({ pid: process.pid, argv, env: process.env, cwd: process.cwd(), prompt, ...launchFiles }, null, 2),
+      JSON.stringify({ pid: process.pid, argv, env: process.env, cwd: process.cwd(), prompt, ...launchFiles, systemPrompt, systemPromptFile: file }, null, 2),
     );
   }
 

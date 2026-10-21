@@ -27,6 +27,7 @@ import {
   PROFILE_CREATOR_PROMPT,
   ROUTINE_PROMPT,
   ROUTINE_EXECUTION_PROMPT,
+  CLAUDE_REUSE_VOLATILE_SECTIONS,
   WEBHOOK_PROMPT,
   SIGN_IN_PROMPT,
   RICH_OUTPUT_PROMPT,
@@ -138,6 +139,24 @@ describe("buildSystemPrompt", () => {
     expect(built.volatile).toContain("@Fig");
     expect(built.volatile).toContain("today 20:48");
     expect(built.volatile).not.toContain("Search past sessions");
+  });
+
+  it("keeps a Claude turn's switched-on instructions volatile, and setup and the webhook's untrusted-data rule stable", () => {
+    const built = buildSystemPrompt("You are Kiwi.", "", [
+      { id: "setup", label: "Setup", text: " Set yourself up." },
+      { id: "skill-instructions", label: "Skill instructions", text: " Use the deploy skill." },
+      { id: "playbooks", label: "Playbooks", text: " Follow the triage playbook." },
+      { id: "assignment", label: "Teammate task", text: " You were asked by a teammate." },
+      { id: "routine-execution", label: "Routine execution", text: ROUTINE_EXECUTION_PROMPT },
+      { id: "webhook", label: "Webhook provenance", text: WEBHOOK_PROMPT },
+    ], CLAUDE_REUSE_VOLATILE_SECTIONS);
+    for (const text of ["Use the deploy skill.", "Follow the triage playbook.", "You were asked by a teammate.", ROUTINE_EXECUTION_PROMPT.trim()]) {
+      expect(built.volatile).toContain(text);
+      expect(built.stable).not.toContain(text);
+    }
+    expect(built.stable).toContain("Set yourself up.");
+    expect(built.stable).toContain(WEBHOOK_PROMPT.trim());
+    expect(built.volatile).not.toContain("UNTRUSTED WEBHOOK EVENT DATA");
   });
 
   it("has an empty volatile half when nothing mid-conversation is present", () => {
