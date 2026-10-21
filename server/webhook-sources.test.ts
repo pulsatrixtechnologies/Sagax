@@ -101,7 +101,7 @@ describe("typed triggers in the manager", () => {
     expect(first).toMatchObject({ kind: "delivered", results: [{ runId: "run-1", duplicate: false }] });
     const prompt = queued[0]!.prompt;
     expect(prompt.startsWith("[USER-CONFIGURED TRIGGER INSTRUCTIONS]\nReview the pull request\n[/USER-CONFIGURED TRIGGER INSTRUCTIONS]")).toBe(true);
-    const open = prompt.match(/\[UNTRUSTED GITHUB EVENT DATA ([a-f0-9]{12})\]/);
+    const open = prompt.match(/\[UNTRUSTED GITHUB EVENT DATA ([a-f0-9]{32})\]/);
     expect(open).not.toBeNull();
     expect(prompt.trimEnd().endsWith(`[/UNTRUSTED GITHUB EVENT DATA ${open![1]}]`)).toBe(true);
     // the payload cannot close the fence early
