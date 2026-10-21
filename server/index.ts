@@ -922,7 +922,7 @@ import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator,
 import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
-import { json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
+import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
@@ -8725,6 +8725,8 @@ const coordinator: Coordinator = createCoordinator({
       if (!parent) {
         const room = child.groupId ? store.group(child.groupId) : undefined;
         if (child.groupId ? !room || !store.groupTaskByThread(room.id, child.threadId) : !store.taskByThread(child.botId, child.threadId)) return;
+        // port of OpenMausBot #2998: a poll root settled once its peers finished did not fail
+        if (child.status === "completed") return;
         store.appendMessage(child.threadId, { role: "bot", kind: "activity", tool: failedTurnTool(child.result) });
         if (room) store.patchGroup(room.id, { unread: true });
         else store.patchTask(child.botId, child.threadId, { unread: true });
@@ -47400,7 +47402,7 @@ const TUNNEL_SOCKET = process.env.SAGAX_TUNNEL_SOCKET?.trim() || null;
 let tunnelListener: ReturnType<typeof createServer> | null = null;
 if (TUNNEL_SOCKET) {
   if (process.platform !== "win32") rmSync(TUNNEL_SOCKET, { force: true });
-  tunnelListener = createServer(handleRequest);
+  tunnelListener = createServer(gzipTunnelReplies(handleRequest));
   desktopViewer.attach(tunnelListener, handleRequest);
   attachDesktopTunnel(tunnelListener, desktopTunnelDeps);
   attachDesktopTerminal(tunnelListener, { ...desktopTunnelDeps, terminals: desktopTerminals });

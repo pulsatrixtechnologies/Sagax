@@ -39,6 +39,7 @@ import {
 import { notifyDeviceRevoked } from "./harness-notice.ts";
 import { createProxyHandler } from "./proxy.ts";
 import { companionOriginSocket, listenCompanionOrigin } from "./origin.ts";
+import { gzipTunnelReplies } from "./tunnel-gzip.ts";
 import { normalizedPhoneSecretPublicKey } from "./phone-secret-key.ts";
 
 // Only Electron supplies this port. Standalone sidecars retain the existing
@@ -182,7 +183,8 @@ const companion = createServer(proxy);
 // connection to WebSocket, so every server exposing this proxy must also
 // forward Node's separate `upgrade` event to the viewer relay.
 companion.on("upgrade", proxy.upgrade);
-const managedOrigin = PRIVATE_ORIGIN ? createServer(proxy) : null;
+// Large JSON replies go gzipped on this listener only (port of OpenMausBot #3009).
+const managedOrigin = PRIVATE_ORIGIN ? createServer(gzipTunnelReplies(proxy)) : null;
 managedOrigin?.on("upgrade", proxy.upgrade);
 
 const control = createControlServer({
