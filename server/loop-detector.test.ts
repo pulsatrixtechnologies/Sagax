@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RuntimeEvent } from "../shared/runtime-events.ts";
 import {
   DEFAULT_LOOP_THRESHOLDS, LoopDetector, POLL_CYCLE_BUDGET, POLL_REPEAT_BUDGET, TRANSIENT_RETRY_BUDGET,
-  canonicalJson, dispatchLoopStop, loopDetectorConfigSchema, loopStopRoute, loopThresholds, makeLoopStopSubscriber,
+  canonicalJson, digest, dispatchLoopStop, loopDetectorConfigSchema, loopStopRoute, loopThresholds, makeLoopStopSubscriber,
   toolCallIdentity, type LoopDetectorConfig, type ToolCallObservation,
 } from "./loop-detector.ts";
 
@@ -24,6 +24,16 @@ describe("LoopDetector", () => {
     const d = detector();
     const verdicts = feed(d, Array.from({ length: 30 }, (_, i) => ({ tool: "Read", input: { path: `f${i}` }, result: "same" })));
     expect(verdicts.every((v) => v === null)).toBe(true);
+  });
+
+  it("normalises strings inside nested objects and arrays", () => {
+    const spaced = { path: " a.txt ", edits: [{ old: "x  y", next: [" z "] }] };
+    const tight = { path: "a.txt", edits: [{ old: "x y", next: ["z"] }] };
+    expect(digest(spaced)).toBe(digest(tight));
+    expect(digest({ command: '  { "a" : "x  y" } ' })).toBe(digest({ command: { a: "x y" } }));
+    const d = detector();
+    const verdicts = feed(d, [spaced, tight, tight].map((input) => ({ tool: "Edit", input, result: "no" })));
+    expect(verdicts.at(-1)).toMatchObject({ kind: "identical-result", count: 3 });
   });
 
   it("treats key-order differences as the same input", () => {
@@ -205,6 +215,28 @@ describe("makeLoopStopSubscriber", () => {
     expect(stop).toHaveBeenCalledTimes(2);
   });
 
+  it("does not let a filtered event from an older turn reset the running turn", () => {
+    const stop = vi.fn();
+    let quarantineOld = false;
+    const sub = makeLoopStopSubscriber({
+      config: () => undefined,
+      stop,
+      ignore: (event) => quarantineOld && event.turnId === "turn-old" && event.type !== "turn.completed",
+    });
+    sub({ ...start("old0", '{"command":"pwd"}'), turnId: "turn-old" } as RuntimeEvent);
+    sub({ ...done("old0", "first"), turnId: "turn-old" } as RuntimeEvent);
+    sub({ ...base, type: "turn.completed", ok: true, turnId: "turn-old" } as unknown as RuntimeEvent);
+    quarantineOld = true;
+    for (let i = 0; i < 10; i++) {
+      sub({ ...start(`late${i}`, '{"command":"pwd"}'), turnId: "turn-old" } as RuntimeEvent);
+      sub({ ...done(`late${i}`, `late ${i}`), turnId: "turn-old" } as RuntimeEvent);
+      sub({ ...start(`cur${i}`, '{"command":"ls"}'), turnId: "turn-current" } as RuntimeEvent);
+      sub({ ...done(`cur${i}`, "same"), turnId: "turn-current" } as RuntimeEvent);
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(stop.mock.calls[0]![1]).toBe("stuck-loop: Bash returned the same result 3 times in a row for the same input");
+  });
+
   it("keeps a newer turn when an older completion arrives late", () => {
     const stop = vi.fn();
     const sub = makeLoopStopSubscriber({ config: () => undefined, stop });
@@ -240,6 +272,17 @@ describe("waits, polls and retries", () => {
       tool: "Bash", input: "runner get pod app", result: `phase ${i}`,
     })));
     expect(verdicts.every((v) => v === null)).toBe(true);
+  });
+
+  it("does not treat a line number or an expected timeout as a transient error", () => {
+    for (const result of ["line 503", "at line 503", "expected timeout", "expected timeout of 30s"]) {
+      const d = detector();
+      const verdicts = feed(d, times(3, {
+        tool: "Bash", input: "cat src/app.ts", result, error: true,
+      }));
+      expect(verdicts.slice(0, 2).every((v) => v === null)).toBe(true);
+      expect(verdicts[2]).toMatchObject({ kind: "same-error", count: 3 });
+    }
   });
 
   it("does not stop retries of one call after a transient error", () => {

@@ -109,12 +109,22 @@ export function canonicalJson(value: unknown): string {
 }
 
 function normalize(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-  const text = value.trim();
-  if (text.startsWith("{") || text.startsWith("[")) {
-    try { return JSON.parse(text); } catch { /* plain text */ }
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text.startsWith("{") || text.startsWith("[")) {
+      try { return normalize(JSON.parse(text)); } catch { /* plain text */ }
+    }
+    return text.replace(/\s+/g, " ");
   }
-  return text.replace(/\s+/g, " ");
+  if (Array.isArray(value)) return value.map(normalize);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      if (item !== undefined) out[key] = normalize(item);
+    }
+    return out;
+  }
+  return value;
 }
 
 export function digest(value: unknown): string {
@@ -128,7 +138,14 @@ const WAIT_COMMAND = /^(?:sleep|wait)\b/i;
 const STATUS_POLL = /^(?:pr\s+checks|pr\s+status|checks|run\s+(?:view|watch|list)|get\s+\S+|wait\s+\S+|describe\s+\S+)\b/i;
 const HTTP_GET = /^(?:curl|wget)\b/i;
 const HTTP_WRITE = /\s(?:-X|--request)\s+(?:POST|PUT|PATCH|DELETE)\b|\s(?:-d|--data|--data-raw|--data-binary|-F|--form)\b/i;
-const TRANSIENT_ERROR = /\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN)\b|\btimed?\s*out\b|\btimeout\b|\b(?:429|502|503|504)\b|\bconnection reset\b/i;
+/** Errno names, not a passing mention of a failure. */
+const ERRNO_ERROR = /\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPIPE)\b/;
+/** "timed out", or a timeout that is the error itself. "expected timeout" is not. */
+const TIMEOUT_ERROR = /\btime(?:d)?\s+out\b|\b(?:request|connection|connect|read|write|gateway|operation|network|socket|response|deadline)\s+timeout\b|\btimeout(?:Error|Exception)\b|^(?:error|err)[:\s]+timeout$|^timeout$/i;
+/** An HTTP status code, not a line or column number ("line 503"). A bare
+ * number counts only as the whole message, or with its reason phrase. */
+const HTTP_STATUS_ERROR = /\b(?:https?|status(?:\s+code)?|error(?:\s+code)?)[:\s]+(?:429|502|503|504)\b|\b(?:429|502|503|504)\s+(?:too many requests|bad gateway|service unavailable|gateway time-?out)\b|^(?:429|502|503|504)$/i;
+const CONNECTION_RESET_ERROR = /\bconnection reset\b/i;
 
 function commandText(input: unknown): string {
   const value = normalize(input);
@@ -185,7 +202,9 @@ function resultText(result: unknown): string {
 }
 
 function transientError(result: unknown, error: boolean): boolean {
-  return error && TRANSIENT_ERROR.test(resultText(result));
+  if (!error) return false;
+  const text = resultText(result);
+  return ERRNO_ERROR.test(text) || TIMEOUT_ERROR.test(text) || HTTP_STATUS_ERROR.test(text) || CONNECTION_RESET_ERROR.test(text);
 }
 
 interface Entry {
@@ -346,9 +365,11 @@ export interface LoopStopOptions {
   config: () => LoopDetectorConfig | undefined;
   /** Stop the thread's run with this reason. Called once per turn. */
   stop: (threadId: string, reason: string, verdict: LoopVerdict) => void;
-  /** Events to leave out (another turn's late events and the like). A
-   * turn completion is still applied, including when this returns true:
-   * a stopped turn's completion can be quarantined, and the detector must
+  /** Events to leave out (another turn's late events and the like). Only an
+   * event that passes this filter may switch the current turn: a filtered
+   * event from an older turn must not clear the turn that is running. A
+   * turn completion is still applied, including when this returns true: a
+   * stopped turn's completion can be quarantined, and the detector must
    * not stay latched. */
   ignore?: (event: RuntimeEvent) => boolean;
 }
@@ -377,12 +398,14 @@ export function makeLoopStopSubscriber(options: LoopStopOptions): (event: Runtim
       forget(threadId);
       return;
     }
+    // A filtered event is not part of the running turn. Recording its turn
+    // id first would clear that turn's history and then drop the event.
+    if (options.ignore?.(event)) return;
     if (event.turnId) {
       const known = turnIds.get(threadId);
       if (known && known !== event.turnId) forget(threadId);
       turnIds.set(threadId, event.turnId);
     }
-    if (options.ignore?.(event)) return;
     if (event.type === "item.started" && event.itemType === "tool") {
       const named = (event as { tool?: unknown }).tool;
       const identity = toolCallIdentity({
