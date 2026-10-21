@@ -551,12 +551,12 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   {
     name: "list_team_setup",
-    description: "Primary Bot only: list authorized teams, teammate IDs, and exact engine/model choices for team setup. Call before proposing configuration; never invent model IDs. Existing thread models are independent of bot defaults.",
+    description: "Primary Bot only: list every bot of the person (whatever its team), their teams, and exact engine/model choices for team setup. Call before proposing configuration; never invent model IDs. A new default model: threads following the bot (main, routines) move at their next turn.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
     name: "propose_team_setup",
-    description: "Primary Bot only: submit all requested specialist creation, profile/model configuration, and authorized team moves in ONE combined plan. Use exact catalog engine/model IDs from list_team_setup. Combine all fields for each bot; use the same create key or botId to coalesce repeated entries. New teams must be named explicitly in newTeams and have a specialist in this plan; access is granted only to those new teams. Existing unauthorized teams cannot be included. Models change bot defaults for groups/new threads; existing threads and execution permissions stay unchanged. If review is pending, the decision and structured result automatically resume you once; do not ask again, poll, or repeat the proposal." + PROPOSAL_OUTCOME,
+    description: "Primary Bot only: submit all requested specialist creation, profile/model configuration, and authorized team moves in ONE combined plan. Use exact catalog engine/model IDs from list_team_setup. Combine all fields for each bot; use the same create key or botId to coalesce repeated entries. New teams must be named explicitly in newTeams and have a specialist in this plan; access is granted only to those new teams. Another person's teams cannot be included. Models change bot defaults: threads following the bot (main, routines) move at their next turn; execution permissions stay unchanged. If review is pending, the decision and structured result automatically resume you once; do not ask again, poll, or repeat the proposal." + PROPOSAL_OUTCOME,
     inputSchema: {
       type: "object", additionalProperties: false,
       properties: {
@@ -592,7 +592,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   {
     name: "archive_bot",
-    description: "Primary Bot only: archive one of the person's bots (kept, restorable) or restore it. With quote it applies at once, else a card.",
+    description: "Primary Bot only: archive one of the person's bots (kept, restorable) or restore it. Already archived: nothing changes, said so. A temporary agent (create_agent) archived is gone for good. With quote it applies at once, else a card.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       bot_id: { type: "string", minLength: 1 }, restore: { type: "boolean" }, quote: PERSON_QUOTE,
     }, required: ["bot_id"] },
@@ -1160,7 +1160,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "propose_model",
     description:
-      "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Primary Bot the ids from the team-setup catalog. The result warns about capabilities the switch gains or loses; existing threads keep their current models." + SELF_CHANGE_OUTCOME,
+      "Submit a user-requested switch of this bot's default engine and model. Use the exact instance and model ids the person named, or for a Primary Bot the ids from the team-setup catalog. The result warns about capabilities the switch gains or loses; threads following the bot (main, routines) move at their next turn." + SELF_CHANGE_OUTCOME,
     inputSchema: {
       type: "object",
       additionalProperties: false,

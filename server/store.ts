@@ -2341,7 +2341,10 @@ export class Store {
    * moves with it, at the same level; a thread's own model stays. */
   private withDefaultModel(bot: BotRecord): TaskRecord[] | undefined {
     return bot.tasks?.map((task) => ({
-      ...task,
+      // 2026-10-20 (prod: routines left on the old instance): a thread whose
+      // own model is the bot's old default was only a copy of it and follows
+      // the bot like the others; a model the person picked there stays
+      ...(task.modelSelection !== undefined && sameModelSelection(task.modelSelection, bot.modelSelection) ? withoutModel(task) : task),
       approvalMode: approvalModeFor(this.projectBotForTask(bot.id, task.threadId)!),
       autoApprove: task.autoApprove ?? bot.autoApprove,
       alwaysAllow: structuredClone(task.alwaysAllow ?? bot.alwaysAllow ?? []),
@@ -3684,4 +3687,10 @@ export class Store {
     if (!this.needsSeed()) return;
     this.createBot();
   }
+}
+
+/** A thread without its own model: it follows its bot's. */
+function withoutModel(task: TaskRecord): TaskRecord {
+  const { modelSelection: _copy, ...rest } = task;
+  return rest;
 }

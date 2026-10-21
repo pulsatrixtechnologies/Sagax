@@ -28,6 +28,8 @@ export interface RosterMember {
   activity?: BotActivity;
   /** Who may see the bot on a shared workspace (server/bot-visibility.ts). */
   visibility?: unknown;
+  /** A temporary agent (create_agent); archived, it is gone for every bot. */
+  temporary?: { archived?: unknown };
 }
 
 const sectionKey = (section?: string): string => section?.trim() || "";
@@ -142,8 +144,37 @@ export function peerInScope(from: RosterMember, target: RosterMember): boolean {
   return !peerScope || peerScope(from, target);
 }
 
+/** Which bots a Primary Bot covers whatever their team (2026-10-20, JC: the
+ * Primary Bot sees and changes every bot its person owns or may manage, no
+ * managed-team setting needed). index.ts sets it on an organization server
+ * (same owner, or a manage level for the person); unset (a solo server, one
+ * person) a Primary Bot covers every bot. */
+let primaryCover: ((from: RosterMember, target: RosterMember) => boolean) | null = null;
+
+export function setPrimaryCover(cover: ((from: RosterMember, target: RosterMember) => boolean) | null): void {
+  primaryCover = cover;
+}
+
+/** Whether `from` is a Primary Bot covering `target` (see setPrimaryCover). */
+export function primaryCovers(from: RosterMember, target: RosterMember): boolean {
+  return Boolean(from.chiefOfStaff) && (!primaryCover || primaryCover(from, target));
+}
+
+/** The team rule for one bot: its section is open to `from`, or `from` is a
+ * Primary Bot covering it. Every route that refuses "a different section"
+ * reads this, so list_bots and the comms routes agree. */
+export function canAccessBot(from: RosterMember, target: RosterMember): boolean {
+  return canAccessTeam(from, target.section) || primaryCovers(from, target);
+}
+
+/** A temporary agent that was archived (create_agent, then delete_agent or
+ * its idle expiry): gone for every list and route. */
+export function archivedAgent(bot: Pick<RosterMember, "temporary">): boolean {
+  return Boolean(bot.temporary?.archived);
+}
+
 export function canReachPeer(from: RosterMember, target: RosterMember): boolean {
-  return from.id !== target.id && !target.hidden && canAccessTeam(from, target.section) && peerAllowed(from, target) && peerInScope(from, target);
+  return from.id !== target.id && !target.hidden && !archivedAgent(target) && canAccessBot(from, target) && peerAllowed(from, target) && peerInScope(from, target);
 }
 
 /** The peers a bot can both see and reach right now. The roster, list_bots
