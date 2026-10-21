@@ -264,6 +264,8 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
   card?: OptionCardData;
   /** Inline xterm session after a terminal request was allowed. */
   terminalEmbed?: import("../../shared/terminal-resources").TerminalEmbed;
+  /** Tailcat remote-support card. The tunnel address is never on this object. */
+  remoteSession?: import("../../shared/remote-session").RemoteSessionView;
   connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** Lifecycle mirror for a routine whose real work lives in a fresh task. */

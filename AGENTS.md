@@ -32,6 +32,10 @@ ones. Deleting a bot or profile deletes its kept profile
 profile kept, no lock handling. #3182 (identity-check retry) does not apply:
 Sagax has no Chrome identity launcher.
 
+## Tailcat remote sessions
+
+A connected Tailcat session is a first-class card (`remoteSession` on the message) and a Sessions à distance section in the bot panel. The address and the client key stay in the Flow session folder on this host. Never accept them as tool arguments, never put them in an API answer, a log line, or visible text. The support code is the label. The 12-hex folder id stays off the screen. Screenshot in the Computer tab is read-only. Shell reuses the in-chat terminal (`provider: tailcat`). See `docs/remote-sessions.md`.
+
 ## Never a UUID/GUID on screen (2026-10-19)
 
 JC: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID

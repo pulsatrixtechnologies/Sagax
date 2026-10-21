@@ -1105,6 +1105,20 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const fallback = r.default && typeof r.default === "object" ? `\nDefault (where you work now): ${JSON.stringify(r.default)}` : "";
     return { text: `Terminal destinations this person may open:\n${JSON.stringify(resources, null, 2)}${fallback}` };
   }
+  if (name === "publish_remote_session") {
+    const banned = ["address", "nodekey", "node_key", "token", "key", "client_key"];
+    if (banned.some((field) => Object.prototype.hasOwnProperty.call(args ?? {}, field))) {
+      return { text: "Do not send a tunnel address or a key. publish_remote_session takes the session id, the code, the OS, the rights and the end time.", isError: true };
+    }
+    const published = await apiResponse("/api/internal/remote-sessions/publish", { method: "POST", body: JSON.stringify(args ?? {}) });
+    const r = published.body;
+    if (!published.ok || r.error) return { text: String(r.error ?? "The remote session card could not be posted."), isError: true };
+    const host = typeof r.hostLabel === "string" && r.hostLabel.trim() ? r.hostLabel.trim() : "the remote computer";
+    const reach = r.reachable === false
+      ? " The tunnel folder is not on this server yet, so a shell and file transfer will wait until it is."
+      : " The person can open a shell, send a file, or close the session from that card.";
+    return { text: `A remote session card for ${host} is in the chat.${reach} Never repeat a tunnel address or a key.` };
+  }
   if (name === "offer_shell_terminal") {
     const resourceId = typeof args.resource_id === "string" ? args.resource_id.trim() : "";
     const provider = typeof args.provider === "string" ? args.provider.trim() : "";
@@ -1112,7 +1126,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (!reason) {
       return { text: "offer_shell_terminal needs a reason (one short sentence shown on the card).", isError: true };
     }
-    const r = await api("/api/internal/terminal/offer", {
+    const offered = await apiResponse("/api/internal/terminal/offer", {
       method: "POST",
       body: JSON.stringify({
         ...(resourceId ? { resourceId } : {}),
@@ -1120,7 +1134,12 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         reason,
       }),
     });
-    if (r.error) return { text: String(r.error), isError: true };
+    const r = offered.body;
+    if (!offered.ok || r.error) return { text: String(r.error ?? "No terminal could be opened."), isError: true };
+    if (r.opened === true) {
+      const host = typeof r.hostLabel === "string" && r.hostLabel.trim() ? r.hostLabel.trim() : "the remote computer";
+      return { text: `A terminal is already open on ${host}. End this turn. You cannot type in it unless the person turns on bot input. Never ask them to paste a password or a tunnel address.` };
+    }
     const destination = r.destination && typeof r.destination === "object" ? r.destination as { label?: unknown; provider?: unknown; hostLabel?: unknown } : null;
     const where = destination && typeof destination.hostLabel === "string"
       ? ` on ${String(destination.label ?? destination.provider ?? "")} (${destination.hostLabel})`

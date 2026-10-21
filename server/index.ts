@@ -778,6 +778,8 @@ import { IMAGE_SERVER_ENGINE } from "../shared/image-generation.ts";
 import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, orgXaiRefusal, type OrgXaiMedia } from "./org-xai-media.ts";
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
+import { createRemoteSessionService } from "./remote-sessions.ts";
+import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
@@ -9986,6 +9988,7 @@ async function bridgeTerminal(ctx: { principalId: string; botId?: string; thread
     throw error;
   }
 }
+let openRemoteShell: (args: { botId: string; threadId: string }) => Promise<{ hostLabel: string; messageId: string } | { error: string } | null> = async () => null;
 const terminalFeature = installTerminalFeature({
   dataDir: DATA_DIR,
   store,
@@ -9998,6 +10001,7 @@ const terminalFeature = installTerminalFeature({
     return bot ? effectiveBotOwner(bot) : "";
   },
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+  openRemoteShell: (args) => openRemoteShell(args),
   // 2026-10-19 (JC: "Toujours permettre" on every card): a terminal is
   // destructive and irreversible; a key the person chose for those asks
   keptRule: (principalId, botId, candidate, threadId) => {
@@ -10080,6 +10084,24 @@ const terminalFeature = installTerminalFeature({
     },
   },
 });
+const remoteSessions = createRemoteSessionService({
+  dataDir: DATA_DIR,
+  store,
+  registry: terminalFeature.registry,
+  sessions: terminalFeature.sessions,
+  access: terminalAccessFor,
+  owner: (botId, threadId) => {
+    const taskOwner = store.taskByThread(botId, threadId)?.ownerPrincipalId?.trim().toLowerCase();
+    if (taskOwner) return taskOwner;
+    const bot = store.bot(botId);
+    return bot ? effectiveBotOwner(bot).trim().toLowerCase() : "";
+  },
+});
+openRemoteShell = (args) => {
+  const principalId = remoteSessions.principalFor(args.botId, args.threadId);
+  if (!principalId) return Promise.resolve(null);
+  return remoteSessions.openShell({ principalId, botId: args.botId, threadId: args.threadId });
+};
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
   browserNetworkDebug.clearOwner(sessionId);
@@ -26699,6 +26721,11 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
   // list_terminal_resources and offer_shell_terminal (server/routes/terminal-internal.ts)
   terminalFeature.internalRoute,
+  // publish_remote_session (server/routes/remote-sessions.ts)
+  createRemoteSessionInternalRoutes({
+    sessions: remoteSessions,
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+  }),
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
   createArtifactInternalRoutes({
     artifacts: () => artifactStore,
@@ -34862,6 +34889,7 @@ terminalFeature.wire(ROUTES, {
   upgrade: (req) => desktopViewer.upgradeOf(req),
   live: (auth) => auth.kind === "loopback" || (auth.kind === "session" && sessions.isLive(auth.session.id)),
 });
+ROUTES.push(createRemoteSessionRoutes({ sessions: remoteSessions, principalId: terminalPrincipalId }));
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds
 // the WebRTC audio; the harness creates the session with the key (which
