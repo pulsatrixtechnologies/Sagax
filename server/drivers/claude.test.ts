@@ -1983,9 +1983,25 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(first.systemPromptFile).toBe("You are Testy.");
     expect(second.systemPromptFile).toBe(first.systemPromptFile);
     const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    expect(sent[1].message.content).toMatch(LAUNCH_NOTE);
+    // the resumed conversation holds the old copy: only the change rides
     expect(sent[1].message.content).toContain("likes tea, dislikes cloud kitchens");
     expect(sent[1].message.content.endsWith("two")).toBe(true);
+
+    recorder.events.length = 0;
+    // relaunched again with nothing changed: the conversation already holds it
+    await instance.adapter.sendTurn({ threadId: "t-relaunch", text: "three", effort: "low", resumeCursor: announced, ...halves("likes tea, dislikes cloud kitchens") });
+    await recorder.until((e) => e.type === "turn.completed");
+    expect(JSON.parse(readFileSync(dump, "utf8")).pid).not.toBe(second.pid);
+    const third = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(third[2].message.content).toBe("three");
+
+    recorder.events.length = 0;
+    // a fresh session (no resume) starts from nothing: the whole half rides
+    await instance.adapter.sendTurn({ threadId: "t-relaunch", text: "four", effort: "medium", sessionReset: true, ...halves("likes tea, dislikes cloud kitchens") });
+    await recorder.until((e) => e.type === "turn.completed");
+    const fourth = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(fourth[3].message.content).toMatch(LAUNCH_NOTE);
+    expect(fourth[3].message.content).toContain("dislikes cloud kitchens");
   });
 
   it("delivers the volatile half with the first real turn of a warm process", async () => {

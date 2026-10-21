@@ -1346,6 +1346,27 @@ function withReminder(text: string, body: string): string {
   return text ? `${note}\n\n${text}` : note;
 }
 
+/** The user message for a turn sent to a conversation that holds the
+ * volatile half `held` (with those section fingerprints): the bare words
+ * when nothing changed, only the changed sections when they can say it,
+ * else the whole half. */
+function volatileTurnMessage(
+  turn: Pick<SendTurnInput, "text" | "images" | "systemVolatile" | "systemVolatileSections" | "mentionTurn">,
+  held: string,
+  heldSections: Record<string, string> | undefined,
+): ClaudeUserMessage {
+  const volatile = turn.systemVolatile ?? "";
+  const notHeld = held === COMPACTED_VOLATILE || held === UNDELIVERED_VOLATILE;
+  const unchanged = volatile === held || (notHeld && !volatile.trim());
+  if (unchanged && !turn.mentionTurn) return claudeUserMessage(turn.text, turn.images);
+  // Only the sections that changed ride (2026-10-19 perf parity, point 4):
+  // one recent-work line moving no longer re-sends the whole memory
+  // notebook into the session every turn.
+  const sectionsNote = volatileSectionsUpdate(turn.systemVolatileSections, notHeld ? undefined : heldSections, Boolean(turn.mentionTurn));
+  if (sectionsNote === null) return claudeUserMessage(withVolatileNote(turn.text, volatile, held === UNDELIVERED_VOLATILE), turn.images);
+  return claudeUserMessage(sectionsNote ? withReminder(turn.text, sectionsNote) : turn.text, turn.images);
+}
+
 function claudeUserMessage(
   text: string,
   images: readonly ClaudeImage[] | undefined,
@@ -1646,6 +1667,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       closed: Promise<void>;
     }
     const sessions = new Map<string, Session>();
+    /** What a closed process's conversation holds of the volatile half, by
+     * thread: a relaunch that resumes that same session sends only what
+     * changed since, like a live one (port of OpenMausBot #3164). Absent
+     * (server restart, crash, unsettled turn): the whole half rides. */
+    const heldVolatile = new Map<string, { sessionId: string; volatile: string; sections?: Record<string, string> }>();
     /** Where each session's file was written (the config dir of its launch),
      * for sessionBytes. After a restart the default config dir is searched. */
     const sessionConfigDirs = new Map<string, string>();
@@ -1694,6 +1720,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const s = sessions.get(threadId);
       if (!s || s.closing) return;
       s.closing = true;
+      if (s.sessionId && s.sawInit && s.volatile !== UNDELIVERED_VOLATILE && (!s.turn || s.turn.settled)) {
+        heldVolatile.set(threadId, { sessionId: s.sessionId, volatile: s.volatile, ...(s.volatileSections ? { sections: s.volatileSections } : {}) });
+      } else heldVolatile.delete(threadId);
       if (s.idleTimer) clearTimeout(s.idleTimer);
       // Broker ownership belongs to this session. Detach and close it now,
       // before a replacement can bind the same per-thread socket; the old
@@ -2262,18 +2291,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           emit({ ...base(threadId, turnId), type: "session.started", sessionId: live.sessionId, model: live.sessionModel ?? null });
         }
         const volatile = turn.systemVolatile ?? "";
-        const notHeld = live.volatile === COMPACTED_VOLATILE || live.volatile === UNDELIVERED_VOLATILE;
-        const unchanged = volatile === live.volatile || (notHeld && !volatile.trim());
-        // Only the sections that changed ride (2026-10-19 perf parity,
-        // point 4): one recent-work line moving no longer re-sends the whole
-        // memory notebook into the session every turn.
-        const sectionsNote = unchanged && !turn.mentionTurn ? ""
-          : volatileSectionsUpdate(turn.systemVolatileSections, notHeld ? undefined : live.volatileSections, Boolean(turn.mentionTurn));
-        const message = unchanged && !turn.mentionTurn
-          ? promptMsg
-          : sectionsNote === null
-            ? claudeUserMessage(withVolatileNote(turn.text, volatile, live.volatile === UNDELIVERED_VOLATILE), turn.images)
-            : sectionsNote ? claudeUserMessage(withReminder(turn.text, sectionsNote), turn.images) : promptMsg;
+        const message = volatileTurnMessage(turn, live.volatile, live.volatileSections);
         live.volatile = volatile;
         live.volatileSections = turn.systemVolatileSections ? sectionFingerprints(turn.systemVolatileSections) : undefined;
         const running = live.turn;
@@ -2328,6 +2346,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const halves = promptHalves(turn);
       const launchSystem = halves.stable ?? turn.system;
       const launchVolatile = halves.stable !== null ? halves.volatile.trim() : "";
+      const heldBefore = heldVolatile.get(threadId);
+      heldVolatile.delete(threadId);
+      const held = halves.stable !== null && heldBefore && heldBefore.sessionId === sessionId ? heldBefore : undefined;
 
       // Until sessions.set() below, this turn owns every launch resource.
       // Any bind, private-config or synchronous spawn failure must release
@@ -2478,8 +2499,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpNames: Object.keys(mcpServers),
         // Launched with the stable half only, a warm process holds no
         // volatile half until its first real turn delivers it.
-        volatile: launchVolatile && turn.warmOnly === true ? UNDELIVERED_VOLATILE : turn.systemVolatile ?? "",
-        ...(turn.systemVolatileSections && !(launchVolatile && turn.warmOnly === true) ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}),
+        ...(turn.warmOnly === true && held
+          ? { volatile: held.volatile, ...(held.sections ? { volatileSections: held.sections } : {}) }
+          : launchVolatile && turn.warmOnly === true ? { volatile: UNDELIVERED_VOLATILE }
+            : { volatile: turn.systemVolatile ?? "", ...(turn.systemVolatileSections ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}) }),
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
         nativePermissionMode: null,
@@ -3215,7 +3238,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // prompt over stdin as a stream-json message — never argv (ARG_MAX).
       // stdin stays OPEN: that is what keeps the session alive for a
       // mid-turn steer or the next turn; closeSession() ends it.
-      if (!(await writeUser(session, threadId, launchVolatile ? claudeUserMessage(withVolatileNote(turn.text, launchVolatile, true), turn.images) : promptMsg))) {
+      const launchMessage = held ? volatileTurnMessage(turn, held.volatile, held.sections)
+        : launchVolatile ? claudeUserMessage(withVolatileNote(turn.text, launchVolatile, true), turn.images) : promptMsg;
+      if (!(await writeUser(session, threadId, launchMessage))) {
         if (!session.turn?.stopRequested) settle(false, "stdin_write_failed");
         closeSession(threadId, "stdin write failed");
       }
