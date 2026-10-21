@@ -791,7 +791,7 @@ describe("a config.json saved with a byte order mark", () => {
 });
 
 describe("saving the newer sections", () => {
-  it("persists routines.newPaused and leaves it out of later saves", () => {
+  it("persists routines.newPaused across later saves", () => {
     const path = join(DATA_DIR, "config.json");
     mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(path, JSON.stringify({ xai: { key: "xai-fixture" } }));

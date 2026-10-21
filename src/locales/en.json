@@ -233,6 +233,7 @@
   "approval.applied.profileOther": "{name} updated {target}'s profile: {title}",
   "approval.applied.profileOwn": "{name} updated its profile: {title}",
   "approval.applied.routine.create": "{name} scheduled a routine: {title}",
+  "approval.applied.routine.createPaused": "{name} created a paused routine: {title}",
   "approval.applied.routine.delete": "{name} deleted a routine: {title}",
   "approval.applied.routine.pause": "{name} paused a routine: {title}",
   "approval.applied.routine.resume": "{name} resumed a routine: {title}",
