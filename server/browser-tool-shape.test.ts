@@ -72,7 +72,7 @@ describe("browser tool shaping", () => {
     const text = "line of accessibility tree\n".repeat(4_000);
     const shaped = shapeBrowserToolResult({ content: [{ type: "text", text }], structuredContent: {} }, { toolName: "agent_browser_snapshot" }) as { content: Array<{ text: string }> };
     expect(shaped.content[0].text.length).toBeLessThan(DEFAULT_BROWSER_RESULT_BUDGET + 600);
-    expect(shaped.content[0].text).toContain("trimmed this tool result");
+    expect(shaped.content[0].text).toContain("TRUNCATED by Sagax");
     expect(shaped.content[0].text).toContain("agent_browser_get_text");
     const custom = shapeBrowserToolResult({ content: [{ type: "text", text }] }, { budget: 1_000 }) as { content: Array<{ text: string }> };
     expect(custom.content[0].text.length).toBeLessThan(1_600);

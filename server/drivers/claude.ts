@@ -43,7 +43,7 @@ import type {
   SteerOutcome,
   TextGenerationOptions,
 } from "../contracts.ts";
-import { gateServer, resultBudget } from "../mcp-gate-config.ts";
+import { customServerGate, gateServer } from "../mcp-gate-config.ts";
 import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type EffortLevel, type TurnAccessInput } from "../contracts.ts";
@@ -2132,10 +2132,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // to stand is between the two processes. Harness-owned mounts (the
       // permission broker, computer, browser, agents, dweb) are already
       // bounded and are deliberately left alone.
-      const budget = resultBudget(turnEnvironment);
+      // Each server's own result size limit, else the app's (customServerGate).
       for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
         if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
-        const gated = gateServer({ name, server: mcpServers[name], threadId, budget: botOwned.has(name) ? budget : 0, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope });
+        const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment) });
         if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
       // an allowed name is mcp__<server> or mcp__<server>__<tool> (agentsAllowedTools)
