@@ -243,6 +243,25 @@ describe("bounded scheduled overlap and run health", () => {
     await h.manager.tick();
   });
 
+  it("tells of a failure once per streak, and again when it changes or after a run completes (port of OpenMausBot #3052)", async () => {
+    const h = harness(start);
+    const alerts: unknown[] = [];
+    h.options.onRunFailed = (_run, alert) => alerts.push(alert);
+    const routine = h.manager.create({ ...input(), enabled: false });
+    const attempt = async (threadId: string, error?: string) => {
+      h.manager.runNow(routine.id); await h.manager.tick();
+      if (error) h.manager.handleRuntimeEvent({ eventId: "error", provider: "fake", threadId, createdAt: new Date().toISOString(), type: "runtime.error", message: error });
+      finish(h, threadId, !error);
+    };
+    await attempt("thread-1", "Bridge rejected the token");
+    await attempt("thread-2", "Bridge rejected the token");
+    await attempt("thread-3", "Bridge rejected the chat id");
+    await attempt("thread-4");
+    await attempt("thread-5", "Bridge rejected the chat id");
+    expect(h.manager.listRuns().map(run => run.status)).toEqual(["failed", "failed", "failed", "completed", "failed"]);
+    expect(alerts).toEqual([undefined, null, undefined, undefined]);
+  });
+
   it("counts restart recovery only once and sanitizes obsolete or invalid health metadata", async () => {
     const h = harness(start);
     const routine = h.manager.create({ ...input(), enabled: false });

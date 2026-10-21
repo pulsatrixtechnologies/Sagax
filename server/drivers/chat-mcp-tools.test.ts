@@ -341,6 +341,14 @@ describe("Chat MCP session", () => {
     expect(alive(failed.read().pid)).toBe(false);
   });
 
+  it("fails setup when the Local VM lists no tools, but not when the owner's selection leaves none (port of OpenMausBot #3111)", async () => {
+    const empty = fixture(`if(message.method === "tools/list") { reply(message,{tools:[]}); continue; }`);
+    await expect(empty.mount(true, true)).rejects.toThrow("The Local VM listed no tools");
+    expect(alive(empty.read().pid)).toBe(false);
+    expect((await empty.mount(false)).definitions).toEqual([]);
+    expect((await fixture().mount(true, true, { allow: ["mcp:computer:screenshot"] })).definitions).toEqual([]);
+  });
+
   it("advertises only name, description and parameters, never outputSchema or other MCP tool fields", async () => {
     const f = fixture(`if(message.method === "tools/list") { reply(message,{tools:[{name:"write",title:"W",description:"d",inputSchema:${JSON.stringify(schema)},outputSchema:{type:"object"},annotations:{readOnlyHint:true}}]}); continue; }`);
     const session = await f.mount();

@@ -17,7 +17,7 @@
 // down the change it records, and a turn must never fail because an audit
 // line did.
 import { randomUUID } from "node:crypto";
-import { closeSync, fstatSync, mkdirSync, openSync, readSync } from "node:fs";
+import { closeSync, fstatSync, mkdirSync, openSync, readSync, statSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -30,6 +30,7 @@ import {
   hashMemoryText,
   memoryOverview,
   readMemoryDoc,
+  resolveMemoryPath,
   workspaceDocPaths,
   writeMemoryDoc,
 } from "./memory-store.ts";
@@ -422,13 +423,37 @@ export function revertMemoryChange(botId: string, entryId: string, opts: { threa
  * thread can have more than one member speaking on it. */
 const turnBots = new Map<string, Set<string>>();
 
+/** Size and truncated mtime at which a baseline text was read (port of
+ * OpenMausBot #2465). The same pair on a later turn means the same bytes, so
+ * the turn diff reuses the baseline instead of reading and hashing the file:
+ * the cost no longer grows with the daily logs. A same-size edit that keeps
+ * the same mtime is missed, the trade the search index already makes. */
+const baselineStats = new Map<string, Map<string, { mtimeMs: number; bytes: number }>>();
+
 function currentDocs(botId: string): Map<string, string> {
   const docs = new Map<string, string>();
   const overview = memoryOverview(botId);
+  const baseline = baselines.get(botId);
+  let stats = baselineStats.get(botId);
+  if (!stats) baselineStats.set(botId, (stats = new Map()));
   // RULES.md and docs/ are journaled like memory (server/workspace-files.ts)
   for (const path of [MEMORY_INDEX, ...overview.topics.map((t) => t.path), ...overview.logs.map((l) => l.path), ...workspaceDocPaths(botId)]) {
+    let stat: { mtimeMs: number; bytes: number } | undefined;
+    try {
+      const s = statSync(resolveMemoryPath(botId, path));
+      if (s.isFile()) stat = { mtimeMs: Math.trunc(s.mtimeMs), bytes: s.size };
+    } catch { /* unreadable: the read below decides */ }
+    const cached = stats.get(path);
+    const known = baseline?.get(path);
+    if (stat && cached && known !== undefined && cached.bytes === stat.bytes && cached.mtimeMs === stat.mtimeMs) {
+      docs.set(path, known);
+      continue;
+    }
     const doc = readMemoryDoc(botId, path);
-    if (doc.exists) docs.set(path, doc.text);
+    if (doc.exists) {
+      docs.set(path, doc.text);
+      if (stat) stats.set(path, stat); else stats.delete(path);
+    } else stats.delete(path);
   }
   return docs;
 }
@@ -501,6 +526,7 @@ export function endMemoryTurn(threadId: string): MemoryJournalEntry[] {
 /** Test seam: forget every baseline and in-flight turn. */
 export function resetMemoryJournalState(): void {
   baselines.clear();
+  baselineStats.clear();
   turnBots.clear();
 }
 
@@ -509,6 +535,7 @@ export function resetMemoryJournalState(): void {
  * next time a turn looked, and would write the journal file back. */
 export function forgetBotMemoryJournal(botId: string): void {
   baselines.delete(botId);
+  baselineStats.delete(botId);
   for (const [threadId, bots] of turnBots) {
     if (!bots.delete(botId)) continue;
     if (bots.size === 0) turnBots.delete(threadId);

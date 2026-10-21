@@ -354,6 +354,8 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
       // A searched URL server answers over the internet: its initialize and
       // whole tools/list get the URL budget; command servers keep theirs.
       const tools = await client.tools(signal, include, searchable.has(name) ? REMOTE_MCP_STARTUP_MS : STARTUP_MS);
+      // port of OpenMausBot #3111: a Local VM with no tools is an error, not a silent turn
+      if (!tools.length && scope === undefined && descriptor === integrations?.localComputer) throw new Error("The Local VM listed no tools");
       // Harness mounts are known by the descriptor the harness passed, never
       // by a name a configured server could also claim.
       // What the server is, for a grant: hashed, so no credential is kept.

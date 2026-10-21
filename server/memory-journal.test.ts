@@ -2,7 +2,7 @@
 // see, keeps the prior text so a revert needs nothing else, and never
 // takes down the change it records. Bot writes are caught at the turn
 // boundary; these tests simulate a bot's file tool with a plain write.
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -300,6 +300,26 @@ describe("turn boundary", () => {
     writeFileSync(join(workspaceDir(b), "MEMORY.md"), "b learned\n");
     const rows = endMemoryTurn("room-1");
     expect(rows.map((r) => r.botId).sort()).toEqual([a, b].sort());
+  });
+
+  it("reuses the baseline of a file whose size and mtime are unchanged, and journals one that moved (port of OpenMausBot #2465)", () => {
+    const bot = freshBot();
+    ensureWorkspace(bot);
+    const note = join(workspaceDir(bot), "MEMORY.md");
+    writeFileSync(note, "aaaa\n");
+    const before = statSync(note);
+    beginMemoryTurn(bot, "t1");
+    endMemoryTurn("t1");
+    // same size, same mtime: not read again, so not journaled (the accepted trade)
+    beginMemoryTurn(bot, "t2");
+    writeFileSync(note, "bbbb\n");
+    utimesSync(note, before.atime, before.mtime);
+    expect(endMemoryTurn("t2")).toEqual([]);
+    // a new mtime is read and journaled
+    beginMemoryTurn(bot, "t3");
+    writeFileSync(note, "cccc\n");
+    utimesSync(note, before.atime, new Date(before.mtimeMs + 5000));
+    expect(endMemoryTurn("t3").length).toBe(1);
   });
 
   it("never throws when a workspace vanished mid-turn", () => {
