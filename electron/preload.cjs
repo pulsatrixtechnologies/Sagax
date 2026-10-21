@@ -343,6 +343,14 @@ const bridge = {
     ipcRenderer.on("desktop:notification-click", listener);
     return () => ipcRenderer.removeListener("desktop:notification-click", listener);
   },
+  /** The menu bar's bot list (macOS, Windows): [{id, name, color, working, unread}], at most nine. */
+  setTrayRoster: (roster) => ipcRenderer.send("desktop:tray-roster", Array.isArray(roster) ? roster : []),
+  /** A bot picked in the menu bar list or by its Cmd+Shift+N shortcut. */
+  onOpenBot: (cb) => {
+    const listener = (_event, value) => { if (value && typeof value.botId === "string") cb(value.botId); };
+    ipcRenderer.on("desktop:open-bot", listener);
+    return () => ipcRenderer.removeListener("desktop:open-bot", listener);
+  },
   /** Presence: whether the person is at this computer ("active", "idle",
    * "locked" or "unknown") and the seconds since their last input. Safe on
    * an organization page: a state and a number, nothing else. */

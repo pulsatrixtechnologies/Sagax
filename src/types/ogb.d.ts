@@ -387,6 +387,10 @@ const __BASE_VERSION__: string;
       withdrawNotification?(withdrawKey: string): void;
       /** The id of a shell notification the person clicked. */
       onNotificationClick?(cb: (id: string, target?: { botId?: string; threadId?: string; groupId?: string; routineRunId?: string } | null) => void): () => void;
+      /** The menu bar's bot list (electron/system-tray.mjs). */
+      setTrayRoster?(roster: Array<{ id: string; name: string; color: string; working: boolean; unread: number }>): void;
+      /** A bot chosen in the menu bar list or by its global shortcut. */
+      onOpenBot?(cb: (botId: string) => void): () => void;
       /** Presence: the computer's idle state and seconds since the last
        * input (Electron powerMonitor). Null outside the main window. */
       systemIdle?(): Promise<{ state: "active" | "idle" | "locked" | "unknown"; idleSeconds: number } | null>;

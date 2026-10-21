@@ -44,7 +44,7 @@ import { createAllWindowsClosedQuit } from "./window-all-closed.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createLoadRecovery, isAppPage, loadErrorPage, loadingPage, loadOutcome, recoveryStrings, uiBundleState, waitForUiBundle } from "./load-recovery.mjs";
 import { confirmLanguage } from "./update-confirm.mjs";
-import { createSystemTray } from "./system-tray.mjs";
+import { createSystemTray, normalizeRoster, slotAccelerator } from "./system-tray.mjs";
 let startupScreen = null;
 let desktopTray = null;
 import { collisionFreeDownloadPath, defaultSaveName, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
@@ -87,7 +87,7 @@ import { isKnownSkin, skinChrome } from "./skin-overlay.cjs";
 import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-window.mjs";
 import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
 import { createDataWindows } from "./data-window.mjs";
-import { createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
+import { createBotHotkeys, createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -676,7 +676,7 @@ function openStartupScreen() {
   startupScreen = createStartupScreen({
     BrowserWindow, iconPath: APP_ICON, isQuitting: () => desktopShutdownStarted,
     onQuit: () => app.quit(),
-    onHide: desktopTray ? (win) => desktopTray.hide(win) : undefined,
+    onHide: desktopTray && process.platform === "win32" ? (win) => desktopTray.hide(win) : undefined,
     isHidden: () => desktopTray?.isHidden() ?? false,
     onShow: (win) => desktopTray?.windowShown(win),
     onFinished: () => { startupScreen = null; },
@@ -3467,11 +3467,13 @@ function createWindow({ deferNavigation = false } = {}) {
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
     mascotHotkey.disable();
+    clearTrayRoster();
   });
   win.webContents.on("render-process-gone", () => {
     retroAssistantWindow.mainWindowGone();
     floatingBotWindows.mainWindowGone();
     mascotHotkey.disable();
+    clearTrayRoster();
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -4158,6 +4160,43 @@ const mascotHotkey = createMascotHotkey({
   },
   log: (line) => slog(line),
 });
+// The menu bar's bot list and the Cmd+Shift+N shortcuts (electron/system-tray.mjs,
+// createBotHotkeys in mascot-hotkey.mjs). The main page is the brain: it sends
+// the roster; a click or a shortcut brings the window up and tells it which
+// bot to open.
+let trayRoster = [];
+function openBotFromShell(botId) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send("desktop:open-bot", { botId: String(botId) });
+}
+const botHotkeys = createBotHotkeys({
+  globalShortcut,
+  slotFor: (slot) => slotAccelerator(slot),
+  onSlot: (slot) => {
+    const bot = trayRoster[slot - 1];
+    if (bot) openBotFromShell(bot.id);
+  },
+  log: (line) => slog(line),
+});
+function clearTrayRoster() {
+  trayRoster = [];
+  desktopTray?.setRoster([]);
+  botHotkeys.sync(0);
+}
+ipcMain.on("desktop:tray-roster", (event, value) => {
+  if (!isDesktopUiSender(event)) return;
+  const sender = BrowserWindow.fromWebContents(event.sender);
+  if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
+  trayRoster = normalizeRoster(value);
+  desktopTray?.setRoster(trayRoster);
+  // the shortcuts exist only where a menu bar list exists
+  if (process.platform === "darwin") botHotkeys.sync(trayRoster.length);
+});
+
 ipcMain.handle("floating-bots:hotkey", (event, config) => {
   if (!isDesktopUiSender(event)) return null;
   return mascotHotkey.configure(config);
@@ -4813,12 +4852,13 @@ app.whenReady().then(async () => {
     clearCache: () => session.defaultSession.clearCache(),
     log: slog,
   });
-  if (process.platform === "win32") {
+  if (process.platform === "win32" || process.platform === "darwin") {
     try {
       desktopTray = createSystemTray({
         Tray, Menu, nativeImage, iconPath: APP_ICON,
         getWindow: () => startupScreen?.window ?? mainWindow,
         onQuit: () => app.quit(),
+        onOpenBot: openBotFromShell,
       });
     } catch (error) {
       // A missing tray must leave a working close/quit path.
@@ -5213,6 +5253,7 @@ app.on("before-quit", (e) => {
   floatingBotWindows.closeAll();
   dataWindows.closeAll();
   mascotHotkey.dispose();
+  botHotkeys.dispose();
   startupScreen?.dispose();
   companyBackupSchedule?.close();
   orgLibrary?.close();
@@ -5276,5 +5317,5 @@ function releaseDesktopDataDirLease() {
 app.on("will-quit", releaseDesktopDataDirLease);
 app.on("will-quit", () => desktopTray?.destroy());
 // the global key goes with the app, whatever path the quit took
-app.on("will-quit", () => mascotHotkey.dispose());
+app.on("will-quit", () => { mascotHotkey.dispose(); botHotkeys.dispose(); });
 process.once("exit", releaseDesktopDataDirLease);
