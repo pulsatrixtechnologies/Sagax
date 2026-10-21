@@ -13208,7 +13208,10 @@
       "approvals.bulk.alwaysNote": "000ea0d9a8597626c611f847846ceeafc4883bf15b5fdb7a7f3a32301e748d22",
       "approval.tool.runCommandCloud": "95e6026051beb75f25c2e72d5c85ca38f95489c5d50a44cdda30a7be4ae1d400",
       "approval.tool.runCommandComputer": "1aff3145399783a21a8aea6f30b6fe544c4e671081d200d624da939c13abbf47",
-      "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
+      "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df",
+      "chat.stale": "301fbe625e2b1e0046400daf960b88d2ec2cffb7107b0937d9815e245e891e43",
+      "chat.unknownMessage": "5caa5c1a56050915e8bd1614f8927fb30d57e87f78721760453207f78604a2cb",
+      "composer.failed.offline": "3916050a3562745657cc7f26d620aee1fe813952ae5cdf9cef2d059b7173744c"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

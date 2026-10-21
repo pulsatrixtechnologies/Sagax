@@ -110,13 +110,13 @@ import { DataResultChip } from "./DataResultChip";
 import { useDataWindowItem } from "./DataWindowButton";
 import { ThreadRefText } from "./ThreadRefs";
 import { optionsCardRow } from "./OptionsCardRow";
-import { MessageBoundary } from "./MessageBoundary";
+import { MessageBoundary, UnknownMessageCard, isUnknownMessageKind } from "./MessageBoundary";
 import { WidgetMessage } from "./widget/WidgetMessage";
 import { PagePublishCard } from "./PublishedPages";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
-import { ChatErrorBanner, ChatNotice } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -1350,6 +1350,7 @@ const MessagesList = memo(function MessagesList({
                 </div>
               ) : null;
             default: {
+              if (isUnknownMessageKind(m.kind)) return <UnknownMessageCard text={m.text} />;
               const peer = peerLine(m) ?? peerRequest(m, botId);
               const user = m.role === "user" && !peer;
               if (!user && isPureLeakedSystemHarnessMessage(m.text) && !m.attachments?.length) {
@@ -2222,6 +2223,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
 
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
+      {!side && <ChatStaleBanner />}
 
       {/* Pinned message banner */}
       <PinnedBanner

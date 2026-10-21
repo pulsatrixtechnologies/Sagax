@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { t } from "@/lib/i18n";
+import { useNetworkOnline } from "@/lib/drafts";
 import { plainErrorLine } from "@/lib/plain-error";
 import type { AppState } from "@/state/store";
 
@@ -13,6 +14,20 @@ export function ChatNotice({ notice }: { notice: AppState["notice"] }) {
         {notice.kind === "bot-gone"
           ? t("thread.botGone")
           : notice.botName ? t("thread.goneShowing", { name: notice.botName }) : t("thread.gone")}
+      </div>
+    </div>
+  );
+}
+
+/** Shown while the network is down: what is on screen may be behind, and a
+ * message sent now waits in the queue until the connection returns. */
+export function ChatStaleBanner() {
+  const online = useNetworkOnline();
+  if (online) return null;
+  return (
+    <div className="w-full px-5">
+      <div role="status" data-chat-stale className="mb-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[13px] text-warning">
+        {t("chat.stale")}
       </div>
     </div>
   );

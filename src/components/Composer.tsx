@@ -19,7 +19,9 @@ import {
   draftRevision,
   appendDraftAttachments,
   changeDraftAttachmentPending,
+  failedComposerSends,
   forgetFailedComposerSend,
+  useNetworkOnline,
   markDraftEdited,
   prependComposerDraft,
   recoverFailedComposerSend,
@@ -844,6 +846,16 @@ export function Composer({
       dispatch({ type: "send", botId: bot.id, ...retry });
     }
   };
+  // A message queued with no network goes out by itself on reconnect.
+  const online = useNetworkOnline();
+  const retryFailedSendRef = useRef(retryFailedSend);
+  retryFailedSendRef.current = retryFailedSend;
+  useEffect(() => {
+    if (!online) return;
+    for (const queued of failedComposerSends(draftId)) {
+      if (queued.offline) retryFailedSendRef.current(queued);
+    }
+  }, [online, draftId]);
   const send = () => {
     // The Hibou 98 easter egg: the secret command toggles the retro owl and
     // is never sent to anyone.
@@ -1173,9 +1185,11 @@ export function Composer({
             className="flex items-center gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12.5px] text-danger"
           >
             <span className="min-w-0 flex-1 truncate">
-              {t("composer.failed.notSent", {
-                text: failed.text.trim() || t("composer.failed.attachment"),
-              })}
+              {failed.offline
+                ? t("composer.failed.offline", { text: failed.text.trim() || t("composer.failed.attachment") })
+                : t("composer.failed.notSent", {
+                    text: failed.text.trim() || t("composer.failed.attachment"),
+                  })}
             </span>
             <button
               type="button"
