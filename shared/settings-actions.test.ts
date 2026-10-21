@@ -77,4 +77,24 @@ describe("the settings registry", () => {
   it("docs/settings-actions.md is the registry's inventory (pnpm gen:settings-doc)", () => {
     expect(readFileSync(new URL("../docs/settings-actions.md", import.meta.url), "utf8")).toBe(settingsDoc());
   });
+
+  it("gives each 2E option its key: accessibility, time zone, desktop shell, notification sound, other computers", () => {
+    for (const key of ["appearance.reduceMotion", "appearance.highContrast", "appearance.textSize", "appearance.hardwareAcceleration", "appearance.spellcheck",
+      "notifications.soundChoice", "account.timeZone", "account.timeZoneAuto", "computer.rename", "computer.remove"]) {
+      expect(settingSpec(key), key).toBeDefined();
+    }
+    for (const storage of ["sagax.a11y.motion.v1", "sagax.a11y.contrast.v1", "sagax.a11y.textSize.v1", "sagax.hardwareAcceleration.v1", "sagax.spellcheck.v1", "sagax.notificationSound.v1"]) {
+      expect(DEVICE_PREFERENCE_KEYS.has(storage), storage).toBe(true);
+    }
+    // the ones that follow the person to another device
+    for (const storage of ["sagax.a11y.motion.v1", "sagax.a11y.contrast.v1", "sagax.a11y.textSize.v1", "sagax.notificationSound.v1"]) {
+      expect((USER_PREFERENCE_KEYS as readonly string[]).includes(storage), storage).toBe(true);
+    }
+    expect(settingSpec("account.timeZone")!.write({}, "America/Toronto")).toEqual({ method: "PUT", path: "/api/settings/bot", body: { timeZone: "America/Toronto", timeZoneAuto: false } });
+    expect(settingSpec("account.timeZoneAuto")!.write({}, true)).toEqual({ method: "PUT", path: "/api/settings/bot", body: { timeZoneAuto: true } });
+    expect(settingSpec("computer.rename")!.write({}, { computer: "Office PC", name: "Desk" })).toEqual({ method: "POST", path: "/api/me/desktop-bridge/computers/rename", body: { computer: "Office PC", name: "Desk" } });
+    expect(settingSpec("computer.remove")!.write({}, "Office PC")).toEqual({ method: "POST", path: "/api/me/desktop-bridge/computers/remove", body: { computer: "Office PC" } });
+    expect(settingSpec("computer.remove")!.classes?.(null, { organization: true })).toEqual(["delete"]);
+    expect(settingSpec("appearance.textSize")!.write({}, "large")).toEqual({ ui: "setPreference", input: { key: "sagax.a11y.textSize.v1", value: "large" } });
+  });
 });

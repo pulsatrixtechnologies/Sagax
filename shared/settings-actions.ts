@@ -419,6 +419,16 @@ add({
   key: "account.botOverride", family: "account", target: "bot", value: "object", label: "Your own model and notifications for a shared bot", where: "Shared bot > Model / Notifications",
   write: (ids, v) => ({ method: "PUT", path: `/api/me/bot-overrides/${enc(ids.target!)}`, body: v }),
 });
+add({
+  key: "account.timeZone", family: "account", target: "none", value: "string", label: "Your time zone (an IANA zone such as America/Toronto; turns automatic detection off)", where: "Settings > General > Appearance > Time zone",
+  read: () => ({ path: "/api/settings/bot", field: "settings.timeZone" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/settings/bot", body: { timeZone: v, timeZoneAuto: false } }),
+});
+add({
+  key: "account.timeZoneAuto", family: "account", target: "none", value: "boolean", label: "Detect your time zone automatically (the app then follows this computer's zone)", where: "Settings > General > Appearance > Time zone",
+  read: () => ({ path: "/api/settings/bot", field: "settings.timeZoneAuto" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/settings/bot", body: { timeZoneAuto: v } }),
+});
 
 // ── preferences kept on the person's device (and per person on an
 // organization server): the screen command writes them in the app ─────
@@ -439,6 +449,11 @@ pref("appearance.threadsLocation", "appearance", "omb-threads-location", "string
 pref("appearance.backgroundEffect", "appearance", "sagax-background-effect", "string", "Background effect", "Settings > Appearance > Background");
 pref("appearance.glyphRipple", "appearance", "sagax-glyph-ripple", "boolean", "Glyph ripple", "Settings > Appearance > Background");
 pref("appearance.retro98", "appearance", "omb.retro98.on", "boolean", "Hibou 98", "Settings > Appearance");
+pref("appearance.reduceMotion", "appearance", "sagax.a11y.motion.v1", "enum:system|reduce", "Reduce motion (follow the system, or always)", "Settings > Appearance > Accessibility");
+pref("appearance.highContrast", "appearance", "sagax.a11y.contrast.v1", "enum:system|high", "Contrast (standard, or high)", "Settings > Appearance > Accessibility");
+pref("appearance.textSize", "appearance", "sagax.a11y.textSize.v1", "enum:default|large|xlarge", "Text size (default, large, extra large)", "Settings > Appearance > Accessibility");
+pref("appearance.hardwareAcceleration", "appearance", "sagax.hardwareAcceleration.v1", "boolean", "Use hardware acceleration (desktop app; needs a restart)", "Settings > Appearance > Desktop");
+pref("appearance.spellcheck", "appearance", "sagax.spellcheck.v1", "boolean", "Check spelling while typing (desktop app)", "Settings > Appearance > Desktop");
 pref("appearance.sendKey", "appearance", "omb-send-key", "enum:enter|mod-enter", "Send key", "Settings > Appearance");
 pref("appearance.runCard", "appearance", "omb-show-run-card", "boolean", "This run card", "Settings > Appearance");
 pref("appearance.sidebarLogo", "appearance", "sagax-show-sidebar-logo", "boolean", "Sidebar logo", "Settings > Appearance");
@@ -448,6 +463,7 @@ pref("appearance.freshTopicAfter", "appearance", "sagax.freshTopicAfter.v1", "st
 pref("appearance.floatingBots", "appearance", "omb.floatingBots.prefs.v1", "object", "Desktop mascot", "Settings > Appearance > Floating bots");
 pref("appearance.busySend", "appearance", "sagax.busySend.v1", "string", "Sending to a busy bot", "Settings > Appearance");
 pref("notifications.sounds", "notifications", "omb-notification-sounds", "boolean", "Notification sounds", "Settings > Notifications");
+pref("notifications.soundChoice", "notifications", "sagax.notificationSound.v1", "enum:system|tick|double-tick|chime-a|chime-b|blip", "Notification sound (the system's, Tick, Double tick, Chime A, Chime B, Blip)", "Settings > Notifications");
 pref("notifications.persistent", "notifications", "omb-notification-persistent", "boolean", "Persistent notifications", "Settings > Notifications");
 pref("notifications.dockBadge", "notifications", "omb-dock-badge", "boolean", "Dock badge", "Settings > Notifications");
 pref("notifications.approvalChime", "notifications", "omb-approval-chime", "boolean", "Approval chime", "Settings > Notifications");
@@ -460,6 +476,20 @@ pref("models.voiceMode", "models", "omb.voiceMode.v1", "object", "Voice mode (vo
 // where bots run for the person (their own computer, routines, network): a
 // widening of where work goes, the person's Allow
 pref("computer.botWorkplace", "computer", "sagax.botWorkplace.v1", "object", "Where bots work for you", "Settings > Computer > Bot workplace", always("rule-change"));
+// the person's other computers (organization server; server/desktop-bridge.ts):
+// named by the computer's name or id, never offline-only for a rename
+add({
+  key: "computer.rename", family: "computer", target: "none", value: "object", label: "Rename one of your other computers ({computer: its name, name: the new name})", where: "Settings > Computer > Other computers",
+  write: (_ids, v) => {
+    const { computer, name } = (v ?? {}) as { computer?: unknown; name?: unknown };
+    return { method: "POST", path: "/api/me/desktop-bridge/computers/rename", body: { computer, name } };
+  },
+});
+add({
+  key: "computer.remove", family: "computer", target: "none", value: "string", label: "Remove one of your other computers from the list (its name; refused while it is online)", where: "Settings > Computer > Other computers",
+  write: (_ids, v) => ({ method: "POST", path: "/api/me/desktop-bridge/computers/remove", body: { computer: v } }),
+  classes: always("delete"),
+});
 
 const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio", "composio"]);
 

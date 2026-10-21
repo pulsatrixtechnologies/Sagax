@@ -3662,3 +3662,19 @@ button:disabled.bg-danger {
   --color-unread: #a16207;
   --glyph-ripple-tint: #a16207;
 }
+
+/* Settings > Appearance > Accessibility (parity 2E; src/lib/accessibility-preferences.ts).
+   The selector outweighs every skin's own, so the choice wins in each one. */
+/* High contrast: secondary text reads as primary, borders get a visible edge. */
+:root[data-contrast="high"]:not(#a11y) {
+  --color-ink-secondary: var(--color-ink);
+  --color-ink-tertiary: var(--color-ink);
+  --color-hairline: color-mix(in srgb, var(--color-ink) 55%, transparent);
+  --color-hairline-weak: color-mix(in srgb, var(--color-ink) 30%, transparent);
+}
+:root[data-contrast="high"] :focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; }
+/* Text size: the whole interface scales, so fixed pixel sizes follow. The
+   desktop app zooms the window itself (data-zoom-native); this is the
+   browser's fallback. */
+:root[data-text-size="large"]:not([data-zoom-native]) { zoom: 1.1; }
+:root[data-text-size="xlarge"]:not([data-zoom-native]) { zoom: 1.25; }

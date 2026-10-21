@@ -511,6 +511,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/bot-overrides\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/cloud-agent-providers(?:\\/(cursor|claude|codex)(?:\\/test)?)?$","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/credentials\\/([a-z0-9]{8,40})(?:\\/(notes|grants)(?:\\/([\\w-]{1,128}))?)?$","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/desktop-bridge\\/computers\\/(rename|remove)$","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/engines\\/([\\w.-]+)\\/login\\/(start|complete|cancel|sign-out)$","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/engines\\/([\\w.-]+)\\/login\\/status$","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/me\\/mcp\\/servers\\/([a-z][a-z0-9_-]{0,31})(?:\\/oauth\\/(start|disconnect))?$","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},

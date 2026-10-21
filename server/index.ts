@@ -1292,7 +1292,7 @@ function liveSessionPerson(sessionId: string): string | null {
 // (server/desktop-bridge.ts): bots in their conversations run shell, files,
 // search, fetch, browser, computer use and Local VM there, and their network
 // traffic leaves through it (server/desktop-egress.ts).
-const desktopBridges = new DesktopBridges(liveSessionPerson);
+const desktopBridges = new DesktopBridges(liveSessionPerson, Date.now, join(DATA_DIR, "desktop-computer-names.json"));
 const desktopLocalModels = new DesktopLocalModels(DATA_DIR, desktopBridges);
 setDesktopInjectModels(() => desktopLocalModels.modelsFor(null));
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);

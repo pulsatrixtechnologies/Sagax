@@ -240,6 +240,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Your photo (a data URL, null removes) | Settings > General > Account | `sagax_settings` set `account.avatar` | simple |
 | About me | Settings > General > About me | `sagax_settings` get, set `account.aboutMe` | simple; organisation : organisation |
 | Your own model and notifications for a shared bot | Shared bot > Model / Notifications | `sagax_settings` set `account.botOverride` | simple |
+| Your time zone (an IANA zone such as America/Toronto; turns automatic detection off) | Settings > General > Appearance > Time zone | `sagax_settings` get, set `account.timeZone` | simple |
+| Detect your time zone automatically (the app then follows this computer's zone) | Settings > General > Appearance > Time zone | `sagax_settings` get, set `account.timeZoneAuto` | simple |
 
 ### Apparence
 
@@ -255,6 +257,11 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Background effect | Settings > Appearance > Background | `sagax_settings` set `appearance.backgroundEffect` | simple |
 | Glyph ripple | Settings > Appearance > Background | `sagax_settings` set `appearance.glyphRipple` | simple |
 | Hibou 98 | Settings > Appearance | `sagax_settings` set `appearance.retro98` | simple |
+| Reduce motion (follow the system, or always) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.reduceMotion` | simple |
+| Contrast (standard, or high) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.highContrast` | simple |
+| Text size (default, large, extra large) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.textSize` | simple |
+| Use hardware acceleration (desktop app; needs a restart) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.hardwareAcceleration` | simple |
+| Check spelling while typing (desktop app) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.spellcheck` | simple |
 | Send key | Settings > Appearance | `sagax_settings` set `appearance.sendKey` | simple |
 | This run card | Settings > Appearance | `sagax_settings` set `appearance.runCard` | simple |
 | Sidebar logo | Settings > Appearance | `sagax_settings` set `appearance.sidebarLogo` | simple |
@@ -269,6 +276,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
 | Notification sounds | Settings > Notifications | `sagax_settings` set `notifications.sounds` | simple |
+| Notification sound (the system's, Tick, Double tick, Chime A, Chime B, Blip) | Settings > Notifications | `sagax_settings` set `notifications.soundChoice` | simple |
 | Persistent notifications | Settings > Notifications | `sagax_settings` set `notifications.persistent` | simple |
 | Dock badge | Settings > Notifications | `sagax_settings` set `notifications.dockBadge` | simple |
 | Approval chime | Settings > Notifications | `sagax_settings` set `notifications.approvalChime` | simple |
@@ -338,6 +346,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
 | Where bots work for you | Settings > Computer > Bot workplace | `sagax_settings` set `computer.botWorkplace` | élargit les droits |
+| Rename one of your other computers ({computer: its name, name: the new name}) | Settings > Computer > Other computers | `sagax_settings` set `computer.rename` | simple |
+| Remove one of your other computers from the list (its name; refused while it is online) | Settings > Computer > Other computers | `sagax_settings` set `computer.remove` | suppression |
 | Local VM ({mode, maxInstances, idleTimeoutMinutes}) | Settings > Computer | `sagax_settings` get, set `server.localVm` | simple; organisation : organisation |
 
 ## Hors de sagax_settings

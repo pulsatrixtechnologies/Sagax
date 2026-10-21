@@ -17,7 +17,8 @@ import {
   useNotificationSounds,
   useNudgeSound,
 } from "@/lib/notification-preferences";
-import { CompactRow, DescribedRow, SettingsGroup, Switch } from "./SettingsPrimitives";
+import { NOTIFICATION_SOUND_CHOICES, notificationSoundChoice, playNotificationSound } from "@/lib/notification-sound";
+import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
 
 function ThisComputer() {
@@ -31,11 +32,25 @@ export function NotificationSettings({ privacy = false }: { privacy?: boolean })
   const nudgeSound = useNudgeSound();
   const shake = useLocalSwitch(nudgeShake);
   const chime = useLocalSwitch(approvalChime);
+  const soundChoice = notificationSoundChoice.use();
   return (
     <>
       <SettingsGroup title={t("settings.group.alerts")} groupId="alerts" accessory={<ThisComputer />}>
         <CompactRow label={t("settings.notificationSounds.title")} rowId="notificationSounds">
           <Switch checked={sounds} aria-label={t("settings.notificationSounds.play")} onClick={() => setNotificationSounds(!sounds)} />
+        </CompactRow>
+        {/* which sound, previewed when picked (drawn here: src/lib/notification-sound.ts) */}
+        <CompactRow label={t("settings.notificationSound.title")} rowId="notificationSound">
+          <PillSelect
+            value={soundChoice}
+            ariaLabel={t("settings.notificationSound.title")}
+            disabled={!sounds}
+            onChange={(next) => {
+              notificationSoundChoice.set(next);
+              playNotificationSound(next);
+            }}
+            options={NOTIFICATION_SOUND_CHOICES.map((id) => ({ value: id, label: t(`settings.notificationSound.${id}`) }))}
+          />
         </CompactRow>
         {/* The one grey line kept: on macOS a Banner slides away whatever this says. */}
         <DescribedRow label={t("settings.notifications.persistent.title")} description={t("settings.notifications.persistent.mac")} rowId="persistentNotifications">

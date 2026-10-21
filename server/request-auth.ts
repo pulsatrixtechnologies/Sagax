@@ -432,6 +432,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/desktop-bridge\/(?:connect|[0-9a-f-]{36}\/(?:poll|lease|result|disconnect|system|local-models))$/ },
   { methods: ["GET"], path: /^\/api\/me\/desktop-bridge$/ },
   { methods: ["POST"], path: /^\/api\/me\/desktop-bridge\/local-vm$/ },
+  { methods: ["POST"], path: /^\/api\/me\/desktop-bridge\/computers\/(?:rename|remove)$/ },
   { methods: ["GET", "PUT"], path: /^\/api\/me\/local-models$/ },
   // Organization server (SAGAX_IDENTITY=perspicax): a member pairs their own
   // phone or computer. The handler binds the code to the member's person and

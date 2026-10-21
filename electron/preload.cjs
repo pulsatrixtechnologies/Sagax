@@ -1,6 +1,6 @@
 // Renderer bridge. contextIsolation stays on; the renderer only ever sees
 // this narrow surface (window.ogb), never Node or ipcRenderer itself.
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require("electron");
 
 // Sandboxed preloads receive Electron's restricted `require`, which cannot
 // load sibling CommonJS files. Keep this tiny predicate inline here; main's
@@ -64,7 +64,7 @@ const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "o
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -278,6 +278,30 @@ const bridge = {
       if (typeof language !== "string") return Promise.resolve(null);
       desktopLanguageCache = language;
       return ipcRenderer.invoke("desktop-language:set", language).catch(() => null);
+    },
+  },
+  /** Hardware acceleration and the spell checker, kept by main
+   * (electron/desktop-shell-preferences.mjs). get() answers at once. */
+  shellPreferences: {
+    get: () => {
+      try {
+        const value = ipcRenderer.sendSync("desktop-shell-preferences:get");
+        return value && typeof value === "object" ? value : null;
+      } catch {
+        return null;
+      }
+    },
+    set: (patch) => ipcRenderer.invoke("desktop-shell-preferences:set", patch).catch(() => null),
+    /** Settings > Appearance > Accessibility > Text size: the page's zoom
+     * (1 to 1.5), done by the window itself so viewport units stay true. */
+    setZoom: (factor) => {
+      if (typeof factor !== "number" || !Number.isFinite(factor)) return false;
+      try {
+        webFrame.setZoomFactor(Math.min(1.5, Math.max(1, factor)));
+        return true;
+      } catch {
+        return false;
+      }
     },
   },
   /** The person's custom app icon (Settings > Appearance): the page sends

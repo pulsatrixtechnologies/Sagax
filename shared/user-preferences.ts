@@ -30,6 +30,12 @@ export const USER_PREFERENCE_KEYS = [
   "omb-language",
   // notifications
   "omb-notification-sounds",
+  // which sound a notification plays (src/lib/notification-sound.ts)
+  "sagax.notificationSound.v1",
+  // Settings > Appearance > Accessibility (src/lib/accessibility-preferences.ts)
+  "sagax.a11y.motion.v1",
+  "sagax.a11y.contrast.v1",
+  "sagax.a11y.textSize.v1",
   // the desktop mascot's behavior (fly away during tasks, activity level)
   "omb.floatingBots.prefs.v1",
   // sidebar layout

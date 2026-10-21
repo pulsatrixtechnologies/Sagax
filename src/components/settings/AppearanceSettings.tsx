@@ -24,6 +24,8 @@ import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
+import { contrastChoice, CONTRAST_CHOICES, MOTION_CHOICES, motionChoice, TEXT_SIZE_CHOICES, textSizeChoice } from "@/lib/accessibility-preferences";
+import { hardwareAccelerationChoice, hasDesktopShellPreferences, spellcheckChoice } from "@/lib/desktop-shell-preferences";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
@@ -275,6 +277,61 @@ function MascotsRow() {
   );
 }
 
+/** Settings > Appearance > Accessibility: motion, contrast and text size,
+ * each its own key for sagax_settings (appearance.reduceMotion, highContrast,
+ * textSize). */
+export function AccessibilityGroup() {
+  const motion = motionChoice.use();
+  const contrast = contrastChoice.use();
+  const size = textSizeChoice.use();
+  return (
+    <div data-settings-card="appearance.accessibility">
+      <SettingsGroup title={t("settings.group.accessibility")} groupId="accessibility">
+        <CompactRow label={t("settings.a11y.motion.title")} rowId="reduceMotion">
+          <PillSelect
+            value={motion}
+            ariaLabel={t("settings.a11y.motion.title")}
+            onChange={(next) => motionChoice.set(next)}
+            options={MOTION_CHOICES.map((id) => ({ value: id, label: t(`settings.a11y.motion.${id}`) }))}
+          />
+        </CompactRow>
+        <CompactRow label={t("settings.a11y.contrast.title")} rowId="highContrast">
+          <PillSelect
+            value={contrast}
+            ariaLabel={t("settings.a11y.contrast.title")}
+            onChange={(next) => contrastChoice.set(next)}
+            options={CONTRAST_CHOICES.map((id) => ({ value: id, label: t(`settings.a11y.contrast.${id}`) }))}
+          />
+        </CompactRow>
+        <CompactRow label={t("settings.a11y.textSize.title")} rowId="textSize">
+          <PillSelect
+            value={size}
+            ariaLabel={t("settings.a11y.textSize.title")}
+            onChange={(next) => textSizeChoice.set(next)}
+            options={TEXT_SIZE_CHOICES.map((id) => ({ value: id, label: t(`settings.a11y.textSize.${id}`) }))}
+          />
+        </CompactRow>
+      </SettingsGroup>
+    </div>
+  );
+}
+
+/** The two choices only the desktop shell honours (hardware acceleration
+ * needs a restart; the spell checker is applied as the shell allows). */
+function DesktopShellRows() {
+  const acceleration = hardwareAccelerationChoice.use() === "true";
+  const spelling = spellcheckChoice.use() === "true";
+  if (!hasDesktopShellPreferences()) return null;
+  return (
+    <>
+      <DescribedRow label={t("settings.hardwareAcceleration.title")} description={t("settings.hardwareAcceleration.note")} rowId="hardwareAcceleration">
+        <Switch checked={acceleration} aria-label={t("settings.hardwareAcceleration.title")} onClick={() => hardwareAccelerationChoice.set(acceleration ? "false" : "true")} />
+      </DescribedRow>
+      <SwitchLine label={t("settings.spellcheck.title")} checked={spelling} onChange={(next) => spellcheckChoice.set(next ? "true" : "false")} rowId="spellcheck" />
+    </>
+  );
+}
+
 export function AppearanceSettings() {
   const { state } = useStore();
   const advanced = useAdvancedMode();
@@ -319,9 +376,11 @@ export function AppearanceSettings() {
         {/* Simple: the sidebar's own "Hidden (N)" row brings entries back. */}
         {advanced && <SidebarHiddenSettings />}
       </SettingsGroup>
+      <AccessibilityGroup />
       <SettingsGroup title={t("settings.group.desktop")} groupId="desktop">
         <AppIconRow />
         <MascotsRow />
+        <DesktopShellRows />
       </SettingsGroup>
     </>
   );
