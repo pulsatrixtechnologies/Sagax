@@ -14628,6 +14628,8 @@ bus.subscribe((event: RuntimeEvent) => {
                 ...(notificationBot.avatarUrl ? { avatarUrl: notificationBot.avatarUrl } : {}),
                 ...(plain ? { title: plain.title } : {}),
                 ...(event.requestId ? { requestId: event.requestId } : {}),
+                // Allow on the phone opens Sagax: this class needs the person's key.
+                ...(permission && ownerStepUp.length > 0 ? { needsKey: true } : {}),
               },
             ));
           };
@@ -15013,7 +15015,10 @@ bus.subscribe((event: RuntimeEvent) => {
             ? reply || routineRun.output || routineRun.routineName
             : reply;
           const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || bot;
-          notify(deliverableNotification("done", notificationBot, routineReportThread ?? event.threadId, completionDetail, { avatarUrl: notificationBot.avatarUrl }));
+          notify(deliverableNotification("done", notificationBot, routineReportThread ?? event.threadId, completionDetail, {
+            avatarUrl: notificationBot.avatarUrl,
+            ...(routineRun && routineRun.status === "completed" ? { routineRunId: routineRun.id, routineName: routineRun.routineName } : {}),
+          }));
         }
         if (screenPollers.has(event.threadId) && askedForView(latestPersonText(event.threadId), "screen")) {
           // views on request only (shared/requested-views.ts): the settled
@@ -17481,7 +17486,12 @@ async function confirmHeldCard(request: { threadId?: string; botId?: string; too
       ...(bot && request.fingerprint ? { ownerRule: { ...candidate, from: "hold" as const } } : {}),
     },
   });
-  if (bot) notify(deliverableNotification("approval", bot, threadId, summary, bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}));
+  const holdNeedsKey = Boolean(bot && autoAnswerStepUp(bot, threadId, { tool: request.tool ?? "action", summary }).length);
+  if (bot) notify(deliverableNotification("approval", bot, threadId, summary, {
+    ...(bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}),
+    requestId: held.requestId,
+    ...(holdNeedsKey ? { needsKey: true } : {}),
+  }));
   const answer = await held.answer;
   if (answer === "timeout") {
     const stale = store.messagesFor(threadId).find((row) => row.id === message.id);
@@ -39385,7 +39395,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             } else if (store.taskByThread(currentSender.id, threadId)?.busy) {
               store.setTaskActivity(currentSender.id, threadId, "waiting-on-you");
             }
-            notify(deliverableNotification("approval", currentSender, threadId, summary, { avatarUrl: currentSender.avatarUrl }));
+            const outboundNeedsKey = autoAnswerStepUp(currentSender, threadId, { tool: outboundTool, summary }).length > 0;
+            notify(deliverableNotification("approval", currentSender, threadId, summary, {
+              avatarUrl: currentSender.avatarUrl,
+              requestId: held.requestId,
+              ...(outboundNeedsKey ? { needsKey: true } : {}),
+            }));
             const answer = await held.answer;
             outboundRequests.forget(held.requestId);
             if (internalCapabilityIsActive(internalCapability)) {

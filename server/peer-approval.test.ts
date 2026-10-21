@@ -118,6 +118,7 @@ describe("peer approval card lifecycle", () => {
       threadId: from.threadId,
       title: "Asker needs approval",
     });
+    expect(frames[0]?.requestId).toBe(card.card!.requestId);
     expect(frames[0]?.body).toContain("@Asker wants to contact @Helper");
     expect(frames[0]?.body).toContain("Helper, can you take the deploy?");
 

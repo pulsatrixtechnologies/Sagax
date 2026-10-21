@@ -271,6 +271,9 @@ final class Session: ObservableObject {
         NotificationCoordinator.shared.responseHandler = { [weak self] target in
             Task { @MainActor in await self?.openNotification(target) }
         }
+        NotificationCoordinator.shared.approvalHandler = { decision in
+            await NotificationApprovalRunner.run(decision)
+        }
         // APNs (PushRegistrar.swift): the server this phone is signed in to
         // gets its token; a push that wakes the app recounts the badge.
         PushRegistrar.shared.activeClient = { [weak self] in
