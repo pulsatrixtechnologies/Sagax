@@ -84,7 +84,8 @@ struct ChatListView: View {
     /// Bulk selection of bot rows and the "more unread" pills (Features/Sidebar).
     @StateObject private var selection = HomeSelectionModel()
     @State private var offscreenUnread = OffscreenUnread(above: 0, below: 0, nearestAbove: nil, nearestBelow: nil)
-    @State private var rosterScrollProxy: ScrollViewProxy?
+    @State private var rowFrames: [String: CGRect] = [:]
+    @State private var rosterViewport: (top: CGFloat, bottom: CGFloat) = (0, 0)
     @FocusState private var searchFocused: Bool
 
     /// Space between the header's glass buttons and whatever the list
@@ -1438,14 +1439,16 @@ extension ChatListView {
             .background {
                 GeometryReader { box in
                     Color.clear.onPreferenceChange(HomeRowFramesKey.self) { frames in
-                        updateOffscreenUnread(frames, top: headerClearance, bottom: box.size.height)
+                        rowFrames = frames
+                        rosterViewport = (headerClearance, box.size.height)
+                        updateOffscreenUnread()
                     }
                 }
             }
             .overlay(alignment: .top) {
                 if offscreenUnread.above > 0, let target = offscreenUnread.nearestAbove {
                     HomeUnreadPill(count: offscreenUnread.above, above: true) {
-                        withAnimation { proxy.scrollTo(target, anchor: .top) }
+                        withAnimation { proxy.scrollTo(target, anchor: .center) }
                     }
                     .padding(.top, headerClearance + 4)
                     .transition(.opacity)
@@ -1460,6 +1463,7 @@ extension ChatListView {
                     .transition(.opacity)
                 }
             }
+            .onValueChange(of: unreadRowIds) { _ in updateOffscreenUnread() }
             .topScrollEdgeFade(height: headerClearance)
             .overlay {
                 if rosterIsEmpty {
@@ -1692,7 +1696,7 @@ extension ChatListView {
             let status = rowStatus(chat, waiting: waiting.contains(chat.id), queued: queued)
             let botId: String? = { if case let .bot(bot) = chat { return bot.id }; return nil }()
             Button {
-                if selection.active, let botId { selection.toggle(botId) } else { openChat(chat) }
+                if selection.active { if let botId { selection.toggle(botId) } } else { openChat(chat) }
             } label: {
                 HomeChatRow(
                     chat: chat,
@@ -1741,9 +1745,10 @@ extension ChatListView {
     }
 
     /// Rows scrolled out of the visible window that still wait on a read.
-    private func updateOffscreenUnread(_ frames: [String: CGRect], top: CGFloat, bottom: CGFloat) {
+    private func updateOffscreenUnread() {
         let unread = unreadRowIds
-        let boxes = frames.map { UnreadRowBox(id: $0.key, top: $0.value.minY, bottom: $0.value.maxY, unread: unread.contains($0.key)) }
+        let (top, bottom) = rosterViewport
+        let boxes = rowFrames.map { UnreadRowBox(id: $0.key, top: $0.value.minY, bottom: $0.value.maxY, unread: unread.contains($0.key)) }
         let next = OffscreenUnread.compute(rows: boxes, viewportTop: top, viewportBottom: bottom)
         if next != offscreenUnread { offscreenUnread = next }
     }

@@ -19,6 +19,7 @@ final class HomeSelectionModel: ObservableObject {
     func toggle(_ botId: String) {
         if let index = ids.firstIndex(of: botId) { ids.remove(at: index) } else { ids.append(botId) }
         Haptics.selection()
+        if ids.isEmpty { clear() }
     }
 
     func contains(_ botId: String) -> Bool { ids.contains(botId) }
