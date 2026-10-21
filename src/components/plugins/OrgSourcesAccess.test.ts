@@ -4,11 +4,16 @@
 // field is empty until the person types one.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
 import { reducer, initialState } from "@/state/store";
+
+vi.mock("@/state/store", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/state/store")>(),
+  useStore: () => ({ state: { config: {}, bots: [] }, dispatch: vi.fn() }),
+}));
 import { openSettings } from "@/lib/settings-link";
 import { MAX_ORG_GITHUB_TOKENS, type OrgGithubTokenPublic } from "../../../shared/org-github-tokens";
 import { PerspicaxOrgSettings } from "../PerspicaxOrgSettings";

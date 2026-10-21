@@ -13,7 +13,7 @@ const fixture = vi.hoisted(() => ({ config: { rooms: { turnTimeoutMinutes: 7 }, 
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
   api: vi.fn(async () => ({ approvals: [] })),
-  useStore: () => ({ state: { config: fixture.config }, dispatch: vi.fn() }),
+  useStore: () => ({ state: { config: fixture.config, bots: [] }, dispatch: vi.fn() }),
 }));
 
 const org = (viewerRole: "admin" | "member", state: "ok" | "missing" = "ok"): PerspicaxOrg => ({
@@ -50,7 +50,7 @@ describe("Settings > Organization (Perspicax)", () => {
     // no help paragraphs, no native select
     expect(html).not.toContain("Nothing runs on the Sagax server itself");
     expect(html).not.toContain("Applies to every bot turn in a group");
-    expect(html).not.toContain("<select");
+    expect(html).toContain('aria-label="Team bot"');
   });
 
   it("shows a member the organization only, and a broken link in the warning color", async () => {
