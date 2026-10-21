@@ -4165,7 +4165,8 @@ ipcMain.handle("floating-bots:hotkey", (event, config) => {
 
 // Caption controls for the overlay-less frameless window. The renderer's
 // buttons are the only way to act on the window, so the channels stay
-// open for the local page; a remote server's page never has them.
+// open; they act only on the sender's own window, so a remote server's page
+// has them too (port of OpenMausBot #3151).
 for (const [channel, act] of [
   ["window:minimize", (win) => win.minimize()],
   ["window:toggle-maximize", (win) => (win.isMaximized() ? win.unmaximize() : win.maximize())],

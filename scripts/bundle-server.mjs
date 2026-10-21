@@ -21,6 +21,7 @@ import { build } from "esbuild";
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { markModuleScope } from "./mark-module-scope.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const server = join(root, "server");
@@ -186,3 +187,7 @@ const piMcpExtDest = join(root, "dist-server", "drivers", "pi-mcp-extension.ts")
 mkdirSync(dirname(piMcpExtDest), { recursive: true });
 await build({ entryPoints: [piMcpExtSrc], outfile: piMcpExtDest, bundle: true,
   platform: "node", target: "node24", format: "esm", external: ["typebox"], });
+
+// Port of OpenMausBot #2800: the packaged server must run as ES modules even
+// when a package.json above the install folder says "commonjs".
+markModuleScope(join(root, "dist-server"));

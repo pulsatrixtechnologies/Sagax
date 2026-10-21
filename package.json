@@ -60,7 +60,7 @@
     "build:server": "node --experimental-strip-types scripts/self-knowledge/generate.ts && tsc -p tsconfig.server.build.json && node scripts/bundle-server.mjs",
     "gen:self-knowledge": "node --experimental-strip-types scripts/self-knowledge/generate.ts",
     "gen:settings-doc": "node --experimental-strip-types scripts/settings-actions/doc.ts",
-    "build:companion": "tsc -p tsconfig.companion.build.json",
+    "build:companion": "tsc -p tsconfig.companion.build.json && node scripts/mark-module-scope.mjs dist-companion",
     "build:speech": "node electron/build-speech-helper.mjs",
     "build:cua": "node scripts/prepare-cua.mjs",
     "build:cua:win": "node scripts/prepare-cua-win.mjs",
