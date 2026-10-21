@@ -1,4 +1,4 @@
-// Two choices only the desktop shell can honour: hardware acceleration (read
+// Choices only the desktop shell can honour: hardware acceleration (read
 // before Electron is ready, so a change needs a restart) and the spell
 // checker. The page keeps them in localStorage (so a bot can set them with
 // sagax_settings) and hands them over; main keeps a copy in userData, like
@@ -7,8 +7,10 @@
 import fs from "node:fs";
 import path from "node:path";
 
+// the chords of electron/system-tray.mjs HOTKEY_MODIFIERS
+const HOTKEY_MODIFIER_NAMES = ["cmd-shift", "cmd-alt", "ctrl-alt"];
 const FILE = "desktop-shell-preferences.json";
-export const DEFAULT_SHELL_PREFERENCES = Object.freeze({ hardwareAcceleration: true, spellcheck: true });
+export const DEFAULT_SHELL_PREFERENCES = Object.freeze({ hardwareAcceleration: true, spellcheck: true, botHotkeys: true, botHotkeyModifier: "cmd-shift" });
 
 /** Only booleans for the two known names; anything else is dropped. */
 export function normalizeShellPreferences(value) {
@@ -16,6 +18,8 @@ export function normalizeShellPreferences(value) {
   if (value && typeof value === "object") {
     if (typeof value.hardwareAcceleration === "boolean") out.hardwareAcceleration = value.hardwareAcceleration;
     if (typeof value.spellcheck === "boolean") out.spellcheck = value.spellcheck;
+    if (typeof value.botHotkeys === "boolean") out.botHotkeys = value.botHotkeys;
+    if (HOTKEY_MODIFIER_NAMES.includes(value.botHotkeyModifier)) out.botHotkeyModifier = value.botHotkeyModifier;
   }
   return out;
 }

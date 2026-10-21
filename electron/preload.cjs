@@ -368,7 +368,7 @@ const bridge = {
     return () => ipcRenderer.removeListener("desktop:notification-click", listener);
   },
   /** The menu bar's bot list (macOS, Windows): [{id, name, color, working, unread}], at most nine. */
-  setTrayRoster: (roster) => ipcRenderer.send("desktop:tray-roster", Array.isArray(roster) ? roster : []),
+  setTrayRoster: (roster, labels) => ipcRenderer.send("desktop:tray-roster", Array.isArray(roster) ? roster : [], labels && typeof labels === "object" ? labels : undefined),
   /** A bot picked in the menu bar list or by its Cmd+Shift+N shortcut. */
   onOpenBot: (cb) => {
     const listener = (_event, value) => { if (value && typeof value.botId === "string") cb(value.botId); };

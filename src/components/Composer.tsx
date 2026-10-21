@@ -117,7 +117,7 @@ import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
 import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerModelRow, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VOICE_NOTE_ICON, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
 import { useComposerDictation } from "./useComposerDictation";
 import { useVoiceNoteRecorder } from "./useVoiceNoteRecorder";
-import { dictationEngine, joinDictated } from "@/lib/composer-dictation";
+import { dictationEngine, isDictationHold, joinDictated } from "@/lib/composer-dictation";
 import { botCtaColors } from "@/lib/voice-cta";
 import { useVoiceModeCheck } from "@/lib/voice-mode/api";
 import { requestSettingsCard } from "./SettingsPrimitives";
@@ -1073,6 +1073,27 @@ export function Composer({
     }
     void dictation.start();
   };
+  // Hold to dictate: a press that starts the mic and is kept down (the mic
+  // button, or the shortcut) stops it on release; a tap keeps listening.
+  const micHold = useRef<{ at: number; started: boolean } | null>(null);
+  const pressMic = () => {
+    const started = !dictating && !voiceNoting && Boolean(engine);
+    micHold.current = { at: Date.now(), started };
+    if (started) void dictation.start();
+  };
+  const releaseMic = () => {
+    const hold = micHold.current;
+    if (hold?.started && isDictationHold(hold.at, Date.now())) dictation.stop();
+    // the click that follows a pointer press must not toggle it back
+    if (hold) window.setTimeout(() => { if (micHold.current === hold) micHold.current = null; }, 0);
+  };
+  const clickMic = () => {
+    if (micHold.current?.started) {
+      micHold.current = null;
+      return;
+    }
+    toggleMic();
+  };
   // Send from the dictation pill: stop listening, then send what was heard
   // once the field holds it (a transcript lands as the recording settles).
   const sendAfterDictation = useRef(false);
@@ -1388,7 +1409,15 @@ export function Composer({
             setDismissedSlashAt(null);
           }}
           onPaste={handlePaste}
-          onKeyUp={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
+          onKeyUp={(e) => {
+            setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0);
+            // letting go of the shortcut after a hold ends the dictation
+            if (e.key.toLowerCase() === "d" || e.key === "Meta" || e.key === "Control") {
+              const hold = micHold.current;
+              micHold.current = null;
+              if (hold?.started && isDictationHold(hold.at, Date.now())) dictation.stop();
+            }
+          }}
           onClick={(e) => setCaret((e.target as HTMLTextAreaElement).selectionStart ?? 0)}
           onKeyDown={(e) => {
             // an input method's keys pick its own candidates: its confirming
@@ -1397,7 +1426,13 @@ export function Composer({
             // ⌘D / Ctrl+D dictates (Grok Bot's shortcut), and stops it
             if ((isMacPlatform() ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "d") {
               e.preventDefault();
-              toggleMic();
+              // a key held down repeats: the first press only decides
+              if (e.repeat) return;
+              pressMic();
+              if (!micHold.current?.started) {
+                micHold.current = null;
+                toggleMic();
+              }
               return;
             }
             if (commandPickerOpen) {
@@ -1508,7 +1543,9 @@ export function Composer({
         )}
         {!locked && (
           <ComposerMicButton
-            onClick={toggleMic}
+            onClick={clickMic}
+            onPress={pressMic}
+            onRelease={releaseMic}
             hidden={dictating || voiceNoting}
             needsSetup={!engine}
             shortcut={dictationShortcut}

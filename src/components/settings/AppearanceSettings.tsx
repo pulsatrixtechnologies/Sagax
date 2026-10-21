@@ -25,7 +25,7 @@ import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-prefe
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { contrastChoice, CONTRAST_CHOICES, MOTION_CHOICES, motionChoice, TEXT_SIZE_CHOICES, textSizeChoice } from "@/lib/accessibility-preferences";
-import { hardwareAccelerationChoice, hasDesktopShellPreferences, spellcheckChoice } from "@/lib/desktop-shell-preferences";
+import { BOT_HOTKEY_MODIFIERS, botHotkeyModifierChoice, botHotkeysChoice, hardwareAccelerationChoice, hasDesktopShellPreferences, spellcheckChoice } from "@/lib/desktop-shell-preferences";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
@@ -321,13 +321,32 @@ export function AccessibilityGroup() {
 function DesktopShellRows() {
   const acceleration = hardwareAccelerationChoice.use() === "true";
   const spelling = spellcheckChoice.use() === "true";
+  const hotkeys = botHotkeysChoice.use() === "true";
+  const chord = botHotkeyModifierChoice.use();
   if (!hasDesktopShellPreferences()) return null;
+  // the bots' global shortcuts exist with the macOS menu bar list
+  const menuBar = window.ogb?.platform === "darwin";
   return (
     <>
       <DescribedRow label={t("settings.hardwareAcceleration.title")} description={t("settings.hardwareAcceleration.note")} rowId="hardwareAcceleration">
         <Switch checked={acceleration} aria-label={t("settings.hardwareAcceleration.title")} onClick={() => hardwareAccelerationChoice.set(acceleration ? "false" : "true")} />
       </DescribedRow>
       <SwitchLine label={t("settings.spellcheck.title")} checked={spelling} onChange={(next) => spellcheckChoice.set(next ? "true" : "false")} rowId="spellcheck" />
+      {menuBar && (
+        <DescribedRow label={t("settings.botHotkeys.title")} description={t("settings.botHotkeys.note")} rowId="botHotkeys">
+          <Switch checked={hotkeys} aria-label={t("settings.botHotkeys.title")} onClick={() => botHotkeysChoice.set(hotkeys ? "false" : "true")} />
+        </DescribedRow>
+      )}
+      {menuBar && hotkeys && (
+        <CompactRow label={t("settings.botHotkeys.chord")} rowId="botHotkeyChord">
+          <PillSelect
+            value={chord}
+            ariaLabel={t("settings.botHotkeys.chord")}
+            onChange={(next) => botHotkeyModifierChoice.set(next)}
+            options={BOT_HOTKEY_MODIFIERS.map((id) => ({ value: id, label: t(`settings.botHotkeys.chord.${id}`) }))}
+          />
+        </CompactRow>
+      )}
     </>
   );
 }
