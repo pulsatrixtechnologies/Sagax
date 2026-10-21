@@ -11,9 +11,19 @@ import type { Bot } from "@/state/store";
 import { taskHiddenFromSidebar } from "./bot-unread";
 import { isConfidentialTask } from "./confidential-thread";
 
+/** Enough of a thread to decide whether a reset archives it. */
+type ResetTask = {
+  threadId: string;
+  archivedAt?: number;
+  confidential?: unknown;
+  routineRunId?: string;
+  hidden?: true;
+  openedBy?: { botId?: string };
+};
+
 /** The open conversations a reset archives. Pure. */
 export function historyResetThreads(bot: Pick<Bot, "id" | "tasks" | "threadId">): string[] {
-  const tasks = bot.tasks ?? [{ threadId: bot.threadId }];
+  const tasks: readonly ResetTask[] = bot.tasks ?? [{ threadId: bot.threadId }];
   return tasks
     .filter((task) => task.archivedAt === undefined && !isConfidentialTask(task) && !taskHiddenFromSidebar(task, bot.id))
     .map((task) => task.threadId);
