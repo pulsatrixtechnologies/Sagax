@@ -68,6 +68,7 @@ import { botEngine, failedTurnCause } from "@/lib/failed-turn";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
 import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
+import { GroupCostNotice, WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
 import { GroupTaskPicker, PersonThreadPicker, ThreadReturnLink } from "./TaskPicker";
@@ -1422,6 +1423,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
       <ChatNotice notice={state.notice} />
       <ChatStaleBanner />
+      {!remoteClient && <><GroupCostNotice group={group} /><WeeklyLimitNotice /></>}
 
       {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
       {!group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
