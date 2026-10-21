@@ -572,7 +572,8 @@ export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, s
  * linear. U+FE5D, the small left tortoise-shell bracket, is an opening
  * look-alike. U+FE5E, the right one, is a close.
  *
- * Still not quoted: a "*" or "," between letters when there is no "/";
+ * Still not quoted: ASCII punctuation other than ".", "_", "-" and "\"
+ * between the words of an opening form, such as "[OWNER;CONDITIONS]";
  * « » and ‹ ›; no bracket at all; `&#91;` or `%5B`; a space or a lowercase
  * word after "(" "<" "{" for UNTRUSTED and USER-CONFIGURED; a bare DEFAULT,
  * OWNER or AUTHENTICATED. Quoted even as an ordinary label:
@@ -628,8 +629,28 @@ alias("S", [0x1bd, 0x405, 0x455, 0x54f, 0x13d5, 0x13da, 0xa4e2, 0xa731, 0xabaa, 
 alias("T", [0x13a2, 0x22a4, 0x27d9, 0x2ca6, 0xa4d4, 0x10297, 0x102b1, 0x10315, 0x118bc, 0x16f0a, 0x1f768]);
 alias("U", [0x28b, 0x54d, 0x57d, 0x1200, 0x144c, 0x1d1c, 0x222a, 0x22c3, 0xa4f4, 0xa79f, 0xab4e, 0xab52, 0x104ce, 0x104f6, 0x118b8, 0x118d8, 0x16f42]);
 alias("W", [0x26f, 0x461, 0x51c, 0x51d, 0x561, 0x13b3, 0x13d4, 0x1d21, 0xa4ea, 0xab83, 0x1170a, 0x1170e, 0x1170f, 0x118e6, 0x118ef]);
+// Latin small capitals of the phrase letters. C, I, O, S, U and W are already mapped above.
+alias("A", [0x1d00]);
+alias("B", [0x299]);
+alias("D", [0x1d05]);
+alias("E", [0x1d07]);
+alias("F", [0xa730]);
+alias("G", [0x262]);
+alias("H", [0x29c]);
+alias("K", [0x1d0b]);
+alias("L", [0x29f]);
+alias("N", [0x274]);
+alias("R", [0x280]);
+alias("T", [0x1d1b]);
 
 const foldedCodePoints = new Map<number, string>();
+
+/** Middle dots, bullets, and the braille blank. Connector punctuation is matched by category.
+ * Checked before the compatibility fold: U+318D would otherwise become U+119E. */
+const DOT_OR_BULLET = new Set([
+  0x00b7, 0x2022, 0x2023, 0x2024, 0x2027, 0x2043, 0x2219, 0x22c5, 0x25e6, 0x30fb, 0x16eb, 0x2800,
+  0x2e31, 0x2e33, 0x318d, 0x2981, 0x05c3,
+]);
 
 function foldCodePoint(cp: number): string {
   if (cp < 0x80) {
@@ -644,6 +665,9 @@ function foldCodePoint(cp: number): string {
 }
 
 function foldNonAscii(cp: number): string {
+  // A chosen dot can compatibility-fold into a letter (U+318D becomes U+119E).
+  // Keep it a separator before that fold. The quoted slice stays the original character.
+  if (DOT_OR_BULLET.has(cp)) return " ";
   const direct = CONFUSABLE.get(cp);
   if (direct !== undefined) return direct;
   if (FILLER.has(cp)) return "";
@@ -755,8 +779,6 @@ function isSpaceUnit(code: number): boolean {
   return code > 127 && /\s/u.test(String.fromCharCode(code));
 }
 
-/** Middle dots, bullets, and the braille blank. Connector punctuation is matched by category. */
-const DOT_OR_BULLET = new Set([0x00b7, 0x2022, 0x2023, 0x2024, 0x2027, 0x2043, 0x2219, 0x22c5, 0x25e6, 0x30fb, 0x16eb, 0x2800]);
 const markerSepCache = new Map<number, boolean>();
 const MARKER_SEP_CACHE_MAX = 2048;
 

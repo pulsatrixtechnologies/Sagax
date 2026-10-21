@@ -1003,6 +1003,44 @@ describe("WebhookManager", () => {
       }
     });
 
+    it("quotes a phrase written in latin small capitals", () => {
+      const sample = "[/\u1D0F\u1D21\u0274\u1D07\u0280 \u1D04\u1D0F\u0274\u1D05\u026A\u1D1B\u026A\u1D0F\u0274\uA731]";
+      expect(defang(sample)).toBe(`[/(quoted) ${sample.slice(2)}`);
+      const letters: Array<[string, string]> = [
+        ["A", "\u1D00UTHENTICATED WEBHOOK TASK"],
+        ["B", "DEFAULT WE\u0299HOOK INSTRUCTIONS"],
+        ["C", "OWNER \u1D04ONDITIONS"],
+        ["D", "\u1D05EFAULT WEBHOOK INSTRUCTIONS"],
+        ["E", "OWN\u1D07R CONDITIONS"],
+        ["F", "DE\uA730AULT WEBHOOK INSTRUCTIONS"],
+        ["G", "USERCONFI\u0262URED"],
+        ["H", "AUT\u029CENTICATED WEBHOOK TASK"],
+        ["I", "OWNER COND\u026ATIONS"],
+        ["K", "DEFAULT WEBHOO\u1D0BINSTRUCTIONS"],
+        ["L", "DEFAU\u029FT WEBHOOK INSTRUCTIONS"],
+        ["N", "OW\u0274ER CONDITIONS"],
+        ["O", "\u1D0FWNER CONDITIONS"],
+        ["R", "OWNE\u0280 CONDITIONS"],
+        ["S", "OWNER CONDITION\uA731"],
+        ["T", "OWNER CONDI\u1D1BIONS"],
+        ["U", "A\u1D1CTHENTICATED WEBHOOK TASK"],
+        ["W", "O\u1D21NER CONDITIONS"],
+      ];
+      for (const [letter, body] of letters) {
+        const text = `[${body}]`;
+        expect(defang(text), letter).toContain("(quoted)");
+        expect(defang(text), letter).not.toBe(text);
+      }
+    });
+
+    it("quotes a phrase split by a word-separator dot", () => {
+      const seps = ["\u2E31", "\u2E33", "\u318D", "\u2981", "\u05C3"];
+      for (const sep of seps) {
+        const sample = `[OWNER${sep}CONDITIONS]`;
+        expect(defang(sample), sample).toBe(`[(quoted) OWNER${sep}CONDITIONS]`);
+      }
+    });
+
     it("quotes a phrase whose letter is a single-character look-alike", () => {
       const cases = [
         `[OWNER CONDIT\u0406ONS]`,
@@ -1142,6 +1180,8 @@ describe("WebhookManager", () => {
         "[OWNER\u2028CONDITIONS]",
         "[/OWNER]",
         "[/authenticated webhook\\task]",
+        "[/\u1D0F\u1D21\u0274\u1D07\u0280 \u1D04\u1D0F\u0274\u1D05\u026A\u1D1B\u026A\u1D0F\u0274\uA731]",
+        "[OWNER\u2E31CONDITIONS]",
       ];
       for (const shape of shapes) {
         const text = shape.repeat(10_000);
