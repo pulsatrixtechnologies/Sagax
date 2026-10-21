@@ -413,6 +413,8 @@ export function ApprovalCard({
   // or answered from an AI client attached to Perspicax (lot C.3)
   const byVoice = card.answeredBy?.via === "call" ? <span className="text-ink-tertiary">· {t("approval.status.byVoice")}</span>
     : card.answeredBy?.via === "ai-client" ? <span className="text-ink-tertiary">· {t("approval.status.byAiClient")}</span>
+      // decided by the model reviewer under the person's rule (lot A1)
+      : card.answeredBy?.via === "auto-review" ? <span className="text-ink-tertiary" data-answered-via="auto-review">· {t("approval.status.byAutoReview")}</span>
       // answered by the person's Primary Bot at their request (sagax_approvals)
       : card.answeredBy?.via === "primary-bot" ? <span className="text-ink-tertiary" data-answered-via="primary-bot">· {t("approval.status.viaBot", { name: card.answeredBy.bot ?? t("approval.someone") })}</span> : null;
   const isRoutineRequest = Boolean(card.routineRequest);

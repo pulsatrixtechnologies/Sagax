@@ -130,7 +130,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
         />
       </label>
       {initial.when && <RuleTextDiff before={initial.when} after={when} />}
-      {!recognized && <p role="note" className="text-[12px] text-warning" data-custom-rule-unrecognized>{t("customRules.unrecognized")}</p>}
+      {!recognized && <p role="note" className="text-[12px] text-ink-secondary" data-custom-rule-unrecognized>{t("customRules.unrecognized")}</p>}
       {shellFamily && <p role="alert" className="text-[12px] text-danger" data-custom-rule-shell-family>{t("customRules.shellFamily")}</p>}
       {exactOutsideCard && <p role="alert" className="text-[12px] text-danger" data-custom-rule-exact-card>{t("customRules.exactFromCard")}</p>}
       <label className="flex items-center justify-between gap-3 text-[12.5px] text-ink-secondary">
@@ -277,6 +277,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
     <PaneSection title={t("customRules.title")} help={t("customRules.help")} data-custom-rules={String(rules.length)}>
       {!alwaysAllow && <p role="note" className="mb-2 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink-secondary" data-org-always-allow-off="">{t("customRules.org.alwaysAllowOff")}</p>}
       {alwaysAllow && hasAllow && bot.approvalMode === "full" && <p role="note" className="mb-2 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink-secondary" data-custom-rules-level="full">{t("customRules.levelFull")}</p>}
+      <p className="mb-2 text-[12px] text-ink-tertiary" data-custom-rules-reviewer="">{t("customRules.reviewerHelp")}</p>
       {rules.length === 0 && editing !== "new" && <PaneEmpty>{t("customRules.empty")}</PaneEmpty>}
       {rules.length > 0 && (
         <div className="overflow-hidden rounded-lg border border-hairline/40">
@@ -294,7 +295,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
                       <span className="break-words text-[13px] text-ink">{rule.when}</span>
                       <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11.5px]">
                         <OrgRuleBadge />
-                        {rule.compiled && !rule.compiled.recognized && <span className="text-warning">{t("customRules.unrecognizedShort")}</span>}
+                        {rule.compiled && !rule.compiled.recognized && <span className="text-ink-secondary" data-custom-rule-model="">{t("customRules.unrecognizedShort")}</span>}
                       </div>
                     </div>
                     <span className={cn("whitespace-nowrap text-[12.5px]", rule.behavior === "deny" ? "text-danger" : "text-ink-secondary")}>
@@ -317,7 +318,7 @@ export function CustomRulesCard({ bot }: { bot: Pick<Bot, "id" | "name"> & Parti
                         {rule.botId === null && <span>{t("customRules.form.allBots")}</span>}
                         {!alwaysAllow && rule.behavior === "allow" && <span className="text-warning" data-custom-rule-paused="">{t("customRules.paused")}</span>}
                         {rule.riskScope.length > 0 && <span className="text-warning">{t("customRules.mayCover", { kinds: riskList(rule.riskScope) })}</span>}
-                        {rule.compiled && !rule.compiled.recognized && <span className="text-warning">{t("customRules.unrecognizedShort")}</span>}
+                        {rule.compiled && !rule.compiled.recognized && <span className="text-ink-secondary" data-custom-rule-model="">{t("customRules.unrecognizedShort")}</span>}
                       </div>
                     </div>
                     <span className={cn("whitespace-nowrap text-[12.5px]", rule.behavior === "deny" ? "text-danger" : rule.behavior === "allow" ? "text-success" : "text-ink-secondary")}>

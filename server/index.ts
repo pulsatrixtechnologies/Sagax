@@ -342,6 +342,7 @@ import { matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, 
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
+import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
@@ -14602,6 +14603,26 @@ bus.subscribe((event: RuntimeEvent) => {
           ));
         }
       }
+      // 2026-10-21 (Grok Bot parity A1, JC): a card the matcher left to the
+      // person is judged by the model reviewer against the same rules, on
+      // the same cards a custom allow may answer (the person's own turn, no
+      // admin card, hold, sandbox widening, question, guest or security key;
+      // no owner ask rule). Unsure or failed: the card stays.
+      if (permission && asker && event.requestId && customReview && customDecision?.kind === "none" && !questions
+        && !strictCard && !guestDriven && !adminApproval && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true
+        && ownerCall && ownerStepUp.length === 0 && !ownerOriginRefused && !emailDraftRequest && !unattended
+        // never a turn that is not the person's own words (a routine, a
+        // webhook, another bot, an automation): their text is the attacker's
+        && ownEnvironmentOrigin(asker, event.threadId) === "owner"
+        && (!owner || (owner.kind === "card" && (owner.reason === "no-rule" || owner.reason === "destructive")))) {
+        void customRulesModel.reviewCard({
+          threadId: event.threadId, requestId: event.requestId, botId: asker.id,
+          instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
+          rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
+          call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
+          language: cfg.language,
+        });
+      }
       break;
     }
     case "request.resolved": {
@@ -17325,6 +17346,52 @@ function safetyReviewer(botId: string): ((prompt: string, signal?: AbortSignal) 
   if (!review) return undefined;
   return (prompt, signal) => review.call(instance, prompt, signal);
 }
+
+/** 2026-10-21 (Grok Bot parity A1): the model reviewer of custom rules
+ * (server/custom-rules-model.ts). It answers a card like the person would,
+ * through the engine that asked, and says so on the card and in the
+ * decision log (`source: auto-review`, the rule, the reason). */
+const customRulesModel = createCustomRulesModelReviewer({
+  reviewer: (botId) => safetyReviewer(botId),
+  stillOpen: (threadId, requestId) => {
+    const card = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
+    return Boolean(card && !card.answered && !card.dismissed && !card.expired);
+  },
+  deliver: async (card, behavior, message) => {
+    // the engine that asked, like every other answer given at request.opened
+    const instance = registry.get(card.instanceId) ?? runningTurnEngines.get(card.threadId);
+    if (!instance) return false;
+    try {
+      const outcome = await instance.adapter.respondToRequest(card.threadId, card.requestId, { behavior, ...(message ? { message } : {}) });
+      if (behavior === "allow" && outcome === "rejected") {
+        store.appendMessage(card.threadId, { role: "bot", kind: "activity", tool: { name: "The provider rejected this action despite your rule (automatic review).", ok: false } });
+      }
+      return behavior === "allow" ? outcome === "allowed-once" : outcome === "rejected" || outcome === "allowed-once";
+    } catch {
+      return false;
+    }
+  },
+  settle: (card, verdict, notice) => {
+    const row = store.messagesFor(card.threadId).find((candidate) => candidate.card?.requestId === card.requestId);
+    if (row?.card) {
+      store.patchMessage(card.threadId, row.id, {
+        card: {
+          ...row.card,
+          customRule: notice,
+          ...(verdict.kind === "ask" ? {} : { answeredBy: { kind: "worker" as const, via: "auto-review" as const } }),
+        },
+      });
+    }
+    if (verdict.kind === "ask") return;
+    const bot = store.bot(card.botId);
+    appendDecision(DATA_DIR, {
+      threadId: card.threadId, requestId: card.requestId, botId: card.botId, ...(bot ? { botName: bot.name } : {}),
+      tool: card.call.tool, ...(card.call.summary ? { summary: card.call.summary } : {}),
+      decision: verdict.kind === "allow" ? "auto-approved" : "auto-denied", source: "auto-review",
+      ...(verdict.rule ? { rule: verdict.rule.id } : {}), ...(verdict.reason ? { reason: verdict.reason } : {}),
+    });
+  },
+});
 
 setMisuseAlert((alert) => {
   const bot = alert.botId ? store.bot(alert.botId) : undefined;

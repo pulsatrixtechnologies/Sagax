@@ -12080,8 +12080,8 @@
       "customRules.form.saveAndAllow": "267e66aa1db93c1813b235cff12184199d08f9ce221d358527bac4f61340d6be",
       "customRules.form.cancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27",
       "customRules.form.placeholder": "79e81c0dc735f477af19d5d6f93ef8ff43d5357a01536523102fad684a0af4db",
-      "customRules.unrecognized": "5b1a2d0c5615e0be9ce8c85d0a178d8a3fd186acbc5f391e49a89b398c00b873",
-      "customRules.unrecognizedShort": "e34e5c83e7e315c780e4590fc280d0871f4091377fc236442f4d4887028810c2",
+      "customRules.unrecognized": "07e9dd09ece833c3d11a8bb070c1e6ee0aeb3f96728b8a2ac11fe9228d91a3ee",
+      "customRules.unrecognizedShort": "f073f1dbac1fdc07f36ce3d1b82f1c993441cc786792023389c2ccfd91f02c3a",
       "customRules.title": "c601dc86d88cc32b011ccbb461ce88c988242ef18ad993dfd46ede47f900d610",
       "customRules.help": "6ca61a5607b5823854db578723e13784574bfd66ef99d42ccd3ac7b6631ba7c9",
       "customRules.empty": "fde342908813b8737ca604b44f57deb572abd62a52c13a3cead0a70502a08ee6",
@@ -13294,7 +13294,14 @@
       "botPanel.recipients.addBot": "12fa6ea8fca355fe484670f588617c5d9712d2870735b05935c82c9a41d26896",
       "botPanel.recipients.remove": "e6a3c4a1250a6ad3f10faa22333e5e50a6ba78e5b28a3b26f5743d9f8c7ede93",
       "botPanel.recipients.invalid": "69da6a43b70a3fb4a3b3e046eae7a8fef42e0c299fc60df023ad46b3f9a3a658",
-      "botPanel.recipients.deletedBot": "20453cde96db5976c48a61d17621d4a42993023334233f71843858358051fd02"
+      "botPanel.recipients.deletedBot": "20453cde96db5976c48a61d17621d4a42993023334233f71843858358051fd02",
+      "customRules.reviewerHelp": "50463d036a8071efdeed1553b169c39b9145be5bcf73d88737035bd67843bfd2",
+      "customRules.notice.modelApproved": "b227a1208109a7593bb9b74fcc1832b32964e53ea6c16e8577bfcf776505170e",
+      "customRules.notice.modelDenied": "5fef5465a760e92df497b8ff833489e2ac60860126c24d5bfa0cd3126bee0780",
+      "customRules.notice.modelHeld": "4e611025f3ff6307757d312057d126f9f8d7c99141e7c500e159b129992ae90c",
+      "customRules.notice.modelOrgDenied": "3f7fc023da229fcbcb3293b78a2c08eed4286bc9c54cbd3da72db356b07ca2ad",
+      "customRules.notice.modelOrgHeld": "c14ad18b36e9c890462c36be12ce19ee0ba72a2e39a88b984406fac82aadfe27",
+      "approval.status.byAutoReview": "b2e332c9935b33a382a8fb86e8e0683307fb9d811a5796b7be7b206546d9b521"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -532,8 +532,10 @@ export type CardAnswerer = (
    * from an AI client attached to Perspicax (Claude Code, claude.ai), through
    * the member API, by the person named (lot C.3). "primary-bot": answered
    * by the person's Primary Bot (`bot`, its name) at the person's own
-   * request in their conversation with it (sagax_approvals, 2026-10-20). */
-  via?: "call" | "ai-client" | "primary-bot";
+   * request in their conversation with it (sagax_approvals, 2026-10-20).
+   * "auto-review": the model reviewer applied the person's rule (2026-10-21,
+   * server/custom-rules-model.ts; the card's customRule says which and why). */
+  via?: "call" | "ai-client" | "primary-bot" | "auto-review";
   bot?: string;
 };
 
