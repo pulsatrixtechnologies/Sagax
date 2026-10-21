@@ -335,7 +335,7 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
    * (shared/reactions.ts; read through normalizeReactions). */
   reactions?: MessageReaction[];
   /** comm chips: "Messaged @X" linking to the bot⇄bot channel. */
-  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor; gone?: boolean };
+  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: MausColor; gone?: boolean; direction?: "sent" | "received"; text?: string };
   /** thread chips: "Opened thread #Title on Bot" linking to that thread */
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };
   /** A teammate parked on a question for the person (WireMessage.inputRequest). */
@@ -668,6 +668,9 @@ export interface Bot {
    * `[]` = none. Read-only on the web today; here so the settings dialog can
    * refetch the overview when the server changes it. */
   peers?: string[];
+  /** 2026-10-21 (parité 1C): who it writes to without a card
+   * (shared/allowed-recipients.ts). */
+  allowedRecipients?: string[];
   /** Whether this bot may use the workspace's connected apps. Unset means
    * allowed for existing bots; imported bots start with this disabled. */
   composio?: boolean;

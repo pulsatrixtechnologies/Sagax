@@ -28,6 +28,7 @@ const { connectedAccountLabel, disconnectAccountConfirmation } = await import("@
 const { personLabel: directoryPersonLabel } = await import("@/components/OrgDirectory");
 const { runAsOptionLabel } = await import("@/components/routines/RunAsField");
 const { ownerLabel } = await import("@/components/settings/OrgSharing");
+const { recipientLabel } = await import("@/components/bot-settings/AllowedRecipientsRow");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -124,6 +125,13 @@ describe("no UUID on screen", () => {
     }));
     expectNoUuid(text);
     expect(text).toContain("ssh build-01");
+  });
+
+  it("allowed recipients name a bot, never its id (parité 1C)", () => {
+    const bots = [{ id: BOT_ID, name: "Cryptic" }];
+    expect(recipientLabel(`bot:${BOT_ID}`, bots)).toEqual({ text: "Cryptic", title: BOT_ID });
+    expectNoUuid(recipientLabel(`bot:${THREAD_ID}`, bots).text);
+    expect(recipientLabel("email:ana@example.com", bots).text).toBe("ana@example.com");
   });
 
   it("people, bots, engines and accounts read by name or a plain word", () => {

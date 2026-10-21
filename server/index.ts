@@ -696,6 +696,8 @@ import { describeTool, readBotActivity } from "./activity.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
 import { OutboundRequestService } from "./outbound-requests.ts";
 import { DEFAULT_OUTBOUND_POLICY, connectorCallsIn, normalizeOutboundPolicy, outboundCallsIn } from "../shared/outbound.ts";
+import { normalizeAllowedRecipients, sendRecipientsAllowed } from "../shared/allowed-recipients.ts";
+import { standingGrantsAllowed } from "./custom-rules-org.ts";
 import { connectorAccessDecision, describeConnectorScopes, normalizeConnectorScopes } from "../shared/connector-scopes.ts";
 import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
 import { listenWebhookIngress, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
@@ -14202,8 +14204,13 @@ bus.subscribe((event: RuntimeEvent) => {
         });
         break;
       }
+      // 2026-10-21 (parité 1C): a message send whose every recipient is on
+      // the bot's allowed recipients goes with no card (shared/allowed-recipients.ts).
+      const recipientsListed = Boolean(permission && asker && event.requestId && !strictCard && !guestDriven && !foreignDestination
+        && sendRecipientsAllowed((botForThread(asker.id, event.threadId) ?? asker).allowedRecipients, event.mcpTool ?? event.tool, event.input));
       const baseVerdict = permission && asker && event.requestId
         ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
+          recipientsAllowed: recipientsListed,
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
           ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && !gateGrantBlocked && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
@@ -14236,7 +14243,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(perspicaxSelfKind && !strictCard && !foreignDestination && perspicaxSelfAnswerAt(perspicaxSelfKind, effectiveApprovalMode)
             ? { perspicaxSelf: perspicaxSelfKind } : {}),
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
-          stepUpRequired: (attachmentRead || readOnlyCommand) && !selfAnswerStepUp.length && asker
+          stepUpRequired: (attachmentRead || readOnlyCommand || recipientsListed) && !selfAnswerStepUp.length && asker
             ? autoAnswerStepUp(asker, event.threadId, {
               tool: event.tool,
               ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
@@ -39211,10 +39218,23 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const outboundKept = outboundCandidate && !safetyCard
             ? keptCardRule(currentSender, threadId, outboundCandidate, autoAnswerStepUp(currentSender, threadId, { tool: outboundTool, input: outboundCandidate.input, summary }))
             : undefined;
+          // 2026-10-21 (parité 1C): one plain message send whose every
+          // recipient is on the bot's allowed recipients goes with no card,
+          // never a batch, opaque code, a safety hold, a class the person
+          // protects with a key, or while standing grants are off.
+          const recipientsListed = !outboundKept && outboundCalls.length === 1 && !opaque && !safetyCard && standingGrantsAllowed()
+            && sendRecipientsAllowed(currentSender.allowedRecipients, outboundTool, outboundCalls[0]!.arguments)
+            && autoAnswerStepUp(currentSender, threadId, { tool: outboundTool, input: JSON.stringify(outboundCalls[0]!.arguments ?? {}), summary }).length === 0;
           if (outboundKept && !(policy.policy === "allow" && !opaque)) {
             appendDecision(DATA_DIR, {
               threadId, botId: currentSender.id, botName: currentSender.name,
               tool: outboundTool, summary, decision: "auto-approved", source: "owner-rule", rule: outboundKept.id,
+            });
+            outboundApproved = true;
+          } else if (recipientsListed && !(policy.policy === "allow" && !opaque)) {
+            appendDecision(DATA_DIR, {
+              threadId, botId: currentSender.id, botName: currentSender.name,
+              tool: outboundTool, summary, decision: "auto-approved", source: "allowed-recipient",
             });
             outboundApproved = true;
           } else if (policy.policy === "allow" && !opaque && !safetyCard) {
@@ -42754,6 +42774,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           }
         }
       }
+      // 2026-10-21 (parité 1C): who this bot writes to without a card. Like
+      // an Always allow, adding someone is a standing grant: it needs the
+      // person's key when they protect "always-grant", and it counts as a
+      // loosening below. Removing someone is free; null clears the list.
+      if (body.allowedRecipients !== undefined) {
+        const nextRecipients = body.allowedRecipients === null ? [] : normalizeAllowedRecipients(body.allowedRecipients);
+        if (!nextRecipients) {
+          return json(res, 400, { error: "allowedRecipients must be a list of email addresses, phone numbers or bot:<id> entries", code: "invalid_recipients" });
+        }
+        const added = nextRecipients.filter((key) => !(existingBot?.allowedRecipients ?? []).includes(key));
+        if (added.length && !standingGrantsAllowed()) {
+          return json(res, 409, { error: "Your organization requires an approval each time, so no one can be added to allowed recipients.", code: "standing_grants_off" });
+        }
+        if (added.length) {
+          const refused = settingsStepUpGate(ruleManager(auth), "allowed-recipients", { botId: m![1], added: [...added].sort() }, patchStepUp, existingBot ? approvalOwnerId(existingBot) || null : null);
+          if (refused) return json(res, refused.status, refused.body);
+        }
+        patch.allowedRecipients = nextRecipients.length ? nextRecipients : undefined;
+      }
       // What "the proof of a human" above actually rests on. In the packaged
       // desktop it is real: every mutation here already carried the owner
       // capability a tool call cannot forge. Outside it — `pnpm dev`, the
@@ -42799,6 +42838,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (section !== undefined && sectionKey(existingBot?.section) !== sectionKey(section)) loosened.push("section");
       if (Array.isArray(patch.alwaysAllow) && patch.alwaysAllow.some((key) => !(existingBot?.alwaysAllow ?? []).includes(key))) {
         loosened.push("alwaysAllow");
+      }
+      if (Array.isArray(patch.allowedRecipients) && patch.allowedRecipients.some((key) => !(existingBot?.allowedRecipients ?? []).includes(key))) {
+        loosened.push("allowedRecipients");
       }
       if (body.mcpServers !== undefined && Array.isArray(existingBot?.mcpServers) &&
           (requestedMcpServers === undefined || requestedMcpServers.some((name) => !existingBot.mcpServers!.includes(name)))) {

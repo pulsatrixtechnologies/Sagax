@@ -68,6 +68,18 @@ function markMirrored(bus: CommsBus, channel: GroupRecord, notify: boolean | und
   bus.store.patchGroup(channel.id, patch);
 }
 
+/** The longest preview a sender's note keeps of what it sent. The channel
+ * holds the whole message. */
+export const COMM_PREVIEW_MAX = 280;
+
+/** One line of what a bot sent, cut short for a note's preview. */
+export function commPreview(message: string): string {
+  const line = message.replace(/\s+/g, " ").trim();
+  // by code point, so an emoji is never cut in half
+  const points = Array.from(line);
+  return points.length > COMM_PREVIEW_MAX ? `${points.slice(0, COMM_PREVIEW_MAX - 1).join("").trimEnd()}…` : line;
+}
+
 /** Mirror `from`'s outgoing message into the channel and drop chips into
  * both 1:1 threads linking to the channel. The chips are what make
  * bot-to-bot turns observable — those turns cost the user tokens, and a
@@ -95,12 +107,16 @@ export function mirrorExchange(
       from: { botId: from.id, name: from.name, color: from.color },
     });
   }
+  // 2026-10-21 (parité 1C): the sender's note carries the words it sent, so
+  // its preview reads "Messaged @X: text"; both notes say which way it went,
+  // so a client never draws the send icon on a message received.
+  const sent = commPreview(message);
   note(sourceThreadId, {
     role: "bot",
     kind: "activity",
     tool: { name: `Messaged @${target.name}` },
     comm: channel
-      ? { groupId: channel.id, withBotId: target.id, withName: target.name, withColor: target.color }
+      ? { groupId: channel.id, withBotId: target.id, withName: target.name, withColor: target.color, direction: "sent", ...(sent ? { text: sent } : {}) }
       : undefined,
   });
   note(target.threadId, {
@@ -108,7 +124,7 @@ export function mirrorExchange(
     kind: "activity",
     tool: { name: `Message from @${from.name}` },
     comm: channel
-      ? { groupId: channel.id, withBotId: from.id, withName: from.name, withColor: from.color }
+      ? { groupId: channel.id, withBotId: from.id, withName: from.name, withColor: from.color, direction: "received" }
       : undefined,
   });
   if (channel) markMirrored(bus, channel, notify);
