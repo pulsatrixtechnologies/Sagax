@@ -2135,6 +2135,7 @@ export function BotListItem({
           if (renaming) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
+            if (selection?.active) { selection.onToggle(); return; }
             openConversation();
           }
         }}
@@ -2561,11 +2562,16 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     for (const child of Array.from(list.children)) observer.observe(child);
     return () => observer.disconnect();
   }, [measureUnread, state.bots, state.groups, selecting]);
+  // The rail has no bar: leaving the wide sidebar ends the selection.
+  useEffect(() => {
+    if (density === "icons" && selecting) clearSelection();
+  });
   // Escape leaves the selection (unless a menu or dialog already took it).
   useEffect(() => {
     if (!selecting) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector("[role=dialog], [role=menu], [data-section-picker]")) clearSelection();
+      const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA"].includes(event.target.tagName));
+      if (event.key === "Escape" && !typing && !event.defaultPrevented && !document.querySelector("[role=dialog], [role=menu], [data-section-picker]")) clearSelection();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -3610,7 +3616,15 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           anchor={batchSectionPicker}
           onClose={() => setBatchSectionPicker(null)}
           onAssign={(section) => {
-            for (const id of selectedBotIds) assignSection("bot", id, section);
+            const ids = selectedBotIds.filter((id) => state.bots.some((bot) => bot.id === id));
+            if (!personal && remoteClient) {
+              // one request for the whole selection
+              void api("/api/sidebar-sections", { method: "POST", body: JSON.stringify({ name: section, botIds: ids }) })
+                .then(({ bots }) => bots.forEach((bot: Bot) => dispatch({ type: "botPatched", bot })))
+                .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+            } else {
+              for (const id of ids) assignSection("bot", id, section);
+            }
             clearSelection();
           }}
         />
@@ -3624,7 +3638,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         returnFocusRef={sidebarRef}
         onConfirm={() => {
           setBatchArchiveConfirm(false);
-          const ids = selectedBotIds;
+          // never the last active bot: the guard reads one snapshot, so cap here
+          const keep = state.bots.filter((bot) => !bot.hidden).length - 1;
+          const ids = selectedBotIds.filter((id) => currentArchivableBot(state.bots, id)).slice(0, Math.max(0, keep));
           clearSelection();
           void (async () => { for (const id of ids) await archiveBot({ id }); })();
         }}
