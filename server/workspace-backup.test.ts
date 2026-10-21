@@ -69,6 +69,8 @@ function fixture(root: string): DatabaseSync {
   writeFileSync(join(root, "environment-id"), "source-environment");
   mkdirSync(join(root, "tools"));
   writeFileSync(join(root, "tools", "downloaded"), "reinstallable");
+  mkdirSync(join(root, "agent-browser-profiles"));
+  writeFileSync(join(root, "agent-browser-profiles", "Cookies"), "a kept Chrome profile stays on this machine");
   mkdirSync(join(root, "decider-log"));
   writeFileSync(join(root, "decider-log", "2026-09.ndjson"), '{"seam":"roomRouting"}\n');
   const db = new DatabaseSync(join(root, "messages.db"));
@@ -181,6 +183,7 @@ describe("encrypted full workspace backups", () => {
       expect(existsSync(join(target, "messages.db-wal"))).toBe(false);
       expect(readFileSync(join(result.safetyCopyPath!, "data", "messages.db-wal"), "utf8")).toBe("old database WAL must not enter the new DB");
       expect(existsSync(join(target, "tools"))).toBe(false);
+      expect(existsSync(join(target, "agent-browser-profiles"))).toBe(false);
       // this machine's decision-model log stays on this machine
       expect(existsSync(join(target, "decider-log"))).toBe(false);
       expect(readJson(join(result.safetyCopyPath!, "data", "bots.json"))).toEqual([{ id: "old" }]);

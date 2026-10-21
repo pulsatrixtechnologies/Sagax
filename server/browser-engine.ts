@@ -17,7 +17,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
 import { browserBundlePaths } from "./browser-bundle-release.ts";
-import { browserProcessesRunning, browserProcessTree, stopBrowserProcesses } from "./browser-processes.ts";
+import { browserProcessesRunning, browserProcessTree, releaseBrowserProfile, stopBrowserProcesses } from "./browser-processes.ts";
 import { BROWSER_VIEWPORT_ARGS, browserRuntimeEnv, ownsBrowserViewport } from "./browser-runtime.ts";
 import { SIGN_IN_PROMPT } from "./system-prompt.ts";
 import { gateChromeSettings } from "./browser/egress/gate.ts";
@@ -38,6 +38,23 @@ const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 export function browserRestoreKey(session: string): string {
   if (!/^[A-Za-z0-9_.-]{1,96}$/.test(session)) throw new Error("Invalid browser session.");
   return `omb-${createHash("sha256").update(session).digest("hex")}`;
+}
+
+const PROFILES_DIR = "agent-browser-profiles";
+
+/** Where every saved session's Chrome profile lives. Outside `<data dir>/browser`
+ * and `tools`, so no sweep of the engine's own folders reaches it. */
+export function browserProfilesRoot(dataDir = DATA_DIR): string {
+  return join(dataDir, PROFILES_DIR);
+}
+
+/** A saved session's own Chrome profile, kept between launches (port of
+ * OpenMausBot #3141). agent-browser otherwise starts each Chrome on a new
+ * temporary profile, so only the cookies of its restore file survive a close:
+ * localStorage and IndexedDB sign-ins (Slack, Discord, Firebase...) were lost. */
+export function browserProfileDirectory(session: string, dataDir = DATA_DIR): string {
+  if (!/^[A-Za-z0-9_.-]{1,96}$/.test(session)) throw new Error("Invalid browser session.");
+  return join(browserProfilesRoot(dataDir), createHash("sha256").update(session).digest("hex").slice(0, 32));
 }
 
 function browserSessionsDirectory(env: NodeJS.ProcessEnv): string {
@@ -209,12 +226,14 @@ export function agentBrowserStreamPorts(env: NodeJS.ProcessEnv = browserRuntimeE
   catch { return []; }
 }
 
-/** The DevTools ports of the Chromes agent-browser launched, from the profiles it creates in the temp folder. */
-export function agentBrowserDevToolsPorts(temp = tmpdir()): number[] {
-  try {
-    return readdirSync(temp).filter((name) => name.startsWith("agent-browser-chrome-"))
-      .flatMap((name) => portInFile(join(temp, name, "DevToolsActivePort")));
-  } catch { return []; }
+/** The DevTools ports of the Chromes agent-browser launched: on the temporary profiles it creates in the temp folder, and
+ * on the saved sessions' own profiles. */
+export function agentBrowserDevToolsPorts(temp = tmpdir(), profiles = browserProfilesRoot()): number[] {
+  const ports = (directory: string, keep: (name: string) => boolean) => {
+    try { return readdirSync(directory).filter(keep).flatMap((name) => portInFile(join(directory, name, "DevToolsActivePort"))); }
+    catch { return []; }
+  };
+  return [...ports(temp, (name) => name.startsWith("agent-browser-chrome-")), ...ports(profiles, () => true)];
 }
 
 /** agent-browser relaunches a running Chrome when a command's launch
@@ -245,6 +264,9 @@ export async function prepareBrowserSessionState(
   const env = browserRuntimeEnv({ ...options.env, AGENT_BROWSER_SESSION: session, AGENT_BROWSER_HEADLESS: "1" });
   ensureManagedBrowserConfig(env);
   if (options.persistent === false) return;
+  // A Chrome left on the kept profile by a killed daemon would take the next launch (Chrome exits with code 21).
+  await releaseBrowserProfile(env.AGENT_BROWSER_PROFILE);
+  check();
   const directory = browserSessionsDirectory(env);
   const key = join(directory, session);
   let pending = preparedBrowserSessions.get(key);
@@ -592,6 +614,8 @@ export function browserEngineStatus(options: BrowserLookupOptions = {}): Browser
     : { kind: "unavailable", reason: `agent-browser publishes no build for ${platform}-${arch}`, installable: false };
 }
 
+const PROFILE_CACHE_ARG = `--disk-cache-size=${64 * 1024 * 1024}`;
+
 /** The MCP server a turn mounts so the bot gets browser tools. One isolated,
  * auto-restored session per browser profile (or per bot), page-provided
  * WebMCP tools off, and only the core tool set. */
@@ -616,6 +640,8 @@ export function agentBrowserIntegration(input: {
   egressPort?: number;
   /** A meeting browser: WebRTC media may use UDP outside the gate. */
   meetingMedia?: boolean;
+  /** The data dir that holds the kept Chrome profiles (default: the server's). */
+  dataDir?: string;
 }): { command: string; args: string[]; env: Record<string, string> } {
   const sourceEnv = input.env ?? process.env;
   const env: Record<string, string> = {
@@ -648,7 +674,16 @@ export function agentBrowserIntegration(input: {
     env.AGENT_BROWSER_HEADED = "0";
   }
   if (input.attachCdpUrl) env.AGENT_BROWSER_CDP = input.attachCdpUrl;
-  else Object.assign(env, agentBrowserEgressEnv(input.egressPort ?? 0, input.platform ?? process.platform, input.meetingMedia === true));
+  else {
+    Object.assign(env, agentBrowserEgressEnv(input.egressPort ?? 0, input.platform ?? process.platform, input.meetingMedia === true));
+    // A saved session (a bot's own browser or a shared profile) keeps its Chrome profile. The temporary browser,
+    // meetings and My Chrome (attached over CDP, never launched here) are not saved, so they get none.
+    if (input.persistent !== false) {
+      env.AGENT_BROWSER_PROFILE = browserProfileDirectory(input.session, input.dataDir);
+      // Chrome's default disk cache is several hundred megabytes per profile.
+      env.AGENT_BROWSER_ARGS = [env.AGENT_BROWSER_ARGS, PROFILE_CACHE_ARG].filter(Boolean).join("\n");
+    }
+  }
   // MCP clients may filter the parent environment. Carry the configured
   // Chrome path explicitly without forwarding unrelated secrets or flags.
   for (const name of ["PATH", "AGENT_BROWSER_EXECUTABLE_PATH"] as const) {
@@ -828,7 +863,7 @@ export const BUILT_IN_BROWSER_SYSTEM_PROMPT =
 export async function clearBrowserSessionState(
   binaryPath: string,
   session: string,
-  options: { env?: NodeJS.ProcessEnv; encryptionKey?: string; timeoutMs?: number } = {},
+  options: { env?: NodeJS.ProcessEnv; encryptionKey?: string; timeoutMs?: number; dataDir?: string } = {},
 ): Promise<boolean> {
   // The native state-clear CLI ignores the daemon session, and even its named
   // form currently drops that name before dispatch. Never invoke it here.
@@ -854,6 +889,8 @@ export async function clearBrowserSessionState(
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
     const candidates = bases.map((base) => new RegExp(`^${base}-candidate-[0-9]+\\.json(?:\\.enc)?$`));
     for (const name of pendingFiles) if (candidates.some((candidate) => candidate.test(name))) remove(join(pendingDirectory, name));
+    // The session's kept Chrome profile goes with its saved state.
+    rmSync(browserProfileDirectory(session, options.dataDir), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     preparedBrowserSessions.delete(join(directory, session));
     return true;
   } catch { return false; }

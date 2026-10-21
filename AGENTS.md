@@ -15,6 +15,23 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Bots' browser keeps its own Chrome profile: port of OpenMausBot #3141 (2026-10-20)
+
+A saved session (a bot's own browser, a shared profile) runs Chrome on
+`<data dir>/agent-browser-profiles/<sha256(session)>` (`AGENT_BROWSER_PROFILE`,
+`server/browser-engine.ts` `browserProfileDirectory`), so localStorage and
+IndexedDB sign-ins survive restart, idle close, app restart and a crash; the
+restore file still carries cookies. Never for the temporary browser,
+confidential threads, meetings, or My Chrome / a CDP attach (no profile, no
+gate bypass; My Chrome rules of #838/#859 unchanged). The disk cache is capped
+at 64 MB. `releaseBrowserProfile` (`server/browser-processes.ts`) stops a Chrome
+orphaned on the profile and drops a stale SingletonLock before a launch; the
+orphan sweep finds Chromes on kept profiles but only ever removes temporary
+ones. Deleting a bot or profile deletes its kept profile
+(`clearBrowserSessionState`); workspace backups leave the folder out. Windows:
+profile kept, no lock handling. #3182 (identity-check retry) does not apply:
+Sagax has no Chrome identity launcher.
+
 ## Never a UUID/GUID on screen (2026-10-19)
 
 JC: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID

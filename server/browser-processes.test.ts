@@ -3,12 +3,12 @@
 // hands its Chrome.
 import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { browserProcessesRunning, browserProcessTree, orphanedBrowsers, stopBrowserProcesses } from "./browser-processes.ts";
+import { browserProcessesRunning, browserProcessTree, orphanedBrowsers, releaseBrowserProfile, stopBrowserProcesses } from "./browser-processes.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
 // The real tools, except where a test stands in for Windows' tasklist and taskkill.
@@ -173,5 +173,73 @@ describe("a browser on Windows", () => {
     } finally {
       holder.kill("SIGKILL");
     }
+  });
+});
+
+// Port of OpenMausBot #3141: a saved session's own Chrome profile outlives its Chrome.
+describe.skipIf(!posix)("a kept Chrome profile", () => {
+  const keptProfile = (home: string) => {
+    const dir = join(home, "agent-browser-profiles", "abc123");
+    mkdirSync(join(dir, "Default"), { recursive: true });
+    writeFileSync(join(dir, "Default", "Cookies"), "kept");
+    return dir;
+  };
+  const lockTo = (dir: string, target: string) => symlinkSync(target, join(dir, "SingletonLock"));
+  const lockExists = (dir: string) => { try { lstatSync(join(dir, "SingletonLock")); return true; } catch { return false; } };
+
+  it("is found when its Chrome is orphaned, but only when the root is given, and never removed", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-kept-"));
+    homes.push(home);
+    const dir = keptProfile(home);
+    const orphan = start(process.execPath, chromeArgs(home, dir), daemonEnv(home, "bot-kept"));
+    await vi.waitFor(async () => expect((await orphanedBrowsers(home, join(home, "agent-browser-profiles"))).map((found) => found.session)).toEqual(["bot-kept"]), { timeout: 5_000 });
+    expect(await orphanedBrowsers(home)).toEqual([]);
+    const [found] = await orphanedBrowsers(home, join(home, "agent-browser-profiles"));
+    expect(found!.tree.profiles).toEqual([]);
+    expect(await stopBrowserProcesses(found!.tree)).toBe(true);
+    expect(gone(orphan.pid!)).toBe(true);
+    expect(readFileSync(join(dir, "Default", "Cookies"), "utf8")).toBe("kept");
+  });
+
+  it("stops a Chrome whose daemon was killed and drops its lock, keeping the profile's contents", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-kept-"));
+    homes.push(home);
+    const dir = keptProfile(home);
+    const orphan = start(process.execPath, chromeArgs(home, dir), daemonEnv(home, "bot-kept"));
+    lockTo(dir, `${hostname()}-${orphan.pid}`);
+    await vi.waitFor(async () => expect((await orphanedBrowsers(home, join(home, "agent-browser-profiles"))).length).toBe(1), { timeout: 5_000 });
+    await releaseBrowserProfile(dir);
+    expect(gone(orphan.pid!)).toBe(true);
+    expect(lockExists(dir)).toBe(false);
+    expect(readFileSync(join(dir, "Default", "Cookies"), "utf8")).toBe("kept");
+  });
+
+  it("drops a lock that names another host or a process that is gone", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-kept-"));
+    homes.push(home);
+    const dir = keptProfile(home);
+    lockTo(dir, "renamed-mac-4242");
+    await releaseBrowserProfile(dir);
+    expect(lockExists(dir)).toBe(false);
+    lockTo(dir, `${hostname()}-999999`);
+    await releaseBrowserProfile(dir);
+    expect(lockExists(dir)).toBe(false);
+    await releaseBrowserProfile(undefined);
+  });
+
+  it("leaves a daemon's own Chrome and its lock alone", async () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-kept-"));
+    homes.push(home);
+    const dir = keptProfile(home);
+    const servedPid = join(home, "served.pid");
+    const daemon = start(process.execPath, ["-e", `const served = require('node:child_process').spawn(process.execPath, ${JSON.stringify(chromeArgs(home, dir))}, { stdio: 'ignore', detached: true }); require('node:fs').writeFileSync(${JSON.stringify(servedPid)}, String(served.pid)); ${IDLE}`], daemonEnv(home, "bot-owned"));
+    await vi.waitFor(() => expect(existsSync(servedPid) && readFileSync(servedPid, "utf8")).toBeTruthy());
+    const served = Number(readFileSync(servedPid, "utf8"));
+    groups.push(served);
+    lockTo(dir, `${hostname()}-${served}`);
+    await releaseBrowserProfile(dir);
+    expect(gone(served)).toBe(false);
+    expect(gone(daemon.pid!)).toBe(false);
+    expect(lockExists(dir)).toBe(true);
   });
 });

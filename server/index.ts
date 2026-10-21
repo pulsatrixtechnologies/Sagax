@@ -658,6 +658,7 @@ import {
   browserEngineEncryptionKey,
   prepareBrowserSessionState,
   clearBrowserSessionState,
+  browserProfileDirectory,
   closeBrowserSession,
   ensureChrome,
   installAgentBrowserBinary,
@@ -3309,7 +3310,11 @@ const browserCleanup: BrowserCleanupCoordinator = new BrowserCleanupCoordinator(
           if (!ok) console.warn(`browser cleanup: could not clear saved state for session ${session}; restart Sagax to retry this profile's cleanup. Do not use state clear --all: it erases other profiles too.`);
           return ok;
         }))
-      : Promise.resolve([true]);
+      : Promise.resolve(sessions.map((session) => {
+          // No engine to ask: the kept Chrome profile (sign-ins) is still removed from disk.
+          try { rmSync(browserProfileDirectory(session), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }); return true; }
+          catch { return false; }
+        }));
     void work.then((results) => results.every(Boolean), (error) => {
       console.warn("browser cleanup: could not clear saved session state", error);
       return false;

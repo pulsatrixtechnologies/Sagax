@@ -38,7 +38,7 @@ const HEADER_BYTES = MAGIC.length + 16 + 12;
 const TAG_BYTES = 16;
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const EXCLUDED = new Set([
-  ".backups", "tools", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
+  ".backups", "tools", "agent-browser-profiles", "cache", ".cache", "tmp", ".tmp", "dist-native", "tunnel-runtime",
   // a note to the next backup (CONFIDENTIAL_FORGOTTEN_MARKER), and the
   // room-handoff file the job runtime imported once (runtime/import-legacy.ts):
   // dead data whose briefs and results may be a confidential thread's

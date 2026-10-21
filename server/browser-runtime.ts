@@ -18,14 +18,14 @@ export const BROWSER_CONTROL_REFUSAL = "Browser tools are paused while a person 
 export const BROWSER_RESTART_TOOL = "restart_browser";
 const BROWSER_RESTART_TOOL_SPEC = {
   name: BROWSER_RESTART_TOOL,
-  description: "Close and restart your browser. Use this only when a browser tool says the browser must be restarted, or it stays busy after a call that did not answer. Every open tab is closed and page state such as form input and sign-ins is lost; afterwards open the page you need again and check whether the interrupted action already happened before repeating it.",
+  description: "Close and restart your browser. Use this only when a browser tool says the browser must be restarted, or it stays busy after a call that did not answer. Every open tab is closed and unsaved page state such as form input is lost; sign-ins stay unless it is a temporary browser. afterwards open the page you need again and check whether the interrupted action already happened before repeating it.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
 };
 const BROWSER_INTERRUPTED = `The browser engine is stuck. Press Restart in the Browser panel, or call ${BROWSER_RESTART_TOOL}, before using browser tools again.`;
 /** Told on the first call after an idle close (closeIfIdle). A temporary
  * browser saves nothing, so its sign-ins went with it. */
 const idleClosedNote = (saves: boolean) => `Your browser sat unused and was closed to free memory; this call opened it again. Pages you had open are gone (${saves ? "saved sign-ins are kept" : "it is a temporary browser, so its sign-ins are gone too"}), so open the page you need again before using earlier @eN refs.`;
-const RESTART_COST = "a restart closes every tab and loses page state such as form input and sign-ins";
+const RESTART_COST = "a restart closes every tab and loses page state such as form input";
 /** Actions whose result also says what changed on the page, so the model
  * need not spend a step reading it back. */
 const PAGE_ACTIONS: ReadonlySet<string> = new Set([
