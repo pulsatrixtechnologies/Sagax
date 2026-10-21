@@ -9348,5 +9348,16 @@
   "approvals.bulk.alwaysNote": "Each request is allowed, and the same action on the same kind of target will pass without a card for that bot. Each rule is listed in Settings > Security, where you can revoke it.",
   "approval.tool.runCommandCloud": "run a command on your cloud computer",
   "approval.tool.runCommandComputer": "run a command on your computer",
-  "approval.details.more": "Details"
+  "approval.details.more": "Details",
+  "settings.updates.channel.title": "Update channel",
+  "settings.updates.channel.short": "Stable, or Nightly for versions still in testing.",
+  "settings.updates.channel.stable": "Stable",
+  "settings.updates.channel.nightly": "Nightly",
+  "settings.updates.away.title": "Update while I am away",
+  "settings.updates.away.short": "Install a downloaded update when you are away and no bot is working.",
+  "settings.updates.away.help": "Sagax restarts by itself only after 15 minutes without input (or a locked screen), once an update is downloaded and no bot is working. Your release notes show after the update.",
+  "updates.dialog.botsWorking": "Bots working: {count}. Restarting now interrupts them.",
+  "updates.dialog.waitingBots": "Sagax restarts by itself once no bot is working.",
+  "updates.dialog.waitForBots": "Restart when bots finish",
+  "updates.dialog.waitCancel": "Cancel"
 }

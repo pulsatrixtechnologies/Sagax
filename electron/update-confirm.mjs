@@ -16,6 +16,7 @@ const STRINGS = {
     },
     install: "Redémarrer pour installer",
     later: "Plus tard",
+    bots: (count) => (count === 1 ? "1 bot travaille et sera interrompu." : `${count} bots travaillent et seront interrompus.`),
   },
   en: {
     title: "Update",
@@ -26,6 +27,7 @@ const STRINGS = {
     },
     install: "Restart to install",
     later: "Later",
+    bots: (count) => (count === 1 ? "1 bot is working and will be interrupted." : `${count} bots are working and will be interrupted.`),
   },
 };
 
@@ -38,14 +40,14 @@ export function confirmLanguage(language, systemLocale = "") {
 
 /** dialog.showMessageBox options. "Later" is the default and the cancel
  * answer, so Enter or Escape never installs. */
-export function updateConfirmOptions({ language = "en", platform = process.platform, version = null, appName = "Sagax" } = {}) {
+export function updateConfirmOptions({ language = "en", platform = process.platform, version = null, appName = "Sagax", activeBots = 0 } = {}) {
   const strings = STRINGS[language] ?? STRINGS.en;
   const cleanVersion = typeof version === "string" && version.trim() ? version.trim() : null;
   return {
     type: "question",
     title: strings.title,
     message: strings.message(appName, cleanVersion),
-    detail: (platform === "win32" ? strings.detail.win32 : strings.detail.other)(appName),
+    detail: `${activeBots > 0 ? `${strings.bots(activeBots)} ` : ""}${(platform === "win32" ? strings.detail.win32 : strings.detail.other)(appName)}`,
     buttons: [strings.install, strings.later],
     defaultId: 1,
     cancelId: 1,

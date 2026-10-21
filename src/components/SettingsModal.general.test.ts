@@ -92,7 +92,7 @@ describe("Settings > General, Grok Bot's layout", () => {
     const page = render();
     expect(page).toContain('data-settings-card="updates"');
     expect(page).toContain("Check for updates");
-    expect(page).toContain('aria-label="Offer pre-release versions"');
+    expect(page).toContain("Update channel");
   });
 
   it("describes General > Advanced by what it holds today, and hides it when it would be empty", () => {
