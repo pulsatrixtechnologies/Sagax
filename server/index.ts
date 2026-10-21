@@ -87,7 +87,7 @@ import {
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
 import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
-import { createBotActService, type BotActAnswerer, type BotActService, type PerformActor } from "./bot-act.ts";
+import { createBotActService, type BotActAnswerer, type BotActResult, type BotActService, type PerformActor } from "./bot-act.ts";
 import { askedBotChange, createSettingsActions } from "./settings-actions.ts";
 import { cwActionCard, cwActionLanguage, cwToolRowWidget, createCwActionPasses } from "./cw-widget-actions.ts";
 import { cwActionInstruction, parseCwAction } from "../shared/cw-widgets/actions.ts";
@@ -210,7 +210,7 @@ import { buildRecall, CALL_RECALL_BUDGET, type RecallBudget } from "./recall.ts"
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import type { CaptureTurn } from "./memory-capture.ts";
 import { appendAboutMe, commitLearned, planLearned } from "./profile-learned.ts";
-import { canAccessTeam, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, setPeerScope, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
+import { archivedAgent, canAccessBot, canAccessTeam, primaryCovers, canReachPeer, coordinatorSupervises, livePeerRoster, livePeerRosterBlock, peerAllowed, peerName, peerRosterSystemPrompt, peerStatus, peerInScope, peerStatusWords, reachablePeers, resolveTeammate, setPeerScope, setPrimaryCover, roomPeerRosterSystemPrompt, roomRosterLine, uniquePeerName, PEER_ACCESS_HELP } from "./peer-roster.ts";
 import { orgPeerInScope } from "./peer-scope.ts";
 import {
   containerComputerAction,
@@ -319,7 +319,8 @@ import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
 import type { EarlyListener } from "./early-listener.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
-import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
+import type { PlanUsageReport } from "./plan-usage.ts";
+import { loadPlanUsage, newPlanUsageAlerts, orgPlanAccounts, planAccountsFromInstances, planUsageAlertText } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost, listPriceFor } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
@@ -387,6 +388,7 @@ import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
 import { createMcpToolNameRoutes } from "./routes/mcp-tool-names.ts";
 import { createMcpServerRenameRoutes } from "./routes/mcp-server-rename.ts";
+import { attachCustomMcp } from "./mcp-result-budget.ts";
 import { callbackPage, DEFAULT_MCP_ACCOUNT, isMcpAccountId, McpOAuthError, McpOAuthManager, McpOAuthVault, parseMcpAccountChoices, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
@@ -493,7 +495,7 @@ import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngine
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
 import { READ_RECEIPTS_PREFERENCE, botParticipant, newestOf, personParticipant, readVisibleTo, readsVisibleTo, roomReceiptMember, sendsReadReceipts } from "./read-receipts.ts";
-import { CONSENT_RULE, escapeNotes, OUTSIDE, peerLineText, peerProvenanceNote, quoteInNote, reportNote, requestWorkOrigin, withPeerProvenance, type WorkOrigin } from "./peer-provenance.ts";
+import { CONSENT_RULE, escapeNotes, OUTSIDE, peerLineText, peerProvenanceNote, quoteInNote, reportNote, requestWorkOrigin, webhookPostText, withPeerProvenance, type WorkOrigin } from "./peer-provenance.ts";
 import { decideRoomPost, emptyRoomPostBudget, type RoomPostAttempt, type RoomPostBudget } from "./room-post-budget.ts";
 import { parseFolderBody, parseFolderOrder, parseThreadOrganization } from "./thread-folders.ts";
 import {
@@ -533,6 +535,7 @@ import { buildRecoveryText, buildTurnContext, engineIsFresh, replaysNatively } f
 import { ReplayBuffer } from "./sse-replay.ts";
 import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnseen, sessionStart, unseenMessages, withUnseenMessages, type ContextMessage } from "./delta-context.ts";
 import { extractTurnImages } from "./turn-images.ts";
+import { fitTurnImagesForModel, modelImageCopyPath } from "./model-image.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
 import { TurnWatchdog } from "./turn-watchdog.ts";
 import { TurnResources, type TurnOwner } from "./turn-resources.ts";
@@ -6331,6 +6334,17 @@ if (IDENTITY.kind === "perspicax") {
       },
     });
   });
+  // 2026-10-20 (JC): a Primary Bot covers every bot its person owns or may
+  // manage, whatever the team (peer-roster.ts primaryCovers)
+  setPrimaryCover((from, target) => {
+    const fromBot = store.bot(from.id);
+    const targetBot = store.bot(target.id);
+    if (!fromBot || !targetBot) return false;
+    if (primaryBotSameOwner(fromBot, targetBot)) return true;
+    const viewer = authzViewerFromId(effectiveBotOwner(fromBot));
+    const level = viewer ? botLevel({ viewer, ...botFacts(targetBot) }) : null;
+    return level === "owner" || level === "manage";
+  });
 }
 {
   const steppedDown = store.enforceOnePrimaryPerOwner();
@@ -8583,7 +8597,7 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
   // cannot silently give a specialist access to another team's transcript.
   const outsideSection = (room: GroupRecord, speaker: BotRecord) => room.memberIds.some(id => {
     const member = store.bot(id);
-    return member && !canAccessTeam(speaker, member.section) && !coordinatorSupervises(member, speaker);
+    return member && !canAccessBot(speaker, member) && !coordinatorSupervises(member, speaker);
   });
   if (group && outsideSection(group, bot)) return "Destination room includes a member outside the agent's section";
   if (parent) {
@@ -8593,7 +8607,7 @@ function roomHandoffProblem(node: Pick<HandoffView, "groupId" | "threadId" | "bo
     // A specialist may address its supervisor in their shared conversation;
     // supervision alone never grants a direct chat or another room's access.
     const sharedSupervisor = source && group && source.id === group.id && parent.threadId === node.threadId && coordinatorSupervises(bot, from);
-    if ((!canAccessTeam(from, bot.section) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
+    if ((!canAccessBot(from, bot) && !sharedSupervisor) || (source && outsideSection(source, from))) return "Room work cannot cross the sender's section boundary";
     if (source && group && source.id === group.id && parent.threadId !== node.threadId) return "Same-room work must stay in the originating conversation";
     if (!peerAllowed(from, bot)) return "The recipient is not an allowed peer of the sender";
     // A room the sender sits in keeps its own rule: people chose its
@@ -10366,6 +10380,7 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
     try {
       rmSync(join(ATTACHMENTS_DIR, name), { force: true });
       if (officeKind(name)) rmSync(officeMediaFolder(ATTACHMENTS_DIR, name), { recursive: true, force: true });
+      rmSync(modelImageCopyPath(ATTACHMENTS_DIR, join(ATTACHMENTS_DIR, name)), { force: true });
     } catch { /* already gone */ }
   }
   memoryUpkeep.dropThread(threadId);
@@ -11691,6 +11706,10 @@ const limitFailover = createLimitFailoverHost({
   payer: (botId, speaker) => {
     const bot = store.bot(botId);
     return bot ? autoPayerKey(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : "server";
+  },
+  ownerPays: (botId, speaker) => {
+    const bot = store.bot(botId);
+    return bot ? ownerPaysForMember(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : false;
   },
   threadSelection: (botId, threadId) => store.projectBotForTask(botId, threadId)?.modelSelection ?? null,
   busy: threadBusy,
@@ -15739,9 +15758,10 @@ function directContext(bot: BotRecord, threadId: string, messages: Message[]): C
       : m.roomRequest?.phase === "result" ? teammateReportContext(m.roomRequest.id, bot.id)
         : m.kind === "digest" && m.digest ? digestPromptLine(m.digest, m.from?.name ?? bot.name)
           : m.peerAsk ? peerLineText(m.peerAsk.name, m.text ?? "", "delivered")
+            : m.webhookPost && m.role !== "user" ? webhookPostText(bot.name, transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"))
             : m.role !== "user" && m.from ? peerReplayText(m, m.from.name, transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"))
               : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
-    keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && Boolean(m.from)),
+    keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && (Boolean(m.from) || m.webhookPost === true)),
     ...(m.steered ? { steered: true } : {}),
     ...(m.role === "user" && m.voiceCall ? { spoken: true } : {}),
   }));
@@ -18744,8 +18764,7 @@ async function startTurn(
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
         await refreshMcpOAuth(bot);
-        const custom = engineMcpServers(bot, threadId);
-        if (Object.keys(custom).length) integrations.custom = custom;
+        attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
       }
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
       let perspicaxPrompt = "";
@@ -19540,7 +19559,7 @@ async function startTurn(
       runningTurnEngines.set(threadId, instance);
       if (!warmOnly) limitFailover.noteDispatch(threadId, {
         botId: bot.id, engine: { instanceId: instance.instanceId, driverKind: instance.driverKind }, selection: bot.modelSelection,
-        payer: autoPayerKey(bot, speaker), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
+        payer: autoPayerKey(bot, speaker), ...(ownerPaysForMember(bot, speaker, opts?.trigger?.kind === "user" ? opts.trigger.principalId : opts?.sender?.id) ? { owner: true } : {}), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
       });
       idleEngines.noteBusy(threadId);
       // The prompt carries the soul as saved now. If it changed during setup,
@@ -19618,6 +19637,8 @@ async function startTurn(
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
       }
       if (!warmOnly) turnTrace(threadId, "send");
+      // Each picture within the model's limits: a scaled copy for a large one.
+      const modelImages = await fitTurnImagesForModel(turnImages);
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -19635,7 +19656,7 @@ async function startTurn(
         text: warmOnly ? "" : (engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText)),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         ...(recalled && !warmOnly && !engineCommand ? { recalled } : {}),
-        images: turnImages,
+        images: modelImages,
         approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
@@ -21059,7 +21080,7 @@ const modelRequests = new ModelRequestService({
 });
 const teamSetupTeams = () => [...new Set(["", ...readSections(), ...store.bots.map((bot) => sectionKey(bot.section)), ...store.groups.map((group) => sectionKey(group.section))])];
 const teamSetupRequests = new TeamSetupRequestService({
-  store, teams: teamSetupTeams, canAccessTeam, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
+  store, teams: teamSetupTeams, canAccessTeam, covers: primaryCovers, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
   // create_bot from a bot that is not a Primary Bot (server/bot-creation.ts)
   mayCreateBots: (bot) => botCreationOffered(bot, ownerBotsReadOnly(bot)),
   autoApply: fullAccessForSource,
@@ -21699,6 +21720,9 @@ function serializeRoomContext(
       const speaker = m.role === "user"
         ? m.via === "api" ? `${person} (sent through the local API, not typed)` : person
         : m.from ? peerName(m.from.name) : "Bot";
+      // An outside app chose a webhook line's words: every reader is told,
+      // the bot it is shown as included.
+      if (m.webhookPost && m.role !== "user") return `${speaker}: ${webhookPostText(m.from?.name ?? "Bot", transcriptText(rendered, messagesById, userName))}`;
       const line = `${speaker}: ${escapeNotes(transcriptText(rendered, messagesById, userName))}`;
       // A room reply is the room talking. A post_to_room message is another
       // bot's text carried in from somewhere else, so it says so — the
@@ -22089,8 +22113,7 @@ async function runGroupMemberTurn(
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
     await refreshMcpOAuth(bot);
-    const custom = engineMcpServers(bot, threadId);
-    if (Object.keys(custom).length) integrations.custom = custom;
+    attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
   }
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
   let roomPerspicaxPrompt = "";
@@ -22743,7 +22766,7 @@ async function runGroupMemberTurn(
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
-        images: turnImages,
+        images: await fitTurnImagesForModel(turnImages),
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
@@ -24006,7 +24029,7 @@ function roomPostEligibility(
   }
   const outsider = group.memberIds
     .map((id) => store.bot(id))
-    .find((member) => member && !canAccessTeam(bot, member.section) && !coordinatorSupervises(member, bot));
+    .find((member) => member && !canAccessBot(bot, member) && !coordinatorSupervises(member, bot));
   if (outsider) {
     return {
       ok: false,
@@ -25226,7 +25249,7 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!body || typeof body !== "object") return out;
   const record = body as Record<string, unknown>;
-  for (const key of ["command", "args", "env", "type", "url", "headers", "oauth", "enabled"]) {
+  for (const key of ["command", "args", "env", "type", "url", "headers", "oauth", "enabled", "resultBudget"]) {
     if (record[key] !== undefined) out[key] = record[key];
   }
   return out;
@@ -25617,6 +25640,29 @@ const autoRefusals = new Map<string, number>();
 function autoPayerKey(bot: BotRecord, speaker: TurnSpeaker): string {
   if (IDENTITY.kind !== "perspicax") return "server";
   return turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId.toLowerCase() || "unknown";
+}
+/** J4: a plan window crossing the warning line (or spent) says so once, to
+ * the person whose plan it is (everyone on the solo server). */
+function announcePlanThresholds(report: PlanUsageReport, scope: string): void {
+  try {
+    for (const alert of newPlanUsageAlerts(report, scope.toLowerCase(), cfg.budgets?.warnAtPercent)) {
+      const text = planUsageAlertText(alert);
+      broadcast({ kind: "notify", notification: {
+        kind: "spend", botId: "", botName: "", threadId: "", title: text.title, body: text.body,
+        ...(scope !== "server" ? { audience: [scope] } : {}),
+      } }, scope === "server" && IDENTITY.kind === "perspicax" ? { adminOnly: true } : {});
+    }
+  } catch (failure) {
+    console.warn(`[plan-usage] threshold alert: ${failure instanceof Error ? failure.message : String(failure)}`);
+  }
+}
+/** J4: the bot owner's plan pays for a turn a member started (a peer hop
+ * from the member's bot, never a routine), so a usage limit is the owner's. */
+function ownerPaysForMember(bot: BotRecord, speaker: TurnSpeaker, asked?: string): boolean {
+  if (IDENTITY.kind !== "perspicax" || routineLineage(speaker)) return false;
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  const who = (asked || speakerPrincipal(speaker, owner, peerOwnerPrincipal(speaker))).trim().toLowerCase();
+  return owner !== "" && autoPayerKey(bot, speaker) === owner && who !== "" && who !== owner;
 }
 function rememberAutoRefusal(payer: string, entry: AutoChainEntry): void {
   autoRefusals.set(`${payer}\u0000${entry.instanceId}\u0000${entry.model}`, Date.now() + AUTO_REFUSAL_TTL_MS);
@@ -26470,7 +26516,7 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
       const bot = store.projectBotForTask(botId, threadId) ?? store.bot(botId);
       return { name: bot?.name ?? "Bot", color: bot?.color ?? "#888888" };
     },
-    handle: (input) => settingsActions().handle(input),
+    handle: async (input) => (await temporaryAgentSetting(input)) ?? settingsActions().handle(input),
   }),
   // sagax_approvals (server/routes/primary-approvals-internal.ts)
   createPrimaryApprovalsInternalRoutes({ handle: (input) => primaryApprovals().handle(input) }),
@@ -34001,7 +34047,7 @@ function agentSummary(bot: BotRecord): AgentSummary {
 /** The bots a bot may reach: its team, the teams it was allowed, its allow-list.
  * An archived temporary agent is gone for everyone. */
 function agentPeersOf(from: BotRecord): BotRecord[] {
-  return reachablePeers(store.bots, from).filter((peer) => !peer.hidden && !peer.temporary?.archived && peerInScope(from, peer) && canAccessTeam(from, peer.section) && peerAllowed(from, peer));
+  return reachablePeers(store.bots, from).filter((peer) => !peer.hidden && !archivedAgent(peer) && peerInScope(from, peer) && canAccessBot(from, peer) && peerAllowed(from, peer));
 }
 // ── temporary agents (server/temporary-agents.ts, Perspicax #321) ──────
 const TEMP_AGENT_DEFAULT_IDLE_HOURS = defaultIdleHours(process.env);
@@ -34030,6 +34076,64 @@ function botLastActivity(bot: BotRecord): number {
   let last = bot.createdAt ?? 0;
   for (const task of store.tasks(bot.id)) last = Math.max(last, task.updatedAt ?? task.createdAt ?? 0);
   return last;
+}
+/** sagax_settings' archive (bot.hidden, bot.delete; archive_bot): idempotent
+ * on any bot, and on a temporary agent (create_agent) answered here. The bot routes never show one (GET
+ * /api/bots leaves them out) and an archived one answers 410, so prod
+ * 2026-10-20 (perf-test-061) read "This agent was archived." and "No such
+ * bot". Its archive is the agent's own mark, read and set here: idempotent,
+ * one clear sentence. Null: not a temporary agent, the screen's path runs. */
+async function temporaryAgentSetting(input: { args: Record<string, unknown>; botId: string; threadId: string; generation: string }): Promise<BotActResult | null> {
+  const { args } = input;
+  const key = args.key;
+  if ((key !== "bot.hidden" && key !== "bot.delete") || (args.action !== "get" && args.action !== "set")) return null;
+  if (key === "bot.delete" && args.action === "get") return null;
+  const id = typeof args.target === "string" ? args.target.trim() : "";
+  const bot = id ? store.bot(id) : undefined;
+  const temporary = bot?.temporary;
+  if (!bot) return null;
+  const caller = store.bot(input.botId);
+  if (!temporary) {
+    // an ordinary bot: archiving it twice (or restoring a shown one) says
+    // so instead of rewriting it; everything else is the screen's path
+    if (key !== "bot.hidden" || args.action !== "set" || !caller || (caller.id !== bot.id && !(primaryCovers(caller, bot) && peerInScope(caller, bot)))) return null;
+    const want = args.value !== false;
+    if ((bot.hidden === true) !== want) return null;
+    return { status: 200, body: { text: want ? `@${bot.name} is already archived. Nothing changed.` : `@${bot.name} is not archived. Nothing changed.` } };
+  }
+  const reply = (status: number, text: string): BotActResult => status >= 400 ? { status, body: { error: text } } : { status, body: { text } };
+  const ownerKey = caller ? effectiveBotOwner(caller).trim().toLowerCase() : "";
+  const creator = Boolean(caller && mayDeleteTemporary(temporary, { kind: "bot", botId: caller.id, ownerPrincipalId: ownerKey || null }));
+  const covered = Boolean(caller && caller.id !== bot.id && primaryCovers(caller, bot) && peerInScope(caller, bot));
+  if (!creator && !covered && caller?.id !== bot.id) return reply(404, "No such bot for this person.");
+  const archived = Boolean(temporary.archived);
+  if (args.action === "get") return reply(200, JSON.stringify({ key, value: archived || bot.hidden === true, temporaryAgent: true }));
+  const archive = args.value !== false;
+  if (key === "bot.delete" && !archive) return reply(200, `@${bot.name}: nothing to delete. Nothing changed.`);
+  if (key === "bot.hidden" && !archive) {
+    return archived
+      ? reply(409, `@${bot.name} is a temporary agent and was archived; it cannot be restored. Create a new one with create_agent if the person still needs it.`)
+      : reply(200, `@${bot.name} is not archived. Nothing changed.`);
+  }
+  if (archived) return reply(200, `@${bot.name} (temporary agent) is already archived. Nothing changed; it no longer appears in lists and is purged on its own.`);
+  // a Primary Bot archives another's temporary agent on the person's words,
+  // as archive_bot does for any bot (askedBotChange); its creator, at once
+  if (!creator) {
+    const quote = typeof args.quote === "string" ? args.quote : "";
+    const gate = quote ? primaryTurnGate(input.botId, input.threadId, input.generation) : null;
+    const proved = gate && !("error" in gate) && checkPersonQuote({ quote, message: gate.message.text, intent: "setting" }).ok
+      ? askedBotChange({ key, family: "bot", value: true, quote, names: [bot.name], speakingBot: false, message: gate.message.text })
+      : "pass quote, the person's own words asking to archive or delete this agent";
+    if (proved !== true) return reply(403, `Not archived: ${proved}.`);
+  }
+  if (bot.busy || store.tasks(bot.id).some((task) => threadBusy(bot.id, task.threadId))) {
+    for (const task of store.tasks(bot.id)) if (threadBusy(bot.id, task.threadId)) await interruptDirectThread(bot.id, task.threadId).catch(() => undefined);
+  }
+  const mark = archiveMark({ kind: "bot", botId: caller!.id }, "deleted", Date.now());
+  store.setBotTemporary(bot.id, { ...temporary, archived: mark });
+  appendAdminAction(DATA_DIR, { category: "setting", action: "setting.change", target: { kind: "bot", id: bot.id, name: bot.name }, changed: [key],
+    after: { [key]: true, temporaryAgent: true, bot: caller!.id, purgeAt: mark.purgeAt }, actor: { kind: "loopback" } });
+  return reply(200, `Done: @${bot.name} (temporary agent) is archived. It no longer appears in lists or takes work; it is purged after its retention.`);
 }
 function temporaryAudit(action: "agents.temporary.expired" | "agents.temporary.purged" | "agents.temporary.pinned" | "agents.temporary.unpinned", bot: BotRecord, after: Record<string, unknown>, actor?: { principalId: string }) {
   appendAdminAction(DATA_DIR, {
@@ -37020,13 +37124,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         requireActiveInternalCapability();
         chief = store.bot(internalCapability.botId)!;
         if (!chief.chiefOfStaff || chief.hidden) return json(res, 403, { error: "Only an active Primary Bot may plan team setup" });
+        const covered = store.bots.filter((bot) => !bot.hidden && !archivedAgent(bot) && (bot.id === chief.id || (canAccessBot(chief, bot) && peerAllowed(chief, bot) && peerInScope(chief, bot))));
+        const setupBots = covered.map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff), ...(bot.temporary ? { temporary: true } : {}) }));
+        const coveredTeams = new Set(covered.map((bot) => bot.section?.trim() || ""));
         return json(res, 200, {
-          teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name)),
-          bots: store.bots.filter((bot) => !bot.hidden && canAccessTeam(chief, bot.section) && (bot.id === chief.id || (peerAllowed(chief, bot) && peerInScope(chief, bot))))
-            .map((bot) => ({ id: bot.id, name: bot.name, title: bot.title, section: bot.section ?? "", modelSelection: bot.modelSelection, chiefOfStaff: Boolean(bot.chiefOfStaff) })),
+          teams: teamSetupTeams().filter((name) => canAccessTeam(chief, name) || coveredTeams.has(name.trim())),
+          // 2026-10-20: every bot of the person (canAccessBot), whatever its
+          // team; an archived bot or temporary agent is not listed
+          bots: setupBots,
           instances: orgOfferedEngines(instances).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
-          scope: "Bot model defaults apply to groups and new threads; existing threads retain their models. Full Access applies requested team setup immediately; other modes return a review card. Existing unauthorized teams remain outside this Primary Bot's scope.",
+          scope: "Every bot of the person is listed, whatever its team. A new default model: threads following the bot (main, routines) move at their next turn. Full Access applies requested team setup immediately; other modes return a review card.",
         });
       }
       if (method === "POST" && path === "/api/internal/team-setup-requests") {
@@ -37172,10 +37280,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const readInRoom = Boolean(store.groupByThread(fromThreadId));
         const readCrossed = readInRoom && threadId !== fromThreadId;
         if (readCrossed) discloseRecall(from, fromThreadId, [threadId]);
+        // An outside app wrote a webhook line: read back with its note, never as the bot's own words.
+        const readText = message.webhook ? webhookPostText(from.name, message.text) : message.text;
         return json(res, 200, {
           ...message,
           crossed: readCrossed,
-          text: message.text.length > SESSION_READ_MAX_CHARS ? `${message.text.slice(0, SESSION_READ_MAX_CHARS)}…` : message.text,
+          text: readText.length > SESSION_READ_MAX_CHARS ? `${readText.slice(0, SESSION_READ_MAX_CHARS)}…` : readText,
           task: store.taskByThread(from.id, threadId)?.title,
         });
       }
@@ -37311,7 +37421,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // unresolvable id the cheapest way past the gate, so it is now a
         // hard refusal — every peer turn has an accountable sender.
         const from = internalSender;
-        if (!canAccessTeam(from, target.section) || target.hidden || !peerInScope(from, target)) {
+        if (!canAccessBot(from, target) || target.hidden || !peerInScope(from, target)) {
           return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
         }
         // The sender's allow-list, when it has one. Checked here rather than
@@ -37459,7 +37569,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const freshFrom = store.bot(fromBotId);
           const freshTarget = store.bot(toBotId);
           if (!freshFrom || !freshTarget) return json(res, 404, { error: "no such bot" });
-          if (!canAccessTeam(freshFrom, freshTarget.section) || freshTarget.hidden || !peerInScope(freshFrom, freshTarget)) {
+          if (!canAccessBot(freshFrom, freshTarget) || freshTarget.hidden || !peerInScope(freshFrom, freshTarget)) {
             return json(res, 200, { error: "that bot moved to a different section", receipt: peerDeliveryReceipt({
               // Access no longer permits reading the peer's current profile.
               botId: toBotId, outcome: "failed",
@@ -37672,7 +37782,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const note = typeof body.note === "string" ? body.note.trim() : "";
         const target = store.bot(botId);
         if (!target || target.id === from.id) return json(res, 404, { error: "no such teammate" });
-        if (target.hidden || !canAccessTeam(from, target.section) || !peerAllowed(from, target) || !peerInScope(from, target)) {
+        if (target.hidden || !canAccessBot(from, target) || !peerAllowed(from, target) || !peerInScope(from, target)) {
           return json(res, 403, { error: "that bot is not on this Primary Bot's team — call list_bots for the ones you can reach" });
         }
         if (store.groupByThread(threadId)) return json(res, 400, { error: "that is a room thread — use coordinate_bots in the room instead" });
@@ -37725,7 +37835,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const toBotId = resolvedTo.id;
         const target = store.bot(toBotId);
         if (!target) return json(res, 404, { error: "no such bot" });
-        if (!canAccessTeam(from, target.section) || target.hidden || !peerInScope(from, target)) {
+        if (!canAccessBot(from, target) || target.hidden || !peerInScope(from, target)) {
           return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
         }
         if (!peerAllowed(from, target)) {
@@ -38279,7 +38389,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!oneWay && depth >= MAX_COMMS_DEPTH) {
           return json(res, 200, { error: "thread chains are limited to one hop — open the thread on yourself, or do this one here" });
         }
-        if (!canAccessTeam(from, target.section) || target.hidden || !peerInScope(from, target)) {
+        if (!canAccessBot(from, target) || target.hidden || !peerInScope(from, target)) {
           return json(res, 403, { error: `that bot belongs to a different section or is unavailable. ${PEER_ACCESS_HELP}` });
         }
         if (!peerAllowed(from, target)) {
@@ -45221,13 +45331,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
           },
         });
-        return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+        const report = await loadPlanUsage({ accounts, refresh });
+        announcePlanThresholds(report, principalId);
+        return json(res, 200, report);
       }
       if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin only" });
       const accounts = planAccountsFromInstances(instances, {
         apiKeyConfigured: (_driver, instanceId) => planKeyConfigured(instances[instanceId]?.driver ?? "", instanceId),
       });
-      return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+      const report = await loadPlanUsage({ accounts, refresh });
+      announcePlanThresholds(report, "server");
+      return json(res, 200, report);
     }
 
     // ── provider key check: does a pasted or saved key open the provider's door ──

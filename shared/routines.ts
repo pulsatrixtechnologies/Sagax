@@ -127,6 +127,8 @@ export interface Routine {
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
+  /** Nominal slot already consumed. Later placement never chooses it or an earlier slot. */
+  lastFiredNominalAt?: number;
   createdAt: number;
   updatedAt: number;
   /** 2026-10-09 (GET /api/routines, server/routine-scope.ts): its bot's

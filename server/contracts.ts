@@ -291,6 +291,12 @@ export interface SendTurnInput {
      * A server is either a command this machine runs (stdio) or a server
      * reached at a URL; a driver that cannot speak to one kind skips it. */
     custom?: Record<string, McpServerSpec>;
+    /** Per-server result budget for `custom` (config.json
+     * `mcpServers.<name>.resultBudget`): characters of one tool result
+     * allowed into context, 0 = never trim. A name missing here uses the app
+     * default (mcp-gate-config.ts resultBudget). Kept apart from the specs so
+     * a server mounted as it is never carries a field its engine rejects. */
+    customResultBudgets?: Record<string, number>;
   };
   cwd?: string;
   /** Let the engine also load the MCP servers from the person's own CLI
@@ -698,6 +704,11 @@ export interface TextGenerationOptions {
   onDelta?: (delta: string) => void;
   /** Cap the completion. The opener asks for a sentence, not an essay. */
   maxTokens?: number;
+  /** No extended thinking: an extraction step (memory capture) gains
+   * nothing from it, and a capture of several conversations spent 3,000 to
+   * 4,000 thinking tokens and ran past its 60 s limit. Drivers without a
+   * switch ignore it. */
+  noThinking?: boolean;
 }
 
 export interface ProviderInstance {

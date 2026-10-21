@@ -15,10 +15,10 @@ import type { RoutineRequestOperation } from "../shared/routine-request.ts";
 import { normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "../shared/routine-schedule.ts";
 import {
   applyTiming,
+  cappedWindow,
   flexibleStartAt,
   hasTimingInput,
   isFlexibleSchedule,
-  nominalGapMs,
   planFlexibleStart,
   storedTiming,
   type RoutineWindowTiming,
@@ -151,6 +151,8 @@ export interface Routine {
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
+  /** Nominal slot this routine already consumed. Later placement never chooses it or an earlier slot. */
+  lastFiredNominalAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -825,7 +827,7 @@ function validInput(input: RoutineInput, after: number): ReturnType<typeof sanit
 function parseSchedule(schedule: RoutineScheduleInput, after: number): RoutineSchedule {
   if (schedule?.type === "cron") {
     const base = normalizeCronSchedule({ type: "cron", expression: schedule.expression, timeZone: schedule.timeZone }, after);
-    return applyTiming(base, schedule, nominalGapMs(base, after));
+    return applyTiming(base, schedule);
   }
   if (schedule?.type === "once") {
     if (hasTimingInput(schedule)) throw new Error("A one-time routine starts at its chosen time");
@@ -837,7 +839,7 @@ function parseSchedule(schedule: RoutineScheduleInput, after: number): RoutineSc
     const time = String(schedule.time ?? "");
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Time must use HH:MM");
     const base = { type: "daily" as const, time, weekdays: cleanDays(schedule.weekdays) };
-    return applyTiming(base, schedule, nominalGapMs(base, after));
+    return applyTiming(base, schedule);
   }
   if (schedule?.type === "interval") {
     const { everyMinutes, anchorAt } = schedule;
@@ -862,7 +864,7 @@ function parseSchedule(schedule: RoutineScheduleInput, after: number): RoutineSc
       ...(weekdays ? { weekdays } : {}),
       ...(window ? { window } : {}),
       ...(endsAt === undefined ? {} : { endsAt }),
-    }, schedule, everyMinutes * 60_000);
+    }, schedule);
   }
   throw new Error("Choose a supported schedule");
 }
@@ -1004,7 +1006,7 @@ function mergeScheduleUpdate(
   current: RoutineSchedule,
   incoming: RoutineScheduleInput,
 ): RoutineScheduleInput {
-  if (current.type !== "interval" || incoming.type !== "interval") return incoming;
+  if (current.type !== "interval" || incoming.type !== "interval") return keepTiming(current, incoming, incoming);
   const merged: RoutineIntervalScheduleInput = { ...incoming };
   if (!Object.hasOwn(incoming, "weekdays") && current.weekdays) {
     merged.weekdays = [...current.weekdays];
@@ -1015,12 +1017,23 @@ function mergeScheduleUpdate(
   if (!Object.hasOwn(incoming, "endsAt") && current.endsAt !== undefined) {
     merged.endsAt = current.endsAt;
   }
-  if (!Object.hasOwn(incoming, "timing") && current.timing === "flexible") {
-    merged.timing = "flexible";
-    merged.windowEarlyMinutes = current.windowEarlyMinutes;
-    merged.windowLateMinutes = current.windowLateMinutes;
-  }
-  return merged;
+  return keepTiming(current, incoming, merged);
+}
+
+/** A schedule edit keeps flexible timing unless the update names a timing of its own. */
+function keepTiming(
+  current: RoutineSchedule,
+  incoming: RoutineScheduleInput,
+  base: RoutineScheduleInput,
+): RoutineScheduleInput {
+  if (base.type === "once" || incoming.type === "once" || current.type === "once") return base;
+  if (Object.hasOwn(incoming, "timing") || !isFlexibleSchedule(current)) return base;
+  return {
+    ...base,
+    timing: "flexible",
+    windowEarlyMinutes: current.windowEarlyMinutes,
+    windowLateMinutes: current.windowLateMinutes,
+  };
 }
 
 function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" | "createdAt" | "updatedAt" | "nextRunAt"> {
@@ -1169,6 +1182,13 @@ export class RoutineManager {
               loaded.nominalRunAt! > MAX_DATE_MS
             ) {
               delete loaded.nominalRunAt;
+            }
+            if (
+              !Number.isSafeInteger(loaded.lastFiredNominalAt) ||
+              loaded.lastFiredNominalAt! < 0 ||
+              loaded.lastFiredNominalAt! > MAX_DATE_MS
+            ) {
+              delete loaded.lastFiredNominalAt;
             }
             delete loaded.failureStreak;
             return [loaded];
@@ -2106,13 +2126,9 @@ export class RoutineManager {
                 const latest = latestIntervalOccurrence(routine.schedule, now, this.zoneOf(routine));
                 if (latest != null && latest > firedNominal) {
                   firedNominal = latest;
-                  const earlyMs = (routine.schedule.windowEarlyMinutes ?? 0) * 60_000;
-                  const picked = flexibleStartAt(
-                    routine.id,
-                    latest,
-                    routine.schedule.windowEarlyMinutes ?? 0,
-                    routine.schedule.windowLateMinutes ?? 0,
-                  );
+                  const window = cappedWindow(routine.schedule, now);
+                  const earlyMs = window.early * 60_000;
+                  const picked = flexibleStartAt(routine.id, latest, window.early, window.late);
                   scheduledFor = Math.min(now, Math.max(picked, latest - earlyMs));
                 }
               }
@@ -2152,6 +2168,7 @@ export class RoutineManager {
             } else if (!flexible) {
               routine.nextRunAt = nextOccurrence(routine.schedule, Math.max(now, scheduledFor), this.zoneOf(routine));
             } else {
+              if (firedNominal != null) routine.lastFiredNominalAt = firedNominal;
               const placed = firedNominal == null
                 ? this.placeInitial(routine.id, routine.schedule, now, routine)
                 : (this.placeAfter(routine, firedNominal, now) ?? { start: null });
@@ -2556,6 +2573,7 @@ export class RoutineManager {
         const scheduledFor = routine.nextRunAt ?? now;
         routine.awaySkips = recordAwaySkip(routine.awaySkips, scheduledFor);
         if (isFlexibleSchedule(routine.schedule)) {
+          if (routine.nominalRunAt != null) routine.lastFiredNominalAt = routine.nominalRunAt;
           const placed = routine.nominalRunAt == null
             ? this.placeInitial(routine.id, routine.schedule, now, routine)
             : (this.placeAfter(routine, routine.nominalRunAt, now) ?? { start: null });
@@ -2778,15 +2796,15 @@ export class RoutineManager {
     id: string,
     schedule: RoutineSchedule,
     now: number,
-    routine?: { botId?: string; runAs?: string },
+    routine?: { botId?: string; runAs?: string; lastFiredNominalAt?: number },
   ): { start: number | null; nominal?: number } {
     if (!isFlexibleSchedule(schedule)) return { start: this.initialOccurrence(schedule, now, routine) };
-    const lateMs = (schedule.windowLateMinutes ?? 0) * 60_000;
     const placed = planFlexibleStart({
       routineId: id,
       schedule,
-      afterNominal: now - lateMs - 1,
+      afterNominal: now - 1,
       notBefore: now,
+      lastFiredNominalAt: routine?.lastFiredNominalAt,
       nextNominal: (after) => nextOccurrence(schedule, after, routine ? this.zoneOf(routine) : undefined),
     });
     return placed ?? { start: null };
@@ -2802,6 +2820,7 @@ export class RoutineManager {
       schedule,
       afterNominal: nominal,
       notBefore,
+      lastFiredNominalAt: routine.lastFiredNominalAt,
       nextNominal: (after) => nextOccurrence(routine.schedule, after, zone),
     });
   }

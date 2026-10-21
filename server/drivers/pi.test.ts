@@ -201,6 +201,20 @@ describe("buildMcpServers", () => {
     expect(servers?.mail).toMatchObject({ scope: "custom" });
   });
 
+  it("gates a custom server with its own result limit, and others with the app's", () => {
+    const servers = buildMcpServers({ threadId: "budget", text: "Go", integrations: {
+      custom: { big: { command: "node", args: ["big"], env: {} }, never: { command: "node", args: ["never"], env: {} }, plain: { command: "node", args: ["plain"], env: {} } },
+      customResultBudgets: { big: 40_000, never: 0 },
+    } });
+    const envOf = (name: string) => (servers as Record<string, { env: Record<string, string> }>)[name]!.env;
+    const budget = (name: string) => envOf(name).SAGAX_GATE_BUDGET;
+    expect(budget("big")).toBe("40000");
+    expect(budget("plain")).toBe(String(process.env.SAGAX_MCP_RESULT_BUDGET ? Number(process.env.SAGAX_MCP_RESULT_BUDGET) : 8_000));
+    // 0 = never trim: mounted as it is, with no gate and no extra field
+    expect(budget("never")).toBeUndefined();
+    expect(JSON.stringify(servers?.never)).not.toContain("resultBudget");
+  });
+
   it("rejects malformed policy and mounts nothing for native-only selection", () => {
     expect(() => buildMcpServers({ threadId: "bad", text: "Stop", toolScope: { allow: null } as never })).toThrow(/tool selection/i);
     expect(buildMcpServers({ threadId: "native", text: "Draft", toolScope: { allow: ["native:read", "native:write"] }, integrations: { agents: { command: "node", args: [], env: {} } } })).toBeNull();

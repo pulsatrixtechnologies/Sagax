@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { cronScheduleLabel } from "../shared/cron-label.ts";
 import { normalizeCronSchedule, nextCronRuns } from "../shared/routine-schedule.ts";
-import { nominalGapMs, presentTiming, storedTiming } from "../shared/routine-timing.ts";
+import { presentTiming, storedTiming } from "../shared/routine-timing.ts";
 import { newId } from "./contracts.ts";
 import { SELF_ROUTINE_CAP, UNDO_STALE, type DirectApply, type DirectApplyCheck } from "./direct-apply.ts";
 import { redactSecretsInText } from "./redact.ts";
@@ -532,9 +532,9 @@ function rfc3339Instant(value: string, offsetMessage: string): number {
   return at;
 }
 
-function timed<T extends { type: string }>(schedule: T, source: unknown, gapMs: number): T {
+function timed<T extends { type: string }>(schedule: T, source: unknown): T {
   try {
-    return presentTiming(schedule, source, gapMs);
+    return presentTiming(schedule, source);
   } catch (error) {
     throw new RoutineRequestError(error instanceof Error ? error.message : "Choose a valid schedule");
   }
@@ -552,11 +552,21 @@ function timingCarry(schedule: {
   };
 }
 
+/** Keep the routine's flexible window when an update does not name a timing. */
+function keptTiming(
+  current: RoutineRequestSchedule,
+  incoming: object,
+): { timing?: "exact" | "flexible"; windowEarlyMinutes?: number; windowLateMinutes?: number } {
+  if (Object.hasOwn(incoming, "timing")) return timingCarry(incoming as Parameters<typeof timingCarry>[0]);
+  if (current.type !== "once" && current.timing === "flexible") return storedTiming(current);
+  return {};
+}
+
 function normalizeSchedule(schedule: RoutineToolScheduleInput, now: number): RoutineRequestSchedule {
   if (schedule.type === "cron") {
     try {
       const base = normalizeCronSchedule({ type: "cron", expression: schedule.expression, timeZone: schedule.timeZone }, now);
-      return timed(base, schedule, nominalGapMs(base, now));
+      return timed(base, schedule);
     } catch (error) {
       if (error instanceof RoutineRequestError) throw error;
       throw new RoutineRequestError(error instanceof Error ? error.message : "Invalid cron schedule");
@@ -604,7 +614,7 @@ function normalizeSchedule(schedule: RoutineToolScheduleInput, now: number): Rou
       ...(schedule.weekdays == null ? {} : { weekdays: intervalWeekdays(schedule.weekdays) }),
       ...(schedule.window == null ? {} : { window: intervalWindow(schedule.window, schedule.everyMinutes) }),
       ...(endsAt === undefined ? {} : { endsAt }),
-    }, schedule, schedule.everyMinutes * 60_000);
+    }, schedule);
   }
   if (!TIME.test(schedule.time)) {
     throw new RoutineRequestError("Weekly schedule time must use 24-hour HH:MM");
@@ -617,7 +627,7 @@ function normalizeSchedule(schedule: RoutineToolScheduleInput, now: number): Rou
     if (number === undefined) throw new RoutineRequestError(`Unsupported weekday: ${day}`);
     return number;
   }))].sort();
-  return timed({ type: "daily", time: schedule.time, weekdays }, schedule, nominalGapMs({ type: "daily", weekdays }, now));
+  return timed({ type: "daily", time: schedule.time, weekdays }, schedule);
 }
 
 function normalizeScheduleChanges(
@@ -763,11 +773,11 @@ function effectiveSchedule(
   current: RoutineRequestSchedule,
   incoming: RoutineRequestScheduleChanges,
 ): RoutineRequestSchedule {
-  if (incoming.type === "cron") return { ...incoming };
+  if (incoming.type === "cron") return { ...incoming, ...keptTiming(current, incoming) };
   if (incoming.type !== "interval") {
     return incoming.type === "once"
       ? { type: "once", at: incoming.at }
-      : { type: "daily", time: incoming.time, weekdays: [...incoming.weekdays], ...timingCarry(incoming) };
+      : { type: "daily", time: incoming.time, weekdays: [...incoming.weekdays], ...keptTiming(current, incoming) };
   }
   const previous = current.type === "interval" ? current : undefined;
   const merged: Extract<RoutineRequestSchedule, { type: "interval" }> = {
@@ -785,8 +795,7 @@ function effectiveSchedule(
   if (window !== undefined && window !== null) merged.window = { ...window };
   const endsAt = incoming.endsAt === undefined ? previous?.endsAt : incoming.endsAt;
   if (endsAt !== undefined && endsAt !== null) merged.endsAt = endsAt;
-  if (Object.hasOwn(incoming, "timing")) Object.assign(merged, timingCarry(incoming));
-  else if (previous?.timing === "flexible") Object.assign(merged, storedTiming(previous));
+  Object.assign(merged, keptTiming(current, incoming));
   return merged;
 }
 

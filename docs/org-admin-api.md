@@ -773,6 +773,35 @@ their own timeout (`decision: "expired"`, `by` null), newest first. `by`
 names the person when Sagax knows them, else the device label. A card that
 expired before that day has no row.
 
+### Organization approval rules (2026-10-21)
+
+| Method and path | Role | What |
+|---|---|---|
+| `GET org-approvals` | admin | `{ alwaysAllow, rules }` |
+| `POST org-approvals` | admin | `{ alwaysAllow: true \| false }` |
+| `POST org-approvals/rules` | admin | `{ when, behavior: "ask" \| "deny" }`, 201 `{ rule }` |
+| `POST org-approvals/rules/{id}` | admin | `{ when?, behavior?, enabled? }` |
+| `POST org-approvals/rules/{id}/remove` | admin | remove one rule |
+
+An organization rule is a custom rule in plain words
+(`shared/custom-rules.ts`) that an admin writes for every person and every
+bot of the server. It only restricts: Ask first or Refuse, never Allow
+(400). It wins over a person's own rule of the same behavior, and members
+see it in their bot's Rules card, marked "Required by your administrator",
+without a way to change or remove it (`/api/custom-rules/:id` answers 403
+`org_rule_locked`). A rule view is `{ id, when, behavior, enabled,
+recognized, createdAt, updatedAt }`; `recognized` false means the words name
+nothing the reviewer can test, so the rule holds nothing. At most 100.
+
+`alwaysAllow` false (on by default) turns "Always allow" off for everyone:
+an Allow answers that one card. Every answer that would save a standing
+grant (a session allow, a saved command, an Always allow rule or key) is
+refused with 403 `org_always_allow_off`, no allow rule is saved or turned
+on, and the standing grants people already saved stop answering while it is
+off (they answer again when it is back on). Each change is an `approval`
+row of the admin activity (`org.approvals.*`). Kept in
+`custom-approval-rules.json` under `org`; `server/custom-rules-org.ts`.
+
 ## Connections
 
 | Method and path | Role | What |

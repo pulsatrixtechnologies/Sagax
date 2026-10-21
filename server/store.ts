@@ -2341,7 +2341,10 @@ export class Store {
    * moves with it, at the same level; a thread's own model stays. */
   private withDefaultModel(bot: BotRecord): TaskRecord[] | undefined {
     return bot.tasks?.map((task) => ({
-      ...task,
+      // 2026-10-20 (prod: routines left on the old instance): a thread whose
+      // own model is the bot's old default was only a copy of it and follows
+      // the bot like the others; a model the person picked there stays
+      ...(task.modelSelection !== undefined && sameModelSelection(task.modelSelection, bot.modelSelection) ? withoutModel(task) : task),
       approvalMode: approvalModeFor(this.projectBotForTask(bot.id, task.threadId)!),
       autoApprove: task.autoApprove ?? bot.autoApprove,
       alwaysAllow: structuredClone(task.alwaysAllow ?? bot.alwaysAllow ?? []),
@@ -3392,7 +3395,11 @@ export class Store {
     const nextTasks = bot.tasks!.map((candidate, index) => candidate === task ? nextTask : others[index]!);
     const botPatch = updateBotDefault ? { modelSelection: structuredClone(selection) } : {};
     this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...botPatch, tasks: nextTasks } : candidate));
-    bot.tasks!.forEach((candidate, index) => Object.assign(candidate, nextTasks[index]));
+    bot.tasks!.forEach((candidate, index) => {
+      Object.assign(candidate, nextTasks[index]);
+      // a copy of the old default was dropped (withDefaultModel): drop it here too
+      if (!("modelSelection" in nextTasks[index]!)) delete candidate.modelSelection;
+    });
     Object.assign(bot, botPatch);
     this.emit({ type: "bot", botId });
     return task;
@@ -3684,4 +3691,10 @@ export class Store {
     if (!this.needsSeed()) return;
     this.createBot();
   }
+}
+
+/** A thread without its own model: it follows its bot's. */
+function withoutModel(task: TaskRecord): TaskRecord {
+  const { modelSelection: _copy, ...rest } = task;
+  return rest;
 }

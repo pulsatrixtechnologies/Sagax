@@ -419,6 +419,14 @@ const bridge = {
       : Promise.reject(new Error("Choose Restart to update.")),
     /** Opt in or out of pre-release versions (our GitHub releases only). */
     setPrereleases: (enabled) => ipcRenderer.invoke("update:set-prereleases", enabled === true),
+    /** The named channel: "stable" or "nightly". */
+    setChannel: (channel) => ipcRenderer.invoke("update:set-channel", channel === "nightly" ? "nightly" : "stable"),
+    /** Install a downloaded update while the person is away and no bot works. */
+    setAutoInstallAway: (enabled) => ipcRenderer.invoke("update:set-auto-install-away", enabled === true),
+    /** How many bots work now, so a restart can warn or wait for them. */
+    reportActivity: (count) => ipcRenderer.invoke("update:report-activity", Number(count) || 0),
+    /** Restart by itself once no bot works (one time). */
+    installWhenIdle: (enabled) => ipcRenderer.invoke("update:install-when-idle", enabled === true),
     onState: (cb) => {
       ipcRenderer
         .invoke("update:get-state")

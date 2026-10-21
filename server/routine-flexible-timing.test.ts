@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { scheduleText } from "./routine-requests.ts";
 import { nextOccurrence, RoutineManager, type RoutineScheduleInput } from "./routines.ts";
+import { cappedWindow } from "../shared/routine-timing.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 
 const MINUTE = 60_000;
@@ -125,13 +126,12 @@ describe("flexible routine timing", () => {
         windowLateMinutes: 15,
       },
     });
-    expect(interval.schedule).toMatchObject({ type: "interval", timing: "flexible" });
+    expect(interval.schedule).toMatchObject({ type: "interval", timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 15 });
     if (interval.schedule.type !== "interval") throw new Error("expected an interval");
-    const early = interval.schedule.windowEarlyMinutes ?? 0;
-    const late = interval.schedule.windowLateMinutes ?? 0;
-    expect(early + late).toBe(5);
-    expect(interval.nextRunAt).toBeGreaterThanOrEqual(interval.nominalRunAt! - early * MINUTE);
-    expect(interval.nextRunAt).toBeLessThanOrEqual(interval.nominalRunAt! + late * MINUTE);
+    const window = cappedWindow(interval.schedule, h.now);
+    expect(window.early + window.late).toBe(5);
+    expect(interval.nextRunAt).toBeGreaterThanOrEqual(interval.nominalRunAt! - window.early * MINUTE);
+    expect(interval.nextRunAt).toBeLessThanOrEqual(interval.nominalRunAt! + window.late * MINUTE);
 
     const cron = h.manager.create({
       name: "Clock",
@@ -146,9 +146,12 @@ describe("flexible routine timing", () => {
         windowLateMinutes: 15,
       },
     });
-    expect(cron.schedule).toMatchObject({ type: "cron", timing: "flexible" });
+    expect(cron.schedule).toMatchObject({ type: "cron", timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 15 });
     if (cron.schedule.type !== "cron") throw new Error("expected a cron");
-    expect((cron.schedule.windowEarlyMinutes ?? 0) + (cron.schedule.windowLateMinutes ?? 0)).toBe(5);
+    const cronWindow = cappedWindow(cron.schedule, h.now);
+    expect(cronWindow.early + cronWindow.late).toBe(5);
+    expect(cron.nextRunAt).toBeGreaterThanOrEqual(cron.nominalRunAt! - cronWindow.early * MINUTE);
+    expect(cron.nextRunAt).toBeLessThanOrEqual(cron.nominalRunAt! + cronWindow.late * MINUTE);
 
     const onTime = h.manager.create({
       name: "Ready",
@@ -240,6 +243,140 @@ describe("flexible routine timing", () => {
     const updated = h.manager.update(routine.id, { schedule: { type: "interval", everyMinutes: 40, anchorAt } });
     expect(updated?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 10, windowLateMinutes: 5, everyMinutes: 40 });
     expect(updated?.nominalRunAt).toBeTypeOf("number");
+  });
+
+  it("keeps flexible timing when a daily or cron update does not mention it", () => {
+    const h = harness();
+    open.push(h);
+    const dailyRoutine = h.manager.create({
+      name: "Day",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily({ timing: "flexible", windowEarlyMinutes: 12, windowLateMinutes: 4 }),
+    });
+    const dailyUpdated = h.manager.update(dailyRoutine.id, { schedule: daily({ time: "10:30" }) });
+    expect(dailyUpdated?.schedule).toMatchObject({
+      type: "daily",
+      time: "10:30",
+      timing: "flexible",
+      windowEarlyMinutes: 12,
+      windowLateMinutes: 4,
+    });
+    const exact = h.manager.update(dailyRoutine.id, { schedule: daily({ time: "10:30", timing: "exact" }) });
+    expect(exact?.schedule).not.toHaveProperty("timing");
+
+    const cron = h.manager.create({
+      name: "Clock",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: { type: "cron", expression: "0 9 * * 1", timeZone: "UTC", timing: "flexible", windowEarlyMinutes: 20, windowLateMinutes: 0 },
+    });
+    const cronUpdated = h.manager.update(cron.id, {
+      schedule: { type: "cron", expression: "0 10 * * 1", timeZone: "UTC" },
+    });
+    expect(cronUpdated?.schedule).toMatchObject({
+      type: "cron",
+      expression: "0 10 * * 1",
+      timing: "flexible",
+      windowEarlyMinutes: 20,
+      windowLateMinutes: 0,
+    });
+  });
+
+  it("does not fire a slot again after pause and resume, or after an edit that keeps it", async () => {
+    const h = harness();
+    open.push(h);
+    const anchorAt = h.now;
+    const schedule = {
+      type: "interval" as const,
+      everyMinutes: 30,
+      anchorAt,
+      timing: "flexible" as const,
+      windowEarlyMinutes: 10,
+      windowLateMinutes: 10,
+    };
+    const routine = h.manager.create({ name: "Steady", prompt: "Check the list", botId: "b1", schedule });
+    const fired = routine.nominalRunAt!;
+    h.setNow(routine.nextRunAt!);
+    expect(h.now).toBeLessThan(fired + 10 * MINUTE);
+    await h.manager.tick();
+    const after = h.manager.getRoutine(routine.id)!;
+    expect(after.lastFiredNominalAt).toBe(fired);
+    expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+
+    const paused = h.manager.update(routine.id, { enabled: false });
+    expect(paused?.nextRunAt).toBeNull();
+    expect(paused?.lastFiredNominalAt).toBe(fired);
+    const resumed = h.manager.update(routine.id, { enabled: true });
+    expect(resumed?.nominalRunAt).toBe(nextOccurrence(routine.schedule, fired));
+    expect(resumed?.nominalRunAt).not.toBe(fired);
+    expect(resumed?.nextRunAt).toBeGreaterThan(h.now);
+    expect(resumed?.lastFiredNominalAt).toBe(fired);
+    await h.manager.tick();
+    expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+
+    const edited = h.manager.update(routine.id, {
+      schedule: { ...schedule, windowEarlyMinutes: 8, windowLateMinutes: 8 },
+    });
+    expect(edited?.nominalRunAt).toBeGreaterThan(fired);
+    expect(edited?.lastFiredNominalAt).toBe(fired);
+    expect(edited?.nextRunAt).toBeGreaterThan(h.now);
+    await h.manager.tick();
+    expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+  });
+
+  it("keeps a stored 600/600 daily window across a reload", () => {
+    const h = harness();
+    open.push(h);
+    const routine = h.manager.create({
+      name: "Wide",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily({ timing: "flexible", windowEarlyMinutes: 600, windowLateMinutes: 600 }),
+    });
+    expect(routine.schedule).toMatchObject({ windowEarlyMinutes: 600, windowLateMinutes: 600 });
+    const window = cappedWindow(routine.schedule, h.now);
+    expect(window.early + window.late).toBe(12 * 60);
+    expect(routine.nextRunAt).toBeGreaterThanOrEqual(routine.nominalRunAt! - window.early * MINUTE);
+    expect(routine.nextRunAt).toBeLessThanOrEqual(routine.nominalRunAt! + window.late * MINUTE);
+    h.manager.stop();
+    const again = new RoutineManager({
+      file: h.file,
+      now: () => h.now,
+      botState: () => "ready",
+      createTask: () => ({ threadId: "t1" }),
+      startTurn: async () => {},
+    });
+    open.push({ stop: () => again.stop() });
+    const reloaded = again.getRoutine(routine.id)!;
+    expect(reloaded.schedule).toMatchObject({ windowEarlyMinutes: 600, windowLateMinutes: 600 });
+    again.stop();
+  });
+
+  it("plans the next run after 72 hours down for an interval and a cron", async () => {
+    const h = harness();
+    open.push(h);
+    const interval = h.manager.create({
+      name: "Often",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: { type: "interval", everyMinutes: 5, anchorAt: h.now, timing: "flexible", windowEarlyMinutes: 1, windowLateMinutes: 1 },
+    });
+    const cron = h.manager.create({
+      name: "Clock",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: { type: "cron", expression: "*/5 * * * *", timeZone: "UTC", timing: "flexible", windowEarlyMinutes: 1, windowLateMinutes: 1 },
+    });
+    const jumped = h.now + 72 * 60 * MINUTE;
+    h.setNow(jumped);
+    await h.manager.tick();
+    const intervalAfter = h.manager.getRoutine(interval.id)!;
+    const cronAfter = h.manager.getRoutine(cron.id)!;
+    expect(intervalAfter.enabled).toBe(true);
+    expect(intervalAfter.nextRunAt).toBeGreaterThanOrEqual(jumped);
+    expect(cronAfter.enabled).toBe(true);
+    expect(cronAfter.nextRunAt).toBeGreaterThanOrEqual(jumped);
   });
 
   it("describes a flexible daily schedule with its window", () => {

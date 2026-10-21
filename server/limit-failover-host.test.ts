@@ -64,8 +64,9 @@ function world(options: { allowed?: string[]; preferred?: Array<{ instanceId: st
     },
   };
   const host = createLimitFailoverHost(deps);
-  const dispatch = (selection = state.selection) => host.noteDispatch("thread", {
+  const dispatch = (selection = state.selection, owner = false) => host.noteDispatch("thread", {
     botId: "bot", engine: { instanceId: selection.instanceId, driverKind: DRIVERS[selection.instanceId]! }, selection, payer: "server", at: clock.now,
+    ...(owner ? { owner: true } : {}),
   });
   return { clock, state, store, host, dispatch, timers };
 }
@@ -148,6 +149,24 @@ describe("a turn its engine's limit refused", () => {
     expect(w.state.switches).toEqual([B, C]);
     expect(w.store.failover("bot", "thread")).toMatchObject({ from: A, to: C });
     expect(w.state.lines.at(-1)!.line).toMatchObject({ kind: "switched", from: "Claude", to: "Grok" });
+  });
+
+  it("says whose limit it is when the bot owner's plan pays for a member's turn (J4)", async () => {
+    const waiting = world({ allowed: ["claude"] });
+    waiting.dispatch(waiting.state.selection, true);
+    waiting.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: LIMIT });
+    await waiting.host.idle();
+    expect(waiting.state.lines.at(-1)!.line).toMatchObject({ kind: "waiting", from: "Claude", owner: true });
+    const switching = world();
+    switching.dispatch(switching.state.selection, true);
+    switching.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: LIMIT });
+    await switching.host.idle();
+    expect(switching.state.lines.at(-1)!.line).toMatchObject({ kind: "switched", to: "Codex", owner: true });
+    const own = world({ allowed: ["claude"] });
+    own.dispatch();
+    own.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: LIMIT });
+    await own.host.idle();
+    expect(own.state.lines.at(-1)!.line).not.toHaveProperty("owner");
   });
 
   it("with no engine left, says so and sends the message again on its own engine once the limit resets", async () => {

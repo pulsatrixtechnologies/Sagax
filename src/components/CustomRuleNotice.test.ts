@@ -11,6 +11,7 @@ vi.mock("@/state/store", async (original) => ({
   useStore: () => ({ dispatch: fixture.dispatch }),
 }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => false }));
+vi.mock("@/lib/org-approval-policy", () => ({ useOrgApprovalPolicy: () => ({ alwaysAllow: true, orgRules: 0 }), noteOrgAlwaysAllowOff: () => {} }));
 
 import { CustomRuleNoticeLine, CustomRuleSavedInset, customRuleNoticeLine } from "./CustomRuleNotice";
 import { pendingApprovals, PendingApprovalActions, PendingApprovalPanel } from "./PendingApproval";

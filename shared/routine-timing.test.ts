@@ -4,11 +4,13 @@ import {
   FLEXIBLE_DEFAULT_EARLY_MINUTES,
   FLEXIBLE_DEFAULT_LATE_MINUTES,
   applyTiming,
+  cappedWindow,
   clampTimingWindow,
   dailyGapMs,
   flexibleStartAt,
   nominalGapMs,
   placedStart,
+  planFlexibleStart,
   windowCapMinutes,
 } from "./routine-timing.ts";
 
@@ -20,7 +22,7 @@ describe("flexible timing windows", () => {
     expect(FLEXIBLE_DEFAULT_EARLY_MINUTES).toBe(15);
     expect(FLEXIBLE_DEFAULT_LATE_MINUTES).toBe(15);
     const daily = { type: "daily" as const, time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] };
-    expect(applyTiming(daily, { timing: "flexible" }, nominalGapMs(daily, 0))).toEqual({
+    expect(applyTiming(daily, { timing: "flexible" })).toEqual({
       ...daily,
       timing: "flexible",
       windowEarlyMinutes: 15,
@@ -30,11 +32,11 @@ describe("flexible timing windows", () => {
 
   it("leaves exact timing, including a missing choice, unchanged", () => {
     const daily = { type: "daily" as const, time: "09:00", weekdays: [1, 2, 3, 4, 5] };
-    expect(applyTiming(daily, {}, nominalGapMs(daily, 0))).toEqual(daily);
-    expect(applyTiming(daily, { timing: "exact" }, nominalGapMs(daily, 0))).toEqual(daily);
-    expect(() => applyTiming(daily, { timing: "exact", windowEarlyMinutes: 5 }, nominalGapMs(daily, 0))).toThrow(/window/i);
-    expect(() => applyTiming({ type: "once", at: 1 }, { timing: "flexible" }, DAY)).toThrow(/one-time/i);
-    expect(() => applyTiming(daily, { timing: "soon" }, DAY)).toThrow(/exact or flexible/i);
+    expect(applyTiming(daily, {})).toEqual(daily);
+    expect(applyTiming(daily, { timing: "exact" })).toEqual(daily);
+    expect(() => applyTiming(daily, { timing: "exact", windowEarlyMinutes: 5 })).toThrow(/window/i);
+    expect(() => applyTiming({ type: "once", at: 1 }, { timing: "flexible" })).toThrow(/one-time/i);
+    expect(() => applyTiming(daily, { timing: "soon" })).toThrow(/exact or flexible/i);
   });
 
   it("caps the window at half the gap for a daily, an interval, and a cron", () => {
@@ -45,24 +47,56 @@ describe("flexible timing windows", () => {
     const cron = { type: "cron" as const, expression: "*/10 * * * *", timeZone: "UTC" };
     expect(nominalGapMs(cron, Date.parse("2026-06-01T00:00:00Z"))).toBe(10 * MINUTE);
     expect(windowCapMinutes(nominalGapMs(cron, Date.parse("2026-06-01T00:00:00Z")))).toBe(5);
+    const stepped = { type: "cron" as const, expression: "*/7 * * * *", timeZone: "UTC" };
+    expect(nominalGapMs(stepped, Date.parse("2026-06-01T00:00:00Z"))).toBe(4 * MINUTE);
+    expect(windowCapMinutes(nominalGapMs(stepped, 0))).toBe(2);
 
     const everyTen = { type: "interval" as const, everyMinutes: 10, anchorAt: 0 };
-    const capped = applyTiming(
-      everyTen,
-      { timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 15 },
-      nominalGapMs(everyTen, 0),
-    );
-    expect(capped.windowEarlyMinutes! + capped.windowLateMinutes!).toBe(5);
+    const stored = applyTiming(everyTen, { timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 15 });
+    expect(stored).toMatchObject({ windowEarlyMinutes: 15, windowLateMinutes: 15 });
+    const capped = cappedWindow(stored, 0);
+    expect(capped.early + capped.late).toBe(5);
     expect(clampTimingWindow(15, 0, 5)).toEqual({ early: 5, late: 0 });
     expect(clampTimingWindow(0, 15, 5)).toEqual({ early: 0, late: 5 });
 
     const daily = { type: "daily" as const, time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] };
-    const wide = applyTiming(
-      daily,
-      { timing: "flexible", windowEarlyMinutes: 10_000, windowLateMinutes: 10_000 },
-      nominalGapMs(daily, 0),
-    );
-    expect(wide.windowEarlyMinutes! + wide.windowLateMinutes!).toBe(12 * 60);
+    const wide = applyTiming(daily, { timing: "flexible", windowEarlyMinutes: 10_000, windowLateMinutes: 10_000 });
+    expect(wide).toMatchObject({ windowEarlyMinutes: 10_000, windowLateMinutes: 10_000 });
+    expect(cappedWindow(wide, 0).early + cappedWindow(wide, 0).late).toBe(12 * 60);
+    const kept = applyTiming(daily, { timing: "flexible", windowEarlyMinutes: 600, windowLateMinutes: 600 });
+    expect(kept).toMatchObject({ windowEarlyMinutes: 600, windowLateMinutes: 600 });
+  });
+
+  it("jumps to the first open slot and skips a slot that already fired", () => {
+    const start = Date.parse("2026-01-01T00:00:00Z");
+    const now = start + 72 * 60 * MINUTE;
+    const every = 5 * MINUTE;
+    let calls = 0;
+    const placed = planFlexibleStart({
+      routineId: "r1",
+      schedule: { type: "interval", everyMinutes: 5, windowEarlyMinutes: 1, windowLateMinutes: 1 },
+      afterNominal: start,
+      notBefore: now,
+      nextNominal: (after) => {
+        calls += 1;
+        return start + (Math.floor((after - start) / every) + 1) * every;
+      },
+    });
+    expect(calls).toBe(1);
+    expect(placed!.nominal).toBeGreaterThan(now - MINUTE);
+    expect(placed!.start).toBeGreaterThanOrEqual(now);
+
+    const nominal = Date.parse("2026-06-02T09:00:00Z");
+    const openAt = nominal + 5 * MINUTE;
+    const next = planFlexibleStart({
+      routineId: "r1",
+      schedule: { type: "daily", weekdays: [0, 1, 2, 3, 4, 5, 6], windowEarlyMinutes: 10, windowLateMinutes: 10 },
+      afterNominal: openAt - 10 * MINUTE - 1,
+      notBefore: openAt,
+      lastFiredNominalAt: nominal,
+      nextNominal: (after) => (after < nominal ? nominal : nominal + DAY),
+    });
+    expect(next!.nominal).toBe(nominal + DAY);
   });
 
   it("picks a start inside the window, the same one every time, and a late window of 0 never after the slot", () => {

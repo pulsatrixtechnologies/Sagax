@@ -300,6 +300,24 @@ routines at once, no card, several bots in one order (one call per bot):
   `archive_bot` go through `sagax_settings` (`bot.delete`, `bot.hidden`).
 - A Primary Bot targets every bot of its person (`chiefPeerTargetRule`,
   routine `for_bot_id`): managed teams no longer refuse.
+- Scope (prod 2026-10-20, 0.6.4, Melonie): a Primary Bot SEES and reaches
+  every bot its person owns (on an organization server also the ones the
+  person may manage), whatever the team: `canAccessBot` / `primaryCovers`
+  (`server/peer-roster.ts`, cover set by index.ts `setPrimaryCover`) feed
+  `canReachPeer` (list_bots, roster), `list_team_setup`, team setup
+  (`covers`), delegations and every "different section" refusal.
+  `managedSections` only widens coordination of other teams now. An
+  archived temporary agent (`archivedAgent`) is in no list.
+- Archive is idempotent (`temporaryAgentSetting`, index.ts, before
+  `settingsActions`): archiving an archived bot says "already archived";
+  a temporary agent (create_agent, never in `GET /api/bots`) is archived
+  with its own mark, read back by `get bot.hidden`, never restored.
+- `bot.primary` changes at once on the person's words to the current
+  Primary Bot ("fais de Melonie mon bot principal").
+- A new default model (`withDefaultModel`, store.ts) also moves a thread
+  whose own model was only a copy of the old default; a person's different
+  pick stays. Routine threads and the main thread follow the bot. Test:
+  `server/primary-scope.e2e.test.ts`, `server/thread-model.test.ts`.
 - A waiting proposal never blocks: past eight open cards the oldest is
   replaced (`proposalPersistence`), nothing applied, journaled; a card under
   a safety hold (`safetyIsArmed`) is never replaced.

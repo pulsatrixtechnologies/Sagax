@@ -19,6 +19,7 @@ const fixture = vi.hoisted(() => ({
   dispatch: [] as unknown[],
 }));
 
+vi.mock("@/lib/org-approval-policy", () => ({ useOrgApprovalPolicy: () => ({ alwaysAllow: true, orgRules: 0 }), noteOrgAlwaysAllowOff: () => {} }));
 vi.mock("../DesktopCapabilities", () => ({ WindowDragStrip: () => null }));
 vi.mock("@/components/Avatar", () => ({ BotAvatar: ({ bot }: { bot: { name: string } }) => createElement("span", { "data-avatar": bot.name }) }));
 vi.mock("@/state/store", async (importOriginal) => {

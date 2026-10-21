@@ -154,6 +154,8 @@ const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" |
   "bot.notifications": WORD("notif|alert|avis"), "bot.speakReplies": WORD("voix|voice|parle|lecture|speak|read aloud|a voix haute"),
   "bot.voiceNotes": WORD("note vocale|notes vocales|voice note"), "bot.pinned": WORD("epingl|pin"),
   "bot.managedSections": "teams", "bot.section": "teams", "bot.hidden": "archive", "bot.delete": "delete",
+  // 2026-10-20: "fais de Melonie mon bot principal"
+  "bot.primary": WORD("bot principal|robot principal|bot principale|primary bot|main bot|chief of staff|bras droit"),
   "routine.enabled": WORD("pause|suspend|desactiv|arret|stop|reprend|resume|reactiv|activ|enable|disable|coupe"),
   "routine.run": WORD("lance|roule|execute|run|demarre|start"), "routine.delete": "delete", "routine.name": "value",
   "routine.schedule": WORD("horaire|heure|chaque|tous les|toutes les|quotidien|hebdo|schedule|daily|weekly|every|cron|minute|matin|soir|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"),
@@ -183,7 +185,7 @@ export function askedBotChange(input: {
   message?: string;
 }): true | string {
   const want = KEY_WORDS[input.key];
-  if (!want) return "only approval levels, rules, and the model, effort, persona, profile, teams, archive, deletion and routines of the person's own bots change at once on the person's words";
+  if (!want) return "only approval levels, rules, and the model, effort, persona, profile, teams, Primary Bot role, archive, deletion and routines of the person's own bots change at once on the person's words";
   const said = normalizeWords(input.quote);
   if (input.speakingBot) {
     if (!SELF_WORDS.test(said) && !messageNamesCard(input.quote, [input.speakingName])) return "the person's words (quote) do not say this bot itself (\"toi-même\", or its name)";

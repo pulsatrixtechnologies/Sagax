@@ -28,7 +28,7 @@ import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
 import { OrganizationSettings } from "./OrganizationSettings";
-import { CompactRow, DescribedRow, PILL, PillSelect, requestSettingsCard, SettingRow, SettingsGroup, Switch, takeRequestedSettingsCard } from "./SettingsPrimitives";
+import { CompactRow, DescribedRow, PILL, PillSelect, type PillOption, requestSettingsCard, SettingRow, SettingsGroup, Switch, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { OrgMemorySettings } from "./OrgMemorySettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
@@ -303,24 +303,44 @@ export function UpdatesRow() {
   );
 }
 
-/** Opt-in to pre-release versions. Updates only ever come from Sagax's own
- * GitHub releases (electron/update-feed.mjs); this only widens the channel. */
+/** The named update channel: Stable, or Nightly (versions still in testing).
+ * Updates only ever come from Sagax's own GitHub releases
+ * (electron/update-feed.mjs); this only widens the channel. */
 function PrereleaseRow() {
   const s = useUpdaterState();
-  const setPrereleases = window.ogb?.updater?.setPrereleases;
-  if (!setPrereleases) return null;
-  const on = s?.allowPrerelease === true;
+  const updater = window.ogb?.updater;
+  // An older main process only knows the pre-release switch.
+  const setChannel = updater?.setChannel ?? (updater?.setPrereleases ? (next: "stable" | "nightly") => updater.setPrereleases?.(next === "nightly") : undefined);
+  if (!setChannel) return null;
+  const channel = s?.channel ?? (s?.allowPrerelease === true ? "nightly" : "stable");
+  const options: ReadonlyArray<PillOption<"stable" | "nightly">> = [
+    { value: "stable", label: t("settings.updates.channel.stable") },
+    { value: "nightly", label: t("settings.updates.channel.nightly") },
+  ];
   return (
     <SettingRow
-      title={t("settings.updates.prerelease.title")}
-      subtitle={t("settings.updates.prerelease.short")}
+      title={t("settings.updates.channel.title")}
+      subtitle={t("settings.updates.channel.short")}
       help={t("settings.updates.prerelease.subtitle")}
     >
-      <Switch
-        checked={on}
-        aria-label={t("settings.updates.prerelease.aria")}
-        onClick={() => void setPrereleases(!on)}
-      />
+      <PillSelect value={channel} options={options} ariaLabel={t("settings.updates.channel.title")} onChange={(next) => void setChannel(next)} />
+    </SettingRow>
+  );
+}
+
+/** Install a downloaded update while the person is away, never with a bot at work. */
+function AutoInstallAwayRow() {
+  const s = useUpdaterState();
+  const setAway = window.ogb?.updater?.setAutoInstallAway;
+  if (!setAway || s?.installMode === "handoff") return null;
+  const on = s?.autoInstallWhenAway === true;
+  return (
+    <SettingRow
+      title={t("settings.updates.away.title")}
+      subtitle={t("settings.updates.away.short")}
+      help={t("settings.updates.away.help")}
+    >
+      <Switch checked={on} aria-label={t("settings.updates.away.title")} onClick={() => void setAway(!on)} />
     </SettingRow>
   );
 }
@@ -814,6 +834,7 @@ export function SettingsModal() {
                 <SettingsGroup title={t("settings.updates.group")} groupId="updates">
                   <UpdatesRow />
                   <PrereleaseRow />
+                  <AutoInstallAwayRow />
                 </SettingsGroup>
               </div>
             )}
