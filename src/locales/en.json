@@ -9330,6 +9330,8 @@
   "limitFailover.back": "{engine}'s limit has reset: back on {engine}.",
   "limitFailover.waiting": "Limit reached on {from} and no other engine is available: your message will be sent again when it resets (around {time}).",
   "limitFailover.waitingRoutine": "Limit reached on {from} and no other engine is available: this routine runs again when it resets (around {time}).",
+  "limitFailover.ownerSwitched": "This bot's owner has reached their usage limit on {from}: continuing on {to} until it resets (around {time}).",
+  "limitFailover.ownerWaiting": "This bot's owner has reached their usage limit on {from} and no other engine is available: your message will be sent again when it resets (around {time}).",
   "vault.card.alsoFill": "Also fill it on {site}, always for this bot ({sites} is this login’s site). The bot chose this address: tick only if you know it is this site’s own sign-in page.",
   "vault.card.signInMyself": "I’ll sign in myself instead",
   "vault.card.selfHint": "Open {bot}’s browser, take control, sign in to {site}, then press Done. From now until that browser restarts, {bot} cannot run scripts or take screenshots in it, and Sagax empties its password and code fields at Done.",
