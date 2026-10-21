@@ -1887,6 +1887,186 @@ describe("a bot's own routine changes", () => {
   const undo = (service: RoutineRequestService, requestId: string, threadId = "ask-thread") =>
     service.undo({ botId: "bot-a", threadId, requestId });
 
+  it("keeps flexible timing when a daily or cron change does not mention it", async () => {
+    const { service, routines } = own();
+    const daily = routines.create({
+      botId: "bot-a",
+      name: "Morning",
+      prompt: "Check the list.",
+      schedule: {
+        type: "daily",
+        time: "09:00",
+        weekdays: [1, 2, 3, 4, 5],
+        timing: "flexible",
+        windowEarlyMinutes: 12,
+        windowLateMinutes: 4,
+      },
+    });
+    expect(await service.submit({
+      botId: "bot-a",
+      threadId: "ask-thread",
+      proposal: {
+        action: "update",
+        routineId: daily.id,
+        changes: { schedule: { type: "weekly", time: "10:00", weekdays: ["monday", "tuesday", "wednesday", "thursday", "friday"] } },
+      },
+    })).toMatchObject({ state: "applied" });
+    expect(routines.getRoutine(daily.id)?.schedule).toMatchObject({
+      type: "daily",
+      time: "10:00",
+      timing: "flexible",
+      windowEarlyMinutes: 12,
+      windowLateMinutes: 4,
+    });
+
+    const cron = routines.create({
+      botId: "bot-a",
+      name: "Clock",
+      prompt: "Check the list.",
+      schedule: {
+        type: "cron",
+        expression: "0 9 * * 1",
+        timeZone: "UTC",
+        timing: "flexible",
+        windowEarlyMinutes: 20,
+        windowLateMinutes: 0,
+      },
+    });
+    expect(await service.submit({
+      botId: "bot-a",
+      threadId: "ask-thread",
+      proposal: {
+        action: "update",
+        routineId: cron.id,
+        changes: { schedule: { type: "cron", expression: "0 10 * * 1", timeZone: "UTC" } },
+      },
+    })).toMatchObject({ state: "applied" });
+    expect(routines.getRoutine(cron.id)?.schedule).toMatchObject({
+      type: "cron",
+      expression: "0 10 * * 1",
+      timing: "flexible",
+      windowEarlyMinutes: 20,
+      windowLateMinutes: 0,
+    });
+
+    expect(await service.submit({
+      botId: "bot-a",
+      threadId: "ask-thread",
+      proposal: {
+        action: "update",
+        routineId: daily.id,
+        changes: { schedule: { type: "weekly", time: "11:00", weekdays: ["monday"], timing: "exact" } },
+      },
+    })).toMatchObject({ state: "applied" });
+    expect(routines.getRoutine(daily.id)?.schedule).not.toHaveProperty("timing");
+  });
+
+  it("previews the next exact run after the slot that already fired", async () => {
+    const { service, routines, clock } = harness(Date.parse("2026-08-17T08:00:00Z"));
+    const routine = routines.create({
+      botId: "bot-a",
+      name: "Morning",
+      prompt: "Check the list.",
+      schedule: {
+        type: "daily",
+        time: "09:00",
+        weekdays: [0, 1, 2, 3, 4, 5, 6],
+        timing: "flexible",
+        windowEarlyMinutes: 30,
+        windowLateMinutes: 0,
+      },
+    });
+    const fired = routine.nominalRunAt!;
+    expect(routine.nextRunAt).toBeLessThan(fired);
+    clock.now = routine.nextRunAt!;
+    await routines.tick();
+    expect(routines.getRoutine(routine.id)!.lastFiredNominalAt).toBe(fired);
+    expect(clock.now).toBeLessThan(fired);
+
+    const card = await service.propose({
+      botId: "bot-a",
+      threadId: "thread-a",
+      proposal: {
+        action: "update",
+        routineId: routine.id,
+        changes: {
+          schedule: {
+            type: "weekly",
+            time: "09:00",
+            weekdays: ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
+            timing: "exact",
+          },
+        },
+      },
+    });
+    expect(card.nextRunAt).toBe(fired + 24 * 60 * 60 * 1000);
+    expect(card.detail).toContain("Next run:");
+    expect(service.resolve({
+      botId: "bot-a",
+      threadId: "thread-a",
+      requestId: card.requestId,
+      behavior: "allow",
+    })).toMatchObject({ state: "applied" });
+    expect(routines.getRoutine(routine.id)?.nextRunAt).toBe(card.nextRunAt);
+  });
+
+  it("applies window minutes without a timing choice on a flexible routine, and rejects them on an exact one", async () => {
+    const { service, routines } = own();
+    const flexible = routines.create({
+      botId: "bot-a",
+      name: "Morning",
+      prompt: "Check the list.",
+      schedule: {
+        type: "daily",
+        time: "09:00",
+        weekdays: [1, 2, 3, 4, 5],
+        timing: "flexible",
+        windowEarlyMinutes: 12,
+        windowLateMinutes: 4,
+      },
+    });
+    const weekdays = ["monday", "tuesday", "wednesday", "thursday", "friday"];
+    expect(await service.submit({
+      botId: "bot-a",
+      threadId: "ask-thread",
+      proposal: {
+        action: "update",
+        routineId: flexible.id,
+        changes: { schedule: { type: "weekly", time: "09:00", weekdays, windowLateMinutes: 9 } },
+      },
+    })).toMatchObject({ state: "applied" });
+    expect(routines.getRoutine(flexible.id)?.schedule).toMatchObject({
+      timing: "flexible",
+      windowEarlyMinutes: 12,
+      windowLateMinutes: 9,
+    });
+
+    const exact = routines.create({
+      botId: "bot-a",
+      name: "Exact",
+      prompt: "Check the list.",
+      schedule: { type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] },
+    });
+    await expect(service.submit({
+      botId: "bot-a",
+      threadId: "ask-thread",
+      proposal: {
+        action: "update",
+        routineId: exact.id,
+        changes: { schedule: { type: "weekly", time: "09:00", weekdays, windowEarlyMinutes: 5 } },
+      },
+    })).rejects.toThrow(/window/i);
+    expect(routines.getRoutine(exact.id)?.schedule).not.toHaveProperty("windowEarlyMinutes");
+
+    await expect(service.submit({
+      botId: "bot-a",
+      threadId: "ask-thread",
+      proposal: createProposal({
+        schedule: { type: "weekly", time: "09:00", weekdays: ["monday"], windowEarlyMinutes: 5 },
+      }),
+    })).rejects.toThrow(/window/i);
+  });
+
   it("creates, updates, pauses, resumes and deletes its own routine at Ask with no open card", async () => {
     const { service, routines, store } = own();
     const submit = (proposal: RoutineProposalInput) => service.submit({ botId: "bot-a", threadId: "ask-thread", proposal });

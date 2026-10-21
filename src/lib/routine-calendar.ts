@@ -178,6 +178,13 @@ export function scheduleAt(schedule: RoutineSchedule, occurrenceAt: number, next
     type: "daily",
     time: toLocalTimeInput(nextAt),
     weekdays: schedule.weekdays.map((weekday) => ((weekday + dayDelta) % 7 + 7) % 7).sort(),
+    ...(schedule.timing === "flexible"
+      ? {
+        timing: "flexible" as const,
+        windowEarlyMinutes: schedule.windowEarlyMinutes,
+        windowLateMinutes: schedule.windowLateMinutes,
+      }
+      : {}),
   };
 }
 

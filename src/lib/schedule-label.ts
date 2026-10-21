@@ -54,11 +54,22 @@ function intervalRestrictions(schedule: Extract<RoutineSchedule, { type: "interv
   return details;
 }
 
+function windowNote(schedule: { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number }): string | null {
+  if (schedule.timing !== "flexible") return null;
+  return `(-${schedule.windowEarlyMinutes ?? 0}/+${schedule.windowLateMinutes ?? 0} min)`;
+}
+
 export function scheduleLabel(schedule: RoutineSchedule | { type: "once"; at: number } | { type: "daily"; time: string; weekdays: number[] }): string {
-  if (schedule.type === "cron") return cronScheduleLabel(schedule);
+  if (schedule.type === "cron") {
+    const note = windowNote(schedule);
+    const label = cronScheduleLabel(schedule);
+    return note ? `${label} · around the time ${note}` : label;
+  }
   if (schedule.type === "once") return `${niceDate(schedule.at)}, ${niceTime(schedule.at)}`;
   if (schedule.type === "interval") {
-    return [intervalLabel(schedule.everyMinutes), ...intervalRestrictions(schedule)].join(" · ");
+    const note = windowNote(schedule);
+    const label = [intervalLabel(schedule.everyMinutes), ...intervalRestrictions(schedule)].join(" · ");
+    return note ? `${label} · around the time ${note}` : label;
   }
   const days = schedule.weekdays;
   const label = days.length === 7
@@ -68,11 +79,17 @@ export function scheduleLabel(schedule: RoutineSchedule | { type: "once"; at: nu
       : days.length === 1
         ? `Weekly on ${DAY_NAMES[days[0]!]}`
         : days.map((day) => DAY_NAMES[day]).join(", ");
-  return `${label} at ${niceTime(atLocalTime(Date.now(), schedule.time))}`;
+  const time = niceTime(atLocalTime(Date.now(), schedule.time));
+  const note = windowNote(schedule);
+  return note ? `${label} around ${time} ${note}` : `${label} at ${time}`;
 }
 
 export function scheduleSentence(schedule: RoutineSchedule): string {
-  if (schedule.type === "cron") return cronScheduleLabel(schedule);
+  const note = windowNote(schedule);
+  if (schedule.type === "cron") {
+    const label = cronScheduleLabel(schedule);
+    return note ? `${label} · around the time ${note}` : label;
+  }
   if (schedule.type === "interval") {
     const label = intervalLabel(schedule.everyMinutes);
     // Convert "Every X min" → "every X minutes", "Every hour" → "every hour", etc.
@@ -83,7 +100,8 @@ export function scheduleSentence(schedule: RoutineSchedule): string {
     const cadence = withMinutes.replace(/(\d+) hr(?!our)/g, (_match, num) => {
       return num === "1" ? "1 hour" : `${num} hours`;
     });
-    return [cadence, ...intervalRestrictions(schedule)].join(" · ");
+    const sentence = [cadence, ...intervalRestrictions(schedule)].join(" · ");
+    return note ? `${sentence} · around the time ${note}` : sentence;
   }
   if (schedule.type === "once") {
     return `once on ${niceDate(schedule.at)}, ${niceTime(schedule.at)}`;
@@ -91,17 +109,18 @@ export function scheduleSentence(schedule: RoutineSchedule): string {
   // type === "daily"
   const days = schedule.weekdays;
   const timeStr = niceTime(atLocalTime(Date.now(), schedule.time));
+  const when = note ? `around ${timeStr} ${note}` : `at ${timeStr}`;
 
   if (days.length === 7) {
-    return `every day at ${timeStr}`;
+    return `every day ${when}`;
   }
   if (days.join(",") === "1,2,3,4,5") {
-    return `every weekday at ${timeStr}`;
+    return `every weekday ${when}`;
   }
   if (days.length === 1) {
-    return `weekly on ${DAY_NAMES[days[0]!]} at ${timeStr}`;
+    return `weekly on ${DAY_NAMES[days[0]!]} ${when}`;
   }
 
   // Custom multi-day selection
-  return `${days.map((day) => DAY_NAMES[day]).join(", ")} at ${timeStr}`;
+  return `${days.map((day) => DAY_NAMES[day]).join(", ")} ${when}`;
 }

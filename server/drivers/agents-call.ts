@@ -96,13 +96,25 @@ const SUPPORTED_SCHEDULES =
   'Supported schedules: {"type":"once","at":"2026-09-01T09:00:00+05:30"} (future RFC3339 with explicit offset), ' +
   '{"type":"weekly","time":"09:00","weekdays":["monday","friday"]}, {"type":"daily","time":"09:00"}, ' +
   '{"type":"interval","every_minutes":15,"weekdays":["monday","friday"],"window_start":"09:00","window_end":"17:00"}, ' +
-  'or {"type":"cron","expression":"0 9 1 * *","timeZone":"Asia/Kolkata"} (monthly at 09:00 on day 1; five fields and an explicit IANA timezone).';
+  'or {"type":"cron","expression":"0 9 1 * *","timeZone":"Asia/Kolkata"} (monthly at 09:00 on day 1; five fields and an explicit IANA timezone). ' +
+  'A repeating schedule may set "timing" to "flexible" with window_early_minutes and window_late_minutes (default 15; together capped at half the gap).';
 
 /** The outcome of coercing a model-sent schedule: the harness-dialect
  * schedule, or a message telling the model exactly what to send instead. */
 interface NormalizedSchedule {
   schedule?: Json;
   error?: string;
+}
+
+/** Timing fields the model may send, copied onto the harness schedule. */
+function copiedTiming(raw: Json): Json {
+  const out: Json = {};
+  if (typeof raw.timing === "string") out.timing = raw.timing;
+  const early = raw.window_early_minutes ?? raw.windowEarlyMinutes;
+  const late = raw.window_late_minutes ?? raw.windowLateMinutes;
+  if (typeof early === "number") out.windowEarlyMinutes = early;
+  if (typeof late === "number") out.windowLateMinutes = late;
+  return out;
 }
 
 /** A schedule as the harness accepts it, or a message telling the model
@@ -121,14 +133,15 @@ function normalizeScheduleInput(args: Json): NormalizedSchedule {
   }
   if (!jsonRecord(raw)) return { error: `The schedule must be a JSON object. ${SUPPORTED_SCHEDULES}` };
   const type = typeof raw.type === "string" ? raw.type.trim().toLowerCase() : "";
+  const timingFields = ["timing", "window_early_minutes", "windowEarlyMinutes", "window_late_minutes", "windowLateMinutes"];
   const fields = type === "once"
     ? ["type", "at"]
     : type === "weekly" || type === "daily"
-      ? ["type", "time", "weekdays"]
+      ? ["type", "time", "weekdays", ...timingFields]
       : type === "interval"
-        ? ["type", "every_minutes", "everyMinutes", "starts_at", "anchorAt", "weekdays", "every_day", "window_start", "window_end", "window", "all_day", "ends_at", "endsAt", "never_ends"]
+        ? ["type", "every_minutes", "everyMinutes", "starts_at", "anchorAt", "weekdays", "every_day", "window_start", "window_end", "window", "all_day", "ends_at", "endsAt", "never_ends", ...timingFields]
         : type === "cron"
-          ? ["type", "expression", "timeZone"]
+          ? ["type", "expression", "timeZone", ...timingFields]
           : null;
   // Provider conversions may send unused optional fields as null. Ignore
   // those, but never silently discard an actual scheduling constraint (for
@@ -139,7 +152,7 @@ function normalizeScheduleInput(args: Json): NormalizedSchedule {
   }
   if (type === "cron") {
     try {
-      return { schedule: { ...normalizeCronSchedule({ type, expression: raw.expression, timeZone: raw.timeZone }) } };
+      return { schedule: { ...normalizeCronSchedule({ type, expression: raw.expression, timeZone: raw.timeZone }), ...copiedTiming(raw) } };
     } catch (error) {
       return { error: `${error instanceof Error ? error.message : "Invalid cron schedule"}. ${SUPPORTED_SCHEDULES}` };
     }
@@ -174,7 +187,7 @@ function normalizeScheduleInput(args: Json): NormalizedSchedule {
       if (!full) return { error: `Unsupported weekday "${String(day)}". Use full names: ${WEEKDAYS.join(", ")}.` };
       if (!normalized.includes(full)) normalized.push(full);
     }
-    return { schedule: { type: "weekly", time, weekdays: normalized } };
+    return { schedule: { type: "weekly", time, weekdays: normalized, ...copiedTiming(raw) } };
   }
   if (type === "interval") {
     for (const flag of ["every_day", "all_day", "never_ends"]) {
@@ -253,6 +266,7 @@ function normalizeScheduleInput(args: Json): NormalizedSchedule {
         ...(intervalWeekdays !== undefined ? { weekdays: intervalWeekdays } : {}),
         ...(window !== undefined ? { window } : {}),
         ...(endsAt !== undefined ? { endsAt } : {}),
+        ...copiedTiming(raw),
       },
     };
   }
