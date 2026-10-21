@@ -48,6 +48,7 @@ export const SPAWNED_PROXIES = {
   mcpGate: resolveProxy("mcp-gate"),
   mcpRemote: resolveProxy("mcp-remote-proxy"),
   phone: resolveProxy("drivers/phone-proxy"),
+  messages: resolveProxy("drivers/imessage-proxy"),
   hook: resolveProxy("hooks/omb-hook"),
   // Loaded by the external `pi` process via `-e`, not by this server — but
   // resolved through the same single source of truth so the packaged layout

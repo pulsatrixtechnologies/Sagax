@@ -310,6 +310,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   if (integrations?.agents && eligible("agents")) servers.push(["agents", integrations.agents]);
   if (integrations?.composio && eligible("composio")) servers.push(["composio", integrations.composio]);
   if (integrations?.data && eligible("data")) servers.push(["data", integrations.data]);
+  if (integrations?.messages && eligible("messages")) servers.push(["messages", integrations.messages]);
   for (const [name, server] of Object.entries(integrations?.custom ?? {})) {
     if (!eligible(name)) continue;
     const remote = remoteMcpSpec(server) !== undefined;
@@ -490,6 +491,10 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     // review and the security keys apply there, and a call that stays in the
     // bot's workspace is answered without a card (sagax-internal-tools.ts).
     if (runs === undefined || tool?.agents) return { title: name, input: args, ask: false };
+    // Messages posts its own send card, including under Full access, and
+    // reads only after the person turned Use Messages on. A broker card
+    // would ask a second time.
+    if (tool?.server === "messages") return { title: name, input: args, ask: false, ...(tool ? { mcpTool: `${tool.server}__${tool.name}` } : {}) };
     const grant = tool && !tool.hostComputer ? JSON.stringify([tool.server, tool.launch, runs]) : undefined;
     if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}), ...(tool ? { mcpTool: `${tool.server}__${tool.name}` } : {}) };
     return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}), mcpTool: `${tool.server}__${runs}` };

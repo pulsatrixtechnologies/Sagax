@@ -21,6 +21,7 @@ import {
 import { Card, CommandLine, DANGER_PILL, DescribedRow, SettingsGroup, cardCount } from "./SettingsPrimitives";
 import { SettingsText } from "./SettingsLink";
 import { MacLocalControl } from "./MacLocalControl";
+import { MessagesSettings } from "./MessagesSettings";
 import { cn } from "@/lib/cn";
 import { useStore } from "@/state/store";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
@@ -1624,6 +1625,7 @@ export function LocalComputerSection() {
       />}
 
       <MacLocalControl />
+      <MessagesSettings />
 
       {/* Scheduled update and disk saver: hidden by itself where this
           person has no computer to care for (403/409). */}

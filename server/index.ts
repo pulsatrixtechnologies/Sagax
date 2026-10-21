@@ -968,6 +968,15 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
+import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
+import { createMessagesRoutes } from "./routes/messages.ts";
+import { handleMessagesMcp } from "./imessage-mcp.ts";
+import { bindImessageMessage, takeImessageSend } from "./imessage-cards.ts";
+import { createOsascriptSender } from "./imessage-send.ts";
+import { readMessagesSettings } from "./imessage-settings.ts";
+import { messagesOnBotMac } from "../shared/imessage.ts";
+import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEvent, type HookRun, type HookTarget } from "./lifecycle-hooks.ts";
+import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
 import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
@@ -3492,7 +3501,7 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop" | "workplace" | "personal-mcp" | "data";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "messages" | "perspicax" | "sandbox" | "desktop" | "workplace" | "personal-mcp" | "data";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
   /** A "sandbox" capability: whose server environment it runs in. */
@@ -3830,6 +3839,7 @@ const phoneSecretEnvelopeSchema = z.object({
 const agentsProxyPath = SPAWNED_PROXIES.agents;
 const perspicaxBridgePath = SPAWNED_PROXIES.perspicax;
 const phoneProxyPath = SPAWNED_PROXIES.phone;
+const messagesProxyPath = SPAWNED_PROXIES.messages;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
@@ -5365,6 +5375,36 @@ function phoneIntegration(botId: string, threadId: string, generation: string) {
   return { command: process.execPath, args: [phoneProxyPath], env };
 }
 
+/** Messages tools, only on the solo Mac this process is. */
+function messagesWanted(): boolean {
+  return messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false }).ok
+    && readMessagesSettings(DATA_DIR).useMessages;
+}
+
+function messagesIntegration(botId: string, threadId: string, generation: string) {
+  const token = mintInternalCapability({
+    botId,
+    threadId,
+    generation,
+    depth: 0,
+    kind: "messages",
+    skillAuthoring: false,
+    createdBots: 0,
+    openedThreads: 0,
+  });
+  return {
+    command: process.execPath,
+    args: [messagesProxyPath],
+    env: {
+      ...AGENTS_NODE_FLAG,
+      SAGAX_MESSAGES_TOKEN: token,
+      SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+    },
+  };
+}
+
+const imessageSender = createOsascriptSender();
+
 // ── Perspicax MCP for the person who speaks (slice 5) ─────────────────
 /** An engine-side server name for a profile: `perspicax_<slug or id>`,
  * [a-z0-9_], at most 40 characters, with a suffix on a collision. */
@@ -6413,6 +6453,59 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
+
+/** Plugin hooks for this turn. Refuses the organization server's own host. */
+async function runLifecycleEvent(botId: string, threadId: string, eventName: string, payload: unknown, toolName?: string): Promise<{ blocked: boolean; context: string }> {
+  const event = lifecycleEvent(eventName);
+  if (!event || !botPlugins.lifecycleHooksEnabled(botId)) return { blocked: false, context: "" };
+  const live = turnWorkplaces.get(threadId);
+  const workplace = IDENTITY.kind === "perspicax" ? (live?.decision.target ?? "none") : "host" as const;
+  const target = chooseHookTarget({
+    identityKind: IDENTITY.kind,
+    workplace,
+    principal: live?.decision.principal ?? null,
+  });
+  const report = await Promise.race([
+    dispatchLifecycleHooks({
+      enabled: true,
+      event,
+      hooks: botPlugins.hooksOf(botId),
+      target,
+      payload,
+      ...(toolName ? { toolName } : {}),
+      files: botPlugins.hookFiles(botId),
+      exec: (where, run) => execLifecycleHook(botId, where, run),
+    }),
+    new Promise<{ blocked: boolean; context: string; ran: boolean; reason: "timeout" }>((resolve) => {
+      setTimeout(() => resolve({ blocked: false, context: "", ran: false, reason: "timeout" }), 2_000);
+    }),
+  ]);
+  return { blocked: report.blocked, context: report.context };
+}
+
+async function execLifecycleHook(botId: string, target: Exclude<HookTarget, { kind: "refuse" }>, run: HookRun) {
+  if (target.kind === "pc") return spawnPcHook(run, workspaceDir(botId), join(DATA_DIR, "bot-plugins", botId, "computer-hooks"));
+  const command = Object.keys(run.files).length ? commandWithFiles(run.command, run.files, run.stdin) : run.command;
+  const stdin = Object.keys(run.files).length ? "" : run.stdin;
+  if (target.kind === "sandbox") {
+    if (!userSandbox) return { stdout: "", code: 1 };
+    const result = await userSandbox.exec(target.principal, {
+      argv: ["/bin/sh", "-c", command],
+      stdinBase64: Buffer.from(stdin, "utf8").toString("base64"),
+      timeoutSec: Math.max(1, Math.ceil(run.timeoutMs / 1000)),
+      env: { LANG: "C.UTF-8" },
+      maxOutputBytes: 16_000,
+    }, botId);
+    return { stdout: result.stdout, code: result.exitCode ?? 1 };
+  }
+  const desktop = desktopBridges.current(target.principal);
+  if (!desktop || desktop.platform === "win32") return { stdout: "", code: 1 };
+  const line = commandWithFiles(run.command, run.files, run.stdin);
+  const result = await desktopBridges.request(target.principal, {
+    action: "run_command", command: line, timeout_seconds: Math.max(1, Math.ceil(run.timeoutMs / 1000)),
+  }, () => true) as { isError?: boolean; content?: Array<{ text?: string }> } | null;
+  return { stdout: result?.content?.map((part) => part.text ?? "").join("\n") ?? "", code: result?.isError ? 1 : 0 };
+}
 /** Turns that already got a cluster-wake row, by thread: `${generation}:${phase}`. */
 const sandboxWakeNoted = new Map<string, Set<string>>();
 /** The Kubernetes cluster of the server environments is starting (or did not
@@ -7134,6 +7227,20 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
   changed: (bot, action, detail, auth) => {
     orgAudit({ category: "bot", action, target: auditBotTarget(bot.id), changed: ["plugins"], after: detail, actor: orgAuditActor(auth) });
   },
+}));
+ROUTES.push(createLifecycleHookRoutes({
+  plugins: botPlugins,
+  bot: (id) => store.bot(id) ?? undefined,
+  mayRead: (auth, bot) => viewerBotLevel(auth, bot) !== null || orgAdminCaller(auth),
+  mayChange: (auth, bot) => {
+    if (IDENTITY.kind !== "perspicax") return auth.kind !== "session" || auth.scopes.includes("admin");
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+}));
+ROUTES.push(createMessagesRoutes({
+  dataDir: DATA_DIR,
+  host: () => ({ platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false }),
 }));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
@@ -12454,6 +12561,9 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
   const name = typeof event.event === "string" ? event.event : "";
   const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
   const threadId = capability.threadId;
+  if (lifecycleEvent(name)) {
+    void runLifecycleEvent(capability.botId, threadId, name, payload, typeof payload.tool_name === "string" ? payload.tool_name : undefined).catch(() => {});
+  }
   // The engine compacting its own session (Claude Code's auto-compact in a
   // single very long turn, past the point where Sagax folds between turns)
   // is invisible to the person: no chat row, only the server log. Once it is
@@ -12592,6 +12702,8 @@ async function scheduleTurnDigest(input: {
     // The pre-turn commit has had its last reader (the diff above is queued
     // ahead of this in the shadow repo); the next snapshot may reclaim it.
     if (checkpoint) void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin);
+    void runLifecycleEvent(input.botId, input.threadId, "after_agent_response", { text: input.reply.slice(0, 2_000) }).catch(() => {});
+    void runLifecycleEvent(input.botId, input.threadId, "stop", {}).catch(() => {});
   }
 }
 
@@ -18950,6 +19062,7 @@ async function startTurn(
       if (selectedSkills.some((skill) => skill.manifest.requiredCapabilities.includes("phoneMcp"))) {
         integrations.phone = phoneIntegration(bot.id, threadId, dispatchClaimId);
       }
+      if (messagesWanted()) integrations.messages = messagesIntegration(bot.id, threadId, dispatchClaimId);
       // the user's connected apps, but only to a driver that can mount
       // them — a key in the config says the connections exist, not that
       // this engine can reach them — and only to a bot the user has not
@@ -19534,6 +19647,7 @@ async function startTurn(
       }
       if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
         integrations.hooks = hooksIntegration(bot.id, threadId, dispatchClaimId);
+        void runLifecycleEvent(bot.id, threadId, "before_submit_prompt", {}).catch(() => {});
       }
       // @mentions in the user's message (the composer's tagging UI) become
       // an explicit coordination nudge. The agent still chooses the matching
@@ -22219,6 +22333,7 @@ async function runGroupMemberTurn(
   }
   if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
     integrations.hooks = hooksIntegration(bot.id, threadId, internalGeneration);
+    void runLifecycleEvent(bot.id, threadId, "before_submit_prompt", {}).catch(() => {});
   }
   const latestUser = [...store.activePath(threadId)].reverse().find(
     (message) => message.role === "user" && message.kind === "text" && message.text,
@@ -22294,6 +22409,7 @@ async function runGroupMemberTurn(
   if (selectedSkills.some((skill) => skill.manifest.requiredCapabilities.includes("phoneMcp"))) {
     integrations.phone = phoneIntegration(bot.id, threadId, internalGeneration);
   }
+  if (messagesWanted()) integrations.messages = messagesIntegration(bot.id, threadId, internalGeneration);
   try {
     if (bot.composio !== false && composio.configured(cfg) && instance.adapter.capabilities.composioMcp === true) {
       const connection = await connectedAppsIntegration(bot, threadId, internalGeneration);
@@ -29312,6 +29428,43 @@ function emailDraftStatus(auth: RequestAuth, threadId: string, draftKey: string)
 
 /** Allow on an email draft's card: the one send the person approved. Deny
  * closes the card and nothing is sent. False when the card is not a draft's. */
+/** Allow on a Messages card sends once, on this Mac. Deny sends nothing. */
+async function resolveImessageCard(res: ServerResponse, threadId: string, requestId: string, behavior: string): Promise<boolean> {
+  if (!requestId.startsWith("imsg-")) return false;
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  const card = message?.card;
+  if (!message || !card) {
+    json(res, 409, { error: "The request is no longer open." });
+    return true;
+  }
+  if (card.answered || card.dismissed || card.expired) {
+    json(res, 409, { error: "The request is no longer open." });
+    return true;
+  }
+  const pending = takeImessageSend(requestId, threadId);
+  if (behavior !== "allow" || !pending) {
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny", subtitle: pending ? card.subtitle : "This send expired. Nothing was sent." } });
+    json(res, 200, { ok: true, outcome: "rejected" });
+    return true;
+  }
+  const host = messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false });
+  if (!host.ok || !readMessagesSettings(DATA_DIR).useMessages) {
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny", subtitle: "Messages is not available on this Mac. Nothing was sent." } });
+    json(res, 409, { error: "Messages is not available on this Mac.", code: "messages_not_on_this_mac" });
+    return true;
+  }
+  try {
+    await imessageSender.send({ to: pending.to, text: pending.text, service: pending.service });
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", subtitle: `Sent to ${pending.to}.` } });
+    json(res, 200, { ok: true, outcome: "allowed-once" });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Messages did not send.";
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", subtitle: detail } });
+    json(res, 200, { ok: true, outcome: "allowed-once", send: "failed" });
+  }
+  return true;
+}
+
 async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, threadId: string, requestId: string, behavior: string): Promise<boolean> {
   if (!requestId.startsWith(EMAIL_SEND_REQUEST_PREFIX)) return false;
   const message = emailSendMessage(threadId, requestId);
@@ -35958,6 +36111,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "data"
         : path === "/api/internal/phone/claim"
         ? "phone"
+        : path === "/api/internal/messages/mcp"
+        ? "messages"
         : path === "/api/internal/sandbox/mcp"
         ? "sandbox"
         : path === "/api/internal/desktop/mcp"
@@ -36697,6 +36852,46 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
           },
         }) });
+      }
+      if (method === "POST" && path === "/api/internal/messages/mcp") {
+        requireActiveInternalCapability();
+        const body = await readInternalBody();
+        const handled = await handleMessagesMcp(body, {
+          host: { platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false },
+          useMessages: readMessagesSettings(DATA_DIR).useMessages,
+          dbDir: messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind }).ok
+            ? join(homedir(), "Library", "Messages") : null,
+          allowedRecipients: internalSender.allowedRecipients,
+          grantsAllowed: standingGrantsAllowed(),
+          stepUp: (args) => autoAnswerStepUp(internalSender, internalCapability.threadId, {
+            tool: "send_message",
+            input: JSON.stringify(args),
+            summary: "Send a message",
+          }).length > 0,
+          sender: imessageSender,
+          botId: internalSender.id,
+          threadId: internalCapability.threadId,
+          openCard: (pending) => {
+            const preview = pending.text.length > 240 ? `${pending.text.slice(0, 240)}...` : pending.text;
+            const message = store.appendMessage(internalCapability.threadId, {
+              role: "bot",
+              kind: "options",
+              from: { botId: internalSender.id, name: internalSender.name, color: internalSender.color },
+              card: {
+                title: "Approval needed",
+                subtitle: `Message to ${pending.to}: ${preview}`,
+                options: ["Allow", "Deny"],
+                requestId: pending.requestId,
+                requestType: "permission",
+                tool: "send_message",
+                toolInput: JSON.stringify({ to: pending.to, text: pending.text, service: pending.service }),
+                plain: { title: `Message to ${pending.to}`, line: preview, risk: "write" },
+              },
+            });
+            bindImessageMessage(pending.requestId, message.id);
+          },
+        });
+        return json(res, 200, handled);
       }
       if (method === "POST" && path === "/api/internal/phone/claim") {
         // Lazy phone exclusivity (issue #1663): the turn holds computer:phone
@@ -44282,6 +44477,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (resolveAndSendTrust(res, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendCwAction(res, auth, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendEmailDraft(res, auth, bot.threadId, String(body.requestId), behavior)) return;
+        if (await resolveImessageCard(res, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendTeamSetup(res, {
           botId: bot.id, threadId: bot.threadId, requestId: String(body.requestId), behavior,
         }, auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
@@ -44404,6 +44600,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (resolveAndSendTrust(res, threadId, requestId, behavior)) return;
         if (await resolveAndSendCwAction(res, auth, threadId, requestId, behavior)) return;
         if (await resolveAndSendEmailDraft(res, auth, threadId, requestId, behavior)) return;
+        if (await resolveImessageCard(res, threadId, requestId, behavior)) return;
         const skillCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.skillRequest,
         );
