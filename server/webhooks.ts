@@ -524,24 +524,45 @@ export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, s
 /** Quote text that reads as a fence marker.
  *
  * Detection uses a skeleton only. The text handed to the run is the original,
- * rewritten solely where a marker matched. The skeleton compatibility-folds,
- * drops control, format and combining characters (and JSON escapes of them),
- * and maps look-alike dashes, slashes, square brackets and letters. A match
- * needs a square bracket (or a true look-alike of one), then the marker word,
- * then a word boundary. Separators may sit between the letters. Parentheses,
- * angle brackets and braces are not openings. The scan is linear: it never
- * retries a split of a whitespace run. */
+ * rewritten solely where a marker matched (and U+FE5D, which compatibility
+ * folding maps to an opening bracket, is converted to "]"). The skeleton
+ * compatibility-folds, drops control, format and combining characters (and
+ * JSON escapes of them, including a run of backslashes before one), and maps
+ * look-alike dashes, slashes, square brackets and letters. A match needs an
+ * opening bracket, then the marker word. Separators may sit between the
+ * letters of a square-bracket match. After the word, "_" (including U+FF3F),
+ * a digit, or more letters in the same identifier still match. The one
+ * exception is a marker word written entirely in lowercase English, with no
+ * "/", and continued by an English letter, as in "defaultValue": invisibles
+ * and combining marks between them are joiners, not a break. Parentheses, angle
+ * brackets and braces match only when the full word in uppercase or snake
+ * case follows them directly, with at most one "/".
+ *
+ * The close scan looks ahead at most CLOSE_LOOKAHEAD characters and stops at
+ * a newline, a "[", or the next match, so one pass stays linear.
+ *
+ * Still not quoted: a "*" or "," between letters; ᴜ (U+1D1C) and Cyrillic
+ * Ѕ (U+0405); « » and ‹ ›; no bracket at all; `&#91;` or `%5B`; a space or a
+ * lowercase word after "(" "<" "{". Quoted even when the words are ordinary
+ * labels: "[default]", "[default, owner]", markdown "[Default branch](…)",
+ * "[USER-CONFIGURED-ish …]", "[DEFAULT] starting", "[OWNER] alice",
+ * "[authenticated] user=bob". A closing look-alike more than
+ * CLOSE_LOOKAHEAD characters after the word is left in place; the opening
+ * bracket is still quoted. */
 const STRIP_MARK = /[\p{Cc}\p{Cf}\p{Mn}\p{Me}]/u;
 /** Invisible letters that are not format characters. */
 const FILLER = new Set([0x115f, 0x1160, 0x3164, 0xffa0]);
-/** Square-bracket closes that compatibility folding does not turn into "]". */
-const CLOSE_LOOKALIKE = new Set([0x3011, 0x3015, 0x3017, 0x3019, 0x301b, 0x27e7]);
+/** How far past a match a closing square-bracket look-alike may sit. */
+const CLOSE_LOOKAHEAD = 80;
+/** Non-ASCII closes. U+FF3D folds to "]" and U+FE5D folds to an opener, so both are listed. */
+const CLOSE_CHARS = new Set([0x3011, 0x3015, 0x3017, 0x3019, 0x301b, 0x27e7, 0xff3d, 0xfe5d]);
 
 const CONFUSABLE = new Map<number, string>();
 function alias(to: string, points: readonly number[]): void {
   for (const cp of points) CONFUSABLE.set(cp, to);
 }
 alias("[", [0x3010, 0x3014, 0x3016, 0x3018, 0x301a, 0x27e6]);
+alias("<", [0x3008, 0x2329, 0x27e8]);
 alias("-", [0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212, 0xfe58, 0xfe63]);
 alias("/", [0x2044, 0x2215, 0x29f8]);
 alias("A", [0x391, 0x3b1, 0x410, 0x430]);
@@ -559,11 +580,23 @@ alias("T", [0x3a4, 0x3c4, 0x422, 0x442]);
 alias("X", [0x3a7, 0x3c7, 0x425, 0x445]);
 alias("Y", [0x3a5, 0x3c5, 0x423, 0x443]);
 
+const foldedCodePoints = new Map<number, string>();
+
 function foldCodePoint(cp: number): string {
   if (cp < 0x80) {
     if (cp <= 0x1f || cp === 0x7f) return "";
     return CONFUSABLE.get(cp) ?? String.fromCharCode(cp);
   }
+  const cached = foldedCodePoints.get(cp);
+  if (cached !== undefined) return cached;
+  const folded = foldNonAscii(cp);
+  foldedCodePoints.set(cp, folded);
+  return folded;
+}
+
+function foldNonAscii(cp: number): string {
+  // U+FE5D is a right bracket whose compatibility fold is an opening one.
+  if (cp === 0xfe5d) return "]";
   if (FILLER.has(cp)) return "";
   const compat = String.fromCodePoint(cp).normalize("NFKC").normalize("NFD");
   let out = "";
@@ -594,33 +627,31 @@ function markerSkeleton(text: string): { skeleton: string; spans: MarkerSpan[] }
     const cp = text.codePointAt(i)!;
     const len = cp > 0xffff ? 2 : 1;
     if (cp === 0x5c) {
-      const next = text[i + 1];
-      if (next === "\\") {
-        // A JSON text escapes a backslash, so `\\/` is the two characters `\/`.
-        if (text[i + 2] === "/") {
-          emit("/", i, i + 3);
-          i += 3;
-          continue;
-        }
-        emit("\\", i, i + 2);
-        i += 2;
-        continue;
-      }
+      let j = i + 1;
+      while (j < text.length && text.charCodeAt(j) === 0x5c) j += 1;
+      const next = text[j];
+      // `\n` and `\\n` (a JSON string of those two characters) are both a break.
       if (next && "bfnrtv0".includes(next)) {
-        i += 2;
+        i = j + 1;
         continue;
       }
+      // A JSON text escapes a backslash, so `\\/` is the two characters `\/`.
       if (next === "/") {
-        emit("/", i, i + 2);
-        i += 2;
+        emit("/", i, j + 1);
+        i = j + 1;
         continue;
       }
-      if ((next === "u" || next === "U") && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+      if (j === i + 1 && (next === "u" || next === "U") && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
         const decoded = Number.parseInt(text.slice(i + 2, i + 6), 16);
         if (foldCodePoint(decoded) === "") {
           i += 6;
           continue;
         }
+      }
+      if (j >= i + 2) {
+        emit("\\", i, i + 2);
+        i += 2;
+        continue;
       }
     }
     const folded = foldCodePoint(cp);
@@ -641,47 +672,102 @@ function isSepUnit(code: number): boolean {
   return code === 46 || code === 95 || code === 45 || isSpaceUnit(code);
 }
 
-function isWordUnit(code: number): boolean {
-  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95;
-}
-
 function sameLetter(code: number, want: number): boolean {
   if (code >= 97 && code <= 122) code -= 32;
   return code === want;
 }
 
+type MarkerMode = "square" | "alt";
+
 /** Letters of one marker word. Separators between them are taken greedily, once. */
-function matchLetters(skeleton: string, at: number, letters: string): number {
+function matchLetters(skeleton: string, at: number, letters: string, mode: MarkerMode): number {
   let j = at;
   for (let k = 0; k < letters.length; k++) {
-    if (j >= skeleton.length || !sameLetter(skeleton.charCodeAt(j), letters.charCodeAt(k))) return -1;
+    if (j >= skeleton.length) return -1;
+    const code = skeleton.charCodeAt(j);
+    if (!sameLetter(code, letters.charCodeAt(k))) return -1;
+    // An alt opener accepts only an uppercase or snake-case word.
+    if (mode === "alt" && (code < 65 || code > 90)) return -1;
     j += 1;
     if (k === letters.length - 1) break;
-    while (j < skeleton.length && isSepUnit(skeleton.charCodeAt(j))) j += 1;
+    if (mode === "alt") {
+      while (j < skeleton.length) {
+        const sep = skeleton.charCodeAt(j);
+        if (sep !== 95 && sep !== 45) break;
+        j += 1;
+      }
+    } else {
+      while (j < skeleton.length && isSepUnit(skeleton.charCodeAt(j))) j += 1;
+    }
   }
   return j;
 }
 
+/** Every letter of the matched word is a lowercase English letter. */
+function wordIsLowerEnglish(skeleton: string, from: number, to: number): boolean {
+  let saw = false;
+  for (let k = from; k < to; k++) {
+    const code = skeleton.charCodeAt(k);
+    if (code >= 97 && code <= 122) {
+      saw = true;
+      continue;
+    }
+    if (code >= 65 && code <= 90) return false;
+  }
+  return saw;
+}
+
+/** Control, format and combining characters, plus the Hangul fillers. A boundary skips these. */
+function isJoiner(cp: number): boolean {
+  if (cp <= 0x1f || cp === 0x7f || FILLER.has(cp)) return true;
+  if (cp < 0x80) return false;
+  return STRIP_MARK.test(String.fromCodePoint(cp));
+}
+
+/** True when the original text continues the word the way "defaultValue" does.
+ * "_", a digit, a slash, or any other continuation is still a match. */
+function isProseContinuation(text: string, from: number, lowerEnglish: boolean, slash: boolean): boolean {
+  if (slash || !lowerEnglish) return false;
+  let i = from;
+  while (i < text.length) {
+    const cp = text.codePointAt(i)!;
+    const len = cp > 0xffff ? 2 : 1;
+    if (isJoiner(cp)) {
+      i += len;
+      continue;
+    }
+    if (cp === 0x5f || cp === 0xff3f || (cp >= 0x30 && cp <= 0x39)) return false;
+    return (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a);
+  }
+  return false;
+}
+
 type MarkerHit = { skStart: number; skEnd: number; slash: boolean; word: string };
 
-/** Longest marker at `i`, which is a `[` in the skeleton. One forward pass, no retry. */
-function matchAt(skeleton: string, i: number): MarkerHit | null {
+/** Longest marker at `i`. One forward pass, no retry. The boundary is read on `text`. */
+function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[], mode: MarkerMode): MarkerHit | null {
   let j = i + 1;
   const len = skeleton.length;
-  while (j < len && isSpaceUnit(skeleton.charCodeAt(j))) j += 1;
   let slash = false;
-  if (j < len && skeleton.charCodeAt(j) === 0x2f) {
+  if (mode === "square") {
+    while (j < len && isSpaceUnit(skeleton.charCodeAt(j))) j += 1;
+    if (j < len && skeleton.charCodeAt(j) === 0x2f) {
+      slash = true;
+      j += 1;
+      while (j < len && isSpaceUnit(skeleton.charCodeAt(j))) j += 1;
+    }
+  } else if (j < len && skeleton.charCodeAt(j) === 0x2f) {
     slash = true;
     j += 1;
-    while (j < len && isSpaceUnit(skeleton.charCodeAt(j))) j += 1;
   }
   const wordAt = j;
   let best = -1;
   let word = "";
   for (const letters of MARKER_WORDS) {
-    const end = matchLetters(skeleton, wordAt, letters);
+    const end = matchLetters(skeleton, wordAt, letters, mode);
     if (end < 0 || end <= best) continue;
-    if (end < len && isWordUnit(skeleton.charCodeAt(end))) continue;
+    const letterEnd = spans[end - 1]!.end;
+    if (isProseContinuation(text, letterEnd, wordIsLowerEnglish(skeleton, wordAt, end), slash)) continue;
     best = end;
     word = letters;
   }
@@ -693,11 +779,13 @@ function matchAt(skeleton: string, i: number): MarkerHit | null {
   return { skStart: i, skEnd: best, slash, word: shown || word };
 }
 
-function findMarkers(skeleton: string): MarkerHit[] {
+function findMarkers(skeleton: string, text: string, spans: MarkerSpan[]): MarkerHit[] {
   const hits: MarkerHit[] = [];
   for (let i = 0; i < skeleton.length; i++) {
-    if (skeleton.charCodeAt(i) !== 0x5b) continue;
-    const hit = matchAt(skeleton, i);
+    const code = skeleton.charCodeAt(i);
+    const mode: MarkerMode | null = code === 0x5b ? "square" : code === 0x28 || code === 0x3c || code === 0x7b ? "alt" : null;
+    if (!mode) continue;
+    const hit = matchAt(skeleton, i, text, spans, mode);
     if (!hit) continue;
     hits.push(hit);
     i = hit.skEnd - 1;
@@ -712,15 +800,14 @@ function skeletonEnd(spans: MarkerSpan[], skEnd: number, textLength: number): nu
   return next > last ? next : last;
 }
 
-/** A non-ASCII closing square bracket later on the same line is part of the marker. */
-function absorbClose(text: string, from: number): { end: number; middle: string } | null {
-  for (let i = from; i < text.length; ) {
+/** A non-ASCII closing square bracket within a fixed lookahead is part of the marker. */
+function absorbClose(text: string, from: number, stopAt: number): { end: number; middle: string } | null {
+  const limit = Math.min(text.length, from + CLOSE_LOOKAHEAD, stopAt);
+  for (let i = from; i < limit; ) {
     const cp = text.codePointAt(i)!;
     const len = cp > 0xffff ? 2 : 1;
-    if (cp === 0x0a || cp === 0x0d) break;
-    if (cp > 0x7f && (CLOSE_LOOKALIKE.has(cp) || foldCodePoint(cp) === "]")) {
-      return { end: i + len, middle: `${text.slice(from, i)}]` };
-    }
+    if (cp === 0x0a || cp === 0x0d || cp === 0x5b) break;
+    if (CLOSE_CHARS.has(cp)) return { end: i + len, middle: `${text.slice(from, i)}]` };
     i += len;
   }
   return null;
@@ -730,25 +817,37 @@ function absorbClose(text: string, from: number): { end: number; middle: string 
 function needsScan(text: string): boolean {
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
-    if (code === 0x5b || code === 0x5c || code > 0x7f) return true;
+    if (code === 0x5b || code === 0x5c || code === 0x28 || code === 0x3c || code === 0x7b || code > 0x7f) return true;
+  }
+  return false;
+}
+
+function hasOpener(skeleton: string): boolean {
+  for (let i = 0; i < skeleton.length; i++) {
+    const code = skeleton.charCodeAt(i);
+    if (code === 0x5b || code === 0x28 || code === 0x3c || code === 0x7b) return true;
   }
   return false;
 }
 
 export function defang(text: string): string {
   if (!text || !needsScan(text)) return text;
+  // Convert the vertical right tortoise-shell bracket before it can open a marker.
+  if (text.includes("\uFE5D")) text = text.replaceAll("\uFE5D", "]");
   const { skeleton, spans } = markerSkeleton(text);
-  if (!skeleton.includes("[")) return text;
-  const hits = findMarkers(skeleton);
+  if (!hasOpener(skeleton)) return text;
+  const hits = findMarkers(skeleton, text, spans);
   if (hits.length === 0) return text;
   const parts: string[] = [];
   let cursor = 0;
-  for (const hit of hits) {
+  for (let n = 0; n < hits.length; n++) {
+    const hit = hits[n]!;
     const start = spans[hit.skStart]!.start;
     if (start < cursor) continue;
     let end = skeletonEnd(spans, hit.skEnd, text.length);
     let replacement = `[${hit.slash ? "/" : ""}(quoted) ${hit.word}`;
-    const closed = absorbClose(text, end);
+    const nextStart = n + 1 < hits.length ? spans[hits[n + 1]!.skStart]!.start : text.length;
+    const closed = absorbClose(text, end, nextStart);
     if (closed) {
       replacement += closed.middle;
       end = closed.end;
@@ -761,10 +860,11 @@ export function defang(text: string): string {
 }
 
 /** A metadata value is one line: control characters (a line break could
- * start a forged `Received:` line or a block) become spaces, then the value
- * is quoted like the payload and capped on a code-point boundary. */
+ * start a forged `Received:` line or a block) become spaces, the value is
+ * capped, then quoted, then capped again if quoting grew it. */
 function metadataValue(value: string, max: number): string {
-  return cutAt(defang(value.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")), max);
+  const flat = value.replace(/[\p{Cc}\u2028\u2029]+/gu, " ");
+  return cutAt(defang(cutAt(flat, max)), max);
 }
 
 /** `max` code units, never a trailing half of a surrogate pair. */
@@ -809,7 +909,7 @@ function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receiv
     `Delivery ID: ${metadataValue(deliveryId, 200)}`,
     `Event: ${metadataValue(normalized.kind, 200)}`,
     "",
-    defang(redact(JSON.stringify(normalized, null, 2), trigger.signingSecret)),
+    fenceText(redact(JSON.stringify(normalized, null, 2), trigger.signingSecret)),
     ...(raw ? ["", "Raw payload (excerpt):", raw] : []),
     `[/UNTRUSTED ${label.toUpperCase()} EVENT DATA ${boundary}]`,
   ].join("\n");
@@ -818,6 +918,20 @@ function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receiv
 /** Quote marker-looking text only after the cap, so a long body is not
  * scanned past 48 000 characters. Quoting can grow the text; a second cut
  * then keeps the fence's closing line on a code-point boundary. */
+function fenceText(text: string): string {
+  let truncated = false;
+  if (text.length > MAX_EVENT_CHARS) {
+    text = cutAt(text, MAX_EVENT_CHARS);
+    truncated = true;
+  }
+  text = defang(text);
+  if (text.length > MAX_EVENT_CHARS) {
+    text = cutAt(text, MAX_EVENT_CHARS);
+    truncated = true;
+  }
+  return truncated ? `${text}\n\n[Payload truncated by Sagax]` : text;
+}
+
 function serializePayload(payload: JsonValue, fenced = false): string {
   let text: string;
   const plainText = z.string().safeParse(payload);
@@ -829,17 +943,10 @@ function serializePayload(payload: JsonValue, fenced = false): string {
       text = String(payload);
     }
   }
-  let truncated = false;
-  if (text.length > MAX_EVENT_CHARS) {
-    text = cutAt(text, MAX_EVENT_CHARS);
-    truncated = true;
+  if (!fenced) {
+    return text.length > MAX_EVENT_CHARS ? `${cutAt(text, MAX_EVENT_CHARS)}\n\n[Payload truncated by Sagax]` : text;
   }
-  if (fenced) text = defang(text);
-  if (text.length > MAX_EVENT_CHARS) {
-    text = cutAt(text, MAX_EVENT_CHARS);
-    truncated = true;
-  }
-  return truncated ? `${text}\n\n[Payload truncated by Sagax]` : text;
+  return fenceText(text);
 }
 
 function previewPayload(payload: JsonValue): string {
