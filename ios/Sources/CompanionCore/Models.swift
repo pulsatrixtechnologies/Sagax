@@ -837,6 +837,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var approvalMode: String?
     public var autoApprove: Bool?
     public var alwaysAllow: [String]?
+    /// People and bots this bot writes to without a card (`allowedRecipients`).
+    /// Absent on an older computer: nobody is on the list.
+    public var allowedRecipients: [String]? = nil
     public var computer: String?
     /// Which cloud computer backs `computer == "cloud"`. Absent (older
     /// harnesses included) means the hosted Boat; "vps" means the user's own

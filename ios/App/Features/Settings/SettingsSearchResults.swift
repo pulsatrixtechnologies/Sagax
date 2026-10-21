@@ -48,7 +48,7 @@ struct SettingsSearchResults: View {
             case .achievements: return sections.contains(.achievements)
             case .privacy: return NavigationMenus.showsPrivacy(gate: gate, connected: connected)
             case .experimental: return sections.contains(.experimental)
-            case .plugins, .botComputer, .pages, .usage, .rules, .timeZone: return connected
+            case .plugins, .botComputer, .pages, .usage, .rules, .approvalGrants, .timeZone: return connected
             default: return true
             }
         }
@@ -69,6 +69,7 @@ struct SettingsSearchResults: View {
         case .pages: String(localized: "Published pages")
         case .usage: String(localized: "Usage")
         case .rules: String(localized: "Auto-review Rules")
+        case .approvalGrants: String(localized: "Approval rules")
         case .timeZone: String(localized: "Time Zone")
         case .language: String(localized: "Language")
         case .haptics: String(localized: "Haptics")
@@ -93,6 +94,7 @@ struct SettingsSearchResults: View {
         case .pages: "doc.richtext"
         case .usage: "chart.bar"
         case .rules: "checklist"
+        case .approvalGrants: "checkmark.shield"
         case .timeZone: "clock"
         case .language: "globe"
         case .haptics: "speaker.wave.2"

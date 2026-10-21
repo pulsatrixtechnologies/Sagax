@@ -15,7 +15,7 @@ import MessageUI
 
 /// The sheet's pages.
 enum SettingsRoute: Hashable {
-    case account, usage, plugins, rules, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy
+    case account, usage, plugins, rules, approvalGrants, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy
 }
 
 struct SettingsView: View {
@@ -334,6 +334,7 @@ private struct SettingsRootPage: View {
         case .pages: navigator.push(.pages)
         case .usage: navigator.push(.usage)
         case .rules: navigator.push(.rules)
+        case .approvalGrants: navigator.push(.approvalGrants)
         case .timeZone: navigator.push(.timeZone)
         case .language: navigator.push(.language)
         case .haptics: navigator.push(.haptics)
@@ -358,6 +359,7 @@ struct SettingsRouteView: View {
         // Connect apps (#203, #218): the desktop panel's three views
         case .plugins: ConnectAppsPage()
         case .rules: AutoReviewRulesView()
+        case .approvalGrants: ApprovalGrantsPage()
         case .timeZone: TimeZonePickerView()
         case .botComputer: BotComputerSettingsView()
         case .pages: PublishedPagesPage()
