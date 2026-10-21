@@ -23,7 +23,7 @@ import {
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { createUpdaterCoordinator } from "./updater-coordinator.mjs";
 import { configureUpdateFeed, fetchReleaseNotes, readUpdatePrefs, updateChannel, writeUpdatePrefs } from "./update-feed.mjs";
-import { AWAY_INSTALL_IDLE_SECONDS, awayInstallDecision, cleanActiveBots } from "./update-away.mjs";
+import { ACTIVITY_STALE_MS, AWAY_INSTALL_IDLE_SECONDS, awayInstallDecision, cleanActiveBots } from "./update-away.mjs";
 import { systemIdleSnapshot } from "./system-idle.mjs";
 import { confirmLanguage, confirmedInstall, updateConfirmOptions } from "./update-confirm.mjs";
 import { readDesktopLanguage } from "./desktop-language.mjs";
@@ -142,8 +142,13 @@ function setAutoInstallAway(enabled) {
   return state;
 }
 
+let waitingVersion = null;
+
 function setWaitingForBots(waiting) {
-  setState({ waitingForBots: waiting });
+  // Only for the update now ready; anything else would wait on nothing.
+  const on = waiting && state.status === "downloaded";
+  waitingVersion = on ? state.version ?? null : null;
+  setState({ waitingForBots: on });
   evaluateAwayInstall();
   return state;
 }
@@ -153,6 +158,12 @@ function setWaitingForBots(waiting) {
  * person's own click: cookies are flushed on before-quit-for-update and
  * Windows shows the installer. */
 function evaluateAwayInstall() {
+  // The wait belongs to the update the person saw: an error or another
+  // version ends it, so a later update never installs on an old click.
+  if (state.waitingForBots && (state.status !== "downloaded" || (state.version ?? null) !== waitingVersion)) {
+    waitingVersion = null;
+    setState({ waitingForBots: false });
+  }
   if (!updaterCoordinator || state.status !== "downloaded") return;
   let idle = null;
   try {
@@ -171,8 +182,12 @@ function evaluateAwayInstall() {
     waiting: state.waitingForBots === true,
   });
   if (!decision.install) return;
-  setState({ waitingForBots: false });
   void updaterCoordinator.install({ confirmed: true });
+  // The wait ends once the install started; a blocked install keeps it.
+  if (state.status === "installing") {
+    waitingVersion = null;
+    setState({ waitingForBots: false });
+  }
 }
 
 // Pre-releases are opt-in. The choice is this computer's, stored next to the
@@ -198,7 +213,7 @@ async function confirmInstallNatively({ version } = {}) {
   } catch {
     /* English */
   }
-  const options = updateConfirmOptions({ language, platform: process.platform, version, appName: DISPLAY_NAME, activeBots: activeBots ?? 0 });
+  const options = updateConfirmOptions({ language, platform: process.platform, version, appName: DISPLAY_NAME, activeBots: Date.now() - activeReportedAt <= ACTIVITY_STALE_MS ? activeBots ?? 0 : 0 });
   const parent = win && !win.isDestroyed?.() ? win : null;
   const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
   return confirmedInstall(result);

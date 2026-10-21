@@ -305,3 +305,17 @@ it("waiting for the bots restarts once none works, without needing the person aw
     expect((await handlers.get("update:set-channel")(local.event, "stable")).channel).toBe("stable");
   });
 });
+
+it("the wait for the bots ends with its update: an error or another version never installs on an old click", async () => {
+  fixture.idle = "active";
+  await downloadedOn("linux", async ({ autoUpdater, handlers, local }) => {
+    await handlers.get("update:report-activity")(local.event, 1);
+    expect((await handlers.get("update:install-when-idle")(local.event, true)).waitingForBots).toBe(true);
+    // a newer version replaces the one the person saw
+    autoUpdater.emit("update-downloaded", { version: "3.0.0" });
+    await handlers.get("update:report-activity")(local.event, 0);
+    await settle();
+    expect(handlers.get("update:get-state")(local.event).waitingForBots).not.toBe(true);
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+  });
+});
