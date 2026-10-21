@@ -56,13 +56,19 @@ it("takes cron through the real routine tools, applying the bot's own routine at
       name: "Monthly report", instructions: "Summarize last month's fixture activity; no external services.", schedule, overlap: "queue",
     }, "Schedule a report at 9am New York time on the first of each month.");
     expect(create.routineRequest).toMatchObject({ version: 1, operation: { action: "create", routine: { schedule } }, undo: { name: "Monthly report", schedule } });
-    expect(create.subtitle).toContain("Next 3 runs (America/New_York)");
+    // New routines start paused (routines.newPaused, on by default).
+    expect(create.subtitle).toContain("Created paused; resume it when ready.");
+    expect(create.subtitle).not.toContain("Next 3 runs");
     expect(create.subtitle).toContain("Cron: 0 9 1 * *");
     const { resultId: routineId } = applied(create);
     const current = async () => (await api("GET", "/api/routines")).routines.find((routine: any) => routine.id === routineId);
-    expect(await current()).toMatchObject({ schedule, enabled: true, runOn: "maus", overlap: "queue" });
+    expect(await current()).toMatchObject({ schedule, enabled: false, nextRunAt: null, runOn: "maus", overlap: "queue" });
     expect(create.subtitle).toContain("Queue one scheduled run");
-    expect((await current()).nextRunAt).toBe(nextCronRuns(schedule, create.routineRequest.createdAt, 1)[0]);
+    const firstResume = await proposal("propose_routine_action", { action: "resume", routine_id: routineId }, "Resume the monthly report now.");
+    expect(firstResume.subtitle).toContain("Next 3 runs (America/New_York)");
+    applied(firstResume);
+    expect(await current()).toMatchObject({ schedule, enabled: true });
+    expect((await current()).nextRunAt).toBe(nextCronRuns(schedule, firstResume.routineRequest.createdAt, 1)[0]);
 
     const cardCount = (await messages()).filter(message => message.card?.routineRequest).length;
     await proposal("propose_routine", {

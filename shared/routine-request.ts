@@ -82,7 +82,9 @@ export interface RoutineRequestTargetBot {
 }
 
 export type RoutineRequestOperation =
-  | { action: "create"; routine: RoutineRequestDefinition; forBot?: RoutineRequestTargetBot }
+  /** `paused`: decided at proposal time, the routine starts paused. Absent
+   * on cards stored before routines could start paused: those start live. */
+  | { action: "create"; routine: RoutineRequestDefinition; forBot?: RoutineRequestTargetBot; paused?: true }
   | { action: "update"; routineId: string; expectedUpdatedAt: number; changes: RoutineRequestChanges; forBot?: RoutineRequestTargetBot }
   | { action: "pause"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot }
   | { action: "resume"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot }

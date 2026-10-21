@@ -603,6 +603,15 @@ describe("ApprovalCard for a change that applied on its own", () => {
     expect(markup).not.toContain("schedule_routine");
   });
 
+  it("says a routine created paused was created paused", () => {
+    const markup = render(routineCard(
+      { ...createRoutineOperation, paused: true },
+      { name: "Backlog review" },
+    ));
+    expect(markup).toContain("Scout created a paused routine: Backlog review");
+    expect(markup).not.toContain("scheduled a routine");
+  });
+
   it("never shows a cron expression that has no plain name", () => {
     const markup = render(routineCard(
       { ...createRoutineOperation, routine: { ...createRoutineOperation.routine, schedule: { type: "cron", expression: "*/7 3-5 * * 1", timeZone: "UTC" } } },

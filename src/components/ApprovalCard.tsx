@@ -286,7 +286,10 @@ export function appliedChange(card: OptionCardData, name: string): { line: strin
         : operation.action === "pause" || operation.action === "resume" ? undo?.appliedUpdatedAt !== undefined
           : operation.action === "delete" ? Boolean(undo?.before)
             : false;
-    return { line: t(ROUTINE_APPLIED_LINE[operation.action], { name, title }), canUndo };
+    const lineKey = operation.action === "create" && operation.paused === true
+      ? "approval.applied.routine.createPaused"
+      : ROUTINE_APPLIED_LINE[operation.action];
+    return { line: t(lineKey, { name, title }), canUndo };
   }
   const skill = card.skillRequest;
   if (skill) {

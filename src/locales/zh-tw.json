@@ -2596,6 +2596,7 @@
   "approval.status.modelChanged": "已變更預設模型",
   "approval.status.undone": "已復原",
   "approval.applied.routine.create": "{name} 排程了例行工作：{title}",
+  "approval.applied.routine.createPaused": "{name} 建立了已暫停的例行工作：{title}",
   "approval.applied.routine.update": "{name} 更新了例行工作：{title}",
   "approval.applied.routine.pause": "{name} 暫停了例行工作：{title}",
   "approval.applied.routine.resume": "{name} 恢復了例行工作：{title}",

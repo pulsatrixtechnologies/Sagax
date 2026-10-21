@@ -897,6 +897,10 @@ describe("agents-proxy MCP surface", () => {
       "saturday",
       "sunday",
     ]);
+    expect(create.inputSchema.properties.enabled).toMatchObject({ type: "boolean" });
+    expect(create.description).toContain("created paused unless enabled is true");
+    const action = list.result.tools.find((t: { name: string }) => t.name === "propose_routine_action");
+    expect(action.inputSchema.properties.changes.properties).not.toHaveProperty("enabled");
     expect(create.inputSchema.properties).not.toHaveProperty("duration_minutes");
     expect(create.inputSchema.properties.timeout_minutes).toMatchObject({ minimum: 5, maximum: 240 });
     expect(create.inputSchema.properties.continuity).toMatchObject({ type: "boolean" });
@@ -1790,6 +1794,31 @@ describe("agents-proxy MCP surface", () => {
     expect(res.result.content[0].text).toContain("has not been applied");
     expect(res.result.content[0].text).toContain("do not claim");
     expect(res.result.isError).toBeFalsy();
+    expect(lastRoutineRequestBody.routine).not.toHaveProperty("enabled");
+  });
+
+  it("forwards an explicit enabled choice and refuses it on an update", async () => {
+    const schedule = { type: "weekly", time: "09:00", weekdays: ["monday", "friday"] };
+    const base = { name: "Morning brief", instructions: "Summarize today's priorities.", schedule };
+    lastRoutineRequestBody = null;
+    const live = await callTool("propose_routine", { ...base, enabled: true });
+    expect(live.result.isError).toBeFalsy();
+    expect(lastRoutineRequestBody.routine.enabled).toBe(true);
+    lastRoutineRequestBody = null;
+    const pausedChoice = await callTool("propose_routine", { ...base, enabled: false });
+    expect(pausedChoice.result.isError).toBeFalsy();
+    expect(lastRoutineRequestBody.routine.enabled).toBe(false);
+    const bad = await callTool("propose_routine", { ...base, enabled: "yes" });
+    expect(bad.result.isError).toBe(true);
+    expect(bad.result.content[0].text).toContain("enabled must be true or false");
+    const update = await callTool("propose_routine_action", {
+      routine_id: "routine-1",
+      action: "update",
+      changes: { name: "Renamed", enabled: false },
+    });
+    expect(update.result.isError).toBe(true);
+    expect(update.result.content[0].text).toContain("Do not set enabled in changes");
+    expect(lastRoutineRequestBody.routine.enabled).toBe(false);
   });
 
   it("forwards for_bot_id when the routine is for another bot", async () => {
