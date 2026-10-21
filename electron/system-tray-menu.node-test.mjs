@@ -44,6 +44,11 @@ test("the menu lists the bots with their shortcut, then Open and Quit; a click o
   assert.deepEqual(opened, ["b2", "show", "quit"]);
 });
 
+test("Windows shows no shortcut it does not register", () => {
+  const menu = buildTrayMenuTemplate({ roster: [bot(1)], platform: "win32", onOpenBot() {}, onShow() {}, onQuit() {} });
+  assert.equal(menu[1].accelerator, undefined);
+});
+
 test("without bots the menu is the plain Open and Quit", () => {
   const menu = buildTrayMenuTemplate({ roster: [], onOpenBot() {}, onShow() {}, onQuit() {} });
   assert.deepEqual(menu.map((item) => item.label ?? item.type), ["Open Sagax", "separator", "Quit Sagax"]);

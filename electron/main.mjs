@@ -676,7 +676,7 @@ function openStartupScreen() {
   startupScreen = createStartupScreen({
     BrowserWindow, iconPath: APP_ICON, isQuitting: () => desktopShutdownStarted,
     onQuit: () => app.quit(),
-    onHide: desktopTray ? (win) => desktopTray.hide(win) : undefined,
+    onHide: desktopTray && process.platform === "win32" ? (win) => desktopTray.hide(win) : undefined,
     isHidden: () => desktopTray?.isHidden() ?? false,
     onShow: (win) => desktopTray?.windowShown(win),
     onFinished: () => { startupScreen = null; },
@@ -4188,6 +4188,7 @@ function clearTrayRoster() {
   botHotkeys.sync(0);
 }
 ipcMain.on("desktop:tray-roster", (event, value) => {
+  if (!isDesktopUiSender(event)) return;
   const sender = BrowserWindow.fromWebContents(event.sender);
   if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
   trayRoster = normalizeRoster(value);

@@ -55,7 +55,7 @@ export function buildTrayMenuTemplate({ roster, platform = process.platform, ico
   if (bots.length > 0) {
     items.push({ label: unreadTotal > 0 ? `Bots (${unreadTotal} unread)` : "Bots", enabled: false });
     bots.forEach((bot, index) => {
-      const accelerator = slotAccelerator(index + 1, platform);
+      const accelerator = platform === "darwin" ? slotAccelerator(index + 1, platform) : null;
       const image = icon?.(bot);
       items.push({
         label: rosterLabel(bot),
