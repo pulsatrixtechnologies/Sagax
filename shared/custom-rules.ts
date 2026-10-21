@@ -1071,7 +1071,8 @@ export function modelCustomDecision(local: CustomRuleDecision, rules: readonly C
   const index = typeof parsed.rule === "string" ? /^R(\d{1,3})$/i.exec(parsed.rule.trim()) : null;
   const rule = index ? rules[Number(index[1]) - 1] : undefined;
   if (!rule || !rule.enabled || rule.behavior !== decision) return { kind: "none" };
-  const reason = typeof parsed.reason === "string" ? oneLine(parsed.reason, MODEL_REASON_MAX) : "";
+  // the reason is model output shaped by untrusted arguments: one line, no link
+  const reason = typeof parsed.reason === "string" ? oneLine(parsed.reason.replace(/\b(?:https?|ftp|file):\/\/\S+|\bwww\.\S+/gi, "…"), MODEL_REASON_MAX) : "";
   if (decision === "allow") {
     if (rule.org) return { kind: "none" };
     if (facts.command !== undefined) return { kind: "none" };

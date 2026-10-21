@@ -14610,10 +14610,14 @@ bus.subscribe((event: RuntimeEvent) => {
       // no owner ask rule). Unsure or failed: the card stays.
       if (permission && asker && event.requestId && customReview && customDecision?.kind === "none" && !questions
         && !strictCard && !guestDriven && !adminApproval && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true
-        && ownerCall && ownerStepUp.length === 0 && !ownerOriginRefused
+        && ownerCall && ownerStepUp.length === 0 && !ownerOriginRefused && !emailDraftRequest && !unattended
+        // never a turn that is not the person's own words (a routine, a
+        // webhook, another bot, an automation): their text is the attacker's
+        && ownEnvironmentOrigin(asker, event.threadId) === "owner"
         && (!owner || (owner.kind === "card" && (owner.reason === "no-rule" || owner.reason === "destructive")))) {
         void customRulesModel.reviewCard({
           threadId: event.threadId, requestId: event.requestId, botId: asker.id,
+          instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
           rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
           call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
           language: cfg.language,
@@ -17354,12 +17358,15 @@ const customRulesModel = createCustomRulesModelReviewer({
     return Boolean(card && !card.answered && !card.dismissed && !card.expired);
   },
   deliver: async (card, behavior, message) => {
-    const bot = store.bot(card.botId);
-    const instance = runningTurnEngines.get(card.threadId) ?? (bot ? registry.get(botForThread(bot.id, card.threadId)?.modelSelection.instanceId ?? bot.modelSelection.instanceId) : undefined);
+    // the engine that asked, like every other answer given at request.opened
+    const instance = registry.get(card.instanceId) ?? runningTurnEngines.get(card.threadId);
     if (!instance) return false;
     try {
       const outcome = await instance.adapter.respondToRequest(card.threadId, card.requestId, { behavior, ...(message ? { message } : {}) });
-      return outcome !== "unavailable";
+      if (behavior === "allow" && outcome === "rejected") {
+        store.appendMessage(card.threadId, { role: "bot", kind: "activity", tool: { name: "The provider rejected this action despite your rule (automatic review).", ok: false } });
+      }
+      return behavior === "allow" ? outcome === "allowed-once" : outcome === "rejected" || outcome === "allowed-once";
     } catch {
       return false;
     }

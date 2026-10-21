@@ -171,6 +171,9 @@ describe("the model reviewer (examen automatique, lot A1)", () => {
     expect(modelCustomDecision({ kind: "none" }, rules, cwWrite, reply("allow", "R2"))).toEqual({ kind: "none" });
     expect(modelCustomDecision({ kind: "none" }, rules, cwWrite, reply("allow", "R9"))).toEqual({ kind: "none" });
     expect(modelCustomDecision({ kind: "none" }, rules, cwWrite, '{"decision":"allow"}')).toEqual({ kind: "none" });
+    expect(modelCustomDecision({ kind: "none" }, rules, cwWrite, reply("allow", "R0"))).toEqual({ kind: "none" });
+    expect(modelCustomDecision({ kind: "none" }, rules, cwWrite, reply("allow", "R999"))).toEqual({ kind: "none" });
+    expect(modelCustomDecision({ kind: "none" }, rules, cwWrite, reply("allow", free.id))).toEqual({ kind: "none" });
   });
 
   it("leaves the card to the person when unsure, failed or unreadable", () => {
@@ -213,6 +216,11 @@ describe("the model reviewer (examen automatique, lot A1)", () => {
     const verdict = modelCustomDecision({ kind: "none" }, [free], cwWrite, JSON.stringify({ decision: "allow", rule: "R1", reason: long }));
     expect(verdict.reason).toMatch(/^a b x+$/);
     expect(verdict.reason!.length).toBe(200);
+  });
+
+  it("drops links from the reason", () => {
+    const verdict = modelCustomDecision({ kind: "none" }, [free], cwWrite, JSON.stringify({ decision: "allow", rule: "R1", reason: "Voir https://evil.example/x et www.evil.example." }));
+    expect(verdict.reason).toBe("Voir … et …");
   });
 
   it("puts the rules before the call, the call inside the untrusted delimiter, and no rule id", () => {

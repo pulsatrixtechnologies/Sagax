@@ -1678,7 +1678,9 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   person's rules and the organization's (R1..Rn, organization first, exact
   command rules left out; the call between untrusted delimiters). Only the
   cards a custom allow may answer (the person's own turn, no admin card,
-  hold, sandbox widening, question, guest, security key or owner ask rule).
+  hold, sandbox widening, question, guest, security key, owner ask rule,
+  email draft, or turn that is not the person's own words: routine,
+  webhook, another bot, unattended; `ownEnvironmentOrigin`).
   Allow or deny only when it names a rule of that behavior; an organization
   rule never allows; an allow never covers a shell line, a risk class the
   rule does not tick, or a local path it cannot read; ask keeps the card

@@ -45,6 +45,8 @@ export interface ModelReviewCard {
   threadId: string;
   requestId: string;
   botId: string;
+  /** The engine instance that asked (the answer goes back to it). */
+  instanceId: string;
   /** The rules of the person who answers the card (rulesOf: their own,
    * their allow rules only while the organization keeps Always allow on,
    * and the organization's). */
@@ -61,7 +63,8 @@ export interface ModelReviewDeps {
   reviewer(botId: string): ModelReviewer | undefined;
   /** The card is still open (nobody answered it meanwhile). */
   stillOpen(threadId: string, requestId: string): boolean;
-  /** Answer the engine; true once it took the answer. */
+  /** Answer the engine that asked; true once it took the answer (an allow
+   * only when the engine ran it). */
   deliver(card: ModelReviewCard, behavior: "allow" | "deny", message?: string): Promise<boolean>;
   /** Show the verdict: the card's rule notice, and for an answer, who
    * answered (the examen automatique) and the decision row. */

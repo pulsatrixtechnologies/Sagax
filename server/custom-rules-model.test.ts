@@ -16,7 +16,7 @@ const freeDeny = rule("toucher aux factures du client Acme", "deny");
 const freeAsk = rule("changer un billet fermé", "ask");
 
 function card(rules: CustomRule[] = [free], extra: Partial<ModelReviewCard> = {}): ModelReviewCard {
-  return { threadId: "t1", requestId: "q1", botId: "b1", rules, local: { kind: "none" }, facts, call: { tool: facts.tool, input, summary: "Update ticket 12" }, language: "fr", ...extra };
+  return { threadId: "t1", requestId: "q1", botId: "b1", instanceId: "claude", rules, local: { kind: "none" }, facts, call: { tool: facts.tool, input, summary: "Update ticket 12" }, language: "fr", ...extra };
 }
 
 function harness(reply: string | (() => Promise<string>), extra: Partial<ModelReviewDeps> = {}) {
