@@ -9359,5 +9359,16 @@
   "updates.dialog.botsWorking": "Bots working: {count}. Restarting now interrupts them.",
   "updates.dialog.waitingBots": "Sagax restarts by itself once no bot is working.",
   "updates.dialog.waitForBots": "Restart when bots finish",
-  "updates.dialog.waitCancel": "Cancel"
+  "updates.dialog.waitCancel": "Cancel",
+  "approval.orgOnce": "Allow applies to this time only. Your organization requires an approval each time.",
+  "customRules.notice.orgDenied": "Refused by your organization's rule",
+  "customRules.notice.orgHeld": "Paused by your organization's \"Ask first\" rule",
+  "customRules.org.required": "Required by your administrator",
+  "customRules.org.locked": "Required by your administrator. You cannot change or delete this rule.",
+  "customRules.org.alwaysAllowOff": "Your organization requires an approval each time: Always allow is off and your \"Allow automatically\" rules are paused. \"Ask first\" and \"Refuse\" rules still apply.",
+  "customRules.paused": "Paused by your organization",
+  "customRules.levelFull": "Full access: this bot already acts without asking, so \"Allow automatically\" rules change nothing here. \"Ask first\" and \"Refuse\" rules still apply.",
+  "customRules.form.someBots": "Bots I choose",
+  "customRules.form.chooseBots": "Choose the bots this rule is for:",
+  "customRules.diff.label": "Changes:"
 }

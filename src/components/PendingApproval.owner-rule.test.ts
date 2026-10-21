@@ -6,12 +6,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, Message } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ admin: true as boolean | null, dispatch: vi.fn() }));
+const fixture = vi.hoisted(() => ({ admin: true as boolean | null, dispatch: vi.fn(), alwaysAllow: true }));
 vi.mock("@/state/store", async (original) => ({
   ...await original<typeof import("@/state/store")>(),
   useStore: () => ({ dispatch: fixture.dispatch }),
 }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => fixture.admin }));
+vi.mock("@/lib/org-approval-policy", () => ({ useOrgApprovalPolicy: () => ({ alwaysAllow: fixture.alwaysAllow, orgRules: 0 }), noteOrgAlwaysAllowOff: () => {} }));
 
 import { pendingApprovals, PendingApprovalActions } from "./PendingApproval";
 import { approvalPill } from "./ApprovalCard";
@@ -38,9 +39,18 @@ function view(extra: Partial<NonNullable<Message["card"]>> = {}) {
 }
 const click = (result: ReturnType<typeof view>, label: string) => result.buttons.find((button) => button.props.children === label)!.props.onClick!();
 
-beforeEach(() => { fixture.admin = false; fixture.dispatch.mockReset(); });
+beforeEach(() => { fixture.admin = false; fixture.alwaysAllow = true; fixture.dispatch.mockReset(); });
 
 describe("owner rule buttons", () => {
+  // 2026-10-21 (lot 1A): the organization turned Always allow off: the card
+  // offers Deny and Allow once, and says why
+  it("offers no Always allow when the organization turned it off", () => {
+    fixture.alwaysAllow = false;
+    const result = view();
+    expect(result.buttons.map((button) => button.props.children)).not.toContain("Always allow");
+    expect(result.html).toContain("data-org-always-allow-off");
+  });
+
   // 2026-10-20 (JC, after Grok Bot): Deny, Always allow, Allow once; Always
   // deny and the rule's scope live in Settings > Security
   it("offers exactly Deny, Always allow and Allow once", () => {

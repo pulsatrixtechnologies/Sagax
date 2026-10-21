@@ -9359,5 +9359,16 @@
   "updates.dialog.botsWorking": "Bots au travail : {count}. Redémarrer maintenant les interrompt.",
   "updates.dialog.waitingBots": "Sagax redémarre seul dès qu'aucun bot ne travaille.",
   "updates.dialog.waitForBots": "Redémarrer quand les bots auront fini",
-  "updates.dialog.waitCancel": "Annuler"
+  "updates.dialog.waitCancel": "Annuler",
+  "approval.orgOnce": "Permettre vaut pour cette fois seulement. Votre organisation exige une approbation à chaque fois.",
+  "customRules.notice.orgDenied": "Refusé par la règle de votre organisation",
+  "customRules.notice.orgHeld": "En attente selon la règle « Demander d'abord » de votre organisation",
+  "customRules.org.required": "Exigé par votre administrateur",
+  "customRules.org.locked": "Exigé par votre administrateur. Vous ne pouvez pas modifier ni supprimer cette règle.",
+  "customRules.org.alwaysAllowOff": "Votre organisation exige une approbation à chaque fois : Toujours permettre est désactivé et vos règles « Autoriser automatiquement » sont en pause. Les règles « Demander d'abord » et « Refuser » s'appliquent toujours.",
+  "customRules.paused": "En pause par votre organisation",
+  "customRules.levelFull": "Plein accès : ce bot agit déjà sans demander, les règles « Autoriser automatiquement » ne changent donc rien ici. Les règles « Demander d'abord » et « Refuser » s'appliquent toujours.",
+  "customRules.form.someBots": "Les bots que je choisis",
+  "customRules.form.chooseBots": "Choisissez les bots visés par cette règle :",
+  "customRules.diff.label": "Changements :"
 }

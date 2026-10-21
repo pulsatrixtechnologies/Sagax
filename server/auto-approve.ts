@@ -14,6 +14,7 @@
 import { supportsApprovalMode, type ApprovalMode } from "../shared/approval-mode.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
 import type { ProviderAdapter, RequestOutcome } from "./contracts.ts";
+import { standingGrantsAllowed } from "./custom-rules-org.ts";
 
 /** A failed delivery is a runtime error, not another permission decision.
  * An expired ask must never become a fresh Allow/Deny card. */
@@ -272,6 +273,21 @@ export function autoVerdict(
   // A safety hold is an explicit accept. It is checked before Full, before a
   // saved Allow rule, and before a gate, so none of those answer it.
   if (context?.safetyHold) return { approve: null, source: "safety-hold" };
+  // 2026-10-21 (server/custom-rules-org.ts): while the organization turned
+  // "Toujours permettre" off, no standing grant answers (a saved Allow rule
+  // of a gate, a saved command, an allow rule in the person's words); each
+  // call is approved on its card.
+  if (!standingGrantsAllowed() && context && (context.ruleAllowed || context.commandAllowed || context.customRule?.behavior === "allow")) {
+    context = {
+      ...context,
+      ruleAllowed: false,
+      commandAllowed: false,
+      ...(context.customRule?.behavior === "allow" ? { customRule: undefined } : {}),
+    };
+  }
+  // An organization admin's Refuse rule (server/custom-rules-org.ts) is
+  // mandatory: even a draft the person approved is refused.
+  if (context?.customRule?.behavior === "deny" && context.customRule.id.startsWith("orule_")) return { approve: null, source: "custom-rule-deny" };
   // A send the person approved on the draft's own card is that person's
   // answer, not a rule: it is not held again by an "ask me" rule.
   if (context?.emailDraftApproved) return { approve: `approved ${tool} (your approved email draft)`, source: "email-draft-approval" };

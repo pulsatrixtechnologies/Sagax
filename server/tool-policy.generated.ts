@@ -57,6 +57,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"exact","route":"/api/custom-rules","tier":"read","readOnly":true,"scope":"custom-rules:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/custom-rules","tier":"admin","readOnly":false,"scope":"custom-rules:admin","defaultEnabled":false},
   {"method":"GET","kind":"prefix","route":"/api/custom-rules/","tier":"read","readOnly":true,"scope":"custom-rules:read","defaultEnabled":true},
+  {"method":"GET","kind":"exact","route":"/api/custom-rules/policy","tier":"read","readOnly":true,"scope":"custom-rules:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/decisions","tier":"read","readOnly":true,"scope":"decisions:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/decisions.csv","tier":"read","readOnly":true,"scope":"decisions:read","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/desktop-bridge/connect","tier":"write","readOnly":false,"scope":"desktop-bridge:write","defaultEnabled":true},
