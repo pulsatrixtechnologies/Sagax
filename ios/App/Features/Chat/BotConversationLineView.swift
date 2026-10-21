@@ -110,7 +110,7 @@ extension ChatView {
     /// One bot-to-bot conversation, drawn as its quiet line.
     func conversationLine(_ row: BotConversation) -> some View {
         let selfBot: Bot? = { if case let .bot(bot) = current { return session.state.bot(bot.id) ?? bot }; return nil }()
-        BotConversationLineView(row: row, selfBot: selfBot, other: session.state.bot(row.otherBotId)) {
+        return BotConversationLineView(row: row, selfBot: selfBot, other: session.state.bot(row.otherBotId)) {
             openBotConversation = row
         }
     }
