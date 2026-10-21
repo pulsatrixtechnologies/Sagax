@@ -49,6 +49,7 @@ export interface RemoteSessionView {
 }
 
 const TUNNEL = /tc[0-9A-Za-z_-]{24,}/g;
+// oxlint-disable-next-line no-control-regex -- public text must not keep control characters
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 
 /** Drop a tunnel token and control characters before anything is stored or shown. */

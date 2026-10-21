@@ -34,9 +34,10 @@ describe("publish body", () => {
     expect(parsed.value.code).toBe("UD6HFH");
     expect(parsed.value.facts?.hostname).toBe("GOXP103");
     expect(JSON.stringify(parsed.value)).not.toContain(ADDRESS);
-    expect("error" in parsePublishBody({ ...{
+    expect("error" in parsePublishBody({
       flow_session_id: ID, code: "UD6HFH", os: "windows", rights: "standard", end_at: "2026-10-21T21:15:00.000Z",
-    }, address: ADDRESS }, now)).toBe(true);
+      address: ADDRESS,
+    }, now)).toBe(true);
     expect("error" in parsePublishBody({
       flow_session_id: ID, code: "UD6HF0", os: "windows", rights: "standard", end_at: "2026-10-21T21:15:00.000Z",
     }, now)).toBe(true);

@@ -39,6 +39,7 @@ export function readTunnel(home: string, id: string): { keyPath: string; address
   } catch {
     return null;
   }
+  // oxlint-disable-next-line no-control-regex -- a tunnel address never contains control characters
   if (!address.startsWith("tc") || address.length > 512 || /[\s\u0000-\u001f]/.test(address)) return null;
   try {
     readFileSync(keyPath);
