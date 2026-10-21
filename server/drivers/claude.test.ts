@@ -109,6 +109,10 @@ const CONTROL_PLANE_FIXTURE = {
   SAGAX_LICENSE_KEY: "license-should-not-leak", SAGAX_INSTALLATION_CREDENTIAL: "fleet-should-not-leak",
 };
 
+
+/** The launch wording of the volatile half in a new process's first message (claude.ts withVolatileNote). */
+const LAUNCH_NOTE = /^<system-reminder>\nThis part of your instructions changes from turn to turn/;
+
 describe("instanceClaudeAllowRules", () => {
   it("reads a JSON list or one rule per line, trimmed and deduplicated", () => {
     expect(instanceClaudeAllowRules({ SAGAX_CLAUDE_ALLOW: '["Bash(claude plugin marketplace add a/b)", "Read"]' }))
@@ -1772,7 +1776,10 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     // and the model still learns what changed, inside this turn
     const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(sent).toHaveLength(2);
-    expect(sent[0].message.content).toBe("one");
+    // a new process gets the volatile half in its first message, not its prompt file
+    expect(sent[0].message.content).toMatch(LAUNCH_NOTE);
+    expect(sent[0].message.content).toContain("likes tea");
+    expect(sent[0].message.content.endsWith("one")).toBe(true);
     expect(sent[1].message.content).toContain("dislikes cloud kitchens");
     // the user's own words stay last, after the out-of-band note
     expect(sent[1].message.content.endsWith("two")).toBe(true);
@@ -1826,7 +1833,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await send("four", [{ id: "recent", text: "\n\nRecent: report (3h ago)" }]);
     expect(JSON.parse(readFileSync(dump, "utf8")).pid).toBe(firstPid);
     const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line).message.content as string);
-    expect(sent[0]).toBe("one");
+    expect(sent[0]).toMatch(LAUNCH_NOTE);
+    expect(sent[0].endsWith("one")).toBe(true);
     // only the moved line rides; the unchanged memory notebook does not
     expect(sent[1]).toContain("3h ago");
     expect(sent[1]).not.toContain("likes tea");
@@ -1865,7 +1873,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     // volatile half is byte-identical to the one the session launched with
     const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(sent).toHaveLength(2);
-    expect(sent[0].message.content).toBe("one");
+    expect(sent[0].message.content).toContain("Tagged: @Testy");
+    expect(sent[0].message.content.endsWith("one")).toBe(true);
     expect(sent[1].message.content).toContain("Tagged: @Testy");
     expect(sent[1].message.content.endsWith("two")).toBe(true);
     expect(seen.systemPrompt).toContain("Tagged: @Testy");
@@ -1888,7 +1897,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.systemPrompt).not.toContain(CALL_MARK);
     const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line).message.content as string);
     expect(sent).toHaveLength(5);
-    expect(sent[0]).toBe("words 0");
+    expect(sent[0]).not.toContain(CALL_MARK);
     expect(sent[1]).toContain(CALL_MARK);
     expect(sent[2]).toBe("words 2");
     expect(sent[3]).toContain(INTERRUPTED_MARK);
@@ -1924,7 +1933,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.parse(readFileSync(dump, "utf8")).pid).not.toBe(firstPid);
   });
 
-  it("launches a new session with the volatile half already in the system prompt", async () => {
+  it("launches a new session with only the stable half in its prompt file and the volatile half in its first message", async () => {
     await create();
     const dump = join(scratch, "volatile-spawn.json");
     process.env.FAKE_CLAUDE_DUMP = dump;
@@ -1939,11 +1948,83 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((e) => e.type === "turn.completed");
 
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.systemPrompt).toContain("likes tea");
-    // a fresh process needs no in-turn note: the prompt already carries it
+    // the file stays byte-identical while memory changes, so a relaunch keeps the cached prefix
+    expect(seen.systemPromptFile).toBe("You are Testy.");
+    // the fake folds the first message's note back: the model is still told everything
+    expect(seen.systemPrompt).toBe("You are Testy.\n\nYour memory:\nlikes tea");
     const content = seen.prompt.message.content;
     const text = typeof content === "string" ? content : content.map((c: any) => c.text ?? "").join("");
-    expect(text).toBe("hi");
+    expect(text).toMatch(LAUNCH_NOTE);
+    expect(text).toContain("likes tea");
+    expect(text.endsWith("hi")).toBe(true);
+  });
+
+  it("relaunches a resumed session with the same prompt file and the current volatile half in its first message", async () => {
+    await create();
+    const dump = join(scratch, "relaunch.json");
+    const prompts = join(scratch, "relaunch-prompts.jsonl");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    const halves = (memory: string) => ({ system: `You are Testy.\n\nYour memory:\n${memory}`, systemStable: "You are Testy.", systemVolatile: `Your memory:\n${memory}` });
+
+    await instance.adapter.sendTurn({ threadId: "t-relaunch", text: "one", ...halves("likes tea") });
+    await recorder.until((e) => e.type === "turn.completed");
+    const first = JSON.parse(readFileSync(dump, "utf8"));
+    const announced = (recorder.events.find((e) => e.type === "session.started") as { sessionId: string }).sessionId;
+
+    recorder.events.length = 0;
+    // a new spawn contract closes the live process; the next one resumes the conversation
+    await instance.adapter.sendTurn({ threadId: "t-relaunch", text: "two", effort: "high", resumeCursor: announced, ...halves("likes tea, dislikes cloud kitchens") });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const second = JSON.parse(readFileSync(dump, "utf8"));
+    expect(second.pid).not.toBe(first.pid);
+    expect(second.argv[second.argv.indexOf("--resume") + 1]).toBe(announced);
+    expect(first.systemPromptFile).toBe("You are Testy.");
+    expect(second.systemPromptFile).toBe(first.systemPromptFile);
+    const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    // the resumed conversation holds the old copy: only the change rides
+    expect(sent[1].message.content).toContain("likes tea, dislikes cloud kitchens");
+    expect(sent[1].message.content.endsWith("two")).toBe(true);
+
+    recorder.events.length = 0;
+    // relaunched again with nothing changed: the conversation already holds it
+    await instance.adapter.sendTurn({ threadId: "t-relaunch", text: "three", effort: "low", resumeCursor: announced, ...halves("likes tea, dislikes cloud kitchens") });
+    await recorder.until((e) => e.type === "turn.completed");
+    expect(JSON.parse(readFileSync(dump, "utf8")).pid).not.toBe(second.pid);
+    const third = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(third[2].message.content).toBe("three");
+
+    recorder.events.length = 0;
+    // a fresh session (no resume) starts from nothing: the whole half rides
+    await instance.adapter.sendTurn({ threadId: "t-relaunch", text: "four", effort: "medium", sessionReset: true, ...halves("likes tea, dislikes cloud kitchens") });
+    await recorder.until((e) => e.type === "turn.completed");
+    const fourth = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(fourth[3].message.content).toMatch(LAUNCH_NOTE);
+    expect(fourth[3].message.content).toContain("dislikes cloud kitchens");
+  });
+
+  it("delivers the volatile half with the first real turn of a warm process", async () => {
+    await create();
+    const dump = join(scratch, "warm-volatile.json");
+    const prompts = join(scratch, "warm-volatile-prompts.jsonl");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    process.env.FAKE_CLAUDE_PROMPTS = prompts;
+    const turn = { threadId: "t-warm-volatile", keepWarm: true, system: "You are Testy.\n\nYour memory:\nlikes tea", systemStable: "You are Testy.", systemVolatile: "Your memory:\nlikes tea" };
+    await instance.adapter.sendTurn({ ...turn, text: "", warmOnly: true });
+    for (const text of ["one", "two"]) {
+      recorder.events.length = 0;
+      expect((await instance.adapter.sendTurn({ ...turn, text })).reused).toBe(true);
+      await recorder.until((e) => e.type === "turn.completed");
+    }
+    const sent = readFileSync(prompts, "utf8").trim().split("\n").map((line) => JSON.parse(line).message.content as string);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]).toMatch(LAUNCH_NOTE);
+    expect(sent[0]).toContain("likes tea");
+    expect(sent[0].endsWith("one")).toBe(true);
+    // held now: the next turn is the bare words
+    expect(sent[1]).toBe("two");
+    expect(JSON.parse(readFileSync(dump, "utf8")).systemPromptFile).toBe("You are Testy.");
   });
 
   it("refreshes a resumed session's recorded prompt on every turn when the CLI supports it", async () => {
