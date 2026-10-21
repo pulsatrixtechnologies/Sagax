@@ -67,13 +67,48 @@ public enum BotConversations {
             case .activity, .screen, .digest: return nil
             default: break
             }
-            let text = (message.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let spoken = PeerLine.parse(message)?.body ?? message.text ?? ""
+            let text = spoken.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return nil }
             let who: (String, String)
             if let ask = message.peerAsk { who = (ask.botId, ask.name) }
             else if let from = message.from { who = (from.botId, from.name) }
             else { who = message.role == .user ? origin : destination }
             return BotConversationLine(id: message.id, speakerId: who.0, speakerName: who.1, text: text, at: message.at)
+        }
+    }
+
+    /// The live row preview: the latest words of the exchange (BB2).
+    public static func previewText(
+        _ messages: [Message], selfId: String, selfName: String, row: BotConversation
+    ) -> String? {
+        lines(messages, selfId: selfId, selfName: selfName, row: row).last?.text
+    }
+
+    /// Threads the open transcript already names, so the quiet line is not
+    /// drawn a second time (desktop ChatView: `threadRef` or `comm.threadId`).
+    public static func linkedThreadIds(in messages: [Message]) -> Set<String> {
+        var ids = Set<String>()
+        for message in messages {
+            if let id = message.threadRef?.threadId, !id.isEmpty { ids.insert(id) }
+            if let id = message.comm?.threadId, !id.isEmpty { ids.insert(id) }
+        }
+        return ids
+    }
+
+    /// Rows for this chat. Only the main thread, and never the thread open
+    /// here or one the transcript already links.
+    public static func visible(
+        _ rows: [BotConversation],
+        openThreadId: String,
+        mainThreadId: String?,
+        fallbackThreadId: String,
+        linkedThreadIds: Set<String>
+    ) -> [BotConversation] {
+        let main = mainThreadId ?? fallbackThreadId
+        guard openThreadId == main else { return [] }
+        return rows.filter { row in
+            row.threadId != openThreadId && !linkedThreadIds.contains(row.threadId)
         }
     }
 }

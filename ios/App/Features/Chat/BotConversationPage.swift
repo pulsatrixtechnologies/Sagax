@@ -53,6 +53,7 @@ struct BotConversationPage: View {
                 .frame(maxWidth: CompanionLayout.chatWidth)
                 .frame(maxWidth: .infinity)
             }
+            .accessibilityLabel(Text("Transcript of the exchange between Bots"))
             footer
         }
         .task { await load() }
@@ -70,7 +71,9 @@ struct BotConversationPage: View {
         .padding(.horizontal, 12).padding(.vertical, 6)
         .background(Capsule().fill(Color.secondary.opacity(0.15)))
         .padding(.top, 16).padding(.bottom, 8)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Agents in this exchange"))
+        .accessibilityValue(Text("\(selfBot.name), \(row.otherName)"))
     }
 
     private var footer: some View {
@@ -84,7 +87,7 @@ struct BotConversationPage: View {
                         .accessibilityIdentifier("bot-conversation-stop")
                 }
             }
-            Label("Read-only", systemImage: "lock.fill")
+            Label("Bot conversation, read only", systemImage: "lock.fill")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 12).padding(.vertical, 5)

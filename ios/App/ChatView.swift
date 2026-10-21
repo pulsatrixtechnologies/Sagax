@@ -524,7 +524,13 @@ struct ChatView: View {
         // one tap away behind "Earlier topics".
         let fresh = session.isFreshTopic(current)
         let transcript = fresh ? [] : rows
-        let conversationRows: [BotConversation] = { if case let .bot(bot) = current { return bot.botConversations ?? [] }; return [] }()
+        let storedBot: Bot? = { if case let .bot(bot) = current { return session.state.bot(bot.id) }; return nil }()
+        let conversationRows = BotConversations.visible(
+            storedBot?.botConversations ?? [],
+            openThreadId: threadId,
+            mainThreadId: storedBot?.mainThreadId,
+            fallbackThreadId: storedBot?.threadId ?? threadId,
+            linkedThreadIds: BotConversations.linkedThreadIds(in: messages))
         let conversationAnchors = BotConversations.anchors(
             conversationRows, rowStarts: transcript.map { $0.head.at }, hasMore: session.state.hasMore[threadId] == true)
         // A VStack with the composer as a sibling, rather than a scroll view
