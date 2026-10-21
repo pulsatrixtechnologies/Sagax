@@ -3,6 +3,7 @@ import { api, type Bot, type ModelSelection } from "@/state/store";
 import type { BotUpdatePatch } from "@/state/bot-patch-queue";
 import type { Routine, RoutineInput } from "./routines";
 import type { ChosenPreset } from "./bot-presets";
+import { AVATAR_INPUT_MAX_BYTES } from "./avatar-input";
 
 export const EMPTY_BOT_DEFAULTS: NewBotDefaults = { profile: {}, memory: {}, skills: [], routines: [] };
 
@@ -85,7 +86,7 @@ export class BotCreationDraft {
 
   uploadAvatar = async (file: File): Promise<string> => {
     if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(file.type)) throw new Error("Choose a PNG, JPEG, GIF, or WebP image");
-    if (file.size > 10 * 1024 * 1024) throw new Error("Choose an image smaller than 10 MiB");
+    if (file.size > AVATAR_INPUT_MAX_BYTES) throw new Error("Choose an image smaller than 25 MB");
     if (this.avatarObjectUrl) URL.revokeObjectURL(this.avatarObjectUrl);
     this.avatarFile = file;
     this.avatarObjectUrl = URL.createObjectURL(file);

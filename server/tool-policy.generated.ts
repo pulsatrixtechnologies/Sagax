@@ -543,6 +543,8 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/team-memory\\/([\\w-]+)$","tier":"admin","readOnly":false,"scope":"team-memory:admin","defaultEnabled":false,"destructive":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/team-memory\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"team-memory:write","defaultEnabled":true},
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/template-links\\/([A-Za-z0-9_-]{22})$","tier":"admin","readOnly":false,"scope":"template-links:admin","defaultEnabled":false,"destructive":true},
+  {"method":"GET","kind":"pattern","route":"^\\/api\\/template-links\\/([A-Za-z0-9_-]{22})$","tier":"read","readOnly":true,"scope":"template-links:read","defaultEnabled":true},
+  {"method":"PUT","kind":"pattern","route":"^\\/api\\/template-links\\/([A-Za-z0-9_-]{22})$","tier":"write","readOnly":false,"scope":"template-links:write","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/terminal\\/sessions\\/([\\w-]+)(?:\\/(ws|bot-input|close))?$","tier":"admin","readOnly":false,"scope":"terminal:admin","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/terminal\\/sessions\\/[\\w-]+\\/ws$","tier":"admin","readOnly":false,"scope":"terminal:admin","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/threads\\/([\\w-]+)(?:\\/|$)","tier":"write","readOnly":false,"scope":"threads:write","defaultEnabled":true},

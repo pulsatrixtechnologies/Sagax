@@ -5561,6 +5561,27 @@ the person asked for are not views.
   empty conversation. It opens Connect apps with those apps first
   (`pluginsFocusApps`, section "needed").
 
+## Bots parity 2F: template update, avatar drop and paste, reset, bot link (2026-10-21)
+
+- Template links: `PUT /api/template-links/:id` freezes the New bot
+  defaults again under the SAME link (`TemplateLinks.update`, `updatedAt`);
+  `GET /api/template-links/:id` gives title, description, skills, never the
+  persona. Share preset > Share the link has Update the template and View
+  the shared copy. A bot does it with `sagax_settings` `template.share`,
+  `template.update`, `template.remove` (card: a public link reaches others);
+  "a template of yourself" = set `server.newBotDefaults` first.
+- Avatar (`src/lib/avatar-input.ts`): drop or paste a PNG, JPEG, GIF or WebP
+  of at most 25 MB on the big avatar or the Upload area, and export the
+  current picture. The avatar's handlers `preventDefault`; the window drop
+  target of the composer (`ComposerAttachments.tsx`) skips a drop already
+  taken, so the picture never becomes an attachment too.
+- Reset the history (bot "..." menu, `src/lib/bot-history-reset.ts`): a new
+  conversation, then every open one of the person archived (never routine
+  runs, confidential threads, an AI client's hidden thread, or a bot-to-bot
+  thread); memory, files, routines and settings stay.
+- Copy link to this bot: `openmausbot://bot/<id>` (`botRefUrl`), which the
+  app already opens (`electron/chat-link.mjs`).
+
 ## Team Bot from a conversation, template links, away routines, emoji (2026-10-16)
 
 Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
