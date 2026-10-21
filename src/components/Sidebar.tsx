@@ -3419,9 +3419,10 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         const allPinned = count > 0 && chosen.every((bot) => bot.pinned);
         const canMove = showServerSectionMove(state.config, personal !== null);
         const archivable = chosen.filter((bot) => currentArchivableBot(state.bots, bot.id));
-        const button = "flex size-8 items-center justify-center rounded-md text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink disabled:pointer-events-none disabled:opacity-40";
+        const button = "flex h-8 min-w-0 flex-1 items-center justify-center rounded-full text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink disabled:pointer-events-none disabled:opacity-40";
         return (
-          <div data-sidebar-select-bar role="toolbar" aria-label={t("sidebar.select.count", { count })} className="mx-3 mb-2 flex items-center justify-center gap-0.5 rounded-xl border-[0.5px] border-hairline-weak bg-sidebar-hover px-2 py-1">
+          <div className="px-4 pb-2">
+          <div data-sidebar-select-bar role="toolbar" aria-label={t("sidebar.select.count", { count })} className="flex h-9 w-full items-center justify-evenly rounded-full border border-sidebar-hairline-weak bg-sidebar-card px-1">
             <button type="button" className={button} disabled={count === 0} title={t("sidebar.select.markRead")} aria-label={t("sidebar.select.markRead")}
               onClick={() => {
                 for (const bot of chosen) {
@@ -3442,6 +3443,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             {showBotArchive(state.config) && <button type="button" className={button} disabled={archivable.length === 0} title={t("sidebar.bot.archive")} aria-label={t("sidebar.bot.archive")}
               onClick={() => setBatchArchiveConfirm(true)}><Archive size={16} /></button>}
             <button type="button" className={button} title={t("sidebar.select.clear")} aria-label={t("sidebar.select.clear")} onClick={clearSelection}><X size={16} /></button>
+          </div>
           </div>
         );
       })()}
