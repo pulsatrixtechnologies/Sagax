@@ -9450,6 +9450,7 @@
   "customRules.notice.modelApproved": "Approved by automatic review under your rule",
   "customRules.notice.modelDenied": "Refused by automatic review under your rule",
   "customRules.notice.modelHeld": "Automatic review left this to you under your Ask first rule",
+  "customRules.notice.reviewing": "Automatic review in progress",
   "customRules.notice.modelOrgDenied": "Refused by automatic review under your organization's rule",
   "customRules.notice.modelOrgHeld": "Automatic review left this to you under your organization's rule",
   "approval.status.byAutoReview": "by automatic review",

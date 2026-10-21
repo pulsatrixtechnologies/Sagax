@@ -7,7 +7,8 @@
 //
 //   - allow or deny only when it names one of the rules of that behavior,
 //     held by shared/custom-rules.ts modelCustomDecision (an organization
-//     rule never allows; an allow keeps the risk scope, never a shell line);
+//     rule never allows; an allow keeps the risk scope; a shell line only
+//     when it is one plain line, lot A1b);
 //   - ask: the card stays, with the rule and the reason on it;
 //   - unsure, failed, timed out or no reviewer: the card stays, untouched.
 //

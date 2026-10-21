@@ -961,6 +961,9 @@ export interface OptionCardData {
   customRuleCandidate?: CustomRuleCandidate;
   /** The custom rule the person saved from this card. */
   customRuleSaved?: { id: string; when: string };
+  /** 2026-10-21 (lot A1b): the model reviewer is still judging this card.
+   * The notification waits. Cleared when the verdict lands or the card stays. */
+  reviewing?: boolean;
   /** An email draft waiting for its Send approval
    * (server/email-draft-send.ts). Status follows the send. */
   emailSendRequest?: EmailSendRequestCard;

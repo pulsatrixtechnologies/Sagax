@@ -1,3 +1,4 @@
+import { reviewCodexPermission } from "./codex-review.ts";
 import { codexToolSurfaceArgs } from "./codex-tool-surface.ts";
 import { CODEX_WITHHELD_APPROVAL, CODEX_WITHHELD_FULL_APPROVAL, codexHostToolArgs, codexHostToolRequest } from "./host-tools.ts";
 import { networkProxyEnvironment } from "./network-proxy.ts";
@@ -2279,6 +2280,13 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       } finally { planSigningOut = false; }
     },
     snapshot,
+    reviewPermission: (prompt, signal) => reviewCodexPermission({
+      cli: config.cli,
+      env: childEnv(),
+      prompt,
+      signal,
+      ...(models.default ? { model: models.default } : {}),
+    }),
     adapter: {
       provider: DRIVER_KIND,
       capabilities: {

@@ -5,6 +5,7 @@
 // real app-server, it never exits on its own — the driver kills it.
 //
 //   FAKE_CODEX_MODE   happy (default) | approval | resume | stream | windows-command |
+//                     review-text | review-tool |
 //                     mcp-elicitation | mcp-app-approval | mcp-form | permissions-approval | question |
 //                     multi-question | mixed-question | empty-question | malformed-question | config-profile |
 //                     config-profile-unsupported | config-read-error | image |
@@ -846,6 +847,15 @@ process.stdin.on("data", (chunk) => {
           // This request proves that the parent is still able to do work after
           // the child finished. Wait for the real adapter approval response.
           out({ jsonrpc: "2.0", id: 100, method: "execCommandApproval", params: { command: "echo parent continues" } });
+          break;
+        }
+        if (mode === "review-text" || mode === "review-tool") {
+          if (mode === "review-tool") {
+            out({ jsonrpc: "2.0", id: 100, method: "execCommandApproval", params: { command: "id" } });
+            break;
+          }
+          notify("item/agentMessage/delta", { itemId: "m1", delta: process.env.FAKE_CODEX_REVIEW_TEXT ?? "{\"decision\":\"none\"}" });
+          notify("turn/completed", { turn: { status: "completed" } });
           break;
         }
         const command = mode === "windows-command"

@@ -343,6 +343,7 @@ import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
 import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
+import { modelReviewCardEligible } from "../shared/custom-rules.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
@@ -14582,46 +14583,69 @@ bus.subscribe((event: RuntimeEvent) => {
       // Notify from HERE, not from a separate subscriber on request.opened:
       // this is the branch where a card actually reached a human. Anything
       // Full access answered took the early return above and never buzzes.
+      // 2026-10-21 (Grok Bot parity A1, extended by A1b, JC: comme Grok): a
+      // card the matcher left is judged by the model reviewer, including a
+      // routine, a webhook and another bot. The action stays untrusted
+      // data. A guest, an admin card, a hold, a sandbox widening, a
+      // question, a security key, an owner ask rule and an email draft stay
+      // with the person. While it judges, the card says so and nobody is
+      // notified yet.
+      const modelReview = Boolean(asker && event.requestId && customReview && customDecision && modelReviewCardEligible({
+        permission, requestId: true, reviewed: true,
+        decision: customDecision.kind === "none" && customDecision.riskBlocked ? "blocked" : customDecision.kind,
+        questions: Boolean(questions), strictCard, guest: guestDriven, adminApproval,
+        hold: safetyEffect?.kind === "hold", explicitApproval: event.requiresExplicitApproval === true,
+        ownerCall: Boolean(ownerCall), stepUp: ownerStepUp.length > 0, originRefused: ownerOriginRefused,
+        emailDraft: Boolean(emailDraftRequest),
+        ...(owner ? { owner: { kind: owner.kind, ...("reason" in owner ? { reason: owner.reason } : {}) } } : {}),
+      }));
       if (asker) {
         const card = store.messagesFor(event.threadId).find((candidate) => candidate.id === message.id)?.card;
         if (card && !card.answered) {
-          // the bot is not working now — it is waiting on a person
-          if (bot) store.setTaskActivity(bot.id, event.threadId, "waiting-on-you");
-          else if (asker.busy) store.setActivity(asker.id, "waiting-on-you");
-          if (event.requestId) showWaitingOnPersonChip(event.threadId, event.requestId, asker, permission ? "approval" : "answer");
-          const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || asker;
-          notify(deliverableNotification(
-            permission ? "approval" : "question",
-            notificationBot,
-            (routineRun && routineSourceThread(routineRun)) || event.threadId,
-            plain ? plain.line : event.summary,
-            {
-              ...(notificationBot.avatarUrl ? { avatarUrl: notificationBot.avatarUrl } : {}),
-              ...(plain ? { title: plain.title } : {}),
-              ...(event.requestId ? { requestId: event.requestId } : {}),
-            },
-          ));
+          const tellThePerson = () => {
+            // the bot is not working now. it is waiting on a person
+            if (bot) store.setTaskActivity(bot.id, event.threadId, "waiting-on-you");
+            else if (asker.busy) store.setActivity(asker.id, "waiting-on-you");
+            if (event.requestId) showWaitingOnPersonChip(event.threadId, event.requestId, asker, permission ? "approval" : "answer");
+            const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || asker;
+            notify(deliverableNotification(
+              permission ? "approval" : "question",
+              notificationBot,
+              (routineRun && routineSourceThread(routineRun)) || event.threadId,
+              plain ? plain.line : event.summary,
+              {
+                ...(notificationBot.avatarUrl ? { avatarUrl: notificationBot.avatarUrl } : {}),
+                ...(plain ? { title: plain.title } : {}),
+                ...(event.requestId ? { requestId: event.requestId } : {}),
+              },
+            ));
+          };
+          const clearReviewing = () => {
+            const row = store.messagesFor(event.threadId).find((candidate) => candidate.id === message.id);
+            if (!row?.card?.reviewing) return row?.card;
+            const { reviewing: _reviewing, ...rest } = row.card;
+            store.patchMessage(event.threadId, row.id, { card: rest });
+            return store.messagesFor(event.threadId).find((candidate) => candidate.id === message.id)?.card;
+          };
+          if (!modelReview || !event.requestId || !customReview || !customDecision) {
+            tellThePerson();
+          } else {
+            store.patchMessage(event.threadId, message.id, { card: { ...card, reviewing: true } });
+            const finishReview = (verdict: { kind: string }) => {
+              const open = clearReviewing();
+              if (!open || open.answered || open.answeredBy || open.dismissed || open.expired) return;
+              if (verdict.kind !== "none" && verdict.kind !== "ask") return;
+              tellThePerson();
+            };
+            void customRulesModel.reviewCard({
+              threadId: event.threadId, requestId: event.requestId, botId: asker.id,
+              instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
+              rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
+              call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
+              language: cfg.language,
+            }).then(finishReview, () => finishReview({ kind: "none" }));
+          }
         }
-      }
-      // 2026-10-21 (Grok Bot parity A1, JC): a card the matcher left to the
-      // person is judged by the model reviewer against the same rules, on
-      // the same cards a custom allow may answer (the person's own turn, no
-      // admin card, hold, sandbox widening, question, guest or security key;
-      // no owner ask rule). Unsure or failed: the card stays.
-      if (permission && asker && event.requestId && customReview && customDecision?.kind === "none" && !questions
-        && !strictCard && !guestDriven && !adminApproval && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true
-        && ownerCall && ownerStepUp.length === 0 && !ownerOriginRefused && !emailDraftRequest && !unattended
-        // never a turn that is not the person's own words (a routine, a
-        // webhook, another bot, an automation): their text is the attacker's
-        && ownEnvironmentOrigin(asker, event.threadId) === "owner"
-        && (!owner || (owner.kind === "card" && (owner.reason === "no-rule" || owner.reason === "destructive")))) {
-        void customRulesModel.reviewCard({
-          threadId: event.threadId, requestId: event.requestId, botId: asker.id,
-          instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
-          rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
-          call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
-          language: cfg.language,
-        });
       }
       break;
     }
@@ -17374,9 +17398,10 @@ const customRulesModel = createCustomRulesModelReviewer({
   settle: (card, verdict, notice) => {
     const row = store.messagesFor(card.threadId).find((candidate) => candidate.card?.requestId === card.requestId);
     if (row?.card) {
+      const { reviewing: _reviewing, ...kept } = row.card;
       store.patchMessage(card.threadId, row.id, {
         card: {
-          ...row.card,
+          ...kept,
           customRule: notice,
           ...(verdict.kind === "ask" ? {} : { answeredBy: { kind: "worker" as const, via: "auto-review" as const } }),
         },

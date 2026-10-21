@@ -133,6 +133,9 @@ interface RuntimeOptions<Config> {
   /** Most tools the provider takes in one request, when it differs from
    * PROVIDER_TOOL_LIMITS (chat-mcp-tools.ts). */
   toolLimit?: number;
+  /** Isolated permission review (lot A1b). Same completion as generateText,
+   * with no tools, and never inferred from generateText itself. */
+  permissionReview?: boolean;
   /** Opt-in structured images and harness-authorized computer/browser MCP. */
   computerUse?: boolean;
   /** Whether a model accepts image parts (default: every model does). A
@@ -1168,6 +1171,19 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       if (toolCalls.length) throw new ChatProtocolError("provider returned tool calls to a text-only helper");
       return text.trim() ? text : reasoning;
     },
+    ...(options.permissionReview ? {
+      reviewPermission: async (prompt: string, signal?: AbortSignal) => {
+        const model = options.generateModel?.() ?? options.models().default;
+        const { text, reasoning, toolCalls } = await complete(
+          [{ role: "user", content: prompt }], model, false, signal,
+          undefined, [], undefined, 400, resolveKey(),
+        );
+        if (toolCalls.length) throw new ChatProtocolError("permission review returned a tool call");
+        const answer = (text.trim() ? text : reasoning).trim();
+        if (!answer) throw new ChatProtocolError("permission review returned no text");
+        return answer;
+      },
+    } : {}),
     dispose: async () => {
       const turns = [...active.values()];
       for (const turn of turns) turn.abort.abort();

@@ -1674,16 +1674,19 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   `customRulesJudgePrompt` / `modelCustomDecision` in shared/custom-rules.ts):
   a card the matcher left to the person (`none`, no risk-blocked allow) is
   judged after it opens by the bot engine's isolated `reviewPermission`
-  (Haiku on Claude; no reviewer on the engine = no review) against the
+  (Haiku on Claude; Codex, Grok and ACP use their own isolated tool-free
+  call, prompt never in argv; no reviewer on the engine = no review) against the
   person's rules and the organization's (R1..Rn, organization first, exact
-  command rules left out; the call between untrusted delimiters). Only the
-  cards a custom allow may answer (the person's own turn, no admin card,
-  hold, sandbox widening, question, guest, security key, owner ask rule,
-  email draft, or turn that is not the person's own words: routine,
-  webhook, another bot, unattended; `ownEnvironmentOrigin`).
-  Allow or deny only when it names a rule of that behavior; an organization
-  rule never allows; an allow never covers a shell line, a risk class the
-  rule does not tick, or a local path it cannot read; ask keeps the card
+  command rules left out; the call between untrusted delimiters). The same
+  cards a custom allow may answer, including a routine, a webhook and
+  another bot (lot A1b, JC: comme Grok). Still never an admin card, a hold,
+  a sandbox widening, a question, a guest, a security key, an owner ask
+  rule or an email draft. The card shows "Examen en cours" and the
+  notification waits until the verdict. Allow or deny only when it names a
+  rule of that behavior; an organization rule never allows; an allow covers
+  a shell line only when it is one plain line (no chaining, redirection,
+  substitution, quoting or control character), never a risk class the rule
+  does not tick, never a local path it cannot read; ask keeps the card
   with the notice. Unsure, failed, timed out (30 s) or answered meanwhile:
   the card stays. The engine gets the answer, the card `answeredBy.via:
   auto-review` and `customRule` (`reviewer: model`, `reason`), the journal
