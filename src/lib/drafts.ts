@@ -484,7 +484,7 @@ export function rememberFailedComposerSend(
 /** True when the browser knows it has no network. Unknown reads as online. */
 export function isNetworkOffline(): boolean {
   try {
-    return globalThis.navigator?.onLine === false;
+    return (globalThis as { navigator?: { onLine?: boolean } }).navigator?.onLine === false;
   } catch {
     return false;
   }
@@ -493,11 +493,12 @@ export function isNetworkOffline(): boolean {
 /** Live network state for labels and banners. */
 export function useNetworkOnline(): boolean {
   const subscribe = useCallback((listener: () => void) => {
-    globalThis.addEventListener?.("online", listener);
-    globalThis.addEventListener?.("offline", listener);
+    const target = globalThis as unknown as Partial<Pick<EventTarget, "addEventListener" | "removeEventListener">>;
+    target.addEventListener?.("online", listener);
+    target.addEventListener?.("offline", listener);
     return () => {
-      globalThis.removeEventListener?.("online", listener);
-      globalThis.removeEventListener?.("offline", listener);
+      target.removeEventListener?.("online", listener);
+      target.removeEventListener?.("offline", listener);
     };
   }, []);
   return useSyncExternalStore(subscribe, () => !isNetworkOffline(), () => true);
