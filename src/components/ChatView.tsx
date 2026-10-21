@@ -8,6 +8,8 @@ import { isStreamSegment, segmentsAbove, segmentsToReach } from "@/lib/single-st
 import { useSegmentTranscript } from "@/lib/use-segment-transcript";
 import { useFocusMessage } from "@/lib/focus-message";
 import { citationAttachment } from "@/lib/citations";
+import { restoreComposerDraft } from "@/lib/drafts";
+import { cancelLocalSend } from "@/lib/send-cancel";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
@@ -116,7 +118,7 @@ import { PagePublishCard } from "./PublishedPages";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
-import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } from "./ChatErrorBanner";
 import { WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
@@ -653,6 +655,21 @@ const Bubble = memo(function Bubble({
             {message.kind === "text" && !webhookView && !hasAttachments && !busy && !message.id.startsWith("optimistic-") && (
               <MessageMenuItem label={t("chat.editMessage")} icon={<Pencil {...HOVER_ICON} />} onSelect={() => onStartEdit(message.id)} />
             )}
+            {message.sendId && message.id.startsWith("optimistic-") && (
+              <MessageMenuItem
+                label={t("chat.cancelReply")}
+                icon={<X {...HOVER_ICON} />}
+                title={t("chat.cancelReply")}
+                onSelect={() => {
+                  if (cancelLocalSend(message.sendId!) === "cancelled") {
+                    dispatch({ type: "optimisticMessageRemoved", threadId, sendId: message.sendId! });
+                    restoreComposerDraft(`bot:${botId}:${threadId}`, { text, attachments: [] });
+                  } else {
+                    dispatch({ type: "error", message: `${t("chat.cancelReplyFailed")} ${t("chat.cancelReplyInFlight")}` });
+                  }
+                }}
+              />
+            )}
             <MessageMenuItem
               label={pinned ? t("chat.unpinMessage") : t("chat.pinMessage")}
               icon={pinned ? <PinOff {...HOVER_ICON} /> : <Pin {...HOVER_ICON} />}
@@ -764,6 +781,7 @@ const Bubble = memo(function Bubble({
                   <ChatMarkdown
                     text={text}
                     botId={botId}
+                    emailDrafts={bots.find((candidate) => candidate.id === botId)?.emailDrafts !== false}
                     mentionPeers={mentionPeers}
                     message={{ threadId, messageId: message.id }}
                     youtubeSendToBot={(body) => dispatch({ type: "send", botId, threadId, text: body })}
@@ -2224,6 +2242,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
 
+      <SavedMessagesNotice threadId={bot.threadId} archived={bot.tasks?.some((task) => task.threadId === bot.threadId && task.archivedAt != null) === true} />
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
       {!side && <ChatStaleBanner />}

@@ -348,7 +348,7 @@ import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
-import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
+import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
 import {
@@ -620,7 +620,7 @@ import {
   THREADS_PROMPT,
   WIDGET_PROMPT,
   WIDGET_APPROVAL_PROMPT,
-  RICH_OUTPUT_PROMPT,
+  richOutputPrompt,
   LEARN_PROMPT,
   PROFILE_PROMPT,
   PROFILE_CREATOR_PROMPT,
@@ -7328,7 +7328,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "reactions", label: "Reactions", text: agentsMounted ? REACTION_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
     { id: "profile", label: "Profile changes", text: agentsMounted ? botProfilePrompt(bot) : "" },
-    { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
+    { id: "rich-output", label: "Rich output", text: richOutputPrompt(bot.emailDrafts !== false) },
     { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
     { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (agentsMounted ? TEAM_MEMORY_PROMPT : "") },
     teamAvailabilityPart(agentsMounted && coordination ? peers : []),
@@ -19712,7 +19712,7 @@ async function startTurn(
         { id: "routine-execution", label: "Routine execution", text: opts?.automationSource === "schedule" || opts?.automationSource === "manual" ? ROUTINE_EXECUTION_PROMPT : "" },
         { id: "profile", label: "Profile changes", text: profilePrompt },
         { id: "learn", label: "Skill authoring", text: learnPrompt },
-        { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
+        { id: "rich-output", label: "Rich output", text: richOutputPrompt((liveBot ?? bot).emailDrafts !== false) },
         { id: "dev-pods", label: "Coding view", text: devPodsPrompt(devPodsThreads.isOn(threadId)) },
         { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
         { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (integrations.agents ? TEAM_MEMORY_PROMPT : "") },
@@ -29211,6 +29211,9 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
   const target = emailDraftBot(auth, threadId, body.botId);
   if (!("bot" in target)) return target;
   const { bot } = target;
+  if (!emailDraftsEnabled(bot)) {
+    return { status: 409, body: { error: "Email drafts are turned off for this bot.", code: "email_drafts_off" } };
+  }
   const normalized = normalizeDraftForSend(body.draft);
   if ("problems" in normalized) return { status: 400, body: { error: normalized.problems.join("; "), code: "invalid_draft" } };
   // a room's people read its cards and messages: a Bcc there is not blind
@@ -42593,6 +42596,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.voiceNotes !== undefined) {
         if (typeof body.voiceNotes !== "boolean") return json(res, 400, { error: "voiceNotes must be true or false" });
         patch.voiceNotes = body.voiceNotes;
+      }
+      if (body.emailDrafts !== undefined) {
+        if (typeof body.emailDrafts !== "boolean") return json(res, 400, { error: "emailDrafts must be true or false" });
+        patch.emailDrafts = body.emailDrafts;
       }
       if (body.memoryEnabled !== undefined) {
         if (typeof body.memoryEnabled !== "boolean") return json(res, 400, { error: "memoryEnabled must be true or false" });

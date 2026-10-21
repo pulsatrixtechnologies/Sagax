@@ -124,6 +124,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Voice | Bot editor > Voice | `sagax_settings` get, set `bot.voice` | simple |
 | Speak replies | Bot editor > Voice | `sagax_settings` get, set `bot.speakReplies` | simple |
 | Voice notes | Bot editor > Voice | `sagax_settings` get, set `bot.voiceNotes` | simple |
+| Email drafts | Bot editor > Permissions > Email drafts | `sagax_settings` get, set `bot.emailDrafts` | simple |
 | Notifications | Bot editor > Voice > Notifications | `sagax_settings` get, set `bot.notifications` | simple |
 | Model and effort ({instanceId, model, effort}) | Bot editor > Model | `sagax_settings` get, set `bot.model` | simple |
 | Reasoning effort (low, medium, high, ...; keeps the model) | Bot editor > Model > Effort | `sagax_settings` get, set `bot.effort` | simple |

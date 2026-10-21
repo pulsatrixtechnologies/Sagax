@@ -1718,6 +1718,23 @@ a room and never shown in a card's arguments. A partial send records who
 already received it, and Retry of the same draft skips them. Deny sends nothing. The
 draft shows the status and a send error inline; Retry asks again.
 
+## Chat parity leftovers (2026-10-21)
+
+- A visualization (`ArtifactFrame`) says when a script fails and when it
+  has not reported a size within 10 seconds. Full screen opens that frame
+  over the app. Widgets still appear only when the person asks (#876).
+- Cancel reply removes a message that is still only on screen. Once the
+  POST has started, the chat says it is already being sent.
+- An archived thread shows "Showing saved messages" until dismissed.
+- Email drafts can be turned off per bot (`emailDrafts: false`, Permissions).
+  The prompt drops the email fence and `POST /email-drafts` answers 409
+  `email_drafts_off`. A draft card says who it was created for.
+- A goal card in a room with more than one goal says "Goal n of total",
+  lists the earlier goals, and can show the full goal text.
+- Always allow on a send card (email draft, a plain message send, or
+  ask_bot / delegate_bot) adds that recipient to the bot's allowed list.
+  It does not replace the Permissions list screen.
+
 ## Server log on disk and expired approvals (2026-10-11)
 
 - The server log tail behind `GET /api/org/admin/logs`
