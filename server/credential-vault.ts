@@ -703,7 +703,7 @@ export class CredentialVault {
       for (const row of Object.values(purchases)) {
         if (row.status === "pending" && row.botId === input.botId && row.cardId === card.id && row.domain === domain) delete purchases[row.id];
       }
-      const merchant = (input.merchant ?? "").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80) || domain;
+      const merchant = visibleText(input.merchant ?? "").slice(0, 80) || domain;
       const id = newPurchaseId(purchases);
       const row: StoredPurchase = {
         id, botId: input.botId, threadId: input.threadId, merchant, domain, amount, currency,
@@ -726,7 +726,7 @@ export class CredentialVault {
       throw new CredentialVaultError("decision must be deny, once or always", "invalid_decision");
     }
     const now = this.now();
-    const name = via?.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 80);
+    const name = via ? visibleText(via).slice(0, 80) : "";
     return this.mutate(principalId, (items, purchases) => {
       const row = purchases[purchaseId];
       if (!row || row.status !== "pending") throw new CredentialVaultError("This purchase was already answered.", "not_pending", 409);
@@ -860,6 +860,15 @@ function applyInput(item: StoredVaultItem, input: VaultItemInput, creating: bool
   if (item.kind === "login" && !item.domains.length) {
     throw new CredentialVaultError("A login needs at least one site it may be filled on", "invalid_domains");
   }
+}
+
+function visibleText(value: string): string {
+  let text = "";
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code >= 32 && code !== 127) text += char;
+  }
+  return text.trim();
 }
 
 function domainOfPage(pageUrl: string): string | null {

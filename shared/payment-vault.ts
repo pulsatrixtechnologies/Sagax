@@ -78,10 +78,11 @@ export function luhnOk(digits: string): boolean {
 }
 
 export function cardBrand(pan: string): CardBrand {
-  if (/^4/.test(pan)) return "visa";
-  if (/^3[47]/.test(pan)) return "amex";
-  if (/^6(?:011|5)/.test(pan)) return "discover";
-  if (/^(?:5[1-5]|2[2-7])/.test(pan)) return "mastercard";
+  if (pan.startsWith("4")) return "visa";
+  if (pan.startsWith("34") || pan.startsWith("37")) return "amex";
+  if (pan.startsWith("6011") || pan.startsWith("65")) return "discover";
+  const two = Number(pan.slice(0, 2));
+  if ((two >= 51 && two <= 55) || (two >= 22 && two <= 27)) return "mastercard";
   return "card";
 }
 
@@ -254,6 +255,11 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function clean(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
-  const text = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  let text = "";
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code >= 32 && code !== 127) text += char;
+  }
+  text = text.trim();
   return text.length > max ? "" : text;
 }

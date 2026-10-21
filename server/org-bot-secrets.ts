@@ -81,7 +81,12 @@ function plain(value: unknown): Record<string, unknown> | null {
 
 function labelOf(value: unknown): string {
   if (typeof value !== "string") throw new OrgBotSecretsError("The label must be 1 to 80 characters.", "invalid_label");
-  const label = value.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  let label = "";
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code >= 32 && code !== 127) label += char;
+  }
+  label = label.trim();
   if (!label || label.length > 80) throw new OrgBotSecretsError("The label must be 1 to 80 characters.", "invalid_label");
   return label;
 }
