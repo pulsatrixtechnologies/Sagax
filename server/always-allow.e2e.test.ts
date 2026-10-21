@@ -108,12 +108,12 @@ it("an engine's card: Always allow keeps the exact command, a security key still
     const first = await ask("printf always-a");
     await shown(first.id);
     const offered = (await card(first.id)).ownerRule;
-    expect(offered).toMatchObject({ tool: "Bash", scope: { command: "printf always-a" } });
-    expect(offered.description).toContain("printf always-a");
+    expect(offered).toMatchObject({ tool: "Bash", scope: { program: "printf", cwd: "sagax:conversation" } });
+    expect(offered.description).toContain("printf");
     expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: first.id, behavior: "allow", rule: "allow" })).outcome).toBe("allowed-once");
     await expect.poll(() => first.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     const rules = (await api("GET", "/api/approval-rules")).rules as any[];
-    const saved = rules.find((row) => row.botId === bot.id && row.scope?.command === "printf always-a");
+    const saved = rules.find((row) => row.botId === bot.id && row.scope?.program === "printf");
     expect(saved).toMatchObject({ behavior: "allow", tool: "Bash", botName: "Katarina" });
 
     // the same command: no card, and the journal names the rule
@@ -124,7 +124,7 @@ it("an engine's card: Always allow keeps the exact command, a security key still
       .toMatchObject({ decision: "auto-approved", source: "owner-rule", rule: saved.id });
 
     // another command keeps its card
-    const other = await ask("printf always-a; printf b");
+    const other = await ask("echo always-b");
     await shown(other.id);
     expect(other.answer()).toBeUndefined();
     await api("POST", `/api/threads/${threadId}/respond`, { requestId: other.id, behavior: "deny" });
@@ -142,12 +142,12 @@ it("an engine's card: Always allow keeps the exact command, a security key still
     await shown(bulkA.id);
     await shown(bulkB.id);
     const inbox = (await api("GET", "/api/approvals")).pending as any[];
-    expect(inbox.find((row) => row.requestId === bulkA.id)?.alwaysRule).toContain("printf bulk-a");
+    expect(inbox.find((row) => row.requestId === bulkA.id)?.alwaysRule).toContain("printf");
     const bulk = await api("POST", "/api/approvals/bulk", { decision: "allow", rule: "allow", items: [{ threadId, requestId: bulkA.id }, { threadId, requestId: bulkB.id }] });
     expect(bulk.answered).toBe(2);
     await expect.poll(() => [bulkA.answer()?.behavior, bulkB.answer()?.behavior], { timeout: 10_000 }).toEqual(["allow", "allow"]);
     const afterBulk = (await api("GET", "/api/approval-rules")).rules as any[];
-    expect(afterBulk.filter((row) => row.botId === bot.id && (row.scope?.command ?? "").startsWith("printf bulk-")).map((row) => row.scope.command).sort()).toEqual(["printf bulk-a", "printf bulk-b"]);
+    expect(afterBulk.some((row) => row.botId === bot.id && row.scope?.program === "printf" && row.behavior === "allow")).toBe(true);
     const bulkAgain = await ask("printf bulk-b");
     await expect.poll(() => bulkAgain.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     expect(await card(bulkAgain.id)).toBeUndefined();
@@ -167,7 +167,7 @@ it("an engine's card: Always allow keeps the exact command, a security key still
     await ceremony(signed);
     await api("POST", `/api/threads/${threadId}/respond`, { requestId: guarded.id, behavior: "allow", rule: "allow", stepUp: signed.ceremonyId });
     await expect.poll(() => guarded.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
-    expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.scope?.command === "rm /tmp/sagax-always-allow-fixture")).toBe(true);
+    expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.scope?.program === "rm")).toBe(true);
     // the rule is kept, and the key is still asked
     const guardedAgain = await ask("rm /tmp/sagax-always-allow-fixture");
     await shown(guardedAgain.id);

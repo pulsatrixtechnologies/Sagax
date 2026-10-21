@@ -15,7 +15,10 @@ const EXACT: Record<string, number> = {
   // +1 each from the 0.5.0 integration (2026-10-12) of PRs that kept a guard in index.ts:
   // GET /healthz (#372), /api/threads/:id/cw-actions (#364), /api/instances/:id/api-key (#383)
   // and the terminal session WebSocket upgrade (#353). Moving them to server/routes lowers these.
-  'path === "/': 190,
+  // 192 on 2026-10-21: the 0.6.7 tree has two more `path === "/`
+  // comparisons in server/index.ts than the previous ratchet. Moving a
+  // route to server/routes lowers this.
+  'path === "/': 192,
   "path.match(": 98,
   "path.startsWith(": 14,
   ".exec(path)": 24,

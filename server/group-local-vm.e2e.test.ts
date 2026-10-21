@@ -537,7 +537,11 @@ describe("Group Local VM ownership on the real isolated server", () => {
       if (state === "removed") boatRow = null;
       // The continuation keeps the bot's own engine and model; the selected
       // Boat arrives as its computer tools. Boat's runner is never asked.
-      const harnessComputer = (sent: any) => computer(sent)?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(computer(sent).args[0]);
+      const harnessComputer = (sent: any) => {
+        const spec = computer(sent);
+        if (spec?.type === "http") return (spec.url ?? "").endsWith("/api/internal/computer/mcp-http");
+        return spec?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(spec?.args?.[0] ?? "");
+      };
       rmSync(dumpFile, { force: true });
       writeFileSync(finishFile, "finish");
       const continued: any = await dump();
@@ -823,7 +827,11 @@ describe("Group Local VM ownership on the real isolated server", () => {
       boatCalls.length = 0; boatPrompts.length = 0;
       // The speaker keeps its own engine; its Boat is woken and mounted as
       // its computer tools, and Boat's runner is never asked.
-      const onBoat = (sent: any) => computer(sent)?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(computer(sent).args[0]);
+      const onBoat = (sent: any) => {
+        const spec = computer(sent);
+        if (spec?.type === "http") return (spec.url ?? "").endsWith("/api/internal/computer/mcp-http");
+        return spec?.args?.at(-1) === "computer" && /harness-mcp-proxy/.test(spec?.args?.[0] ?? "");
+      };
       writeFileSync(finishFile, "finish");
       await send(group.id);
       expect(onBoat(await dump())).toBe(true);

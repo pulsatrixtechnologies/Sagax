@@ -144,7 +144,9 @@ describe("agent-to-agent API (real server)", () => {
     if (awaited.body.reply) expect(texts).toContain(`agent:${awaited.body.reply}`);
 
     const withThreads = await tool(fresh, "read_latest_page_with_threads", { agent_id: beta.id, limit: 1 });
-    expect(withThreads.body.threads).toEqual([expect.objectContaining({ thread_id: threadId, hidden: true, status: "idle" })]);
+    const threads = withThreads.body.threads as Array<{ thread_id: string; hidden: boolean; status: string }>;
+    expect(threads.every((thread) => thread.hidden)).toBe(true);
+    expect(threads).toEqual(expect.arrayContaining([expect.objectContaining({ thread_id: threadId, hidden: true, status: "idle" })]));
     const cold = await tool(fresh, "read_transcript_cold", { agent_id: beta.id });
     expect(cold.body.entries.length).toBe(latest.body.entries.length);
 

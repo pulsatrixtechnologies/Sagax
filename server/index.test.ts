@@ -30,7 +30,8 @@ import { freePortBlock } from "./testing/ports.ts";
 import { openSse } from "./testing/sse.ts";
 import { FILE_MAX_BYTES, IMAGE_MAX_BYTES } from "./attachments.ts";
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
-import { computerPrompt, SIGN_IN_PROMPT } from "./system-prompt.ts";
+import { computerPrompt, RUN_YOURSELF_PROMPT, SIGN_IN_PROMPT, VERIFY_FIRST_PROMPT } from "./system-prompt.ts";
+import { expectHarnessComputer } from "./testing/harness-computer.ts";
 import {
   PHONE_SECRET_INFO,
   phoneSecretAAD,
@@ -3537,8 +3538,7 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${botIds[0]}/messages`, { text: "hold the shared desktop" })).status).toBe(202);
       await promptedOnTeamComputer(1, botIds[0]);
-      expect((await readJsonFileWhenReady<ComputerDump>(fakeClaudeDump)).mcpConfig.mcpServers.computer?.args)
-        .toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
+      expectHarnessComputer((await readJsonFileWhenReady<ComputerDump>(fakeClaudeDump)).mcpConfig.mcpServers.computer);
       // A sibling thread can wait, and Stop must cancel that pending claim
       // without interrupting the thread which already owns the desktop.
       const firstThread = (await api("GET", "/api/bots?messages=0")).body.bots.find((b: { id: string }) => b.id === botIds[0]).threadId;
@@ -7906,7 +7906,7 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Open Chrome on the cloud VM" })).status).toBe(202);
       const pinnedCloud = await readJsonFileWhenReady<Dump>(fakeClaudeDump, 10_000);
       expect(pinnedCloud.argv[pinnedCloud.argv.indexOf("--model") + 1]).toBe("claude-sonnet-5");
-      expect(pinnedCloud.mcpConfig.mcpServers.computer?.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
+      expectHarnessComputer(pinnedCloud.mcpConfig.mcpServers.computer);
       expect(pinnedCloud.systemPrompt).toContain("assigned cloud computer");
       expect(boatPromptBodies).toHaveLength(0);
       expect((await api("GET", `/api/bots/${bot.id}/computer?threadId=${bot.threadId}`)).body.surface).toBe("cloud");
@@ -8415,7 +8415,7 @@ describe("harness HTTP API", () => {
       const system: string = seen.systemPrompt ?? "";
       expect(system.startsWith(MISUSE_POLICY_PROMPT)).toBe(true);
       const persona = "You are Kiwi, a personal bot in Sagax. Role: Tracker.";
-      const afterPolicy = system.slice(MISUSE_POLICY_PROMPT.length);
+      const afterPolicy = system.slice((MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT).length);
       expect(afterPolicy.startsWith(persona)).toBe(true);
       const afterPersona = afterPolicy.slice(persona.length);
       expect(afterPersona.startsWith("\n\nYour standing instructions follow.")).toBe(true);
@@ -8436,17 +8436,18 @@ describe("harness HTTP API", () => {
         chiefOfStaff: true,
         modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
       })).status).toBe(200);
-      const roster = "Current Roster end section team:\n- No other visible bots are available yet.";
+      const header = "Current Roster end section team:";
 
       const sections = (await api("GET", `/api/bots/${bot.id}/system-prompt`)).body.sections as Array<{ id: string; text: string }>;
       const team = sections.find((section) => section.id === "coordination")?.text ?? "";
-      expect(team).toContain("Your home team is the Roster end section.");
-      expect(team.endsWith(roster)).toBe(true);
+      expect(team).toContain("Your home team is the Roster end section;");
+      expect(team).toContain(header);
+      expect(team).not.toContain("SAGAX STATUS");
 
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       const system = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(system).toContain(roster);
+      expect(system).toContain(header);
       expect(system).not.toContain("SAGAX STATUS");
     } finally {
       await api("POST", `/api/bots/${bot.id}/interrupt`);
@@ -8506,7 +8507,7 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       let system = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(system.startsWith(MISUSE_POLICY_PROMPT + "You are Blank, a personal bot in Sagax.")).toBe(true);
+      expect(system.startsWith(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Blank, a personal bot in Sagax.")).toBe(true);
       expect(system).not.toContain("at most four questions");
       expect(system).toContain("propose_profile");
 

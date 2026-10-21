@@ -75,7 +75,7 @@ describe("the settings registry", () => {
   });
 
   it("docs/settings-actions.md is the registry's inventory (pnpm gen:settings-doc)", () => {
-    expect(readFileSync(new URL("../docs/settings-actions.md", import.meta.url), "utf8")).toBe(settingsDoc());
+    expect(readFileSync(new URL("../docs/settings-actions.md", import.meta.url), "utf8").replace(/\r\n/g, "\n")).toBe(settingsDoc());
   });
 
   it("gives each 2E option its key: accessibility, time zone, desktop shell, notification sound, other computers", () => {

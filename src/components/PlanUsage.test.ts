@@ -127,6 +127,11 @@ describe("Plan usage rows", () => {
 });
 
 describe("planRows", () => {
+  it("a report without providers draws no rows", () => {
+    expect(planRows({} as PlanUsageReport)).toEqual([]);
+    expect(connectedPlanRows(null)).toEqual([]);
+  });
+
   it("one row per provider: an older server's duplicates with the same outcome fold", () => {
     const legacy = (id: string, name: string, driver: string, error: string) => ({ id, name, driver, plan: null, ok: false, error, fiveHour: CLOSED, weekly: CLOSED, extra: [] });
     const rows = planRows({

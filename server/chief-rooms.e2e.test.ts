@@ -110,10 +110,14 @@ it("creates and manages an own-section room through the mounted Chief MCP proxy"
     const saved = (await rooms()).find((candidate) => candidate.id === room.id);
     expect(saved).toMatchObject({ name: "Verified room", memberIds: [chief.id, second.id], bulletin: "Verified short brief ✓", section: "Room verification" });
     evidence.push({ saved });
-    await tool("create_room", { name: "Forbidden room", member_bot_ids: [foreign.id] }, true);
-    await tool("manage_room", { room_id: room.id, action: "add_members", member_bot_ids: [foreign.id] }, true);
+    await tool("create_room", { name: "Missing room", member_bot_ids: ["not-a-bot"] }, true);
+    await tool("manage_room", { room_id: room.id, action: "add_members", member_bot_ids: ["not-a-bot"] }, true);
     expect((await rooms()).find((candidate) => candidate.id === room.id)).toEqual(saved);
-    expect((await rooms()).some((candidate) => candidate.name === "Forbidden room")).toBe(false);
+    expect((await rooms()).some((candidate) => candidate.name === "Missing room")).toBe(false);
+    // 2026-10-20: on a solo server a Primary Bot covers every bot the person
+    // owns, including one filed in another section.
+    await tool("create_room", { name: "Cross section room", member_bot_ids: [foreign.id] });
+    expect((await rooms()).find((candidate) => candidate.name === "Cross section room")?.memberIds).toEqual(expect.arrayContaining([chief.id, foreign.id]));
     await control(["messages", "--channel", room.id, "--limit", "10"]);
     await control(["interrupt", "--bot", chief.id]);
     await tool("manage_room", { room_id: room.id, action: "rename", name: "Expired turn" }, true);

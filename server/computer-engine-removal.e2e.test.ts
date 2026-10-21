@@ -18,6 +18,7 @@ import { runControlOmb } from "../scripts/control-omb.ts";
 import { SNAPSHOT_REUSE_MS } from "./harness/registry.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { expectHarnessComputer } from "./testing/harness-computer.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FAKE_CLI = join(ROOT, "server/testing/fake-claude-cli.ts");
@@ -295,7 +296,7 @@ describe("removing the Computer engine", () => {
     // a tool; Boat's own agent is never asked.
     const cloudTurn = await server.turn(starter.id, main, "Take a screenshot of the cloud computer.");
     expect(cloudTurn.argv[cloudTurn.argv.indexOf("--model") + 1]).toBe(replacement.model);
-    expect(cloudTurn.mcpConfig.mcpServers.computer.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
+    expectHarnessComputer(cloudTurn.mcpConfig.mcpServers.computer);
     expect(boxesCreated).toBe(1);
     expect(agentCalls).toEqual([]);
 

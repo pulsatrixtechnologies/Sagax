@@ -104,7 +104,7 @@ it("keeps the bot's own engine on the cloud computer, and a failed place never b
   const gate = join(await import("node:os").then(os => os.tmpdir()), `omb-hosted-desktop-gate-${process.pid}-${Date.now()}`);
   // Each turn on the cloud computer uses it, as a real model would: its first
   // computer call is what creates or wakes the Boat.
-  const fixture = await launchVerificationServer({ SAGAX_TEST_FIXED_WORKSPACE: "1", FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_SLOW_FINISH_GATE: gate, FAKE_CLAUDE_USES_CLOUD_COMPUTER: "1" },
+  const fixture = await launchVerificationServer({ SAGAX_TEST_FIXED_WORKSPACE: "1", FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_SLOW_FINISH_GATE: gate, FAKE_CLAUDE_USES_CLOUD_COMPUTER: "1", SAGAX_HARNESS_MCP_HTTP: "0" },
     undefined, undefined, undefined, undefined, undefined, [], origin).catch(async error => {
     upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())); throw error;
   });

@@ -330,11 +330,11 @@ posixOnly("organization server: a member's own destinations", () => {
       const desktopCall = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
       const card = await turn.cardOf(desktopCall.id);
       expect(card.adminApproval).not.toBe(true);
-      expect(card.ownerRule).toMatchObject({ scope: { command: "dir" }, from: "origin" });
+      expect(card.ownerRule).toMatchObject({ scope: { program: "dir" }, from: "origin" });
       expect((await turn.respond(bob, desktopCall.id, "allow", "allow")).status).toBe(200);
       await waitFor(async () => desktopCall.answer()?.behavior === "allow");
       const rule = ((await api("GET", "/api/approval-rules", bob)).body.rules as Array<{ id: string; botId: string | null; scope: Record<string, string>; from?: string }>)
-        .find((row) => row.botId === sage.id && row.scope.command === "dir");
+        .find((row) => row.botId === sage.id && row.scope.program === "dir");
       expect(rule?.from).toBe("origin");
       const again = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
       await waitFor(async () => again.answer()?.behavior === "allow");

@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import zlib from "node:zlib";
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -145,7 +145,8 @@ describe("model image fit", () => {
   });
 
   it("puts the copy of a picture in a subfolder beside it", () => {
-    expect(modelImageCopyPath("/data/att", "/data/att/.office/up/1.png")).toBe("/data/att/.office/up/1.png.fit.png");
+    const source = "/data/att/.office/up/1.png";
+    expect(modelImageCopyPath("/data/att", source)).toBe(`${resolve(source)}.fit.png`);
   });
 });
 
