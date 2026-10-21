@@ -10,7 +10,7 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
     // The Settings list, in the desktop's order (NavigationMenus.settings),
     // then the pages one level in.
     case general, organization, appearance, notifications, privacy, achievements, experimental, plugins, account, botComputer, pages, usage
-    case rules, timeZone, language, haptics, quickReplies, walkieVoice, about
+    case rules, approvalGrants, timeZone, language, haptics, quickReplies, walkieVoice, about
 
     /// The desktop's section keywords for the same page (SettingsModal.tsx
     /// `SECTIONS`), and words for the phone's own pages.
@@ -26,6 +26,7 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
         case .usage: return ["tokens", "cost", "billing", "usage", "budget", "spent", "history", "csv", "export"]
         case .plugins: return ["plugins", "tools", "skills", "mcp", "install"]
         case .rules: return ["auto-review", "rules", "approvals", "always allow", "commands"]
+        case .approvalGrants: return ["approval", "approvals", "custom rules", "rules", "allow", "ask", "refuse", "recipients", "allowed recipients", "destinataires", "règles", "approbation", "always allowed"]
         case .timeZone: return ["time zone", "timezone", "clock"]
         case .botComputer: return ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "update", "reset", "recover", "disk", "rename", "other computers"]
         case .pages: return ["pages", "published", "publish", "share", "revoke", "pages publiées"]
