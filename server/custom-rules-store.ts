@@ -109,12 +109,12 @@ function cleanScope(scope: readonly RiskClass[] | undefined): RiskClass[] {
   return RISK_CLASSES.filter((risk) => scope?.includes(risk));
 }
 
-let registered: CustomRuleStore | null = null;
+const registry: { store: CustomRuleStore | null } = { store: null };
 
 /** The server's store (the last one made: one per server), for the
  * organization console routes (server/org-admin-ops.ts). */
 export function registeredCustomRuleStore(): CustomRuleStore | null {
-  return registered;
+  return registry.store;
 }
 
 export class CustomRuleStore {
@@ -131,7 +131,7 @@ export class CustomRuleStore {
     // the live policy the deciders read (autoVerdict, matchOwnerRule, the
     // step-up gate): one store per server
     setOrgApprovalPolicySource(() => this.orgPolicy());
-    registered = this;
+    registry.store = this;
   }
 
   private load(): void {

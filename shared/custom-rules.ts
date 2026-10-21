@@ -1059,7 +1059,7 @@ export function ruleTextDiff(before: string, after: string): RuleTextPart[] {
   }
   const key = (word: string) => word.trim().toLowerCase();
   // longest common subsequence of words
-  const table: number[][] = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+  const table: number[][] = Array.from({ length: a.length + 1 }, () => Array.from({ length: b.length + 1 }, () => 0));
   for (let i = a.length - 1; i >= 0; i--) {
     for (let j = b.length - 1; j >= 0; j--) {
       table[i]![j] = key(a[i]!) === key(b[j]!) ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
