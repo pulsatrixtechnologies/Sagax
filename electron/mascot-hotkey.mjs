@@ -286,7 +286,7 @@ export function createBotHotkeys({ globalShortcut, onSlot, slotFor, log = () => 
     /** Keep exactly slots 1..count registered. Returns the slots held. */
     sync(count, enabled = true) {
       const wanted = enabled ? Math.max(0, Math.min(9, Math.floor(Number(count) || 0))) : 0;
-      for (const slot of [...held.keys()]) if (slot > wanted) release(slot);
+      for (const slot of held.keys()) if (slot > wanted) release(slot);
       for (let slot = 1; slot <= wanted; slot++) {
         if (held.has(slot)) continue;
         const accelerator = slotFor(slot);
@@ -306,7 +306,7 @@ export function createBotHotkeys({ globalShortcut, onSlot, slotFor, log = () => 
       return [...held.keys()].sort((a, b) => a - b);
     },
     dispose() {
-      for (const slot of [...held.keys()]) release(slot);
+      for (const slot of held.keys()) release(slot);
     },
   };
 }
