@@ -92,6 +92,8 @@ describe("remote support on this computer", () => {
       expect(created.error).toContain("not installed");
       expect(created.error).not.toContain("Install tailcat");
       expect(created.error).not.toContain("/usr/bin");
+      expect(created.error).not.toContain("nodekey:");
+      expect(created.error).not.toMatch(/copy tailcat into/i);
     }
     expect(created.ok === false && created.error.includes(PRIVATE)).toBe(false);
   });

@@ -4,7 +4,7 @@
 import { spawnScriptPty } from "../../../electron/script-pty.mjs";
 import type { TerminalResource } from "../../../shared/terminal-resources.ts";
 import type { TerminalAttachment, TerminalListContext, TerminalOpenContext, TerminalResourceAdapter } from "../types.ts";
-import { readTunnel } from "../../remote-session-probe.ts";
+import { readTunnel, tailcatPtyArgv } from "../../remote-session-probe.ts";
 import { resolveTailcatBinary } from "../../tailcat-bin.ts";
 
 export interface TailcatTerminalTarget {
@@ -47,7 +47,7 @@ export function createTailcatAdapter(deps: {
       if (!tunnel) throw new Error("This remote computer is not connected from here.");
       try {
         const bin = resolveTailcatBinary() ?? "tailcat";
-        return spawnScriptPty([bin, "ssh", "--key", tunnel.keyPath, tunnel.address], {
+        return spawnScriptPty(tailcatPtyArgv(bin, tunnel.keyPath, tunnel.address), {
           cols: ctx.cols,
           rows: ctx.rows,
         });

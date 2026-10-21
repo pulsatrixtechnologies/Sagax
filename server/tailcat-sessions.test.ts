@@ -8,6 +8,7 @@ import { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 import { createRemoteSessionService, type RemoteSessionService } from "./remote-sessions.ts";
 import type { RunCommand } from "./remote-session-probe.ts";
 import { parsePublishBody } from "./routes/remote-sessions.ts";
+import { resolveTailcatBinary } from "./tailcat-bin.ts";
 
 const ADDRESS = "tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd";
 const ID = "0123456789ab";
@@ -172,6 +173,50 @@ describe("remote session service", () => {
     expect(calls).toEqual([]);
     const shell = await service.openShell({ principalId: PERSON, botId: BOT, threadId: THREAD });
     expect(shell).toEqual({ error: "The tunnel for this remote computer is not on this server yet." });
+    expect(await service.upload(PERSON, BOT, ID, "notes.txt", Buffer.from("hello"))).toEqual({ error: "The tunnel for this remote computer is not on this server yet." });
+    expect(await service.download(PERSON, BOT, ID, "C:/Temp/notes.txt")).toEqual({ error: "The tunnel for this remote computer is not on this server yet." });
+    const closed = await service.close(PERSON, BOT, ID);
+    expect(closed?.state).toBe("ended");
+    expect(await service.upload(PERSON, BOT, ID, "notes.txt", Buffer.from("hello"))).toEqual({ error: "That remote session is not open." });
+  });
+
+  it("copies files with the tailcat shipped beside the app when PATH is only the system directories", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "sagax-tailcat-bin-"));
+    const bundled = path.join(root, "tailcat", "tailcat");
+    mkdirSync(path.dirname(bundled));
+    writeFileSync(bundled, "fixture");
+    const saved = {
+      PATH: process.env.PATH,
+      SAGAX_RESOURCES_PATH: process.env.SAGAX_RESOURCES_PATH,
+      SAGAX_TAILCAT_PATH: process.env.SAGAX_TAILCAT_PATH,
+      SAGAX_DATA_DIR: process.env.SAGAX_DATA_DIR,
+    };
+    process.env.PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
+    process.env.SAGAX_RESOURCES_PATH = root;
+    delete process.env.SAGAX_TAILCAT_PATH;
+    delete process.env.SAGAX_DATA_DIR;
+    try {
+      const found = resolveTailcatBinary();
+      expect(found).toBe(bundled);
+      const service = setup();
+      tunnel();
+      await service.publish(input);
+      const probe = calls.find((argv) => argv[1] === "ssh");
+      expect(probe?.[0]).toBe(bundled);
+      expect(probe?.[0]).not.toBe("tailcat");
+      const sent = await service.upload(PERSON, BOT, ID, "notes.txt", Buffer.from("hello"));
+      expect(sent).toEqual({ name: "notes.txt" });
+      const copied = calls.find((argv) => argv[1] === "cp");
+      expect(copied?.[0]).toBe(bundled);
+      expect(JSON.stringify(sent)).not.toContain(ADDRESS);
+      expect(found).toBe(bundled);
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it("opens a shell and moves a file without returning the address", async () => {

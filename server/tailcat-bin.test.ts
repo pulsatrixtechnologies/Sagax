@@ -54,6 +54,17 @@ describe("resolveTailcatBinary", () => {
     })).toBe(homebrew);
   });
 
+  it("returns nothing when the shipped copy is absent and PATH cannot see another install", () => {
+    expect(resolveTailcatBinary({
+      env: { PATH: GUI_PATH },
+      platform: "darwin",
+      arch: "arm64",
+      resourcesPath: "/no/resources",
+      appRoot: "/no/app",
+      exists: () => false,
+    })).toBeNull();
+  });
+
   it("finds the image copy on Linux when the PATH directories are not writable and do not list it", () => {
     expect(resolveTailcatBinary({
       env: { PATH: GUI_PATH },

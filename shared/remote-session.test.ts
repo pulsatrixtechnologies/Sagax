@@ -12,8 +12,12 @@ import {
 } from "./remote-session.ts";
 
 describe("remote session public text", () => {
-  it("drops a tunnel token and control characters", () => {
+  it("drops a tunnel token, a GUID, a node key, and control characters", () => {
+    const guid = "01234567-89ab-cdef-0123-456789abcdef";
+    const nodekey = `nodekey:${"ab".repeat(32)}`;
     expect(publicText("GOXP103\n tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd extra")).toBe("GOXP103 extra");
+    expect(publicText(`GOXP103 ${guid} ${nodekey}`)).toBe("GOXP103");
+    expect(publicText(guid)).toBeUndefined();
     expect(publicText("   ")).toBeUndefined();
   });
 

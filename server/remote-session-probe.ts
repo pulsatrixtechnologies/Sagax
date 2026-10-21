@@ -145,8 +145,12 @@ export function stopCommand(id: string): string {
   return `printf '' > /tmp/px-assist-${id}/stop 2>/dev/null || type nul > %TEMP%\\px-assist-${id}\\stop`;
 }
 
+export function tailcatPtyArgv(bin: string, keyPath: string, address: string): string[] {
+  return [bin, "ssh", "--key", keyPath, address];
+}
+
 export function tailcatSshArgv(bin: string, keyPath: string, address: string, command: string): string[] {
-  return [bin, "ssh", "--key", keyPath, address, command];
+  return [...tailcatPtyArgv(bin, keyPath, address), command];
 }
 
 export function tailcatCopyArgv(bin: string, keyPath: string, from: string, to: string): string[] {

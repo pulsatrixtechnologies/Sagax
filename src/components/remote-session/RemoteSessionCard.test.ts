@@ -1,11 +1,16 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { formatEndLabel, type RemoteSessionView } from "../../../shared/remote-session";
-import { t } from "@/lib/i18n";
-import { StoreProvider } from "@/state/store";
-import { RemoteSessionCard } from "./RemoteSessionCard";
+import { setLocale, t } from "@/lib/i18n";
+import { StoreProvider, type Bot } from "@/state/store";
+import type { TerminalEmbed } from "../../../shared/terminal-resources";
+import { TerminalChatEmbed } from "../terminal/TerminalChatEmbed";
+import { RemoteSessionActions, remoteFileNotice } from "./RemoteSessionActions";
+import { RemoteSessionCard, remoteSuggestionText } from "./RemoteSessionCard";
+import { RemoteSessionScreen } from "./RemoteSessionControl";
+import { beginRemoteControl, remoteClosePhase, RemoteSessionsPanel, RemoteSessionsSection, runRemoteSessionClose } from "./RemoteSessionsSection";
 
 const ADDRESS = "tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd";
 
@@ -59,5 +64,178 @@ describe("remote session card", () => {
     expect(html).toContain(t("remoteSession.closed"));
     expect(html).not.toContain("data-remote-hint");
     expect(html).not.toContain(ADDRESS);
+  });
+});
+
+const GUID = "01234567-89ab-cdef-0123-456789abcdef";
+const NODEKEY = `nodekey:${"ab".repeat(32)}`;
+
+describe("remote session surfaces", () => {
+  afterEach(() => setLocale("en"));
+
+  it("shows the French sidebar and the card facts, and hides an empty list", () => {
+    setLocale("fr");
+    const empty = renderToStaticMarkup(createElement(
+      StoreProvider,
+      null,
+      createElement(RemoteSessionsSection, { bot: { id: "melonie" } as Bot }),
+    ));
+    expect(empty).not.toContain("data-remote-sessions");
+    expect(empty).not.toContain("Sessions à distance");
+    expect(renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      rows: [],
+      confirmId: null,
+      error: null,
+      onTakeControl: () => undefined,
+      onClose: () => undefined,
+    }))).toBe("");
+
+    const shown: RemoteSessionView = {
+      ...view,
+      hostname: `GOXP103 ${GUID} ${ADDRESS}`,
+      user: `gox\\zsellam ${NODEKEY}`,
+    };
+    const sidebar = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      rows: [shown],
+      confirmId: null,
+      error: null,
+      onTakeControl: () => undefined,
+      onClose: () => undefined,
+    }));
+    expect(sidebar).toContain("Sessions à distance");
+    expect(sidebar).toContain("UD6HFH");
+    expect(sidebar).toContain(formatEndLabel(shown.endAt));
+    expect(sidebar).toContain("GOXP103");
+    expect(sidebar).not.toContain(GUID);
+    expect(sidebar).not.toContain(NODEKEY);
+    expect(sidebar).not.toContain(ADDRESS);
+    expect(sidebar).not.toContain(shown.id);
+    expect(sidebar).toContain(t("remoteSession.takeControl"));
+    expect(sidebar).toContain(t("remoteSession.close"));
+    expect(sidebar).not.toContain(t("remoteSession.confirmClose"));
+
+    const asking = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      rows: [shown],
+      confirmId: shown.id,
+      error: null,
+      onTakeControl: () => undefined,
+      onClose: () => undefined,
+    }));
+    expect(asking).toContain(t("remoteSession.confirmClose"));
+
+    const bare: RemoteSessionView = {
+      ...view,
+      hostname: undefined,
+      osName: undefined,
+      user: undefined,
+      model: undefined,
+      serial: undefined,
+      cpu: undefined,
+      ram: undefined,
+      disk: undefined,
+      suggestions: [],
+    };
+    const card = renderToStaticMarkup(createElement(
+      StoreProvider,
+      null,
+      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: bare }),
+    ));
+    expect(card).toContain("UD6HFH");
+    expect(card).toContain(t("remoteSession.unknown"));
+    expect(card).toContain(t("remoteSession.field.serial"));
+    expect(card).toContain(t("remoteSession.field.cpu"));
+    expect(card).toContain(t("remoteSession.rights.admin"));
+    expect(card).not.toContain(GUID);
+    expect(card).not.toContain(ADDRESS);
+    expect(card).not.toContain(bare.id);
+  });
+
+  it("takes control on the Computer tab, keeps the screen read-only, and closes in two steps", async () => {
+    setLocale("fr");
+    const focused: string[] = [];
+    const opened: string[] = [];
+    beginRemoteControl({
+      botId: "melonie",
+      sessionId: view.id,
+      advanced: true,
+      focusLocal: (_bot, id) => focused.push(id),
+      focusRemote: (_bot, id) => focused.push(`remote:${id}`),
+      openComputer: () => opened.push("computer"),
+    });
+    beginRemoteControl({
+      botId: "melonie",
+      sessionId: view.id,
+      advanced: false,
+      focusLocal: () => focused.push("again"),
+      focusRemote: () => undefined,
+      openComputer: () => opened.push("nope"),
+    });
+    expect(focused).toEqual([view.id, `remote:${view.id}`, "again"]);
+    expect(opened).toEqual(["computer"]);
+
+    const available = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: "blob:screen", missed: false }));
+    expect(available).toContain("<img");
+    expect(available).toContain(t("remoteSession.screen"));
+    const unavailable = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: null, missed: true }));
+    expect(unavailable.replaceAll("&#x27;", "'")).toContain(t("remoteSession.screenUnavailable"));
+    expect(unavailable).not.toContain("<img");
+    expect(`${available} ${unavailable}`).not.toMatch(/vnc|mouse|keyboard/i);
+
+    expect(remoteClosePhase(null, view.id)).toBe("ask");
+    expect(remoteClosePhase(view.id, view.id)).toBe("commit");
+    const calls: string[] = [];
+    await runRemoteSessionClose({
+      confirmId: null,
+      viewId: view.id,
+      close: async () => { calls.push("close"); return null; },
+      onAsk: () => calls.push("ask"),
+      onClosed: () => calls.push("closed"),
+      onError: () => calls.push("error"),
+    });
+    await runRemoteSessionClose({
+      confirmId: view.id,
+      viewId: view.id,
+      close: async () => { calls.push("close"); return null; },
+      onAsk: () => calls.push("ask"),
+      onClosed: () => calls.push("closed"),
+      onError: () => calls.push("error"),
+    });
+    expect(calls).toEqual(["ask", "close", "closed"]);
+    expect(calls).not.toContain("focus");
+  });
+
+  it("sends the short diagnostic prompt and names the remote terminal and the file result", () => {
+    setLocale("fr");
+    const prompt = remoteSuggestionText("disk-low", "GOXP103");
+    expect(prompt).toBe(t("remoteSession.prompt.disk-low", { host: "GOXP103" }));
+    expect(prompt).not.toContain(ADDRESS);
+    expect(prompt).not.toContain(GUID);
+    expect(remoteSuggestionText("missing", "GOXP103")).toBeNull();
+
+    const actions = renderToStaticMarkup(createElement(RemoteSessionActions, { botId: "melonie", view }));
+    expect(actions).toContain(t("remoteSession.shell"));
+    expect(actions).toContain(t("remoteSession.upload"));
+    expect(actions).toContain(t("remoteSession.download"));
+    const closed = renderToStaticMarkup(createElement(RemoteSessionActions, { botId: "melonie", view: { ...view, state: "ended" } }));
+    expect(closed).toContain(t("remoteSession.closed"));
+    expect(closed).not.toContain(t("remoteSession.shell"));
+
+    expect(remoteFileNotice("sent", "notes.txt")).toBe(t("remoteSession.sent", { name: "notes.txt" }));
+    expect(remoteFileNotice("downloaded", "C:/Users/zsellam/Desktop/notes.txt")).toBe(t("remoteSession.downloaded", { name: "notes.txt" }));
+
+    const embed: TerminalEmbed = {
+      sessionId: "term-1",
+      resourceId: view.id,
+      provider: "tailcat",
+      hostLabel: "GOXP103",
+      label: "not-the-remote-label",
+      status: "ended",
+    };
+    const terminal = renderToStaticMarkup(createElement(TerminalChatEmbed, { embed }));
+    expect(terminal).toContain(t("remoteSession.terminal"));
+    expect(terminal).toContain("GOXP103");
+    expect(terminal).not.toContain("not-the-remote-label");
+    expect(terminal).not.toContain(ADDRESS);
+    expect(terminal).not.toContain(view.id);
   });
 });

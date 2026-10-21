@@ -5,6 +5,13 @@ import type { RemoteSessionView } from "../../../shared/remote-session";
 import { t } from "@/lib/i18n";
 import { downloadRemoteFile, openRemoteShell, uploadRemoteFile } from "./remote-session-client";
 
+/** The line shown after a file leaves or arrives. */
+export function remoteFileNotice(kind: "sent" | "downloaded", name: string): string {
+  if (kind === "sent") return t("remoteSession.sent", { name });
+  const base = name.split(/[\\/]/).pop() || name;
+  return t("remoteSession.downloaded", { name: base });
+}
+
 /** Shell, upload and download for one connected session. */
 export function RemoteSessionActions({ botId, view }: { botId: string; view: RemoteSessionView }) {
   const input = useRef<HTMLInputElement>(null);
@@ -31,7 +38,7 @@ export function RemoteSessionActions({ botId, view }: { botId: string; view: Rem
     const failed = await uploadRemoteFile(botId, view.id, file);
     setPending(null);
     if (failed) setError(failed);
-    else setNotice(t("remoteSession.sent", { name: file.name }));
+    else setNotice(remoteFileNotice("sent", file.name));
   };
 
   const download = async () => {
@@ -43,7 +50,7 @@ export function RemoteSessionActions({ botId, view }: { botId: string; view: Rem
     const failed = await downloadRemoteFile(botId, view.id, remotePath);
     setPending(null);
     if (failed) setError(failed);
-    else setNotice(t("remoteSession.downloaded", { name: remotePath.split(/[\\/]/).pop() || remotePath }));
+    else setNotice(remoteFileNotice("downloaded", remotePath));
   };
 
   if (!live) return <p className="px-3 py-2 text-[12px] text-ink-secondary">{t("remoteSession.closed")}</p>;

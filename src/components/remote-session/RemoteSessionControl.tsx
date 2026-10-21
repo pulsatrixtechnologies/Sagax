@@ -6,6 +6,20 @@ import { RemoteSessionActions } from "./RemoteSessionActions";
 import { RemoteSessionFacts } from "./RemoteSessionFacts";
 import { useRemoteSessions } from "./use-remote-sessions";
 
+/** The Computer tab picture. A failed fetch says the screen is unavailable. No pointer control. */
+export function RemoteSessionScreen({ shot, missed }: { shot: string | null; missed: boolean }) {
+  return (
+    <div data-remote-session-screen="">
+      <div className="px-3 py-2 text-[12px] text-ink-secondary">{t("remoteSession.screen")}</div>
+      <div className="flex aspect-[16/10] items-center justify-center bg-inset">
+        {shot
+          ? <img src={shot} alt="" className="h-full w-full object-contain" />
+          : <span className="text-[12px] text-ink-secondary">{missed ? t("remoteSession.screenUnavailable") : t("remoteSession.screen")}</span>}
+      </div>
+    </div>
+  );
+}
+
 /** The Computer tab while a remote session is the one in focus. Read-only screen. */
 export function RemoteSessionControl({ botId }: { botId: string }) {
   const { rows } = useRemoteSessions(botId);
@@ -49,10 +63,7 @@ export function RemoteSessionControl({ botId }: { botId: string }) {
   if (!session) return null;
   return (
     <div data-remote-session-control="" className="mb-4 overflow-hidden rounded-xl border border-hairline">
-      <div className="px-3 py-2 text-[12px] text-ink-secondary">{t("remoteSession.screen")}</div>
-      <div className="flex aspect-[16/10] items-center justify-center bg-inset">
-        {shot ? <img src={shot} alt="" className="h-full w-full object-contain" /> : <span className="text-[12px] text-ink-secondary">{missed ? t("remoteSession.screenUnavailable") : t("remoteSession.screen")}</span>}
-      </div>
+      <RemoteSessionScreen shot={shot} missed={missed} />
       <RemoteSessionFacts view={session} />
       <RemoteSessionActions botId={botId} view={session} />
     </div>

@@ -1,3 +1,5 @@
+import { UUID_FRAGMENT } from "./human-id.ts";
+
 /** A Tailcat remote-support session as the chat and the bot panel may show it.
  * The tunnel address, the node key and the client key never appear here. */
 
@@ -49,13 +51,15 @@ export interface RemoteSessionView {
 }
 
 const TUNNEL = /tc[0-9A-Za-z_-]{24,}/g;
+const GUID = new RegExp(UUID_FRAGMENT.source, "gi");
+const NODEKEY = /nodekey:[0-9a-f]{64}/gi;
 // oxlint-disable-next-line no-control-regex -- public text must not keep control characters
 const CONTROL = /[\u0000-\u001f\u007f]/g;
 
 /** Drop a tunnel token and control characters before anything is stored or shown. */
 export function publicText(value: unknown, max = 160): string | undefined {
   if (typeof value !== "string") return undefined;
-  const cleaned = value.replace(TUNNEL, "").replace(CONTROL, " ").replace(/\s+/g, " ").trim();
+  const cleaned = value.replace(TUNNEL, "").replace(NODEKEY, "").replace(GUID, "").replace(CONTROL, " ").replace(/\s+/g, " ").trim();
   if (!cleaned) return undefined;
   return cleaned.slice(0, max);
 }

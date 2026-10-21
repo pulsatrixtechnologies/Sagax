@@ -25,14 +25,20 @@ const SUGGESTION_PROMPT: Record<string, LocaleKey> = {
   startup: "remoteSession.prompt.startup",
 };
 
+/** The short prompt a suggestion chip sends. Unknown ids send nothing. */
+export function remoteSuggestionText(id: string, host: string): string | null {
+  const key = SUGGESTION_PROMPT[id];
+  return key ? t(key, { host }) : null;
+}
+
 /** The chat card for one remote computer. Suggestions send a short prompt. */
 export function RemoteSessionCard({ botId, threadId, view }: { botId: string; threadId: string; view: RemoteSessionView }) {
   const { dispatch } = useStore();
   const host = publicText(view.hostname) || view.code;
   const ask = (id: string) => {
-    const key = SUGGESTION_PROMPT[id];
-    if (!key) return;
-    dispatch({ type: "send", botId, threadId, text: t(key, { host }) });
+    const text = remoteSuggestionText(id, host);
+    if (!text) return;
+    dispatch({ type: "send", botId, threadId, text });
   };
   return (
     <div data-remote-session-card="" data-remote-state={view.state} className="overflow-hidden rounded-xl border border-hairline text-ink">
