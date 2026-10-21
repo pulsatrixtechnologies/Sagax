@@ -1,7 +1,12 @@
 const DEFAULT_EARLY_MINUTES = 15;
 const DEFAULT_LATE_MINUTES = 15;
 
-export function readTiming(schedule: { type: string }): { mode: "exact" | "flexible"; early: number; late: number } {
+export function readTiming(schedule: {
+  type: string;
+  timing?: string;
+  windowEarlyMinutes?: number;
+  windowLateMinutes?: number;
+}): { mode: "exact" | "flexible"; early: number; late: number } {
   const raw = schedule as { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number };
   if (raw.type !== "once" && raw.timing === "flexible") {
     return {
@@ -32,7 +37,11 @@ export function withRoutineTiming<T extends { type: string }>(
   }
   const early = Number.isInteger(earlyMinutes) && earlyMinutes >= 0 ? earlyMinutes : DEFAULT_EARLY_MINUTES;
   const late = Number.isInteger(lateMinutes) && lateMinutes >= 0 ? lateMinutes : DEFAULT_LATE_MINUTES;
-  return { ...rest, timing: "flexible", windowEarlyMinutes: early, windowLateMinutes: late };
+  return { ...rest, timing: "flexible", windowEarlyMinutes: early, windowLateMinutes: late } as T & {
+    timing: "flexible";
+    windowEarlyMinutes: number;
+    windowLateMinutes: number;
+  };
 }
 
 function wholeMinutes(value: string): number {

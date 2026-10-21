@@ -107,13 +107,13 @@ interface NormalizedSchedule {
 }
 
 /** Timing fields the model may send, copied onto the harness schedule. */
-function copiedTiming(raw: Record<string, Json | undefined>): Record<string, Json> {
-  const out: Record<string, Json> = {};
-  if (raw.timing != null) out.timing = raw.timing;
+function copiedTiming(raw: Json): Json {
+  const out: Json = {};
+  if (typeof raw.timing === "string") out.timing = raw.timing;
   const early = raw.window_early_minutes ?? raw.windowEarlyMinutes;
   const late = raw.window_late_minutes ?? raw.windowLateMinutes;
-  if (early != null) out.windowEarlyMinutes = early;
-  if (late != null) out.windowLateMinutes = late;
+  if (typeof early === "number") out.windowEarlyMinutes = early;
+  if (typeof late === "number") out.windowLateMinutes = late;
   return out;
 }
 

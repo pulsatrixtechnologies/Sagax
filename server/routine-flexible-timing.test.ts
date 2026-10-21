@@ -17,6 +17,8 @@ function harness(start = new Date(2026, 7, 17, 8, 0, 0, 0).getTime()) {
   const manager = new RoutineManager({
     file,
     now: () => now,
+    botState: () => "ready",
+    createTask: () => ({ threadId: "t1" }),
     startTurn: async () => {},
   });
   return {
@@ -54,7 +56,13 @@ describe("flexible routine timing", () => {
     expect(disk.routines[0]!.nominalRunAt).toBeUndefined();
     const saved = routine.nextRunAt;
     h.manager.stop();
-    const again = new RoutineManager({ file: h.file, now: () => h.now, startTurn: async () => {} });
+    const again = new RoutineManager({
+      file: h.file,
+      now: () => h.now,
+      botState: () => "ready",
+      createTask: () => ({ threadId: "t1" }),
+      startTurn: async () => {},
+    });
     open.push({ stop: () => again.stop() });
     again.start();
     expect(again.listRoutines()[0]!.nextRunAt).toBe(saved);
@@ -86,7 +94,13 @@ describe("flexible routine timing", () => {
     expect(routine.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 15, windowLateMinutes: 15 });
 
     h.manager.stop();
-    const again = new RoutineManager({ file: h.file, now: () => h.now, startTurn: async () => {} });
+    const again = new RoutineManager({
+      file: h.file,
+      now: () => h.now,
+      botState: () => "ready",
+      createTask: () => ({ threadId: "t1" }),
+      startTurn: async () => {},
+    });
     open.push({ stop: () => again.stop() });
     again.start();
     const reloaded = again.listRoutines().find((item) => item.id === routine.id)!;
@@ -111,9 +125,13 @@ describe("flexible routine timing", () => {
         windowLateMinutes: 15,
       },
     });
-    expect(interval.schedule.windowEarlyMinutes! + interval.schedule.windowLateMinutes!).toBe(5);
-    expect(interval.nextRunAt).toBeGreaterThanOrEqual(interval.nominalRunAt! - interval.schedule.windowEarlyMinutes! * MINUTE);
-    expect(interval.nextRunAt).toBeLessThanOrEqual(interval.nominalRunAt! + interval.schedule.windowLateMinutes! * MINUTE);
+    expect(interval.schedule).toMatchObject({ type: "interval", timing: "flexible" });
+    if (interval.schedule.type !== "interval") throw new Error("expected an interval");
+    const early = interval.schedule.windowEarlyMinutes ?? 0;
+    const late = interval.schedule.windowLateMinutes ?? 0;
+    expect(early + late).toBe(5);
+    expect(interval.nextRunAt).toBeGreaterThanOrEqual(interval.nominalRunAt! - early * MINUTE);
+    expect(interval.nextRunAt).toBeLessThanOrEqual(interval.nominalRunAt! + late * MINUTE);
 
     const cron = h.manager.create({
       name: "Clock",
@@ -128,7 +146,9 @@ describe("flexible routine timing", () => {
         windowLateMinutes: 15,
       },
     });
-    expect(cron.schedule.windowEarlyMinutes! + cron.schedule.windowLateMinutes!).toBe(5);
+    expect(cron.schedule).toMatchObject({ type: "cron", timing: "flexible" });
+    if (cron.schedule.type !== "cron") throw new Error("expected a cron");
+    expect((cron.schedule.windowEarlyMinutes ?? 0) + (cron.schedule.windowLateMinutes ?? 0)).toBe(5);
 
     const onTime = h.manager.create({
       name: "Ready",
@@ -182,8 +202,8 @@ describe("flexible routine timing", () => {
         everyMinutes: 30,
         anchorAt: h.now,
         timing: "flexible",
-        windowEarlyMinutes: 10,
-        windowLateMinutes: 10,
+        windowEarlyMinutes: 5,
+        windowLateMinutes: 5,
       },
     });
     const firstNominal = routine.nominalRunAt!;
@@ -195,14 +215,14 @@ describe("flexible routine timing", () => {
     expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
 
     const kept = h.manager.update(routine.id, { name: "Steady renamed" });
-    expect(kept?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 10, windowLateMinutes: 10 });
+    expect(kept?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 5, windowLateMinutes: 5 });
     expect(kept?.nominalRunAt).toBe(after.nominalRunAt);
     expect(kept?.nextRunAt).toBe(after.nextRunAt);
 
     const exact = h.manager.update(routine.id, {
       schedule: { type: "interval", everyMinutes: 30, anchorAt: h.now, timing: "exact" },
     });
-    expect(exact?.schedule.timing).toBeUndefined();
+    expect(exact?.schedule).not.toHaveProperty("timing");
     expect(exact?.nominalRunAt).toBeUndefined();
     expect(exact?.nextRunAt).toBe(nextOccurrence(exact!.schedule, h.now));
   });
@@ -217,8 +237,8 @@ describe("flexible routine timing", () => {
       botId: "b1",
       schedule: { type: "interval", everyMinutes: 30, anchorAt, timing: "flexible", windowEarlyMinutes: 10, windowLateMinutes: 5 },
     });
-    const updated = h.manager.update(routine.id, { schedule: { type: "interval", everyMinutes: 20, anchorAt } });
-    expect(updated?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 10, windowLateMinutes: 5, everyMinutes: 20 });
+    const updated = h.manager.update(routine.id, { schedule: { type: "interval", everyMinutes: 40, anchorAt } });
+    expect(updated?.schedule).toMatchObject({ timing: "flexible", windowEarlyMinutes: 10, windowLateMinutes: 5, everyMinutes: 40 });
     expect(updated?.nominalRunAt).toBeTypeOf("number");
   });
 

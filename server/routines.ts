@@ -2794,10 +2794,12 @@ export class RoutineManager {
 
   /** The next flexible slot after `nominal`, never the slot that just fired. */
   private placeAfter(routine: Routine, nominal: number, notBefore: number): { start: number; nominal: number } | null {
+    if (!isFlexibleSchedule(routine.schedule)) return null;
+    const schedule = routine.schedule;
     const zone = this.zoneOf(routine);
     return planFlexibleStart({
       routineId: routine.id,
-      schedule: routine.schedule,
+      schedule,
       afterNominal: nominal,
       notBefore,
       nextNominal: (after) => nextOccurrence(routine.schedule, after, zone),

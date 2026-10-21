@@ -54,7 +54,7 @@ function intervalRestrictions(schedule: Extract<RoutineSchedule, { type: "interv
   return details;
 }
 
-function windowNote(schedule: { timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number }): string | null {
+function windowNote(schedule: { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number }): string | null {
   if (schedule.timing !== "flexible") return null;
   return `(-${schedule.windowEarlyMinutes ?? 0}/+${schedule.windowLateMinutes ?? 0} min)`;
 }
