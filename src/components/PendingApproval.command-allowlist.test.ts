@@ -9,6 +9,7 @@ vi.mock("@/state/store", async (original) => ({
   useStore: () => ({ dispatch: fixture.dispatch }),
 }));
 vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => fixture.admin }));
+vi.mock("@/lib/org-approval-policy", () => ({ useOrgApprovalPolicy: () => ({ alwaysAllow: true, orgRules: 0 }), noteOrgAlwaysAllowOff: () => {} }));
 
 import { pendingApprovals, PendingApprovalActions, PendingApprovalPanel } from "./PendingApproval";
 

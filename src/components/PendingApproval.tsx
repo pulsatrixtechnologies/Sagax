@@ -19,6 +19,7 @@ import { ApprovalHeading, TechnicalDetails } from "./ApprovalParts";
 import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { useOrgApprovalPolicy } from "@/lib/org-approval-policy";
 import { CustomRuleNoticeLine } from "./CustomRuleNotice";
 import { customRuleError } from "./bot-settings/CustomRulesCard";
 
@@ -359,6 +360,9 @@ export function PendingApprovalActions({
 }) {
   const { dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
+  // 2026-10-21: the organization may keep every approval to one card
+  // (server/custom-rules-org.ts): no Always allow, and the card says why
+  const orgPolicy = useOrgApprovalPolicy();
   const isRoutineRequest = isRoutineApproval(pending);
   const isSkillRequest = isSkillApproval(pending);
   const isProfileRequest = isProfileApproval(pending);
@@ -436,7 +440,9 @@ export function PendingApprovalActions({
       : bot && pending.allowKey ? { run: () => decide("allow", true), hint: t("approval.action.stopAsking", { name: bot.name, key: pending.allowKey }) }
         : canRememberCommand && pending.commandAllowlist ? { run: () => decide("allow", false, true), hint: t("approval.action.alwaysAllowCommandHint", { cwd: pending.commandAllowlist.cwd }) }
           : undefined;
-  const widening = alwaysAllow ? (
+  const widening = !orgPolicy.alwaysAllow && !durableRequest ? (
+    <span className="text-[11.5px] text-ink-tertiary" data-org-always-allow-off="">{t("approval.orgOnce")}</span>
+  ) : alwaysAllow ? (
     <button
       type="button"
       onClick={alwaysAllow.run}

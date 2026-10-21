@@ -29,6 +29,7 @@ import { approvalAction, describeApproval, parseArgs, parseToolId, type Approval
 import { sagaxFolder } from "../shared/human-id.ts";
 import { singleProgramOf } from "../shared/read-only-command.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
+import { standingGrantsAllowed } from "./custom-rules-org.ts";
 
 export const BOT_PERMISSION_MODES = ["approval", "auto", "bypass"] as const;
 export type BotPermissionMode = (typeof BOT_PERMISSION_MODES)[number];
@@ -284,13 +285,16 @@ export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScop
 }
 
 /** The rule that decides a call: deny first, then ask, then allow; within
- * one behavior, the narrowest (most scope keys, one bot over all). */
+ * one behavior, the narrowest (most scope keys, one bot over all). While
+ * the organization turned "Toujours permettre" off
+ * (server/custom-rules-org.ts), no allow rule answers. */
 export function matchOwnerRule(rules: readonly OwnerRule[], call: RuleCall): OwnerRule | undefined {
   const scope = callScopeFor(call);
   const destructive = destructiveKindOf(call);
   const weight = (rule: OwnerRule) => RULE_BEHAVIORS.indexOf(rule.behavior);
+  const allowRules = standingGrantsAllowed();
   return rules
-    .filter((rule) => ruleMatches(rule, call, scope, destructive))
+    .filter((rule) => (allowRules || rule.behavior !== "allow") && ruleMatches(rule, call, scope, destructive))
     .sort((a, b) =>
       weight(b) - weight(a)
       || Object.keys(b.scope).length - Object.keys(a.scope).length
@@ -363,9 +367,11 @@ export function ruleCoversSituation(rule: Pick<OwnerRule, "from">, situation: Ru
 
 /** 2026-10-19: whether an allow rule saved on a card that is not an engine's
  * tool call (an act or a setting change, a widget's change, a proposal)
- * covers this one: same tool and the very same scope, key for key. */
+ * covers this one: same tool and the very same scope, key for key. Never
+ * while the organization turned "Toujours permettre" off
+ * (server/custom-rules-org.ts). */
 export function ruleCoversExactScope(rule: OwnerRule, tool: string, scope: RuleScope): boolean {
-  if (rule.behavior !== "allow" || rule.tool !== tool) return false;
+  if (rule.behavior !== "allow" || rule.tool !== tool || !standingGrantsAllowed()) return false;
   const keys = Object.keys(rule.scope);
   if (keys.length !== Object.keys(scope).length) return false;
   return keys.every((key) => scope[key] === rule.scope[key]);

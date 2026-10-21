@@ -13224,7 +13224,18 @@
       "updates.dialog.botsWorking": "9165535e78fdc0e83ab9b6ba523162dc268bf8606494eab1b61aba11399340c7",
       "updates.dialog.waitingBots": "ca1c0459fd111da4f3a706cb5ed75d4cf96b8e1aef52db2a764c3eb6956c0c3d",
       "updates.dialog.waitForBots": "9215160a2c595f47c0da0fcd4ffb4bb5579a3e5f3a538c3c2355aea7ec4650c9",
-      "updates.dialog.waitCancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27"
+      "updates.dialog.waitCancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27",
+      "approval.orgOnce": "6fbc185faa03bad19ca248111587de2921ab2121e5aa6f3c01869a7b432efbf6",
+      "customRules.notice.orgDenied": "ff94fd00cb675c531684ee4329920b984efa41ea056b8865eed94318c71cb657",
+      "customRules.notice.orgHeld": "691913df44d4f7c4b90d7fc765bcb30af7c304622f368932e398e16f6e51f567",
+      "customRules.org.required": "e37634987abec94a131d5d34d4e0f3ef5c35d7d941c670052a75bd70448f2209",
+      "customRules.org.locked": "81d3358544868af2de94418dde7317099d94693deae79f9aebd29e24f98fd8c5",
+      "customRules.org.alwaysAllowOff": "641b11a58fa120b53024b2ce0d986aa24708b6bb8a5d6a3ff82d2df5d737bb0d",
+      "customRules.paused": "050ab71a41aa78639bea286a6e22ff787c4589099c6988379042fa142df9c00a",
+      "customRules.levelFull": "89f85fc409728633e13878f758eb20776bcfb796dfde9ce3e31bc1af079bbf09",
+      "customRules.form.someBots": "5ce51214a9d21f039ab49ffad6a9d8dc6bd33fd2bd2f72ff4ad008afd5bc46df",
+      "customRules.form.chooseBots": "93245f0ace064e95b50ce501448da376b402033212403270d74893d640196692",
+      "customRules.diff.label": "17c97d5fd575e283fd33e1d523a7f69186c928c21bcec7618161ff5aac09f171"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
