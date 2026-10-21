@@ -5430,6 +5430,7 @@
   "routines.status.completed": "Completed",
   "routines.status.failed": "Failed",
   "routines.status.missed": "Missed",
+  "routines.status.nothing_to_report": "Nothing to report",
   "routines.status.problems": "Problems",
   "routines.status.queued": "Queued",
   "routines.status.running": "Running",

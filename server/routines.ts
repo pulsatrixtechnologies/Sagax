@@ -9,6 +9,15 @@ import type { RuntimeEvent } from "./contracts.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { stopCause } from "./drivers/engine-errors.ts";
+import {
+  evaluateRoutinePrecheck,
+  loadRoutinePrecheck,
+  parseRoutinePrecheck,
+  runRoutinePrecheck,
+  type RoutinePrecheck,
+  type RoutinePrecheckFacts,
+  type RoutinePrecheckVerdict,
+} from "./routine-precheck.ts";
 import { awayDecision, awayReportDue, loadAwaySkips, recordAwaySkip, type AwayVerdict, type RoutineAwaySkips } from "./routine-away.ts";
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
@@ -97,7 +106,9 @@ export type RoutineRunStatus =
   | "completed"
   | "failed"
   | "cancelled"
-  | "missed";
+  | "missed"
+  /** The pre-check found nothing to do: no turn, no message, no notice. */
+  | "nothing_to_report";
 
 export interface Routine {
   id: string;
@@ -148,6 +159,9 @@ export interface Routine {
   onlyWhenPresent?: boolean;
   /** Occurrences skipped while the person was away, until dismissed. */
   awaySkips?: RoutineAwaySkips;
+  /** Deterministic test run before a scheduled run starts any model turn
+   * (server/routine-precheck.ts). Absent: every due run starts a turn. */
+  precheck?: RoutinePrecheck;
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
@@ -278,6 +292,8 @@ export interface RoutineRun {
   output?: string;
   /** Human-readable reason the detached execution is waiting. */
   attention?: string;
+  /** Why a `nothing_to_report` run had nothing to do. */
+  quietReason?: string;
   error?: string;
   cost?: number | null;
   denials?: string[];
@@ -347,6 +363,8 @@ export interface RoutineInput {
   overlap?: "skip" | "queue";
   /** Only while the person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** Omission preserves it; null removes it. */
+  precheck?: RoutinePrecheck | null;
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;
 }
@@ -487,6 +505,9 @@ export interface RoutineManagerOptions {
    * similar work the organization memory knows of, and the note the bot
    * reads with the run's prompt. Fails open: a throw, a null or a slow
    * answer (ROUTINE_MEMORY_HINT_MAX_MS) starts the run as if not asked. */
+  /** Replaces the pure pre-check evaluator (tests, later wired checks). It
+   * runs under ROUTINE_PRECHECK_TIMEOUT_MS; a throw or timeout fails the run. */
+  evaluatePrecheck?: (precheck: RoutinePrecheck, facts: RoutinePrecheckFacts) => Promise<RoutinePrecheckVerdict> | RoutinePrecheckVerdict;
   memoryHint?: (run: RoutineRun, prompt: string) => Promise<{ hint: RoutineMemoryHint; note: string } | null>;
   /** 2026-10-15: a routine turned on or off from a conversation (a routine
    * card, its Undo, the person's switch while the conversation is open).
@@ -681,6 +702,7 @@ function cloneRoutine(routine: Routine): Routine {
     attachments: cloneAttachments(routine.attachments),
     ...(routine.suspended ? { suspended: { ...routine.suspended } } : {}),
     ...(routine.awaySkips ? { awaySkips: { ...routine.awaySkips } } : {}),
+    ...(routine.precheck ? { precheck: { ...routine.precheck } } : {}),
   };
 }
 
@@ -1080,6 +1102,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
   if (continuity && target === "room-goal") {
     throw new Error("Room goals do not carry continuity yet");
   }
+  const precheck = input.precheck == null ? undefined : parseRoutinePrecheck(input.precheck);
   return {
     name,
     prompt,
@@ -1095,6 +1118,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(continuity ? { continuity: true } : {}),
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(input.onlyWhenPresent === true ? { onlyWhenPresent: true } : {}),
+    ...(precheck ? { precheck } : {}),
   };
 }
 
@@ -1170,7 +1194,9 @@ export class RoutineManager {
               suspended: loadSuspension(routine.suspended),
               onlyWhenPresent: routine.onlyWhenPresent === true ? true : undefined,
               awaySkips: loadAwaySkips(routine.awaySkips),
+              precheck: loadRoutinePrecheck(routine.precheck),
             };
+            if (loaded.precheck === undefined) delete loaded.precheck;
             if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
             if (loaded.awaySkips === undefined) delete loaded.awaySkips;
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
@@ -1560,6 +1586,7 @@ export class RoutineManager {
       continuity: patch.continuity ?? routine.continuity,
       overlap: Object.hasOwn(patch, "overlap") ? patch.overlap : routine.overlap,
       onlyWhenPresent: patch.onlyWhenPresent ?? routine.onlyWhenPresent,
+      precheck: Object.hasOwn(patch, "precheck") ? patch.precheck : routine.precheck,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
@@ -1609,6 +1636,7 @@ export class RoutineManager {
       }
       // Switching "Only when I'm here" off forgets what it skipped.
       if (!clean.onlyWhenPresent) { delete routine.onlyWhenPresent; delete routine.awaySkips; }
+      if (!clean.precheck) delete routine.precheck;
       if (Object.hasOwn(patch, "timeoutMinutes") && patch.timeoutMinutes == null) {
         delete routine.timeoutMinutes;
       }
@@ -2274,6 +2302,24 @@ export class RoutineManager {
           this.failRun(run, this.missingTargetMessage(run.target));
           continue;
         }
+        // The pre-check runs before admission and before any task or turn.
+        // Only scheduled runs: a person's Run now and a webhook always wake.
+        if (triggerSource === "schedule" && run.retryAt === undefined) {
+          const routine = this.routines.find((candidate) => candidate.id === run.routineId);
+          if (routine?.precheck) {
+            const verdict = await this.precheckRun(routine, routine.precheck);
+            // The run may have been cancelled while the pre-check ran.
+            if (run.status !== "queued") continue;
+            if (!verdict.ok) {
+              this.failRun(run, verdict.error);
+              continue;
+            }
+            if (!verdict.verdict.wake) {
+              this.quietRun(run, verdict.verdict.reason);
+              continue;
+            }
+          }
+        }
         if (this.options.admit) {
           const routine = this.routines.find((candidate) => candidate.id === run.routineId);
           let admission: RoutineAdmission;
@@ -2740,6 +2786,42 @@ export class RoutineManager {
     // Port of OpenMausBot #3052: the same failure as the last outcome is
     // reported once per streak (null = the owner was already told).
     this.options.onRunFailed?.(cloneRun(run), alert === undefined && this.failsLikeLastOutcome(run) ? null : alert);
+  }
+
+  /** Facts from the routine's own receipts, then the evaluator under its
+   * hard timeout. Never throws: an error is a failed run, never a pass. */
+  private async precheckRun(routine: Routine, precheck: RoutinePrecheck): Promise<
+    { ok: true; verdict: RoutinePrecheckVerdict } | { ok: false; error: string }
+  > {
+    const mine = this.runs.filter((run) => run.routineId === routine.id &&
+      (run.status === "completed" || run.status === "nothing_to_report"));
+    let lastReportAt: number | undefined;
+    for (const run of mine) {
+      if (run.status !== "completed") continue;
+      const at = run.finishedAt ?? run.createdAt;
+      if (lastReportAt === undefined || at > lastReportAt) lastReportAt = at;
+    }
+    const quietRunsSinceReport = mine.filter((run) => run.status === "nothing_to_report" &&
+      (lastReportAt === undefined || (run.finishedAt ?? run.createdAt) > lastReportAt)).length;
+    const facts: RoutinePrecheckFacts = { now: this.now(), lastReportAt, quietRunsSinceReport };
+    const evaluate = this.options.evaluatePrecheck ?? evaluateRoutinePrecheck;
+    try {
+      return { ok: true, verdict: await runRoutinePrecheck(() => evaluate({ ...precheck }, facts)) };
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: `Pre-check failed, the run did not start: ${detail}` };
+    }
+  }
+
+  /** Nothing to do: recorded, never a turn, a message or a notification.
+   * Not a failure (no onRunFailed), and the source card is left alone. */
+  private quietRun(run: RoutineRun, reason: string) {
+    run.status = "nothing_to_report";
+    run.attention = undefined;
+    run.quietReason = redactSecretsInText(reason).slice(0, 200);
+    run.finishedAt = this.now();
+    this.save();
+    this.options.emit?.({ kind: "routine.run", run: cloneRun(run) });
   }
 
   private missQueuedRun(run: RoutineRun, message: string) {

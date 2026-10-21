@@ -70,7 +70,9 @@ export type RoutineRunStatus =
   | "completed"
   | "failed"
   | "cancelled"
-  | "missed";
+  | "missed"
+  /** The routine's pre-check found nothing to do; no turn started. */
+  | "nothing_to_report";
 
 /** Why a run started a second time by itself: its engine stalled, Sagax
  * restarted while it ran, the provider rate-limited it or failed for a moment,
