@@ -3315,7 +3315,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
      * summaries can contain paths, commands, or secrets, so the generic
      * `claude -p "prompt"` shape is not safe for review. No tools or MCP
      * servers are mounted in this isolated process. */
-    const generateReview = (prompt: string, signal?: AbortSignal, onUsage?: TextGenerationOptions["onUsage"]): Promise<string> =>
+    const generateReview = (prompt: string, signal?: AbortSignal, onUsage?: TextGenerationOptions["onUsage"], noThinking = false): Promise<string> =>
       new Promise((resolve, reject) => {
         if (config.requireApiKey && !input.environment.ANTHROPIC_API_KEY) {
           reject(new Error(NO_ANTHROPIC_KEY));
@@ -3323,6 +3323,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         const model = config.managedModels?.[0] ?? "claude-haiku-4-5";
         const env = environment(model);
+        if (noThinking) env.MAX_THINKING_TOKENS = "0";
         // Isolated unless this machine's own setup must come along: the
         // inherit escape hatch, or a login kept in settings.json (an
         // apiKeyHelper, Bedrock or Vertex variables) that --setting-sources ""
@@ -3505,7 +3506,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return () => listeners.delete(listener);
         },
       },
-      generateText: (prompt, options) => generateReview(prompt, options?.signal, options?.onUsage),
+      generateText: (prompt, options) => generateReview(prompt, options?.signal, options?.onUsage, options?.noThinking === true),
       reviewPermission: generateReview,
       listCommands,
       dispose: async () => {

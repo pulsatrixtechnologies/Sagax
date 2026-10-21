@@ -50,7 +50,7 @@ export const MAX_PENDING_THREADS = 50;
 export const TOPIC_MAX_BYTES = 64 * 1024;
 
 export interface UpkeepEngine {
-  generateText?: (prompt: string, options?: { signal?: AbortSignal }) => Promise<string>;
+  generateText?: (prompt: string, options?: { signal?: AbortSignal; noThinking?: boolean }) => Promise<string>;
 }
 
 export interface UpkeepBot {
@@ -216,7 +216,7 @@ async function askModel(engine: UpkeepEngine, prompt: string): Promise<string | 
   const expiry = AbortSignal.timeout(MODEL_TIMEOUT_MS);
   try {
     const answer = await Promise.race([
-      engine.generateText(prompt, { signal: expiry }),
+      engine.generateText(prompt, { signal: expiry, noThinking: true }),
       new Promise<never>((_, reject) => expiry.addEventListener("abort", () => reject(new Error("timed out")), { once: true })),
     ]);
     return typeof answer === "string" ? answer : null;

@@ -4349,6 +4349,16 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     for (const name of names) expect(seen.env[name]).toBeUndefined();
   });
 
+  it("turns thinking off for a one-shot only when asked (memory capture), never for a review", async () => {
+    await create();
+    const dump = join(scratch, "no-thinking.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await expect(instance.generateText?.("capture this", { noThinking: true })).resolves.toBe("fake generated text");
+    expect(JSON.parse(readFileSync(dump, "utf8")).env.MAX_THINKING_TOKENS).toBe("0");
+    await expect(instance.generateText?.("summarize safely")).resolves.toBe("fake generated text");
+    expect(JSON.parse(readFileSync(dump, "utf8")).env.MAX_THINKING_TOKENS).toBeUndefined();
+  });
+
   it("declares safe same-provider permission review", async () => {
     await create();
     const dump = join(scratch, "permission-review.json");
