@@ -704,6 +704,11 @@ export interface TextGenerationOptions {
   onDelta?: (delta: string) => void;
   /** Cap the completion. The opener asks for a sentence, not an essay. */
   maxTokens?: number;
+  /** No extended thinking: an extraction step (memory capture) gains
+   * nothing from it, and a capture of several conversations spent 3,000 to
+   * 4,000 thinking tokens and ran past its 60 s limit. Drivers without a
+   * switch ignore it. */
+  noThinking?: boolean;
 }
 
 export interface ProviderInstance {
