@@ -3421,7 +3421,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         const archivable = chosen.filter((bot) => currentArchivableBot(state.bots, bot.id));
         const button = "flex size-8 items-center justify-center rounded-md text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink disabled:pointer-events-none disabled:opacity-40";
         return (
-          <div data-sidebar-select-bar role="toolbar" aria-label={t("sidebar.select.count", { count })} className="mx-auto mb-2 flex w-fit items-center justify-center gap-0.5 rounded-xl border-[0.5px] border-hairline-weak bg-sidebar-hover px-2 py-1">
+          <div data-sidebar-select-bar role="toolbar" aria-label={t("sidebar.select.count", { count })} className="mx-3 mb-2 flex items-center justify-center gap-0.5 rounded-xl border-[0.5px] border-hairline-weak bg-sidebar-hover px-2 py-1">
             <button type="button" className={button} disabled={count === 0} title={t("sidebar.select.markRead")} aria-label={t("sidebar.select.markRead")}
               onClick={() => {
                 for (const bot of chosen) {
