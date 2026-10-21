@@ -493,7 +493,7 @@ import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngine
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
 import { READ_RECEIPTS_PREFERENCE, botParticipant, newestOf, personParticipant, readVisibleTo, readsVisibleTo, roomReceiptMember, sendsReadReceipts } from "./read-receipts.ts";
-import { CONSENT_RULE, escapeNotes, OUTSIDE, peerLineText, peerProvenanceNote, quoteInNote, reportNote, requestWorkOrigin, withPeerProvenance, type WorkOrigin } from "./peer-provenance.ts";
+import { CONSENT_RULE, escapeNotes, OUTSIDE, peerLineText, peerProvenanceNote, quoteInNote, reportNote, requestWorkOrigin, webhookPostText, withPeerProvenance, type WorkOrigin } from "./peer-provenance.ts";
 import { decideRoomPost, emptyRoomPostBudget, type RoomPostAttempt, type RoomPostBudget } from "./room-post-budget.ts";
 import { parseFolderBody, parseFolderOrder, parseThreadOrganization } from "./thread-folders.ts";
 import {
@@ -15752,9 +15752,10 @@ function directContext(bot: BotRecord, threadId: string, messages: Message[]): C
       : m.roomRequest?.phase === "result" ? teammateReportContext(m.roomRequest.id, bot.id)
         : m.kind === "digest" && m.digest ? digestPromptLine(m.digest, m.from?.name ?? bot.name)
           : m.peerAsk ? peerLineText(m.peerAsk.name, m.text ?? "", "delivered")
+            : m.webhookPost && m.role !== "user" ? webhookPostText(bot.name, transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"))
             : m.role !== "user" && m.from ? peerReplayText(m, m.from.name, transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"))
               : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
-    keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && Boolean(m.from)),
+    keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && (Boolean(m.from) || m.webhookPost === true)),
     ...(m.steered ? { steered: true } : {}),
     ...(m.role === "user" && m.voiceCall ? { spoken: true } : {}),
   }));
@@ -21714,6 +21715,9 @@ function serializeRoomContext(
       const speaker = m.role === "user"
         ? m.via === "api" ? `${person} (sent through the local API, not typed)` : person
         : m.from ? peerName(m.from.name) : "Bot";
+      // An outside app chose a webhook line's words: every reader is told,
+      // the bot it is shown as included.
+      if (m.webhookPost && m.role !== "user") return `${speaker}: ${webhookPostText(m.from?.name ?? "Bot", transcriptText(rendered, messagesById, userName))}`;
       const line = `${speaker}: ${escapeNotes(transcriptText(rendered, messagesById, userName))}`;
       // A room reply is the room talking. A post_to_room message is another
       // bot's text carried in from somewhere else, so it says so — the
@@ -37249,10 +37253,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const readInRoom = Boolean(store.groupByThread(fromThreadId));
         const readCrossed = readInRoom && threadId !== fromThreadId;
         if (readCrossed) discloseRecall(from, fromThreadId, [threadId]);
+        // An outside app wrote a webhook line: read back with its note, never as the bot's own words.
+        const readText = message.webhook ? webhookPostText(from.name, message.text) : message.text;
         return json(res, 200, {
           ...message,
           crossed: readCrossed,
-          text: message.text.length > SESSION_READ_MAX_CHARS ? `${message.text.slice(0, SESSION_READ_MAX_CHARS)}…` : message.text,
+          text: readText.length > SESSION_READ_MAX_CHARS ? `${readText.slice(0, SESSION_READ_MAX_CHARS)}…` : readText,
           task: store.taskByThread(from.id, threadId)?.title,
         });
       }
