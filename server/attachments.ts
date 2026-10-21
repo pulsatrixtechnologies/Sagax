@@ -19,9 +19,11 @@ import { UploadContentError, assertContentMatches, checkUploadedFile } from "./u
 
 export const ATTACHMENTS_DIR = join(DATA_DIR, "attachments");
 
-/** The spec's ceiling: a screenshot bigger than this is rejected before it
- * is ever buffered, matching the composer's existing size discipline. */
-export const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+/** The ceiling of a stored picture: one bigger than this is rejected before
+ * it is ever buffered. A phone photo (often 12 MB) fits: the copy an engine
+ * gets is scaled down at send time (server/model-image.ts), never refused for
+ * its size (2026-10-20). */
+export const IMAGE_MAX_BYTES = 32 * 1024 * 1024;
 
 /** Shared documents are deliberately smaller than Cloudflare's transport
  * ceiling. This is a local inbox, not unbounded remote storage. */
