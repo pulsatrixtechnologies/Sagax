@@ -9,6 +9,7 @@
  */
 
 import type { RoutineCronSchedule } from "./routine-schedule.ts";
+import type { RoutineWindowTiming } from "./routine-timing.ts";
 
 export type RoutineRequestRunOn = "maus" | "cloud";
 
@@ -19,9 +20,9 @@ export interface RoutineRequestIntervalWindow {
 
 export type RoutineRequestSchedule =
   | { type: "once"; at: number }
-  | { type: "daily"; time: string; weekdays: number[] }
-  | RoutineCronSchedule
-  | {
+  | ({ type: "daily"; time: string; weekdays: number[] } & RoutineWindowTiming)
+  | (RoutineCronSchedule & RoutineWindowTiming)
+  | ({
     type: "interval";
     everyMinutes: number;
     anchorAt?: number;
@@ -31,11 +32,11 @@ export type RoutineRequestSchedule =
     window?: RoutineRequestIntervalWindow;
     /** Inclusive epoch-millisecond cutoff. Missing means never. */
     endsAt?: number;
-  };
+  } & RoutineWindowTiming);
 
 export type RoutineRequestScheduleChanges =
   | Exclude<RoutineRequestSchedule, { type: "interval" }>
-  | {
+  | ({
     type: "interval";
     everyMinutes: number;
     anchorAt?: number;
@@ -45,7 +46,7 @@ export type RoutineRequestScheduleChanges =
     window?: RoutineRequestIntervalWindow | null;
     /** `null` explicitly removes an existing end date. */
     endsAt?: number | null;
-  };
+  } & RoutineWindowTiming);
 
 export interface RoutineRequestDefinition {
   name: string;

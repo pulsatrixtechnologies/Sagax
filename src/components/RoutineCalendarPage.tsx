@@ -114,6 +114,7 @@ import {
 import { api, openBotThread, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
+import { readTiming, RoutineTimingFields, withRoutineTiming } from "./routines/RoutineTimingFields";
 import { BOT_CALENDAR_DRAG_TYPE } from "@/lib/bot-drag";
 
 const HOUR_HEIGHT = 64;
@@ -389,6 +390,10 @@ function EventEditor({
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
+  const initialTiming = readTiming(schedule);
+  const [timingMode, setTimingMode] = useState<"exact" | "flexible">(initialTiming.mode);
+  const [earlyMinutes, setEarlyMinutes] = useState(initialTiming.early);
+  const [lateMinutes, setLateMinutes] = useState(initialTiming.late);
   const [cronDraft, setCronDraft] = useState(() => cronDraftFor(schedule.type === "cron" ? schedule : undefined, initialAt));
   const [cronChanged, setCronChanged] = useState(false);
   const [weekdays, setWeekdays] = useState(schedule.type === "daily" ? schedule.weekdays : [new Date(initialAt).getDay()]);
@@ -552,13 +557,14 @@ function EventEditor({
         if (recurrence === "interval" && intervalEndsAt != null && intervalEndsAt < nextIntervalForSave(savedAt, intervalMinutes, existingIntervalSchedule)) {
           throw new Error("Choose an end date after the first run.");
         }
-        const nextSchedule = isCronChoice(recurrence) ? cron?.schedule : makeRoutineSchedule(recurrence, at, weekdays, intervalMinutes, {
+        const built = isCronChoice(recurrence) ? cron?.schedule : makeRoutineSchedule(recurrence, at, weekdays, intervalMinutes, {
           anchorAt: intervalAnchorAt,
           weekdays: selectedIntervalWeekdays ? [...selectedIntervalWeekdays].sort() : null,
           window: selectedIntervalWindow ?? null,
           endsAt: intervalEndsAt,
         });
-        if (!nextSchedule) throw new Error(cron?.error || "Choose a valid schedule.");
+        if (!built) throw new Error(cron?.error || "Choose a valid schedule.");
+        const nextSchedule = withRoutineTiming(built, recurrence !== "none", timingMode, earlyMinutes, lateMinutes);
         // `runAs` (organization server): the person chosen in the modal.
         const input: RoutineInput & { runAs?: string } = {
           name,
@@ -704,6 +710,16 @@ function EventEditor({
                   {kind === "routine" && <><option value="monthly">Monthly</option><option value="yearly">Yearly</option><option value="cron">Custom cron (advanced)</option></>}
                 </select>
               </div>
+              {kind === "routine" && recurrence !== "none" && (
+                <RoutineTimingFields
+                  mode={timingMode}
+                  earlyMinutes={earlyMinutes}
+                  lateMinutes={lateMinutes}
+                  onMode={setTimingMode}
+                  onEarly={setEarlyMinutes}
+                  onLate={setLateMinutes}
+                />
+              )}
               {kind === "routine" && <RoutineScheduleNote />}
               {isCronChoice(recurrence) && kind === "routine" && cron && <CronScheduleFields choice={recurrence} value={cronDraft} onChange={(draft) => { setCronDraft(draft); setCronChanged(true); }} runs={cron.runs} error={cron.error} />}
               {recurrence === "custom" && (

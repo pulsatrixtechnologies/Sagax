@@ -39,6 +39,18 @@ describe("schedule labels", () => {
     expect(scheduleSentence({ type: "interval", everyMinutes: 120, anchorAt: 0 })).toBe("every 2 hours");
     expect(scheduleSentence({ type: "interval", everyMinutes: 90, anchorAt: 0 })).toBe("every 1 hour 30 minutes");
     expect(scheduleSentence({ type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] })).toMatch(/^every weekday at /);
+    const flexible = {
+      type: "daily" as const,
+      time: "09:00",
+      weekdays: [0, 1, 2, 3, 4, 5, 6],
+      timing: "flexible" as const,
+      windowEarlyMinutes: 15,
+      windowLateMinutes: 0,
+    };
+    expect(scheduleLabel(flexible)).toMatch(/Every day around .+ \(-15\/\+0 min\)/);
+    expect(scheduleSentence(flexible)).toMatch(/every day around .+ \(-15\/\+0 min\)/);
+    expect(scheduleLabel({ type: "interval", everyMinutes: 30, anchorAt: 0, timing: "flexible", windowEarlyMinutes: 5, windowLateMinutes: 10 }))
+      .toContain("around the time (-5/+10 min)");
     expect(scheduleSentence({ type: "daily", time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] })).toMatch(/^every day at /);
     expect(scheduleSentence({ type: "daily", time: "09:00", weekdays: [3] })).toMatch(/^weekly on Wed at /);
     expect(scheduleSentence({ type: "once", at: Date.UTC(2026, 8, 5, 12) })).toMatch(/^once on /);

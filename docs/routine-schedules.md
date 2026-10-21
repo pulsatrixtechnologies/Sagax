@@ -101,6 +101,26 @@ Cron series are edited through the routine editor rather than calendar dragging,
 which could otherwise ambiguously change an entire expression. Dense calendar
 projections are bounded per day; Run logs remain the source of actual outcomes.
 
+## Exact or flexible timing
+
+A repeating routine starts at its scheduled time, or inside a window around
+that time. A one-time routine always starts at the time that was chosen.
+
+Flexible timing has an early window and a late window, in whole minutes.
+When neither is given, both are 15. Together they are capped at half the
+gap between consecutive scheduled times, so two windows cannot overlap.
+A daily gap is the shortest distance between the selected weekdays. An
+interval gap is its cadence. A cron gap is the shortest of the next few
+runs. A late window of 0 means the run is ready by the scheduled time.
+
+The start inside the window is chosen from the routine and the scheduled
+slot. It stays the same after a restart. The following slot is computed
+from the scheduled time, not from the shifted start, so an early start
+does not run the same slot twice.
+
+The editor offers Exact or Flexible on a repeating routine. A flexible
+schedule reads "around HH:MM (-E/+L min)".
+
 ## Webhooks: always a bearer token
 
 Webhooks are the way to start a routine-style task from an event outside the
