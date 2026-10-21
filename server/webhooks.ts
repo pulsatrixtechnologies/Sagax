@@ -633,15 +633,20 @@ function foldNonAscii(cp: number): string {
   return out;
 }
 
-type MarkerSpan = { start: number; end: number };
+/** Parallel arrays, one entry per skeleton unit, so a long scan does not allocate an object per character. */
+type MarkerSpans = { starts: number[]; ends: number[] };
 
 /** Skeleton used only to find markers. Each unit records the slice of `text` it came from. */
-function markerSkeleton(text: string): { skeleton: string; spans: MarkerSpan[] } {
+function markerSkeleton(text: string): { skeleton: string; spans: MarkerSpans } {
   const units: string[] = [];
-  const spans: MarkerSpan[] = [];
+  const starts: number[] = [];
+  const ends: number[] = [];
   const emit = (chunk: string, start: number, end: number) => {
-    for (let i = 0; i < chunk.length; i++) units.push(chunk[i]!);
-    for (let i = 0; i < chunk.length; i++) spans.push({ start, end });
+    for (let i = 0; i < chunk.length; i++) {
+      units.push(chunk[i]!);
+      starts.push(start);
+      ends.push(end);
+    }
   };
   for (let i = 0; i < text.length; ) {
     const cp = text.codePointAt(i)!;
@@ -678,7 +683,7 @@ function markerSkeleton(text: string): { skeleton: string; spans: MarkerSpan[] }
     if (folded) emit(folded, i, i + len);
     i += len;
   }
-  return { skeleton: units.join(""), spans };
+  return { skeleton: units.join(""), spans: { starts, ends } };
 }
 
 const MARKER_WORDS = ["USERCONFIGURED", "AUTHENTICATED", "UNTRUSTED", "DEFAULT", "OWNER"] as const;
@@ -893,7 +898,7 @@ function skipGap(skeleton: string, j: number, mode: MarkerMode): number {
 }
 
 /** Longest marker at `i`. One forward pass, no retry. The boundary is read on `text`. */
-function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[], mode: MarkerMode): MarkerHit | null {
+function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpans, mode: MarkerMode): MarkerHit | null {
   let j = skipGap(skeleton, i + 1, mode);
   const len = skeleton.length;
   let slash = false;
@@ -916,7 +921,7 @@ function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[],
     }
     const end = matchLetters(skeleton, wordAt, letters, mode);
     if (end <= best) continue;
-    const letterEnd = spans[end - 1]!.end;
+    const letterEnd = spans.ends[end - 1]!;
     if (isProseContinuation(text, letterEnd, wordIsLowerEnglish(skeleton, wordAt, end), slash)) continue;
     best = end;
     word = letters;
@@ -925,8 +930,8 @@ function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[],
   if (best < 0) return null;
   const opener = skeleton.charCodeAt(i);
   if (phrase) {
-    const from = spans[wordAt]!.start;
-    const to = spans[best - 1]!.end;
+    const from = spans.starts[wordAt]!;
+    const to = spans.ends[best - 1]!;
     return { skStart: i, skEnd: best, slash, word: text.slice(from, to), phrase: true, opener };
   }
   let shown = "";
@@ -936,7 +941,7 @@ function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[],
   return { skStart: i, skEnd: best, slash, word: shown || word, phrase: false, opener };
 }
 
-function findMarkers(skeleton: string, text: string, spans: MarkerSpan[]): MarkerHit[] {
+function findMarkers(skeleton: string, text: string, spans: MarkerSpans): MarkerHit[] {
   const hits: MarkerHit[] = [];
   for (let i = 0; i < skeleton.length; i++) {
     const code = skeleton.charCodeAt(i);
@@ -950,10 +955,10 @@ function findMarkers(skeleton: string, text: string, spans: MarkerSpan[]): Marke
   return hits;
 }
 
-function skeletonEnd(spans: MarkerSpan[], skEnd: number, textLength: number): number {
-  if (skEnd >= spans.length) return textLength;
-  const next = spans[skEnd]!.start;
-  const last = spans[skEnd - 1]?.end ?? 0;
+function skeletonEnd(spans: MarkerSpans, skEnd: number, textLength: number): number {
+  if (skEnd >= spans.starts.length) return textLength;
+  const next = spans.starts[skEnd]!;
+  const last = skEnd > 0 ? spans.ends[skEnd - 1]! : 0;
   return next > last ? next : last;
 }
 
@@ -1017,11 +1022,11 @@ export function defang(text: string): string {
   let cursor = 0;
   for (let n = 0; n < hits.length; n++) {
     const hit = hits[n]!;
-    const start = spans[hit.skStart]!.start;
+    const start = spans.starts[hit.skStart]!;
     if (start < cursor) continue;
     let end = skeletonEnd(spans, hit.skEnd, text.length);
     let replacement = `[${hit.slash ? "/" : ""}(quoted) ${hit.word}`;
-    const nextStart = n + 1 < hits.length ? spans[hits[n + 1]!.skStart]!.start : text.length;
+    const nextStart = n + 1 < hits.length ? spans.starts[hits[n + 1]!.skStart]! : text.length;
     if (hit.phrase) {
       const balanced = balancePhrase(text, end, nextStart, hit.opener);
       replacement += `${balanced.middle}]`;
