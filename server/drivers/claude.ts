@@ -1588,6 +1588,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
        * began the turn. The acceptance boundary for --resume: before it,
        * nothing was submitted and the turn has caused nothing. */
       sawInit: boolean;
+      /** The last turn ended in failure: the CLI may have refused its
+       * message before keeping it, so what the conversation holds of the
+       * volatile half is not known (heldVolatile). */
+      lastTurnFailed?: boolean;
       /** Set while this process was started for a call warm and no user
        * turn owns it yet. Init is recorded; every other event is dropped
        * until a real turn attaches. */
@@ -1720,7 +1724,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const s = sessions.get(threadId);
       if (!s || s.closing) return;
       s.closing = true;
-      if (s.sessionId && s.sawInit && s.volatile !== UNDELIVERED_VOLATILE && (!s.turn || s.turn.settled)) {
+      if (s.sessionId && s.sawInit && !s.lastTurnFailed && s.volatile !== UNDELIVERED_VOLATILE && (!s.turn || s.turn.settled)) {
         heldVolatile.set(threadId, { sessionId: s.sessionId, volatile: s.volatile, ...(s.volatileSections ? { sections: s.volatileSections } : {}) });
       } else heldVolatile.delete(threadId);
       if (s.idleTimer) clearTimeout(s.idleTimer);
@@ -2531,6 +2535,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         const t = session.turn;
         if (!t || t.settled) return;
         t.settled = true;
+        session.lastTurnFailed = !ok;
         if (t.continuationGrace) {
           clearTimeout(t.continuationGrace);
           t.continuationGrace = null;
