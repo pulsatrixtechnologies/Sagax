@@ -15,7 +15,7 @@ import MessageUI
 
 /// The sheet's pages.
 enum SettingsRoute: Hashable {
-    case account, usage, plugins, rules, timeZone, botComputer, appearance, language, haptics, general, experimental, notifications, privacy
+    case account, usage, plugins, rules, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy
 }
 
 struct SettingsView: View {
@@ -189,6 +189,12 @@ private struct SettingsRootPage: View {
         if session.connection != nil {
             SettingsSectionLabel(text: "Bot")
             SettingsBotCard(showsComputer: has(.computer))
+            SettingsSpacer(SettingsMetrics.cardGap)
+            SettingsCard {
+                SettingsRow(title: "Published pages", accessory: .chevron, height: 44, identifier: "settings-pages") {
+                    navigator.push(.pages)
+                }
+            }
         }
         SettingsSpacer(SettingsMetrics.cardGap)
         SettingsCard {
@@ -325,6 +331,7 @@ private struct SettingsRootPage: View {
         case .plugins: navigator.push(.plugins)
         case .account: navigator.push(.account)
         case .botComputer: navigator.push(.botComputer)
+        case .pages: navigator.push(.pages)
         case .usage: navigator.push(.usage)
         case .rules: navigator.push(.rules)
         case .timeZone: navigator.push(.timeZone)
@@ -353,6 +360,7 @@ struct SettingsRouteView: View {
         case .rules: AutoReviewRulesView()
         case .timeZone: TimeZonePickerView()
         case .botComputer: BotComputerSettingsView()
+        case .pages: PublishedPagesPage()
         case .appearance: AppearanceSettingsView()
         case .language: LanguageSettingsView()
         case .haptics: HapticsSettingsView()
