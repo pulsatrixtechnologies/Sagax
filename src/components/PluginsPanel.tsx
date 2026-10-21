@@ -45,6 +45,7 @@ import {
   removeMarketplace as removeBotMarketplace,
   removeMarketplaceToken as removeBotMarketplaceToken,
   setMarketplaceToken as setBotMarketplaceToken,
+  setPluginConfig as setBotPluginConfig,
   setPluginEnabled as setBotPluginEnabled,
   uninstallPlugin as uninstallBotPlugin,
   updateMarketplace as updateBotMarketplace,
@@ -87,6 +88,8 @@ import { ManageView } from "./plugins/ManageView";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
 import { OrgSourcesAccess, showOrgSourcesAccess } from "./plugins/OrgSourcesAccess";
 import { PluginStatusLabel } from "./plugins/PluginParts";
+import { pluginShareLink } from "@/lib/plugin-link";
+import { DataCenterDialog, type DataCenter } from "./plugins/DataCenterDialog";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type PluginDetailProps } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
 import { ScopeToggle } from "./plugins/ScopeToggle";
@@ -111,6 +114,8 @@ interface MarketplaceListing {
 
 interface FeaturedListing {
   id: string; name: string; description: string; url: string; domain: string; auth: string; installed?: boolean; site?: string; category?: string; iconUrl?: string;
+  /** the provider's data centers (Add asks which one first) */
+  regions?: DataCenter[];
 }
 
 /** One page of the panel's window. The window keeps a stack of them (the
@@ -187,6 +192,7 @@ export function PluginsPanel() {
   // answers 403 to anyone else).
   const orgAdmin = perspicaxOrg?.viewerRole === "admin";
   const [featured, setFeatured] = useState<FeaturedListing[] | null>(null);
+  const [dataCenterFor, setDataCenterFor] = useState<{ item: PluginItem; regions: DataCenter[]; defaultUrl: string } | null>(null);
   const [skills, setSkills] = useState<SkillsLibrarySkillWire[] | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -378,11 +384,16 @@ export function PluginsPanel() {
     push({ page: "detail", key });
   };
 
-  const installFeatured = async (item: PluginItem) => {
+  const installFeatured = async (item: PluginItem, region?: string) => {
+    const listing = featured?.find((entry) => entry.id === item.id);
+    if (region === undefined && listing?.regions?.length) {
+      setDataCenterFor({ item, regions: listing.regions, defaultUrl: listing.url });
+      return;
+    }
     setInstalling(item.id);
     setPanelError(null);
     try {
-      const result = await api("/api/plugins/install", { method: "POST", body: JSON.stringify({ id: item.id }) });
+      const result = await api("/api/plugins/install", { method: "POST", body: JSON.stringify({ id: item.id, ...(region ? { region } : {}) }) });
       await mcp.load();
       await loadFeatured();
       if (typeof result.authorizationUrl === "string") await apps.openConnectUrl(result.authorizationUrl);
@@ -518,6 +529,10 @@ export function PluginsPanel() {
         onInstall={() => installForBot(item.id)}
         onToggle={(enabled) => toggleForBot(item.id, enabled)}
         onUninstall={() => uninstallForBot(item.id)}
+        onSaveConfig={async (values) => {
+          if (!scopeBotId) return;
+          setBotView(await setBotPluginConfig(scopeBotId, item.id, values));
+        }}
       />
     );
   };
@@ -893,6 +908,19 @@ export function PluginsPanel() {
           {content}
         </div>
       </div>
+      {dataCenterFor && (
+        <DataCenterDialog
+          name={dataCenterFor.item.name}
+          regions={dataCenterFor.regions}
+          defaultUrl={dataCenterFor.defaultUrl}
+          onCancel={() => setDataCenterFor(null)}
+          onChoose={(region) => {
+            const { item } = dataCenterFor;
+            setDataCenterFor(null);
+            void installFeatured(item, region);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1045,8 +1073,13 @@ type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
 
 function detailProps(item: PluginItem, context: DetailContext): DetailBase {
   if (item.kind === "app") return appDetail(item, context);
-  if (item.kind === "plugin") return pluginDetail(item, context);
-  return mcpDetail(item, context);
+  if (item.kind === "plugin") {
+    const marketplace = item.id.split("@")[1];
+    const source = context.marketplaces?.find((entry) => entry.name === marketplace)?.source;
+    return { ...pluginDetail(item, context), link: pluginShareLink({ kind: "plugin", marketplaceSource: source }) };
+  }
+  const server = context.mcp.servers?.find((candidate) => candidate.name === item.id);
+  return { ...mcpDetail(item, context), link: pluginShareLink({ kind: "mcp", serverUrl: server && "url" in server ? server.url : undefined }) };
 }
 
 function appDetail(item: PluginItem, { apps, aliasDraft, setAliasDraft, bots, instances, openBotAccess, appTools, loadAppTools, toggleAppTool, canSwitchAppTools }: DetailContext): DetailBase {

@@ -41,6 +41,7 @@ import type { PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
 import { githubGitEnvironment } from "./github-connect.ts";
 import { WORKSPACE_TOKEN_KEY } from "./marketplace-tokens.ts";
+import { applyPluginConfig, checkPluginConfig, readConfigValues, readPluginConfigFields, writeConfigValues, type PluginConfigField, type PluginConfigValue } from "./plugin-config.ts";
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const BOT_ID = /^[\w-]{1,80}$/;
@@ -185,7 +186,9 @@ export type PluginState = z.infer<typeof stateSchema>;
  * it (server/bot-zip.ts): its marketplaces with its installs. */
 export type LegacyPluginState = z.infer<typeof legacyStateSchema>;
 export type MarketplaceRecord = z.infer<typeof marketplaceRecord>;
-export type InstalledBotPlugin = z.infer<typeof pluginRecord> & { key: string };
+/** A plugin's declared fields and this bot's values (server/plugin-config.ts). */
+export interface PluginConfigView { fields: PluginConfigField[]; values: Record<string, PluginConfigValue> }
+export type InstalledBotPlugin = z.infer<typeof pluginRecord> & { key: string; config?: PluginConfigView };
 
 /** What a plugin brings to a bot, by name (read from its folder). */
 export interface PluginContents {
@@ -588,7 +591,34 @@ export class BotPlugins {
   }
 
   listPlugins(botId: string): InstalledBotPlugin[] {
-    return Object.entries(this.read(botId).plugins).map(([key, record]) => ({ key, ...record })).sort((a, b) => a.key.localeCompare(b.key));
+    const values = readConfigValues(this.configFile(botId));
+    return Object.entries(this.read(botId).plugins).map(([key, record]) => {
+      const fields = readPluginConfigFields(this.pluginDir(botId, record.marketplace, record.name));
+      return { key, ...record, ...(fields.length ? { config: { fields, values: values[key] ?? {} } } : {}) };
+    }).sort((a, b) => a.key.localeCompare(b.key));
+  }
+
+  private configFile(botId: string): string {
+    return join(this.root(botId), "plugins", "config.json");
+  }
+
+  /** Save a plugin's configuration values for this bot and write them into
+   * its skills, agents and commands (server/plugin-config.ts). */
+  setPluginConfig(botId: string, key: string, input: unknown): Promise<InstalledBotPlugin> {
+    return this.withLock(botId, async () => {
+      const record = this.read(botId).plugins[key];
+      if (!record) throw new BotPluginError("No plugin with that name on this bot.", "not_found", 404);
+      const dir = this.pluginDir(botId, record.marketplace, record.name);
+      const fields = readPluginConfigFields(dir);
+      if (!fields.length) throw new BotPluginError("This plugin declares no configuration.", "no_config", 400);
+      const checked = checkPluginConfig(fields, input);
+      if (!checked.ok) throw new BotPluginError(checked.error, checked.code, 400);
+      const all = readConfigValues(this.configFile(botId));
+      all[key] = checked.values;
+      writeConfigValues(this.configFile(botId), all);
+      applyPluginConfig(dir, fields, checked.values);
+      return { key, ...record, config: { fields, values: checked.values } };
+    });
   }
 
   /** Add (or fetch again) a marketplace of the one list, from a bot. The
@@ -692,6 +722,9 @@ export class BotPlugins {
           rmSync(checkout, { recursive: true, force: true });
         }
       }
+      // the copy is fresh: this bot's values (or the defaults) go in again
+      const fields = readPluginConfigFields(target);
+      if (fields.length) applyPluginConfig(target, fields, readConfigValues(this.configFile(botId))[key] ?? {});
       const now = this.now();
       const previous = state.plugins[key];
       const revision = this.options.marketplaces.revisionOf(input.marketplace, entry);
@@ -729,6 +762,11 @@ export class BotPlugins {
       rmSync(this.pluginDir(botId, record.marketplace, record.name), { recursive: true, force: true });
       delete state.plugins[key];
       this.write(botId, state);
+      const values = readConfigValues(this.configFile(botId));
+      if (values[key]) {
+        delete values[key];
+        writeConfigValues(this.configFile(botId), values);
+      }
     });
   }
 

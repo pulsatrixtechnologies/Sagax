@@ -36,7 +36,7 @@ function write(root: string, path: string, content: string) {
 function marketplaceRepo(): string {
   const repo = temp();
   write(repo, ".claude-plugin/marketplace.json", JSON.stringify({ name: "acme-tools", plugins: [{ name: "reviewer", source: "./plugins/reviewer" }] }));
-  write(repo, "plugins/reviewer/.claude-plugin/plugin.json", JSON.stringify({ name: "reviewer" }));
+  write(repo, "plugins/reviewer/.claude-plugin/plugin.json", JSON.stringify({ name: "reviewer", userConfig: { team: { type: "string", title: "Team" }, token: { type: "string", title: "Token", sensitive: true } } }));
   write(repo, "plugins/reviewer/agents/critic.md", "---\nname: critic\n---\nCritic");
   write(repo, "plugins/reviewer/commands/review.md", "Review the diff");
   return repo;
@@ -129,6 +129,20 @@ describe("one marketplace list, two install scopes", () => {
     // the workspace list says one bot uses it, and refuses to drop it
     const workspace = await call(ADMIN, "GET", "/api/marketplaces");
     expect(workspace.body.marketplaces[0]).toMatchObject({ name: "acme-tools", bots: 1 });
+  });
+
+  it("saves a plugin's configuration for its bot's owner, never a secret, and refuses anyone else", async () => {
+    const { call } = await boot();
+    await call(ADMIN, "POST", "/api/marketplaces", { source: "acme/tools" });
+    await call("pr_alice", "POST", "/api/bots/alice-bot/plugins/install", { marketplace: "acme-tools", plugin: "reviewer" });
+    const listed = await call("pr_alice", "GET", "/api/bots/alice-bot/plugins");
+    expect(listed.body.plugins[0].config.fields.map((field: { key: string }) => field.key)).toEqual(["team", "token"]);
+    const saved = await call("pr_alice", "PUT", "/api/bots/alice-bot/plugins/reviewer@acme-tools/config", { values: { team: "Platform" } });
+    expect(saved.status).toBe(200);
+    expect(saved.body.plugin.config.values).toEqual({ team: "Platform" });
+    const secret = await call("pr_alice", "PUT", "/api/bots/alice-bot/plugins/reviewer@acme-tools/config", { values: { token: "abc" } });
+    expect(secret).toMatchObject({ status: 400, body: { code: "sensitive_field" } });
+    expect((await call("pr_bob", "PUT", "/api/bots/alice-bot/plugins/reviewer@acme-tools/config", { values: { team: "x" } })).status).toBe(403);
   });
 
   it("lets a member change only the plugins of a bot they own or manage", async () => {
