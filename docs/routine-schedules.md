@@ -111,17 +111,25 @@ When neither is given, both are 15. The minutes are stored as written.
 When a start is placed they are capped at half the gap between consecutive
 scheduled times, so two windows cannot overlap. A daily gap is the shortest
 distance between the selected weekdays. An interval gap is its cadence. A
-cron gap is the shortest gap in the expression over a full cycle of its
-days, including the step back to the next hour and the step from the last
-restricted day onto the next one. The cycle does not depend on when the gap
-is measured. A late window of 0 means the run is ready by the scheduled
-time.
+cron gap is the shortest real time between consecutive runs. For an
+expression written with numbers, it comes from the minute and hour grid and
+the distance between matching days, including the step back to the next hour
+and the step from the last restricted day onto the next one. A spring-forward
+from 2024 through 2031 shortens a gap that contains the skipped hour. A
+day-of-month expression whose only spring-forward falls outside that span
+keeps the wall-clock gap. The repeated hour when the clocks fall back does
+not shorten a gap. The result does not depend on when it is measured, and it
+is remembered for that expression and zone. An expression that names a month
+or a weekday in words is still walked, and a cycle longer than 2,500 steps
+can be cut short. A late window of 0 means the
+run is ready by the scheduled time.
 
 The start inside the window is chosen from the routine and the scheduled
 slot. It stays the same after a restart. The following slot is computed
 from the scheduled time, not from the shifted start. A slot that already
-fired is not placed again, including after a pause or a schedule edit
-while its window is still open.
+fired is not placed again, including after a pause, a schedule edit, a
+restart, a time-zone change, or a suspension from an older build being
+cleared, while its window is still open.
 
 The editor offers Exact or Flexible on a repeating routine. A flexible
 schedule reads "around HH:MM (-E/+L min)".

@@ -8,6 +8,7 @@ import {
   clampTimingWindow,
   dailyGapMs,
   flexibleStartAt,
+  cronGapCacheMisses,
   nominalGapMs,
   placedStart,
   planFlexibleStart,
@@ -85,6 +86,37 @@ describe("flexible timing windows", () => {
     expect(nominalGapMs(monthDay, third)).toBe(60 * MINUTE);
     expect(nominalGapMs(monthDay, fourth)).toBe(60 * MINUTE);
     expect(nominalGapMs(monthDay, Date.parse("2026-01-04T00:01:00Z"))).toBe(60 * MINUTE);
+  });
+
+  it("computes a dense day-restricted gap quickly and remembers it", () => {
+    const everyFive = { type: "cron" as const, expression: "*/5 * 1-15 * *", timeZone: "UTC" };
+    const everyMinute = { type: "cron" as const, expression: "*/1 * 1 * *", timeZone: "UTC" };
+    const before = cronGapCacheMisses();
+    const started = performance.now();
+    expect(nominalGapMs(everyFive, Date.parse("2026-06-01T00:00:00Z"))).toBe(5 * MINUTE);
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(cronGapCacheMisses()).toBe(before + 1);
+    const again = performance.now();
+    expect(nominalGapMs(everyFive, Date.parse("2026-12-01T00:00:00Z"))).toBe(5 * MINUTE);
+    expect(performance.now() - again).toBeLessThan(50);
+    expect(cronGapCacheMisses()).toBe(before + 1);
+
+    const minuteStarted = performance.now();
+    expect(nominalGapMs(everyMinute, Date.parse("2026-06-01T00:00:00Z"))).toBe(MINUTE);
+    expect(performance.now() - minuteStarted).toBeLessThan(50);
+    expect(cronGapCacheMisses()).toBe(before + 2);
+    expect(nominalGapMs(everyMinute, Date.parse("2026-08-01T00:00:00Z"))).toBe(MINUTE);
+    expect(cronGapCacheMisses()).toBe(before + 2);
+  });
+
+  it("shortens a gap that contains a spring-forward and leaves the fall-back hour longer", () => {
+    const toronto = { type: "cron" as const, expression: "0 1,3 * * 0", timeZone: "America/Toronto" };
+    const june = Date.parse("2026-06-07T12:00:00Z");
+    const november = Date.parse("2026-11-02T12:00:00Z");
+    expect(nominalGapMs(toronto, june)).toBe(60 * MINUTE);
+    expect(nominalGapMs(toronto, november)).toBe(60 * MINUTE);
+    const utc = { type: "cron" as const, expression: "0 1,3 * * 0", timeZone: "UTC" };
+    expect(nominalGapMs(utc, june)).toBe(120 * MINUTE);
   });
 
   it("jumps to the first open slot and skips a slot that already fired", () => {

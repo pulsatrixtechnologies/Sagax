@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -11,13 +11,14 @@ import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 const MINUTE = 60_000;
 const DAYS = [0, 1, 2, 3, 4, 5, 6];
 
-function harness(start = new Date(2026, 7, 17, 8, 0, 0, 0).getTime()) {
+function harness(start = new Date(2026, 7, 17, 8, 0, 0, 0).getTime(), timeZoneFor?: () => string | undefined) {
   const dir = mkdtempSync(join(tmpdir(), "routine-timing-"));
   const file = join(dir, "routines.json");
   let now = start;
   const manager = new RoutineManager({
     file,
     now: () => now,
+    ...(timeZoneFor ? { timeZoneFor } : {}),
     botState: () => "ready",
     createTask: () => ({ threadId: "t1" }),
     startTurn: async () => {},
@@ -309,6 +310,87 @@ describe("flexible routine timing", () => {
     h.setNow(fired);
     await h.manager.tick();
     expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+  });
+
+  async function firedThenExact(h: ReturnType<typeof harness>) {
+    const routine = h.manager.create({
+      name: "Morning",
+      prompt: "Check the list",
+      botId: "b1",
+      schedule: daily({ timing: "flexible", windowEarlyMinutes: 30, windowLateMinutes: 0 }),
+    });
+    const fired = routine.nominalRunAt!;
+    expect(routine.nextRunAt).toBeLessThan(fired);
+    h.setNow(routine.nextRunAt!);
+    await h.manager.tick();
+    const exact = h.manager.update(routine.id, { schedule: daily({ timing: "exact" }) });
+    const next = exact!.nextRunAt!;
+    expect(exact?.lastFiredNominalAt).toBe(fired);
+    expect(next).toBeGreaterThan(fired);
+    expect(h.now).toBeLessThan(fired);
+    return { routine, fired, next };
+  }
+
+  function reopen(h: ReturnType<typeof harness>) {
+    const again = new RoutineManager({
+      file: h.file,
+      now: () => h.now,
+      botState: () => "ready",
+      createTask: () => ({ threadId: "t1" }),
+      startTurn: async () => {},
+    });
+    open.push({ stop: () => again.stop() });
+    return again;
+  }
+
+  it("does not fire 09:00 again when an early run became exact and the server restarts", async () => {
+    const h = harness();
+    open.push(h);
+    const { routine, fired, next } = await firedThenExact(h);
+    h.manager.stop();
+    const again = reopen(h);
+    again.start();
+    expect(again.getRoutine(routine.id)!.nextRunAt).toBe(next);
+    expect(again.getRoutine(routine.id)!.nextRunAt).toBeGreaterThan(fired);
+    h.setNow(fired);
+    await again.tick();
+    expect(again.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+  });
+
+  it("does not put the fired slot back when the time zone is applied again", async () => {
+    let zone = "UTC";
+    const h = harness(undefined, () => zone);
+    open.push(h);
+    const { routine, fired, next } = await firedThenExact(h);
+    expect(next).toBe(nextOccurrence(daily(), fired, "UTC"));
+    zone = "Atlantic/Reykjavik";
+    expect(h.manager.rescheduleWallClock()).toBe(0);
+    const kept = h.manager.getRoutine(routine.id)!;
+    expect(kept.nextRunAt).toBe(next);
+    expect(kept.nextRunAt).toBeGreaterThan(fired);
+    h.setNow(fired);
+    await h.manager.tick();
+    expect(h.manager.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
+  });
+
+  it("does not fire the cleared slot when a retired suspension is reloaded", async () => {
+    const h = harness();
+    open.push(h);
+    const { routine, fired, next } = await firedThenExact(h);
+    h.manager.stop();
+    const disk = JSON.parse(readFileSync(h.file, "utf8")) as { routines: Array<{ id: string; suspended?: unknown }> };
+    const row = disk.routines.find((item) => item.id === routine.id);
+    expect(row).toBeDefined();
+    row!.suspended = { reason: "delegation_missing", at: 1 };
+    writeFileSync(h.file, JSON.stringify(disk));
+    const again = reopen(h);
+    const loaded = again.getRoutine(routine.id)!;
+    expect(loaded.suspended).toBeUndefined();
+    expect(loaded.nextRunAt).toBe(next);
+    expect(loaded.nextRunAt).toBeGreaterThan(fired);
+    h.setNow(fired);
+    await again.tick();
+    expect(again.listRuns().filter((run) => run.routineId === routine.id)).toHaveLength(1);
   });
 
   it("still places the upcoming slot when exact timing becomes flexible", () => {

@@ -562,11 +562,32 @@ function keptTiming(
   return {};
 }
 
-function normalizeSchedule(schedule: RoutineToolScheduleInput, now: number): RoutineRequestSchedule {
+/** Window minutes on an update of a flexible routine, with no timing key, keep that mode. */
+function flexibleWindowUpdate(
+  schedule: RoutineToolScheduleInput,
+  current: { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number } | undefined,
+): RoutineToolScheduleInput {
+  if (schedule.type === "once" || !current || current.type === "once" || current.timing !== "flexible") return schedule;
+  if (schedule.timing != null) return schedule;
+  if (schedule.windowEarlyMinutes == null && schedule.windowLateMinutes == null) return schedule;
+  return {
+    ...schedule,
+    timing: "flexible",
+    windowEarlyMinutes: schedule.windowEarlyMinutes ?? current.windowEarlyMinutes,
+    windowLateMinutes: schedule.windowLateMinutes ?? current.windowLateMinutes,
+  };
+}
+
+function normalizeSchedule(
+  schedule: RoutineToolScheduleInput,
+  now: number,
+  current?: { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number },
+): RoutineRequestSchedule {
+  const source = flexibleWindowUpdate(schedule, current);
   if (schedule.type === "cron") {
     try {
       const base = normalizeCronSchedule({ type: "cron", expression: schedule.expression, timeZone: schedule.timeZone }, now);
-      return timed(base, schedule);
+      return timed(base, source);
     } catch (error) {
       if (error instanceof RoutineRequestError) throw error;
       throw new RoutineRequestError(error instanceof Error ? error.message : "Invalid cron schedule");
@@ -614,7 +635,7 @@ function normalizeSchedule(schedule: RoutineToolScheduleInput, now: number): Rou
       ...(schedule.weekdays == null ? {} : { weekdays: intervalWeekdays(schedule.weekdays) }),
       ...(schedule.window == null ? {} : { window: intervalWindow(schedule.window, schedule.everyMinutes) }),
       ...(endsAt === undefined ? {} : { endsAt }),
-    }, schedule);
+    }, source);
   }
   if (!TIME.test(schedule.time)) {
     throw new RoutineRequestError("Weekly schedule time must use 24-hour HH:MM");
@@ -627,14 +648,15 @@ function normalizeSchedule(schedule: RoutineToolScheduleInput, now: number): Rou
     if (number === undefined) throw new RoutineRequestError(`Unsupported weekday: ${day}`);
     return number;
   }))].sort();
-  return timed({ type: "daily", time: schedule.time, weekdays }, schedule);
+  return timed({ type: "daily", time: schedule.time, weekdays }, source);
 }
 
 function normalizeScheduleChanges(
   schedule: RoutineToolScheduleInput,
   now: number,
+  current?: { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number },
 ): RoutineRequestScheduleChanges {
-  const normalized = normalizeSchedule(schedule, now);
+  const normalized = normalizeSchedule(schedule, now, current);
   if (schedule.type !== "interval" || normalized.type !== "interval") return normalized;
   return {
     ...normalized,
@@ -658,11 +680,15 @@ function normalizeDefinition(input: RoutineToolDefinitionInput, now: number): Ro
   };
 }
 
-function normalizeChanges(input: RoutineToolChangesInput, now: number): RoutineRequestChanges {
+function normalizeChanges(
+  input: RoutineToolChangesInput,
+  now: number,
+  current?: { type: string; timing?: string; windowEarlyMinutes?: number; windowLateMinutes?: number },
+): RoutineRequestChanges {
   const changes: RoutineRequestChanges = {};
   if (input.name !== undefined) changes.name = text(input.name, "name", 80);
   if (input.instructions !== undefined) changes.instructions = text(input.instructions, "instructions", 20_000);
-  if (input.schedule !== undefined) changes.schedule = normalizeScheduleChanges(input.schedule, now);
+  if (input.schedule !== undefined) changes.schedule = normalizeScheduleChanges(input.schedule, now, current);
   if (input.runOn !== undefined) changes.runOn = runOn(input.runOn);
   if (input.durationMinutes !== undefined) changes.durationMinutes = duration(input.durationMinutes);
   if (input.timeoutMinutes !== undefined) changes.timeoutMinutes = timeout(input.timeoutMinutes);
@@ -716,7 +742,7 @@ function normalizedOperation(
       action: "update",
       routineId: id,
       expectedUpdatedAt: current.updatedAt,
-      changes: normalizeChanges(validated.changes, now),
+      changes: normalizeChanges(validated.changes, now, current.schedule),
       ...(validated.forBot ? { forBot: validated.forBot } : {}),
     };
   }

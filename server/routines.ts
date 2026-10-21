@@ -1185,7 +1185,7 @@ export class RoutineManager {
                 if (placed.nominal != null) loaded.nominalRunAt = placed.nominal;
                 else delete loaded.nominalRunAt;
               } else {
-                loaded.nextRunAt = this.initialOccurrence(schedule, this.now(), loaded);
+                loaded.nextRunAt = this.nextExactStart(schedule, this.now(), loaded);
               }
             }
             if (
@@ -2795,7 +2795,7 @@ export class RoutineManager {
         this.emitRoutine(routine);
         continue;
       }
-      const next = nextOccurrence(routine.schedule, now, this.zoneOf(routine));
+      const next = this.nextExactStart(routine.schedule, now, routine);
       if (next === routine.nextRunAt) continue;
       routine.nextRunAt = next;
       changed++;
@@ -2812,12 +2812,7 @@ export class RoutineManager {
     routine?: { botId?: string; runAs?: string; lastFiredNominalAt?: number },
   ): { start: number | null; nominal?: number } {
     if (!isFlexibleSchedule(schedule)) {
-      // A slot at or before the last fired nominal is already consumed. That
-      // includes a switch from flexible to exact while the fired slot's
-      // window is still open: exact placement must not put that slot back.
-      const fired = routine?.lastFiredNominalAt;
-      const after = schedule.type !== "once" && fired != null ? Math.max(now, fired) : now;
-      return { start: this.initialOccurrence(schedule, after, routine) };
+      return { start: this.nextExactStart(schedule, now, routine) };
     }
     const placed = planFlexibleStart({
       routineId: id,
@@ -2845,15 +2840,24 @@ export class RoutineManager {
     });
   }
 
-  private initialOccurrence(schedule: RoutineSchedule, now: number, routine?: { botId?: string; runAs?: string }): number | null {
-    // Return the original time, not max(at, now): tick() already decides
-    // whether a stale "once" run fires or is recorded as "missed" based on
-    // how far past the scheduled time it is. Clamping to now here hides the
-    // original schedule from the run receipt (scheduledFor would read "now"
-    // instead of the time the user chose) and prevents the 12-hour missed
-    // threshold from ever triggering for a "once" routine created late.
+  /**
+   * Next exact start. Every placement path uses this, including a restart,
+   * a time-zone change and a suspension from an older build being cleared.
+   * A repeating slot at or before the last fired nominal is already consumed,
+   * so a switch from flexible to exact cannot put that slot back.
+   * A one-time routine keeps the time that was chosen: tick() decides whether
+   * a stale one-time run fires or is missed, and clamping it here would hide
+   * that time from the receipt.
+   */
+  private nextExactStart(
+    schedule: RoutineSchedule,
+    now: number,
+    routine?: { botId?: string; runAs?: string; lastFiredNominalAt?: number },
+  ): number | null {
     if (schedule.type === "once") return schedule.at;
-    return nextOccurrence(schedule, now, routine ? this.zoneOf(routine) : undefined);
+    const fired = routine?.lastFiredNominalAt;
+    const after = fired != null && Number.isSafeInteger(fired) && fired >= 0 ? Math.max(now, fired) : now;
+    return nextOccurrence(schedule, after, routine ? this.zoneOf(routine) : undefined);
   }
 
   private newRun(
