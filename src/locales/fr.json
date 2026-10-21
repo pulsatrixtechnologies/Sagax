@@ -7055,6 +7055,7 @@
   "approval.applied.profileOther": "{name} a mis à jour le profil de {target} : {title}",
   "approval.applied.profileOwn": "{name} a mis à jour son profil : {title}",
   "approval.applied.routine.create": "{name} a planifié une routine : {title}",
+  "approval.applied.routine.createPaused": "{name} a créé une routine en pause : {title}",
   "approval.applied.routine.delete": "{name} a supprimé une routine : {title}",
   "approval.applied.routine.pause": "{name} a mis une routine en pause : {title}",
   "approval.applied.routine.resume": "{name} a repris une routine : {title}",

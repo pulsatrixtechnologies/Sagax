@@ -2248,6 +2248,7 @@
   "approval.status.modelChanged": "既定のモデルを変更しました",
   "approval.status.undone": "取り消しました",
   "approval.applied.routine.create": "{name} がルーティンを予約しました: {title}",
+  "approval.applied.routine.createPaused": "{name} が一時停止中のルーティンを作成しました: {title}",
   "approval.applied.routine.update": "{name} がルーティンを更新しました: {title}",
   "approval.applied.routine.pause": "{name} がルーティンを一時停止しました: {title}",
   "approval.applied.routine.resume": "{name} がルーティンを再開しました: {title}",
