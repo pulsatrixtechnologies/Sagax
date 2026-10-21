@@ -143,15 +143,18 @@ const ERRNO_ERROR = /\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENETUNREAC
 /** "timed out", a timeout that is the error itself, or "aborted due to
  * timeout". "expected timeout" is not. */
 const TIMEOUT_ERROR = /\btime(?:d)?\s+out\b|\b(?:request|connection|connect|read|write|gateway|operation|network|socket|response|deadline)\s+timeout\b|\bdue to (?:a )?timeout\b|\btimeout(?:Error|Exception)\b|^(?:error|err)[:\s]+timeout$|^timeout$/i;
-/** An HTTP status code, not a line or column number ("line 503"). A bare
- * number counts only as the whole message or with its reason phrase. A
- * status field, a code in parentheses, or "returned 503" counts too. */
-const HTTP_STATUS_ERROR = /\b(?:https?|status(?:\s+code)?|error(?:\s+code)?)["']?[:\s=]+["']?(?:429|502|503|504)\b|\b(?:429|502|503|504)\s+(?:too many requests|bad gateway|service unavailable|gateway time-?out)\b|^(?:429|502|503|504)$|\((?:429|502|503|504)\)|\breturned\s+(?:429|502|503|504)\b/i;
+/** An HTTP status code, not a line or column number ("line 503") and not a
+ * parenthesized number in passing ("see issue (503)"). A bare number counts
+ * only as the whole message or with its reason phrase. A status or
+ * status_code field, "returned 503", or a code in parentheses next to an
+ * HTTP, status, error, or rate-limit word counts too. */
+const HTTP_STATUS_ERROR = /\b(?:https?|status(?:[\s_]*code)?|error(?:[\s_]*code)?)["']?[:\s=]+["']?(?:429|502|503|504)\b|\b(?:429|502|503|504)\s+(?:too many requests|bad gateway|service unavailable|gateway time-?out)\b|^(?:429|502|503|504)$|\breturned\s+(?:429|502|503|504)\b|\b(?:https?|status(?:[\s_]*code)?|error(?:[\s_]*code)?|rate\s+limit)\b[^()\n]{0,40}\((?:429|502|503|504)\)/i;
 const CONNECTION_RESET_ERROR = /\bconnection reset\b/i;
 const SOCKET_HANGUP = /\bsocket hang up\b/i;
-/** A proxy reset, for example "upstream connect error or disconnect/reset
- * before headers". The two words stay near each other. */
-const UPSTREAM_RESET = /\bupstream\b.{0,160}\breset\b/i;
+/** Proxy failures only: "upstream connect error", "disconnect/reset before
+ * headers", and "upstream request timeout". "upstream branch was reset"
+ * is a git note, not one of these. */
+const UPSTREAM_RESET = /\bupstream connect error\b|\bdisconnect\/reset before headers\b|\bupstream request timeout\b/i;
 
 function commandText(input: unknown): string {
   const value = normalize(input);

@@ -276,7 +276,10 @@ describe("waits, polls and retries", () => {
   });
 
   it("does not treat a line number or an expected timeout as a transient error", () => {
-    for (const result of ["line 503", "at line 503", "expected timeout", "expected timeout of 30s"]) {
+    for (const result of [
+      "line 503", "at line 503", "expected timeout", "expected timeout of 30s",
+      "see issue (503) for details", "upstream branch was reset",
+    ]) {
       const d = detector();
       const verdicts = feed(d, times(3, {
         tool: "Bash", input: "cat src/app.ts", result, error: true,
@@ -288,6 +291,7 @@ describe("waits, polls and retries", () => {
 
   it.each([
     ["a status field", '{"status":503}'],
+    ["a status_code field", '{"status_code":503}'],
     ["a hung socket", "socket hang up"],
     ["an aborted operation", "The operation was aborted due to timeout"],
     ["a rate limit", "Rate limit exceeded (429)"],
@@ -345,6 +349,15 @@ describe("waits, polls and retries", () => {
       tool: "Bash", input: "runner get pod app", result: `phase ${i}`,
     })));
     expect(polls.at(-1)).toMatchObject({ kind: "identical-call", count: POLL_REPEAT_BUDGET });
+  });
+
+  it("gives a status_code field the transient retry budget", () => {
+    const d = detector();
+    const verdicts = feed(d, times(TRANSIENT_RETRY_BUDGET, {
+      tool: "Fetch", input: { url: "http://example.test/item" }, result: '{"status_code":503}', error: true,
+    }));
+    expect(verdicts.slice(0, -1).every((v) => v === null)).toBe(true);
+    expect(verdicts.at(-1)).toMatchObject({ kind: "same-error", count: TRANSIENT_RETRY_BUDGET });
   });
 
   it("still stops a transient retry that never succeeds", () => {
