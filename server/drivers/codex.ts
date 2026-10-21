@@ -1091,6 +1091,23 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           );
           }
         }
+        // The Messages tool posts its own send card. Codex must not ask twice.
+        if (turn.integrations?.messages) {
+          if (turn.toolScope !== undefined) {
+            mountSelected("messages", "sagax_messages", turn.integrations.messages);
+          } else {
+          const bridge = turn.integrations.messages;
+          Object.assign(env, bridge.env);
+          for (const name of Object.keys(bridge.env)) mountedNames.add(name);
+          const prefix = "mcp_servers.sagax_messages";
+          appServerArgs.push(
+            "-c", `${prefix}.command=${JSON.stringify(bridge.command)}`,
+            "-c", `${prefix}.args=${JSON.stringify(bridge.args)}`,
+            "-c", `${prefix}.env_vars=${JSON.stringify(Object.keys(bridge.env))}`,
+            "-c", `${prefix}.default_tools_approval_mode="auto"`,
+          );
+          }
+        }
 
         // Codex hands its MCP children their variables from the one
         // environment it also runs shell commands in. Every variable a mount

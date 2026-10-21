@@ -88,6 +88,7 @@ const ENTRY_POINTS = [
   "drivers/agents-proxy.ts",
   "drivers/dweb-proxy.ts",
   "drivers/phone-proxy.ts",
+  "drivers/imessage-proxy.ts",
 ];
 
 await build({

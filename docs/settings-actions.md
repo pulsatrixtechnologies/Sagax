@@ -164,6 +164,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Share the New bot defaults as a public template link ({name?, description?}); get lists your links | New bot > Share preset > Share the link | `sagax_settings` get, set `template.share` | autrui |
 | Update a shared template under the same link ({id, name?, description?}) | New bot > Share preset > Share the link > Update the template | `sagax_settings` set `template.update` | autrui |
 | Delete a shared template and turn its link off (its id) | New bot > Share preset > Share the link > Turn off | `sagax_settings` set `template.remove` | suppression |
+| Lifecycle hooks on the bot computer (never on the server) | Bot editor > Permissions > Lifecycle hooks | `sagax_settings` get, set `bot.lifecycleHooks` | élargit les droits |
 
 ### Conversations
 
@@ -355,6 +356,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Where bots work for you | Settings > Computer > Bot workplace | `sagax_settings` set `computer.botWorkplace` | élargit les droits |
 | Rename one of your other computers ({computer: its name, name: the new name}) | Settings > Computer > Other computers | `sagax_settings` set `computer.rename` | simple |
 | Remove one of your other computers from the list (its name; refused while it is online) | Settings > Computer > Other computers | `sagax_settings` set `computer.remove` | suppression |
+| Use Messages on this Mac (read and send iMessage or SMS; solo desktop only) | Settings > Computer > Messages | `sagax_settings` get, set `computer.messages` | élargit les droits |
 | Local VM ({mode, maxInstances, idleTimeoutMinutes}) | Settings > Computer | `sagax_settings` get, set `server.localVm` | simple; organisation : organisation |
 
 ## Hors de sagax_settings

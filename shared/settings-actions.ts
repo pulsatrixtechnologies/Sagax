@@ -537,6 +537,22 @@ add({
   write: (_ids, v) => ({ method: "POST", path: "/api/me/desktop-bridge/computers/remove", body: { computer: v } }),
   classes: always("delete"),
 });
+add({
+  key: "computer.messages", family: "computer", target: "none", value: "boolean",
+  label: "Use Messages on this Mac (read and send iMessage or SMS; solo desktop only)",
+  where: "Settings > Computer > Messages",
+  read: () => ({ path: "/api/messages", field: "useMessages" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/messages", body: { useMessages: v === true } }),
+  classes: always("rule-change"),
+});
+add({
+  key: "bot.lifecycleHooks", family: "bot", target: "bot", value: "boolean",
+  label: "Lifecycle hooks on the bot computer (never on the server)",
+  where: "Bot editor > Permissions > Lifecycle hooks",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/lifecycle-hooks`, field: "enabled" }),
+  write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/lifecycle-hooks`, body: { enabled: v === true } }),
+  classes: always("rule-change"),
+});
 
 const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio", "composio"]);
 

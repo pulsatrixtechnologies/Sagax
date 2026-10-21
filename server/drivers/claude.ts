@@ -2043,6 +2043,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         mcpServers.phone = { ...turn.integrations.phone };
         allowed.push("mcp__phone");
       }
+      // Pre-allowed: the Messages tool itself posts the send card (including
+      // under Full access) and refuses anything that is not this Mac.
+      if (turn.integrations?.messages) {
+        mcpServers.messages = { ...turn.integrations.messages };
+        allowed.push("mcp__messages");
+      }
       if (turn.integrations?.browser) {
         // Mounted, not pre-allowed: file: and loopback navigations stay on
         // the approval path, and the browser route refuses them outright.

@@ -158,6 +158,7 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
   }
   if (turn.integrations?.agents) servers.agents = { ...turn.integrations.agents };
   if (turn.integrations?.phone) servers.phone = { ...turn.integrations.phone };
+  if (turn.integrations?.messages) servers.messages = { ...turn.integrations.messages };
   if (turn.integrations?.dweb) {
     servers.dweb = {
       command: process.execPath,

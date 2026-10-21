@@ -3274,6 +3274,22 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
   Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
   Docker: `scripts/smoke-sandbox-desktop.ts`.
 
+## Messages and lifecycle hooks (2026-10-21)
+
+Messages (iMessage and SMS) run only in the solo Sagax process on the Mac
+where that process runs (`shared/imessage.ts`, `server/imessage-mcp.ts`).
+The Use Messages switch is `messages.json` in the data dir. Sends to someone
+on the bot's allowed recipients go through. Everyone else gets a card.
+Group chats are refused. This is not a desktop-bridge action: an
+organization server must not ask the signed-in Mac to open Messages.
+
+Plugin lifecycle hooks are stripped from the folder Claude loads with
+`--plugin-dir`. The commands are kept under `bot-plugins/<bot>/computer-hooks/`
+and run only when the owner turns them on, on the bot's computer (sandbox,
+the person's PC, or the solo machine). They never run in the Sagax server
+process and never on an organization server's own host
+(`server/lifecycle-hooks.ts`).
+
 ## Desktop bridge (organization mode)
 
 In server mode the desktop app is the bridge between the organization server

@@ -27,16 +27,19 @@
 //     an extra HTTP header through the environment, never the URL, the argv
 //     or a file.
 //   - What runs on the server host is never taken from a plugin: hooks,
-//     MCP and LSP servers and bin/ are removed at install (they would run on
-//     the Sagax host, outside every person's environment). The plugin's
-//     skills, commands, agents and output styles stay. The MCP servers it
-//     declared are listed so the person can add them as their own.
+//     MCP and LSP servers and bin/ are removed from the folder Claude loads
+//     with --plugin-dir (they would run on the Sagax host). Hook commands
+//     are kept beside that folder and run only on the bot's computer when
+//     the owner turns lifecycle hooks on (server/lifecycle-hooks.ts). The
+//     plugin's skills, commands, agents and output styles stay. The MCP
+//     servers it declared are listed so the person can add them as their own.
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { capturePluginHooks, type LifecycleHook } from "./lifecycle-hooks.ts";
 import type { PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
 import { githubGitEnvironment } from "./github-connect.ts";
@@ -167,6 +170,8 @@ const pluginRecord = z.object({
   removed: z.array(z.string()),
   /** MCP servers the plugin declared (names only). */
   declaredMcpServers: z.array(z.string()),
+  /** Hook commands kept off the server host. Absent when the plugin had none. */
+  lifecycleHooks: z.number().int().min(0).max(100).optional(),
 }).strict();
 
 /** Before the one marketplace list: each bot kept its own marketplaces. */
@@ -179,6 +184,8 @@ const legacyStateSchema = z.object({
 const stateSchema = z.object({
   version: z.literal(2),
   plugins: z.record(z.string(), pluginRecord),
+  /** Owner switch. Off until they turn it on. Hooks never run on the server. */
+  lifecycleHooksEnabled: z.boolean().optional(),
 }).strict();
 
 export type PluginState = z.infer<typeof stateSchema>;
@@ -339,8 +346,9 @@ function measure(dir: string): { bytes: number; files: number } {
 
 /** Copy one plugin without links, then take out what would run on the
  * server host. Returns what was removed and the MCP servers it declared. */
-export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?: Record<string, unknown>): { removed: string[]; declaredMcpServers: string[] } {
+export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?: Record<string, unknown>): { removed: string[]; declaredMcpServers: string[]; hooks: LifecycleHook[]; hookFiles: Record<string, string> } {
   if (!existsSync(from) || !statSync(from).isDirectory()) throw new BotPluginError("The plugin's folder is missing from its repository.", "invalid_plugin", 422);
+  const captured = capturePluginHooks(from);
   rmSync(to, { recursive: true, force: true });
   mkdirSync(join(to, ".."), { recursive: true });
   cpSync(from, to, {
@@ -380,7 +388,7 @@ export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?:
     mkdirSync(join(to, ".claude-plugin"), { recursive: true });
     writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2));
   }
-  return { removed, declaredMcpServers: [...declared].filter((name) => NAME.test(name)).slice(0, 50) };
+  return { removed, declaredMcpServers: [...declared].filter((name) => NAME.test(name)).slice(0, 50), hooks: captured.hooks, hookFiles: captured.files };
 }
 
 // ── git ──────────────────────────────────────────────────────────────────
@@ -709,7 +717,7 @@ export class BotPlugins {
         } catch { return undefined; }
       })();
       const target = this.pluginDir(botId, input.marketplace, input.plugin);
-      let result: { removed: string[]; declaredMcpServers: string[] };
+      let result: { removed: string[]; declaredMcpServers: string[]; hooks: LifecycleHook[]; hookFiles: Record<string, string> };
       if (entry.source.kind === "path") {
         result = copySanitizedPlugin(insideRoot(marketRoot, entry.source.path), target, rawEntry);
       } else {
@@ -739,10 +747,96 @@ export class BotPlugins {
         updatedAt: now,
         removed: result.removed,
         declaredMcpServers: result.declaredMcpServers,
+        ...(result.hooks.length ? { lifecycleHooks: result.hooks.length } : {}),
       };
+      this.writeHookBundle(botId, key, result.hooks, result.hookFiles);
       this.write(botId, state);
       return { key, ...state.plugins[key]! };
     });
+  }
+
+  private hookDir(botId: string, key: string): string {
+    const safe = key.replace(/[^A-Za-z0-9._-]/g, "_");
+    return join(this.root(botId), "computer-hooks", safe);
+  }
+
+  /** Hook files sit beside the plugin folder Claude loads, never inside it. */
+  private writeHookBundle(botId: string, key: string, hooks: LifecycleHook[], files: Record<string, string>): void {
+    const dir = this.hookDir(botId, key);
+    rmSync(dir, { recursive: true, force: true });
+    if (!hooks.length) return;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    writeFileAtomic(join(dir, "manifest.json"), `${JSON.stringify({ hooks })}\n`, { mode: 0o600 });
+    for (const [name, body] of Object.entries(files)) {
+      if (name.includes("..") || name.startsWith("/")) continue;
+      const file = join(dir, "files", name);
+      mkdirSync(join(file, ".."), { recursive: true, mode: 0o700 });
+      writeFileAtomic(file, body, { mode: 0o600 });
+    }
+  }
+
+  lifecycleHookView(botId: string): { enabled: boolean; events: string[] } {
+    const state = this.read(botId);
+    const events = new Set<string>();
+    for (const hook of this.hooksOf(botId)) events.add(hook.event);
+    return { enabled: state.lifecycleHooksEnabled === true, events: [...events].sort() };
+  }
+
+  setLifecycleHooksEnabled(botId: string, enabled: boolean): { enabled: boolean; events: string[] } {
+    const state = this.read(botId);
+    state.lifecycleHooksEnabled = enabled;
+    this.write(botId, state);
+    return this.lifecycleHookView(botId);
+  }
+
+  /** Enabled plugins' hook commands, and the files that belong with them.
+   * Empty when the owner has not turned hooks on. */
+  hooksOf(botId: string): LifecycleHook[] {
+    if (!BOT_ID.test(botId)) return [];
+    const state = this.read(botId);
+    const out: LifecycleHook[] = [];
+    for (const [key, record] of Object.entries(state.plugins)) {
+      if (!record.enabled) continue;
+      try {
+        const raw = JSON.parse(readFileSync(join(this.hookDir(botId, key), "manifest.json"), "utf8")) as { hooks?: LifecycleHook[] };
+        if (Array.isArray(raw.hooks)) out.push(...raw.hooks);
+      } catch { /* no hooks kept */ }
+    }
+    return out;
+  }
+
+  /** Script files kept beside the plugins, for the computer to stage. */
+  hookFiles(botId: string): Record<string, string> {
+    if (!BOT_ID.test(botId)) return {};
+    const root = join(this.root(botId), "computer-hooks");
+    const out: Record<string, string> = {};
+    const walk = (dir: string, prefix: string) => {
+      let entries;
+      try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink() || Object.keys(out).length >= 20) continue;
+        const path = join(dir, entry.name);
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) walk(path, rel);
+        else if (entry.isFile() && entry.name !== "manifest.json") {
+          try {
+            const info = statSync(path);
+            if (info.isFile() && info.size <= 64 * 1024) out[rel] = readFileSync(path, "utf8");
+          } catch { /* skip */ }
+        }
+      }
+    };
+    walk(root, "");
+    return out;
+  }
+
+  lifecycleHooksEnabled(botId: string): boolean {
+    if (!BOT_ID.test(botId)) return false;
+    return this.read(botId).lifecycleHooksEnabled === true;
+  }
+
+  hookRoot(botId: string, key: string): string {
+    return join(this.hookDir(botId, key), "files");
   }
 
   setEnabled(botId: string, key: string, enabled: boolean): InstalledBotPlugin {
@@ -760,6 +854,7 @@ export class BotPlugins {
       const record = state.plugins[key];
       if (!record) throw new BotPluginError("No plugin with that name on this bot.", "not_found", 404);
       rmSync(this.pluginDir(botId, record.marketplace, record.name), { recursive: true, force: true });
+      rmSync(this.hookDir(botId, key), { recursive: true, force: true });
       delete state.plugins[key];
       this.write(botId, state);
       const values = readConfigValues(this.configFile(botId));

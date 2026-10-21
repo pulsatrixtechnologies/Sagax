@@ -274,6 +274,9 @@ export interface SendTurnInput {
     agents?: { command: string; args: string[]; env: Record<string, string> };
     /** Physical Android phone tools over authorized USB debugging. */
     phone?: { command: string; args: string[]; env: Record<string, string> };
+    /** Messages on the solo Mac where this process runs. Never mounted on
+     * an organization server, and never a desktop-bridge operation. */
+    messages?: { command: string; args: string[]; env: Record<string, string> };
     /** The app's built-in browser: an MCP proxy (server/harness-mcp-proxy browser)
      * that forwards to the Electron-owned WebContentsView the Browser tab
      * shows. One tab per bot, in its own persistent session partition. */
