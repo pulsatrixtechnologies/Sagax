@@ -518,30 +518,196 @@ export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, s
     return undefined;
   }
   if (secret) text = text.split(secret).join("[redacted]");
-  return text.length > MAX_RAW_EXCERPT ? `${text.slice(0, MAX_RAW_EXCERPT)}\n[Payload truncated by Sagax]` : text;
+  return text.length > MAX_RAW_EXCERPT ? `${cutAt(text, MAX_RAW_EXCERPT)}\n[Payload truncated by Sagax]` : text;
 }
 
-/** Text from a sender must never be able to close the fence it sits in, nor
- * open a block that reads as instructions: any bracket followed (spaces, a
- * slash and JSON-escaped line breaks allowed) by a marker word is quoted,
- * whatever its case. Look-alikes are folded first (NFKC turns full-width
- * brackets and letters into plain ones) and invisible format characters
- * (zero-width spaces, joiners, bidi controls) are dropped, so neither can
- * hide a marker from the check while the model still reads it as one. */
-const FENCE_MARKER = /\[((?:\s|\\[nrt])*\/?(?:\s|\\[nrt])*)(UNTRUSTED|USER[\s_-]*CONFIGURED|OWNER|AUTHENTICATED|DEFAULT)/gi;
-const INVISIBLE = /[\p{Cf}\u034F\u115F\u1160\u3164\uFFA0]/gu;
+/** Quote text that reads as a fence marker.
+ *
+ * The text is compatibility-folded first, so a full-width form or a ligature
+ * cannot grow past the size cap after the fence is closed. Whether a span is
+ * a marker is decided on a skeleton of that text, not on a pile of patterns:
+ * control, format and combining characters are dropped, JSON escapes of them
+ * are dropped, and look-alike dashes, slashes, brackets and letters are mapped
+ * to plain forms. Separators may sit between the letters of a marker word.
+ * Only the matched span is rewritten, so ordinary letters, accents and emoji
+ * stay as they were. */
+const STRIP_MARK = /[\p{Cc}\p{Cf}\p{Mn}\p{Me}]/u;
+/** Invisible letters that are not format characters. */
+const FILLER = new Set([0x115f, 0x1160, 0x3164, 0xffa0]);
+/** Closing brackets that compatibility folding does not turn into "]". */
+const CLOSE_LOOKALIKE = new Set([0x3011, 0x3015, 0x3017, 0x3019, 0x301b, 0x3009, 0x27e7, 0x27e9]);
+
+const CONFUSABLE = new Map<number, string>();
+function alias(to: string, points: readonly number[]): void {
+  for (const cp of points) CONFUSABLE.set(cp, to);
+}
+alias("[", [0x3c, 0x28, 0x7b, 0x3010, 0x3014, 0x3016, 0x3018, 0x301a, 0x3008, 0x27e6, 0x27e8]);
+alias("-", [0x2010, 0x2011, 0x2012, 0x2013, 0x2014, 0x2015, 0x2212, 0xfe58, 0xfe63]);
+alias("/", [0x2044, 0x2215, 0x29f8]);
+alias("A", [0x391, 0x3b1, 0x410, 0x430]);
+alias("B", [0x392, 0x3b2, 0x412, 0x432]);
+alias("E", [0x395, 0x3b5, 0x415, 0x435]);
+alias("H", [0x397, 0x3b7, 0x41d, 0x43d]);
+alias("I", [0x399, 0x3b9]);
+alias("K", [0x39a, 0x3ba, 0x41a, 0x43a]);
+alias("M", [0x39c, 0x3bc, 0x41c, 0x43c]);
+alias("N", [0x39d, 0x3bd]);
+alias("O", [0x39f, 0x3bf, 0x41e, 0x43e]);
+alias("P", [0x3a1, 0x3c1, 0x420, 0x440]);
+alias("C", [0x421, 0x441]);
+alias("T", [0x3a4, 0x3c4, 0x422, 0x442]);
+alias("X", [0x3a7, 0x3c7, 0x425, 0x445]);
+alias("Y", [0x3a5, 0x3c5, 0x423, 0x443]);
+
+function foldCodePoint(cp: number): string {
+  if (cp < 0x80) {
+    if (cp <= 0x1f || cp === 0x7f) return "";
+    return CONFUSABLE.get(cp) ?? String.fromCharCode(cp);
+  }
+  if (FILLER.has(cp)) return "";
+  const compat = String.fromCodePoint(cp).normalize("NFKC").normalize("NFD");
+  let out = "";
+  for (let i = 0; i < compat.length; ) {
+    const next = compat.codePointAt(i)!;
+    const len = next > 0xffff ? 2 : 1;
+    if (next < 0x80) {
+      if (next > 0x1f && next !== 0x7f) out += CONFUSABLE.get(next) ?? String.fromCharCode(next);
+    } else if (!FILLER.has(next) && !STRIP_MARK.test(String.fromCodePoint(next))) {
+      out += CONFUSABLE.get(next) ?? String.fromCodePoint(next);
+    }
+    i += len;
+  }
+  return out;
+}
+
+type MarkerSpan = { start: number; end: number };
+
+/** Skeleton used only to find markers. Each unit records the slice of `text` it came from. */
+function markerSkeleton(text: string): { skeleton: string; spans: MarkerSpan[] } {
+  let skeleton = "";
+  const spans: MarkerSpan[] = [];
+  const emit = (chunk: string, start: number, end: number) => {
+    for (let i = 0; i < chunk.length; i++) {
+      skeleton += chunk[i];
+      spans.push({ start, end });
+    }
+  };
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i)!;
+    const len = cp > 0xffff ? 2 : 1;
+    if (cp === 0x5c) {
+      const next = text[i + 1];
+      if (next === "\\") {
+        // A JSON text escapes a backslash, so `\\/` is the two characters `\/`.
+        if (text[i + 2] === "/") {
+          emit("/", i, i + 3);
+          i += 3;
+          continue;
+        }
+        emit("\\", i, i + 2);
+        i += 2;
+        continue;
+      }
+      if (next && "bfnrtv0".includes(next)) {
+        i += 2;
+        continue;
+      }
+      if (next === "/") {
+        emit("/", i, i + 2);
+        i += 2;
+        continue;
+      }
+      if ((next === "u" || next === "U") && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+        const decoded = Number.parseInt(text.slice(i + 2, i + 6), 16);
+        if (foldCodePoint(decoded) === "") {
+          i += 6;
+          continue;
+        }
+      }
+    }
+    const folded = foldCodePoint(cp);
+    if (folded) emit(folded, i, i + len);
+    i += len;
+  }
+  return { skeleton, spans };
+}
+
+function spacedWord(word: string): string {
+  return [...word].join("[\\s._-]*");
+}
+
+const FENCE_MARKER = new RegExp(
+  `\\[(\\s*\\/?\\s*)(${[
+    spacedWord("UNTRUSTED"),
+    `${spacedWord("USER")}[\\s_-]*${spacedWord("CONFIGURED")}`,
+    spacedWord("AUTHENTICATED"),
+    spacedWord("DEFAULT"),
+    spacedWord("OWNER"),
+  ].join("|")})`,
+  "gi",
+);
+
+function skeletonEnd(spans: MarkerSpan[], skEnd: number, textLength: number): number {
+  if (skEnd >= spans.length) return textLength;
+  const next = spans[skEnd]!.start;
+  const last = spans[skEnd - 1]?.end ?? 0;
+  return next > last ? next : last;
+}
+
+/** A non-ASCII closing bracket later on the same line is part of the marker. */
+function absorbClose(text: string, from: number): { end: number; middle: string } | null {
+  const breakAt = text.slice(from).search(/\r|\n/);
+  const limit = breakAt === -1 ? text.length : from + breakAt;
+  for (let i = from; i < limit; ) {
+    const cp = text.codePointAt(i)!;
+    const len = cp > 0xffff ? 2 : 1;
+    if (CLOSE_LOOKALIKE.has(cp)) return { end: i + len, middle: `${text.slice(from, i)}]` };
+    i += len;
+  }
+  return null;
+}
+
 export function defang(text: string): string {
-  return text
-    .normalize("NFKC")
-    .replace(INVISIBLE, "")
-    .replace(FENCE_MARKER, (_match, between: string, word: string) => `[${between.replace(/\s+|\\[nrt]/g, "")}(quoted) ${word}`);
+  const normalized = text.normalize("NFKC");
+  const { skeleton, spans } = markerSkeleton(normalized);
+  if (spans.length === 0) return normalized;
+  FENCE_MARKER.lastIndex = 0;
+  let out = "";
+  let cursor = 0;
+  for (const match of skeleton.matchAll(FENCE_MARKER)) {
+    const skStart = match.index;
+    if (skStart === undefined) continue;
+    const start = spans[skStart]!.start;
+    if (start < cursor) continue;
+    let end = skeletonEnd(spans, skStart + match[0].length, normalized.length);
+    const between = match[1] ?? "";
+    const word = (match[2] ?? "").replace(/\s+/g, "");
+    let replacement = `[${between.includes("/") ? "/" : ""}(quoted) ${word}`;
+    const closed = absorbClose(normalized, end);
+    if (closed) {
+      replacement += closed.middle;
+      end = closed.end;
+    }
+    out += normalized.slice(cursor, start) + replacement;
+    cursor = end;
+  }
+  return out + normalized.slice(cursor);
 }
 
 /** A metadata value is one line: control characters (a line break could
  * start a forged `Received:` line or a block) become spaces, then the value
- * is quoted like the payload and capped. */
+ * is quoted like the payload and capped on a code-point boundary. */
 function metadataValue(value: string, max: number): string {
-  return defang(value.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")).slice(0, max);
+  return cutAt(defang(value.replace(/[\p{Cc}\u2028\u2029]+/gu, " ")), max);
+}
+
+/** `max` code units, never a trailing half of a surrogate pair. */
+function cutAt(text: string, max: number): string {
+  if (text.length <= max) return text;
+  let end = max;
+  const unit = text.charCodeAt(end - 1);
+  if (unit >= 0xd800 && unit <= 0xdbff) end -= 1;
+  return text.slice(0, end);
 }
 
 function redact(text: string, secret?: string): string {
@@ -584,7 +750,8 @@ function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receiv
 }
 
 /** `fenced` quotes marker-looking text before the cap, so the cut can only
- * shorten already quoted text and the fence's closing line always follows. */
+ * shorten already quoted text and the fence's closing line always follows.
+ * The cut stays on a code-point boundary. */
 function serializePayload(payload: JsonValue, fenced = false): string {
   let text: string;
   const plainText = z.string().safeParse(payload);
@@ -598,7 +765,7 @@ function serializePayload(payload: JsonValue, fenced = false): string {
   }
   if (fenced) text = defang(text);
   if (text.length <= MAX_EVENT_CHARS) return text;
-  return `${text.slice(0, MAX_EVENT_CHARS)}\n\n[Payload truncated by Sagax]`;
+  return `${cutAt(text, MAX_EVENT_CHARS)}\n\n[Payload truncated by Sagax]`;
 }
 
 function previewPayload(payload: JsonValue): string {
@@ -1067,7 +1234,7 @@ export class WebhookManager {
       payload: normalized as unknown as JsonValue,
       contentType: "application/json",
       eventName: normalized.kind,
-      deliveryId: deliveryId.slice(0, 200),
+      deliveryId: cutAt(deliveryId, 200),
       normalized,
       ...(userAgent ? { userAgent } : {}),
       ...(raw ? { raw } : {}),
@@ -1096,7 +1263,7 @@ export class WebhookManager {
 
     const allowed = trigger.eventTypes ?? [];
     if (allowed.length > 0 && (!event.eventName || !allowed.includes(event.eventName))) {
-      const deliveryId = String(event.deliveryId ?? "").trim().slice(0, 200) || randomUUID();
+      const deliveryId = cutAt(String(event.deliveryId ?? "").trim(), 200) || randomUUID();
       this.appendAttempt(trigger, event, {
         outcome: "ignored",
         statusCode: 202,
@@ -1108,7 +1275,7 @@ export class WebhookManager {
     }
 
     const now = this.now();
-    const requestedDeliveryId = String(event.deliveryId ?? "").trim().slice(0, 200);
+    const requestedDeliveryId = cutAt(String(event.deliveryId ?? "").trim(), 200);
     if (requestedDeliveryId) {
       const key = `${trigger.endpointId}:${requestedDeliveryId}`;
       const committed = this.options.findRun?.(trigger.id, requestedDeliveryId);
@@ -1208,7 +1375,7 @@ export class WebhookManager {
 
   private captureVerification(trigger: StoredWebhookTrigger, event: WebhookEvent): WebhookReceiveResult {
     const receivedAt = this.now();
-    const deliveryId = String(event.deliveryId ?? "").trim().slice(0, 200) || randomUUID();
+    const deliveryId = cutAt(String(event.deliveryId ?? "").trim(), 200) || randomUUID();
     trigger.verificationPending = false;
     trigger.verifiedAt = receivedAt;
     trigger.lastReceivedAt = receivedAt;
@@ -1269,7 +1436,7 @@ export class WebhookManager {
     };
     if (event.eventName) attempt.eventName = event.eventName.slice(0, 200);
     if (event.payload !== undefined) attempt.preview = previewPayload(event.payload);
-    if (details.deliveryId) attempt.deliveryId = details.deliveryId.slice(0, 200);
+    if (details.deliveryId) attempt.deliveryId = cutAt(details.deliveryId, 200);
     if (details.runId) attempt.runId = details.runId;
     if (details.reason) attempt.reason = details.reason;
     return attempt;
