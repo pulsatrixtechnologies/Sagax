@@ -29,6 +29,7 @@ describe("LoopDetector", () => {
   it("normalises strings inside nested objects and arrays", () => {
     const spaced = { path: " a.txt ", edits: [{ old: "x  y", next: [" z "] }] };
     const tight = { path: "a.txt", edits: [{ old: "x y", next: ["z"] }] };
+    expect(digest("a b")).toBe(digest("a  b"));
     expect(digest(spaced)).toBe(digest(tight));
     expect(digest({ command: '  { "a" : "x  y" } ' })).toBe(digest({ command: { a: "x y" } }));
     const d = detector();
@@ -283,6 +284,21 @@ describe("waits, polls and retries", () => {
       expect(verdicts.slice(0, 2).every((v) => v === null)).toBe(true);
       expect(verdicts[2]).toMatchObject({ kind: "same-error", count: 3 });
     }
+  });
+
+  it.each([
+    ["a status field", '{"status":503}'],
+    ["a hung socket", "socket hang up"],
+    ["an aborted operation", "The operation was aborted due to timeout"],
+    ["a rate limit", "Rate limit exceeded (429)"],
+    ["a returned status", "returned 503"],
+    ["an upstream reset", "upstream connect error or disconnect/reset before headers"],
+  ])("does not stop five retries after %s", (_name, result) => {
+    const d = detector();
+    const verdicts = feed(d, times(5, {
+      tool: "Fetch", input: { url: "http://example.test/item" }, result, error: true,
+    }));
+    expect(verdicts.every((v) => v === null)).toBe(true);
   });
 
   it("does not stop retries of one call after a transient error", () => {

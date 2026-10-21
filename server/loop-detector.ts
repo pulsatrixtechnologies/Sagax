@@ -140,12 +140,18 @@ const HTTP_GET = /^(?:curl|wget)\b/i;
 const HTTP_WRITE = /\s(?:-X|--request)\s+(?:POST|PUT|PATCH|DELETE)\b|\s(?:-d|--data|--data-raw|--data-binary|-F|--form)\b/i;
 /** Errno names, not a passing mention of a failure. */
 const ERRNO_ERROR = /\b(?:ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|ECONNABORTED|EPIPE)\b/;
-/** "timed out", or a timeout that is the error itself. "expected timeout" is not. */
-const TIMEOUT_ERROR = /\btime(?:d)?\s+out\b|\b(?:request|connection|connect|read|write|gateway|operation|network|socket|response|deadline)\s+timeout\b|\btimeout(?:Error|Exception)\b|^(?:error|err)[:\s]+timeout$|^timeout$/i;
+/** "timed out", a timeout that is the error itself, or "aborted due to
+ * timeout". "expected timeout" is not. */
+const TIMEOUT_ERROR = /\btime(?:d)?\s+out\b|\b(?:request|connection|connect|read|write|gateway|operation|network|socket|response|deadline)\s+timeout\b|\bdue to (?:a )?timeout\b|\btimeout(?:Error|Exception)\b|^(?:error|err)[:\s]+timeout$|^timeout$/i;
 /** An HTTP status code, not a line or column number ("line 503"). A bare
- * number counts only as the whole message, or with its reason phrase. */
-const HTTP_STATUS_ERROR = /\b(?:https?|status(?:\s+code)?|error(?:\s+code)?)[:\s]+(?:429|502|503|504)\b|\b(?:429|502|503|504)\s+(?:too many requests|bad gateway|service unavailable|gateway time-?out)\b|^(?:429|502|503|504)$/i;
+ * number counts only as the whole message or with its reason phrase. A
+ * status field, a code in parentheses, or "returned 503" counts too. */
+const HTTP_STATUS_ERROR = /\b(?:https?|status(?:\s+code)?|error(?:\s+code)?)["']?[:\s=]+["']?(?:429|502|503|504)\b|\b(?:429|502|503|504)\s+(?:too many requests|bad gateway|service unavailable|gateway time-?out)\b|^(?:429|502|503|504)$|\((?:429|502|503|504)\)|\breturned\s+(?:429|502|503|504)\b/i;
 const CONNECTION_RESET_ERROR = /\bconnection reset\b/i;
+const SOCKET_HANGUP = /\bsocket hang up\b/i;
+/** A proxy reset, for example "upstream connect error or disconnect/reset
+ * before headers". The two words stay near each other. */
+const UPSTREAM_RESET = /\bupstream\b.{0,160}\breset\b/i;
 
 function commandText(input: unknown): string {
   const value = normalize(input);
@@ -204,7 +210,8 @@ function resultText(result: unknown): string {
 function transientError(result: unknown, error: boolean): boolean {
   if (!error) return false;
   const text = resultText(result);
-  return ERRNO_ERROR.test(text) || TIMEOUT_ERROR.test(text) || HTTP_STATUS_ERROR.test(text) || CONNECTION_RESET_ERROR.test(text);
+  return ERRNO_ERROR.test(text) || TIMEOUT_ERROR.test(text) || HTTP_STATUS_ERROR.test(text)
+    || CONNECTION_RESET_ERROR.test(text) || SOCKET_HANGUP.test(text) || UPSTREAM_RESET.test(text);
 }
 
 interface Entry {
