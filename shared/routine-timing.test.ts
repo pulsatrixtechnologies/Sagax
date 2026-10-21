@@ -109,6 +109,39 @@ describe("flexible timing windows", () => {
     expect(cronGapCacheMisses()).toBe(before + 2);
   });
 
+  it("reads month and weekday names without walking", () => {
+    const weekdays = { type: "cron" as const, expression: "*/5 * * * MON-FRI", timeZone: "America/Toronto" };
+    const before = cronGapCacheMisses();
+    const started = performance.now();
+    expect(nominalGapMs(weekdays, Date.parse("2026-06-01T00:00:00Z"))).toBe(5 * MINUTE);
+    expect(performance.now() - started).toBeLessThan(50);
+    expect(cronGapCacheMisses()).toBe(before + 1);
+    expect(nominalGapMs({ ...weekdays, expression: "*/5 * * * mon-fri" }, Date.parse("2026-06-01T00:00:00Z"))).toBe(5 * MINUTE);
+
+    const january = { type: "cron" as const, expression: "* * * JAN *", timeZone: "UTC" };
+    const januaryStarted = performance.now();
+    expect(nominalGapMs(january, Date.parse("2026-06-01T00:00:00Z"))).toBe(MINUTE);
+    expect(performance.now() - januaryStarted).toBeLessThan(50);
+    expect(cronGapCacheMisses()).toBe(before + 3);
+    expect(nominalGapMs(january, Date.parse("2026-08-01T00:00:00Z"))).toBe(MINUTE);
+    expect(cronGapCacheMisses()).toBe(before + 3);
+  });
+
+  it("keeps a weekly gap at seven days", () => {
+    const monday = { type: "cron" as const, expression: "0 9 * * 1", timeZone: "UTC" };
+    expect(nominalGapMs(monday, Date.parse("2026-06-01T00:00:00Z"))).toBe(7 * DAY);
+    const wide = { ...monday, windowEarlyMinutes: 10_000, windowLateMinutes: 10_000 };
+    expect(cappedWindow(wide, 0).early + cappedWindow(wide, 0).late).toBe(7 * 12 * 60);
+    expect(nominalGapMs({ ...monday, expression: "0 9 * * MON" }, 0)).toBe(7 * DAY);
+  });
+
+  it("counts a skipped spring-forward time at the later instant", () => {
+    const toronto = { type: "cron" as const, expression: "30 2 * * *", timeZone: "America/Toronto" };
+    expect(nominalGapMs(toronto, Date.parse("2026-03-01T00:00:00Z"))).toBe(23 * 60 * MINUTE);
+    const lordHowe = { type: "cron" as const, expression: "0 1,3 * * *", timeZone: "Australia/Lord_Howe" };
+    expect(nominalGapMs(lordHowe, Date.parse("2026-10-01T00:00:00Z"))).toBe(90 * MINUTE);
+  });
+
   it("shortens a gap that contains a spring-forward and leaves the fall-back hour longer", () => {
     const toronto = { type: "cron" as const, expression: "0 1,3 * * 0", timeZone: "America/Toronto" };
     const june = Date.parse("2026-06-07T12:00:00Z");

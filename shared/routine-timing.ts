@@ -106,6 +106,24 @@ export function dailyGapMs(weekdays: readonly number[]): number {
   return minDays * DAY_MS;
 }
 
+const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** Three-letter month or weekday names, in any case, become numbers. A longer word stays, so the field is walked. */
+function rewriteNames(field: string, names: readonly string[], origin: number): string | null {
+  if (!/[A-Za-z]/.test(field)) return field;
+  let invalid = false;
+  const rewritten = field.replace(/[A-Za-z]+/g, (word) => {
+    const index = names.indexOf(word.toLowerCase());
+    if (index < 0) {
+      invalid = true;
+      return word;
+    }
+    return String(index + origin);
+  });
+  return invalid ? null : rewritten;
+}
+
 /** One cron field (star, a number, a range, a step, or a comma list) as sorted values. */
 function parseCronField(field: string, min: number, max: number): number[] | null {
   if (/[^0-9*,/-]/.test(field)) return null;
@@ -180,11 +198,14 @@ function cronParts(expression: string): CronParts | null {
   const minutes = parseCronField(minuteField!, 0, 59);
   const hours = parseCronField(hourField!, 0, 23);
   if (!minutes || !hours) return null;
+  const monthSource = monthField === "*" || monthField === "?" ? monthField : rewriteNames(monthField!, MONTH_NAMES, 1);
+  const weekdaySource = weekdayField === "*" || weekdayField === "?" ? weekdayField : rewriteNames(weekdayField!, WEEKDAY_NAMES, 0);
+  if (monthSource == null || weekdaySource == null) return null;
   const days = dayField === "*" || dayField === "?" ? null : parseCronField(dayField!, 1, 31);
-  const months = monthField === "*" || monthField === "?" ? null : parseCronField(monthField!, 1, 12);
-  const rawWeekdays = weekdayField === "*" || weekdayField === "?" ? null : parseCronField(weekdayField!, 0, 7);
-  if ((dayField !== "*" && dayField !== "?" && !days) || (monthField !== "*" && monthField !== "?" && !months)) return null;
-  if (weekdayField !== "*" && weekdayField !== "?" && !rawWeekdays) return null;
+  const months = monthSource === "*" || monthSource === "?" ? null : parseCronField(monthSource, 1, 12);
+  const rawWeekdays = weekdaySource === "*" || weekdaySource === "?" ? null : parseCronField(weekdaySource, 0, 7);
+  if ((dayField !== "*" && dayField !== "?" && !days) || (monthSource !== "*" && monthSource !== "?" && !months)) return null;
+  if (weekdaySource !== "*" && weekdaySource !== "?" && !rawWeekdays) return null;
   const weekdays = rawWeekdays ? [...new Set(rawWeekdays.map((day) => day % 7))].sort((a, b) => a - b) : null;
   return { minutes, hours, days, months, weekdays };
 }
@@ -211,11 +232,14 @@ function civilDate(year: number, month: number, day: number): CivilDate {
   return { year: at.getUTCFullYear(), month: at.getUTCMonth() + 1, day: at.getUTCDate(), weekday: at.getUTCDay() };
 }
 
-/** Shortest number of days from one matching day to the next, over eight years. */
+/** Shortest number of days from one matching day to the next.
+ * The span is a multiple of 7, so a weekly schedule wraps onto the same weekday,
+ * and it still covers 2024 through 2031, including both leap days. */
 function minimumDayDistance(parts: CronParts): number | null {
   if (!parts.days && !parts.months && !parts.weekdays) return 1;
   const start = Date.UTC(2024, 0, 1);
-  const total = Math.round((Date.UTC(2032, 0, 1) - start) / DAY_MS);
+  const span = Math.round((Date.UTC(2032, 0, 1) - start) / DAY_MS);
+  const total = span - (span % 7);
   let previous: number | undefined;
   let first: number | undefined;
   let min = Number.POSITIVE_INFINITY;
@@ -290,13 +314,13 @@ function springJumps(timeZone: string): SpringJump[] {
       const probe = new Date(origin + index * DAY_MS);
       const probeDate = civilDate(probe.getUTCFullYear(), probe.getUTCMonth() + 1, probe.getUTCDate());
       const offset = noonOffset(probeDate, timeZone);
-      if (offset > previous + 30 * 60_000) {
+      if (offset >= previous + 30 * 60_000) {
         let seen = previous;
         for (let dayIndex = 1; dayIndex <= 7; dayIndex++) {
           const at = new Date(origin + (index - 7 + dayIndex) * DAY_MS);
           const date = civilDate(at.getUTCFullYear(), at.getUTCMonth() + 1, at.getUTCDate());
           const dayOffset = noonOffset(date, timeZone);
-          if (dayOffset > seen + 30 * 60_000) {
+          if (dayOffset >= seen + 30 * 60_000) {
             const startMinute = firstMissingMinute(date, timeZone);
             if (startMinute != null) {
               jumps.push({ ...date, startMinute, shiftMinutes: Math.round((dayOffset - seen) / 60_000) });
@@ -314,13 +338,6 @@ function springJumps(timeZone: string): SpringJump[] {
   }
 }
 
-function utcIfShown(date: CivilDate, minuteOfDay: number, timeZone: string): number | null {
-  if (!showsWallMinute(date, minuteOfDay, timeZone)) return null;
-  const hour = Math.floor(minuteOfDay / 60);
-  const minute = minuteOfDay % 60;
-  return zonedTimeToUtc(date.year, date.month, date.day, hour, minute, timeZone);
-}
-
 function adjacentMatch(date: CivilDate, parts: CronParts, direction: -1 | 1): CivilDate | null {
   for (let delta = 1; delta <= 8 * 366; delta++) {
     const next = civilDate(date.year, date.month, date.day + direction * delta);
@@ -329,15 +346,23 @@ function adjacentMatch(date: CivilDate, parts: CronParts, direction: -1 | 1): Ci
   return null;
 }
 
+/** The instant this wall minute runs. A minute inside a spring-forward gap lands at the later time, the same way a cron run does. */
+function slotInstant(date: CivilDate, minuteOfDay: number, timeZone: string): number {
+  const hour = Math.floor(minuteOfDay / 60);
+  const minute = minuteOfDay % 60;
+  return zonedTimeToUtc(date.year, date.month, date.day, hour, minute, timeZone);
+}
+
 function boundaryMinutes(from: CivilDate, fromSlot: number, to: CivilDate, toSlot: number, timeZone: string): number | null {
-  const start = utcIfShown(from, fromSlot, timeZone);
-  const end = utcIfShown(to, toSlot, timeZone);
-  if (start == null || end == null || end <= start) return null;
+  const start = slotInstant(from, fromSlot, timeZone);
+  const end = slotInstant(to, toSlot, timeZone);
+  if (end <= start) return null;
   return Math.round((end - start) / 60_000);
 }
 
 /**
- * A spring-forward removes the skipped hour from a gap that contains it.
+ * A spring-forward removes the skipped minutes from a gap that contains them.
+ * A slot inside the skipped hour is counted at the later instant it moves to.
  * Only that shorter real gap can undercut the wall-clock minimum.
  */
 function shortenForSpring(slots: number[], wall: number, timeZone: string, parts: CronParts): number {
@@ -351,15 +376,8 @@ function shortenForSpring(slots: number[], wall: number, timeZone: string, parts
     const prev = adjacentMatch(jump, parts, -1);
     const next = adjacentMatch(jump, parts, 1);
     if (dateMatches(jump, parts)) {
-      let before: number | undefined;
-      let afterSlot: number | undefined;
-      const resume = jump.startMinute + jump.shiftMinutes;
-      for (const slot of slots) {
-        if (slot < jump.startMinute) before = slot;
-        else if (slot >= resume && afterSlot == null) afterSlot = slot;
-      }
-      if (before != null && afterSlot != null) {
-        const gap = boundaryMinutes(jump, before, jump, afterSlot, timeZone);
+      for (let index = 1; index < slots.length; index++) {
+        const gap = boundaryMinutes(jump, slots[index - 1]!, jump, slots[index]!, timeZone);
         if (gap != null && gap < best) best = gap;
       }
       // The skipped hour sits between the previous matching day and this one

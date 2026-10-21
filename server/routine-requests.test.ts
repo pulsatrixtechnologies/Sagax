@@ -1961,6 +1961,55 @@ describe("a bot's own routine changes", () => {
     expect(routines.getRoutine(daily.id)?.schedule).not.toHaveProperty("timing");
   });
 
+  it("previews the next exact run after the slot that already fired", async () => {
+    const { service, routines, clock } = harness(Date.parse("2026-08-17T08:00:00Z"));
+    const routine = routines.create({
+      botId: "bot-a",
+      name: "Morning",
+      prompt: "Check the list.",
+      schedule: {
+        type: "daily",
+        time: "09:00",
+        weekdays: [0, 1, 2, 3, 4, 5, 6],
+        timing: "flexible",
+        windowEarlyMinutes: 30,
+        windowLateMinutes: 0,
+      },
+    });
+    const fired = routine.nominalRunAt!;
+    expect(routine.nextRunAt).toBeLessThan(fired);
+    clock.now = routine.nextRunAt!;
+    await routines.tick();
+    expect(routines.getRoutine(routine.id)!.lastFiredNominalAt).toBe(fired);
+    expect(clock.now).toBeLessThan(fired);
+
+    const card = await service.propose({
+      botId: "bot-a",
+      threadId: "thread-a",
+      proposal: {
+        action: "update",
+        routineId: routine.id,
+        changes: {
+          schedule: {
+            type: "weekly",
+            time: "09:00",
+            weekdays: ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
+            timing: "exact",
+          },
+        },
+      },
+    });
+    expect(card.nextRunAt).toBe(fired + 24 * 60 * 60 * 1000);
+    expect(card.detail).toContain("Next run:");
+    expect(service.resolve({
+      botId: "bot-a",
+      threadId: "thread-a",
+      requestId: card.requestId,
+      behavior: "allow",
+    })).toMatchObject({ state: "applied" });
+    expect(routines.getRoutine(routine.id)?.nextRunAt).toBe(card.nextRunAt);
+  });
+
   it("applies window minutes without a timing choice on a flexible routine, and rejects them on an exact one", async () => {
     const { service, routines } = own();
     const flexible = routines.create({

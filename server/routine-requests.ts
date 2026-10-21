@@ -828,20 +828,25 @@ function effectiveSchedule(
 function nextForOperation(operation: RoutineRequestOperation, manager: RoutineManager, now: number): number | null {
   if (operation.action === "create") {
     if (operation.routine.schedule.type === "interval" && operation.routine.schedule.anchorAt === undefined) return null;
-    return nextOccurrence(asSchedule(operation.routine.schedule, now), now);
+    const schedule = asSchedule(operation.routine.schedule, now);
+    return schedule.type === "once" ? nextOccurrence(schedule, now) : manager.nextExactStart(schedule, now);
   }
   const current = manager.listRoutines().find((routine) => routine.id === operation.routineId);
   if (!current) return null;
   if (operation.action === "pause" || operation.action === "delete") return null;
   if (operation.action === "run_now") return now;
-  if (operation.action === "resume") return nextOccurrence(current.schedule, now);
+  if (operation.action === "resume") {
+    return current.schedule.type === "once"
+      ? nextOccurrence(current.schedule, now)
+      : manager.nextExactStart(current.schedule, now, current);
+  }
   if (!("changes" in operation)) return null;
   if (!current.enabled) return null;
   const definition = effectiveDefinition(operation, manager);
   if (!definition) return null;
   if (definition.schedule.type === "interval" && definition.schedule.anchorAt === undefined) return null;
   const schedule = asSchedule(definition.schedule, now);
-  return nextOccurrence(schedule, now);
+  return schedule.type === "once" ? nextOccurrence(schedule, now) : manager.nextExactStart(schedule, now, current);
 }
 
 function formatInstant(at: number, timeZone: string): string {
@@ -1015,7 +1020,7 @@ function cardCopy(
       `Schedule: ${when}`,
       `Next run: ${nextDescription}`,
       ...(definition.schedule.type === "cron" && nextRunAt !== null && operation.action !== "run_now"
-        ? [`Next 3 runs (${scheduleTimeZone}): ${nextCronRuns(definition.schedule, now, 3).map((at) => formatInstant(at, scheduleTimeZone)).join(" · ")}`]
+        ? [`Next 3 runs (${scheduleTimeZone}): ${nextCronRuns(definition.schedule, nextRunAt - 1, 3).map((at) => formatInstant(at, scheduleTimeZone)).join(" · ")}`]
         : []),
       `Runs on: ${destination}`,
       `Run limit: ${definition.timeoutMinutes === undefined ? "No limit" : `${definition.timeoutMinutes} minutes`}`,

@@ -2842,14 +2842,14 @@ export class RoutineManager {
 
   /**
    * Next exact start. Every placement path uses this, including a restart,
-   * a time-zone change and a suspension from an older build being cleared.
-   * A repeating slot at or before the last fired nominal is already consumed,
-   * so a switch from flexible to exact cannot put that slot back.
-   * A one-time routine keeps the time that was chosen: tick() decides whether
-   * a stale one-time run fires or is missed, and clamping it here would hide
-   * that time from the receipt.
+   * a time-zone change, a suspension from an older build being cleared, and
+   * the confirmation card's next-run preview. A repeating slot at or before
+   * the last fired nominal is already consumed, so a switch from flexible to
+   * exact cannot put that slot back. A one-time routine keeps the time that
+   * was chosen: tick() decides whether a stale one-time run fires or is
+   * missed, and clamping it here would hide that time from the receipt.
    */
-  private nextExactStart(
+  nextExactStart(
     schedule: RoutineSchedule,
     now: number,
     routine?: { botId?: string; runAs?: string; lastFiredNominalAt?: number },
