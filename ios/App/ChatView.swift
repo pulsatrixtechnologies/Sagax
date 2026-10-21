@@ -53,6 +53,8 @@ struct ChatView: View {
     }
     @State var revealedMessageId: String?
     @State var showingTasks = false
+    /// A bot-to-bot conversation opened read only (BB1).
+    @State var openBotConversation: BotConversation?
     @State var showingComputer = false
     @State var showingPlus = false
     /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
@@ -233,6 +235,11 @@ struct ChatView: View {
         // whole chain as one opaque type made the optimizer abort ("Possible
         // non-terminating type substitution") when archiving Release.
         AnyView(screen)
+        .sheet(item: $openBotConversation) { row in
+            if case let .bot(bot) = current {
+                BotConversationPage(row: row, selfBot: bot).environmentObject(session)
+            }
+        }
         .sheet(isPresented: $showingTasks) {
             if current.supportsTasks {
                 TaskManagerView(chat: current) { selectedThreadId = $0 }
@@ -517,6 +524,15 @@ struct ChatView: View {
         // one tap away behind "Earlier topics".
         let fresh = session.isFreshTopic(current)
         let transcript = fresh ? [] : rows
+        let storedBot: Bot? = { if case let .bot(bot) = current { return session.state.bot(bot.id) }; return nil }()
+        let conversationRows = BotConversations.visible(
+            storedBot?.botConversations ?? [],
+            openThreadId: threadId,
+            mainThreadId: storedBot?.mainThreadId,
+            fallbackThreadId: storedBot?.threadId ?? threadId,
+            linkedThreadIds: BotConversations.linkedThreadIds(in: messages))
+        let conversationAnchors = BotConversations.anchors(
+            conversationRows, rowStarts: transcript.map { $0.head.at }, hasMore: session.state.hasMore[threadId] == true)
         // A VStack with the composer as a sibling, rather than a scroll view
         // with `.safeAreaInset`. The inset version sized itself to its
         // content, so a short transcript left the composer floating in the
@@ -557,6 +573,7 @@ struct ChatView: View {
 
                         ForEach(Array(transcript.enumerated()), id: \.element.id) { index, row in
                             VStack(alignment: .leading, spacing: 0) {
+                                ForEach(conversationAnchors.before[index] ?? []) { conversationLine($0) }
                                 // a gap in time is worth marking; a timestamp
                                 // on every message is just noise
                                 if let desktop = desktopChatText {
@@ -625,6 +642,8 @@ struct ChatView: View {
                             .background { desktopParityRowProbe(row) }
 #endif
                         }
+
+                        ForEach(conversationAnchors.after) { conversationLine($0) }
 
                         // The reply as it is typed. It sits after the last
                         // settled message and disappears the moment the real

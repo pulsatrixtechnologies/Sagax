@@ -358,6 +358,9 @@ public struct Reaction: Codable, Hashable, Sendable {
 
 public struct CommChip: Codable, Hashable, Sendable {
     public var groupId: String
+    /// The thread this note points at (`Comm.threadId`). A bot-to-bot line
+    /// already named here is not drawn again.
+    public var threadId: String? = nil
     /// The channel thread no longer exists (#176).
     public var gone: Bool? = nil
     public var withBotId: String
@@ -788,6 +791,10 @@ public struct QueuedSend: Codable, Hashable, Identifiable, Sendable {
 public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var threadId: String
+    /// The bot's main thread (`WireBot.mainThreadId`): where a bot-to-bot
+    /// line is drawn. Absent on an older computer; the selected thread is
+    /// the fallback, as on the desktop.
+    public var mainThreadId: String? = nil
     public var name: String
     public var title: String
     public var description: String
@@ -893,6 +900,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var directGrants: [String]? = nil
     /// Ask before contacting other bots (Permissions); absent is off.
     public var approvePeerComms: Bool? = nil
+    /// Bot-to-bot conversations this viewer may read, both ends (`shared/wire.ts`
+    /// WireBotConversation). Absent: none. Read only; see `BotConversations`.
+    public var botConversations: [BotConversation]? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
