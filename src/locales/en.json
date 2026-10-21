@@ -8180,7 +8180,7 @@
   "composer.dictation.needsKey": "Dictation needs a voice key: open Keys",
   "composer.dictation.processing": "Transcribing voice input…",
   "composer.dictation.stopAria": "Stop dictation, {time}",
-  "sidebar.section.myTeam": "My team",
+  "sidebar.section.myTeam": "My Team",
   "sidebar.section.builtIn": "Built-in",
   "sidebar.threadsFor": "Threads for {name}",
   "sidebar.openUnreadThread": "Open {name}, unread",
