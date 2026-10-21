@@ -29,7 +29,7 @@ export function weeklyLimitNotice(rows: PlanRow[], from = WEEKLY_NOTICE_FROM): W
   if (!worst) return null;
   const percent = Math.min(100, Math.round(worst.used));
   const band = percent >= 100 ? 100 : percent >= 90 ? 90 : 80;
-  return { name: worst.row.name, percent, band, key: `weekly:${worst.row.id}:${worst.row.weekly.resetsAt ?? "-"}:${band}` };
+  return { name: worst.row.name, percent, band, key: `weekly:${worst.row.id}:${(worst.row.weekly.resetsAt ?? "-").slice(0, 10)}:${band}` };
 }
 
 /** Group threads: more than one bot answering. A direct bot-to-bot channel

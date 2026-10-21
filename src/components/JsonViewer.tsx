@@ -119,7 +119,7 @@ export function JsonViewer({ path, name, message, onClose, returnFocus }: JsonVi
 
   const actions = state.kind === "ready" && (
     <>
-      <button type="button" className="table-action gap-1 px-1.5 text-xs" onClick={() => toggle(ROOT_PATH)} aria-pressed={rootOpen}
+      <button type="button" className="table-action gap-1 px-1.5 text-xs" onClick={() => toggle(ROOT_PATH)}
         aria-label={t(rootOpen ? "json.collapseRoot" : "json.expandRoot")} title={t(rootOpen ? "json.collapseRoot" : "json.expandRoot")}>
         {rootOpen ? <ChevronsDownUp size={15} /> : <ChevronsUpDown size={15} />}
         <span className="hidden md:inline">{t(rootOpen ? "json.collapseRoot" : "json.expandRoot")}</span>
