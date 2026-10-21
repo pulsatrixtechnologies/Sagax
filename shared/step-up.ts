@@ -71,6 +71,8 @@ export const STEP_UP_SETTINGS_ACTIONS = [
   /** The credential vault's values taken out in a file (Settings >
    * Credentials, Export): the key whenever the person has one. */
   "credentials.export",
+  /** Allow a purchase with a saved card. The key when "money" is chosen. */
+  "purchase.allow",
 ] as const;
 export type StepUpSettingsAction = (typeof STEP_UP_SETTINGS_ACTIONS)[number];
 
@@ -93,6 +95,7 @@ export const SETTINGS_ACTION_CLASS: Readonly<Record<StepUpSettingsAction, StepUp
   "allowed-recipients": "always-grant",
   "rules.remove": "rule-change",
   "credentials.export": null,
+  "purchase.allow": "money",
 };
 
 /** Approval levels by how much runs without asking. Custom is a provider

@@ -48,7 +48,7 @@ struct SettingsSearchResults: View {
             case .achievements: return sections.contains(.achievements)
             case .privacy: return NavigationMenus.showsPrivacy(gate: gate, connected: connected)
             case .experimental: return sections.contains(.experimental)
-            case .plugins, .botComputer, .pages, .usage, .rules, .approvalGrants, .timeZone: return connected
+            case .plugins, .botComputer, .pages, .usage, .rules, .approvalGrants, .timeZone, .credentials, .securityKeys: return connected
             default: return true
             }
         }
@@ -76,6 +76,8 @@ struct SettingsSearchResults: View {
         case .quickReplies: String(localized: "Quick Replies")
         case .walkieVoice: String(localized: "Call voice")
         case .about: String(localized: "About")
+        case .credentials: String(localized: "Vault")
+        case .securityKeys: String(localized: "Security keys")
         }
     }
 
@@ -101,6 +103,8 @@ struct SettingsSearchResults: View {
         case .quickReplies: "bolt"
         case .walkieVoice: "waveform"
         case .about: "info.circle"
+        case .credentials: "key"
+        case .securityKeys: "lock"
         }
     }
 }

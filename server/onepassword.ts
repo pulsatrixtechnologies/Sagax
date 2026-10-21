@@ -146,6 +146,8 @@ export function fieldValue(item: unknown, field: VaultFillField): string | null 
     case "apiKey":
       return value(rows.find((row) => row.id === "credential" || String(row.label ?? "").toLowerCase() === "credential"))
         ?? value(rows.find((row) => row.purpose === "PASSWORD"));
+    default:
+      return null;
   }
 }
 

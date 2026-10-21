@@ -13,11 +13,17 @@
 export const VAULT_LOGIN_TARGET = "vaultLogin" as const;
 export type VaultLoginTarget = typeof VAULT_LOGIN_TARGET;
 
-export const VAULT_ITEM_KINDS = ["login", "apiKey", "note"] as const;
+export const VAULT_ITEM_KINDS = ["login", "apiKey", "note", "card", "address", "contact"] as const;
 export type VaultItemKind = (typeof VAULT_ITEM_KINDS)[number];
 
-/** A field the browser runtime can fill. */
-export const VAULT_FILL_FIELDS = ["username", "password", "totp", "apiKey"] as const;
+/** A field the browser runtime can fill. Card, address and contact fields
+ * are typed only after a purchase approval (shared/payment-vault.ts). */
+export const VAULT_FILL_FIELDS = [
+  "username", "password", "totp", "apiKey",
+  "cardNumber", "cardExpiry", "cardCvc", "cardholder",
+  "addressLine1", "addressLine2", "addressCity", "addressRegion", "addressPostal", "addressCountry", "addressRecipient", "addressPhone",
+  "contactName", "contactEmail", "contactPhone", "contactCompany",
+] as const;
 export type VaultFillField = (typeof VAULT_FILL_FIELDS)[number];
 
 /** once: this conversation, for a short while. always: this bot, until revoked. */
@@ -52,6 +58,12 @@ export interface VaultItemListing {
   hasTotp: boolean;
   hasApiKey: boolean;
   hasNotes: boolean;
+  /** A card, as the owner sees it: brand and last four, never the number. */
+  card?: { brand: string; last4: string; expMonth: number; expYear: number; holder: string };
+  /** An address the owner saved. The bot does not receive it; a fill does. */
+  address?: { recipient: string; line1: string; line2?: string; city: string; region?: string; postal: string; country: string; phone?: string };
+  /** A contact the owner saved. The bot does not receive the fields; a fill does. */
+  contact?: { fullName: string; email?: string; phone?: string; company?: string };
   /** "1password": a read-only reference resolved at fill time. */
   source: "local" | "1password";
   grants: VaultGrantListing[];

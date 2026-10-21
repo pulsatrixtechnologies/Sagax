@@ -980,6 +980,7 @@ import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
 import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { OrgBotSecrets } from "./org-bot-secrets.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
@@ -6662,6 +6663,14 @@ ROUTES.push(createCredentialVaultRoutes({
     return fresh ? null : { status: 403, body: { error: "Sign in again, then export your vault.", code: "reauth_required" } };
   },
   importGate: (auth) => credentialVaultPersonRefusal(auth),
+  // Reveal and a purchase answer are the person's. Their Primary Bot may
+  // answer a purchase when they asked, in this turn (actConfirmed).
+  ownerGate: (auth) => (actConfirmed()?.primary ? null : credentialVaultPersonRefusal(auth)),
+  viaPrimary: () => actConfirmed()?.primary?.botName ?? null,
+  purchaseStepUp: (auth, detail, stepUp) => settingsStepUpGate(
+    IDENTITY.kind === "perspicax" ? ruleManager(auth) : localPrincipalId(),
+    "purchase.allow", detail, stepUp,
+  ),
   cards: {
     find: (botId, threadId, messageId) => secretMessage(botId, threadId, messageId)?.secret ?? null,
     patch: (_botId, threadId, messageId, secret) => { store.patchMessage(threadId, messageId, { secret }); },
@@ -6772,6 +6781,7 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
 /** The organization's GitHub tokens (Settings > Organization > Plugins and
  * GitHub, server/org-github-tokens.ts). */
 const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+const orgBotSecrets = new OrgBotSecrets(DATA_DIR, vaultKeySource);
 /** A token per bot and plugin marketplace (server/marketplace-tokens.ts). */
 const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
 /** Who reads a private GitHub repository for `actor`: their own GitHub
@@ -28934,9 +28944,30 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
           ...(card.ownerRule?.description ? { alwaysScope: card.ownerRule.description } : {}),
         });
       }
+      const vaultPerson = IDENTITY.kind === "perspicax" ? turn.person.toLowerCase() : LOCAL_VAULT_PRINCIPAL;
+      for (const purchase of credentialVault.pendingPurchases(vaultPerson)) {
+        out.push({
+          threadId: purchase.threadId,
+          requestId: purchase.id,
+          botId: purchase.botId,
+          botName: store.bot(purchase.botId)?.name || "Bot",
+          at: purchase.createdAt,
+          title: purchase.title,
+          line: purchase.line,
+          kind: "permission",
+          needsKey: securityKeys.required(vaultPerson, ["money"]).length > 0,
+          options: ["allow", "always_allow", "deny"],
+          always: "session",
+          alwaysScope: `pay ${purchase.merchant} with the card ending ${purchase.cardLast4}`,
+        });
+      }
       return out;
     },
     respond: (turn, card, body) => {
+      if (card.requestId.startsWith("pay_")) {
+        const decision = body.behavior === "deny" ? "deny" : body.always === true ? "always" : body.behavior === "allow" ? "once" : "";
+        return replay(turn, "POST", `/api/me/credentials/purchases/${card.requestId}/answer`, { decision }, card.threadId);
+      }
       const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
       const skill = message?.card?.skillRequest && body.behavior === "allow" ? reviewedSkillSha256(message.card.skillRequest) : undefined;
       return replay(turn, "POST", `/api/threads/${card.threadId}/respond`, { requestId: card.requestId, ...body, ...(skill ? { reviewedSha256: skill } : {}) }, card.threadId);
@@ -32255,6 +32286,11 @@ if (IDENTITY.kind === "perspicax") {
     // Access tokens live in org-github-tokens.enc, not in config.json, so a
     // client id or marketplace save cannot drop them. The audit records the
     // operation, the count, the id and the label. Never the token.
+    botSecrets: {
+      list: () => orgBotSecrets.list(),
+      change: (change) => orgBotSecrets.change(change),
+      teamBot: (id) => Boolean(store.bot(id)),
+    },
     githubTokens: {
       list: () => orgGithubTokens.list(),
       change: (change, auth) => {
