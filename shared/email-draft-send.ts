@@ -18,6 +18,11 @@
 import { parseArgs } from "./approval-describe.ts";
 import { isOutboundTool } from "./outbound.ts";
 
+/** Absent or true: this bot may write email draft cards. False turns them off. */
+export function emailDraftsEnabled(bot: { emailDrafts?: boolean } | null | undefined): boolean {
+  return bot?.emailDrafts !== false;
+}
+
 export const EMAIL_SEND_REQUEST_PREFIX = "maildraft-";
 export const EMAIL_SEND_PASS_MS = 10 * 60_000;
 const MAX_RECIPIENTS = 50;

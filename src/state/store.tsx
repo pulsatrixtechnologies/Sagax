@@ -3,6 +3,8 @@
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
 import { devPodsTurnField } from "@/components/dev-pods/prefs";
+import { restoreComposerDraft } from "@/lib/drafts";
+import { beginLocalSend, claimInFlightSend, finishSend } from "@/lib/send-cancel";
 import { receiveThreadReadFrame } from "@/lib/read-receipts-feed";
 import { personaCategoryForSection } from "@/lib/persona-sections";
 import { withPrimaryBot } from "@/lib/primary-bot";
@@ -650,6 +652,8 @@ export interface Bot {
   voice?: string;
   /** whether this bot may send voice notes (on unless switched off) */
   voiceNotes?: boolean;
+  /** whether this bot may write email draft cards (on unless switched off) */
+  emailDrafts?: boolean;
   /** whether this bot uses native memory (on unless switched off) */
   memoryEnabled?: boolean;
   pinned?: boolean;
@@ -4457,6 +4461,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const threadId =
             action.threadId ?? stateRef.current.bots.find((bot) => bot.id === action.botId)?.threadId;
           const sendId = action.sendId ?? crypto.randomUUID();
+          beginLocalSend(sendId);
           // words typed to a bot that is on a voice call are a call turn too:
           // its answer is read aloud like the rest of the call
           const liveCallId = voiceCallId(action.botId);
@@ -4464,11 +4469,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // on a call, words said or typed while the bot works join its turn
           const busyMode = voiceCall ? undefined : action.busyMode;
           void waitForExecutionSettings(botBeforeSend ? [botBeforeSend] : [], threadId)
-            .then(() => api(`/api/bots/${action.botId}/messages`, {
+            .then(() => {
+              if (!claimInFlightSend(sendId)) {
+                if (threadId) rawDispatch({ type: "optimisticMessageRemoved", threadId, sendId });
+                restoreComposerDraft(`bot:${action.botId}:${threadId ?? ""}`, { text: action.text, attachments: [] });
+                return null;
+              }
+              return api(`/api/bots/${action.botId}/messages`, {
                 method: "POST",
                 body: JSON.stringify({ text: action.text, replyToId: action.replyToId, threadId, sendId, ...(voiceCall ? { voiceCall } : {}), ...(busyMode === "auto" ? { routeWhileBusy: true } : busyMode ? { busyMode } : {}), ...(action.dataContext ? { dataContext: action.dataContext } : {}), ...devPodsTurnField(), ...singleStreamTurnField() }),
-              }))
+              });
+            })
             .then((body) => {
+              if (body === null) return;
               action.onSent?.();
               if (body?.message && typeof body.threadId === "string") {
                 rawDispatch({ type: "messageAdded", threadId: body.threadId, message: body.message });
@@ -4498,7 +4511,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               }
               showError(error);
               action.onError?.();
-            });
+            })
+            .finally(() => finishSend(sendId));
           break;
         }
         case "stopParallelTask":

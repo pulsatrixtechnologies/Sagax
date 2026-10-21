@@ -67,7 +67,7 @@ import { roomRetryRequest } from "@/lib/room-retry";
 import { botEngine, failedTurnCause } from "@/lib/failed-turn";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
-import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } from "./ChatErrorBanner";
 import { GroupCostNotice, WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
@@ -78,7 +78,7 @@ import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
-import { GoalRunCard, GoalRunHeaderChip } from "./GoalRunCard";
+import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
@@ -392,6 +392,7 @@ function RoomTextMessage({
                   <ChatMarkdown
                     text={botText}
                     botId={m.from?.botId}
+                    emailDrafts={speakerBot?.emailDrafts !== false}
                     mentionPeers={members}
                     everyone={!group.dm}
                     message={{ threadId: group.threadId, messageId: m.id }}
@@ -812,6 +813,7 @@ export const Transcript = memo(function Transcript({
             <div className="flex justify-start">
               <GoalRunCard
                 message={m}
+                history={goalRunPlace(group.messages, m.id)}
                 onStop={stopGoalRun}
                 onRunAgain={m.id === latestGoalRunMessageId && m.goalRun?.goal && !roomBusy
                   ? () => runGoalAgain(m.goalRun!.goal)
@@ -1477,6 +1479,8 @@ export function GroupView({ group: stored }: { group: Group }) {
           </button>
         )}
       </div>}
+
+      <SavedMessagesNotice threadId={group.threadId} archived={group.tasks?.some((task) => task.threadId === group.threadId && task.archivedAt != null) === true} />
 
       {/* Pinned message banner — resolves against the room's full transcript */}
       {(() => {

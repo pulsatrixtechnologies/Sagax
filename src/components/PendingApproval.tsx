@@ -22,6 +22,8 @@ import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { useOrgApprovalPolicy } from "@/lib/org-approval-policy";
 import { CustomRuleNoticeLine } from "./CustomRuleNotice";
 import { customRuleError } from "./bot-settings/CustomRulesCard";
+import { recipientKeysForSendCard } from "../../shared/send-card-recipients";
+import { parseRecipientEntry } from "../../shared/allowed-recipients";
 
 interface ApprovalLabels {
   [tool: string]: LocaleKey;
@@ -437,6 +439,11 @@ export function PendingApprovalActions({
   // keeps the card's default rule (this bot, this kind of action or this
   // program, never a second panel), answers this request and closes the
   // card. The detailed rule editor lives in Settings > Security only.
+  // A send card's Always allow adds the recipient to this bot's list
+  // (shared/allowed-recipients.ts), instead of a wider rule.
+  const recipientKeys = !durableRequest && orgPolicy.alwaysAllow && bot
+    ? recipientKeysForSendCard(pending.message.card)
+    : null;
   const alwaysAllow: { run: () => void; hint?: string } | undefined = ownerRule
     ? { run: () => decide("allow", false, false, "allow"), hint: t("approval.action.alwaysAllowRuleHint", { name: bot?.name ?? t("approval.someone"), rule: ownerRule.description }) }
     : durableRequest ? undefined
@@ -445,6 +452,13 @@ export function PendingApprovalActions({
           : undefined;
   const widening = !orgPolicy.alwaysAllow && !durableRequest ? (
     <span className="text-[11.5px] text-ink-tertiary" data-org-always-allow-off="">{t("approval.orgOnce")}</span>
+  ) : recipientKeys && bot ? (
+    <AlwaysAllowRecipients
+      bot={bot}
+      keys={recipientKeys}
+      className={secondary}
+      onSaved={() => decide("allow")}
+    />
   ) : alwaysAllow ? (
     <button
       type="button"
@@ -537,6 +551,64 @@ export function PendingApprovalActions({
         </button>
       </div>
     </div>
+  );
+}
+
+/** "Toujours permettre" on a send card: the recipients join this bot's
+ * allowed list, then this request is allowed once. The list screen is not
+ * redrawn here. */
+function AlwaysAllowRecipients({ bot, keys, className, onSaved }: {
+  bot: Bot;
+  keys: string[];
+  className: string;
+  onSaved: () => void;
+}) {
+  const store = useStore();
+  const dispatch = store.dispatch;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const bots = store.state?.bots ?? [];
+  const names = keys.map((key) => {
+    const entry = parseRecipientEntry(key);
+    if (!entry) return key;
+    if (entry.kind !== "bot") return entry.value;
+    return bots.find((candidate) => candidate.id === entry.value)?.name ?? t("botPanel.recipients.deletedBot");
+  }).join(", ");
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        title={t("approval.recipients.alwaysHint", { names })}
+        className={cn(className, "disabled:opacity-40")}
+        data-always-allow=""
+        data-always-allow-recipient=""
+        onClick={() => {
+          const current = bot.allowedRecipients ?? [];
+          const next = [...current];
+          for (const key of keys) if (!next.includes(key)) next.push(key);
+          if (next.length === current.length) {
+            onSaved();
+            return;
+          }
+          setBusy(true);
+          setError(null);
+          void api<{ bot: Bot }>(`/api/bots/${encodeURIComponent(bot.id)}`, {
+            method: "PATCH",
+            body: JSON.stringify({ allowedRecipients: next }),
+          })
+            .then((response) => {
+              dispatch({ type: "botPatched", bot: response.bot });
+              onSaved();
+            })
+            .catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        {t("approval.action.alwaysAllow")}
+      </button>
+      {error && <div role="alert" className="order-last w-full basis-full text-[12px] text-danger">{error}</div>}
+    </>
   );
 }
 

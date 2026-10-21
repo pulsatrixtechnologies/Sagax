@@ -125,6 +125,7 @@ botField("bot.mascotExpression", "mascotExpression", "string", "Mascot expressio
 botField("bot.voice", "voice", "string?", "Voice", "Bot editor > Voice");
 botField("bot.speakReplies", "speakReplies", "boolean", "Speak replies", "Bot editor > Voice");
 botField("bot.voiceNotes", "voiceNotes", "boolean", "Voice notes", "Bot editor > Voice");
+botField("bot.emailDrafts", "emailDrafts", "boolean", "Email drafts", "Bot editor > Permissions > Email drafts");
 botField("bot.notifications", "notifications", "any", "Notifications", "Bot editor > Voice > Notifications");
 botField("bot.model", "modelSelection", "object", "Model and effort ({instanceId, model, effort})", "Bot editor > Model");
 add({
