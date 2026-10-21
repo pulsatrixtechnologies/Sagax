@@ -637,6 +637,7 @@ import { LocalVmIdleTimer } from "./local-vm-idle.ts";
 import { LocalVmLease, LocalVmLeasePool } from "./local-vm-lease.ts";
 import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts";
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
+import { makeLoopStopSubscriber } from "./loop-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
 import * as vps from "./vps-computer.ts";
@@ -16292,6 +16293,21 @@ bus.subscribe((event: RuntimeEvent) => {
     tool: { name: `Same call repeated ${threshold}× — ${tool}: ${args.slice(0, 80)}${args.length > 80 ? "…" : ""} — it may be stuck`, ok: false },
   });
 });
+
+// A run going in circles is stopped, not only flagged (server/loop-detector.ts):
+// the same call, the same result, the same error, or a short cycle of calls
+// whose results never change. Stopped like Stop, with the reason recorded.
+bus.subscribe(makeLoopStopSubscriber({
+  config: () => cfg.loopDetector,
+  ignore: shouldIgnoreProviderEvent,
+  stop: (threadId, reason) => {
+    const botId = store.botByThread(threadId)?.id;
+    if (!botId) return;
+    console.warn(`[loop] thread ${threadId.slice(0, 8)}: ${reason}`);
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: reason, ok: false } });
+    void interruptDirectThread(botId, threadId).catch(() => {});
+  },
+}));
 
 // Drain queued delegations for a source thread after its turn settles.
 // Run as a separate subscriber so the drain logic stays out of the main
