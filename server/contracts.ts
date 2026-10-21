@@ -291,6 +291,12 @@ export interface SendTurnInput {
      * A server is either a command this machine runs (stdio) or a server
      * reached at a URL; a driver that cannot speak to one kind skips it. */
     custom?: Record<string, McpServerSpec>;
+    /** Per-server result budget for `custom` (config.json
+     * `mcpServers.<name>.resultBudget`): characters of one tool result
+     * allowed into context, 0 = never trim. A name missing here uses the app
+     * default (mcp-gate-config.ts resultBudget). Kept apart from the specs so
+     * a server mounted as it is never carries a field its engine rejects. */
+    customResultBudgets?: Record<string, number>;
   };
   cwd?: string;
   /** Let the engine also load the MCP servers from the person's own CLI

@@ -387,6 +387,7 @@ import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
 import { createMcpToolNameRoutes } from "./routes/mcp-tool-names.ts";
 import { createMcpServerRenameRoutes } from "./routes/mcp-server-rename.ts";
+import { attachCustomMcp } from "./mcp-result-budget.ts";
 import { callbackPage, DEFAULT_MCP_ACCOUNT, isMcpAccountId, McpOAuthError, McpOAuthManager, McpOAuthVault, parseMcpAccountChoices, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
@@ -18758,8 +18759,7 @@ async function startTurn(
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
         await refreshMcpOAuth(bot);
-        const custom = engineMcpServers(bot, threadId);
-        if (Object.keys(custom).length) integrations.custom = custom;
+        attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
       }
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
       let perspicaxPrompt = "";
@@ -22108,8 +22108,7 @@ async function runGroupMemberTurn(
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
     await refreshMcpOAuth(bot);
-    const custom = engineMcpServers(bot, threadId);
-    if (Object.keys(custom).length) integrations.custom = custom;
+    attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
   }
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
   let roomPerspicaxPrompt = "";
@@ -25245,7 +25244,7 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!body || typeof body !== "object") return out;
   const record = body as Record<string, unknown>;
-  for (const key of ["command", "args", "env", "type", "url", "headers", "oauth", "enabled"]) {
+  for (const key of ["command", "args", "env", "type", "url", "headers", "oauth", "enabled", "resultBudget"]) {
     if (record[key] !== undefined) out[key] = record[key];
   }
   return out;

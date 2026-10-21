@@ -5,6 +5,7 @@ import {
   isReservedMcpEnvEntry,
   listMcpServers,
   MAX_MCP_SERVERS,
+  MAX_RESULT_BUDGET,
   mcpServerNameError,
   parseMcpServerMutation,
   parseMcpServersImport,
@@ -370,5 +371,30 @@ describe("custom MCP environment names (port de OpenMausBot #2865)", () => {
     }
     expect(isReservedMcpEnvEntry("ELECTRON_RUN_AS_NODE", "1")).toBe(false);
     expect(isReservedMcpEnvEntry("NOTES_TOKEN", "x")).toBe(false);
+  });
+});
+
+describe("a server's own result size limit", () => {
+  it("is stored for a command and a URL server, listed back, and optional", () => {
+    const stdio = parseMcpServerMutation("fx", { command: "npx", resultBudget: 40_000 });
+    expect(stdio.ok && stdio.server.resultBudget).toBe(40_000);
+    const remote = parseMcpServerMutation("fx", { type: "http", url: "https://mcp.example.test/mcp", resultBudget: 0 });
+    expect(remote.ok && remote.server.resultBudget).toBe(0);
+    const none = parseMcpServerMutation("fx", { command: "npx" });
+    expect(none.ok && "resultBudget" in none.server).toBe(false);
+    const listed = listMcpServers({ a: { command: "npx", resultBudget: 9_000 }, b: { command: "npx" }, c: { type: "http", url: "https://mcp.example.test/mcp", resultBudget: 0 } });
+    expect(listed.map((server) => server.resultBudget)).toEqual([9_000, undefined, 0]);
+  });
+
+  it("refuses negative, fractional, non-numeric and oversized values", () => {
+    for (const bad of [-1, 1.5, "8000", Number.NaN, MAX_RESULT_BUDGET + 1]) {
+      expect(parseMcpServerMutation("fx", { command: "npx", resultBudget: bad }).ok).toBe(false);
+    }
+    expect(parseMcpServerMutation("fx", { command: "npx", resultBudget: MAX_RESULT_BUDGET }).ok).toBe(true);
+  });
+
+  it("survives a pasted config block", () => {
+    const parsed = parseMcpServersImport(JSON.stringify({ mcpServers: { fx: { command: "npx", resultBudget: 20_000 } } }));
+    expect(parsed.ok && parsed.servers.fx?.resultBudget).toBe(20_000);
   });
 });

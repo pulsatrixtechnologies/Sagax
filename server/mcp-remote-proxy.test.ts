@@ -461,7 +461,7 @@ describe("remote MCP tool directory", () => {
     expect(described.result.content[0].text.length).toBeGreaterThan(600);
     expect(JSON.parse(described.result.content[0].text).inputSchema).toEqual(padded.find((tool) => tool.name === "payments_list")!.inputSchema);
     const ran = (await call(CALL_TOOL, { name: "payments_list", arguments: { company_id: "biz_1" } })).result.content[0].text;
-    expect(ran).toContain("[Sagax trimmed this tool result");
+    expect(ran).toContain("TRUNCATED by Sagax");
     expect(fake.calls).toEqual([{ name: "payments_list", arguments: { company_id: "biz_1" } }]);
   });
 
