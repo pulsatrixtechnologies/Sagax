@@ -101,6 +101,44 @@ Cron series are edited through the routine editor rather than calendar dragging,
 which could otherwise ambiguously change an entire expression. Dense calendar
 projections are bounded per day; Run logs remain the source of actual outcomes.
 
+## Exact or flexible timing
+
+A repeating routine starts at its scheduled time, or inside a window around
+that time. A one-time routine always starts at the time that was chosen.
+
+Flexible timing has an early window and a late window, in whole minutes.
+When neither is given, both are 15. The minutes are stored as written.
+When a start is placed they are capped at half the gap between consecutive
+scheduled times, so two windows cannot overlap. A daily gap is the shortest
+distance between the selected weekdays. An interval gap is its cadence. A
+cron gap is the shortest real time between consecutive runs. It comes
+from the minute and hour grid and the distance between matching days,
+including the step back to the next hour and the step from the last
+restricted day onto the next one. Month and weekday names, in any case,
+including a range, a list, or a step, are read as numbers. A spring-forward
+from 2024 through 2031 shortens a gap that contains the skipped minutes, and
+a time inside those minutes is counted at the later instant the clock jumps to.
+A day-of-month expression whose only spring-forward falls outside that span
+keeps the wall-clock gap. The repeated hour when the clocks fall back does
+not shorten a gap. The result does not depend on when it is measured, and it
+is remembered for that expression and zone. A field that is not a number or
+a three-letter name is still walked, and a cycle longer than 2,500 steps
+can be cut short. A late window of 0 means the
+run is ready by the scheduled time.
+
+The start inside the window is chosen from the routine and the scheduled
+slot. It stays the same after a restart. The following slot is computed
+from the scheduled time, not from the shifted start. A slot that already
+fired is not placed again, including after a pause, a schedule edit, a
+restart, a time-zone change, or a suspension from an older build being
+cleared, while its window is still open.
+
+The editor offers Exact or Flexible on a repeating routine. A flexible
+schedule reads "around HH:MM (-E/+L min)".
+
+An older build does not know these fields. The first time that build saves
+the routine, it drops the timing settings.
+
 ## Webhooks: always a bearer token
 
 Webhooks are the way to start a routine-style task from an event outside the

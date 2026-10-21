@@ -16,6 +16,8 @@ export interface LimitDispatch {
   selection: ModelSelection;
   /** Whose limit it draws on (autoPayerKey: "server" when solo). */
   payer: string;
+  /** A member spoke and the bot owner's plan pays (J4): the line says whose limit it is. */
+  owner?: boolean;
   speaker?: unknown;
   trigger?: unknown;
   /** When the turn was dispatched: its failure row is written after. */
@@ -45,6 +47,8 @@ export interface LimitFailoverHostDeps {
   preferred: (botId: string, threadId: string) => Array<{ instanceId: string; model?: string }>;
   config: (instanceId: string) => { environment?: Record<string, string>; access?: string } | undefined;
   payer: (botId: string, speaker: unknown) => string;
+  /** The bot owner's plan pays for a member's turn (J4). */
+  ownerPays?: (botId: string, speaker: unknown) => boolean;
   /** The model the thread runs on now; null when it is gone. */
   threadSelection: (botId: string, threadId: string) => ModelSelection | null;
   /** The thread still runs a turn (the failed one settling, or a newer one). */
@@ -170,6 +174,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
         const kept = store.record({ botId: dispatch.botId, threadId, from: dispatch.selection, to: backup, resetsAt, at: deps.now() });
         deps.replaceFailure(threadId, turnId, {
           kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt,
+          ...(dispatch.owner ? { owner: true as const } : {}),
         }, dispatch.at);
         await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger);
         return;
@@ -182,7 +187,9 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
       at: homeReset + store.afterResetMs, ...(dispatch.speaker !== undefined ? { speaker: dispatch.speaker } : {}),
       ...(dispatch.trigger !== undefined ? { trigger: dispatch.trigger } : {}),
     })) return;
-    deps.replaceFailure(threadId, turnId, { kind: "waiting", from: deps.engineName(homeEngine.instanceId), resetsAt: homeReset }, dispatch.at);
+    deps.replaceFailure(threadId, turnId, {
+      kind: "waiting", from: deps.engineName(homeEngine.instanceId), resetsAt: homeReset, ...(dispatch.owner ? { owner: true as const } : {}),
+    }, dispatch.at);
     arm();
   };
 
@@ -263,7 +270,10 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
           // Nothing awaited after the pick: the thread is read again here.
           if (!backup || !same(deps.threadSelection(botId, threadId), selection) || deps.switchThread(botId, threadId, backup)) return;
           const kept = store.record({ botId, threadId, from: selection, to: backup, resetsAt: until, at: deps.now() });
-          deps.note(threadId, { kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt });
+          deps.note(threadId, {
+            kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt,
+            ...(deps.ownerPays?.(botId, speaker) ? { owner: true as const } : {}),
+          });
         }).catch((failure) => {
           console.warn(`[limit-failover] before turn ${threadId}: ${failure instanceof Error ? failure.message : String(failure)}`);
         });

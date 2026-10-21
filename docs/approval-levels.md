@@ -132,6 +132,30 @@ Sagax is a Sagax tool, routed per tool: a card that would act on the shared
 server or beyond the owner's own rights still goes to an organization admin
 (an admin card, answered once and never remembered, whatever the level).
 
+### Organization rules and "Always allow" off (2026-10-21)
+
+An organization admin can, in the Perspicax console (`org-approvals`,
+`docs/org-admin-api.md`), write rules in plain words for every person and
+bot of the server, and turn "Always allow" off for everyone
+(`server/custom-rules-org.ts`). An organization rule asks first or refuses,
+never allows; it wins over a person's own rule of the same behavior, shows
+in each bot's Rules card and on the card it decides as "Required by your
+administrator", and nobody else can change or remove it. With "Always
+allow" off, every card offers Deny and Allow once only and says that the
+organization requires an approval each time; every answer path refuses an
+answer that would save a standing grant (403 `org_always_allow_off`, in
+`server/step-up-gate.ts`), and the grants people saved before (allow rules
+in their words, saved commands, a gate's Always allow key, owner allow
+rules) stop answering (`autoVerdict`, `matchOwnerRule`, the custom rule
+store) until it is on again. An organization Refuse rule refuses even an email
+draft the person approved on its card. Not yet covered (read in
+`server/index.ts`): a My Chrome site grant and a published page's tool
+grant saved before; a bot's Always allow keys added through its settings
+while off (saved, unused until it is on again); and organization rules
+apply to the engines' tool calls only, not to a bot act, a proposal or a
+kept send. Approval levels are not grants: Auto and Full keep their meaning
+(`memberAutoApproval` and `allowFullAccess` govern them).
+
 ### The owner's own environment
 
 On an organization server each person has their own isolated environment:

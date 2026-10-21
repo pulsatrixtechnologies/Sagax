@@ -197,6 +197,21 @@ const ROUTINE_SCHEDULE_SCHEMA = {
       type: "boolean",
       description: "Only for an interval update: true removes an existing end cutoff.",
     },
+    timing: {
+      type: "string",
+      enum: ["exact", "flexible"],
+      description: "Optional. exact starts on time. flexible starts inside the early and late windows. Omit for exact.",
+    },
+    window_early_minutes: {
+      type: "integer",
+      minimum: 0,
+      description: "Flexible only: minutes before the scheduled time. Default 15. Capped with the late window at half the gap between runs.",
+    },
+    window_late_minutes: {
+      type: "integer",
+      minimum: 0,
+      description: "Flexible only: minutes after the scheduled time. Default 15. 0 means the run is ready by the scheduled time.",
+    },
   },
   required: ["type"],
 } as const;

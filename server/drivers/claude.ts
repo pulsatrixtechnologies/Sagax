@@ -43,7 +43,7 @@ import type {
   SteerOutcome,
   TextGenerationOptions,
 } from "../contracts.ts";
-import { gateServer, resultBudget } from "../mcp-gate-config.ts";
+import { customServerGate, gateServer } from "../mcp-gate-config.ts";
 import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type EffortLevel, type TurnAccessInput } from "../contracts.ts";
@@ -70,7 +70,7 @@ import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 import { harnessMcpHttpSpec, loopbackNoProxy } from "../harness-mcp-http.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { availableTools, catalogProfileFromEnv } from "./agents-catalog.ts";
-import { sectionFingerprints, volatileSectionsUpdate } from "./prompt-split.ts";
+import { promptHalves, sectionFingerprints, volatileSectionsUpdate } from "./prompt-split.ts";
 import {
   ASK_USER_QUESTION_TOOL,
   ASK_USER_TOOL,
@@ -1323,21 +1323,48 @@ type ClaudeUserMessage = {
 /** A value no real volatile half can equal: after the CLI compacts its
  * session, the next turn's volatile half always counts as changed. */
 const COMPACTED_VOLATILE = "\u0000compacted";
+/** A process launched with the stable half only whose first message has not
+ * gone out yet (a warm process): its next turn carries the whole volatile
+ * half, in the launch wording. */
+const UNDELIVERED_VOLATILE = "\u0000undelivered";
 
 /** How a mid-session change to the volatile half of the system prompt
  * reaches a model whose process was launched with the old copy. The CLI's
  * own out-of-band convention inside a user turn, and it costs one short
  * append rather than a relaunch that re-uploads the whole prompt cache. */
-function withVolatileNote(text: string, volatile: string): string {
-  const body = volatile.trim()
-    ? `This part of your instructions changed since this session started. It replaces the earlier copy:\n\n${volatile.trim()}`
-    : "The notes that were in your instructions when this session started have been cleared.";
+function withVolatileNote(text: string, volatile: string, launch = false): string {
+  const body = !volatile.trim()
+    ? "The notes that were in your instructions when this session started have been cleared."
+    : launch
+      ? `This part of your instructions changes from turn to turn, so it arrives here instead of in the system prompt. It replaces any earlier copy:\n\n${volatile.trim()}`
+      : `This part of your instructions changed since this session started. It replaces the earlier copy:\n\n${volatile.trim()}`;
   return withReminder(text, body);
 }
 
 function withReminder(text: string, body: string): string {
   const note = `<system-reminder>\n${body}\n</system-reminder>`;
   return text ? `${note}\n\n${text}` : note;
+}
+
+/** The user message for a turn sent to a conversation that holds the
+ * volatile half `held` (with those section fingerprints): the bare words
+ * when nothing changed, only the changed sections when they can say it,
+ * else the whole half. */
+function volatileTurnMessage(
+  turn: Pick<SendTurnInput, "text" | "images" | "systemVolatile" | "systemVolatileSections" | "mentionTurn">,
+  held: string,
+  heldSections: Record<string, string> | undefined,
+): ClaudeUserMessage {
+  const volatile = turn.systemVolatile ?? "";
+  const notHeld = held === COMPACTED_VOLATILE || held === UNDELIVERED_VOLATILE;
+  const unchanged = volatile === held || (notHeld && !volatile.trim());
+  if (unchanged && !turn.mentionTurn) return claudeUserMessage(turn.text, turn.images);
+  // Only the sections that changed ride (2026-10-19 perf parity, point 4):
+  // one recent-work line moving no longer re-sends the whole memory
+  // notebook into the session every turn.
+  const sectionsNote = volatileSectionsUpdate(turn.systemVolatileSections, notHeld ? undefined : heldSections, Boolean(turn.mentionTurn));
+  if (sectionsNote === null) return claudeUserMessage(withVolatileNote(turn.text, volatile, held === UNDELIVERED_VOLATILE), turn.images);
+  return claudeUserMessage(sectionsNote ? withReminder(turn.text, sectionsNote) : turn.text, turn.images);
 }
 
 function claudeUserMessage(
@@ -1561,6 +1588,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
        * began the turn. The acceptance boundary for --resume: before it,
        * nothing was submitted and the turn has caused nothing. */
       sawInit: boolean;
+      /** The last turn ended in failure: the CLI may have refused its
+       * message before keeping it, so what the conversation holds of the
+       * volatile half is not known (heldVolatile). */
+      lastTurnFailed?: boolean;
       /** Set while this process was started for a call warm and no user
        * turn owns it yet. Init is recorded; every other event is dropped
        * until a real turn attaches. */
@@ -1640,6 +1671,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       closed: Promise<void>;
     }
     const sessions = new Map<string, Session>();
+    /** What a closed process's conversation holds of the volatile half, by
+     * thread: a relaunch that resumes that same session sends only what
+     * changed since, like a live one (port of OpenMausBot #3164). Absent
+     * (server restart, crash, unsettled turn): the whole half rides. */
+    const heldVolatile = new Map<string, { sessionId: string; volatile: string; sections?: Record<string, string> }>();
     /** Where each session's file was written (the config dir of its launch),
      * for sessionBytes. After a restart the default config dir is searched. */
     const sessionConfigDirs = new Map<string, string>();
@@ -1688,6 +1724,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const s = sessions.get(threadId);
       if (!s || s.closing) return;
       s.closing = true;
+      if (s.sessionId && s.sawInit && !s.lastTurnFailed && s.volatile !== UNDELIVERED_VOLATILE && (!s.turn || s.turn.settled)) {
+        heldVolatile.set(threadId, { sessionId: s.sessionId, volatile: s.volatile, ...(s.volatileSections ? { sections: s.volatileSections } : {}) });
+      } else heldVolatile.delete(threadId);
       if (s.idleTimer) clearTimeout(s.idleTimer);
       // Broker ownership belongs to this session. Detach and close it now,
       // before a replacement can bind the same per-thread socket; the old
@@ -2093,10 +2132,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // to stand is between the two processes. Harness-owned mounts (the
       // permission broker, computer, browser, agents, dweb) are already
       // bounded and are deliberately left alone.
-      const budget = resultBudget(turnEnvironment);
+      // Each server's own result size limit, else the app's (customServerGate).
       for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
         if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
-        const gated = gateServer({ name, server: mcpServers[name], threadId, budget: botOwned.has(name) ? budget : 0, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope });
+        const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment) });
         if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
       }
       // an allowed name is mcp__<server> or mcp__<server>__<tool> (agentsAllowedTools)
@@ -2256,17 +2295,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           emit({ ...base(threadId, turnId), type: "session.started", sessionId: live.sessionId, model: live.sessionModel ?? null });
         }
         const volatile = turn.systemVolatile ?? "";
-        const unchanged = volatile === live.volatile || (live.volatile === COMPACTED_VOLATILE && !volatile.trim());
-        // Only the sections that changed ride (2026-10-19 perf parity,
-        // point 4): one recent-work line moving no longer re-sends the whole
-        // memory notebook into the session every turn.
-        const sectionsNote = unchanged && !turn.mentionTurn ? ""
-          : volatileSectionsUpdate(turn.systemVolatileSections, live.volatile === COMPACTED_VOLATILE ? undefined : live.volatileSections, Boolean(turn.mentionTurn));
-        const message = unchanged && !turn.mentionTurn
-          ? promptMsg
-          : sectionsNote === null
-            ? claudeUserMessage(withVolatileNote(turn.text, volatile), turn.images)
-            : sectionsNote ? claudeUserMessage(withReminder(turn.text, sectionsNote), turn.images) : promptMsg;
+        const message = volatileTurnMessage(turn, live.volatile, live.volatileSections);
         live.volatile = volatile;
         live.volatileSections = turn.systemVolatileSections ? sectionFingerprints(turn.systemVolatileSections) : undefined;
         const running = live.turn;
@@ -2312,6 +2341,19 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         closeSession(threadId, turn.sessionReset ? "context reset" : "spawn contract changed");
       }
 
+      // A new process gets the stable half only and its first message the
+      // volatile half (memory, recent work, roster...): the prompt file stays
+      // byte-identical while those change, so a relaunch of this thread
+      // (idle close, restart, a contract change) reads the conversation from
+      // the provider's cache instead of writing it again (port of
+      // OpenMausBot #3164). A legacy unsplit turn keeps its whole prompt.
+      const halves = promptHalves(turn);
+      const launchSystem = halves.stable ?? turn.system;
+      const launchVolatile = halves.stable !== null ? halves.volatile.trim() : "";
+      const heldBefore = heldVolatile.get(threadId);
+      heldVolatile.delete(threadId);
+      const held = halves.stable !== null && heldBefore && heldBefore.sessionId === sessionId ? heldBefore : undefined;
+
       // Until sessions.set() below, this turn owns every launch resource.
       // Any bind, private-config or synchronous spawn failure must release
       // them here rather than leave a live listener or credential temp file.
@@ -2334,9 +2376,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       try {
         // Create the prompt file only for a new process. A compatible live
         // session has already consumed the same system prompt at launch.
-        if (turn.system) {
+        if (launchSystem) {
           systemPromptPath = join(mkdtempSync(join(tmpdir(), "omb-system-")), "prompt.txt");
-          writeFileSync(systemPromptPath, turn.system, { mode: 0o600 });
+          writeFileSync(systemPromptPath, launchSystem, { mode: 0o600 });
           args.push("--append-system-prompt-file", systemPromptPath);
         }
         // Only create a broker for a new process. A compatible retained
@@ -2459,8 +2501,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         turnFiles: turnFiles(mcpServers),
         contract,
         mcpNames: Object.keys(mcpServers),
-        volatile: turn.systemVolatile ?? "",
-        ...(turn.systemVolatileSections ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}),
+        // Launched with the stable half only, a warm process holds no
+        // volatile half until its first real turn delivers it.
+        ...(turn.warmOnly === true && held
+          ? { volatile: held.volatile, ...(held.sections ? { volatileSections: held.sections } : {}) }
+          : launchVolatile && turn.warmOnly === true ? { volatile: UNDELIVERED_VOLATILE }
+            : { volatile: turn.systemVolatile ?? "", ...(turn.systemVolatileSections ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}) }),
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
         nativePermissionMode: null,
@@ -2489,6 +2535,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         const t = session.turn;
         if (!t || t.settled) return;
         t.settled = true;
+        session.lastTurnFailed = !ok;
         if (t.continuationGrace) {
           clearTimeout(t.continuationGrace);
           t.continuationGrace = null;
@@ -3196,7 +3243,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // prompt over stdin as a stream-json message — never argv (ARG_MAX).
       // stdin stays OPEN: that is what keeps the session alive for a
       // mid-turn steer or the next turn; closeSession() ends it.
-      if (!(await writeUser(session, threadId, promptMsg))) {
+      const launchMessage = held ? volatileTurnMessage(turn, held.volatile, held.sections)
+        : launchVolatile ? claudeUserMessage(withVolatileNote(turn.text, launchVolatile, true), turn.images) : promptMsg;
+      if (!(await writeUser(session, threadId, launchMessage))) {
         if (!session.turn?.stopRequested) settle(false, "stdin_write_failed");
         closeSession(threadId, "stdin write failed");
       }
@@ -3266,7 +3315,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
      * summaries can contain paths, commands, or secrets, so the generic
      * `claude -p "prompt"` shape is not safe for review. No tools or MCP
      * servers are mounted in this isolated process. */
-    const generateReview = (prompt: string, signal?: AbortSignal, onUsage?: TextGenerationOptions["onUsage"]): Promise<string> =>
+    const generateReview = (prompt: string, signal?: AbortSignal, onUsage?: TextGenerationOptions["onUsage"], noThinking = false): Promise<string> =>
       new Promise((resolve, reject) => {
         if (config.requireApiKey && !input.environment.ANTHROPIC_API_KEY) {
           reject(new Error(NO_ANTHROPIC_KEY));
@@ -3274,6 +3323,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         const model = config.managedModels?.[0] ?? "claude-haiku-4-5";
         const env = environment(model);
+        if (noThinking) env.MAX_THINKING_TOKENS = "0";
         // Isolated unless this machine's own setup must come along: the
         // inherit escape hatch, or a login kept in settings.json (an
         // apiKeyHelper, Bedrock or Vertex variables) that --setting-sources ""
@@ -3456,7 +3506,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           return () => listeners.delete(listener);
         },
       },
-      generateText: (prompt, options) => generateReview(prompt, options?.signal, options?.onUsage),
+      generateText: (prompt, options) => generateReview(prompt, options?.signal, options?.onUsage, options?.noThinking === true),
       reviewPermission: generateReview,
       listCommands,
       dispose: async () => {

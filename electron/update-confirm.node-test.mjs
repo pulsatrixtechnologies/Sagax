@@ -36,3 +36,10 @@ test("French for a French choice or system, English otherwise", () => {
   assert.equal(confirmLanguage("de"), "en");
   assert.equal(confirmLanguage(null, undefined), "en");
 });
+
+test("names the bots at work that a restart would interrupt", () => {
+  const fr = updateConfirmOptions({ language: "fr", platform: "darwin", activeBots: 2 });
+  assert.match(fr.detail, /^2 bots travaillent et seront interrompus\./);
+  assert.match(updateConfirmOptions({ language: "en", platform: "win32", activeBots: 1 }).detail, /^1 bot is working and will be interrupted\. .*installer/);
+  assert.doesNotMatch(updateConfirmOptions({ language: "en", platform: "darwin" }).detail, /interrupted/);
+});

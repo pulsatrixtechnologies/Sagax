@@ -323,6 +323,8 @@ export function updatedServerEntry(existing: StoredMcpServer, entry: Record<stri
   const kept = {
     enabled: existing.enabled,
     ...(existing.disabledTools?.length ? { disabledTools: existing.disabledTools } : {}),
+    // the result size limit the person set (port of OpenMausBot #2727)
+    ...(existing.resultBudget !== undefined ? { resultBudget: existing.resultBudget } : {}),
     source: marketplace,
   };
   if ("url" in entry && "url" in existing) {

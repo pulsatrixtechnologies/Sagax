@@ -320,7 +320,8 @@ import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
 import type { EarlyListener } from "./early-listener.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
-import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
+import type { PlanUsageReport } from "./plan-usage.ts";
+import { loadPlanUsage, newPlanUsageAlerts, orgPlanAccounts, planAccountsFromInstances, planUsageAlertText } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost, listPriceFor } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
@@ -388,6 +389,7 @@ import { withDisabledTools } from "./mcp-tool-filter.ts";
 import { probeMcpServer } from "./mcp-probe.ts";
 import { createMcpToolNameRoutes } from "./routes/mcp-tool-names.ts";
 import { createMcpServerRenameRoutes } from "./routes/mcp-server-rename.ts";
+import { attachCustomMcp } from "./mcp-result-budget.ts";
 import { callbackPage, DEFAULT_MCP_ACCOUNT, isMcpAccountId, McpOAuthError, McpOAuthManager, McpOAuthVault, parseMcpAccountChoices, phoneOAuthReturns, phoneReturnLocation, resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import {
   GROUP_GOAL_MAX_TURNS,
@@ -494,7 +496,7 @@ import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngine
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
 import { READ_RECEIPTS_PREFERENCE, botParticipant, newestOf, personParticipant, readVisibleTo, readsVisibleTo, roomReceiptMember, sendsReadReceipts } from "./read-receipts.ts";
-import { CONSENT_RULE, escapeNotes, OUTSIDE, peerLineText, peerProvenanceNote, quoteInNote, reportNote, requestWorkOrigin, withPeerProvenance, type WorkOrigin } from "./peer-provenance.ts";
+import { CONSENT_RULE, escapeNotes, OUTSIDE, peerLineText, peerProvenanceNote, quoteInNote, reportNote, requestWorkOrigin, webhookPostText, withPeerProvenance, type WorkOrigin } from "./peer-provenance.ts";
 import { decideRoomPost, emptyRoomPostBudget, type RoomPostAttempt, type RoomPostBudget } from "./room-post-budget.ts";
 import { parseFolderBody, parseFolderOrder, parseThreadOrganization } from "./thread-folders.ts";
 import {
@@ -640,6 +642,7 @@ import { LocalVmIdleTimer } from "./local-vm-idle.ts";
 import { LocalVmLease, LocalVmLeasePool } from "./local-vm-lease.ts";
 import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts";
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
+import { dispatchLoopStop, makeLoopStopSubscriber } from "./loop-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
 import * as vps from "./vps-computer.ts";
@@ -4344,12 +4347,22 @@ function clearThreadStopping(threadId: string): void {
   stoppingThreads.delete(threadId);
 }
 
-/** A person stops a thread's turn: what they sent into it is withdrawn,
- * and words sent while it stops wait for the next turn. */
-async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+/** Stop one direct thread the way the Stop button does. Mark the thread
+ * stopping so words sent while it settles wait for the next turn, withdraw
+ * input the running turn already took, then interrupt the engine.
+ *
+ * A stuck-loop stop uses this too. Those words went into a turn that is
+ * about to die, so they stay unreceived and the next turn can answer them. */
+async function stopDirectThread(botId: string, threadId: string): Promise<void> {
   if (threadBusy(botId, threadId)) markThreadStopping(threadId);
   handoffs.stoppedByPerson(threadId);
   await interruptDirectThread(botId, threadId);
+}
+
+/** A person stops a thread's turn: what they sent into it is withdrawn,
+ * and words sent while it stops wait for the next turn. */
+async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+  await stopDirectThread(botId, threadId);
 }
 
 async function interruptDirectThread(botId: string, threadId: string, options?: { preserveComputerResume?: boolean }): Promise<void> {
@@ -9441,6 +9454,38 @@ function coordinationLiveRosterBlock(recipient: BotRecord): string {
   return livePeerRosterBlock(livePeerRoster(team));
 }
 
+/** Stop the room threads the room's Stop button stops: cancel queued work
+ * first, then interrupt each live engine turn. `outcome` defaults to the
+ * person's Stop. A stuck-loop stop passes its own detail so a goal card
+ * names the loop, and still uses this function. */
+async function stopGroupThreads(
+  group: GroupRecord,
+  threadIds: readonly string[],
+  outcome?: { status: "stopped" | "limit-reached"; detail: string; byHarness?: boolean },
+): Promise<void> {
+  const interruptTargets = threadIds.map((threadId) => {
+    const speaker = groupSpeakers.get(threadId);
+    const busy = speaker
+      ? store.bot(speaker.botId)
+      : threadId === group.threadId && group.busyBotId
+        ? store.bot(group.busyBotId)
+        : undefined;
+    return {
+      threadId,
+      instance: busy ? runningTurnInstance(busy, threadId) : undefined,
+    };
+  });
+  // Abort every queued operation before the first provider round trip;
+  // otherwise one queued task could begin while Stop awaits interruption
+  // of the task ahead of it.
+  for (const { threadId } of interruptTargets) cancelGroupTurnOperations(group.id, threadId, outcome);
+  for (const { threadId, instance } of interruptTargets) {
+    revokeInternalCapabilitiesForThread(threadId);
+    await instance?.adapter.interruptTurn(threadId).catch(() => {});
+    closeOpenApprovals(threadId);
+  }
+}
+
 /** `outcome.byHarness`: the harness stopped the room (a provider save, a
  * Company change) and `detail` is its cause: the goal run's card says it and
  * the room's assignments fail with it, so no requester or person reads it as
@@ -11705,6 +11750,10 @@ const limitFailover = createLimitFailoverHost({
   payer: (botId, speaker) => {
     const bot = store.bot(botId);
     return bot ? autoPayerKey(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : "server";
+  },
+  ownerPays: (botId, speaker) => {
+    const bot = store.bot(botId);
+    return bot ? ownerPaysForMember(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : false;
   },
   threadSelection: (botId, threadId) => store.projectBotForTask(botId, threadId)?.modelSelection ?? null,
   busy: threadBusy,
@@ -15753,9 +15802,10 @@ function directContext(bot: BotRecord, threadId: string, messages: Message[]): C
       : m.roomRequest?.phase === "result" ? teammateReportContext(m.roomRequest.id, bot.id)
         : m.kind === "digest" && m.digest ? digestPromptLine(m.digest, m.from?.name ?? bot.name)
           : m.peerAsk ? peerLineText(m.peerAsk.name, m.text ?? "", "delivered")
+            : m.webhookPost && m.role !== "user" ? webhookPostText(bot.name, transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"))
             : m.role !== "user" && m.from ? peerReplayText(m, m.from.name, transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"))
               : transcriptText(m, messagesById, cfg.profile?.name?.trim() || "User"),
-    keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && Boolean(m.from)),
+    keep: m.roomRequest?.phase === "result" || Boolean(m.peerAsk) || (m.role !== "user" && (Boolean(m.from) || m.webhookPost === true)),
     ...(m.steered ? { steered: true } : {}),
     ...(m.role === "user" && m.voiceCall ? { spoken: true } : {}),
   }));
@@ -16323,6 +16373,41 @@ bus.subscribe((event: RuntimeEvent) => {
     tool: { name: `Same call repeated ${threshold}× — ${tool}: ${args.slice(0, 80)}${args.length > 80 ? "…" : ""} — it may be stuck`, ok: false },
   });
 });
+
+// A run going in circles is stopped, not only flagged (server/loop-detector.ts):
+// the same call, the same result, the same error, or a short cycle of calls
+// whose results never change. A direct thread stops through stopDirectThread,
+// the same steps as the person's Stop. A room thread, including one several
+// bots share, stops through stopGroupThreads, the same steps as the room's
+// Stop. A thread with neither is logged once and left running.
+const loopUnownedLogged = new Set<string>();
+bus.subscribe(makeLoopStopSubscriber({
+  config: () => cfg.loopDetector,
+  ignore: shouldIgnoreProviderEvent,
+  stop: (threadId, reason) => {
+    const group = store.groupByThread(threadId);
+    const botId = group ? undefined : store.botByThread(threadId)?.id;
+    const note = () => {
+      console.warn(`[loop] thread ${threadId.slice(0, 8)}: ${reason}`);
+      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: reason, ok: false } });
+    };
+    dispatchLoopStop(threadId, { botId, groupId: group?.id }, {
+      stopDirect: (id, thread) => {
+        note();
+        void stopDirectThread(id, thread).catch(() => {});
+      },
+      stopRoom: (groupId, thread) => {
+        note();
+        const room = store.group(groupId);
+        if (!room) return;
+        void stopGroupThreads(room, [thread], { status: "stopped", detail: reason }).catch(() => {});
+      },
+      onUnowned: (thread) => {
+        console.warn(`[loop] thread ${thread.slice(0, 8)} is not a direct or room thread; not stopped`);
+      },
+    }, loopUnownedLogged);
+  },
+}));
 
 // Drain queued delegations for a source thread after its turn settles.
 // Run as a separate subscriber so the drain logic stays out of the main
@@ -18758,8 +18843,7 @@ async function startTurn(
       // never pre-allowed, so every call rides the normal permission flow.
       if (instance.adapter.capabilities.customMcp === true) {
         await refreshMcpOAuth(bot);
-        const custom = engineMcpServers(bot, threadId);
-        if (Object.keys(custom).length) integrations.custom = custom;
+        attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
       }
       // Slice 5: the bot's Perspicax profiles, as the person who speaks.
       let perspicaxPrompt = "";
@@ -19554,7 +19638,7 @@ async function startTurn(
       runningTurnEngines.set(threadId, instance);
       if (!warmOnly) limitFailover.noteDispatch(threadId, {
         botId: bot.id, engine: { instanceId: instance.instanceId, driverKind: instance.driverKind }, selection: bot.modelSelection,
-        payer: autoPayerKey(bot, speaker), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
+        payer: autoPayerKey(bot, speaker), ...(ownerPaysForMember(bot, speaker, opts?.trigger?.kind === "user" ? opts.trigger.principalId : opts?.sender?.id) ? { owner: true } : {}), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
       });
       idleEngines.noteBusy(threadId);
       // The prompt carries the soul as saved now. If it changed during setup,
@@ -21716,6 +21800,9 @@ function serializeRoomContext(
       const speaker = m.role === "user"
         ? m.via === "api" ? `${person} (sent through the local API, not typed)` : person
         : m.from ? peerName(m.from.name) : "Bot";
+      // An outside app chose a webhook line's words: every reader is told,
+      // the bot it is shown as included.
+      if (m.webhookPost && m.role !== "user") return `${speaker}: ${webhookPostText(m.from?.name ?? "Bot", transcriptText(rendered, messagesById, userName))}`;
       const line = `${speaker}: ${escapeNotes(transcriptText(rendered, messagesById, userName))}`;
       // A room reply is the room talking. A post_to_room message is another
       // bot's text carried in from somewhere else, so it says so — the
@@ -22106,8 +22193,7 @@ async function runGroupMemberTurn(
   // user-configured MCP servers: same gating as the 1:1 site above.
   if (instance.adapter.capabilities.customMcp === true) {
     await refreshMcpOAuth(bot);
-    const custom = engineMcpServers(bot, threadId);
-    if (Object.keys(custom).length) integrations.custom = custom;
+    attachCustomMcp(integrations, engineMcpServers(bot, threadId), cfg);
   }
   // Slice 5: the bot's Perspicax profiles, as the person who speaks in the room.
   let roomPerspicaxPrompt = "";
@@ -25243,7 +25329,7 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (!body || typeof body !== "object") return out;
   const record = body as Record<string, unknown>;
-  for (const key of ["command", "args", "env", "type", "url", "headers", "oauth", "enabled"]) {
+  for (const key of ["command", "args", "env", "type", "url", "headers", "oauth", "enabled", "resultBudget"]) {
     if (record[key] !== undefined) out[key] = record[key];
   }
   return out;
@@ -25634,6 +25720,29 @@ const autoRefusals = new Map<string, number>();
 function autoPayerKey(bot: BotRecord, speaker: TurnSpeaker): string {
   if (IDENTITY.kind !== "perspicax") return "server";
   return turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId.toLowerCase() || "unknown";
+}
+/** J4: a plan window crossing the warning line (or spent) says so once, to
+ * the person whose plan it is (everyone on the solo server). */
+function announcePlanThresholds(report: PlanUsageReport, scope: string): void {
+  try {
+    for (const alert of newPlanUsageAlerts(report, scope.toLowerCase(), cfg.budgets?.warnAtPercent)) {
+      const text = planUsageAlertText(alert);
+      broadcast({ kind: "notify", notification: {
+        kind: "spend", botId: "", botName: "", threadId: "", title: text.title, body: text.body,
+        ...(scope !== "server" ? { audience: [scope] } : {}),
+      } }, scope === "server" && IDENTITY.kind === "perspicax" ? { adminOnly: true } : {});
+    }
+  } catch (failure) {
+    console.warn(`[plan-usage] threshold alert: ${failure instanceof Error ? failure.message : String(failure)}`);
+  }
+}
+/** J4: the bot owner's plan pays for a turn a member started (a peer hop
+ * from the member's bot, never a routine), so a usage limit is the owner's. */
+function ownerPaysForMember(bot: BotRecord, speaker: TurnSpeaker, asked?: string): boolean {
+  if (IDENTITY.kind !== "perspicax" || routineLineage(speaker)) return false;
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  const who = (asked || speakerPrincipal(speaker, owner, peerOwnerPrincipal(speaker))).trim().toLowerCase();
+  return owner !== "" && autoPayerKey(bot, speaker) === owner && who !== "" && who !== owner;
 }
 function rememberAutoRefusal(payer: string, entry: AutoChainEntry): void {
   autoRefusals.set(`${payer}\u0000${entry.instanceId}\u0000${entry.model}`, Date.now() + AUTO_REFUSAL_TTL_MS);
@@ -37251,10 +37360,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const readInRoom = Boolean(store.groupByThread(fromThreadId));
         const readCrossed = readInRoom && threadId !== fromThreadId;
         if (readCrossed) discloseRecall(from, fromThreadId, [threadId]);
+        // An outside app wrote a webhook line: read back with its note, never as the bot's own words.
+        const readText = message.webhook ? webhookPostText(from.name, message.text) : message.text;
         return json(res, 200, {
           ...message,
           crossed: readCrossed,
-          text: message.text.length > SESSION_READ_MAX_CHARS ? `${message.text.slice(0, SESSION_READ_MAX_CHARS)}…` : message.text,
+          text: readText.length > SESSION_READ_MAX_CHARS ? `${readText.slice(0, SESSION_READ_MAX_CHARS)}…` : readText,
           task: store.taskByThread(from.id, threadId)?.title,
         });
       }
@@ -41518,27 +41629,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : activeOperations.length > 0
           ? [...new Set(activeOperations.map((operation) => operation.threadId))]
           : [group.threadId];
-      const interruptTargets = targetThreadIds.map((threadId) => {
-        const speaker = groupSpeakers.get(threadId);
-        const busy = speaker
-          ? store.bot(speaker.botId)
-          : threadId === group.threadId && group.busyBotId
-            ? store.bot(group.busyBotId)
-            : undefined;
-        return {
-          threadId,
-          instance: busy ? runningTurnInstance(busy, threadId) : undefined,
-        };
-      });
-      // Abort every queued operation before the first provider round trip;
-      // otherwise one queued task could begin while Stop awaits interruption
-      // of the task ahead of it.
-      for (const { threadId } of interruptTargets) cancelGroupTurnOperations(group.id, threadId);
-      for (const { threadId, instance } of interruptTargets) {
-        revokeInternalCapabilitiesForThread(threadId);
-        await instance?.adapter.interruptTurn(threadId).catch(() => {});
-        closeOpenApprovals(threadId);
-      }
+      await stopGroupThreads(group, targetThreadIds);
       return json(res, 200, { ok: true });
     }
 
@@ -45300,13 +45391,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
           },
         });
-        return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+        const report = await loadPlanUsage({ accounts, refresh });
+        announcePlanThresholds(report, principalId);
+        return json(res, 200, report);
       }
       if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin only" });
       const accounts = planAccountsFromInstances(instances, {
         apiKeyConfigured: (_driver, instanceId) => planKeyConfigured(instances[instanceId]?.driver ?? "", instanceId),
       });
-      return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+      const report = await loadPlanUsage({ accounts, refresh });
+      announcePlanThresholds(report, "server");
+      return json(res, 200, report);
     }
 
     // ── provider key check: does a pasted or saved key open the provider's door ──

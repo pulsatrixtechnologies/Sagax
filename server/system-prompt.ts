@@ -44,8 +44,15 @@ const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", 
  * what changed in its volatile half: the surface paragraph changes when a
  * teammate's reply resumes a person's turn (no computer choice there), and
  * relaunching the engine for that one paragraph cost 1.3 to 2.4 s and about
- * 26,000 cache-write tokens, twice (2026-10-19 perf parity). */
-export const CLAUDE_REUSE_VOLATILE_SECTIONS: ReadonlySet<string> = new Set(["plan"]);
+ * 26,000 cache-write tokens, twice (2026-10-19 perf parity). The other
+ * three describe one turn, not the conversation (a routine run, the skills
+ * and playbooks its words switched on): stable, each one that came or went
+ * relaunched the engine (port of OpenMausBot #3164). Three per-turn
+ * sections stay stable on purpose: "setup" sits right after the standing
+ * instructions it overrides, and "webhook" and "assignment" carry trust
+ * rules (untrusted webhook data; teammate results are reports, the consent
+ * rule) that stay in the system prompt, out of reach of what they guard. */
+export const CLAUDE_REUSE_VOLATILE_SECTIONS: ReadonlySet<string> = new Set(["plan", "routine-execution", "skill-instructions", "playbooks"]);
 
 /** The team availability section, defined once for the direct turn, the room
  * turn and the preview. Its id is what puts it in the volatile half: a call

@@ -455,6 +455,10 @@ const __BASE_VERSION__: string;
         install(options?: { confirmed?: boolean }): Promise<void>;
         /** opt in or out of pre-release versions from Sagax's GitHub releases */
         setPrereleases?(enabled: boolean): Promise<UpdaterState>;
+        setChannel?(channel: "stable" | "nightly"): Promise<UpdaterState>;
+        setAutoInstallAway?(enabled: boolean): Promise<UpdaterState>;
+        reportActivity?(count: number): Promise<void>;
+        installWhenIdle?(enabled: boolean): Promise<UpdaterState>;
         onState(cb: (s: UpdaterState) => void): () => void;
       };
     };
@@ -499,6 +503,14 @@ export interface UpdaterState {
   message?: string;
   /** pre-release versions are offered (opt-in, this computer only) */
   allowPrerelease?: boolean;
+  /** the named update channel (this computer only) */
+  channel?: "stable" | "nightly";
+  /** a downloaded update installs by itself while the person is away and no bot works */
+  autoInstallWhenAway?: boolean;
+  /** bots working now, as the page last reported (a restart would cut them short) */
+  activeBots?: number;
+  /** the person asked to restart once no bot works */
+  waitingForBots?: boolean;
   /** native work may still be running; recovery requires an app restart */
   retryable?: boolean;
   /**

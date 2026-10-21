@@ -10,8 +10,10 @@
 // matcher cannot read never allows anything.
 //
 // Precedence, whoever wrote the rule and for whichever bot:
-//   deny > ask > allow, and within one behavior a bot's own rule before a
-//   rule for all of the person's bots.
+//   deny > ask > allow, and within one behavior an organization rule
+//   first (2026-10-21, server/custom-rules-org.ts: an admin's ask or deny,
+//   for every person and bot, that a member cannot change), then a bot's
+//   own rule before a rule for all of the person's bots.
 //
 // Safety:
 //   - An allow rule never covers a call classed destructive, irreversible,
@@ -68,6 +70,9 @@ export interface CustomRule {
    * that command line, that tool and server, that working folder and that
    * engine instance. Without a binding an exact command never allows. */
   binding?: CustomRuleBinding;
+  /** 2026-10-21: an organization admin's rule (ask or deny only), for every
+   * person and bot of the server; read-only for everyone else. */
+  org?: true;
   createdAt: number;
   updatedAt: number;
 }
@@ -96,6 +101,8 @@ export interface CustomRuleNotice {
    * cover this risk class, so the card stays. */
   outcome: "approved" | "denied" | "held" | "risk";
   missing?: RiskClass[];
+  /** The organization admin's rule ("Exigé par votre administrateur"). */
+  org?: true;
 }
 
 /** "Toujours permettre ceci": the rule a card offers to save, and the risk
@@ -909,7 +916,7 @@ export function evaluateCustomRules(rules: readonly CustomRule[], facts: CallFac
       }
       return true;
     })
-    .sort((a, b) => BEHAVIOR_WEIGHT[b.behavior] - BEHAVIOR_WEIGHT[a.behavior] || Number(b.botId !== null) - Number(a.botId !== null) || a.createdAt - b.createdAt);
+    .sort((a, b) => BEHAVIOR_WEIGHT[b.behavior] - BEHAVIOR_WEIGHT[a.behavior] || Number(b.org === true) - Number(a.org === true) || Number(b.botId !== null) - Number(a.botId !== null) || a.createdAt - b.createdAt);
   const top = matching[0];
   if (!top) return { kind: "none" };
   if (top.behavior !== "allow") return { kind: top.behavior, rule: top };
@@ -1021,6 +1028,59 @@ export function candidateWhen(facts: CallFacts, language = "fr"): string {
   return facts.objects.includes("file") || folder
     ? (fr ? `la lecture de fichiers${where}${product}` : `reading files${where}${product}`)
     : (fr ? `la lecture${product}` : `reading${product}`);
+}
+
+// ── a rule's words changed ───────────────────────────────────────────────
+
+export interface RuleTextPart {
+  text: string;
+  /** same: in both; removed: only in the old text; added: only in the new. */
+  kind: "same" | "removed" | "added";
+}
+
+/** Word by word, what changed between a rule's old and new words (the
+ * notice and the editor mark it). Spaces stay with the word before them.
+ * Long texts (over 200 words each side) come back as one removal and one
+ * addition. */
+export function ruleTextDiff(before: string, after: string): RuleTextPart[] {
+  const split = (text: string) => text.match(/\S+\s*/g) ?? [];
+  const a = split(before);
+  const b = split(after);
+  const parts: RuleTextPart[] = [];
+  const push = (text: string, kind: RuleTextPart["kind"]) => {
+    const last = parts[parts.length - 1];
+    if (last && last.kind === kind) last.text += text;
+    else parts.push({ text, kind });
+  };
+  if (a.length > 200 || b.length > 200) {
+    if (before) push(before, "removed");
+    if (after) push(after, "added");
+    return parts;
+  }
+  const key = (word: string) => word.trim().toLowerCase();
+  // longest common subsequence of words
+  const table: number[][] = Array.from({ length: a.length + 1 }, () => Array.from({ length: b.length + 1 }, () => 0));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      table[i]![j] = key(a[i]!) === key(b[j]!) ? table[i + 1]![j + 1]! + 1 : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
+    }
+  }
+  let i = 0;
+  let j = 0;
+  while (i < a.length && j < b.length) {
+    if (key(a[i]!) === key(b[j]!)) {
+      push(b[j]!, "same");
+      i++;
+      j++;
+    } else if (table[i + 1]![j]! >= table[i]![j + 1]!) {
+      push(a[i++]!, "removed");
+    } else {
+      push(b[j++]!, "added");
+    }
+  }
+  while (i < a.length) push(a[i++]!, "removed");
+  while (j < b.length) push(b[j++]!, "added");
+  return parts;
 }
 
 export function isCustomRuleBehavior(value: unknown): value is CustomRuleBehavior {

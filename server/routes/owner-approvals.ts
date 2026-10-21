@@ -15,6 +15,7 @@
 import type { RequestAuth } from "../request-auth.ts";
 import { isBotPermissionMode, isRuleBehavior, type BotPermissionMode, type OwnerRule } from "../owner-approval.ts";
 import type { OwnerApprovalStore } from "../owner-approval-store.ts";
+import { ORG_ALWAYS_ALLOW_OFF, standingGrantsAllowed } from "../custom-rules-org.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface LegacyRule extends OwnerRule {
@@ -119,6 +120,9 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
           const refused = deps.stepUp(auth, me, "approval-rules.allow", { id, behavior: isRuleBehavior(body.behavior) ? body.behavior : "allow", botId: null, legacy: true }, body.stepUp);
           if (refused) return json(res, refused.status, refused.body);
         }
+        // 2026-10-21: no allow rule is made while the organization turned
+        // Always allow off (server/custom-rules-org.ts)
+        if (method === "PATCH" && (body.behavior ?? "allow") === "allow" && !standingGrantsAllowed()) return json(res, 403, ORG_ALWAYS_ALLOW_OFF);
         if (method === "PATCH") {
           // editing an earlier rule makes it this person's own rule
           if (!legacy.key.startsWith("mcp:")) return json(res, 400, { error: "This rule is about another bot or room; remove it instead." });
@@ -163,6 +167,7 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       const widens = body.behavior === "allow"
         ? current?.behavior !== "allow" || body.anyTarget === true || body.botId === null
         : body.behavior === undefined && current?.behavior === "allow" && (body.anyTarget === true || body.botId === null);
+      if (current && widens && !standingGrantsAllowed()) return json(res, 403, ORG_ALWAYS_ALLOW_OFF);
       if (current && widens && deps.stepUp) {
         const refused = deps.stepUp(auth, me, "approval-rules.allow", {
           id,

@@ -13,6 +13,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { applyStoredEngineEnv } from "./engine-api-keys.ts";
 import { withoutComputerEngine } from "./computer-engine-removal.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
+import { loopDetectorConfigSchema, type LoopDetectorConfig } from "./loop-detector.ts";
 import { EFFORT_LEVELS, type LiveSettings } from "../shared/wire.ts";
 import { isModelVariant, type InstanceConfigMap, type ModelSelection } from "./contracts.ts";
 import { PROVIDER_ICON_PRESETS, providerIconError } from "../shared/provider-icon.ts";
@@ -691,6 +692,9 @@ const appConfigSchema = z.object({
     /** Minutes of quiet before the size check applies (default 60). */
     staleSessionColdMinutes: z.number().min(0).max(24 * 60 * 30).optional(),
   }).optional(),
+  /** Stops a run that repeats itself (server/loop-detector.ts). Absent
+   * fields take the defaults; `enabled: false` turns it off. */
+  loopDetector: loopDetectorConfigSchema.optional(),
   /** Memory upkeep timing, for bots with Memory upkeep switched on. */
   memory: z.object({
     /** Quiet time after a turn before its facts are captured (ms). */
@@ -824,6 +828,7 @@ export interface AppConfig {
   mcp?: { callTimeoutMinutes?: number };
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[]; staleSessionHours?: number; staleSessionBytes?: number; staleSessionColdMinutes?: number };
+  loopDetector?: LoopDetectorConfig;
   memory?: { captureQuietMs?: number; tidyHour?: number };
   routines?: { newPaused?: boolean };
   /** Shared preserves the historical singleton. Per-bot gives every bot a

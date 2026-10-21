@@ -4,6 +4,7 @@
  * frame union and every client consumer share one home; the client file
  * re-exports these under the same names. */
 import type { RoutineCronSchedule } from "./routine-schedule.ts";
+import type { RoutineWindowTiming } from "./routine-timing.ts";
 
 export interface RoutineIntervalWindow {
   start: string;
@@ -11,10 +12,10 @@ export interface RoutineIntervalWindow {
 }
 
 export type RoutineSchedule =
-  | RoutineCronSchedule
+  | (RoutineCronSchedule & RoutineWindowTiming)
   | { type: "once"; at: number }
-  | { type: "daily"; time: string; weekdays: number[] }
-  | {
+  | ({ type: "daily"; time: string; weekdays: number[] } & RoutineWindowTiming)
+  | ({
     type: "interval";
     everyMinutes: number;
     anchorAt: number;
@@ -24,11 +25,11 @@ export type RoutineSchedule =
     window?: RoutineIntervalWindow;
     /** Inclusive epoch-millisecond cutoff. Missing means never. */
     endsAt?: number;
-  };
+  } & RoutineWindowTiming);
 
 export type RoutineScheduleInput =
   | Extract<RoutineSchedule, { type: "once" | "daily" | "cron" }>
-  | {
+  | ({
     type: "interval";
     everyMinutes: number;
     anchorAt: number;
@@ -38,7 +39,7 @@ export type RoutineScheduleInput =
     window?: RoutineIntervalWindow | null;
     /** `null` explicitly removes an existing end date on updates. */
     endsAt?: number | null;
-  };
+  } & RoutineWindowTiming);
 
 export type RoutineRunOn = "maus" | "cloud";
 
@@ -124,6 +125,10 @@ export interface Routine {
    * are back. Cleared by POST /api/routines/:id/away-seen. */
   awaySkips?: { count: number; firstAt: number; lastAt: number; reportedAt?: number };
   nextRunAt: number | null;
+  /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
+  nominalRunAt?: number;
+  /** Nominal slot already consumed. Later placement never chooses it or an earlier slot. */
+  lastFiredNominalAt?: number;
   createdAt: number;
   updatedAt: number;
   /** 2026-10-09 (GET /api/routines, server/routine-scope.ts): its bot's
