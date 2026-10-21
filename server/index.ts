@@ -694,6 +694,7 @@ import { BOT_PACKAGE_MAX_SKILLS, isBotPackage, packageSummary, parsePackageDocum
 import { createTeamManifest, parseTeamManifest } from "./team-manifest.ts";
 import { readThreadEvents } from "./thread-events.ts";
 import { TeamMemory, TEAM_MEMORY_KINDS, type TeamMemoryKind } from "./team-memory.ts";
+import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { describeTool, readBotActivity } from "./activity.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
 import { OutboundRequestService } from "./outbound-requests.ts";
@@ -1127,7 +1128,7 @@ import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
-import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
+import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
@@ -2488,9 +2489,18 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
       ? "A local service can only decline this request. Approve or answer it in Sagax while signed in."
       : null;
   }
-  if (!auth.scopes.includes("admin") && store.messagesFor(threadId).some(message =>
-    message.card?.requestId === requestId && message.card.teamMemoryRequest)) {
-    return "Only a workspace admin can review shared team memory.";
+  const teamMemoryCard = store.messagesFor(threadId).find((message) =>
+    message.card?.requestId === requestId && message.card.teamMemoryRequest);
+  if (teamMemoryCard?.card?.teamMemoryRequest) {
+    return teamMemoryReviewRefusal({
+      admin: auth.scopes.includes("admin"),
+      shared: sharedMembership(),
+      memberOfSection: personMayReviewTeamMemory(
+        auth,
+        teamMemoryCard.card.teamMemoryRequest.section,
+        teamMemoryCard.from?.botId ?? store.botByThread(threadId)?.id,
+      ),
+    });
   }
   // A Cloud home is one person's: a device paired with chat-only access (a
   // guest) may read along but never answer, or its words would reach the
@@ -2500,6 +2510,40 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
   if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
+}
+
+/** A signed-in person can use at least one bot that sits in this section. */
+function personMayUseTeamSection(auth: RequestAuth, section: string): boolean {
+  if (auth.kind !== "session") return false;
+  const viewer = authzViewerFor(auth);
+  if (!viewer || viewer.disabled) return false;
+  const key = sectionContextKey(section);
+  return store.bots.some((bot) =>
+    sectionContextKey(bot.section) === key && canOnBot(viewer, "bot.use", botFacts(bot)));
+}
+
+/** The section's people, or the people who can use the bot that proposed
+ * this entry. A workspace admin is decided separately. */
+function personMayReviewTeamMemory(auth: RequestAuth, section: string, proposerBotId: string | undefined): boolean {
+  if (personMayUseTeamSection(auth, section)) return true;
+  if (auth.kind !== "session" || !proposerBotId) return false;
+  const viewer = authzViewerFor(auth);
+  const proposer = store.bot(proposerBotId);
+  if (!viewer || viewer.disabled || !proposer) return false;
+  return canOnBot(viewer, "bot.use", botFacts(proposer));
+}
+
+/** The team-memory dialog. A bot's own shell proposes through the internal
+ * route and waits for a card; it does not write the shared file itself. */
+function teamMemoryRouteRefusal(auth: RequestAuth, section: string): string | null {
+  if (auth.kind === "loopback" && auth.trust === "service") {
+    return "A local service cannot change shared team memory. Propose it and let a person confirm the card.";
+  }
+  return teamMemoryReviewRefusal({
+    admin: auth.kind === "loopback" || auth.scopes.includes("admin"),
+    shared: sharedMembership(),
+    memberOfSection: personMayUseTeamSection(auth, section),
+  });
 }
 
 /** Settings > Bot > Auto-review (server/bot-settings.ts): when the caller
@@ -42649,14 +42693,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (IDENTITY.kind === "perspicax" && body.approvalMode === "full") {
         const target = store.bot(m[1]);
         if (!target) return json(res, 404, { error: "no such bot" });
-        if (Object.keys(body).some((key) => key !== "approvalMode" && key !== "confirmFullAccess") ||
-          (body.confirmFullAccess !== undefined && typeof body.confirmFullAccess !== "boolean")) {
-          return json(res, 400, { error: "send { approvalMode: \"full\", confirmFullAccess } alone" });
-        }
+        const parsedFull = parseOrgFullAccessBody(body as Record<string, unknown>);
+        if ("error" in parsedFull) return json(res, 400, { error: parsedFull.error });
         // use may talk and rename a thread, not raise the bot. This branch
         // returns before the member field check, so the cap is applied here.
         if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
-        const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
+        const refusal = orgFullAccessRefusalFor(auth, target, parsedFull.confirm);
         if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
         if (target.busy && !primaryAskedReplay()) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
@@ -42668,8 +42710,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           approvalMode: "full", autoApprove: false, alwaysAllow: [],
           fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
         })!;
+        // The settings control shows the open conversation. The grant has to
+        // land on that thread too, or the menu snaps back to the thread's
+        // previous level while only the bot default changed.
+        const follow = threadFollowsFullGrant({
+          threadId: parsedFull.threadId,
+          knownThread: Boolean(parsedFull.threadId && store.taskByThread(updated.id, parsedFull.threadId)),
+          threadBusy: Boolean(parsedFull.threadId && threadBusy(updated.id, parsedFull.threadId)),
+        });
+        if (follow) store.patchTask(updated.id, follow, { approvalMode: "full", autoApprove: false, alwaysAllow: [] });
         auditApprovalModeChange(auth, target.id, before, "full");
-        const visible = wireBot(updated);
+        const visible = wireBot(store.bot(updated.id)!);
         broadcast({ kind: "bot", bot: visible });
         return json(res, 200, { bot: visible });
       }
@@ -43606,6 +43657,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!url.searchParams.has("section")) return json(res, 400, { error: "section is required" });
       const section = sectionContextKey(url.searchParams.get("section") ?? "");
       if (section.length > 60) return json(res, 400, { error: "section must be at most 60 characters" });
+      const teamMemoryRefusal = teamMemoryRouteRefusal(auth, section);
+      if (teamMemoryRefusal) return json(res, 403, { error: teamMemoryRefusal });
       if (method === "GET") {
         return json(res, 200, { section, label: sectionContextLabel(section), entries: teamMemory.list(section) });
       }
@@ -43630,6 +43683,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && (method === "PATCH" || method === "DELETE")) {
       if (!url.searchParams.has("section")) return json(res, 400, { error: "section is required" });
       const section = sectionContextKey(url.searchParams.get("section") ?? "");
+      const teamMemoryRefusal = teamMemoryRouteRefusal(auth, section);
+      if (teamMemoryRefusal) return json(res, 403, { error: teamMemoryRefusal });
       if (method === "DELETE") {
         if (!teamMemory.remove(section, m[1])) return json(res, 404, { error: "no such entry" });
         return json(res, 200, { entries: teamMemory.list(section) });

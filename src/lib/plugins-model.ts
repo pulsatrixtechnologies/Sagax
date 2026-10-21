@@ -132,6 +132,9 @@ export interface PluginSources {
    * nor managed service): an app that also exists as an MCP server is then
    * offered as the server */
   composioUsable?: boolean;
+  /** Cloud connectors of the xAI account (shared/grok-cloud-connectors.ts).
+   * Shown, not connected from here: the person manages them on grok.com. */
+  grokConnectors?: readonly { id: string; name: string; tag: string }[] | null;
 }
 
 export const WHOP_KEY = "whop:whop";
@@ -177,6 +180,23 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       status: state?.pending ? "pending" : failed && !accounts.length ? "needs_auth" : connected ? "connected" : "available",
       action: connected ? null : card.noAuth ? "add" : "connect",
       source: "composio",
+    });
+  }
+  for (const connector of sources.grokConnectors ?? []) {
+    const id = connector.id.trim();
+    const name = connector.name.trim();
+    if (!id || !name) continue;
+    items.push({
+      key: `grok:${id}`,
+      kind: "app",
+      id,
+      name,
+      description: "xAI",
+      category: categoryFromTags([connector.tag]),
+      installed: false,
+      status: "available",
+      action: null,
+      source: "grok",
     });
   }
   if (sources.whop) {

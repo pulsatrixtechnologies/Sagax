@@ -26,7 +26,7 @@ export interface ProviderGroup<T extends InstanceLike = InstanceLike> {
 const KNOWN: Array<{ id: ProviderId; name: string; kinds: string[]; manageUrl?: string; bringsConnectors?: boolean }> = [
   { id: "claude", name: "Claude", kinds: ["claudeAgent"], manageUrl: "https://claude.ai/customize/connectors", bringsConnectors: true },
   { id: "openai", name: "ChatGPT / Codex", kinds: ["codex"], manageUrl: "https://chatgpt.com/#settings/Connectors" },
-  { id: "xai", name: "Grok", kinds: ["grokAgent", "grok"] },
+  { id: "xai", name: "Grok", kinds: ["grokAgent", "grok"], manageUrl: "https://grok.com/connectors" },
   { id: "google", name: "Gemini", kinds: ["geminiAgent"] },
 ];
 

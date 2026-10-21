@@ -170,6 +170,11 @@ describe("Plugins panel views", () => {
     expect(providers).toContain('data-harness-connectors="provider"');
     expect(providers).toContain("Codex: ChatGPT connectors do not reach bots in Sagax.");
     expect(providers).toContain("Grok bots on an organization server see the cloud connectors of this xAI account. A call still asks before it runs.");
+    expect(providers).toContain('data-grok-connector="outlook"');
+    expect(providers).toContain("Outlook (Exchange)");
+    expect(providers).toContain('data-grok-connector="x"');
+    expect(providers).toContain('data-grok-connector="microsoft-teams"');
+    expect(providers).toContain("Manage on Grok");
     expect(providers).toContain("Gemini: Google&#x27;s extensions do not reach bots in Sagax.");
     expect(providers).toContain("Manage on ChatGPT / Codex");
   });

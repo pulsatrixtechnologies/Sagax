@@ -563,6 +563,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // the owner removes a person's grant (server/direct-grants.ts checks ownership)
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/direct-grants\/pr_[0-9a-f-]{36}$/ },
   // approvals and cards
+  // A section's shared memory: the handler lets a member of that section,
+  // or a workspace admin, read and edit it. Anyone else is refused there.
+  { methods: ["GET", "POST"], path: /^\/api\/team-memory$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/team-memory\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/respond$/ },
   { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/undo$/ }, // whoever may answer the card: see the handler

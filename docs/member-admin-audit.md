@@ -76,7 +76,7 @@ under Full access, or would write lasting instructions from untrusted text.
 | `select_computer` | own (picks among their own places) | admin tier | own | Own destination. |
 | `manage_pairing` | own (create: a code bound to the speaking person and capped to their scopes, on an organization server; list stays an admin route) | admin tier | own; the engine gate still treats it as host level (section 1) | Own devices. |
 | `propose_team_setup` | own (a card for their own team of bots) | admin tier | own, self scope | A proposal they confirm. |
-| `propose_team_memory` | org (memory the whole section reads) | admin tier | unchanged | Organization data. |
+| `propose_team_memory` | org (memory the section reads) | admin tier | a member of that section, or an admin, confirms the card | The section's own people. |
 | `create_bot`, `propose_bot_deletion`, `create_room`, `manage_room` | own (self scope override) | allowed at self | unchanged | Already. |
 | `create_agent`, `delete_agent` | own (a temporary agent of theirs) | admin tier | unchanged; gated by `clients.agentsCreate` on the client side | Already delegable there. |
 | `add_mcp_server` | host (a program on the server) | admin tier | unchanged | Shared host. |

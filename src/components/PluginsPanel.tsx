@@ -37,6 +37,7 @@ import { permissionMissingText } from "@/lib/permissions";
 import { connectorToolRows, loadConnectorTools, saveDisabledTools, toggledDisabledTools, type ConnectorToolsInventory } from "@/lib/connector-tool-switches";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
 import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
+import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
 import {
   addMarketplace as addBotMarketplace,
   installPlugin as installBotPlugin,
@@ -357,6 +358,7 @@ export function PluginsPanel() {
     skills,
     marketplaces: shownMarketplaces,
     whop: { description: t("whop.description"), server: mcp.whopServer?.name, connected: mcp.whopConnected },
+    grokConnectors: GROK_CLOUD_CONNECTORS,
     // Until the catalog answers, assume apps can be connected (no flicker).
     composioUsable: apps.cards === null || apps.configured,
   }), [apps.cards, apps.status, apps.configured, mcp.servers, featured, skills, shownMarketplaces, mcp.whopServer?.name, mcp.whopConnected]);

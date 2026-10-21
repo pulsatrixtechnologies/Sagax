@@ -478,6 +478,21 @@ describe("trusted approval-mode persistence", () => {
     expect(setMode).toHaveBeenCalledWith("bot-1", "full", { acknowledgeLocalAuto: false, allThreads: true });
   });
 
+  it("names the open conversation on an organization Full grant and keeps it off the ordinary patch", async () => {
+    const request = vi.fn(async () => ({ bot: announcement("full") }));
+    await persistBotUpdate(
+      "bot-1",
+      { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true, threadId: "talk", title: "Ops" },
+      new AbortController().signal,
+      request,
+    );
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ title: "Ops" });
+    expect(request.mock.calls[1]?.[0]).toBe("/api/bots/bot-1");
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({
+      approvalMode: "full", confirmFullAccess: true, threadId: "talk",
+    });
+  });
+
   it("never sends a Full confirmation over HTTP after a rapid switch back to Ask", async () => {
     const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
     await persistBotUpdate(
@@ -1752,6 +1767,25 @@ describe("sections and the Primary Bot", () => {
     });
 
     expect(next.bots[0]?.computer).toBeUndefined();
+  });
+
+  it("shows a Full grant on the open conversation immediately", () => {
+    const current = {
+      ...bot("juniper", "Dispatch"),
+      messages: [],
+      approvalMode: "auto" as const,
+      threadId: "talk",
+      tasks: [{ threadId: "talk", title: "Talk", createdAt: 1, approvalMode: "auto" as const, autoApprove: true }],
+    };
+    const next = reducer({ ...initialState, bots: [current] }, {
+      type: "updateBot",
+      botId: current.id,
+      patch: { approvalMode: "full", organizationFullAccess: true, confirmFullAccess: true, threadId: "talk" },
+    });
+    const saved = next.bots[0]!;
+    expect(saved.approvalMode).toBe("full");
+    expect(saved.tasks?.[0]).toMatchObject({ threadId: "talk", approvalMode: "full", autoApprove: false });
+    expect(saved.tasks?.find((task) => task.threadId !== "talk")).toBeUndefined();
   });
 });
 

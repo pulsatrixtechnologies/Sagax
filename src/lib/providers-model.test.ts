@@ -23,7 +23,7 @@ describe("providers on this installation", () => {
     ]);
     expect(groups.filter((group) => group.bringsConnectors).map((group) => group.id)).toEqual(["claude"]);
     expect(groups.find((group) => group.id === "openai")!.manageUrl).toBe("https://chatgpt.com/#settings/Connectors");
-    expect(groups.find((group) => group.id === "xai")!.manageUrl).toBeUndefined();
+    expect(groups.find((group) => group.id === "xai")!.manageUrl).toBe("https://grok.com/connectors");
   });
 
   it("says how each account is reached", () => {

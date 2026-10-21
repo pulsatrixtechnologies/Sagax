@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
 import { appKey, buildPluginItems, categoryFromTags, connectedSummary, installedPlugins, mainSections, matchesFilter, matchesType } from "./plugins-model";
 
 const sources = {
@@ -181,6 +182,15 @@ describe("one row per app across sources", () => {
   it("draws a catalog server with its provider's site, not its MCP host", () => {
     const atlassian = buildPluginItems(merged).find((item) => item.key === "featured:atlassian")!;
     expect(atlassian.domain).toBe("atlassian.com");
+  });
+
+  it("lists the xAI account connectors, including Exchange, X and Microsoft Teams", () => {
+    const items = buildPluginItems({ grokConnectors: GROK_CLOUD_CONNECTORS });
+    const names = items.filter((item) => item.source === "grok").map((item) => item.name);
+    expect(names).toEqual(expect.arrayContaining(["Outlook (Exchange)", "X", "Microsoft Teams"]));
+    const found = mainSections(items, "exchange", "all");
+    expect(found[0]!.items.map((item) => item.key)).toEqual(["grok:outlook"]);
+    expect(items.find((item) => item.id === "microsoft-teams")).toMatchObject({ kind: "app", installed: false, category: "communication", action: null });
   });
 });
 

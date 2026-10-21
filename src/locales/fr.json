@@ -8663,7 +8663,7 @@
   "teamShare.choices": "Ce qui part dans le fichier",
   "teamShare.file": "Détails du fichier",
   "teamMemory.title": "Mémoire d'équipe {label}",
-  "teamMemory.intro": "Les personnes, lieux, décisions et termes que partagent tous les bots de cette section. Chaque proposition d'un bot attend la révision d'un admin avant d'être partagée. Vos propres ajouts sont partagés tout de suite. Vous pouvez tout modifier ou retirer.",
+  "teamMemory.intro": "Les personnes, lieux, décisions et termes que partagent tous les bots de cette section. Chaque proposition d'un bot attend la révision d'un membre de cette équipe, ou d'un admin, avant d'être partagée. Vos propres ajouts sont partagés tout de suite. Vous pouvez tout modifier ou retirer.",
   "teamMemory.close": "Fermer la mémoire d'équipe",
   "teamMemory.loading": "Chargement de la mémoire d'équipe",
   "teamMemory.waiting": "En attente de vous",
