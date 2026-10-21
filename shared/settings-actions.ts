@@ -240,6 +240,47 @@ add({
   classes: always("delete"),
 });
 
+// ── bot templates behind a public link (routes/template-links.ts) ──────
+// "Make a public template of yourself": the bot first sets the New bot
+// defaults (server.newBotDefaults) from its own persona when asked, then
+// shares or updates the template. A public link reaches other people: card.
+const templateLinkId = (value: unknown): string | null => {
+  const id = typeof value === "string" ? value : value && typeof value === "object" ? (value as { id?: unknown }).id : undefined;
+  return typeof id === "string" && /^[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
+};
+const templateBody = (value: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (value && typeof value === "object") {
+    for (const field of ["name", "description"] as const) {
+      const text = (value as Record<string, unknown>)[field];
+      if (typeof text === "string" && text.trim()) out[field] = text.trim();
+    }
+  }
+  return out;
+};
+add({
+  key: "template.share", family: "bot", target: "none", value: "object", label: "Share the New bot defaults as a public template link ({name?, description?}); get lists your links", where: "New bot > Share preset > Share the link",
+  read: () => ({ path: "/api/template-links", field: "links" }),
+  write: (_ids, v) => ({ method: "POST", path: "/api/template-links", body: templateBody(v) }),
+  classes: always("others"),
+});
+add({
+  key: "template.update", family: "bot", target: "none", value: "object", label: "Update a shared template under the same link ({id, name?, description?})", where: "New bot > Share preset > Share the link > Update the template",
+  write: (_ids, v) => {
+    const id = templateLinkId(v);
+    return id ? { method: "PUT", path: `/api/template-links/${id}`, body: templateBody(v) } : "value is {id, name?, description?} with the id of one of your links (get template.share).";
+  },
+  classes: always("others"),
+});
+add({
+  key: "template.remove", family: "bot", target: "none", value: "string", label: "Delete a shared template and turn its link off (its id)", where: "New bot > Share preset > Share the link > Turn off",
+  write: (_ids, v) => {
+    const id = templateLinkId(v);
+    return id ? { method: "DELETE", path: `/api/template-links/${id}` } : "value is the id of one of your links (get template.share).";
+  },
+  classes: always("delete"),
+});
+
 // ── thread (PATCH /api/bots/:id/tasks/:threadId) ──────────────────────
 function threadField(key: string, field: string, value: SettingValue, label: string, where: string, classes?: SettingSpec["classes"]): void {
   add({
