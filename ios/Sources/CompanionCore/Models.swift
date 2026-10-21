@@ -893,6 +893,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var directGrants: [String]? = nil
     /// Ask before contacting other bots (Permissions); absent is off.
     public var approvePeerComms: Bool? = nil
+    /// Bot-to-bot conversations this viewer may read, both ends (`shared/wire.ts`
+    /// WireBotConversation). Absent: none. Read only; see `BotConversations`.
+    public var botConversations: [BotConversation]? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
