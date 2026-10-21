@@ -31,6 +31,7 @@ import {
   Search,
   Puzzle,
   Share2,
+  SlidersHorizontal,
   Trash2,
   Users,
   X,
@@ -43,6 +44,8 @@ import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
 import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
+import { viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
+import { ModelPicker } from "./ModelPicker";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
@@ -2511,6 +2514,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // on bots. `selecting` stays on while the bar is open, even at zero.
   const [selecting, setSelecting] = useState(false);
   const [selectedBotIds, setSelectedBotIds] = useState<string[]>([]);
+  const [batchModel, setBatchModel] = useState(false);
   const [batchSectionPicker, setBatchSectionPicker] = useState<MenuState | null>(null);
   const [batchArchiveConfirm, setBatchArchiveConfirm] = useState(false);
   const clearSelection = () => {
@@ -3432,6 +3436,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                 for (const bot of chosen) dispatch({ type: "updateBot", botId: bot.id, patch: { pinned: !allPinned } });
                 clearSelection();
               }}>{allPinned ? <PinOff size={16} /> : <Pin size={16} />}</button>
+            <button type="button" data-sidebar-select-model className={button} disabled={chosen.every((bot) => viewerLocalBotSettings(state.config, bot))} title={t("sidebar.select.model")} aria-label={t("sidebar.select.model")} aria-haspopup="dialog"
+              onClick={() => setBatchModel(true)}><SlidersHorizontal size={16} /></button>
             {canMove && <button type="button" className={button} disabled={count === 0} title={t("sidebar.select.move", { count })} aria-label={t("sidebar.select.move", { count })} aria-haspopup="menu"
               onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setBatchSectionPicker({ botId: "", x: rect.left, y: rect.top - 260 }); }}><FolderInput size={16} /></button>}
             {showBotArchive(state.config) && <button type="button" className={button} disabled={archivable.length === 0} title={t("sidebar.bot.archive")} aria-label={t("sidebar.bot.archive")}
@@ -3614,6 +3620,20 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         }} />
       {moveToTeam && <TeamDialog section={moveToTeam} onClose={() => setMoveToTeam(null)} />}
       {shareTeam !== null && <ShareTeamDialog team={shareTeam} onClose={() => setShareTeam(null)} />}
+      {batchModel && (() => {
+        const writable = selectedBotIds.flatMap((id) => state.bots.filter((bot) => bot.id === id && !viewerLocalBotSettings(state.config, bot)));
+        const first = writable[0];
+        if (!first) return null;
+        return (
+          <ModelPicker
+            bot={first}
+            threadId={first.threadId}
+            windowOnly
+            alsoApplyTo={writable.slice(1).map((bot) => bot.id)}
+            onWindowClose={() => setBatchModel(false)}
+          />
+        );
+      })()}
       <SectionPicker
           current={undefined}
           names={personal ? personalSectionNames(personal) : undefined}

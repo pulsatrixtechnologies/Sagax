@@ -9450,6 +9450,7 @@
   "sidebar.select.bar": "Actions sur les Bots sélectionnés",
   "sidebar.select.count": "{count} sélectionné(s)",
   "sidebar.select.markRead": "Marquer comme lu",
+  "sidebar.select.model": "Modèle et effort",
   "sidebar.select.move": "Déplacer {count} Bot(s) vers une équipe",
   "sidebar.select.clear": "Effacer la sélection",
   "sidebar.select.archiveTitle": "Archiver {count} Bot(s) sélectionné(s) ?",
