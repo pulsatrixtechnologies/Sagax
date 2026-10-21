@@ -166,7 +166,9 @@ app.whenReady().then(async () => {
   // change inherits the new default, so each level is verified there.
   const firstThread = created.body.bot.threadId;
   const readCreated = async () => (await api("/api/bots?messages=0")).body.bots.find((bot) => bot.id === id);
-  for (const [mode, native] of [["full", "bypassPermissions"], ["auto", "auto"], ["edits", "acceptEdits"], ["ask", "default"]]) {
+  // 2026-10-19: Sagax Auto is Claude acceptEdits plus the allowlist, not
+  // the CLI's own auto classifier.
+  for (const [mode, native] of [["full", "bypassPermissions"], ["auto", "acceptEdits"], ["edits", "acceptEdits"], ["ask", "default"]]) {
     await coordinator.request(child, id, mode);
     await until(async () => (await readCreated())?.approvalMode === mode);
     const fresh = (await api(`/api/bots/${id}/tasks`, "POST", { title: `Verify ${mode}` })).body.task;
@@ -253,9 +255,9 @@ app.whenReady().then(async () => {
   await api(`/api/bots/${parallel.id}/respond`, "POST", { requestId: held.requestId, behavior: "deny" });
   await until(async () => !(await api("/api/bots?messages=0")).body.bots.find(bot => bot.id === parallel.id).busy);
   console.log(JSON.stringify({ composerGrantWhileSiblingBusy: true, siblingNotInterrupted: true }));
-  // The fake reviewer only approves the two known reads under native Auto.
-  // Their actual MCP calls reach this real isolated server. This verifies the
-  // routing contract, not the availability/quality of Grok's hosted reviewer.
+  // Sagax's approval gate runs Grok Auto in default mode and holds calls
+  // itself. The two known reads reach this real isolated server. This
+  // verifies the routing contract, not Grok's hosted reviewer.
   for (const model of ["grok-4.6", "grok-4.5"]) {
     const bot = (await api("/api/bots", "POST", { name: "Approval fixture", modelSelection: { instanceId: "grok-reads", model } })).body.bot;
     for (const [turn, mode] of ["auto", "auto", "ask"].entries()) {
@@ -284,8 +286,14 @@ app.whenReady().then(async () => {
       assert.match(text, /^session_search:/m);
       assert.equal((text.match(/^list_bots:/gm) ?? []).length, 2, "Repeated reads complete without another prompt");
       const argv = JSON.parse(readFileSync(grokDump, "utf8")).argv;
-      assert.equal(argv[argv.indexOf("--permission-mode") + 1], mode === "auto" ? "auto" : "default");
-      assert.equal(argv[argv.indexOf("-m") + 1], model);
+      // Gated Auto and Ask both launch Grok in default. Full is bypassPermissions, covered above.
+      assert.equal(argv[argv.indexOf("--permission-mode") + 1], "default");
+      // A reused Grok process keeps its first -m. The model of this turn is the session profile.
+      const session = JSON.parse(readFileSync(`${grokDump}.session.json`, "utf8"));
+      const config = JSON.parse(readFileSync(`${grokDump}.config.json`, "utf8"));
+      const setModel = [...config].reverse().find((call) => call.method === "session/set_model");
+      const launched = setModel?.params?.modelId ?? session?._meta?.agentProfile?.model ?? argv[argv.indexOf("-m") + 1];
+      assert.equal(launched, model);
       // The same level keeps the live session; a new level gives the
       // integrations new credentials, so the conversation is loaded again.
       const methods = JSON.parse(readFileSync(grokRpc, "utf8"));
