@@ -5592,6 +5592,28 @@ the person asked for are not views.
 - Copy link to this bot: `openmausbot://bot/<id>` (`botRefUrl`), which the
   app already opens (`electron/chat-link.mjs`).
 
+## Plugins parity 2F: configuration, data centers, link (2026-10-21)
+
+- Plugin configuration (`server/plugin-config.ts`): the `userConfig` fields a
+  Claude Code plugin declares in `.claude-plugin/plugin.json`, filled per bot
+  (`PUT /api/bots/:id/plugins/:key/config { values }`, owner or manager,
+  `bot-plugins/<bot>/plugins/config.json` 0600). Values replace
+  `${user_config.KEY}` in the plugin's skills, agents and commands, from each
+  file's original kept under `.claude-plugin/sagax-originals/`; an update
+  copies the plugin again and the values go back in; uninstall forgets them.
+  A `sensitive` field is never stored nor written: 400 `sensitive_field`,
+  the form points to Settings > Credentials.
+- Data centers: a catalog entry may list `regions` (the default `url` among
+  them) and a registry remote whose address has one `{variable}` with
+  `choices` becomes one address per choice (`registryRegions`). Add asks
+  first (`plugins/DataCenterDialog.tsx`), `POST /api/plugins/install`
+  takes `region` and refuses an id the listing does not offer
+  (`unknown_region`). No catalog entry has regions yet: add one only with
+  the provider's documented regional addresses.
+- Copy link to this plugin (`src/lib/plugin-link.ts`): a marketplace
+  plugin's repository, a reviewed server's documentation, else its https
+  address; nothing for a connected app or a local server.
+
 ## Team Bot from a conversation, template links, away routines, emoji (2026-10-16)
 
 Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
@@ -5602,11 +5624,14 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   (`threadTitleGate`, the generated-title path), conversation as data, text
   lines only, secrets scrubbed; a fallback draft from the title and lines
   when the model cannot. Plugins and connectors of the source bot are ticked
-  boxes. Memory carry-over is an explicit opt-in, OFF by default:
-  `POST /api/bots/:id/team-bot-carry` answers 400 `memory_opt_in` without a
-  literal `includeMemory: true` and writes nothing; with it, only the ticked
-  notes plus `memory/conversation-carry-over.md` (compaction summary
-  helper), all listed in the dialog first. The bot is created by
+  boxes. Since 2026-10-21 (JC: a copy, never the private memory) the copy
+  starts from the source bot's persona (the drafted text one click away),
+  copies its rule sets, copies each ticked plugin's saved configuration
+  (never a secret field) and joins its team, whose shared memory
+  (`server/team-memory.ts`) then follows; it never takes a conversation or
+  the bot's own memory: `POST /api/bots/:id/team-bot-carry` answers 410
+  `private_memory_never` and writes nothing, and the draft lists no notes.
+  The bot is created by
   `POST /api/bots` and published by the existing Team Bot path (Sharing,
   Perspicax grants); the app adds no multi-person view.
 - Template public links (`server/template-links.ts`,

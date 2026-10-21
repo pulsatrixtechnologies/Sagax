@@ -117,7 +117,20 @@ export interface InstalledPlugin {
   enabled: boolean;
   removed: string[];
   declaredMcpServers: string[];
+  /** the fields the plugin declares and this bot's values (server/plugin-config.ts) */
+  config?: PluginConfigView;
 }
+
+export interface PluginConfigField {
+  key: string;
+  type: "string" | "number" | "boolean" | "directory" | "file";
+  title: string;
+  description?: string;
+  sensitive: boolean;
+  required: boolean;
+  default?: string | number | boolean;
+}
+export interface PluginConfigView { fields: PluginConfigField[]; values: Record<string, string | number | boolean> }
 
 export interface BotPluginsView {
   marketplaces: MarketplaceListing[];
@@ -152,4 +165,6 @@ export const installPlugin = (botId: string, marketplace: string, plugin: string
   api<BotPluginsView>(`${pluginsPath(botId)}/install`, { method: "POST", body: JSON.stringify({ marketplace, plugin }), timeoutMs: 180_000 });
 export const setPluginEnabled = (botId: string, key: string, enabled: boolean) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ enabled }) });
+export const setPluginConfig = (botId: string, key: string, values: Record<string, string | number | boolean>) =>
+  api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}/config`, { method: "PUT", body: JSON.stringify({ values }) });
 export const uninstallPlugin = (botId: string, key: string) => api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}`, { method: "DELETE" });

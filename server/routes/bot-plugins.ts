@@ -12,6 +12,8 @@
 //          marketplace too when the caller may remove it (an admin, or who added it) and nothing uses it
 //   POST   /api/bots/:id/plugins/install { marketplace, plugin }     install or update
 //   PATCH  /api/bots/:id/plugins/:key { enabled }
+//   PUT    /api/bots/:id/plugins/:key/config { values }   the plugin's declared
+//          fields (server/plugin-config.ts); a secret field answers 400 sensitive_field
 //   DELETE /api/bots/:id/plugins/:key
 //
 // Reads need use on the bot; every change needs its owner or manage (an
@@ -44,7 +46,7 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   changed?: (bot: B, action: string, detail: Record<string, unknown>, auth: RequestAuth) => void;
 }
 
-const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|token))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63}))?$/;
+const ROUTE = /^\/api\/bots\/([\w-]+)\/plugins(?:\/(marketplaces|install)(?:\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\/(update|token))?)?|\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63})(\/config)?)?$/;
 const TOKEN = /^[\x21-\x7e]{8,4096}$/;
 
 function tokenField(value: unknown): string | null | undefined {
@@ -62,7 +64,7 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     if (!path.startsWith("/api/bots/") || !path.includes("/plugins")) return PASS;
     const match = ROUTE.exec(decodeURIComponent(path));
     if (!match) return PASS;
-    const [, botId, section, name, update, key] = match;
+    const [, botId, section, name, update, key, config] = match;
     const bot = deps.bot(botId!);
     if (!bot || !deps.mayRead(auth, bot)) return json(res, 404, { error: "no such bot" });
     res.setHeader("cache-control", "private, no-store");
@@ -131,6 +133,12 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
         const installed = await deps.plugins.install(bot.id, { marketplace, plugin }, actor);
         deps.changed?.(bot, "plugin.install", { plugin: installed.key, removed: installed.removed }, auth);
         return json(res, 201, { plugin: installed, ...listing() });
+      }
+      if (key && config) {
+        if (method !== "PUT") return json(res, 405, { error: "PUT only" });
+        const plugin = await deps.plugins.setPluginConfig(bot.id, key, body?.values);
+        deps.changed?.(bot, "plugin.config", { plugin: key, fields: Object.keys(plugin.config?.values ?? {}) }, auth);
+        return json(res, 200, { plugin, ...listing() });
       }
       if (key) {
         if (method === "PATCH") {
