@@ -524,38 +524,55 @@ export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, s
 /** Quote text that reads as a fence marker.
  *
  * Detection uses a skeleton only. The text handed to the run is the original,
- * rewritten solely where a marker matched (and U+FE5D, which compatibility
- * folding maps to an opening bracket, is converted to "]"). The skeleton
- * compatibility-folds, drops control, format and combining characters (and
- * JSON escapes of them, including a run of backslashes before one), and maps
- * look-alike dashes, slashes, square brackets and letters. A match needs an
- * opening bracket, then the marker word. Separators may sit between the
- * letters of a square-bracket match. After the word, "_" (including U+FF3F),
- * a digit, or more letters in the same identifier still match. The one
- * exception is a marker word written entirely in lowercase English, with no
- * "/", and continued by an English letter, as in "defaultValue": invisibles
- * and combining marks between them are joiners, not a break. Parentheses, angle
- * brackets and braces match only when the full word in uppercase or snake
- * case follows them directly, with at most one "/".
+ * rewritten solely where a marker matched. The skeleton compatibility-folds,
+ * drops control, format and combining characters (and JSON escapes of them),
+ * and maps look-alike dashes, slashes, square brackets and letters. A run of
+ * backslashes that is not one of those escapes is skipped in one step, so a
+ * long run stays linear. A match needs an opening bracket, then the marker
+ * word. Separators may sit between the letters of a square-bracket match.
+ * After the word, "_" (including U+FF3F), a digit, or more letters in the
+ * same identifier still match.
+ *
+ * Two shapes stay unquoted. A marker word written entirely in lowercase
+ * English, with no "/", and continued by an English letter, as in
+ * "defaultValue". Full-width lowercase (U+FF41–U+FF5A) counts as an English
+ * letter: the skeleton folds it to ASCII lowercase, and the continuation
+ * check on the original text does too. Invisibles and combining marks
+ * between them are joiners, not a break. And a plain suffix on the generic
+ * words DEFAULT, OWNER and AUTHENTICATED: more letters directly attached
+ * ("OWNERSHIP", "DEFAULTS", "Owners", "Defaults") or a bare "_id"
+ * ("[owner_id=5]"). A "_" or a digit that is not that bare id still matches
+ * ("[DEFAULT_TIMEOUT]", "[DEFAULT2]", "[owner_identity]").
+ *
+ * Parentheses, angle brackets and braces match only when the full word in
+ * uppercase or snake case follows them directly, with at most one "/".
+ * DEFAULT, OWNER and AUTHENTICATED also need the rest of the phrase
+ * (WEBHOOK INSTRUCTIONS, CONDITIONS, WEBHOOK TASK), with a space, "_" or
+ * "-" between the words. "(DEFAULT)", "<OWNER_ID>", "{DEFAULT_TIMEOUT}",
+ * "${OWNER}", "{{AUTHENTICATED_USER}}" and "(OWNERSHIP)" do not.
  *
  * The close scan looks ahead at most CLOSE_LOOKAHEAD characters and stops at
- * a newline, a "[", or the next match, so one pass stays linear.
+ * a newline, a "[", or the next match, so one pass stays linear. U+FE5D, the
+ * small left tortoise-shell bracket, is an opening look-alike. U+FE5E, the
+ * right one, is a close.
  *
  * Still not quoted: a "*" or "," between letters; ᴜ (U+1D1C) and Cyrillic
  * Ѕ (U+0405); « » and ‹ ›; no bracket at all; `&#91;` or `%5B`; a space or a
- * lowercase word after "(" "<" "{". Quoted even when the words are ordinary
- * labels: "[default]", "[default, owner]", markdown "[Default branch](…)",
- * "[USER-CONFIGURED-ish …]", "[DEFAULT] starting", "[OWNER] alice",
- * "[authenticated] user=bob". A closing look-alike more than
- * CLOSE_LOOKAHEAD characters after the word is left in place; the opening
- * bracket is still quoted. */
+ * lowercase word after "(" "<" "{"; a generic word there without the rest of
+ * its phrase; a plain letter or "_id" suffix on those generic words. Quoted
+ * even when the words are ordinary labels: "[default]", "[default, owner]",
+ * markdown "[Default branch](…)", "[USER-CONFIGURED-ish …]",
+ * "[DEFAULT] starting", "[OWNER] alice", "[authenticated] user=bob",
+ * "[DEFAULT_TIMEOUT]", "[OWNER_NAME]", "[owner_identity]". A closing
+ * look-alike more than CLOSE_LOOKAHEAD characters after the word is left in
+ * place; the opening bracket is still quoted. */
 const STRIP_MARK = /[\p{Cc}\p{Cf}\p{Mn}\p{Me}]/u;
 /** Invisible letters that are not format characters. */
 const FILLER = new Set([0x115f, 0x1160, 0x3164, 0xffa0]);
 /** How far past a match a closing square-bracket look-alike may sit. */
 const CLOSE_LOOKAHEAD = 80;
-/** Non-ASCII closes. U+FF3D folds to "]" and U+FE5D folds to an opener, so both are listed. */
-const CLOSE_CHARS = new Set([0x3011, 0x3015, 0x3017, 0x3019, 0x301b, 0x27e7, 0xff3d, 0xfe5d]);
+/** Non-ASCII closes. U+FF3D folds to "]" and U+FE5E is the small right tortoise-shell bracket. */
+const CLOSE_CHARS = new Set([0x3011, 0x3015, 0x3017, 0x3019, 0x301b, 0x27e7, 0xff3d, 0xfe5e]);
 
 const CONFUSABLE = new Map<number, string>();
 function alias(to: string, points: readonly number[]): void {
@@ -595,8 +612,6 @@ function foldCodePoint(cp: number): string {
 }
 
 function foldNonAscii(cp: number): string {
-  // U+FE5D is a right bracket whose compatibility fold is an opening one.
-  if (cp === 0xfe5d) return "]";
   if (FILLER.has(cp)) return "";
   const compat = String.fromCodePoint(cp).normalize("NFKC").normalize("NFD");
   let out = "";
@@ -648,9 +663,9 @@ function markerSkeleton(text: string): { skeleton: string; spans: MarkerSpan[] }
           continue;
         }
       }
-      if (j >= i + 2) {
-        emit("\\", i, i + 2);
-        i += 2;
+      // Not an escape. Skip the whole run once; emitting a pair and rescanning is quadratic.
+      if (j > i + 1) {
+        i = j;
         continue;
       }
     }
@@ -724,8 +739,27 @@ function isJoiner(cp: number): boolean {
   return STRIP_MARK.test(String.fromCodePoint(cp));
 }
 
+/** ASCII Latin, plus full-width Latin (U+FF21–U+FF3A, U+FF41–U+FF5A). */
+function isLatinLetter(cp: number): boolean {
+  return (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a) || (cp >= 0xff21 && cp <= 0xff3a) || (cp >= 0xff41 && cp <= 0xff5a);
+}
+
+function latinLowerAscii(cp: number): number {
+  if (cp >= 0x41 && cp <= 0x5a) return cp + 32;
+  if (cp >= 0x61 && cp <= 0x7a) return cp;
+  if (cp >= 0xff21 && cp <= 0xff3a) return cp - 0xff21 + 0x61;
+  if (cp >= 0xff41 && cp <= 0xff5a) return cp - 0xff41 + 0x61;
+  return -1;
+}
+
+/** A space or a line break ends the word. A letter after one is a new word, not a suffix. */
+function isWordBreak(cp: number): boolean {
+  return cp === 0x09 || cp === 0x0a || cp === 0x0b || cp === 0x0c || cp === 0x0d || cp === 0x20 || cp === 0x85 || cp === 0x2028 || cp === 0x2029;
+}
+
 /** True when the original text continues the word the way "defaultValue" does.
- * "_", a digit, a slash, or any other continuation is still a match. */
+ * "_", a digit, a slash, or any other continuation is still a match.
+ * Full-width lowercase counts as an English letter. */
 function isProseContinuation(text: string, from: number, lowerEnglish: boolean, slash: boolean): boolean {
   if (slash || !lowerEnglish) return false;
   let i = from;
@@ -737,7 +771,80 @@ function isProseContinuation(text: string, from: number, lowerEnglish: boolean, 
       continue;
     }
     if (cp === 0x5f || cp === 0xff3f || (cp >= 0x30 && cp <= 0x39)) return false;
-    return (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a);
+    return isLatinLetter(cp);
+  }
+  return false;
+}
+
+/** The rest of the phrase a generic word needs after "(" "<" "{". */
+const GENERIC_TAIL: Readonly<Record<string, readonly string[]>> = {
+  DEFAULT: ["WEBHOOK", "INSTRUCTIONS"],
+  OWNER: ["CONDITIONS"],
+  AUTHENTICATED: ["WEBHOOK", "TASK"],
+};
+
+function isGenericWord(word: string): boolean {
+  return Object.prototype.hasOwnProperty.call(GENERIC_TAIL, word);
+}
+
+function isAltSep(code: number): boolean {
+  return code === 32 || code === 9 || code === 95 || code === 45;
+}
+
+/** Skeleton index after WEBHOOK INSTRUCTIONS, CONDITIONS or WEBHOOK TASK, or -1. */
+function matchAltTail(skeleton: string, at: number, word: string): number {
+  const tail = GENERIC_TAIL[word];
+  if (!tail) return -1;
+  let j = at;
+  for (const letters of tail) {
+    if (j >= skeleton.length || !isAltSep(skeleton.charCodeAt(j))) return -1;
+    while (j < skeleton.length && isAltSep(skeleton.charCodeAt(j))) j += 1;
+    const end = matchLetters(skeleton, j, letters, "alt");
+    if (end < 0) return -1;
+    j = end;
+  }
+  return j;
+}
+
+/** "_id" / "_ID" / "_Id" not followed by another Latin letter. */
+function isBareIdSuffix(text: string, from: number): boolean {
+  let i = from;
+  const letters: number[] = [];
+  while (i < text.length && letters.length < 3) {
+    const cp = text.codePointAt(i)!;
+    const len = cp > 0xffff ? 2 : 1;
+    if (isJoiner(cp) && !isWordBreak(cp)) {
+      i += len;
+      continue;
+    }
+    const lower = latinLowerAscii(cp);
+    if (lower < 0) break;
+    letters.push(lower);
+    i += len;
+  }
+  return letters.length === 2 && letters[0] === 0x69 && letters[1] === 0x64;
+}
+
+/** A plain suffix on DEFAULT, OWNER or AUTHENTICATED: attached letters, or a bare "_id". */
+function isGenericPlainSuffix(text: string, from: number): boolean {
+  let i = from;
+  let broke = false;
+  while (i < text.length) {
+    const cp = text.codePointAt(i)!;
+    const len = cp > 0xffff ? 2 : 1;
+    if (isWordBreak(cp)) {
+      broke = true;
+      i += len;
+      continue;
+    }
+    if (isJoiner(cp)) {
+      i += len;
+      continue;
+    }
+    if (broke) return false;
+    if (isLatinLetter(cp)) return true;
+    if (cp === 0x5f || cp === 0xff3f) return isBareIdSuffix(text, i + len);
+    return false;
   }
   return false;
 }
@@ -765,10 +872,18 @@ function matchAt(skeleton: string, i: number, text: string, spans: MarkerSpan[],
   let word = "";
   for (const letters of MARKER_WORDS) {
     const end = matchLetters(skeleton, wordAt, letters, mode);
-    if (end < 0 || end <= best) continue;
+    if (end < 0) continue;
+    let phraseEnd = end;
+    if (mode === "alt" && isGenericWord(letters)) {
+      const tailEnd = matchAltTail(skeleton, end, letters);
+      if (tailEnd < 0) continue;
+      phraseEnd = tailEnd;
+    }
+    if (phraseEnd <= best) continue;
     const letterEnd = spans[end - 1]!.end;
     if (isProseContinuation(text, letterEnd, wordIsLowerEnglish(skeleton, wordAt, end), slash)) continue;
-    best = end;
+    if (mode === "square" && isGenericWord(letters) && isGenericPlainSuffix(text, letterEnd)) continue;
+    best = phraseEnd;
     word = letters;
   }
   if (best < 0) return null;
@@ -832,8 +947,6 @@ function hasOpener(skeleton: string): boolean {
 
 export function defang(text: string): string {
   if (!text || !needsScan(text)) return text;
-  // Convert the vertical right tortoise-shell bracket before it can open a marker.
-  if (text.includes("\uFE5D")) text = text.replaceAll("\uFE5D", "]");
   const { skeleton, spans } = markerSkeleton(text);
   if (!hasOpener(skeleton)) return text;
   const hits = findMarkers(skeleton, text, spans);

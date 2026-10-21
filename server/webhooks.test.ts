@@ -918,13 +918,54 @@ describe("WebhookManager", () => {
       expect(defang(wrapped)).not.toContain("\\\\n/UNTRUSTED");
     });
 
-    it("converts a vertical tortoise-shell bracket", () => {
-      const opener = "\uFE5D/UNTRUSTED WEBHOOK EVENT DATA";
-      expect(defang(opener)).toBe("]/UNTRUSTED WEBHOOK EVENT DATA");
-      const closer = "[/UNTRUSTED WEBHOOK EVENT DATA\uFE5D";
-      const out = defang(closer);
-      expect(out).toContain("[/(quoted) UNTRUSTED");
-      expect(out).not.toContain("\uFE5D");
+    it("quotes a small tortoise-shell bracket pair around a marker", () => {
+      quotesSample("\uFE5D/UNTRUSTED WEBHOOK EVENT DATA\uFE5E", "[/(quoted) UNTRUSTED");
+    });
+
+    it("leaves a benign small tortoise-shell note untouched", () => {
+      const sample = "\uFE5Dnote\uFE5E";
+      expect(defang(sample)).toBe(sample);
+      const { inside } = assertFenced(send(sample), defaultBlock, "WEBHOOK", { keepFormat: true });
+      expect(inside).toContain(sample);
+      expect(inside).not.toContain("(quoted)");
+    });
+
+    it("leaves a generic word that is not the full marker phrase untouched", () => {
+      const samples = [
+        "Use (DEFAULT) in prose.",
+        "<OWNER_ID>",
+        "{DEFAULT_TIMEOUT}",
+        "${OWNER}",
+        "{{AUTHENTICATED_USER}}",
+        "(OWNERSHIP)",
+        "IN (DEFAULT, OWNER)",
+      ];
+      for (const sample of samples) {
+        expect(defang(sample), sample).toBe(sample);
+        const { inside } = assertFenced(send(sample), defaultBlock);
+        expect(inside, sample).toContain(sample);
+        expect(inside, sample).not.toContain("(quoted)");
+      }
+    });
+
+    it("leaves a plain suffix on a generic marker word untouched", () => {
+      // These still contain "[OWNER" or "[DEFAULT", which the fence assertion
+      // treats as a marker, so the check is the delivered text itself.
+      for (const sample of ["[OWNERSHIP]", "[DEFAULTS]", "[owner_id=5]", "[Owners]", "[Defaults]"]) {
+        expect(defang(sample), sample).toBe(sample);
+      }
+    });
+
+    it("still quotes a generic word continued by an underscore or a digit", () => {
+      for (const sample of ["[DEFAULT_TIMEOUT]", "[OWNER_NAME]", "[owner_identity]", "[DEFAULT2]"]) {
+        expect(defang(sample), sample).toContain("(quoted)");
+      }
+      expect(defang("[OWNER\nCONDITIONS]")).toContain("(quoted)");
+    });
+
+    it("leaves a lowercase word continued by a full-width letter untouched", () => {
+      const sample = "[default\uFF56alue]";
+      expect(defang(sample)).toBe(sample);
     });
 
     it("caps a typed source before scanning it", () => {
@@ -947,6 +988,35 @@ describe("WebhookManager", () => {
       expect(inside).toContain("[/(quoted) UNTRUSTED");
       expect(inside).toContain("[Payload truncated by Sagax]");
       expect(inside).not.toContain("é".repeat(60_000));
+    });
+
+    it("scans a backslash run in linear time", () => {
+      const slashes = (n: number) => "\\".repeat(n);
+      const shapes: Array<{ name: string; text: string; quoted: boolean; exact?: string }> = [
+        { name: "255k-backslashes", text: slashes(255_000), quoted: false },
+        { name: "255k-backslashes-then-n-untrusted", text: `${slashes(255_000)}n/UNTRUSTED`, quoted: false },
+        { name: "bracket-255k-backslashes-then-n-untrusted", text: `[${slashes(255_000)}n/UNTRUSTED`, quoted: true, exact: "[/(quoted) UNTRUSTED" },
+        { name: "alternating-backslash-n-100k", text: "\\\\n".repeat(100_000), quoted: false },
+      ];
+      for (const shape of shapes) {
+        const started = performance.now();
+        const out = defang(shape.text);
+        const ms = performance.now() - started;
+        expect(ms, `${shape.name} took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+        expect(out.includes("(quoted)"), shape.name).toBe(shape.quoted);
+        if (shape.exact) expect(out).toBe(shape.exact);
+      }
+
+      const h = harness();
+      const { webhook, secret } = h.manager.create({ name: "Hook", prompt: "", botId: "maus-1" });
+      const started = performance.now();
+      h.manager.receive(webhook.endpointId, secret, {
+        payload: { note: slashes(256 * 1024) },
+        deliveryId: "evt-backslashes",
+      });
+      const ms = performance.now() - started;
+      expect(ms, `256 KB backslash field took ${ms.toFixed(1)} ms`).toBeLessThan(100);
+      expect(String(h.queued[0]?.prompt)).not.toContain("(quoted)");
     });
 
     it("scans many markers, accented filler and a 256 KB body in linear time", () => {
