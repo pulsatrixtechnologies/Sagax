@@ -58,6 +58,14 @@ export function ArtifactFrame({ artifact, fill = false, className, bare = false 
 
   useEffect(() => { postWidgetTheme(frame.current, theme); }, [theme]);
   useEffect(() => { postArtifactData(frame.current, artifact.data); }, [artifact.data]);
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
 
   useEffect(() => {
     loads.current = 0;
