@@ -533,6 +533,7 @@ import { buildRecoveryText, buildTurnContext, engineIsFresh, replaysNatively } f
 import { ReplayBuffer } from "./sse-replay.ts";
 import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnseen, sessionStart, unseenMessages, withUnseenMessages, type ContextMessage } from "./delta-context.ts";
 import { extractTurnImages } from "./turn-images.ts";
+import { fitTurnImagesForModel, modelImageCopyPath } from "./model-image.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
 import { TurnWatchdog } from "./turn-watchdog.ts";
 import { TurnResources, type TurnOwner } from "./turn-resources.ts";
@@ -10377,6 +10378,7 @@ function wipeConfidentialThread(botId: string, threadId: string, attachmentNames
     try {
       rmSync(join(ATTACHMENTS_DIR, name), { force: true });
       if (officeKind(name)) rmSync(officeMediaFolder(ATTACHMENTS_DIR, name), { recursive: true, force: true });
+      rmSync(modelImageCopyPath(ATTACHMENTS_DIR, join(ATTACHMENTS_DIR, name)), { force: true });
     } catch { /* already gone */ }
   }
   memoryUpkeep.dropThread(threadId);
@@ -19629,6 +19631,8 @@ async function startTurn(
         if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped while waiting for an engine slot");
       }
       if (!warmOnly) turnTrace(threadId, "send");
+      // Each picture within the model's limits: a scaled copy for a large one.
+      const modelImages = await fitTurnImagesForModel(turnImages);
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -19646,7 +19650,7 @@ async function startTurn(
         text: warmOnly ? "" : (engineCommand ? engineCommand.engineText : withRecalled(recalled, dispatchContext.turnText)),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         ...(recalled && !warmOnly && !engineCommand ? { recalled } : {}),
-        images: turnImages,
+        images: modelImages,
         approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
@@ -22754,7 +22758,7 @@ async function runGroupMemberTurn(
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
-        images: turnImages,
+        images: await fitTurnImagesForModel(turnImages),
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
