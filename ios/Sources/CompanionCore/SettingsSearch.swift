@@ -9,7 +9,7 @@ import Foundation
 public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
     // The Settings list, in the desktop's order (NavigationMenus.settings),
     // then the pages one level in.
-    case general, organization, appearance, notifications, privacy, achievements, experimental, plugins, account, botComputer, usage
+    case general, organization, appearance, notifications, privacy, achievements, experimental, plugins, account, botComputer, pages, usage
     case rules, timeZone, language, haptics, quickReplies, walkieVoice, about
 
     /// The desktop's section keywords for the same page (SettingsModal.tsx
@@ -27,7 +27,8 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
         case .plugins: return ["plugins", "tools", "skills", "mcp", "install"]
         case .rules: return ["auto-review", "rules", "approvals", "always allow", "commands"]
         case .timeZone: return ["time zone", "timezone", "clock"]
-        case .botComputer: return ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "update", "reset", "disk"]
+        case .botComputer: return ["computer", "local vm", "vm", "virtual", "desktop", "ordinateur", "update", "reset", "recover", "disk", "rename", "other computers"]
+        case .pages: return ["pages", "published", "publish", "share", "revoke", "pages publiées"]
         case .appearance: return ["skin", "theme", "appearance", "font", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "dark", "light", "app icon", "icon",
                                      "activity", "tools", "tool calls", "run", "density", "compact", "comfortable", "list", "logo", "search", "recherche", "plus", "top", "haut"]
         case .language: return ["language", "langue", "français", "english", "português"]

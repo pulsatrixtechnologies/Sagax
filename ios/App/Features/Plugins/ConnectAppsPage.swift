@@ -689,6 +689,8 @@ struct ConnectAppsManage: View {
         if session.surfaceGate.allows(.myConnections) {
             YourConnectionsSection()
         }
+        ConnectorPreferencesSection()
+        SlackConnectionsSection()
         if session.canAdminister {
             // Add manually and Paste config need a keyboard and secrets: they
             // stay on the computer; the marketplaces work from here.

@@ -170,6 +170,13 @@ public struct ComputerStatus: Decodable, Equatable, Sendable {
     public var limitBytes: Double?
     public var version: String?
     public var problem: String?
+    /// The cluster is waking. Absent on an older computer.
+    public var waking: Waking?
+
+    public struct Waking: Decodable, Equatable, Sendable {
+        public var since: Double
+        public var elapsedMs: Double
+    }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
@@ -181,9 +188,10 @@ public struct ComputerStatus: Decodable, Equatable, Sendable {
         limitBytes = try? values.decodeIfPresent(Double.self, forKey: .limitBytes)
         version = try? values.decodeIfPresent(String.self, forKey: .version)
         problem = try? values.decodeIfPresent(String.self, forKey: .problem)
+        waking = try? values.decodeIfPresent(Waking.self, forKey: .waking)
     }
 
-    private enum CodingKeys: String, CodingKey { case kind, configured, state, diskState, workspaceBytes, limitBytes, version, problem }
+    private enum CodingKeys: String, CodingKey { case kind, configured, state, diskState, workspaceBytes, limitBytes, version, problem, waking }
 }
 
 struct ConfirmBody: Encodable {

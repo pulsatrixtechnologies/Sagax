@@ -2438,6 +2438,9 @@ public struct MessageImageAttachment: Codable, Hashable, Sendable {
     /// The server's duration estimate for an audio attachment, in
     /// milliseconds; shown until the player loads real metadata.
     public var durationMs: Double?
+    /// Word times, when a computer sends them. Absent today: the settle
+    /// keeps path and mime only.
+    public var words: [VoiceNoteWord]? = nil
 }
 
 /// One voice note in Message.attachments: the parked clip's bare generated
@@ -2447,13 +2450,15 @@ public struct MessageVoiceNote: Hashable, Sendable, Identifiable {
     public var path: String
     public var mime: String?
     public var durationMs: Double?
+    public var words: [VoiceNoteWord]?
 
     public var id: String { path }
 
-    public init(path: String, mime: String? = nil, durationMs: Double? = nil) {
+    public init(path: String, mime: String? = nil, durationMs: Double? = nil, words: [VoiceNoteWord]? = nil) {
         self.path = path
         self.mime = mime
         self.durationMs = durationMs
+        self.words = words
     }
 }
 
@@ -2467,7 +2472,7 @@ extension Message {
             guard attachment.kind == "audio", let path = attachment.path,
                   !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   seen.insert(path).inserted else { return nil }
-            return MessageVoiceNote(path: path, mime: attachment.mime, durationMs: attachment.durationMs)
+            return MessageVoiceNote(path: path, mime: attachment.mime, durationMs: attachment.durationMs, words: attachment.words)
         }
     }
 }

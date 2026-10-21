@@ -48,7 +48,7 @@ struct SettingsSearchResults: View {
             case .achievements: return sections.contains(.achievements)
             case .privacy: return NavigationMenus.showsPrivacy(gate: gate, connected: connected)
             case .experimental: return sections.contains(.experimental)
-            case .plugins, .botComputer, .usage, .rules, .timeZone: return connected
+            case .plugins, .botComputer, .pages, .usage, .rules, .timeZone: return connected
             default: return true
             }
         }
@@ -66,6 +66,7 @@ struct SettingsSearchResults: View {
         case .plugins: String(localized: "Connect apps")
         case .account: String(localized: "Account")
         case .botComputer: String(localized: "Bot Computer")
+        case .pages: String(localized: "Published pages")
         case .usage: String(localized: "Usage")
         case .rules: String(localized: "Auto-review Rules")
         case .timeZone: String(localized: "Time Zone")
@@ -89,6 +90,7 @@ struct SettingsSearchResults: View {
         case .plugins: "puzzlepiece.extension"
         case .account: "person.crop.circle"
         case .botComputer: "desktopcomputer"
+        case .pages: "doc.richtext"
         case .usage: "chart.bar"
         case .rules: "checklist"
         case .timeZone: "clock"
