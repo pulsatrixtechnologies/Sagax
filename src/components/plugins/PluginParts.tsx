@@ -1,7 +1,7 @@
 // Small pieces the three Plugins views share: the icon, the status word and
 // the page header with its back arrow.
 import type { ReactNode } from "react";
-import { BookOpen, Puzzle, ServerCog } from "lucide-react";
+import { BookOpen, ChevronLeft, Puzzle, ServerCog } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -66,14 +66,34 @@ export function PluginStatusLabel({ status, className }: { status: PluginStatus;
 /** A sub-page's header: back arrow, title, close. */
 /** A page's header in the panel's window: the breadcrumb (back, the pages
  * above, this one), then its title. The close button is the window's. */
-export function PluginPageHeader({ title, trail, onBack, titleId }: {
+export function PluginPageHeader({ title, trail, onBack, titleId, plainBack = false }: {
   title: string;
   /** the pages above this one, Connect apps first (absent: Connect apps) */
   trail?: readonly Crumb[];
   onBack: () => void;
   titleId: string;
+  /** Grok Bot's manage page: a chevron and the parent name, then the title.
+   * No crumb for the current page. */
+  plainBack?: boolean;
 }) {
   const crumbs = trail ?? [{ label: t("connectApps.title"), onSelect: onBack }];
+  if (plainBack) {
+    const parent = crumbs[0];
+    return (
+      <header className={CATEGORY_MODAL.titleBar}>
+        <button
+          type="button"
+          onClick={parent?.onSelect ?? onBack}
+          data-plugins-back=""
+          className="-ml-1.5 mb-2 flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[13px] leading-[18px] text-ink-secondary hover:bg-hover hover:text-ink"
+        >
+          <ChevronLeft size={16} aria-hidden="true" />
+          {parent?.label ?? t("connectApps.title")}
+        </button>
+        <h2 id={titleId} className={cn(CATEGORY_MODAL.title, "truncate")}>{title}</h2>
+      </header>
+    );
+  }
   return (
     <header className={CATEGORY_MODAL.titleBar}>
       <Breadcrumb trail={crumbs} current={title} onBack={onBack} backData={{ "data-plugins-back": "" }} />
