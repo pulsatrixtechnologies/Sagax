@@ -354,7 +354,7 @@ async function handle(message: Json): Promise<void> {
     for (let retries = 0; ; retries += 1) {
       try { result = await attempt(); break; }
       catch (failure) {
-        const wait = failure instanceof McpHttpError && failure.status === 429 && !signal.aborted ? rateLimitWait(failure.retryAfterMs, retries) : null;
+        const wait = failure instanceof McpHttpError && failure.status === 429 && message.method === "tools/call" && !signal.aborted ? rateLimitWait(failure.retryAfterMs, retries) : null;
         if (wait === null || !await announceAndWait(wait, signal)) throw failure;
       }
     }

@@ -25645,12 +25645,12 @@ function autoPayerKey(bot: BotRecord, speaker: TurnSpeaker): string {
  * the person whose plan it is (everyone on the solo server). */
 function announcePlanThresholds(report: PlanUsageReport, scope: string): void {
   try {
-    for (const alert of newPlanUsageAlerts(report, scope, cfg.budgets?.warnAtPercent)) {
+    for (const alert of newPlanUsageAlerts(report, scope.toLowerCase(), cfg.budgets?.warnAtPercent)) {
       const text = planUsageAlertText(alert);
       broadcast({ kind: "notify", notification: {
         kind: "spend", botId: "", botName: "", threadId: "", title: text.title, body: text.body,
         ...(scope !== "server" ? { audience: [scope] } : {}),
-      } });
+      } }, scope === "server" && IDENTITY.kind === "perspicax" ? { adminOnly: true } : {});
     }
   } catch (failure) {
     console.warn(`[plan-usage] threshold alert: ${failure instanceof Error ? failure.message : String(failure)}`);

@@ -489,7 +489,7 @@ export function newPlanUsageAlerts(report: PlanUsageReport, scope: string, thres
       if (!value.available || value.usedPercent === null) continue;
       const level = value.usedPercent >= 100 ? "limit" : value.usedPercent >= line ? "warn" : null;
       if (!level) continue;
-      const key = `${scope}\u0000${row.id}\u0000${window}\u0000${value.resetsAt ?? ""}\u0000${level}`;
+      const key = `${scope}\u0000${row.id}\u0000${window}\u0000${(value.resetsAt ?? "").slice(0, 16)}\u0000${level}`;
       if (announcedWindows.has(key)) continue;
       announcedWindows.set(key, true);
       if (announcedWindows.size > ANNOUNCED_MAX) announcedWindows.delete(announcedWindows.keys().next().value as string);
