@@ -363,6 +363,11 @@ public struct CommChip: Codable, Hashable, Sendable {
     public var withBotId: String
     public var withName: String
     public var withColor: String
+    /// 2026-10-21 (parity 1C): `sent` on the sender's note, `received` on the
+    /// recipient's. Older servers send neither: see `isReceived`.
+    public var direction: String? = nil
+    /// The words a sender's note sent, cut short ("Messaged @X: text").
+    public var text: String? = nil
 }
 
 public struct Message: Codable, Hashable, Identifiable, Sendable {

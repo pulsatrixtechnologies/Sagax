@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DATA_DIR } from "./config.ts";
 import type { ModelSelection } from "./contracts.ts";
 import {
+  COMM_PREVIEW_MAX,
+  commPreview,
   getOrCreateChannel,
   mirrorActivity,
   mirrorExchange,
@@ -122,6 +124,24 @@ describe("bot⇄bot mirrors and the badge", () => {
     // place in the sidebar and the user can open it and read everything
     expect(store.group(channel.id)?.unread).toBe(false);
     expect(groupFrames(changes, channel.id)).toBe(1);
+  });
+
+  it("puts the sent words on the sender's note and a direction on both (parité 1C)", () => {
+    const { store, from, target, channel, bus } = pair();
+    mirrorExchange(bus, from, target, "can you\n  take the deploy?", channel);
+    const sent = store.messagesFor(from.threadId).find((m) => m.tool?.name === "Messaged @Quarry");
+    const received = store.messagesFor(target.threadId).find((m) => m.tool?.name === "Message from @Forge");
+    expect(sent?.comm).toMatchObject({ direction: "sent", text: "can you take the deploy?" });
+    expect(received?.comm?.direction).toBe("received");
+    expect(received?.comm?.text).toBeUndefined();
+  });
+
+  it("cuts a long sent message short on the note, never in the channel", () => {
+    const long = "x".repeat(COMM_PREVIEW_MAX + 50);
+    expect(commPreview(long)).toHaveLength(COMM_PREVIEW_MAX);
+    expect(Array.from(commPreview("😀".repeat(COMM_PREVIEW_MAX + 5)))).toHaveLength(COMM_PREVIEW_MAX);
+    expect(commPreview(long).endsWith("…")).toBe(true);
+    expect(commPreview("  short  ")).toBe("short");
   });
 
   it("keeps a peer reply and a terminal chip silent in the same way", () => {

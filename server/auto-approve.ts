@@ -180,6 +180,9 @@ export type AutoVerdictSource =
   | "perspicax-read"
   | "perspicax-lease"
   | "own-read-only"
+  /** 2026-10-21 (parité 1C): a message send whose every recipient is on the
+   * bot's allowed recipients (shared/allowed-recipients.ts). */
+  | "allowed-recipient"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -259,6 +262,12 @@ export function autoVerdict(
      * no automatic answer from Sagax's own tools or the owner's environment,
      * the card shows and its Allow needs the key (#648). */
     stepUpRequired?: readonly string[];
+    /** 2026-10-21 (parité 1C): a message send (an email, a text) whose
+     * every recipient is on the bot's allowed recipients
+     * (sendRecipientsAllowed). Answered at any level after the safety hold
+     * and the person's own rules, never for a sandbox widening, a call a
+     * security key protects, or while standing grants are off. */
+    recipientsAllowed?: boolean;
     /** The call is one of Sagax's own tools that must never answer itself:
      * a rule change (rules_update and the like, "rule-change" class). */
     ruleChange?: boolean;
@@ -277,11 +286,12 @@ export function autoVerdict(
   // "Toujours permettre" off, no standing grant answers (a saved Allow rule
   // of a gate, a saved command, an allow rule in the person's words); each
   // call is approved on its card.
-  if (!standingGrantsAllowed() && context && (context.ruleAllowed || context.commandAllowed || context.customRule?.behavior === "allow")) {
+  if (!standingGrantsAllowed() && context && (context.ruleAllowed || context.commandAllowed || context.customRule?.behavior === "allow" || context.recipientsAllowed)) {
     context = {
       ...context,
       ruleAllowed: false,
       commandAllowed: false,
+      recipientsAllowed: false,
       ...(context.customRule?.behavior === "allow" ? { customRule: undefined } : {}),
     };
   }
@@ -301,6 +311,13 @@ export function autoVerdict(
   // risk scope was checked against the call before it got here.
   if (context?.customRule?.behavior === "allow" && !context.requiresExplicitApproval) {
     return { approve: `approved ${tool} (your rule)`, source: "custom-rule" };
+  }
+  // The bot's allowed recipients (JC 2026-10-21: « dans la liste = part sans
+  // carte »): the send is to people the person named ahead of time. It
+  // answers the outbound guard and a gate card alike, never a widening or a
+  // class the person protects with a security key.
+  if (context?.recipientsAllowed && !context.requiresExplicitApproval && !(context.stepUpRequired?.length)) {
+    return { approve: `approved ${tool} (allowed recipients)`, source: "allowed-recipient" };
   }
   // Sagax's own person-scoped tools (sagax-internal-tools.ts, a reviewed
   // list of exact names) and the owner's own environment answer only after

@@ -13282,7 +13282,19 @@
       "computer.remove.body": "c2dc0988d9fdcbf9e77edc9da2ee7e6fa9239d75f0ca5cb4af45ec4a4b9f3231",
       "computer.remove.online": "e78e585366a987616dd1ba6b53687e0fb4d57bdbe92bc155f8f7e8d4da64d3fc",
       "computer.remove.rate": "17a0695ae67ccdb78d0bf4ab10d3742024d8d06720ae2e5f303240adfb69689c",
-      "computer.change.failed": "36d32f75172e9adf84d1938c7eeeb6df3fee05af3ca1b6184932d7a991995c8e"
+      "computer.change.failed": "36d32f75172e9adf84d1938c7eeeb6df3fee05af3ca1b6184932d7a991995c8e",
+      "botPanel.recipients.title": "8df82bd6e255e1eda698ea3d762a47a912aeda4f85a142c202daa678ffa42002",
+      "botPanel.recipients.description": "5065680c6de83b295e3b4617a3077e925a2b223f40a716a6f5d62eebf85959cb",
+      "botPanel.recipients.help": "15a9ef572ebcece883a1b7e6a73cbb9b2bc80049c114b9e9a522fdf02c3232c7",
+      "botPanel.recipients.helpBotsAskOff": "41b43b91d88a6930f281d2abf98580ad912ecba293d51854e1ffeb5b74fc5a41",
+      "botPanel.recipients.empty": "e1cde9578b65f9081bf0ee0a72e9f1c63cac2eae4c2c54066d5c36e6f8628791",
+      "botPanel.recipients.orgOff": "fc84de235bf8e674d42e0a44eb7efacbff59ba6de0cee6f79e08a4be55b5dfc8",
+      "botPanel.recipients.placeholder": "4e1c522fa19cbdd8993def88f1d6b4c945e3632e707bb829cc158ff4d886b4a9",
+      "botPanel.recipients.add": "9fd728c66c9a256b121472dabf32a34317aed01d8427d70ec830289cf23a7cc8",
+      "botPanel.recipients.addBot": "12fa6ea8fca355fe484670f588617c5d9712d2870735b05935c82c9a41d26896",
+      "botPanel.recipients.remove": "e6a3c4a1250a6ad3f10faa22333e5e50a6ba78e5b28a3b26f5743d9f8c7ede93",
+      "botPanel.recipients.invalid": "69da6a43b70a3fb4a3b3e046eae7a8fef42e0c299fc60df023ad46b3f9a3a658",
+      "botPanel.recipients.deletedBot": "20453cde96db5976c48a61d17621d4a42993023334233f71843858358051fd02"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

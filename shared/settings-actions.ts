@@ -166,6 +166,9 @@ botField("bot.connectorScopes", "connectorScopes", "any", "Connected apps scopes
 botField("bot.composio", "composio", "any", "Connected apps (Composio)", "Bot editor > Access > Connected apps", selfReach);
 botField("bot.parkDirectMessages", "parkDirectMessages", "boolean", "Park direct messages while busy", "Bot editor > Behaviour");
 botField("bot.alwaysAllow", "alwaysAllow", "array", "Always allowed tools", "Bot editor > Access > Always allowed", always("rule-change"));
+// 2026-10-21 (parité 1C): people and bots it writes to without a card
+// (shared/allowed-recipients.ts): bot:<id>, email:<address>, phone:+<digits>
+botField("bot.allowedRecipients", "allowedRecipients", "array", "Allowed recipients (no card: bot:<id>, email:<address>, phone:+<digits>)", "Bot editor > Permissions > Allowed recipients", always("rule-change"));
 add({
   key: "bot.approvalMode", family: "bot", target: "bot", value: "enum:ask|edits|auto|full",
   label: "Approval level (ask, edits, auto = Approve for me, full)", where: "Bot editor > Permissions > Approval level",

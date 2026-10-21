@@ -895,6 +895,8 @@ const ActivityChip = memo(function ActivityChip({ message, place = "auto" }: { m
         <StepRow
           testId="bot-comm-chip"
           label={stepLabel(tool, botNames(bots))}
+          // 2026-10-21 (parité 1C): what it sent, after "Messaged @X"
+          target={comm.direction !== "received" && comm.text ? comm.text : undefined}
           phase={tool.ok === false ? "failed" : "done"}
           icon={<BotAvatar bot={withBot ?? { name: comm.withName, color: comm.withColor }} state="happy" size={14} animated={false} />}
           title={stay ? undefined : t("chat.openConversationWith", { name: comm.withName })}

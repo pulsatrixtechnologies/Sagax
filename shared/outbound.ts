@@ -79,6 +79,32 @@ export function isOutboundTool(name: string): boolean {
   return tokens.some((token) => CREATE_VERBS.has(token)) && tokens.some((token) => SENT_NOUNS.has(token));
 }
 
+/** What a plain message send is called: an email, a mail, a text, a DM. */
+const MESSAGE_NOUNS = new Set(["EMAIL", "EMAILS", "MAIL", "GMAIL", "OUTLOOK", "SMS", "MMS", "TEXT", "MESSAGE", "MESSAGES", "IMESSAGE", "DM"]);
+const MESSAGE_VERBS = new Set(["SEND", "SENDS", "CREATE", "NEW"]);
+/** Verbs and nouns of an outbound call that is not a plain message: money,
+ * invitations, shares, public posts, comments, replies and forwards (they
+ * reach whoever is on the original thread). A bot's allowed recipients
+ * (shared/allowed-recipients.ts) never answer these. */
+const NOT_A_MESSAGE = new Set([
+  "REFUND", "CHARGE", "PAY", "PAYOUT", "TRANSFER", "INVOICE", "PAYMENT", "INVITE", "SHARE", "PUBLISH", "TWEET", "RETWEET",
+  "BROADCAST", "POST", "COMMENT", "ISSUE", "TASK", "EVENT", "CALENDAR", "REPLY", "RESPOND", "FORWARD", "GRANT", "ASSIGN",
+]);
+
+/** An outbound call that sends a message (an email, a text) to people it
+ * names, and nothing else. An allow list: a send verb and a message noun,
+ * and none of the words of money, invitations, shares, posts or replies. No
+ * raw API call. */
+export function isMessageSendTool(name: string): boolean {
+  if (!isOutboundTool(name) || name === "COMPOSIO_PROXY_EXECUTE") return false;
+  const tokens = actionTokens(name);
+  if (tokens.some((token) => NOT_A_MESSAGE.has(token))) return false;
+  const server = name.startsWith("mcp__") ? (name.split("__")[1] ?? "").toUpperCase() : "";
+  const toolkit = /^[A-Z][A-Z0-9]*_/.test(name) ? name.slice(0, name.indexOf("_")) : "";
+  const nouns = [...tokens, ...server.split(/[^A-Z0-9]+/), toolkit];
+  return tokens.some((token) => MESSAGE_VERBS.has(token)) && nouns.some((token) => MESSAGE_NOUNS.has(token));
+}
+
 /** The stored shape, or null when the value is not one. */
 export function normalizeOutboundPolicy(value: unknown): OutboundPolicy | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;

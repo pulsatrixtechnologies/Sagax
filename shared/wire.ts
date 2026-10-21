@@ -433,6 +433,10 @@ export interface WireBot {
   approvePeerComms?: boolean;
   /** Bot ids this bot is allowed to contact. */
   peers?: string[];
+  /** 2026-10-21 (parité 1C): who this bot writes to without a card:
+   * `bot:<id>`, `email:<address>`, `phone:+<digits>`
+   * (shared/allowed-recipients.ts). Anyone else keeps the card. */
+  allowedRecipients?: string[];
   /** Whether this bot may use the workspace's connected apps. */
   composio?: boolean;
   /** Which connected-app tools this bot may call, by service slug. Absent
@@ -603,6 +607,22 @@ export interface RoutineToggleEvent {
   turnKey: string;
   /** In the order they changed; the name as it was then. */
   routines: Array<{ id: string; name: string; botId?: string; groupId?: string; runAs?: string }>;
+}
+
+/** A bot⇄bot chip's link to the channel. 2026-10-21 (parité 1C): which way
+ * the message went (`sent` on the sender's note, `received` on the
+ * recipient's) and, on the sender's note, the words it sent, cut short, so a
+ * preview reads "Messaged @X: text". Older notes carry neither: clients read
+ * a missing direction as sent unless the note says "Message from". */
+export interface Comm {
+  groupId: string;
+  threadId?: string;
+  withBotId: string;
+  withName: string;
+  withColor: string;
+  gone?: boolean;
+  direction?: "sent" | "received";
+  text?: string;
 }
 
 export interface WireMessage {
@@ -788,7 +808,7 @@ export interface WireMessage {
   reactions?: MessageReaction[];
   /** comm chips: "Messaged @X", linking to the bot-bot channel. */
   /** `gone` is stamped at read time when the channel thread no longer exists. */
-  comm?: { groupId: string; threadId?: string; withBotId: string; withName: string; withColor: string; gone?: boolean };
+  comm?: Comm;
   /** thread chips: "Opened thread #Title on @X". */
   /** `gone` is stamped at read time when the target thread no longer exists. */
   threadRef?: { botId: string; threadId: string; title: string; gone?: boolean };

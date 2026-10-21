@@ -490,6 +490,33 @@ final class RosterPreviewKindTests: XCTestCase {
         XCTAssertEqual(rosterPreviewLine([chip], detail: .full).kind, .sentToBot)
     }
 
+    func testASentNoteShowsWhatItSentAndAReceivedOneHasNoSendIcon() throws {
+        var sent = message("a", kind: .activity)
+        sent.tool = ToolActivity(name: "Messaged @Cryptic", ok: true)
+        sent.comm = try JSONDecoder().decode(
+            CommChip.self,
+            from: Data(#"{"groupId":"g","withBotId":"c","withName":"Cryptic","withColor":"blue","direction":"sent","text":"Peux-tu vérifier le billet ?"}"#.utf8)
+        )
+        XCTAssertEqual(rosterPreviewLine([sent], detail: .full), RosterPreviewLine(text: "Messaged @Cryptic: Peux-tu vérifier le billet ?", kind: .sentToBot))
+
+        var received = message("b", kind: .activity)
+        received.tool = ToolActivity(name: "Message from @Cryptic", ok: true)
+        received.comm = try JSONDecoder().decode(
+            CommChip.self,
+            from: Data(#"{"groupId":"g","withBotId":"c","withName":"Cryptic","withColor":"blue","direction":"received"}"#.utf8)
+        )
+        XCTAssertEqual(rosterPreviewKind(of: received), .plain)
+
+        // an older server: no direction, the note's own words tell
+        var legacy = message("c", kind: .activity)
+        legacy.tool = ToolActivity(name: "Message from @Cryptic", ok: true)
+        legacy.comm = try JSONDecoder().decode(
+            CommChip.self,
+            from: Data(#"{"groupId":"g","withBotId":"c","withName":"Cryptic","withColor":"blue"}"#.utf8)
+        )
+        XCTAssertEqual(rosterPreviewKind(of: legacy), .plain)
+    }
+
     func testTheKindFollowsTheFoldedRowNotTheRawLastMessage() {
         var tool = message("b", kind: .activity)
         tool.tool = ToolActivity(name: "shell", ok: true)

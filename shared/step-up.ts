@@ -62,6 +62,9 @@ export const STEP_UP_SETTINGS_ACTIONS = [
   "approval-mode",
   /** An exact command saved so a bot runs it without asking. */
   "command-allowlist",
+  /** Someone added to a bot's allowed recipients (shared/allowed-recipients.ts):
+   * the bot then writes to them without asking. */
+  "allowed-recipients",
   /** A deny or ask rule removed, turned off or made to allow less; an owner
    * rule removed or widened to every bot. */
   "rules.remove",
@@ -87,6 +90,7 @@ export const SETTINGS_ACTION_CLASS: Readonly<Record<StepUpSettingsAction, StepUp
   "permission-mode": "rule-change",
   "approval-mode": "rule-change",
   "command-allowlist": "always-grant",
+  "allowed-recipients": "always-grant",
   "rules.remove": "rule-change",
   "credentials.export": null,
 };

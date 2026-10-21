@@ -142,6 +142,26 @@ describe("autoVerdict", () => {
   });
 });
 
+describe("allowed recipients (parité 1C)", () => {
+  it("sends with no card when every recipient is listed, at any level", () => {
+    for (const mode of ["ask", "edits", "auto"] as const) {
+      expect(autoVerdict(mode, "mcp__composio__GMAIL_SEND_EMAIL", { recipientsAllowed: true })).toEqual({
+        approve: "approved mcp__composio__GMAIL_SEND_EMAIL (allowed recipients)",
+        source: "allowed-recipient",
+      });
+    }
+  });
+
+  it("keeps the card for a gate's sandbox widening, a security key, a safety hold or the person's ask rule", () => {
+    const tool = "mcp__composio__GMAIL_SEND_EMAIL";
+    expect(autoVerdict("auto", tool, { recipientsAllowed: true, requiresExplicitApproval: true }).approve).toBeNull();
+    expect(autoVerdict("auto", tool, { recipientsAllowed: true, stepUpRequired: ["external-send"] }).approve).toBeNull();
+    expect(autoVerdict("auto", tool, { recipientsAllowed: true, safetyHold: true }).approve).toBeNull();
+    expect(autoVerdict("auto", tool, { recipientsAllowed: true, customRule: { behavior: "ask", id: "r1" } }).approve).toBeNull();
+    expect(autoVerdict("auto", tool, { recipientsAllowed: false })).toEqual({ approve: null, source: "outbound-guard" });
+  });
+});
+
 describe("approvalModeForOrigin", () => {
   it("runs peer-started Custom turns as Auto and leaves every other mode alone", () => {
     expect(approvalModeForOrigin("custom", { peerInitiated: true })).toBe("auto");

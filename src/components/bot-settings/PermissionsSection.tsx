@@ -24,6 +24,7 @@ import { api, useStore, type Bot } from "@/state/store";
 import type { ApprovalMode } from "../../../shared/approval-mode";
 import { DEFAULT_OUTBOUND_POLICY, type OutboundPolicy } from "../../../shared/outbound";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
+import { AllowedRecipientsRow } from "./AllowedRecipientsRow";
 import { CommandAllowlistDialog } from "../CommandAllowlistDialog";
 import { FullAccessWarning } from "../FullAccessWarning";
 import { LocalComputerAutoWarning } from "../LocalComputerAutoWarning";
@@ -104,6 +105,8 @@ export function PermissionsSection({
   const showPrimaryUi = advanced && showPrimary && (draft || Boolean(bot.chiefOfStaff));
   const showContactUi = advanced && showContact;
   const showOutboundUi = advanced && showOutbound;
+  // 2026-10-21 (parité 1C): who it writes to without a card
+  const showRecipientsUi = advanced && !draft && canEditBotField(state.config, bot, "allowedRecipients");
   // the owner always manages their own bot's permission mode and rules
   const showOwnerPermissions = !draft && viewerOwnsBot(state.config, bot);
   // 2026-10-15: this bot's tool access and parallel conversations (they were
@@ -111,7 +114,7 @@ export function PermissionsSection({
   // checks the same (server/routes/bot-runtime-settings.ts).
   const showToolAccess = advanced && !draft && canEditBotField(state.config, bot, "toolScope");
   const showParallel = advanced && !draft && canEditBotField(state.config, bot, "maxConcurrentThreads");
-  if (!showPrimaryUi && !showApproval && !showContactUi && !showOutboundUi && !showOwnerPermissions && !showToolAccess && !showParallel) return null;
+  if (!showPrimaryUi && !showApproval && !showContactUi && !showRecipientsUi && !showOutboundUi && !showOwnerPermissions && !showToolAccess && !showParallel) return null;
 
   const approvalSelector = showApproval && (
     <ApprovalModeSelector
@@ -129,7 +132,7 @@ export function PermissionsSection({
       onManageCommandAllowlist={advanced && !draft && ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: bot.id, botName: bot.name }) : undefined}
     />
   );
-  const approvalRows = (showApproval || showContactUi) ? (
+  const approvalRows = (showApproval || showContactUi || showRecipientsUi) ? (
     <>
       {showApproval && (
         <DescribedRow
@@ -158,6 +161,7 @@ export function PermissionsSection({
           />
         </DescribedRow>
       )}
+      {showRecipientsUi && <AllowedRecipientsRow key={bot.id} bot={bot} />}
     </>
   ) : null;
 

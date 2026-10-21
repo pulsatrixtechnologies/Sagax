@@ -149,6 +149,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Connected apps (Composio) | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.composio` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Park direct messages while busy | Bot editor > Behaviour | `sagax_settings` get, set `bot.parkDirectMessages` | simple |
 | Always allowed tools | Bot editor > Access > Always allowed | `sagax_settings` get, set `bot.alwaysAllow` | élargit les droits |
+| Allowed recipients (no card: bot:<id>, email:<address>, phone:+<digits>) | Bot editor > Permissions > Allowed recipients | `sagax_settings` get, set `bot.allowedRecipients` | élargit les droits |
 | Approval level (ask, edits, auto = Approve for me, full) | Bot editor > Permissions > Approval level | `sagax_settings` get, set `bot.approvalMode` | élargit les droits |
 | Owner permission mode | Bot editor > Permissions > Owner permissions | `sagax_settings` get, set `bot.permissionMode` | élargit les droits |
 | Primary Bot | Bot editor > Permissions > Primary Bot | `sagax_settings` get, set `bot.primary` | simple |

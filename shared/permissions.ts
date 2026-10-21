@@ -489,6 +489,7 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   outbound: "bots.tools",
   peers: "bots.tools",
   approvePeerComms: "bots.tools",
+  allowedRecipients: "bots.tools",
   acknowledgePeerScope: "bots.tools",
   visibility: "sharing.visibility",
   section: "sharing.visibility",

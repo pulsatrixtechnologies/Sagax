@@ -198,7 +198,7 @@ public func rosterPreviewLine(_ messages: [Message], detail: ActivityDetail) -> 
 
 /// Which icon one message earns in a roster row.
 public func rosterPreviewKind(of message: Message) -> RosterPreviewKind {
-    if message.comm != nil { return .sentToBot }
+    if let comm = message.comm { return isReceivedComm(comm, toolName: message.tool?.name) ? .plain : .sentToBot }
     if message.kind == .activity, message.threadRef != nil, message.role == .bot { return .sentToBot }
     if !(message.attachments ?? []).isEmpty { return .attachment }
     if message.kind == .text, let text = message.text,
@@ -206,6 +206,13 @@ public func rosterPreviewKind(of message: Message) -> RosterPreviewKind {
         return .attachment
     }
     return .plain
+}
+
+/// A bot⇄bot note about a message this bot received, not one it sent. Older
+/// servers send no direction: their received note reads "Message from @X".
+public func isReceivedComm(_ comm: CommChip, toolName: String?) -> Bool {
+    if let direction = comm.direction { return direction == "received" }
+    return toolName?.hasPrefix("Message from") ?? false
 }
 
 /// What a single message reads as in a roster row.
@@ -219,7 +226,14 @@ func previewText(of message: Message) -> String {
         return card.isPending && !card.subtitle.isEmpty ? card.subtitle : card.title
     case .secret:
         return message.secret?.label ?? message.text ?? "Credential required"
-    case .activity: return message.tool?.name ?? ""
+    case .activity:
+        let name = message.tool?.name ?? ""
+        // "Messaged @X: text" on the sender's note (parity 1C)
+        if let comm = message.comm, !isReceivedComm(comm, toolName: name),
+           let sent = comm.text?.trimmingCharacters(in: .whitespacesAndNewlines), !sent.isEmpty {
+            return name.isEmpty ? sent : "\(name): \(sent)"
+        }
+        return name
     case .screen: return "Screenshot"
     case .video: return message.video?.title ?? "Video"
     case .digest: return ""
