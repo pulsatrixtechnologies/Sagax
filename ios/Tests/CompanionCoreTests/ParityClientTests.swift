@@ -562,17 +562,17 @@ final class CommPreviewTests: XCTestCase {
 
     func testSentShowsTheTextAndThePaperPlane() throws {
         let line = rosterPreviewLine([try note("Messaged @Cryptic", text: "Bonjour")], detail: .full)
-        XCTAssertEqual(line, RosterPreviewLine(text: "Messaged Cryptic: Bonjour", kind: .sentToBot))
+        XCTAssertEqual(line, RosterPreviewLine(text: "Messaged @Cryptic: Bonjour", kind: .sentToBot))
     }
 
     func testSentWithoutTextKeepsTheName() throws {
         let line = rosterPreviewLine([try note("Messaged @Cryptic")], detail: .full)
-        XCTAssertEqual(line, RosterPreviewLine(text: "Messaged Cryptic", kind: .sentToBot))
+        XCTAssertEqual(line, RosterPreviewLine(text: "Messaged @Cryptic", kind: .sentToBot))
     }
 
     func testReceivedHasNoPaperPlane() throws {
         let line = rosterPreviewLine([try note("Message from @Cryptic", text: "Salut")], detail: .full)
         XCTAssertEqual(line.kind, .plain)
-        XCTAssertEqual(line.text, "Message from Cryptic")
+        XCTAssertEqual(line.text, "Message from @Cryptic")
     }
 }
