@@ -117,6 +117,7 @@ import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
 import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
+import { WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
 import { ConnectorCard } from "./ConnectorCard";
@@ -2226,6 +2227,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
       {!side && <ChatStaleBanner />}
+      {!side && !remoteClient && <WeeklyLimitNotice />}
 
       {/* Pinned message banner */}
       <PinnedBanner

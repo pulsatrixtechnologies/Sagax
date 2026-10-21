@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { FileText, LoaderCircle, Table2 } from "lucide-react";
+import { Braces, FileText, LoaderCircle, Table2 } from "lucide-react";
 import { requestMessageFile, type MessageAttachmentContext } from "./AttachmentPreview";
 import { RichTable, TableDialog } from "./RichTable";
 import { TABLE_FILE_MAX_BYTES, tableDelimiter, type TextTable } from "@/lib/table-data";
 import { t } from "@/lib/i18n";
 import { isXlsxName, type SheetTable } from "@/lib/xlsx-data";
 import { readBoundedBytes } from "@/lib/pdf-view";
+import { isJsonName } from "@/lib/json-tree";
 
 /** Bound chunked responses too; this is a preview limit, not a download limit. */
 export async function readTableResponse(response: Response, signal: AbortSignal): Promise<string> {
@@ -30,17 +31,19 @@ export async function readTableResponse(response: Response, signal: AbortSignal)
 }
 
 /** What a message file previews as in the app, from its name. */
-export function filePreviewKind(name: string, path = ""): "table" | "xlsx" | "pdf" | null {
+export function filePreviewKind(name: string, path = ""): "table" | "xlsx" | "pdf" | "json" | null {
   if (tableDelimiter(name) ?? tableDelimiter(path)) return "table";
   if (isXlsxName(name) || isXlsxName(path)) return "xlsx";
   if (/\.pdf$/i.test(name.trim()) || /\.pdf$/i.test(path.trim())) return "pdf";
+  if (isJsonName(name) || isJsonName(path)) return "json";
   return null;
 }
 
 const PdfViewer = lazy(() => import("./PdfViewer"));
+const JsonViewer = lazy(() => import("./JsonViewer"));
 
 /** The preview button next to a message file: a table dialog for CSV, TSV
- * and XLSX, the PDF viewer for a PDF, nothing for other files. */
+ * and XLSX, the PDF viewer for a PDF, a collapsible tree for JSON, nothing for other files. */
 export function FilePreviewButton({ path, name, message }: { path: string; name: string; message: MessageAttachmentContext }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -50,6 +53,12 @@ export function FilePreviewButton({ path, name, message }: { path: string; name:
     return <>
       <button ref={trigger} type="button" className="table-action" title={t("pdf.preview", { name })} aria-label={t("pdf.preview", { name })} onClick={() => setOpen(true)}><FileText size={14} /></button>
       {open && <Suspense fallback={null}><PdfViewer path={path} name={name} message={message} returnFocus={trigger.current} onClose={() => setOpen(false)} /></Suspense>}
+    </>;
+  }
+  if (kind === "json") {
+    return <>
+      <button ref={trigger} type="button" className="table-action" title={t("json.preview", { name })} aria-label={t("json.preview", { name })} onClick={() => setOpen(true)}><Braces size={14} /></button>
+      {open && <Suspense fallback={null}><JsonViewer path={path} name={name} message={message} returnFocus={trigger.current} onClose={() => setOpen(false)} /></Suspense>}
     </>;
   }
   const delimiter = tableDelimiter(name) ?? tableDelimiter(path);
