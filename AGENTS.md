@@ -5576,8 +5576,9 @@ the person asked for are not views.
   target of the composer (`ComposerAttachments.tsx`) skips a drop already
   taken, so the picture never becomes an attachment too.
 - Reset the history (bot "..." menu, `src/lib/bot-history-reset.ts`): a new
-  conversation, then every open one of the bot archived (never routine runs
-  or confidential ones); memory, files, routines and settings stay.
+  conversation, then every open one of the person archived (never routine
+  runs, confidential threads, an AI client's hidden thread, or a bot-to-bot
+  thread); memory, files, routines and settings stay.
 - Copy link to this bot: `openmausbot://bot/<id>` (`botRefUrl`), which the
   app already opens (`electron/chat-link.mjs`).
 

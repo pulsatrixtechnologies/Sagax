@@ -7,7 +7,8 @@
 // or the name opens the same menu where the pointer is. 2026-10-21 (parity
 // with Grok Bot): Copy link to this bot (openmausbot://bot/<id>) and Reset
 // the history (src/lib/bot-history-reset.ts: a new conversation, the open
-// ones archived; memory, files and routines kept).
+// ones archived; memory, files and routines kept; routine runs,
+// confidential threads, hidden client threads and bot-to-bot threads stay).
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Archive, Bug, Check, Copy, Database, Download, FileArchive, Link2, MoreHorizontal, Pencil, PictureInPicture2, RotateCcw, Star, UserRoundPen } from "lucide-react";

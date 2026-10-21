@@ -41,8 +41,9 @@ describe("avatar input", () => {
 });
 
 describe("reset a bot's history", () => {
-  it("archives the open conversations, never routine runs, confidential or archived ones", () => {
+  it("archives the open conversations, never routine runs, confidential, hidden, bot-to-bot or archived ones", () => {
     const bot = {
+      id: "atlas",
       threadId: "t1",
       tasks: [
         { threadId: "t1", title: "a", createdAt: 1 },
@@ -50,9 +51,12 @@ describe("reset a bot's history", () => {
         { threadId: "t3", title: "c", createdAt: 3, confidential: true as const },
         { threadId: "t4", title: "d", createdAt: 4, archivedAt: 5 },
         { threadId: "t5", title: "e", createdAt: 6 },
+        { threadId: "t6", title: "client", createdAt: 7, hidden: true as const },
+        { threadId: "t7", title: "work", createdAt: 8, openedBy: { botId: "other", name: "Other" } },
+        { threadId: "t8", title: "incidents", createdAt: 9, openedBy: { botId: "atlas", name: "Atlas" } },
       ],
     };
-    expect(historyResetThreads(bot as never)).toEqual(["t1", "t5"]);
+    expect(historyResetThreads(bot as never)).toEqual(["t1", "t5", "t8"]);
     expect(historyResetThreads({ threadId: "only" } as never)).toEqual(["only"]);
   });
 });

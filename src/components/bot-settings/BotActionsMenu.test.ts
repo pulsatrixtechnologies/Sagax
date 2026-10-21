@@ -86,6 +86,8 @@ describe("bot actions menu", () => {
       { threadId: "t1", title: "a", createdAt: 1 },
       { threadId: "t2", title: "routine", createdAt: 2, routineRunId: "r1" },
       { threadId: "t3", title: "b", createdAt: 3 },
+      { threadId: "t4", title: "work", createdAt: 4, openedBy: { botId: "other", name: "Other" } },
+      { threadId: "t5", title: "client", createdAt: 5, hidden: true },
     ] } as unknown as Bot;
     open({ bot: withThreads });
     act(() => { (document.querySelector("[data-menu-item=reset-history]") as HTMLElement).click(); });

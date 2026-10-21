@@ -3,13 +3,18 @@
 // files, routines, skills and settings. Nothing is deleted: a new
 // conversation opens, then every open conversation of the person with that
 // bot goes to the archive, where it can still be read or brought back.
-// Routine runs and confidential conversations are left as they are.
+// Routine runs, confidential conversations, an AI client's hidden thread
+// and a bot-to-bot thread are left as they are: the person never sees those
+// as their history, and archiving a work thread would drop the teammate's
+// next message on a new thread (store.workThread).
 import type { Bot } from "@/state/store";
+import { taskHiddenFromSidebar } from "./bot-unread";
+import { isConfidentialTask } from "./confidential-thread";
 
 /** The open conversations a reset archives. Pure. */
-export function historyResetThreads(bot: Pick<Bot, "tasks" | "threadId">): string[] {
+export function historyResetThreads(bot: Pick<Bot, "id" | "tasks" | "threadId">): string[] {
   const tasks = bot.tasks ?? [{ threadId: bot.threadId }];
   return tasks
-    .filter((task) => !("routineRunId" in task && task.routineRunId) && !("confidential" in task && task.confidential) && !("archivedAt" in task && task.archivedAt !== undefined))
+    .filter((task) => task.archivedAt === undefined && !isConfidentialTask(task) && !taskHiddenFromSidebar(task, bot.id))
     .map((task) => task.threadId);
 }
