@@ -37159,10 +37159,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const readInRoom = Boolean(store.groupByThread(fromThreadId));
         const readCrossed = readInRoom && threadId !== fromThreadId;
         if (readCrossed) discloseRecall(from, fromThreadId, [threadId]);
+        // An outside app wrote a webhook line: read back with its note, never as the bot's own words.
+        const readText = message.webhook ? webhookPostText(from.name, message.text) : message.text;
         return json(res, 200, {
           ...message,
           crossed: readCrossed,
-          text: message.text.length > SESSION_READ_MAX_CHARS ? `${message.text.slice(0, SESSION_READ_MAX_CHARS)}…` : message.text,
+          text: readText.length > SESSION_READ_MAX_CHARS ? `${readText.slice(0, SESSION_READ_MAX_CHARS)}…` : readText,
           task: store.taskByThread(from.id, threadId)?.title,
         });
       }
