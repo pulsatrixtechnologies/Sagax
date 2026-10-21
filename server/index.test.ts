@@ -8343,12 +8343,10 @@ describe("harness HTTP API", () => {
       expect(card.allowKey).toBeUndefined();
       expect(card.allowSession).toBe(true);
       expect((await messages()).some((m) => m.tool?.name.startsWith("auto-approved"))).toBe(false);
-      // the person is told once who is asking and why, naming the model
-      await expect.poll(async () => (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available")).length, windowsPoll).toBe(1);
-      const notices = (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available"));
-      expect(notices).toHaveLength(1);
-      expect(notices[0].tool!.name).toContain("claude-haiku-4-5");
-      expect(notices[0].tool!.name).toContain("asks before each action");
+      // Auto is an allowlist (acceptEdits), not the CLI reviewer. The driver
+      // does not set nativeReview, so the old "reviewer is not available" notice
+      // is not posted. The card itself is the ask.
+      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer"))).toHaveLength(0);
 
       // "Always allow this session" rides to Claude as `always`
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: card.requestId, behavior: "allow", always: true })).status).toBe(200);
@@ -8356,7 +8354,7 @@ describe("harness HTTP API", () => {
 
       const second = raise("ask-ls", "ls memory");
       await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls memory")?.card?.title, windowsPoll).toBe("Approval needed");
-      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer"))).toHaveLength(1);
+      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer"))).toHaveLength(0);
       const secondCard = (await messages()).find((m) => m.card?.subtitle === "ls memory")!.card!;
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: secondCard.requestId, behavior: "allow" })).status).toBe(200);
       const plain = await second;
