@@ -3932,11 +3932,21 @@ describe("routine pre-check and nothing_to_report", () => {
     expect(run.quietReason).toBe("No change");
     expect(evaluated).toHaveLength(1);
     expect(h.started).toHaveLength(0);
-    expect(h.changed.filter(changed => changed.status !== "queued")).toHaveLength(0);
+    // No lifecycle card at all, not even a queued one, so the chat stays clean.
+    expect(h.changed).toHaveLength(0);
     expect(h.failed).toHaveLength(0);
     expect(h.taskTitles).toHaveLength(0);
     expect(h.manager.listRoutines()[0].nextRunAt).toBeGreaterThan(due);
     expect(isRoutineProblemRun(run)).toBe(false);
+  });
+
+  it("a woken run shows its card from the start of its turn", async () => {
+    const h = harness(start);
+    h.options.evaluatePrecheck = () => ({ wake: true });
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 2 } });
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(h.changed.some(changed => changed.status === "running")).toBe(true);
   });
 
   it("the pure every_nth condition wakes on its third occurrence", async () => {

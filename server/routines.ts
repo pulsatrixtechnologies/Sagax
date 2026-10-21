@@ -1142,6 +1142,8 @@ export class RoutineManager {
   private ticking = false;
   private ownerNotices: RoutineOwnerNotice[] = [];
   private readonly failureFacts = new Map<string, RoutineFailureFacts>();
+  /** Scheduled runs whose pre-check woke them this process (server/routine-precheck.ts). */
+  private readonly precheckPassed = new Set<string>();
   /** routine id -> the occurrence (nextRunAt) already pre-woken. */
   private readonly prewoken = new Map<string, number>();
   /** routine id -> the task reserved and warmed for its next occurrence. */
@@ -2306,7 +2308,7 @@ export class RoutineManager {
         // Only scheduled runs: a person's Run now and a webhook always wake.
         if (triggerSource === "schedule" && run.retryAt === undefined) {
           const routine = this.routines.find((candidate) => candidate.id === run.routineId);
-          if (routine?.precheck) {
+          if (routine?.precheck && !this.precheckPassed.has(run.id)) {
             const verdict = await this.precheckRun(routine, routine.precheck);
             // The run may have been cancelled while the pre-check ran.
             if (run.status !== "queued") continue;
@@ -2318,6 +2320,7 @@ export class RoutineManager {
               this.quietRun(run, verdict.verdict.reason);
               continue;
             }
+            this.precheckPassed.add(run.id);
           }
         }
         if (this.options.admit) {
@@ -3024,8 +3027,20 @@ export class RoutineManager {
     this.options.emit?.({ kind: "routine", routine: this.routineWithHealth(routine) });
   }
 
+  /** A scheduled run whose routine has a pre-check stays out of the
+   * conversation (no lifecycle card) until the pre-check wakes it, so a quiet
+   * run leaves no message behind. */
+  private awaitingPrecheck(run: RoutineRun): boolean {
+    if (run.status !== "queued" && run.status !== "cancelled") return false;
+    if ((run.triggerSource ?? (run.manual ? "manual" : "schedule")) !== "schedule" || run.retryAt !== undefined) return false;
+    if (this.precheckPassed.has(run.id)) return false;
+    return this.routines.some((routine) => routine.id === run.routineId && routine.precheck !== undefined);
+  }
+
   private emitRun(run: RoutineRun) {
     this.options.emit?.({ kind: "routine.run", run: cloneRun(run) });
+    if (run.status !== "queued") this.precheckPassed.delete(run.id);
+    if (this.awaitingPrecheck(run)) return;
     this.notifyRunChanged(run);
     if (run.status === "completed" || run.status === "failed") {
       const routine = this.routines.find(candidate => candidate.id === run.routineId);
