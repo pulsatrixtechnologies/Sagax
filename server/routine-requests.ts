@@ -89,10 +89,13 @@ const routineToolDefinitionSchema = z.object({
   timeoutMinutes: z.number().nullable().optional(),
   continuity: z.boolean().optional(),
   overlap: z.enum(["skip", "queue"]).optional(),
+  /** Create only: true starts the routine live, false paused; absent
+   * follows `routines.newPaused`. Pause and resume are actions of their own. */
+  enabled: z.boolean().optional(),
 }).strict();
 
 const routineToolChangesSchema = routineToolDefinitionSchema
-  .omit({ timeoutMinutes: true })
+  .omit({ timeoutMinutes: true, enabled: true })
   .partial()
   .extend({ timeoutMinutes: z.number().nullable().optional() })
   .strict()
@@ -235,7 +238,12 @@ const storedManageBase = {
   forBot: targetBotSchema.optional(),
 };
 const storedOperationSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("create"), routine: storedDefinitionSchema, forBot: targetBotSchema.optional() }).strict(),
+  z.object({
+    action: z.literal("create"),
+    routine: storedDefinitionSchema,
+    forBot: targetBotSchema.optional(),
+    paused: z.literal(true).optional(),
+  }).strict(),
   z.object({ action: z.literal("update"), ...storedManageBase, changes: storedChangesSchema }).strict(),
   z.object({ action: z.literal("pause"), ...storedManageBase }).strict(),
   z.object({ action: z.literal("resume"), ...storedManageBase }).strict(),
@@ -334,6 +342,10 @@ export interface RoutineRequestServiceOptions {
    * bot is deleted or moved to another section). Returns the sentence to
    * refuse with, or null to allow. Checked at propose AND confirm time. */
   validateTarget?: (proposerBotId: string, target: { botId: string; name: string }) => string | null;
+  /** Whether a created routine starts paused (config `routines.newPaused`,
+   * default true). Read once per proposal and carried on the operation, so
+   * the card and the applied routine never disagree. */
+  newPaused?: () => boolean;
 }
 
 export interface ProposeRoutineRequestArgs {
@@ -642,6 +654,7 @@ function normalizedOperation(
   botId: string,
   validated: ParsedRoutineProposal,
   now: number,
+  newPaused = true,
 ): RoutineRequestOperation {
   if (validated.action === "create") {
     const operation: Extract<RoutineRequestOperation, { action: "create" }> = {
@@ -649,6 +662,9 @@ function normalizedOperation(
       routine: normalizeDefinition(validated.routine, now),
     };
     if (validated.forBot) operation.forBot = validated.forBot;
+    // Decided once, here: the card and the applied routine both read this
+    // flag. An explicit choice of the creator wins over the server default.
+    if (validated.routine.enabled === undefined ? newPaused : !validated.routine.enabled) operation.paused = true;
     return operation;
   }
   const id = routineId(validated.routineId);
@@ -853,6 +869,9 @@ function effectiveDefinition(operation: RoutineRequestOperation, manager: Routin
   return merged;
 }
 
+/** The line a create card carries when new routines start paused. */
+export const CREATED_PAUSED_LINE = "Created paused; resume it when ready.";
+
 function cardCopy(
   operation: RoutineRequestOperation,
   manager: RoutineManager,
@@ -875,7 +894,9 @@ function cardCopy(
       tool: "manage_routine",
     };
   }
-  const nextRunAt = nextForOperation(operation, manager, now);
+  const createsPaused = operation.action === "create" && operation.paused === true;
+  // A routine created paused has no pending run until its owner resumes it.
+  const nextRunAt = createsPaused ? null : nextForOperation(operation, manager, now);
   const scheduleTimeZone = definition.schedule.type === "cron" ? definition.schedule.timeZone : timeZone;
   const when = operation.action === "run_now" ? "Now" : scheduleText(definition.schedule, timeZone);
   const destination = definition.runOn === "cloud" ? "Bot’s current model on its cloud computer" : "Bot’s current model and configured computer";
@@ -889,6 +910,8 @@ function cardCopy(
     intervalHasRestrictions(definition.schedule);
   const nextDescription = remainsPaused
     ? "None — this routine remains paused"
+    : createsPaused
+      ? "None — created paused; resume it when ready"
     : deferredInterval
       ? deferredRestrictedInterval
         ? `Next allowed time after confirmation (${timeZone})`
@@ -900,7 +923,7 @@ function cardCopy(
           : operation.action === "delete"
             ? "None — this routine will be deleted"
             : "None";
-  const status = remainsPaused ? " · Remains paused" : "";
+  const status = remainsPaused ? " · Remains paused" : createsPaused ? " · Created paused" : "";
   // Existing routines may predate nested-card redaction. The approval still
   // shows every instruction, but credential-shaped values never travel back
   // through the bot's MCP response or into the transcript.
@@ -917,7 +940,7 @@ function cardCopy(
       ...(forBot ? [`For: @${redactSecretsInText(forBot.name)} — each run uses that bot's engine and permissions`] : []),
       `Schedule: ${when}`,
       `Next run: ${nextDescription}`,
-      ...(definition.schedule.type === "cron" && nextRunAt !== null && operation.action !== "run_now"
+      ...(definition.schedule.type === "cron" && nextRunAt !== null && operation.action !== "run_now" && !createsPaused
         ? [`Next 3 runs (${scheduleTimeZone}): ${nextCronRuns(definition.schedule, now, 3).map((at) => formatInstant(at, scheduleTimeZone)).join(" · ")}`]
         : []),
       `Runs on: ${destination}`,
@@ -929,6 +952,7 @@ function cardCopy(
       ...(operation.action === "create" || operation.action === "update"
         ? [consequenceLine(definition.schedule, Boolean(definition.continuity))]
         : []),
+      ...(createsPaused ? [CREATED_PAUSED_LINE] : []),
       "",
       "Instructions:",
       visibleInstructions,
@@ -938,13 +962,14 @@ function cardCopy(
   };
 }
 
-function inputFromDefinition(definition: RoutineRequestDefinition, botId: string, now: number): RoutineInput {
+function inputFromDefinition(definition: RoutineRequestDefinition, botId: string, now: number, paused: boolean): RoutineInput {
   return {
     name: definition.name,
     prompt: definition.instructions,
     botId,
     runOn: definition.runOn,
-    enabled: true,
+    // Paused: no pending run until the owner resumes it (propose_routine_action).
+    enabled: !paused,
     schedule: asSchedule(definition.schedule, now),
     durationMinutes: definition.durationMinutes,
     ...(definition.timeoutMinutes === undefined ? {} : { timeoutMinutes: definition.timeoutMinutes }),
@@ -1033,10 +1058,13 @@ function requestCommit(payload: RoutineRequestCardData, messageId: string): Rout
 function revalidateOperation(operation: RoutineRequestOperation, manager: RoutineManager, botId: string, now: number): void {
   if (operation.action === "create") {
     const definition = operation.routine;
+    // A create that starts paused counts a paused copy as a duplicate too
+    // (otherwise every retried proposal would add another).
+    const includePaused = operation.paused === true;
     const owner = operation.forBot?.botId ?? botId;
     const schedule = asSchedule(definition.schedule, now);
     const duplicate = manager.listRoutines().find((routine) => {
-      if (!routine.enabled || routine.target !== "bot" || routine.botId !== owner
+      if ((!routine.enabled && !includePaused) || routine.target !== "bot" || routine.botId !== owner
         || routine.runOn !== definition.runOn || routine.prompt !== definition.instructions
         || routine.durationMinutes !== definition.durationMinutes
         || routine.timeoutMinutes !== definition.timeoutMinutes
@@ -1055,7 +1083,7 @@ function revalidateOperation(operation: RoutineRequestOperation, manager: Routin
       // The tool cannot choose a result destination. Return the existing ID,
       // without moving its reports or treating a renamed request as new work.
       throw new RoutineRequestError(
-        `An enabled routine with the same instructions and execution settings already exists (${duplicate.id}). Use list_routines to review it, then update or run that routine instead.`,
+        `${duplicate.enabled ? "An enabled" : "A paused"} routine with the same instructions and execution settings already exists (${duplicate.id}). Use list_routines to review it, then update or run that routine instead.`,
         409,
         { terminal: true },
       );
@@ -1168,6 +1196,7 @@ export class RoutineRequestService {
   private readonly canPersist?: RoutineRequestServiceOptions["canPersist"];
   private readonly validateTarget?: RoutineRequestServiceOptions["validateTarget"];
   private readonly autoApply?: RoutineRequestServiceOptions["autoApply"];
+  private readonly newPaused: () => boolean;
 
   constructor(options: RoutineRequestServiceOptions) {
     this.store = options.store;
@@ -1178,6 +1207,8 @@ export class RoutineRequestService {
     this.canPersist = options.canPersist;
     this.validateTarget = options.validateTarget;
     this.autoApply = options.autoApply;
+    // Same default as config.ts DEFAULT_NEW_ROUTINES_PAUSED.
+    this.newPaused = options.newPaused ?? (() => true);
   }
 
   async propose(args: ProposeRoutineRequestArgs): Promise<RoutineProposalResult> {
@@ -1201,7 +1232,7 @@ export class RoutineRequestService {
     if (!parsedProposal.success) {
       throw new RoutineRequestError(schemaIssue(parsedProposal.error, "Invalid routine proposal"));
     }
-    const operation = normalizedOperation(this.routines, botId, parsedProposal.data, at);
+    const operation = normalizedOperation(this.routines, botId, parsedProposal.data, at, this.newPaused());
     if (operation.forBot && this.validateTarget) {
       const refusal = this.validateTarget(botId, operation.forBot);
       if (refusal) throw new RoutineRequestError(refusal, 403);
@@ -1301,6 +1332,8 @@ export class RoutineRequestService {
   /** Whether one more enabled routine would take the bot past the cap. */
   private overSelfCap(operation: RoutineRequestOperation, owner: string): boolean {
     if (operation.action !== "create" && operation.action !== "resume") return false;
+    // A create that starts paused adds no enabled routine.
+    if (operation.action === "create" && operation.paused === true) return false;
     const enabled = this.routines.listRoutines().filter((routine) => routine.botId === owner && routine.enabled).length;
     return enabled + 1 > SELF_ROUTINE_CAP;
   }
@@ -1668,6 +1701,7 @@ export class RoutineRequestService {
           operation.routine,
           operation.forBot?.botId ?? payload.botId,
           confirmationAt,
+          operation.paused === true,
         ), {
           requestId: payload.requestId,
           messageId,

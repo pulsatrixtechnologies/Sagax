@@ -319,6 +319,9 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   if (args.overlap !== undefined && args.overlap !== "skip" && args.overlap !== "queue") {
     return { fields, error: "overlap must be skip or queue." };
   }
+  if (args.enabled !== undefined && typeof args.enabled !== "boolean") {
+    return { fields, error: "enabled must be true or false." };
+  }
   if (args.clear_timeout != null && typeof args.clear_timeout !== "boolean") {
     return { fields, error: "clear_timeout must be true or false." };
   }
@@ -337,6 +340,7 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   else if (timeoutMinutes != null) fields.timeoutMinutes = timeoutMinutes;
   if (typeof args.continuity === "boolean") fields.continuity = args.continuity;
   if (args.overlap !== undefined) fields.overlap = args.overlap;
+  if (typeof args.enabled === "boolean") fields.enabled = args.enabled;
   return { fields };
 }
 
@@ -1222,6 +1226,9 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       }
       const { fields: changes, error: scheduleError } = routineFields(args.changes);
       if (scheduleError) return { text: scheduleError, isError: true };
+      if (Object.hasOwn(changes, "enabled")) {
+        return { text: "Pause and resume are their own actions. Do not set enabled in changes.", isError: true };
+      }
       if (!Object.keys(changes).length) {
         return { text: "The update action needs at least one supported field in changes.", isError: true };
       }

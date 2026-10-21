@@ -698,6 +698,11 @@ const appConfigSchema = z.object({
     /** Local hour (0-23) after which the nightly tidy-up runs. */
     tidyHour: z.number().int().min(0).max(23).optional(),
   }).strict().optional(),
+  /** Routines a bot creates through the approval flow. */
+  routines: z.object({
+    /** Start them paused (default true): the owner resumes them when ready. */
+    newPaused: z.boolean().optional(),
+  }).strict().optional(),
   threads: threadsConfigSchema.optional(),
   /** The authorization decision log (server/decision-log.ts): days of month
    * files kept, at least; SAGAX_DECISION_RETENTION_DAYS wins when set. */
@@ -820,6 +825,7 @@ export interface AppConfig {
   threads?: { maxConcurrentPerBot: number; maxParallelPerPerson?: number; eventLogMaxBytes?: number; eventLogRetentionDays?: number };
   context?: { rebuildBytes?: number; compactAt?: number; autoCompact?: boolean; autoCompactOffBots?: string[]; staleSessionHours?: number; staleSessionBytes?: number; staleSessionColdMinutes?: number };
   memory?: { captureQuietMs?: number; tidyHour?: number };
+  routines?: { newPaused?: boolean };
   /** Shared preserves the historical singleton. Per-bot gives every bot a
    * separate container, durable workspace, viewer and lease. Pool runs N
    * seats shared by all conversations, with per-thread affinity (#1654). */
@@ -1096,6 +1102,14 @@ export function captureQuietMs(cfg: AppConfig): number {
 
 export function tidyHour(cfg: AppConfig): number {
   return cfg.memory?.tidyHour ?? DEFAULT_TIDY_HOUR;
+}
+
+/** Routines created through the approval flow start paused unless
+ * `routines.newPaused` is false. */
+export const DEFAULT_NEW_ROUTINES_PAUSED = true;
+
+export function newRoutinesPaused(cfg: AppConfig): boolean {
+  return cfg.routines?.newPaused ?? DEFAULT_NEW_ROUTINES_PAUSED;
 }
 
 export function showToolCallsEnabled(cfg: AppConfig): boolean {
@@ -1771,7 +1785,7 @@ export function saveConfig(
   // back after we have successfully recognized the legacy list.
   const storedProfiles = storedBrowserProfilesSchema.safeParse(disk.browserProfiles);
   if (storedProfiles.success) disk.browserProfiles = storedProfiles.data;
-  for (const key of ["xai", "anthropic", "mistral", "cerebras", "groq", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "mcp", "threads", "context", "memory", "localVm", "features", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
+  for (const key of ["xai", "anthropic", "mistral", "cerebras", "groq", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "mcp", "threads", "context", "memory", "routines", "localVm", "features", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
     const section = checkedPatch[key];
     if (!section) continue;
     const current = jsonObjectSchema.safeParse(disk[key]);

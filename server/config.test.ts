@@ -30,6 +30,7 @@ import { cacheUntilConfigChanges,
   threadEventLogMaxBytes,
   threadEventLogRetentionDays,
   showToolCallsEnabled,
+  newRoutinesPaused,
   routinesInConversationEnabled,
   connectedAppsEnabled,
   templatesEnabled, vpsComputerEnabled, boatComputerEnabled, decisionModelEnabled, dataWindowEnabled, routineGroupSettingsEnabled,
@@ -704,6 +705,15 @@ describe("configuration boundaries", () => {
     expect(routineGroupSettingsEnabled({ features: { routineGroupSettings: true } })).toBe(true);
   });
 
+  it("starts approval-flow routines paused unless routines.newPaused is false", () => {
+    expect(newRoutinesPaused({})).toBe(true);
+    expect(newRoutinesPaused({ routines: {} })).toBe(true);
+    expect(newRoutinesPaused({ routines: { newPaused: true } })).toBe(true);
+    expect(newRoutinesPaused({ routines: { newPaused: false } })).toBe(false);
+    expect(parseConfigPatch({ routines: { newPaused: false } })).toEqual({ routines: { newPaused: false } });
+    expect(() => parseConfigPatch({ routines: { newPaused: "no" } })).toThrow(/newPaused/);
+  });
+
   it("keeps tool-call chips off by default and accepts an explicit opt-in", () => {
     expect(showToolCallsEnabled({})).toBe(false);
     expect(parseConfigPatch({ features: { showToolCalls: true } })).toEqual({
@@ -781,6 +791,24 @@ describe("a config.json saved with a byte order mark", () => {
 });
 
 describe("saving the newer sections", () => {
+  it("persists routines.newPaused and leaves it out of later saves", () => {
+    const path = join(DATA_DIR, "config.json");
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(path, JSON.stringify({ xai: { key: "xai-fixture" } }));
+    try {
+      saveConfig({ routines: { newPaused: false } });
+      saveConfig({ budgets: { monthlyUsd: 10 } });
+      const disk = JSON.parse(readFileSync(path, "utf8"));
+      expect(disk.routines).toEqual({ newPaused: false });
+      expect(disk.xai).toEqual({ key: "xai-fixture" });
+      expect(newRoutinesPaused(parseStoredConfig(disk))).toBe(false);
+      saveConfig({ routines: { newPaused: true } });
+      expect(newRoutinesPaused(loadConfig())).toBe(true);
+    } finally {
+      rmSync(path, { force: true });
+    }
+  });
+
   it("persists the Anthropic key, the spend limit and the price list, section by section", () => {
     const path = join(DATA_DIR, "config.json");
     mkdirSync(DATA_DIR, { recursive: true });

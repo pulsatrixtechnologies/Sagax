@@ -297,6 +297,7 @@ import {
   liveSettingsFor,
   liveCallKey,
   mergeOpenCodeProviderKeys,
+  newRoutinesPaused,
   openCodeProviderKeys,
 } from "./config.ts";
 import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
@@ -20686,6 +20687,7 @@ const routineRequests = new RoutineRequestService({
   autoApply: appliesDirectly,
   cloudReady: cloudRoutineReadiness,
   canPersist: proposalPersistence,
+  newPaused: () => newRoutinesPaused(cfg),
   // Cross-bot routines: the confirmation card can sit open indefinitely, so
   // the target is re-authorized when the user confirms, not just at proposal.
   validateTarget: (proposerBotId, target) => {
