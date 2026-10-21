@@ -44,6 +44,7 @@ import { ThreadModelsLine } from "./ThreadModelsLine";
 import { effortLabel } from "@/lib/effort-label";
 import { isUltracodeEffort, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
 import { effortForModel, fastBaseOf, fastTwinOf, modelDefaultEffort, modelEffortLevels } from "../../shared/model-capabilities";
+import { batchModelActions } from "@/lib/batch-bot-model";
 import { ModelMenuSettings } from "./ModelMenuSettings";
 import { favoriteKey, toggleModelFavorite, useModelFavorites } from "@/lib/model-favorites";
 import { engineRuns, modelUsable } from "@/lib/model-health";
@@ -655,6 +656,8 @@ export function ModelPicker({
   menuControl,
   onChip,
   fallbackAnchor,
+  /** Other selected bots that receive the same model and effort. */
+  alsoApplyTo,
 }: {
   bot: Bot;
   threadId?: string;
@@ -680,8 +683,18 @@ export function ModelPicker({
   onChip?: (chip: ComposerModelChip | null) => void;
   /** Headless: what the menu opens above when no row asked (the mascot). */
   fallbackAnchor?: () => HTMLElement | null;
+  alsoApplyTo?: readonly string[];
 }) {
   const { state, dispatch, refreshInstances, refreshModels: refreshInstanceModels } = useStore();
+  const applyToOthers = (next: ModelSelection) => {
+    if (!alsoApplyTo?.length) return;
+    const others = alsoApplyTo.flatMap((id) => {
+      if (id === bot.id) return [];
+      const candidate = state.bots.find((item) => item.id === id);
+      return candidate ? [{ id: candidate.id, threadId: candidate.threadId, busy: candidate.busy }] : [];
+    });
+    for (const action of batchModelActions(others, next)) dispatch(action);
+  };
   // The model window (a modal like Settings) and the composer's model menu.
   const [open, setOpen] = useState(windowOnly);
   const [menu, setMenu] = useState(false);
@@ -1001,50 +1014,61 @@ export function ModelPicker({
   // threads that follow the bot move with it, a thread on its own model
   // keeps it.
   const pick = (instance: InstanceInfo, model: string, keepOpen = false) => {
-    if (bot.busy || instance.policy || notAllowed(instance)) return;
+    if ((bot.busy && !alsoApplyTo?.length) || instance.policy || notAllowed(instance)) return;
     const localRow = instance.models.options.find((option) => option.id === model && (option.local || isDesktopModelId(option.id)));
     if (localRow && localRowUnavailable(instance.driverKind, model, localRow.anthropic)) return;
-    if (viewerLocal) {
+    if (viewerLocal && !alsoApplyTo?.length) {
       saveViewerChoice(dispatch, bot.id, { model: { instanceId: instance.instanceId, model } });
       closeAll();
       return;
     }
-    dispatch({
-      type: "setModel",
-      botId: bot.id,
-      threadId: threadId ?? bot.threadId,
-      updateBotDefault: true,
-      selection: modelSelectionForPick(selection, instance, model),
-    });
+    const next = modelSelectionForPick(selection, instance, model);
+    if (!bot.busy && !viewerLocal) {
+      dispatch({
+        type: "setModel",
+        botId: bot.id,
+        threadId: threadId ?? bot.threadId,
+        updateBotDefault: true,
+        selection: next,
+      });
+    }
+    applyToOthers(next);
     if (threadId) setChangedBotModel(true);
     if (!keepOpen) closeAll();
   };
 
   /** The menu's Effort list: this person's level, for the model in use. */
   const setEffort = (effort: EffortLevel | undefined) => {
-    if (bot.busy) return;
-    if (viewerLocal) {
+    if (bot.busy && !alsoApplyTo?.length) return;
+    if (viewerLocal && !alsoApplyTo?.length) {
       saveViewerChoice(dispatch, bot.id, { effort: effort ?? null });
       return;
     }
     const { variant: _variant, ...rest } = selection;
-    dispatch({ type: "setModel", botId: bot.id, threadId, ...(threadId ? { updateBotDefault: true } : {}),
-      selection: { ...rest, ...(effort ? { effort } : { effort: undefined }) } });
+    const next = { ...rest, ...(effort ? { effort } : { effort: undefined }) };
+    if (!viewerLocal) {
+      dispatch({ type: "setModel", botId: bot.id, threadId, ...(threadId ? { updateBotDefault: true } : {}), selection: next });
+    }
+    applyToOthers(next);
   };
 
   // Auto keeps the engine and base model; choosing a model pins it. The
   // same one mode: the thread and the bot's default.
   const chooseAuto = () => {
-    if (bot.busy || viewerLocal) return;
+    if ((bot.busy && !alsoApplyTo?.length) || (viewerLocal && !alsoApplyTo?.length)) return;
     closeAll();
-    if (autoOn) return;
-    dispatch({
-      type: "setModel",
-      botId: bot.id,
-      threadId: threadId ?? bot.threadId,
-      updateBotDefault: true,
-      selection: { ...selection, auto: true },
-    });
+    if (autoOn && !alsoApplyTo?.length) return;
+    const next = { ...selection, auto: true as const };
+    if (!bot.busy && !viewerLocal && !autoOn) {
+      dispatch({
+        type: "setModel",
+        botId: bot.id,
+        threadId: threadId ?? bot.threadId,
+        updateBotDefault: true,
+        selection: next,
+      });
+    }
+    applyToOthers(next);
     if (threadId) setChangedBotModel(true);
   };
 
