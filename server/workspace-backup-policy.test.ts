@@ -80,6 +80,8 @@ describe("workspace backup data boundary", () => {
     for (const path of [
       "org-github-tokens.enc",
       "org-github-tokens.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp",
+      "org-bot-secrets.enc",
+      "org-bot-secrets.enc.4242.05a7b3e0-1234-4abc-8def-0123456789ab.tmp",
     ]) expect(excludedWorkspaceAuthPath(path)).toBe(true);
     for (const path of ["org-github-tokens.enc.md", "workspaces/bot/org-github-tokens.enc", "notes/org-github-tokens.enc"]) {
       expect(excludedWorkspaceAuthPath(path)).toBe(false);

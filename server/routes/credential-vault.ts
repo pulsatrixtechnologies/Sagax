@@ -77,6 +77,14 @@ export interface CredentialVaultRouteDeps {
   /** Whether this caller may import: null to go on (absent allows, as for
    * creating an item). */
   importGate?(auth: RequestAuth): { status: number; body: unknown } | null;
+  /** Reveal and a purchase answer: the person, or their Primary Bot when
+   * they asked. Null to go on. Absent allows (tests). */
+  ownerGate?(auth: RequestAuth): { status: number; body: unknown } | null;
+  /** A purchase the person chose "money" needs their security key. */
+  purchaseStepUp?(auth: RequestAuth, detail: Record<string, unknown>, stepUp: unknown): { status: number; body: unknown } | null;
+  /** Set when this answer is the person's Primary Bot. The card then says
+   * "via <name>". A caller cannot invent it. */
+  viaPrimary?(): string | null;
 }
 
 /** The most items one import request may carry (the vault keeps 500). */
@@ -93,6 +101,9 @@ function importItem(raw: unknown): VaultTransferItem | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const row = raw as Record<string, unknown>;
   if (!(VAULT_ITEM_KINDS as readonly unknown[]).includes(row.kind) || typeof row.name !== "string") return null;
+  // Cards, addresses and contacts are not in a password-manager file. A
+  // file must not carry a card number.
+  if (row.kind === "card" || row.kind === "address" || row.kind === "contact") return null;
   const domains = Array.isArray(row.domains)
     ? [...new Set(row.domains.map((domain) => normalizeVaultDomain(domain)).filter((domain): domain is string => Boolean(domain)))]
     : [];
@@ -241,6 +252,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         const unavailable = deps.vault.unavailableReason(principalId);
         return json(res, 200, {
           items: unavailable ? [] : deps.vault.list(principalId),
+          purchases: unavailable ? [] : deps.vault.pendingPurchases(principalId),
           onePassword: await deps.onePassword.status(),
           ...(unavailable ? { unavailable } : {}),
           ...(deps.exportBlocked?.(auth) ? { exportBlocked: true } : {}),
@@ -293,6 +305,33 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         // counts only: never a name, a site or a value
         deps.audit?.("credentials.import", auth, { format: input.format, mode: input.duplicates, received: items.length, ...outcome });
         return json(res, 200, outcome);
+      }
+      const reveal = /^\/api\/me\/credentials\/([a-z0-9]{8,40})\/reveal$/.exec(path);
+      if (reveal) {
+        if (method !== "POST") return json(res, 405, { error: "POST only" });
+        const owned = deps.ownerGate?.(auth);
+        if (owned) return json(res, owned.status, owned.body);
+        const input = await body();
+        const value = deps.vault.reveal(principalId, reveal[1]!, input.field);
+        return json(res, 200, { value });
+      }
+      if (path === "/api/me/credentials/purchases") {
+        if (method !== "POST") return json(res, 405, { error: "POST only" });
+        return json(res, 200, { purchases: deps.vault.pendingPurchases(principalId) });
+      }
+      const purchase = /^\/api\/me\/credentials\/purchases\/(pay_[a-f0-9]{16})\/answer$/.exec(path);
+      if (purchase) {
+        if (method !== "POST") return json(res, 405, { error: "POST only" });
+        const owned = deps.ownerGate?.(auth);
+        if (owned) return json(res, owned.status, owned.body);
+        const input = await body();
+        const detail = { purchaseId: purchase[1], decision: input.decision };
+        const stepped = deps.purchaseStepUp?.(auth, detail, input.stepUp);
+        if (stepped) return json(res, stepped.status, stepped.body);
+        const via = deps.viaPrimary?.() ?? undefined;
+        const answered = deps.vault.answerPurchase(principalId, purchase[1]!, input.decision, via ?? undefined);
+        deps.audit?.("credentials.grant", auth, { purchaseId: purchase[1], decision: input.decision, ...(via ? { via: "primary-bot" } : {}) });
+        return json(res, 200, { purchase: answered.listing, note: answered.note });
       }
       if (path === "/api/me/credentials/export") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });

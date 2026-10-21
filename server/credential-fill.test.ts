@@ -588,6 +588,6 @@ describe("fill_credential through the browser runtime", () => {
     const { runtime } = setup();
     const { spec } = engine("https://example.test/");
     const listed = await runtime.agentRpc("list", spec, "tools/list", {}) as { tools: Array<{ name: string }> };
-    expect(listed.tools.map((tool) => tool.name)).toEqual(["agent_browser_snapshot", "restart_browser", "fill_credential"]);
+    expect(listed.tools.map((tool) => tool.name)).toEqual(["agent_browser_snapshot", "restart_browser", "fill_credential", "request_purchase"]);
   });
 });
