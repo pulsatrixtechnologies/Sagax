@@ -8527,8 +8527,8 @@
   "customRules.form.saveAndAllow": "Enregistrer et autoriser",
   "customRules.form.cancel": "Annuler",
   "customRules.form.placeholder": "ex. : lire les fichiers dans ~/Documents",
-  "customRules.unrecognized": "Non reconnue : nommez une action (lire, écrire, envoyer...), un dossier ou un outil entre accents graves. D'ici là, cette règle n'autorise rien.",
-  "customRules.unrecognizedShort": "Non reconnue",
+  "customRules.unrecognized": "Lue par l'examen automatique : un modèle juge chaque carte selon cette règle. Pour une règle exacte, nommez une action (lire, écrire, envoyer...), un dossier ou un outil entre accents graves.",
+  "customRules.unrecognizedShort": "Examen automatique",
   "customRules.title": "Règles personnalisées",
   "customRules.help": "Écrivez une règle courte en langage naturel pour chaque action. « Refuser » l'emporte sur « Demander d'abord », qui l'emporte sur « Autoriser automatiquement ». Pour le shell, seules des commandes exactes et la simple lecture d'un dossier peuvent être permises. Ces règles ne s'appliquent qu'à vous, et les contrôles de sécurité intégrés s'appliquent toujours.",
   "customRules.empty": "Aucune règle personnalisée pour l'instant. Exemple : « toujours permettre la lecture de fichiers dans ~/Documents ».",
@@ -9429,5 +9429,12 @@
   "sidebar.select.archiveTitle": "Archiver {count} Bot(s) sélectionné(s) ?",
   "sidebar.select.archiveBody": "Ils quittent la barre latérale et gardent tout. Restaurez-les quand vous voulez depuis les Bots archivés.",
   "sidebar.unreadAbove": "{count} non lu(s) de plus au-dessus",
-  "sidebar.unreadBelow": "{count} non lu(s) de plus en dessous"
+  "sidebar.unreadBelow": "{count} non lu(s) de plus en dessous",
+  "customRules.reviewerHelp": "Examen automatique : un modèle léger lit aussi vos règles et approuve ou refuse les cartes qu'elles couvrent clairement, avec sa raison sur la carte. S'il hésite, la carte vous revient. Il ne permet jamais une commande shell, ni une action risquée que votre règle ne coche pas.",
+  "customRules.notice.modelApproved": "Approuvé par l'examen automatique selon votre règle",
+  "customRules.notice.modelDenied": "Refusé par l'examen automatique selon votre règle",
+  "customRules.notice.modelHeld": "L'examen automatique vous laisse décider selon votre règle « Demander d'abord »",
+  "customRules.notice.modelOrgDenied": "Refusé par l'examen automatique selon la règle de votre organisation",
+  "customRules.notice.modelOrgHeld": "L'examen automatique vous laisse décider selon la règle de votre organisation",
+  "approval.status.byAutoReview": "par l'examen automatique"
 }

@@ -110,6 +110,8 @@ export interface DecisionRow {
   source: DecisionSource;
   /** which rule decided: a guard's regex source, or the granted key */
   rule?: string;
+  /** `auto-review` rows: the model reviewer's reason, one short sentence */
+  reason?: string;
   /** the turn ran with nobody at the keyboard when this was decided */
   unattended?: boolean;
   /** who answered, on rows a person's answer produced */
@@ -144,7 +146,7 @@ export function bindConfidentialDecisions(isConfidential: (threadId: string) => 
 /** A row without anything a person or a bot wrote: the summary of the call,
  * the rule that matched it, how the ask reached the fold. */
 export function metadataOnly<T extends Partial<DecisionRow>>(row: T): T {
-  const { summary: _summary, rule: _rule, origin: _origin, ...rest } = row;
+  const { summary: _summary, rule: _rule, reason: _reason, origin: _origin, ...rest } = row;
   return rest as T;
 }
 

@@ -6,6 +6,9 @@
 // 2026-10-21 (Grok Bot parity lot 1A): an organization admin's rule says so
 // ("Exigé par votre administrateur") and offers no edit; a rule whose words
 // change shows what changed, word by word (RuleTextDiff).
+//
+// 2026-10-21 (lot A1): a rule the model reviewer applied (examen
+// automatique) says so, with its reason in one sentence.
 import { Lock, ShieldCheck, ShieldX, ShieldAlert } from "lucide-react";
 
 import { t } from "@/lib/i18n";
@@ -26,6 +29,13 @@ export function riskList(risks: readonly RiskClass[]): string {
 
 /** The one line a notice reads as. */
 export function customRuleNoticeLine(notice: Notice): string {
+  // 2026-10-21 (Grok Bot parity A1): the model reviewer applied the rule
+  if (notice.reviewer === "model") {
+    if (notice.org) return t(notice.outcome === "denied" ? "customRules.notice.modelOrgDenied" : "customRules.notice.modelOrgHeld");
+    if (notice.outcome === "approved") return t("customRules.notice.modelApproved");
+    if (notice.outcome === "denied") return t("customRules.notice.modelDenied");
+    return t("customRules.notice.modelHeld");
+  }
   if (notice.org && notice.outcome === "denied") return t("customRules.notice.orgDenied");
   if (notice.org && notice.outcome === "held") return t("customRules.notice.orgHeld");
   if (notice.outcome === "approved") return t("customRules.notice.approved");
@@ -60,6 +70,7 @@ export function CustomRuleNoticeLine({ notice, botId, compact = false }: { notic
       <span className="font-medium text-ink">{customRuleNoticeLine(notice)}</span>
       <span className="min-w-0 break-words">« {notice.when} »</span>
       {notice.org ? <OrgRuleBadge /> : <EditCustomRuleLink botId={notice.botId ?? botId} />}
+      {notice.reason && <span data-custom-rule-reason="" className="basis-full min-w-0 break-words text-ink-secondary">{notice.reason}</span>}
     </div>
   );
 }

@@ -27,6 +27,17 @@ function message(extra: Partial<NonNullable<Message["card"]>> = {}): Message {
 }
 
 describe("rule notice", () => {
+  it("says when automatic review applied the rule, with its reason (lot A1)", () => {
+    const model = { ...notice, reviewer: "model" as const, reason: "The file is in Documents." };
+    expect(customRuleNoticeLine({ ...model, outcome: "approved" })).toBe("Approved by automatic review under your rule");
+    expect(customRuleNoticeLine({ ...model, behavior: "deny", outcome: "denied" })).toBe("Refused by automatic review under your rule");
+    expect(customRuleNoticeLine({ ...model, behavior: "ask", outcome: "held" })).toBe("Automatic review left this to you under your Ask first rule");
+    expect(customRuleNoticeLine({ ...model, behavior: "deny", outcome: "denied", org: true })).toBe("Refused by automatic review under your organization's rule");
+    const html = renderToStaticMarkup(createElement(CustomRuleNoticeLine, { notice: { ...model, outcome: "approved" } }));
+    expect(html).toContain("data-custom-rule-reason");
+    expect(html).toContain("The file is in Documents.");
+    expect(renderToStaticMarkup(createElement(CustomRuleNoticeLine, { notice: { ...notice, outcome: "approved" } }))).not.toContain("data-custom-rule-reason");
+  });
   it("says which rule decided, in its words, with Edit rule", () => {
     expect(customRuleNoticeLine({ ...notice, outcome: "approved" })).toBe("Approved automatically by your rule");
     expect(customRuleNoticeLine({ ...notice, behavior: "deny", outcome: "denied" })).toBe("Refused by your rule");

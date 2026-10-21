@@ -8540,8 +8540,8 @@
   "customRules.form.saveAndAllow": "Save and allow",
   "customRules.form.cancel": "Cancel",
   "customRules.form.placeholder": "e.g. read files in ~/Documents",
-  "customRules.unrecognized": "Not recognized: name an action (read, write, send...), a folder or a tool in backticks. Until then, this rule allows nothing.",
-  "customRules.unrecognizedShort": "Not recognized",
+  "customRules.unrecognized": "Read by automatic review: a model judges each card against this rule. For an exact rule, name an action (read, write, send...), a folder or a tool in backticks.",
+  "customRules.unrecognizedShort": "Automatic review",
   "customRules.title": "Custom rules",
   "customRules.help": "Write a short rule in plain words for each action. \"Refuse\" wins over \"Ask first\", which wins over \"Allow automatically\". For the shell, only exact commands and plain reads of a folder can be allowed. These rules apply only to you, and the built-in safety checks always apply.",
   "customRules.empty": "No custom rule yet. Example: \"always allow reading files in ~/Documents\".",
@@ -9429,5 +9429,12 @@
   "sidebar.select.archiveTitle": "Archive {count} selected bots?",
   "sidebar.select.archiveBody": "They leave the sidebar and keep everything. Restore them any time from Archived bots.",
   "sidebar.unreadAbove": "{count} more unread above",
-  "sidebar.unreadBelow": "{count} more unread below"
+  "sidebar.unreadBelow": "{count} more unread below",
+  "customRules.reviewerHelp": "Automatic review: a light model also reads your rules and approves or refuses the cards they clearly cover, with its reason on the card. When it is unsure, the card stays yours. It never allows a shell command, or a risky action your rule does not tick.",
+  "customRules.notice.modelApproved": "Approved by automatic review under your rule",
+  "customRules.notice.modelDenied": "Refused by automatic review under your rule",
+  "customRules.notice.modelHeld": "Automatic review left this to you under your Ask first rule",
+  "customRules.notice.modelOrgDenied": "Refused by automatic review under your organization's rule",
+  "customRules.notice.modelOrgHeld": "Automatic review left this to you under your organization's rule",
+  "approval.status.byAutoReview": "by automatic review"
 }

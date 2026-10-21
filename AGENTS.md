@@ -1668,9 +1668,29 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   deny or ask catches either, case-insensitively and in one Unicode form.
   A server's readOnlyHint never makes a call a read. Tools are named whole,
   server included; products match known server ids (or a Perspicax or
-  Composio gateway's tool prefix). No model reviewer is wired:
-  `customRulesReviewPrompt`, `tightenCustomDecision` and
-  `safetyReviewPrompt(call, policy)` are the tighten-only contract for one.
+  Composio gateway's tool prefix).
+- Model reviewer (examen automatique, 2026-10-21, Grok Bot parity A1, JC:
+  "OUI, comme Grok"; `server/custom-rules-model.ts`, contract
+  `customRulesJudgePrompt` / `modelCustomDecision` in shared/custom-rules.ts):
+  a card the matcher left to the person (`none`, no risk-blocked allow) is
+  judged after it opens by the bot engine's isolated `reviewPermission`
+  (Haiku on Claude; no reviewer on the engine = no review) against the
+  person's rules and the organization's (R1..Rn, organization first, exact
+  command rules left out; the call between untrusted delimiters). Only the
+  cards a custom allow may answer (the person's own turn, no admin card,
+  hold, sandbox widening, question, guest, security key or owner ask rule).
+  Allow or deny only when it names a rule of that behavior; an organization
+  rule never allows; an allow never covers a shell line, a risk class the
+  rule does not tick, or a local path it cannot read; ask keeps the card
+  with the notice. Unsure, failed, timed out (30 s) or answered meanwhile:
+  the card stays. The engine gets the answer, the card `answeredBy.via:
+  auto-review` and `customRule` (`reviewer: model`, `reason`), the journal
+  `source: auto-review` with the rule and the reason (dropped in a
+  confidential thread). Cache: one call per prompt in flight, 10 minutes.
+  Tests: `shared/custom-rules.test.ts`, `server/custom-rules-model.test.ts`,
+  `server/custom-rules-model.e2e.test.ts`. `tightenCustomDecision` and
+  `safetyReviewPrompt(call, policy)` stay the tighten-only contract of the
+  safety review.
 - Tests: `server/custom-rules.security.test.ts` holds every probe input of
   the four reviews; add each new bypass there.
 
