@@ -319,7 +319,8 @@ import { serveStaticUi } from "./static-ui.ts";
 import { coalescedRun } from "./coalesced-run.ts";
 import type { EarlyListener } from "./early-listener.ts";
 import { appendUsage, parseUsageRange, readUsage, flushUsageLedger, type UsageRow, type UsageTrigger } from "./usage-ledger.ts";
-import { loadPlanUsage, orgPlanAccounts, planAccountsFromInstances } from "./plan-usage.ts";
+import type { PlanUsageReport } from "./plan-usage.ts";
+import { loadPlanUsage, newPlanUsageAlerts, orgPlanAccounts, planAccountsFromInstances, planUsageAlertText } from "./plan-usage.ts";
 import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost, listPriceFor } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
@@ -11706,6 +11707,10 @@ const limitFailover = createLimitFailoverHost({
     const bot = store.bot(botId);
     return bot ? autoPayerKey(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : "server";
   },
+  ownerPays: (botId, speaker) => {
+    const bot = store.bot(botId);
+    return bot ? ownerPaysForMember(bot, (speaker ?? { origin: "person" }) as TurnSpeaker) : false;
+  },
   threadSelection: (botId, threadId) => store.projectBotForTask(botId, threadId)?.modelSelection ?? null,
   busy: threadBusy,
   switchThread: (botId, threadId, to) => {
@@ -19554,7 +19559,7 @@ async function startTurn(
       runningTurnEngines.set(threadId, instance);
       if (!warmOnly) limitFailover.noteDispatch(threadId, {
         botId: bot.id, engine: { instanceId: instance.instanceId, driverKind: instance.driverKind }, selection: bot.modelSelection,
-        payer: autoPayerKey(bot, speaker), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
+        payer: autoPayerKey(bot, speaker), ...(ownerPaysForMember(bot, speaker, opts?.trigger?.kind === "user" ? opts.trigger.principalId : opts?.sender?.id) ? { owner: true } : {}), speaker, ...(opts?.trigger ? { trigger: opts.trigger } : {}), at: Date.now(),
       });
       idleEngines.noteBusy(threadId);
       // The prompt carries the soul as saved now. If it changed during setup,
@@ -25635,6 +25640,29 @@ const autoRefusals = new Map<string, number>();
 function autoPayerKey(bot: BotRecord, speaker: TurnSpeaker): string {
   if (IDENTITY.kind !== "perspicax") return "server";
   return turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId.toLowerCase() || "unknown";
+}
+/** J4: a plan window crossing the warning line (or spent) says so once, to
+ * the person whose plan it is (everyone on the solo server). */
+function announcePlanThresholds(report: PlanUsageReport, scope: string): void {
+  try {
+    for (const alert of newPlanUsageAlerts(report, scope.toLowerCase(), cfg.budgets?.warnAtPercent)) {
+      const text = planUsageAlertText(alert);
+      broadcast({ kind: "notify", notification: {
+        kind: "spend", botId: "", botName: "", threadId: "", title: text.title, body: text.body,
+        ...(scope !== "server" ? { audience: [scope] } : {}),
+      } }, scope === "server" && IDENTITY.kind === "perspicax" ? { adminOnly: true } : {});
+    }
+  } catch (failure) {
+    console.warn(`[plan-usage] threshold alert: ${failure instanceof Error ? failure.message : String(failure)}`);
+  }
+}
+/** J4: the bot owner's plan pays for a turn a member started (a peer hop
+ * from the member's bot, never a routine), so a usage limit is the owner's. */
+function ownerPaysForMember(bot: BotRecord, speaker: TurnSpeaker, asked?: string): boolean {
+  if (IDENTITY.kind !== "perspicax" || routineLineage(speaker)) return false;
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  const who = (asked || speakerPrincipal(speaker, owner, peerOwnerPrincipal(speaker))).trim().toLowerCase();
+  return owner !== "" && autoPayerKey(bot, speaker) === owner && who !== "" && who !== owner;
 }
 function rememberAutoRefusal(payer: string, entry: AutoChainEntry): void {
   autoRefusals.set(`${payer}\u0000${entry.instanceId}\u0000${entry.model}`, Date.now() + AUTO_REFUSAL_TTL_MS);
@@ -45303,13 +45331,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
           },
         });
-        return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+        const report = await loadPlanUsage({ accounts, refresh });
+        announcePlanThresholds(report, principalId);
+        return json(res, 200, report);
       }
       if (!auth.scopes.includes("admin")) return json(res, 403, { error: "admin only" });
       const accounts = planAccountsFromInstances(instances, {
         apiKeyConfigured: (_driver, instanceId) => planKeyConfigured(instances[instanceId]?.driver ?? "", instanceId),
       });
-      return json(res, 200, await loadPlanUsage({ accounts, refresh }));
+      const report = await loadPlanUsage({ accounts, refresh });
+      announcePlanThresholds(report, "server");
+      return json(res, 200, report);
     }
 
     // ── provider key check: does a pasted or saved key open the provider's door ──

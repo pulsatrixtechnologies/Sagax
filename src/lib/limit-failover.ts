@@ -13,11 +13,11 @@ export function limitFailoverLineText(line: LimitFailoverLine, now = Date.now())
   const time = "resetsAt" in line ? resetClockText(line.resetsAt, clockLocale(), undefined, now) : "";
   switch (line.kind) {
     case "switched":
-      return t("limitFailover.switched", { from: line.from, to: line.to, time });
+      return t(line.owner ? "limitFailover.ownerSwitched" : "limitFailover.switched", { from: line.from, to: line.to, time });
     case "back":
       return t("limitFailover.back", { engine: line.engine });
     case "waiting":
-      return t("limitFailover.waiting", { from: line.from, time });
+      return t(line.owner ? "limitFailover.ownerWaiting" : "limitFailover.waiting", { from: line.from, time });
     case "waitingRoutine":
       return t("limitFailover.waitingRoutine", { from: line.from, time });
   }
