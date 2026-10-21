@@ -532,8 +532,7 @@ export function rawExcerpt(type: TriggerSourceConfig["type"], rawBody: string, s
  * word. A backslash between the bracket and the word is a separator. A
  * backslash before the word TASK is that separator too, so "\task" keeps
  * the "t". A tab escape before UNTRUSTED is still dropped. Other separators
- * may sit between the
- * letters of a square-bracket match. After UNTRUSTED or USER-CONFIGURED,
+ * may sit between the letters of a square-bracket match. After UNTRUSTED or USER-CONFIGURED,
  * "_" (including U+FF3F), a digit, or more letters in the same identifier
  * still match.
  *
