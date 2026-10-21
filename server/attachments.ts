@@ -8,12 +8,13 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  rmSync,
   statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { link, open, unlink } from "node:fs/promises";
-import { join, extname } from "node:path";
+import { basename, dirname, join, extname, resolve, sep } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { UploadContentError, assertContentMatches, checkUploadedFile } from "./upload-content-check.ts";
 
@@ -252,6 +253,21 @@ export function deleteAttachment(path: string): void {
   } catch {
     // Already gone, or never existed — nothing to reconcile.
   }
+  // the copy scaled for the model goes with its picture (server/model-image.ts)
+  try { rmSync(modelImageCopyPath(dirname(path), path), { force: true }); } catch { /* none */ }
+}
+
+/** Where the copy of a stored picture scaled for a model is kept: under
+ * `<attachments>/.model/` for a top-level attachment, beside the picture for
+ * one in a subfolder (`.office/<upload>/`, removed with that folder). Never
+ * outside the attachments folder. */
+export function modelImageCopyPath(attachmentsDir: string, sourcePath: string): string {
+  const root = resolve(attachmentsDir);
+  const source = resolve(sourcePath);
+  if (!source.startsWith(root + sep)) throw new Error("the picture is not in the attachments folder");
+  return dirname(source) === root
+    ? join(root, ".model", `${basename(source)}.fit.png`)
+    : `${source}.fit.png`;
 }
 
 /** Test-only: force the next quota check to rescan the directory instead of

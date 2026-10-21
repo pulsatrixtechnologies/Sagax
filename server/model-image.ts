@@ -20,11 +20,12 @@
 // in a subfolder (`.office/<upload>/`) sit beside it and go with that folder.
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
 
 import type { renderAsync as RenderAsync } from "@resvg/resvg-js";
 
-import { ATTACHMENTS_DIR } from "./attachments.ts";
+import { ATTACHMENTS_DIR, modelImageCopyPath } from "./attachments.ts";
 import type { TurnImageInput } from "./contracts.ts";
 import { nativeRequire } from "./data/engine.ts";
 
@@ -36,7 +37,8 @@ export const MODEL_IMAGE_MAX_BYTES = 3_750_000;
 const MIN_EDGE = 512;
 /** A side above this is not decoded (a 20000 px side is already absurd). */
 const MAX_SOURCE_SIDE = 20_000;
-const MODEL_DIR = ".model";
+/** Most pixels drawn for one picture (resvg holds them all, 4 bytes each). */
+const MAX_SOURCE_PIXELS = 50_000_000;
 
 export interface RasterSize {
   width: number;
@@ -116,8 +118,10 @@ export interface FittedImage {
  * MODEL_IMAGE_MAX_BYTES. Null when it cannot be read or drawn. */
 export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime"], render: ScaleRenderer = resvgScale): Promise<FittedImage | null> {
   const size = rasterSize(bytes);
-  if (!size || size.width > MAX_SOURCE_SIDE || size.height > MAX_SOURCE_SIDE) return null;
-  if (Math.max(size.width, size.height) <= MODEL_IMAGE_MAX_EDGE && bytes.length <= MODEL_IMAGE_MAX_BYTES) {
+  if (!size || size.width > MAX_SOURCE_SIDE || size.height > MAX_SOURCE_SIDE || size.width * size.height > MAX_SOURCE_PIXELS) return null;
+  // resvg 2.6 draws a WebP as an empty frame: it goes as it is (engines take
+  // WebP, and scale a large one down themselves).
+  if (mime === "image/webp" || (Math.max(size.width, size.height) <= MODEL_IMAGE_MAX_EDGE && bytes.length <= MODEL_IMAGE_MAX_BYTES)) {
     return { bytes, mime, size, resized: false };
   }
   let edge = Math.min(MODEL_IMAGE_MAX_EDGE, Math.max(size.width, size.height));
@@ -139,14 +143,7 @@ export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime
   }
 }
 
-/** Where the model copy of a stored picture is kept. */
-export function modelImageCopyPath(attachmentsDir: string, sourcePath: string): string {
-  const root = resolve(attachmentsDir);
-  const source = resolve(sourcePath);
-  return dirname(source) === root
-    ? join(root, MODEL_DIR, `${basename(source)}.fit.png`)
-    : `${source}.fit.png`;
-}
+export { modelImageCopyPath };
 
 export interface FitTurnImagesOptions {
   attachmentsDir?: string;
@@ -157,25 +154,29 @@ export interface FitTurnImagesOptions {
  * model bounds, a scaled copy where the stored picture is too large. */
 export async function fitTurnImagesForModel(images: readonly TurnImageInput[], options: FitTurnImagesOptions = {}): Promise<TurnImageInput[]> {
   const attachmentsDir = options.attachmentsDir ?? ATTACHMENTS_DIR;
-  if (!images.length) return [];
-  return Promise.all(images.map(async (image) => {
-    try {
-      const copy = modelImageCopyPath(attachmentsDir, image.path);
-      if (existsSync(copy) && statSync(copy).mtimeMs >= statSync(image.path).mtimeMs) {
-        return { path: copy, mime: "image/png", bytes: statSync(copy).size };
-      }
-      const bytes = await readFile(image.path);
-      const fitted = await fitImageForModel(bytes, image.mime, options.render);
-      if (!fitted || !fitted.resized) return image;
-      mkdirSync(dirname(copy), { recursive: true, mode: 0o700 });
-      const temp = `${copy}.${process.pid}.tmp`;
-      await writeFile(temp, fitted.bytes, { mode: 0o600 });
-      chmodSync(temp, 0o600);
-      await rename(temp, copy);
-      return { path: copy, mime: fitted.mime, bytes: fitted.bytes.length };
-    } catch (error) {
-      console.warn(`model image: kept as stored (${error instanceof Error ? error.message : "unknown"})`);
-      return image;
+  // One at a time: each draw holds a decoded picture in memory.
+  const out: TurnImageInput[] = [];
+  for (const image of images) out.push(await fitOne(image, attachmentsDir, options.render));
+  return out;
+}
+
+async function fitOne(image: TurnImageInput, attachmentsDir: string, render: ScaleRenderer | undefined): Promise<TurnImageInput> {
+  try {
+    const copy = modelImageCopyPath(attachmentsDir, image.path);
+    if (existsSync(copy) && statSync(copy).mtimeMs >= statSync(image.path).mtimeMs) {
+      return { path: copy, mime: "image/png", bytes: statSync(copy).size };
     }
-  }));
+    const bytes = await readFile(image.path);
+    const fitted = await fitImageForModel(bytes, image.mime, render);
+    if (!fitted || !fitted.resized) return image;
+    mkdirSync(dirname(copy), { recursive: true, mode: 0o700 });
+    const temp = `${copy}.${randomUUID()}.tmp`;
+    await writeFile(temp, fitted.bytes, { mode: 0o600 });
+    chmodSync(temp, 0o600);
+    await rename(temp, copy);
+    return { path: copy, mime: fitted.mime, bytes: fitted.bytes.length };
+  } catch (error) {
+    console.warn(`model image: kept as stored (${error instanceof Error ? error.message : "unknown"})`);
+    return image;
+  }
 }

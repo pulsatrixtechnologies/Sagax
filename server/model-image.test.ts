@@ -148,3 +148,32 @@ describe("model image fit", () => {
     expect(modelImageCopyPath("/data/att", "/data/att/.office/up/1.png")).toBe("/data/att/.office/up/1.png.fit.png");
   });
 });
+
+describe("model image fit, limits", () => {
+  it("sends a WebP as it is (resvg would draw it empty)", async () => {
+    const webp = Buffer.alloc(30);
+    webp.write("RIFF", 0, "latin1");
+    webp.write("WEBPVP8X", 8, "latin1");
+    webp.writeUIntLE(5999, 24, 3);
+    webp.writeUIntLE(3999, 27, 3);
+    let drawn = false;
+    const fitted = await fitImageForModel(webp, "image/webp", async () => { drawn = true; return Buffer.alloc(0); });
+    expect(drawn).toBe(false);
+    expect(fitted).toMatchObject({ resized: false, mime: "image/webp" });
+  });
+
+  it("never draws a picture above the pixel limit", async () => {
+    const huge = Buffer.alloc(24);
+    huge.writeUInt32BE(0x89504e47, 0);
+    huge.write("IHDR", 12, "latin1");
+    huge.writeUInt32BE(10_000, 16);
+    huge.writeUInt32BE(10_000, 20);
+    let drawn = false;
+    expect(await fitImageForModel(huge, "image/png", async () => { drawn = true; return Buffer.alloc(0); })).toBeNull();
+    expect(drawn).toBe(false);
+  });
+
+  it("refuses a copy path outside the attachments folder", () => {
+    expect(() => modelImageCopyPath("/data/att", "/tmp/x.png")).toThrow();
+  });
+});
