@@ -166,8 +166,12 @@ function announceCard(bus: ApprovalBus, from: BotRecord, card: Message, sourceTh
   }
   const group = room && !room.dm ? { id: room.id, name: room.name } : undefined;
   const title = card.card?.title ?? "";
-  const detail = card.card?.subtitle ? `${title} — ${card.card.subtitle}` : title;
-  bus.notify?.(deliverableNotification("approval", from, sourceThreadId, detail, { avatarUrl: from.avatarUrl, group }));
+  const detail = card.card?.subtitle ? `${title}: ${card.card.subtitle}` : title;
+  bus.notify?.(deliverableNotification("approval", from, sourceThreadId, detail, {
+    avatarUrl: from.avatarUrl,
+    group,
+    ...(card.card?.requestId ? { requestId: card.card.requestId } : {}),
+  }));
 }
 
 /** Ask the user (in the source task thread) whether `from` may `action` `target`.

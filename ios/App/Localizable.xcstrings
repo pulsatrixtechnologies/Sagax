@@ -35967,6 +35967,34 @@
         }
       }
     },
+    "Approval chime": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Approval chime" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Carillon d'approbation" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Toque de aprovação" } }
+      }
+    },
+    "A distinct sound when an approval is waiting.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A distinct sound when an approval is waiting." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un son distinct quand une approbation attend." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Um som distinto quando uma aprovação está esperando." } }
+      }
+    },
+    "Open routine %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open routine %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir la routine %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Abrir a rotina %@" } }
+      }
+    },
+    "This approval needs your security key. Open Sagax to confirm. Nothing was approved yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This approval needs your security key. Open Sagax to confirm. Nothing was approved yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette approbation exige votre clé de sécurité. Ouvrez Sagax pour confirmer. Rien n'a été approuvé." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta aprovação exige sua chave de segurança. Abra o Sagax para confirmar. Nada foi aprovado." } }
+      }
+    },
     "Notification sounds": {
       "localizations": {
         "en": {
