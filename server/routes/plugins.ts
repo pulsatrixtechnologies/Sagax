@@ -9,11 +9,13 @@
 //   GET  /api/plugins/installed
 //        { plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? }
 //                   | { kind: "composio", slug, name, connected, logo?, domain? }], count }
-//   POST /api/plugins/install { id, trust?, returnTo?, callbackOrigin? }
+//   POST /api/plugins/install { id, region?, trust?, returnTo?, callbackOrigin? }
 //        adds the server (enabled; a server that still needs a sign-in is never
 //        mounted for a turn) and, when it asks for one, starts its OAuth sign-in:
 //        { name, alreadyInstalled, auth, authorizationUrl? }. A registry entry
-//        needs `trust: true` (it is not reviewed). Server admins and the owner
+//        needs `trust: true` (it is not reviewed). A listing with `regions`
+//        connects to the chosen one (`region`, its id; the default address
+//        without it); an id it does not list answers 400. Server admins and the owner
 //        of a personal computer only (admin scope for sessions).
 //
 // Reads are member scope: names, descriptions, addresses and icons, never a
@@ -21,7 +23,7 @@
 import type { IncomingMessage } from "node:http";
 
 import { PLUGIN_CATALOG } from "../../shared/plugin-catalog.ts";
-import { featuredListing, featuredMatching, type PluginListing, type RegistrySearch } from "../plugin-registry.ts";
+import { featuredListing, featuredMatching, listingInRegion, type PluginListing, type RegistrySearch } from "../plugin-registry.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -67,7 +69,10 @@ export function createPluginRoutes(deps: PluginRouteDeps): RouteHandler {
       if (cursor && cursor.length > 500) return json(res, 400, { error: "cursor is not one this server returned" });
       const [page, installed] = await Promise.all([deps.registry.search(q, cursor), deps.installed()]);
       const installedUrls = new Set(installed.flatMap((plugin) => (plugin.kind === "mcp" ? [plugin.url] : [])));
-      const mark = (listing: PluginListing) => ({ ...listing, installed: installedUrls.has(listing.url) });
+      const mark = (listing: PluginListing) => {
+        const region = listing.regions?.find((candidate) => installedUrls.has(candidate.url));
+        return { ...listing, installed: installedUrls.has(listing.url) || Boolean(region), ...(region ? { installedRegion: region.id } : {}) };
+      };
       const featured = cursor ? [] : (q ? featuredMatching(q) : PLUGIN_CATALOG.map(featuredListing));
       const featuredUrls = new Set(featured.map((listing) => listing.url));
       return json(res, 200, {
@@ -96,6 +101,10 @@ export function createPluginRoutes(deps: PluginRouteDeps): RouteHandler {
         if (!entry) return json(res, 404, { error: "No plugin with that id.", code: "not_found" });
         listing = featuredListing(entry);
       }
+      const regionId = typeof body?.region === "string" && body.region ? body.region : undefined;
+      const regional = listingInRegion(listing, regionId);
+      if (!regional) return json(res, 400, { error: "That data center is not one this plugin offers.", code: "unknown_region" });
+      listing = regional;
       if (listing.auth === "headers" || listing.auth === "api-key") {
         return json(res, 400, { error: "This server needs a key in its headers: add it on your computer, in Settings > MCP servers.", code: "headers_required" });
       }

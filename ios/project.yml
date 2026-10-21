@@ -62,8 +62,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax
-        MARKETING_VERSION: "0.6.6"
-        CURRENT_PROJECT_VERSION: "66"
+        MARKETING_VERSION: "0.6.7"
+        CURRENT_PROJECT_VERSION: "67"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         # The catalog lives in App/, which is already a source path.
@@ -181,6 +181,9 @@ targets:
         # Required for communication notifications (INSendMessageIntent).
         NSUserActivityTypes:
           - INSendMessageIntent
+        NSFaceIDUsageDescription: >-
+          Sagax uses Face ID to show a card number or another secret you
+          saved. The bot never sees it.
         NSSpeechRecognitionUsageDescription: >-
           Sagax converts your speech into text so you can send it
           to a bot. Recognition runs on this phone when it can.
@@ -240,8 +243,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.share
-        MARKETING_VERSION: "0.6.6"
-        CURRENT_PROJECT_VERSION: "66"
+        MARKETING_VERSION: "0.6.7"
+        CURRENT_PROJECT_VERSION: "67"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -298,8 +301,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.notification
-        MARKETING_VERSION: "0.6.6"
-        CURRENT_PROJECT_VERSION: "66"
+        MARKETING_VERSION: "0.6.7"
+        CURRENT_PROJECT_VERSION: "67"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -376,8 +379,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.widgets
-        MARKETING_VERSION: "0.6.6"
-        CURRENT_PROJECT_VERSION: "66"
+        MARKETING_VERSION: "0.6.7"
+        CURRENT_PROJECT_VERSION: "67"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES

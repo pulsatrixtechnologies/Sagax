@@ -170,6 +170,8 @@ function runStatus(status: RoutineRun["status"]): BotActivityStatus {
     case "waiting": return "waiting";
     case "completed": return "finished";
     case "cancelled": return "stopped";
+    // A quiet pre-check did no work. It is not a failure if a client opens the run.
+    case "nothing_to_report": return "finished";
     default: return "failed";
   }
 }
@@ -351,7 +353,9 @@ export function createBotActivityRoutes(deps: BotActivityRouteDeps): RouteHandle
       items.push(threadItem(bot, task, runById, viewerId));
     }
     for (const run of runs) {
-      if (listedRuns.has(run.id) || run.status === "missed") continue;
+      // Quiet pre-checks stay in the routine logs. Listing them would fill
+      // this window with fake failures on every poll.
+      if (listedRuns.has(run.id) || run.status === "missed" || run.status === "nothing_to_report") continue;
       if (run.threadId && listedThreads.has(run.threadId)) continue;
       const at = run.finishedAt ?? run.startedAt ?? run.scheduledFor;
       if (!ACTIVE_RUN.has(run.status) && at < since) continue;

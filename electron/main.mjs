@@ -44,7 +44,7 @@ import { createAllWindowsClosedQuit } from "./window-all-closed.mjs";
 import { createStartupScreen } from "./startup-screen.mjs";
 import { createLoadRecovery, isAppPage, loadErrorPage, loadingPage, loadOutcome, recoveryStrings, uiBundleState, waitForUiBundle } from "./load-recovery.mjs";
 import { confirmLanguage } from "./update-confirm.mjs";
-import { createSystemTray, normalizeRoster, slotAccelerator } from "./system-tray.mjs";
+import { createSystemTray, normalizeBotHotkeyConfig, normalizeRoster, slotAccelerator } from "./system-tray.mjs";
 let startupScreen = null;
 let desktopTray = null;
 import { collisionFreeDownloadPath, defaultSaveName, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
@@ -4036,6 +4036,7 @@ ipcMain.handle("desktop-shell-preferences:set", desktopUiOnly("desktop-shell-pre
   const saved = writeShellPreferences(app.getPath("userData"), patch);
   if (saved) {
     try { session.defaultSession.setSpellCheckerEnabled(saved.spellcheck); } catch { /* no spell checker here */ }
+    if (patch && ("botHotkeys" in patch || "botHotkeyModifier" in patch)) applyBotHotkeyConfig();
   }
   return saved;
 }));
@@ -4202,9 +4203,25 @@ function openBotFromShell(botId) {
   win.focus();
   win.webContents.send("desktop:open-bot", { botId: String(botId) });
 }
+// Settings > Appearance > Desktop: the bots' global shortcuts on or off, and
+// which chord (kept with the other shell choices, desktop-shell-preferences.mjs).
+function botHotkeyConfig() {
+  try {
+    const kept = readShellPreferences(app.getPath("userData"));
+    return normalizeBotHotkeyConfig({ enabled: kept.botHotkeys, modifier: kept.botHotkeyModifier });
+  } catch {
+    return normalizeBotHotkeyConfig(null);
+  }
+}
+function applyBotHotkeyConfig() {
+  const config = botHotkeyConfig();
+  desktopTray?.setHotkeys(config);
+  botHotkeys.dispose();
+  if (process.platform === "darwin") botHotkeys.sync(trayRoster.length, config.enabled);
+}
 const botHotkeys = createBotHotkeys({
   globalShortcut,
-  slotFor: (slot) => slotAccelerator(slot),
+  slotFor: (slot) => slotAccelerator(slot, process.platform, botHotkeyConfig().modifier),
   onSlot: (slot) => {
     const bot = trayRoster[slot - 1];
     if (bot) openBotFromShell(bot.id);
@@ -4216,14 +4233,15 @@ function clearTrayRoster() {
   desktopTray?.setRoster([]);
   botHotkeys.sync(0);
 }
-ipcMain.on("desktop:tray-roster", (event, value) => {
+ipcMain.on("desktop:tray-roster", (event, value, labels) => {
   if (!isDesktopUiSender(event)) return;
   const sender = BrowserWindow.fromWebContents(event.sender);
   if (!sender || sender !== mainWindow || sender.isDestroyed()) return;
   trayRoster = normalizeRoster(value);
+  if (labels) desktopTray?.setLabels(labels);
   desktopTray?.setRoster(trayRoster);
   // the shortcuts exist only where a menu bar list exists
-  if (process.platform === "darwin") botHotkeys.sync(trayRoster.length);
+  if (process.platform === "darwin") botHotkeys.sync(trayRoster.length, botHotkeyConfig().enabled);
 });
 
 ipcMain.handle("floating-bots:hotkey", (event, config) => {
@@ -4888,7 +4906,9 @@ app.whenReady().then(async () => {
         getWindow: () => startupScreen?.window ?? mainWindow,
         onQuit: () => app.quit(),
         onOpenBot: openBotFromShell,
+        templatePath: path.join(__dirname, "resources/trayTemplate.png"),
       });
+      desktopTray.setHotkeys(botHotkeyConfig());
     } catch (error) {
       // A missing tray must leave a working close/quit path.
       slog(`system tray unavailable: ${error?.message ?? error}`);

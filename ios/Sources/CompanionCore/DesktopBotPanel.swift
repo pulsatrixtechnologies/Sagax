@@ -267,16 +267,38 @@ public struct WebhookListing: Decodable, Hashable, Identifiable, Sendable {
     public var botId: String
     public var enabled: Bool
     public var deliveryCount: Int
+    /// Public path id. The bearer token never rides this list.
+    public var endpointId: String?
+    public var lastReceivedAt: Double?
+    /// Typed source (`github`, `slack`, ...). Nil on a plain bearer webhook.
+    public var sourceType: String?
+    public var sourceEvents: [String]
+    /// Read-only filter line (`repo: acme/app`). Empty when there is none.
+    public var sourceFilters: String
+    /// The signing secret is set on the computer. The value is never here.
+    public var signingSecretSet: Bool
 
-    public init(id: String, name: String, botId: String, enabled: Bool, deliveryCount: Int) {
+    public init(
+        id: String, name: String, botId: String, enabled: Bool, deliveryCount: Int,
+        endpointId: String? = nil, lastReceivedAt: Double? = nil, sourceType: String? = nil,
+        sourceEvents: [String] = [], sourceFilters: String = "", signingSecretSet: Bool = false
+    ) {
         self.id = id
         self.name = name
         self.botId = botId
         self.enabled = enabled
         self.deliveryCount = deliveryCount
+        self.endpointId = endpointId
+        self.lastReceivedAt = lastReceivedAt
+        self.sourceType = sourceType
+        self.sourceEvents = sourceEvents
+        self.sourceFilters = sourceFilters
+        self.signingSecretSet = signingSecretSet
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, botId, enabled, deliveryCount }
+    private enum CodingKeys: String, CodingKey {
+        case id, name, botId, enabled, deliveryCount, endpointId, lastReceivedAt, source, signingSecretSet
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -285,20 +307,121 @@ public struct WebhookListing: Decodable, Hashable, Identifiable, Sendable {
         botId = (try? c.decode(String.self, forKey: .botId)) ?? ""
         enabled = (try? c.decode(Bool.self, forKey: .enabled)) ?? false
         deliveryCount = (try? c.decode(Int.self, forKey: .deliveryCount)) ?? 0
+        endpointId = try? c.decodeIfPresent(String.self, forKey: .endpointId)
+        lastReceivedAt = try? c.decodeIfPresent(Double.self, forKey: .lastReceivedAt)
+        signingSecretSet = (try? c.decodeIfPresent(Bool.self, forKey: .signingSecretSet)) ?? false
+        if let source = try? c.decode(WebhookSourceWire.self, forKey: .source) {
+            sourceType = source.type
+            sourceEvents = source.events ?? []
+            sourceFilters = WebhookPublicURL.filtersLine(source.filters ?? [:])
+        } else {
+            sourceType = nil
+            sourceEvents = []
+            sourceFilters = ""
+        }
+    }
+}
+
+/// A typed trigger's public fields. Filters that are not a list of strings
+/// are dropped. A secret is not a field of this object.
+private struct WebhookSourceWire: Decodable {
+    var type: String?
+    var events: [String]?
+    var filters: [String: [String]]?
+
+    private enum CodingKeys: String, CodingKey { case type, events, filters }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        type = try c.decodeIfPresent(String.self, forKey: .type)
+        events = try c.decodeIfPresent([String].self, forKey: .events)
+        filters = try? c.decode([String: [String]].self, forKey: .filters)
+    }
+}
+
+/// Where deliveries land, without a token (`ingress` on `GET /api/webhooks`).
+public struct WebhookIngress: Decodable, Hashable, Sendable {
+    public var available: Bool
+    public var baseUrl: String
+}
+
+/// The URL a person may read. A typed trigger is `/sources/<id>` (the
+/// provider signs it). A bearer webhook is `/hooks/<id>` and the token
+/// stays on the computer. Anything that could hide a path is refused.
+public enum WebhookPublicURL {
+    public static func make(baseURL: String?, endpointId: String?, typed: Bool) -> String? {
+        guard let endpointId else { return nil }
+        let id = endpointId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, id.range(of: #"^[A-Za-z0-9_-]{1,128}$"#, options: .regularExpression) != nil else { return nil }
+        let path = (typed ? "/sources/" : "/hooks/") + id
+        let base = (baseURL ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !base.isEmpty else { return path }
+        let trimmed = base.hasSuffix("/") ? String(base.dropLast()) : base
+        guard trimmed.hasPrefix("https://") || trimmed.hasPrefix("http://") else { return path }
+        guard !trimmed.contains(" ") else { return path }
+        return trimmed + path
+    }
+
+    /// Brand names, never translated (`TRIGGER_SOURCES` labels).
+    public static func sourceLabel(_ type: String) -> String {
+        switch type {
+        case "github": "GitHub"
+        case "gitlab": "GitLab"
+        case "slack": "Slack"
+        case "teams": "Microsoft Teams"
+        case "email": "Outlook"
+        case "calendar": "Outlook Calendar"
+        case "sentry": "Sentry"
+        case "pagerduty": "PagerDuty"
+        case "linear": "Linear"
+        default: type
+        }
+    }
+
+    public static func filtersLine(_ filters: [String: [String]]) -> String {
+        filters.keys.sorted().compactMap { key in
+            let values = (filters[key] ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+            guard !values.isEmpty else { return nil }
+            return "\(key): \(values.joined(separator: ", "))"
+        }.joined(separator: " · ")
     }
 }
 
 public struct WebhooksResponse: Decodable, Sendable {
     public var webhooks: [WebhookListing]
+    public var ingress: WebhookIngress?
+
+    private enum CodingKeys: String, CodingKey { case webhooks, ingress }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        webhooks = (try? c.decode([WebhookListing].self, forKey: .webhooks)) ?? []
+        ingress = try? c.decode(WebhookIngress.self, forKey: .ingress)
+    }
 
     /// One bot's webhooks, in the server's order.
     public func of(botId: String) -> [WebhookListing] { webhooks.filter { $0.botId == botId } }
+}
+
+private struct WebhookOneResponse: Decodable {
+    var webhook: WebhookListing
 }
 
 public extension CompanionClient {
     /// `GET /api/webhooks`: the triggers (Edit persona > Access's Webhooks card).
     func webhooks() async throws -> WebhooksResponse {
         try await send(makeRequest("GET", "/api/webhooks"), as: WebhooksResponse.self)
+    }
+
+    /// Pause or resume a trigger the computer already has. Creating,
+    /// rotating and revealing a secret stay on the computer: this body is
+    /// only `enabled`.
+    func setWebhookEnabled(id: String, enabled: Bool) async throws -> WebhookListing {
+        guard Self.validRouteID(id) else { throw APIError.badURL }
+        return try await send(
+            try makeRequest("PATCH", "/api/webhooks/\(id)", body: ["enabled": enabled, "verificationPending": false]),
+            as: WebhookOneResponse.self
+        ).webhook
     }
 
     /// `PATCH /api/bots/:id` with the panel's own fields.

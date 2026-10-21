@@ -113,6 +113,7 @@ export function SidebarMascotAvatar(props: BotAvatarProps & { botId: string }) {
       <span ref={box} className="inline-flex">
         <BotAvatar
           {...avatarProps}
+          fillBox
           animated={avatarProps.animated || Boolean(tapMove)}
           sidebarAlive={alive && !tapMove}
           mascotRef={mascotRef}

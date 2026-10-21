@@ -23,8 +23,22 @@ export interface OnePasswordItem {
   domains: string[];
 }
 
+export interface PurchaseListing {
+  id: string;
+  merchant: string;
+  amount: string;
+  currency: string;
+  cardName: string;
+  cardLast4: string;
+  title: string;
+  line: string;
+  status: "pending" | "once" | "always" | "denied";
+  via?: string;
+}
+
 export interface CredentialVaultState {
   items: VaultItemListing[];
+  purchases?: PurchaseListing[];
   onePassword: OnePasswordStatus;
   /** The vault could not be opened on this launch (the keychain was busy). */
   unavailable?: string;
@@ -41,6 +55,9 @@ export interface VaultItemDraft {
   apiKey?: string;
   notes?: string;
   domains: string[];
+  card?: { pan?: string; cvv?: string; expMonth?: number; expYear?: number; holder?: string };
+  address?: { recipient?: string; line1?: string; line2?: string; city?: string; region?: string; postal?: string; country?: string; phone?: string };
+  contact?: { fullName?: string; email?: string; phone?: string; company?: string };
 }
 
 const ITEM = (id: string) => `/api/me/credentials/${encodeURIComponent(id)}`;
@@ -53,6 +70,11 @@ export const updateCredential = (id: string, patch: Partial<VaultItemDraft>) =>
   api<{ item: VaultItemListing }>(ITEM(id), { method: "PATCH", body: JSON.stringify(patch) });
 export const deleteCredential = (id: string) => api<{ ok: true }>(ITEM(id), { method: "DELETE" });
 export const revealCredentialNotes = (id: string) => api<{ notes: string }>(`${ITEM(id)}/notes`, { method: "POST", body: "{}" });
+/** One secret, for the signed-in person. The server never puts it on a list. */
+export const revealCredential = (id: string, field: "password" | "apiKey" | "notes" | "pan" | "cvv") =>
+  api<{ value: string }>(`${ITEM(id)}/reveal`, { method: "POST", body: JSON.stringify({ field }) });
+export const answerPurchase = (id: string, decision: "deny" | "once" | "always") =>
+  api<{ purchase: PurchaseListing }>(`/api/me/credentials/purchases/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify({ decision }) });
 export const allowBotAlways = (id: string, botId: string) =>
   api<{ item: VaultItemListing }>(`${ITEM(id)}/grants`, { method: "POST", body: JSON.stringify({ botId, mode: "always" }) });
 export const revokeBot = (id: string, botId: string) =>

@@ -410,6 +410,9 @@ export interface WireBot {
   /** Whether this bot may send voice notes. Absent/true = allowed; false
    * hides the tool and refuses the route even with a voice configured. */
   voiceNotes?: boolean;
+  /** Whether this bot may write email draft cards. Absent/true = allowed;
+   * false refuses ```email fences in the prompt and the send route. */
+  emailDrafts?: boolean;
   /** Whether this bot uses native memory. Absent/true = enabled. */
   memoryEnabled?: boolean;
   /** Queue direct-chat messages behind outstanding delegated work. */
@@ -964,6 +967,9 @@ export interface OptionCardData {
   customRuleCandidate?: CustomRuleCandidate;
   /** The custom rule the person saved from this card. */
   customRuleSaved?: { id: string; when: string };
+  /** 2026-10-21 (lot A1b): the model reviewer is still judging this card.
+   * The notification waits. Cleared when the verdict lands or the card stays. */
+  reviewing?: boolean;
   /** An email draft waiting for its Send approval
    * (server/email-draft-send.ts). Status follows the send. */
   emailSendRequest?: EmailSendRequestCard;

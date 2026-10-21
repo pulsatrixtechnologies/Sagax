@@ -21,7 +21,7 @@ import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
-import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokConfigDeclaresMcp } from "./grok.ts";
+import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp } from "./grok.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
@@ -1650,7 +1650,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
         expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "default"]);
         expect(seen.argv).not.toContain("--allow");
-        // account-level MCPs are not mounted by Sagax: off on a gated turn
+        // a solo Auto turn can call account connectors with no prompt: they stay off
         expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
         expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
       }
@@ -1742,7 +1742,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(seen.env.GROK_HOME).toBe(join(homeA, ".grok"));
     expect(seen.env.XAI_API_KEY).toBeUndefined();
     expect(seen.env.GROK_AGENT).toBe("grok-build");
-    expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
+    expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBeUndefined();
     expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
     const profile = JSON.parse(readFileSync(`${dump}.session.json`, "utf8"))._meta.agentProfile;
     expect(profile).toMatchObject({
@@ -3401,6 +3401,26 @@ describe("ACP snapshot", () => {
     } finally {
       await instance.dispose();
     }
+  });
+});
+
+describe("grokCloudConnectorEnv", () => {
+  it("keeps cloud connectors off on a solo turn, where default mode can call them unasked", () => {
+    expect(grokCloudConnectorEnv(undefined)).toEqual({
+      GROK_MANAGED_MCPS_ENABLED: "false",
+      GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
+    });
+  });
+
+  it("lets an organization turn fetch the xAI account connectors", () => {
+    expect(grokCloudConnectorEnv(undefined, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" });
+  });
+
+  it("turns cloud connectors off when a tool selection cannot list them", () => {
+    expect(grokCloudConnectorEnv({ allow: ["native:read_file"] })).toEqual({
+      GROK_MANAGED_MCPS_ENABLED: "false",
+      GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
+    });
   });
 });
 

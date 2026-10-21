@@ -6,7 +6,7 @@ exposes to a bot or an AI client. The machine-readable form is the registry in
 `server/mcp-permissions.ts`; `server/mcp-permissions.test.ts` fails when a
 catalog tool has no permission.
 
-Totals: capabilities 130, covered 130, gaps 0.
+Totals: capabilities 133, covered 133, gaps 0.
 
 Sources read: the agents tool catalog, the internal routes it calls
 (`/api/internal/*`), the member API (`docs/org-member-api.md`), and the
@@ -159,6 +159,9 @@ Reading the table:
 | flow:read | perspicax | `flow` | `flow:read` | covered |
 | flow:action | perspicax | `flow_action` | `flow:action` | covered |
 | review:write | perspicax | `review_write` | `review:write` | covered |
+| remotesupport:open | perspicax | `remote_support_open` | `remotesupport:open` | covered |
+| remotesupport:status | perspicax | `remote_support_status` | `remotesupport:status` | covered |
+| remotesupport:close | perspicax | `remote_support_close` | `remotesupport:close` | covered |
 | api:query | perspicax | `<profile>__query` | `api:query` | covered (bridge) |
 | api:write | perspicax | `<profile>__write`, `<profile>__<resource>_write` | `api:write` | covered (bridge) |
 | api:action | perspicax | `<profile>__action` | `api:action` | covered (bridge) |
@@ -184,7 +187,7 @@ mode still decide. Perspicax's own Sagax tools (`sagax_bots`, `sagax_send`,
 `sagax_thread`, `sagax_routine_run`, `sagax_approve`, `sagax_nudge`) are
 aliases of the Sagax permissions they stand for. The Perspicax gateway tools
 (`PERSPICAX_TOOLS`: the memory tools, the `api_*` meta-tools, `identity`,
-`flow`, `flow_action`, `review_write`) are listed only on an organization
+`flow`, `flow_action`, the `remote_support_*` tools, `review_write`) are listed only on an organization
 server linked to Perspicax (`SAGAX_PERSPICAX_TOOLS`) and forwarded by
 `/api/internal/perspicax/tool` to the profile mounted in the turn, after the
 misuse and safety review. Reading the Perspicax catalog to vet resource names

@@ -259,13 +259,18 @@ const WIDGET_KIT_PROMPT =
 export const WIDGET_SELF_CHECK_PROMPT =
   " Before you show a ```widget, pass its HTML to check_widget, read the validation report and fix every defect before you answer; show only HTML that passed. After the third failed check, show your best version in a ```widget-imperfect fence instead.";
 
+const EMAIL_DRAFT_ON =
+  " When you write an email for the person, put it in one ```email fence: header lines To:, Cc:, Bcc: and Subject: (only the ones that apply), a blank line, then the body in Markdown; it shows as a draft card with Copy and Open in mail app, and nothing is sent.";
+const EMAIL_DRAFT_OFF =
+  " Email drafts are turned off for you. Do not write an ```email fence. If the person asks for an email, say drafts are off for this bot and put the text in the chat instead.";
+
 /** How the chat renders rich output (src/components/ChatMarkdown.tsx and
  * src/lib/rich-blocks.ts own the other side of each convention). Sent to
  * every bot whose replies land in the chat transcript. */
 export const RICH_OUTPUT_PROMPT =
   " Your replies render as GitHub-flavored Markdown with KaTeX math, Mermaid diagrams (```mermaid), tables (sortable, copyable), task lists, footnotes and callouts (a blockquote opening with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION])."
   + " Views only on request: draw a chart, a widget, a ```csv table, a ```cw view, a show_widget card or a video only when the person asked for one in this message (\"make me a chart\", \"show it as an interactive table\", \"play the video\") or the request cannot be answered without one; otherwise answer in text, with a Markdown table for records and comparisons. Never add a view on your own initiative."
-  + " When you write an email for the person, put it in one ```email fence: header lines To:, Cc:, Bcc: and Subject: (only the ones that apply), a blank line, then the body in Markdown; it shows as a draft card with Copy and Open in mail app, and nothing is sent."
+  + EMAIL_DRAFT_ON
   + " For a chart the person asks for, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; when the person asks for a table they can sort or filter, a ```csv fence becomes one."
   + " For an interactive tool the person asks for (calculator, simulator, small form or visualization), use a ```widget fence with self-contained HTML, CSS and inline JavaScript; it runs in a sandbox with no network access, so inline all data and never load external scripts, fonts or images."
   + WIDGET_SELF_CHECK_PROMPT
@@ -274,6 +279,12 @@ export const RICH_OUTPUT_PROMPT =
   + CW_FENCE_PROMPT
   + " To show a YouTube video the person wants to watch, put its link alone on its own line: it plays inline (any other time, keep the link inside a sentence); never wrap it in an ```artifact or ```widget fence."
   + " To show an image, a video file or a document, attach it or link its absolute path; a remote image loads only after the person allows it.";
+
+/** The rich-output paragraph for one bot. Drafts off replaces the email
+ * fence instruction (bot.emailDrafts === false). */
+export function richOutputPrompt(emailDrafts = true): string {
+  return emailDrafts ? RICH_OUTPUT_PROMPT : RICH_OUTPUT_PROMPT.replace(EMAIL_DRAFT_ON, EMAIL_DRAFT_OFF);
+}
 
 export const CREDENTIAL_PROMPT =
   " If a supported API key is missing for the service actually needed, use request_credential to create a secure credential request. Before requesting a computer-provider key, inspect the configured targets with select_computer; an existing self-hosted VPS does not need Boat credentials. Do not request a different provider's key merely because a task mentions cloud. A freshly QR-paired mobile app or the desktop app can show the secure entry card. Never claim it opened unless the request succeeded, and never ask the user to paste credentials into chat.";

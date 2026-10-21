@@ -2,6 +2,8 @@ import { killCliTree, spawnCli } from "./procs.ts";
 import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT, parsePageState, READ_OPEN_PAGE_ONLY, readsAroundBrowser, shapeBrowserToolResult, slimBrowserToolList, stripHarnessOwnedArguments, type PageState } from "./browser-tool-shape.ts";
 import { randomBytes } from "node:crypto";
 import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, LOGIN_MODE, parseEvalArray, parseEvalObject, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript, type FillRequest, type LoginRequest } from "./credential-fill.ts";
+import { itemIdFromHandle } from "../shared/credential-vault.ts";
+import { parsePurchaseCall, REQUEST_PURCHASE_TOOL, REQUEST_PURCHASE_TOOL_SPEC } from "../shared/payment-vault.ts";
 import { clearScript, loginOutcomeText, loginStateScript, markerScript, MAX_LOGIN_STEPS, parseLoginState, stepFields, submitScript, type LoginField, type LoginOutcome, type LoginPageState } from "./login-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
@@ -78,6 +80,8 @@ export interface CredentialFillAccess {
   /** The bot holds a live grant on some item: its own scripts are off in
    * the whole browser session, so it cannot plant a listener before a fill. */
   armed(): boolean;
+  /** Ask the person to approve a payment. The value never comes back. */
+  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId: string; merchant?: string; addressId?: string; contactId?: string }): { ok: true; message: string } | { ok: false; message: string };
 }
 
 /** Argument names that address an element. On a browser where a login was
@@ -179,7 +183,13 @@ const SCRIPTS_OFF_AFTER_FILL = "Scripts in the page are turned off in this brows
 const SCRIPTS_OFF_WHILE_ALLOWED = "Scripts in the page are turned off in this browser while you are allowed to use a saved login, so nothing can capture it. Use snapshots, clicks, fills and get_text.";
 const SCREENSHOT_AFTER_FILL_REFUSAL = "Screenshots are turned off in this browser since Sagax filled a saved login in it, so the value cannot appear in an image. Use a snapshot or get_text, or call restart_browser.";
 
-const FIELD_NAMES: Record<VaultFillField, string> = { username: "user name", password: "password", totp: "one-time code", apiKey: "API key" };
+const FIELD_NAMES: Record<VaultFillField, string> = {
+  username: "user name", password: "password", totp: "one-time code", apiKey: "API key",
+  cardNumber: "card number", cardExpiry: "expiry", cardCvc: "security code", cardholder: "name on the card",
+  addressLine1: "street", addressLine2: "address line", addressCity: "city", addressRegion: "region",
+  addressPostal: "postal code", addressCountry: "country", addressRecipient: "recipient", addressPhone: "phone",
+  contactName: "name", contactEmail: "email", contactPhone: "phone", contactCompany: "company",
+};
 
 function toolText(text: string, isError = false): { content: Array<{ type: "text"; text: string }>; isError?: true } {
   return { content: [{ type: "text", text }], ...(isError ? { isError: true as const } : {}) };
@@ -603,6 +613,9 @@ export class BrowserRuntime {
         if (method === "tools/call" && toolName === FILL_CREDENTIAL_TOOL) {
           return await this.fillCredential(session, spec, entry.client, params, beforeDispatch, credentials);
         }
+        if (method === "tools/call" && toolName === REQUEST_PURCHASE_TOOL) {
+          return await this.requestPurchase(session, entry.client, params, beforeDispatch, credentials);
+        }
         let guardedParams = params;
         if (method === "tools/call" && scriptTool(toolName)) {
           // While the bot may use a saved login, and in a browser where one
@@ -822,6 +835,28 @@ export class BrowserRuntime {
    * engine's command over stdin, never on a command line (agent-browser
    * 0.38.2 mcp.rs call_eval): no process list shows it. The result names the
    * item and the field, never the value. */
+  /** Ask the person to approve a payment. The card number stays in the vault. */
+  private async requestPurchase(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
+    const call = parsePurchaseCall(params);
+    if (typeof call === "string") return toolText(call, true);
+    if (!credentials?.requestPurchase) return toolText("Purchases are not available in this browser.", true);
+    const cardId = itemIdFromHandle(call.credential);
+    const addressId = call.address ? itemIdFromHandle(call.address) : null;
+    const contactId = call.contact ? itemIdFromHandle(call.contact) : null;
+    if (!cardId || (call.address && !addressId) || (call.contact && !contactId)) return toolText("request_purchase needs a card handle (cred_...).", true);
+    const href = await this.engineUrl(client);
+    beforeDispatch?.();
+    if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
+    if (!href) return toolText("The page's address could not be read; nothing was asked.", true);
+    const opened = credentials.requestPurchase({
+      pageUrl: href, amount: call.amount, currency: call.currency, cardId,
+      ...(call.merchant ? { merchant: call.merchant } : {}),
+      ...(addressId ? { addressId } : {}),
+      ...(contactId ? { contactId } : {}),
+    });
+    return toolText(opened.message, !opened.ok);
+  }
+
   private async fillCredential(session: string, spec: BrowserSpawnSpec, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
     const request = parseFillArguments(params);
     if (typeof request === "string") return toolText(request, true);
@@ -1421,7 +1456,7 @@ function firstText(result: unknown): string {
  * fill_credential. An engine tool with either name is replaced. */
 function withRestartTool(result: unknown): unknown {
   if (!result || typeof result !== "object" || !Array.isArray((result as { tools?: unknown }).tools)) return result;
-  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL]);
+  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL, REQUEST_PURCHASE_TOOL]);
   const tools = ((result as { tools: unknown[] }).tools).filter((tool) => !own.has((tool as { name?: unknown } | null)?.name));
-  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC] };
+  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC, REQUEST_PURCHASE_TOOL_SPEC] };
 }

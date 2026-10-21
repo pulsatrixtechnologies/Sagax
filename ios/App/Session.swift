@@ -271,6 +271,9 @@ final class Session: ObservableObject {
         NotificationCoordinator.shared.responseHandler = { [weak self] target in
             Task { @MainActor in await self?.openNotification(target) }
         }
+        NotificationCoordinator.shared.approvalHandler = { decision in
+            await NotificationApprovalRunner.run(decision)
+        }
         // APNs (PushRegistrar.swift): the server this phone is signed in to
         // gets its token; a push that wakes the app recounts the badge.
         PushRegistrar.shared.activeClient = { [weak self] in
@@ -303,7 +306,7 @@ final class Session: ObservableObject {
         }
         if (arguments.contains("-store-preview") || arguments.contains("-computer-switcher-preview")),
            let url = Bundle.main.url(
-               forResource: arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : arguments.contains("-open-thread-preview") ? "OpenThreadPreview" : "StorePreview",
+               forResource: arguments.contains("-cards-preview") ? "CardsPreview" : arguments.contains("-images-preview") ? "ImagePreview" : arguments.contains("-chat-update-preview") ? "ChatUpdatePreview" : arguments.contains("-chat-presentation-preview") ? "ChatPresentationPreview" : arguments.contains("-roster-preview") ? "RosterPreview" : arguments.contains("-threads-preview") ? "ThreadPreview" : arguments.contains("-open-thread-preview") ? "OpenThreadPreview" : arguments.contains("-bot-conversation-preview") ? "BotConversationPreview" : "StorePreview",
                withExtension: "json"
            ),
            let data = try? Data(contentsOf: url),
@@ -340,6 +343,11 @@ final class Session: ObservableObject {
                 let config = URLSessionConfiguration.ephemeral
                 config.protocolClasses = [ImagePreviewProtocol.self]
                 client = CompanionClient(connection: preview, token: "image-fixture-token", session: URLSession(configuration: config))
+            }
+            if arguments.contains("-bot-conversation-preview") {
+                let config = URLSessionConfiguration.ephemeral
+                config.protocolClasses = [BotConversationPreviewProtocol.self]
+                client = CompanionClient(connection: preview, token: "conversation-fixture-token", session: URLSession(configuration: config))
             }
             if arguments.contains("-voice-preview") {
                 let config = URLSessionConfiguration.ephemeral
@@ -3024,6 +3032,30 @@ final class Session: ObservableObject {
     func setRoutineEnabled(_ routine: Routine, enabled: Bool) async -> Routine? {
         guard let client else { return nil }
         do { return try await client.setRoutineEnabled(id: routine.id, enabled: enabled) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    /// `present`, `away` or `unknown`. Nil when the computer did not answer.
+    func loadRoutineAwayState() async -> String? {
+        guard let client else { return nil }
+        return try? await client.routineAwayState()
+    }
+
+    func markRoutineAwaySeen(_ routine: Routine) async -> Routine? {
+        guard let client else { return nil }
+        do { return try await client.markRoutineAwaySeen(id: routine.id) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
+    func loadTriggers() async -> (hooks: [WebhookListing], baseURL: String?) {
+        guard let client else { return ([], nil) }
+        guard let list = try? await client.webhooks() else { return ([], nil) }
+        return (list.webhooks, list.ingress?.baseUrl)
+    }
+
+    func setWebhookEnabled(id: String, enabled: Bool) async -> WebhookListing? {
+        guard let client else { return nil }
+        do { return try await client.setWebhookEnabled(id: id, enabled: enabled) }
         catch { actionError = error.localizedDescription; return nil }
     }
 

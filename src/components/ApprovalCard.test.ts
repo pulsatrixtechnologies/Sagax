@@ -60,6 +60,27 @@ describe("ApprovalCard decided by voice", () => {
   it("says nothing extra for a tap", () => {
     expect(renderToStaticMarkup(createElement(ApprovalCard, { message: bash("allow") }))).not.toContain("by voice");
   });
+
+  it("says automatic review is in progress while the reviewer has the card (lot A1b)", () => {
+    const message: Message = {
+      id: "reviewing",
+      role: "bot",
+      kind: "options",
+      at: 1,
+      card: {
+        title: "Approval needed",
+        subtitle: "pnpm test",
+        options: ["Allow", "Deny"],
+        requestId: "r-review",
+        tool: "Bash",
+        reviewing: true,
+      },
+    };
+    const html = renderToStaticMarkup(createElement(ApprovalCard, { message }));
+    expect(html).toContain("Automatic review in progress");
+    expect(html).toContain('data-auto-review="pending"');
+    expect(openRequestHtml(message)).toContain("Automatic review in progress");
+  });
 });
 
 describe("ApprovalCard routine proposals", () => {

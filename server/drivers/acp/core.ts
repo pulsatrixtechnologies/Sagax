@@ -2944,14 +2944,14 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
        * an empty folder, in the interactive approval mode, refusing any
        * tool, file or permission request. Off the turn path: upkeep calls
        * it after a chat goes quiet and at the nightly tidy-up. */
-      const generateMemoryText = async (prompt: string, options: TextGenerationOptions = {}): Promise<string> => {
+      const isolatedText = async (prompt: string, options: TextGenerationOptions, folder: string, clientName: string): Promise<string> => {
         if (startupModelRefresh) await startupModelRefresh;
         const turnConfig: AcpConfig = { ...config, fullAuto: false };
         const env = childEnv(turnConfig);
         if (support.requireAuthenticationBeforeSpawn && !(await support.isAuthenticated(env, turnConfig, instanceId))) {
           throw new Error(support.loginNote);
         }
-        const cwd = mkdtempSync(join(tmpdir(), "omb-acp-memory-"));
+        const cwd = mkdtempSync(join(tmpdir(), folder));
         try {
           const turn = { threadId: `memory-text-${newId()}`, text: prompt, approvalMode: "ask", cwd } as SendTurnInput;
           support.applyTurnEnv?.(env, { fullAuto: false, cwd, threadId: turn.threadId, mcpServers: [] });
@@ -2970,6 +2970,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             pickAuthMethod: (methods) => support.pickAuthMethod(methods, spawnEnv),
             authRequired: support.authFailure === "fail-request" ? "if-requested" : support.authFailure === "fail",
             loginNote: support.loginNote,
+            clientName,
             ...(support.configureSession ? {
               configure: ({ request, sessionId, session }) => support.configureSession!({
                 request,
@@ -2991,12 +2992,16 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           try { rmSync(cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch { /* left for the OS */ }
         }
       };
+      const generateMemoryText = (prompt: string, options: TextGenerationOptions = {}) =>
+        isolatedText(prompt, options, "omb-acp-memory-", "openmausbot_memory");
+      const reviewPermission = (prompt: string, signal?: AbortSignal) =>
+        isolatedText(prompt, { signal }, "omb-acp-review-", "openmausbot_review");
 
       return {
         instanceId,
         driverKind: DRIVER_KIND,
         displayName: input.displayName,
-        ...(support.backgroundText === false ? {} : { generateMemoryText }),
+        ...(support.backgroundText === false ? {} : { generateMemoryText, reviewPermission }),
         enabled: input.enabled,
         get models() {
           return models;

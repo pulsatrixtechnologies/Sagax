@@ -48,6 +48,8 @@ export function excludedWorkspaceAuthPath(path: string): boolean {
   if (/^mcp-oauth\.(?:enc|key)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Organization GitHub access tokens (server/org-github-tokens.ts).
   if (/^org-github-tokens\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // Team secrets of the organization (server/org-bot-secrets.ts).
+  if (/^org-bot-secrets\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // File-backed provider keys (server/engine-api-keys.ts), solo and per person.
   if (/^engine-api-keys\.(?:enc|json)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   if (/^principals\/[^/]+\/engine-api-keys\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
@@ -656,7 +658,7 @@ export function secretCategory(path: string): WorkspaceBackupReconnectCategory |
   if (/^connections\.enc(?:$|\.)/.test(name)) return "connections";
   if (/^credential-vault\.enc(?:$|\.)/.test(name)) return "credentialVault";
   if (/^mcp-oauth\.(?:enc|json)(?:$|\.)/.test(name)) return "mcp";
-  if (/^(?:org-github-tokens|marketplace-tokens)\.enc(?:$|\.)/.test(name)) return "github";
+  if (/^(?:org-github-tokens|org-bot-secrets|marketplace-tokens)\.enc(?:$|\.)/.test(name)) return "github";
   if (/^cloud-agent-credentials\.enc(?:$|\.)/.test(name)) return "cloudAgents";
   if (/^trigger-poller-credentials\.enc(?:$|\.)/.test(name)) return "triggers";
   if (/^push-devices\/[^/]+\.json$/.test(folded)) return "phones";

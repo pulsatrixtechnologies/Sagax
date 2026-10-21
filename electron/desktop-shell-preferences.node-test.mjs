@@ -22,9 +22,9 @@ test("both choices are on until the person turns one off", () => {
 test("a change is merged, kept and read back", () => {
   const dir = tmp();
   try {
-    assert.deepEqual(writeShellPreferences(dir, { hardwareAcceleration: false }), { hardwareAcceleration: false, spellcheck: true });
-    assert.deepEqual(writeShellPreferences(dir, { spellcheck: false }), { hardwareAcceleration: false, spellcheck: false });
-    assert.deepEqual(readShellPreferences(dir), { hardwareAcceleration: false, spellcheck: false });
+    assert.deepEqual(writeShellPreferences(dir, { hardwareAcceleration: false }), { hardwareAcceleration: false, spellcheck: true, botHotkeys: true, botHotkeyModifier: "cmd-shift" });
+    assert.deepEqual(writeShellPreferences(dir, { spellcheck: false }), { hardwareAcceleration: false, spellcheck: false, botHotkeys: true, botHotkeyModifier: "cmd-shift" });
+    assert.deepEqual(readShellPreferences(dir), { hardwareAcceleration: false, spellcheck: false, botHotkeys: true, botHotkeyModifier: "cmd-shift" });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -44,4 +44,9 @@ test("a damaged file reads as the defaults", () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the bots' shortcut choices are kept: on or off, and a known chord only", () => {
+  assert.deepEqual(normalizeShellPreferences({ botHotkeys: false, botHotkeyModifier: "ctrl-alt" }), { botHotkeys: false, botHotkeyModifier: "ctrl-alt" });
+  assert.deepEqual(normalizeShellPreferences({ botHotkeys: "no", botHotkeyModifier: "Meta+X" }), {});
 });

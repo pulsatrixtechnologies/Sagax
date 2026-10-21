@@ -114,6 +114,20 @@ function pick(aim, field) {
     const before = password > 0 ? inputs.slice(0, password).reverse().find(textLike) : undefined;
     return { el: before || inputs.find((el) => textLike(el) && /user|login|email|account|identifiant|courriel/i.test(hint(el))) };
   }
+  if (field === 'cardNumber') return { el: inputs.find((el) => el.autocomplete === 'cc-number') || inputs.find((el) => textLike(el) && /card.?number|cc-number|num[eé]ro|carte/i.test(hint(el))) };
+  if (field === 'cardExpiry') return { el: inputs.find((el) => el.autocomplete === 'cc-exp') || inputs.find((el) => textLike(el) && /expir|mm|yy|date/i.test(hint(el))) };
+  if (field === 'cardCvc') return { el: inputs.find((el) => el.autocomplete === 'cc-csc') || inputs.find((el) => /cvc|cvv|csc|security.?code|code/i.test(hint(el))) };
+  if (field === 'cardholder') return { el: inputs.find((el) => el.autocomplete === 'cc-name') || inputs.find((el) => textLike(el) && /cardholder|titulaire|name on card/i.test(hint(el))) };
+  if (field === 'addressLine1') return { el: inputs.find((el) => el.autocomplete === 'address-line1' || el.autocomplete === 'street-address') };
+  if (field === 'addressLine2') return { el: inputs.find((el) => el.autocomplete === 'address-line2') };
+  if (field === 'addressCity') return { el: inputs.find((el) => el.autocomplete === 'address-level2') };
+  if (field === 'addressRegion') return { el: inputs.find((el) => el.autocomplete === 'address-level1') };
+  if (field === 'addressPostal') return { el: inputs.find((el) => el.autocomplete === 'postal-code') };
+  if (field === 'addressCountry') return { el: inputs.find((el) => el.autocomplete === 'country' || el.autocomplete === 'country-name') };
+  if (field === 'addressRecipient' || field === 'contactName') return { el: inputs.find((el) => el.autocomplete === 'name') };
+  if (field === 'addressPhone' || field === 'contactPhone') return { el: inputs.find((el) => el.autocomplete === 'tel' || el.type === 'tel') };
+  if (field === 'contactEmail') return { el: inputs.find((el) => el.autocomplete === 'email' || el.type === 'email') };
+  if (field === 'contactCompany') return { el: inputs.find((el) => el.autocomplete === 'organization') };
   return {};
 }
 function judge(found, field) {
@@ -124,7 +138,7 @@ function judge(found, field) {
   if (el.ownerDocument !== document) return 'frame';
   if (!usable(el)) return 'not_input';
   if (field === 'password' && el.type !== 'password') return 'not_password';
-  if (field !== 'password' && el.type === 'password' && field !== 'apiKey') return 'password_box';
+  if (field !== 'password' && field !== 'cardCvc' && el.type === 'password' && field !== 'apiKey') return 'password_box';
   return null;
 }`;
 

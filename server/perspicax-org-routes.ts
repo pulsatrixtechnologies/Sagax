@@ -22,7 +22,9 @@
 // Registered before the interim organization routes, which answer only in
 // solo mode (server/org-routes.ts).
 import type { OrgGithubTokenPublic } from "../shared/org-github-tokens.ts";
+import type { OrgBotSecretPublic } from "../shared/org-bot-secrets.ts";
 import type { DirectoryPerson, DirectoryState } from "./perspicax-link.ts";
+import { OrgBotSecretsError, parseOrgBotSecretChange, type OrgBotSecretChange } from "./org-bot-secrets.ts";
 import { OrgGithubTokensError, parseOrgGithubTokenChange, type OrgGithubTokenChange } from "./org-github-tokens.ts";
 import type { Principal } from "./principals.ts";
 import type { RequestAuth } from "./request-auth.ts";
@@ -149,6 +151,13 @@ export interface PerspicaxOrgRouteDeps {
   githubTokens?: {
     list(): OrgGithubTokenPublic[];
     change(change: OrgGithubTokenChange, auth: RequestAuth): void;
+  };
+  /** Team secrets (admin only). list() has no values. change() writes one. */
+  botSecrets?: {
+    list(): OrgBotSecretPublic[];
+    change(change: OrgBotSecretChange): OrgBotSecretPublic[];
+    /** A team bot of this organization. A private bot is refused. */
+    teamBot(botId: string): boolean;
   };
   pendingAdminApprovals(): PendingAdminApproval[];
   /** Slice 4: the teams with their people (principal ids). */
@@ -294,6 +303,34 @@ export function createPerspicaxOrgRoutes(deps: PerspicaxOrgRouteDeps): RouteHand
       if (deps.viewerRole(auth) !== "admin" && !deps.delegated?.(auth, "host.shell")) return json(res, 403, { error: "Only an organization admin can answer these approvals." });
       res.setHeader("cache-control", "no-store");
       return json(res, 200, { approvals: deps.pendingAdminApprovals() });
+    }
+    if (path === "/api/org/bot-secrets" && (method === "GET" || method === "POST")) {
+      res.setHeader("cache-control", "private, no-store");
+      const admin = deps.viewerRole(auth) === "admin" || deps.delegated?.(auth, "server.settings") === true;
+      if (!admin) return json(res, 403, { error: "Only an organization admin can see team secrets.", code: "admin_only" });
+      if (!deps.botSecrets) return json(res, 404, { error: "not found" });
+      if (method === "GET") {
+        try {
+          return json(res, 200, { secrets: deps.botSecrets.list() });
+        } catch (error) {
+          const known = error instanceof OrgBotSecretsError ? error : null;
+          return json(res, known?.status ?? 503, { error: known?.message ?? "The team secrets could not be read.", code: known?.code ?? "store_unavailable" });
+        }
+      }
+      const body = await readBody(req);
+      let change: OrgBotSecretChange;
+      try {
+        change = parseOrgBotSecretChange(body, (botId) => deps.botSecrets!.teamBot(botId));
+      } catch (error) {
+        const known = error instanceof OrgBotSecretsError ? error : null;
+        return json(res, known?.status ?? 400, { error: known?.message ?? "That secret change is not valid.", code: known?.code ?? "invalid_secret" });
+      }
+      try {
+        return json(res, 200, { secrets: deps.botSecrets.change(change) });
+      } catch (error) {
+        const known = error instanceof OrgBotSecretsError ? error : null;
+        return json(res, known?.status ?? 500, { error: known?.message ?? "The secret could not be saved.", code: known?.code ?? "store_unavailable" });
+      }
     }
     if (path === "/api/org/routine-delegation" && method === "GET") {
       res.setHeader("cache-control", "no-store");

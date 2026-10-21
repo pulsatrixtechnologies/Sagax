@@ -3903,3 +3903,117 @@ it("starts a routine at its due time, not at the next 10 s tick", async () => {
     vi.useRealTimers();
   }
 });
+
+describe("routine pre-check and nothing_to_report", () => {
+  const start = Date.parse("2026-10-20T08:00:00Z");
+  const input = () => ({ name: "Poll", prompt: "Check for news", botId: "maus-1",
+    schedule: { type: "interval" as const, everyMinutes: 5, anchorAt: start } });
+  const finish = (h: ReturnType<typeof harness>, threadId: string, ok: boolean) => h.manager.handleRuntimeEvent({
+    eventId: `done-${threadId}`, provider: "fake", threadId, createdAt: new Date().toISOString(), type: "turn.completed", ok,
+  });
+
+  it("without a pre-check, a due run starts its turn as before", async () => {
+    const h = harness(start);
+    const routine = h.manager.create(input());
+    expect(routine.precheck).toBeUndefined();
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+  });
+
+  it("a false condition records nothing_to_report, starts no turn, notifies nobody, and advances nextRunAt", async () => {
+    const h = harness(start);
+    const evaluated: unknown[] = [];
+    h.options.evaluatePrecheck = (_precheck, facts) => { evaluated.push(facts); return { wake: false, reason: "No change" }; };
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 3 } });
+    const due = routine.nextRunAt!;
+    h.setNow(due); await h.manager.tick(); await h.manager.tick();
+    const run = h.manager.listRuns()[0];
+    expect(run.status).toBe("nothing_to_report");
+    expect(run.quietReason).toBe("No change");
+    expect(evaluated).toHaveLength(1);
+    expect(h.started).toHaveLength(0);
+    // No lifecycle card at all, not even a queued one, so the chat stays clean.
+    expect(h.changed).toHaveLength(0);
+    expect(h.failed).toHaveLength(0);
+    expect(h.taskTitles).toHaveLength(0);
+    expect(h.manager.listRoutines()[0].nextRunAt).toBeGreaterThan(due);
+    expect(isRoutineProblemRun(run)).toBe(false);
+  });
+
+  it("a woken run shows its card from the start of its turn", async () => {
+    const h = harness(start);
+    h.options.evaluatePrecheck = () => ({ wake: true });
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 2 } });
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(h.changed.some(changed => changed.status === "running")).toBe(true);
+  });
+
+  it("the pure every_nth condition wakes on its third occurrence", async () => {
+    const h = harness(start);
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 3 } });
+    for (let i = 0; i < 3; i += 1) {
+      h.setNow(routine.nextRunAt! + i * 5 * 60_000); await h.manager.tick(); await h.manager.tick();
+    }
+    expect(h.manager.listRuns().filter(run => run.status === "nothing_to_report")).toHaveLength(2);
+    expect(h.started).toHaveLength(1);
+  });
+
+  it("a true condition runs normally; Run now skips the pre-check", async () => {
+    const h = harness(start);
+    h.options.evaluatePrecheck = () => ({ wake: true });
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "elapsed_since_report", minMinutes: 1 } });
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    h.options.evaluatePrecheck = () => ({ wake: false, reason: "quiet" });
+    finish(h, "thread-1", true);
+    h.manager.runNow(routine.id); await h.manager.tick();
+    expect(h.started).toHaveLength(2);
+  });
+
+  it.each([
+    ["throws", () => { throw new Error("broken check"); }, /broken check/],
+    ["times out", () => new Promise<never>(() => {}), /did not answer/],
+  ])("a pre-check that %s fails the run with its reason and starts no turn", async (_label, evaluate, reason) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const h = harness(start);
+      h.options.evaluatePrecheck = evaluate as never;
+      const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 2 } });
+      h.setNow(routine.nextRunAt!);
+      const ticking = h.manager.tick();
+      await vi.advanceTimersByTimeAsync(6_000);
+      await ticking;
+      const run = h.manager.listRuns()[0];
+      expect(run.status).toBe("failed");
+      expect(run.error).toMatch(/Pre-check failed/);
+      expect(run.error).toMatch(reason);
+      expect(h.started).toHaveLength(0);
+      expect(h.failed).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects a malformed pre-check, and null removes one", () => {
+    const h = harness(start);
+    expect(() => h.manager.create({ ...input(), precheck: { kind: "script", command: "true" } as never })).toThrow(/pre-check/);
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 2 } });
+    expect(h.manager.update(routine.id, { name: "Renamed" })?.precheck).toEqual({ kind: "condition", test: "every_nth", every: 2 });
+    expect(h.manager.update(routine.id, { precheck: null })?.precheck).toBeUndefined();
+  });
+
+  it("nothing_to_report neither breaks nor extends a failure streak", async () => {
+    const h = harness(start);
+    let wake = true;
+    h.options.evaluatePrecheck = () => wake ? { wake: true } : { wake: false, reason: "quiet" };
+    const routine = h.manager.create({ ...input(), precheck: { kind: "condition", test: "every_nth", every: 2 } });
+    h.setNow(routine.nextRunAt!); await h.manager.tick();
+    finish(h, "thread-1", false);
+    expect(h.manager.listRoutines()[0].failureStreak).toBe(1);
+    wake = false;
+    h.setNow(h.manager.listRoutines()[0].nextRunAt!); await h.manager.tick(); await h.manager.tick();
+    expect(h.manager.listRuns().some(run => run.status === "nothing_to_report")).toBe(true);
+    expect(h.manager.listRoutines()[0].failureStreak).toBe(1);
+  });
+});

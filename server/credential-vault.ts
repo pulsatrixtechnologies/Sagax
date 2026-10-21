@@ -29,6 +29,7 @@ import {
   VAULT_ITEM_KINDS,
   VAULT_ONCE_GRANT_MS,
   itemIdFromHandle,
+  vaultHandle,
   normalizeVaultDomain,
   vaultDomainMatches,
   type VaultFillField,
@@ -36,6 +37,22 @@ import {
   type VaultItemKind,
   type VaultItemListing,
 } from "../shared/credential-vault.ts";
+import {
+  cardExpiryText,
+  isPaymentFillField,
+  mergeCard,
+  parseAddress,
+  parseAmount,
+  parseContact,
+  parseCurrency,
+  publicCard,
+  purchaseBotNote,
+  purchaseCardText,
+  type PaymentFillField,
+  type StoredAddress,
+  type StoredCard,
+  type StoredContact,
+} from "../shared/payment-vault.ts";
 import { mergePatch, planVaultImport, type VaultDuplicateMode, type VaultExportFormat, type VaultTransferItem } from "../shared/credential-vault-transfer.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
@@ -63,6 +80,52 @@ const onePasswordRefSchema = z.object({
   itemId: z.string().min(1).max(128),
 }).strict();
 
+const cardSchema = z.object({
+  pan: z.string().regex(/^\d{13,19}$/),
+  cvv: z.string().regex(/^\d{3,4}$/),
+  expMonth: z.number().int().min(1).max(12),
+  expYear: z.number().int().min(2000).max(2100),
+  holder: z.string().min(1).max(80),
+  brand: z.enum(["visa", "mastercard", "amex", "discover", "card"]),
+  last4: z.string().regex(/^\d{4}$/),
+}).strict();
+
+const addressSchema = z.object({
+  recipient: z.string().min(1).max(80),
+  line1: z.string().min(1).max(120),
+  line2: z.string().min(1).max(120).optional(),
+  city: z.string().min(1).max(80),
+  region: z.string().min(1).max(80).optional(),
+  postal: z.string().min(1).max(20),
+  country: z.string().regex(/^[A-Z]{2}$/),
+  phone: z.string().min(1).max(32).optional(),
+}).strict();
+
+const contactSchema = z.object({
+  fullName: z.string().min(1).max(80),
+  email: z.string().min(3).max(120).optional(),
+  phone: z.string().min(1).max(32).optional(),
+  company: z.string().min(1).max(80).optional(),
+}).strict();
+
+const purchaseSchema = z.object({
+  id: z.string().regex(/^pay_[a-f0-9]{16}$/),
+  botId: z.string().regex(BOT_ID),
+  threadId: z.string().regex(THREAD_ID),
+  merchant: z.string().min(1).max(80),
+  domain: z.string().min(1).max(253),
+  amount: z.string().regex(/^\d{1,6}\.\d{2}$/),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  cardId: z.string().regex(/^[a-z0-9]{8,40}$/),
+  addressId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
+  contactId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
+  status: z.enum(["pending", "once", "always", "denied"]),
+  createdAt: z.number(),
+  answeredAt: z.number().optional(),
+  expiresAt: z.number().optional(),
+  via: z.string().min(1).max(80).optional(),
+}).strict();
+
 const itemSchema = z.object({
   id: z.string().regex(/^[a-z0-9]{8,40}$/),
   kind: z.enum(VAULT_ITEM_KINDS),
@@ -73,6 +136,9 @@ const itemSchema = z.object({
   totpSeed: z.string().max(1_024).optional(),
   apiKey: z.string().max(16_384).optional(),
   notes: z.string().max(16_384).optional(),
+  card: cardSchema.optional(),
+  address: addressSchema.optional(),
+  contact: contactSchema.optional(),
   source: z.enum(["local", "1password"]),
   onePassword: onePasswordRefSchema.optional(),
   grants: z.array(grantSchema).max(200),
@@ -85,11 +151,33 @@ const itemSchema = z.object({
 const documentSchema = z.object({
   version: z.literal(1),
   items: z.record(z.string(), itemSchema),
+  purchases: z.record(z.string(), purchaseSchema).optional(),
 }).strict();
 
 export type StoredVaultItem = z.infer<typeof itemSchema>;
+export type StoredPurchase = z.infer<typeof purchaseSchema>;
 export type OnePasswordRef = z.infer<typeof onePasswordRefSchema>;
 type VaultDocument = z.infer<typeof documentSchema>;
+
+export interface PurchaseListing {
+  id: string;
+  botId: string;
+  threadId: string;
+  merchant: string;
+  domain: string;
+  amount: string;
+  currency: string;
+  cardName: string;
+  cardLast4: string;
+  cardBrand: string;
+  addressName?: string;
+  contactName?: string;
+  status: StoredPurchase["status"];
+  via?: string;
+  createdAt: number;
+  title: string;
+  line: string;
+}
 
 export class CredentialVaultError extends Error {
   readonly code: string;
@@ -112,7 +200,14 @@ export interface VaultItemInput {
   totpSeed?: unknown;
   apiKey?: unknown;
   notes?: unknown;
+  /** A card, an address or a contact. A blank secret on an edit keeps it. */
+  card?: unknown;
+  address?: unknown;
+  contact?: unknown;
 }
+
+const REVEAL_FIELDS = ["password", "apiKey", "notes", "pan", "cvv"] as const;
+export type VaultRevealField = (typeof REVEAL_FIELDS)[number];
 
 /** Reads a 1Password item's field at fill time (server/onepassword.ts). */
 export type OnePasswordFieldReader = (ref: OnePasswordRef, field: VaultFillField) => Promise<string | null>;
@@ -182,6 +277,9 @@ export function listingOf(item: StoredVaultItem, now: number = Date.now()): Vaul
     hasTotp: Boolean(item.totpSeed),
     hasApiKey: Boolean(item.apiKey),
     hasNotes: Boolean(item.notes),
+    ...(item.card ? { card: publicCard(item.card) } : {}),
+    ...(item.address ? { address: { ...item.address } } : {}),
+    ...(item.contact ? { contact: { ...item.contact } } : {}),
     source: item.source,
     grants: activeGrants(item, now).map((grant) => ({ ...grant })),
     createdAt: item.createdAt,
@@ -261,11 +359,12 @@ export class CredentialVault {
     this.cache.set(principalId, document);
   }
 
-  private mutate<T>(principalId: string, change: (items: Record<string, StoredVaultItem>) => T): T {
+  private mutate<T>(principalId: string, change: (items: Record<string, StoredVaultItem>, purchases: Record<string, StoredPurchase>) => T): T {
     const document = this.load(principalId);
     const items = structuredClone(document.items);
-    const result = change(items);
-    this.write(principalId, { version: 1, items });
+    const purchases = structuredClone(document.purchases ?? {});
+    const result = change(items, purchases);
+    this.write(principalId, { version: 1, items, ...(Object.keys(purchases).length ? { purchases } : {}) });
     return result;
   }
 
@@ -300,7 +399,7 @@ export class CredentialVault {
 
   create(principalId: string, input: VaultItemInput, extra: { source?: "local" | "1password"; onePassword?: OnePasswordRef } = {}): VaultItemListing {
     const kind = (VAULT_ITEM_KINDS as readonly unknown[]).includes(input.kind ?? "login") ? (input.kind ?? "login") as VaultItemKind : null;
-    if (!kind) throw new CredentialVaultError("kind must be login, apiKey or note", "invalid_kind");
+    if (!kind) throw new CredentialVaultError("kind must be login, apiKey, note, card, address or contact", "invalid_kind");
     const now = this.now();
     const item: StoredVaultItem = {
       id: newItemId(),
@@ -421,6 +520,7 @@ export class CredentialVault {
       return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
     }
     if (!item) return { ok: false, code: "unknown_item", message: "No saved credential has this handle. Call request_login to ask the person for one." };
+    if (isPaymentFillField(request.field)) return this.resolvePayment(principalId, item, { ...request, field: request.field });
     if (!this.granted(principalId, item.id, request.botId, request.threadId)) {
       return { ok: false, code: "not_granted", message: `You are not allowed to use "${item.name}" here. Call request_login so the person can allow it.` };
     }
@@ -523,7 +623,7 @@ export class CredentialVault {
         onePassword++;
         continue;
       }
-      if (format === "chrome-csv" && item.kind !== "login") {
+      if (item.kind === "card" || item.kind === "address" || item.kind === "contact" || (format === "chrome-csv" && item.kind !== "login")) {
         notInFormat++;
         continue;
       }
@@ -542,6 +642,165 @@ export class CredentialVault {
     return { items, onePassword, notInFormat, totpNotInFormat };
   }
 
+  /** The owner's own look at one secret (Settings, or Face ID on the phone).
+   * Never a bot, never a log. */
+  reveal(principalId: string, itemId: string, field: unknown): string {
+    if (typeof field !== "string" || !(REVEAL_FIELDS as readonly string[]).includes(field)) {
+      throw new CredentialVaultError("Nothing to show.", "invalid_field");
+    }
+    const item = this.load(principalId).items[itemId];
+    if (!item) throw new CredentialVaultError("No such item", "unknown_item", 404);
+    if (field === "password") return item.password ?? "";
+    if (field === "apiKey") return item.apiKey ?? "";
+    if (field === "notes") return item.notes ?? "";
+    if (field === "pan") {
+      if (!item.card) throw new CredentialVaultError("This item has no card number.", "no_value");
+      return item.card.pan;
+    }
+    if (!item.card) throw new CredentialVaultError("This item has no security code.", "no_value");
+    return item.card.cvv;
+  }
+
+  /** Purchases still waiting on the person, newest first. No card number. */
+  pendingPurchases(principalId: string): PurchaseListing[] {
+    const document = this.load(principalId);
+    return Object.values(document.purchases ?? {})
+      .filter((row) => row.status === "pending")
+      .sort((left, right) => right.createdAt - left.createdAt)
+      .map((row) => this.purchaseListing(document, row));
+  }
+
+  /** Ask the person to approve a payment. The page's own address is the
+   * merchant site: the bot does not choose where the number is typed. */
+  openPurchase(principalId: string, input: {
+    botId: string; threadId: string; merchant?: string; pageUrl: string;
+    amount: unknown; currency: unknown; cardId: string; addressId?: string; contactId?: string;
+  }): { already: boolean; listing: PurchaseListing; note: string } {
+    if (!BOT_ID.test(input.botId)) throw new CredentialVaultError("invalid bot", "invalid_bot");
+    if (!THREAD_ID.test(input.threadId)) throw new CredentialVaultError("invalid conversation", "invalid_thread");
+    const domain = domainOfPage(input.pageUrl);
+    if (!domain) throw new CredentialVaultError("The page is not a site a card can be filled on.", "invalid_domains");
+    const amount = parseAmount(input.amount);
+    const currency = parseCurrency(input.currency);
+    if (!amount || !currency) throw new CredentialVaultError("amount and currency are required", "invalid_amount");
+    const now = this.now();
+    return this.mutate(principalId, (items, purchases) => {
+      const card = items[input.cardId];
+      if (!card || card.kind !== "card" || !card.card) throw new CredentialVaultError("No such card", "unknown_item", 404);
+      if (input.addressId) {
+        const address = items[input.addressId];
+        if (!address || address.kind !== "address") throw new CredentialVaultError("No such address", "unknown_item", 404);
+      }
+      if (input.contactId) {
+        const contact = items[input.contactId];
+        if (!contact || contact.kind !== "contact") throw new CredentialVaultError("No such contact", "unknown_item", 404);
+      }
+      const live = Object.values(purchases).find((row) => purchaseCovers(row, input.botId, input.threadId, domain, now) && row.cardId === card.id);
+      if (live && live.status !== "pending") {
+        const listing = this.purchaseListing({ items }, live);
+        return { already: true, listing, note: purchaseBotNote(live.status === "always" ? "always" : "once", { merchant: live.merchant, amount: live.amount, currency: live.currency, handle: vaultHandle(card.id) }) };
+      }
+      for (const row of Object.values(purchases)) {
+        if (row.status === "pending" && row.botId === input.botId && row.cardId === card.id && row.domain === domain) delete purchases[row.id];
+      }
+      const merchant = visibleText(input.merchant ?? "").slice(0, 80) || domain;
+      const id = newPurchaseId(purchases);
+      const row: StoredPurchase = {
+        id, botId: input.botId, threadId: input.threadId, merchant, domain, amount, currency,
+        cardId: card.id, ...(input.addressId ? { addressId: input.addressId } : {}), ...(input.contactId ? { contactId: input.contactId } : {}),
+        status: "pending", createdAt: now,
+      };
+      purchases[id] = row;
+      const listing = this.purchaseListing({ items }, row);
+      return {
+        already: false,
+        listing,
+        note: `Sagax purchase update: ${listing.title} ${listing.line} Nothing was charged. Wait for the person to allow it, then call fill_credential. You never receive the card number.`,
+      };
+    });
+  }
+
+  /** The person's answer: deny, this time, or always for this bot on this site. */
+  answerPurchase(principalId: string, purchaseId: string, decision: unknown, via?: string): { listing: PurchaseListing; note: string } {
+    if (decision !== "deny" && decision !== "once" && decision !== "always") {
+      throw new CredentialVaultError("decision must be deny, once or always", "invalid_decision");
+    }
+    const now = this.now();
+    const name = via ? visibleText(via).slice(0, 80) : "";
+    return this.mutate(principalId, (items, purchases) => {
+      const row = purchases[purchaseId];
+      if (!row || row.status !== "pending") throw new CredentialVaultError("This purchase was already answered.", "not_pending", 409);
+      row.status = decision === "deny" ? "denied" : decision;
+      row.answeredAt = now;
+      if (decision === "once") row.expiresAt = now + VAULT_ONCE_GRANT_MS;
+      if (name) row.via = name;
+      const listing = this.purchaseListing({ items }, row);
+      const handle = decision === "deny" ? undefined : vaultHandle(row.cardId);
+      return { listing, note: purchaseBotNote(decision, { merchant: row.merchant, amount: row.amount, currency: row.currency, ...(handle ? { handle } : {}) }) };
+    });
+  }
+
+  private purchaseListing(document: { items: Record<string, StoredVaultItem> }, row: StoredPurchase): PurchaseListing {
+    const card = document.items[row.cardId];
+    const address = row.addressId ? document.items[row.addressId] : undefined;
+    const contact = row.contactId ? document.items[row.contactId] : undefined;
+    const text = purchaseCardText({
+      merchant: row.merchant,
+      amount: row.amount,
+      currency: row.currency,
+      last4: card?.card?.last4 ?? "••••",
+      brand: card?.card?.brand ?? "card",
+      ...(address ? { addressName: address.name } : {}),
+    });
+    return {
+      id: row.id, botId: row.botId, threadId: row.threadId, merchant: row.merchant, domain: row.domain,
+      amount: row.amount, currency: row.currency,
+      cardName: card?.name ?? "Card", cardLast4: card?.card?.last4 ?? "", cardBrand: card?.card?.brand ?? "card",
+      ...(address ? { addressName: address.name } : {}),
+      ...(contact ? { contactName: contact.name } : {}),
+      status: row.status, ...(row.via ? { via: row.via } : {}), createdAt: row.createdAt,
+      title: text.title, line: text.line,
+    };
+  }
+
+  private resolvePayment(
+    principalId: string,
+    item: StoredVaultItem,
+    request: { field: PaymentFillField; botId: string; threadId: string; pageUrl: string },
+  ): FillResolution {
+    const domain = domainOfPage(request.pageUrl);
+    const now = this.now();
+    let purchase: StoredPurchase | undefined;
+    try {
+      purchase = Object.values(this.load(principalId).purchases ?? {}).find((row) => {
+        if (!purchaseCovers(row, request.botId, request.threadId, domain ?? "", now)) return false;
+        if (request.field.startsWith("card")) return row.cardId === item.id;
+        if (request.field.startsWith("address")) return row.addressId === item.id;
+        return row.contactId === item.id;
+      });
+    } catch (error) {
+      return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
+    }
+    if (!purchase) {
+      return { ok: false, code: "not_granted", message: "A payment on this page needs the person's approval first. Call request_purchase. Nothing was filled, and you never receive the card number." };
+    }
+    const value = paymentField(item, request.field);
+    if (!value) return { ok: false, code: "no_value", message: `"${item.name}" has no ${request.field} saved. Nothing was filled.` };
+    const stamp = this.now();
+    try {
+      this.mutate(principalId, (items) => {
+        const current = items[item.id];
+        if (current) {
+          current.lastUsedAt = stamp;
+          current.lastUsedBy = request.botId;
+        }
+      });
+    } catch {
+      // the fill still happens
+    }
+    return { ok: true, value, item: listingOf(item, stamp), field: request.field };
+  }
+
   /** Forget a person's whole vault (their account is deleted). */
   drop(principalId: string): void {
     rmSync(this.file(principalId), { force: true });
@@ -556,23 +815,24 @@ function applyInput(item: StoredVaultItem, input: VaultItemInput, creating: bool
     item.name = name;
   }
   if (input.domains !== undefined) item.domains = domainsFrom(input.domains);
-  if (input.username !== undefined) {
+  const loginLike = item.kind === "login" || item.kind === "apiKey" || item.kind === "note";
+  if (loginLike && input.username !== undefined) {
     const username = text(input.username, "username", 512).trim();
     if (username) item.username = username;
     else delete item.username;
   }
-  if (input.password !== undefined) {
+  if (loginLike && input.password !== undefined) {
     const password = text(input.password, "password", 4_096);
     if (password) item.password = password;
     else delete item.password;
   }
-  if (input.totpSeed !== undefined) {
+  if (loginLike && input.totpSeed !== undefined) {
     const seed = text(input.totpSeed, "one-time code seed", 1_024).trim();
     if (seed && !parseTotpSeed(seed)) throw new CredentialVaultError("The one-time code seed must be a base32 secret or an otpauth:// link", "invalid_totp");
     if (seed) item.totpSeed = seed;
     else delete item.totpSeed;
   }
-  if (input.apiKey !== undefined) {
+  if (loginLike && input.apiKey !== undefined) {
     const apiKey = text(input.apiKey, "API key", 16_384).trim();
     if (apiKey) item.apiKey = apiKey;
     else delete item.apiKey;
@@ -582,9 +842,80 @@ function applyInput(item: StoredVaultItem, input: VaultItemInput, creating: bool
     if (notes.trim()) item.notes = notes;
     else delete item.notes;
   }
+  if (item.kind === "card") {
+    const card = mergeCard(item.card, input.card, creating || !item.card);
+    if (typeof card === "string") throw new CredentialVaultError(card, "invalid_card");
+    item.card = card;
+  }
+  if (item.kind === "address" && (creating || input.address !== undefined)) {
+    const address = parseAddress(input.address);
+    if (typeof address === "string") throw new CredentialVaultError(address, "invalid_address");
+    item.address = address;
+  }
+  if (item.kind === "contact" && (creating || input.contact !== undefined)) {
+    const contact = parseContact(input.contact);
+    if (typeof contact === "string") throw new CredentialVaultError(contact, "invalid_contact");
+    item.contact = contact;
+  }
   if (item.kind === "login" && !item.domains.length) {
     throw new CredentialVaultError("A login needs at least one site it may be filled on", "invalid_domains");
   }
+}
+
+function visibleText(value: string): string {
+  let text = "";
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code >= 32 && code !== 127) text += char;
+  }
+  return text.trim();
+}
+
+function domainOfPage(pageUrl: string): string | null {
+  try {
+    const url = new URL(pageUrl);
+    if (url.username || url.password || url.protocol !== "https:") return null;
+    return normalizeVaultDomain(url.host);
+  } catch {
+    return null;
+  }
+}
+
+function purchaseCovers(row: StoredPurchase, botId: string, threadId: string, domain: string, now: number): boolean {
+  if (row.botId !== botId || row.domain !== domain) return false;
+  if (row.status === "always") return true;
+  if (row.status !== "once") return false;
+  return row.threadId === threadId && (row.expiresAt ?? 0) > now;
+}
+
+function newPurchaseId(purchases: Record<string, StoredPurchase>): string {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const id = `pay_${randomBytes(8).toString("hex")}`;
+    if (!purchases[id]) return id;
+  }
+  throw new CredentialVaultError("The purchase could not be saved.", "vault_unavailable", 503);
+}
+
+function paymentField(item: StoredVaultItem, field: PaymentFillField): string | null {
+  const card: StoredCard | undefined = item.card;
+  const address: StoredAddress | undefined = item.address;
+  const contact: StoredContact | undefined = item.contact;
+  if (field === "cardNumber") return card?.pan ?? null;
+  if (field === "cardExpiry") return card ? cardExpiryText(card) : null;
+  if (field === "cardCvc") return card?.cvv ?? null;
+  if (field === "cardholder") return card?.holder ?? null;
+  if (field === "addressRecipient") return address?.recipient ?? null;
+  if (field === "addressLine1") return address?.line1 ?? null;
+  if (field === "addressLine2") return address?.line2 ?? null;
+  if (field === "addressCity") return address?.city ?? null;
+  if (field === "addressRegion") return address?.region ?? null;
+  if (field === "addressPostal") return address?.postal ?? null;
+  if (field === "addressCountry") return address?.country ?? null;
+  if (field === "addressPhone") return address?.phone ?? null;
+  if (field === "contactName") return contact?.fullName ?? null;
+  if (field === "contactEmail") return contact?.email ?? null;
+  if (field === "contactPhone") return contact?.phone ?? null;
+  return contact?.company ?? null;
 }
 
 /** The browser runtime's view of the vault for one turn
@@ -597,6 +928,7 @@ export function fillResolverFor(
 ): {
   resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code: string }>;
   armed(): boolean;
+  requestPurchase(input: { pageUrl: string; amount: string; currency: string; cardId: string; merchant?: string; addressId?: string; contactId?: string }): { ok: true; message: string } | { ok: false; message: string };
 } {
   return {
     async resolve(request) {
@@ -604,5 +936,24 @@ export function fillResolverFor(
       return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.name } : { ok: false, message: resolved.message, code: resolved.code };
     },
     armed: () => vault.armed(context.principalId, context.botId, context.threadId),
+    requestPurchase(input) {
+      try {
+        const opened = vault.openPurchase(context.principalId, {
+          botId: context.botId,
+          threadId: context.threadId,
+          pageUrl: input.pageUrl,
+          amount: input.amount,
+          currency: input.currency,
+          cardId: input.cardId,
+          ...(input.merchant ? { merchant: input.merchant } : {}),
+          ...(input.addressId ? { addressId: input.addressId } : {}),
+          ...(input.contactId ? { contactId: input.contactId } : {}),
+        });
+        return { ok: true as const, message: opened.note };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The purchase could not be asked.";
+        return { ok: false as const, message };
+      }
+    },
   };
 }

@@ -1678,16 +1678,19 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   `customRulesJudgePrompt` / `modelCustomDecision` in shared/custom-rules.ts):
   a card the matcher left to the person (`none`, no risk-blocked allow) is
   judged after it opens by the bot engine's isolated `reviewPermission`
-  (Haiku on Claude; no reviewer on the engine = no review) against the
+  (Haiku on Claude; Codex, Grok and ACP use their own isolated tool-free
+  call, prompt never in argv; no reviewer on the engine = no review) against the
   person's rules and the organization's (R1..Rn, organization first, exact
-  command rules left out; the call between untrusted delimiters). Only the
-  cards a custom allow may answer (the person's own turn, no admin card,
-  hold, sandbox widening, question, guest, security key, owner ask rule,
-  email draft, or turn that is not the person's own words: routine,
-  webhook, another bot, unattended; `ownEnvironmentOrigin`).
-  Allow or deny only when it names a rule of that behavior; an organization
-  rule never allows; an allow never covers a shell line, a risk class the
-  rule does not tick, or a local path it cannot read; ask keeps the card
+  command rules left out; the call between untrusted delimiters). The same
+  cards a custom allow may answer, including a routine, a webhook and
+  another bot (lot A1b, JC: comme Grok). Still never an admin card, a hold,
+  a sandbox widening, a question, a guest, a security key, an owner ask
+  rule or an email draft. The card shows "Examen en cours" and the
+  notification waits until the verdict. Allow or deny only when it names a
+  rule of that behavior; an organization rule never allows; an allow covers
+  a shell line only when it is one plain line (no chaining, redirection,
+  substitution, quoting or control character), never a risk class the rule
+  does not tick, never a local path it cannot read; ask keeps the card
   with the notice. Unsure, failed, timed out (30 s) or answered meanwhile:
   the card stays. The engine gets the answer, the card `answeredBy.via:
   auto-review` and `customRule` (`reviewer: model`, `reason`), the journal
@@ -1718,6 +1721,23 @@ relaxed for it, and the person's deny rules still apply. Bcc is refused in
 a room and never shown in a card's arguments. A partial send records who
 already received it, and Retry of the same draft skips them. Deny sends nothing. The
 draft shows the status and a send error inline; Retry asks again.
+
+## Chat parity leftovers (2026-10-21)
+
+- A visualization (`ArtifactFrame`) says when a script fails and when it
+  has not reported a size within 10 seconds. Full screen opens that frame
+  over the app. Widgets still appear only when the person asks (#876).
+- Cancel reply removes a message that is still only on screen. Once the
+  POST has started, the chat says it is already being sent.
+- An archived thread shows "Showing saved messages" until dismissed.
+- Email drafts can be turned off per bot (`emailDrafts: false`, Permissions).
+  The prompt drops the email fence and `POST /email-drafts` answers 409
+  `email_drafts_off`. A draft card says who it was created for.
+- A goal card in a room with more than one goal says "Goal n of total",
+  lists the earlier goals, and can show the full goal text.
+- Always allow on a send card (email draft, a plain message send, or
+  ask_bot / delegate_bot) adds that recipient to the bot's allowed list.
+  It does not replace the Permissions list screen.
 
 ## Server log on disk and expired approvals (2026-10-11)
 
@@ -3258,6 +3278,22 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
   Tests: `server/user-sandbox-desktop.test.ts`, `server/sandboxd.test.ts`;
   Docker: `scripts/smoke-sandbox-desktop.ts`.
 
+## Messages and lifecycle hooks (2026-10-21)
+
+Messages (iMessage and SMS) run only in the solo Sagax process on the Mac
+where that process runs (`shared/imessage.ts`, `server/imessage-mcp.ts`).
+The Use Messages switch is `messages.json` in the data dir. Sends to someone
+on the bot's allowed recipients go through. Everyone else gets a card.
+Group chats are refused. This is not a desktop-bridge action: an
+organization server must not ask the signed-in Mac to open Messages.
+
+Plugin lifecycle hooks are stripped from the folder Claude loads with
+`--plugin-dir`. The commands are kept under `bot-plugins/<bot>/computer-hooks/`
+and run only when the owner turns them on, on the bot's computer (sandbox,
+the person's PC, or the solo machine). They never run in the Sagax server
+process and never on an organization server's own host
+(`server/lifecycle-hooks.ts`).
+
 ## Desktop bridge (organization mode)
 
 In server mode the desktop app is the bridge between the organization server
@@ -3637,6 +3673,13 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   rules, see docs/self-hosting.md) and stays.
 - Codex: ChatGPT connectors need Codex's own ChatGPT login, which Sagax's
   ChatGPT plan mode and API keys do not have, so Codex turns get none.
+- Grok: only an organization turn (host tools withheld) loads the xAI
+  account's cloud connectors (`grokCloudConnectorEnv` in
+  `server/drivers/acp/grok.ts`). Grok reaches them through `use_tool`, and a
+  server Sagax did not mount keeps its card. A solo turn forces
+  `GROK_MANAGED_MCPS_ENABLED=false`: in `--permission-mode default` Grok can
+  call those servers with no prompt. Gateway tools stay off. A tool
+  selection turns the connectors off too.
 
 ## Engine slash commands in the chat
 
@@ -5565,6 +5608,49 @@ the person asked for are not views.
   empty conversation. It opens Connect apps with those apps first
   (`pluginsFocusApps`, section "needed").
 
+## Bots parity 2F: template update, avatar drop and paste, reset, bot link (2026-10-21)
+
+- Template links: `PUT /api/template-links/:id` freezes the New bot
+  defaults again under the SAME link (`TemplateLinks.update`, `updatedAt`);
+  `GET /api/template-links/:id` gives title, description, skills, never the
+  persona. Share preset > Share the link has Update the template and View
+  the shared copy. A bot does it with `sagax_settings` `template.share`,
+  `template.update`, `template.remove` (card: a public link reaches others);
+  "a template of yourself" = set `server.newBotDefaults` first.
+- Avatar (`src/lib/avatar-input.ts`): drop or paste a PNG, JPEG, GIF or WebP
+  of at most 25 MB on the big avatar or the Upload area, and export the
+  current picture. The avatar's handlers `preventDefault`; the window drop
+  target of the composer (`ComposerAttachments.tsx`) skips a drop already
+  taken, so the picture never becomes an attachment too.
+- Reset the history (bot "..." menu, `src/lib/bot-history-reset.ts`): a new
+  conversation, then every open one of the person archived (never routine
+  runs, confidential threads, an AI client's hidden thread, or a bot-to-bot
+  thread); memory, files, routines and settings stay.
+- Copy link to this bot: `openmausbot://bot/<id>` (`botRefUrl`), which the
+  app already opens (`electron/chat-link.mjs`).
+
+## Plugins parity 2F: configuration, data centers, link (2026-10-21)
+
+- Plugin configuration (`server/plugin-config.ts`): the `userConfig` fields a
+  Claude Code plugin declares in `.claude-plugin/plugin.json`, filled per bot
+  (`PUT /api/bots/:id/plugins/:key/config { values }`, owner or manager,
+  `bot-plugins/<bot>/plugins/config.json` 0600). Values replace
+  `${user_config.KEY}` in the plugin's skills, agents and commands, from each
+  file's original kept under `.claude-plugin/sagax-originals/`; an update
+  copies the plugin again and the values go back in; uninstall forgets them.
+  A `sensitive` field is never stored nor written: 400 `sensitive_field`,
+  the form points to Settings > Credentials.
+- Data centers: a catalog entry may list `regions` (the default `url` among
+  them) and a registry remote whose address has one `{variable}` with
+  `choices` becomes one address per choice (`registryRegions`). Add asks
+  first (`plugins/DataCenterDialog.tsx`), `POST /api/plugins/install`
+  takes `region` and refuses an id the listing does not offer
+  (`unknown_region`). No catalog entry has regions yet: add one only with
+  the provider's documented regional addresses.
+- Copy link to this plugin (`src/lib/plugin-link.ts`): a marketplace
+  plugin's repository, a reviewed server's documentation, else its https
+  address; nothing for a connected app or a local server.
+
 ## Team Bot from a conversation, template links, away routines, emoji (2026-10-16)
 
 Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
@@ -5575,11 +5661,14 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   (`threadTitleGate`, the generated-title path), conversation as data, text
   lines only, secrets scrubbed; a fallback draft from the title and lines
   when the model cannot. Plugins and connectors of the source bot are ticked
-  boxes. Memory carry-over is an explicit opt-in, OFF by default:
-  `POST /api/bots/:id/team-bot-carry` answers 400 `memory_opt_in` without a
-  literal `includeMemory: true` and writes nothing; with it, only the ticked
-  notes plus `memory/conversation-carry-over.md` (compaction summary
-  helper), all listed in the dialog first. The bot is created by
+  boxes. Since 2026-10-21 (JC: a copy, never the private memory) the copy
+  starts from the source bot's persona (the drafted text one click away),
+  copies its rule sets, copies each ticked plugin's saved configuration
+  (never a secret field) and joins its team, whose shared memory
+  (`server/team-memory.ts`) then follows; it never takes a conversation or
+  the bot's own memory: `POST /api/bots/:id/team-bot-carry` answers 410
+  `private_memory_never` and writes nothing, and the draft lists no notes.
+  The bot is created by
   `POST /api/bots` and published by the existing Team Bot path (Sharing,
   Perspicax grants); the app adds no multi-person view.
 - Template public links (`server/template-links.ts`,

@@ -54,7 +54,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-const CONNECT = <button type="button" className={cardActionClass()}>Connecter</button>;
+const CONNECT = <button type="button" className={cardActionClass("quiet")}>Connecter</button>;
 const crumbToApps = [{ label: t("connectApps.title"), onSelect: () => {} }];
 
 /** Connect apps' home, or (section) Productivity opened alone with View all. */

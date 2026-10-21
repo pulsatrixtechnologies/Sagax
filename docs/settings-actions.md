@@ -124,6 +124,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Voice | Bot editor > Voice | `sagax_settings` get, set `bot.voice` | simple |
 | Speak replies | Bot editor > Voice | `sagax_settings` get, set `bot.speakReplies` | simple |
 | Voice notes | Bot editor > Voice | `sagax_settings` get, set `bot.voiceNotes` | simple |
+| Email drafts | Bot editor > Permissions > Email drafts | `sagax_settings` get, set `bot.emailDrafts` | simple |
 | Notifications | Bot editor > Voice > Notifications | `sagax_settings` get, set `bot.notifications` | simple |
 | Model and effort ({instanceId, model, effort}) | Bot editor > Model | `sagax_settings` get, set `bot.model` | simple |
 | Reasoning effort (low, medium, high, ...; keeps the model) | Bot editor > Model > Effort | `sagax_settings` get, set `bot.effort` | simple |
@@ -160,6 +161,10 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
 | Tool access grant ({scope: area:read/write/admin, expiresAt}) | Bot editor > Tool access | `sagax_settings` set `bot.toolGrant` | élargit les droits |
 | Delete the bot (true) | Bot editor > ... > Delete | `sagax_settings` set `bot.delete` | suppression |
+| Share the New bot defaults as a public template link ({name?, description?}); get lists your links | New bot > Share preset > Share the link | `sagax_settings` get, set `template.share` | autrui |
+| Update a shared template under the same link ({id, name?, description?}) | New bot > Share preset > Share the link > Update the template | `sagax_settings` set `template.update` | autrui |
+| Delete a shared template and turn its link off (its id) | New bot > Share preset > Share the link > Turn off | `sagax_settings` set `template.remove` | suppression |
+| Lifecycle hooks on the bot computer (never on the server) | Bot editor > Permissions > Lifecycle hooks | `sagax_settings` get, set `bot.lifecycleHooks` | élargit les droits |
 
 ### Conversations
 
@@ -263,6 +268,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Text size (default, large, extra large) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.textSize` | simple |
 | Use hardware acceleration (desktop app; needs a restart) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.hardwareAcceleration` | simple |
 | Check spelling while typing (desktop app) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.spellcheck` | simple |
+| Global shortcuts that open a bot (macOS menu bar list) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.botHotkeys` | simple |
+| Chord of the bots' global shortcuts (Cmd+Shift, Cmd+Option, Ctrl+Option, then the slot number) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.botHotkeyChord` | simple |
 | Send key | Settings > Appearance | `sagax_settings` set `appearance.sendKey` | simple |
 | This run card | Settings > Appearance | `sagax_settings` set `appearance.runCard` | simple |
 | Sidebar logo | Settings > Appearance | `sagax_settings` set `appearance.sidebarLogo` | simple |
@@ -349,6 +356,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Where bots work for you | Settings > Computer > Bot workplace | `sagax_settings` set `computer.botWorkplace` | élargit les droits |
 | Rename one of your other computers ({computer: its name, name: the new name}) | Settings > Computer > Other computers | `sagax_settings` set `computer.rename` | simple |
 | Remove one of your other computers from the list (its name; refused while it is online) | Settings > Computer > Other computers | `sagax_settings` set `computer.remove` | suppression |
+| Use Messages on this Mac (read and send iMessage or SMS; solo desktop only) | Settings > Computer > Messages | `sagax_settings` get, set `computer.messages` | élargit les droits |
 | Local VM ({mode, maxInstances, idleTimeoutMinutes}) | Settings > Computer | `sagax_settings` get, set `server.localVm` | simple; organisation : organisation |
 
 ## Hors de sagax_settings

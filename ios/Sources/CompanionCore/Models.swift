@@ -358,6 +358,9 @@ public struct Reaction: Codable, Hashable, Sendable {
 
 public struct CommChip: Codable, Hashable, Sendable {
     public var groupId: String
+    /// The thread this note points at (`Comm.threadId`). A bot-to-bot line
+    /// already named here is not drawn again.
+    public var threadId: String? = nil
     /// The channel thread no longer exists (#176).
     public var gone: Bool? = nil
     public var withBotId: String
@@ -788,6 +791,10 @@ public struct QueuedSend: Codable, Hashable, Identifiable, Sendable {
 public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var threadId: String
+    /// The bot's main thread (`WireBot.mainThreadId`): where a bot-to-bot
+    /// line is drawn. Absent on an older computer; the selected thread is
+    /// the fallback, as on the desktop.
+    public var mainThreadId: String? = nil
     public var name: String
     public var title: String
     public var description: String
@@ -830,6 +837,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var approvalMode: String?
     public var autoApprove: Bool?
     public var alwaysAllow: [String]?
+    /// People and bots this bot writes to without a card (`allowedRecipients`).
+    /// Absent on an older computer: nobody is on the list.
+    public var allowedRecipients: [String]? = nil
     public var computer: String?
     /// Which cloud computer backs `computer == "cloud"`. Absent (older
     /// harnesses included) means the hosted Boat; "vps" means the user's own
@@ -893,6 +903,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     public var directGrants: [String]? = nil
     /// Ask before contacting other bots (Permissions); absent is off.
     public var approvePeerComms: Bool? = nil
+    /// Bot-to-bot conversations this viewer may read, both ends (`shared/wire.ts`
+    /// WireBotConversation). Absent: none. Read only; see `BotConversations`.
+    public var botConversations: [BotConversation]? = nil
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {
@@ -1860,6 +1873,16 @@ public struct RoutineSuspension: Codable, Hashable, Sendable {
     public var at: Double
 }
 
+/// Runs skipped while the person was away (`RoutineAwaySkips`).
+/// Every field is optional so a partial object cannot drop the routine.
+public struct RoutineAwaySkips: Codable, Hashable, Sendable {
+    public var count: Int?
+    public var firstAt: Double?
+    public var lastAt: Double?
+    /// Set once the person is back and the count was reported.
+    public var reportedAt: Double?
+}
+
 public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var name: String
@@ -1898,6 +1921,10 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var canEdit: Bool? = nil
     /// Someone else's routine: no prompt, attachments or threads.
     public var redacted: Bool? = nil
+    /// Skip scheduled runs while the person is away. Absent means it runs.
+    public var onlyWhenPresent: Bool? = nil
+    /// Skipped runs to report once the person is back.
+    public var awaySkips: RoutineAwaySkips? = nil
 }
 
 public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
@@ -1974,6 +2001,9 @@ public struct RoutineInput: Encodable, Sendable {
     /// id, RunAsField); nil leaves it to the server (the routine's current
     /// person, else the caller).
     public var runAs: String? = nil
+    /// "Only when I'm here". Nil leaves the stored value alone on an edit
+    /// and means off on a create.
+    public var onlyWhenPresent: Bool? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",
@@ -1998,6 +2028,7 @@ public struct RoutineInput: Encodable, Sendable {
         self.attachments = attachments
         self.results = results
         self.completeSchedule = completeSchedule
+        self.onlyWhenPresent = nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2264,6 +2295,8 @@ struct RoutinesResponse: Codable, Sendable {
 }
 
 struct RoutineResponse: Codable, Sendable { var routine: Routine }
+
+struct RoutineAwayStateResponse: Decodable, Sendable { var state: String }
 struct RoutineRunResponse: Codable, Sendable { var run: RoutineRun }
 
 struct ConnectorAuthorizationResponse: Codable, Sendable {
@@ -2408,6 +2441,9 @@ public struct MessageImageAttachment: Codable, Hashable, Sendable {
     /// The server's duration estimate for an audio attachment, in
     /// milliseconds; shown until the player loads real metadata.
     public var durationMs: Double?
+    /// Word times, when a computer sends them. Absent today: the settle
+    /// keeps path and mime only.
+    public var words: [VoiceNoteWord]? = nil
 }
 
 /// One voice note in Message.attachments: the parked clip's bare generated
@@ -2417,13 +2453,15 @@ public struct MessageVoiceNote: Hashable, Sendable, Identifiable {
     public var path: String
     public var mime: String?
     public var durationMs: Double?
+    public var words: [VoiceNoteWord]?
 
     public var id: String { path }
 
-    public init(path: String, mime: String? = nil, durationMs: Double? = nil) {
+    public init(path: String, mime: String? = nil, durationMs: Double? = nil, words: [VoiceNoteWord]? = nil) {
         self.path = path
         self.mime = mime
         self.durationMs = durationMs
+        self.words = words
     }
 }
 
@@ -2437,7 +2475,7 @@ extension Message {
             guard attachment.kind == "audio", let path = attachment.path,
                   !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   seen.insert(path).inserted else { return nil }
-            return MessageVoiceNote(path: path, mime: attachment.mime, durationMs: attachment.durationMs)
+            return MessageVoiceNote(path: path, mime: attachment.mime, durationMs: attachment.durationMs, words: attachment.words)
         }
     }
 }

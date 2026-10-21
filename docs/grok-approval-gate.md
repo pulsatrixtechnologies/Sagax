@@ -10,6 +10,7 @@ In `--permission-mode auto`, Grok runs its safety classifier before **every** MC
 - **When the flag is on:**
   - Grok starts with `--permission-mode default`. Its built-in tools prompt through ACP and each prompt is a card (the classifier no longer answers them); on an organization server they are withheld anyway.
   - A solo turn whose Grok config (`$GROK_HOME/config.toml` or the project's `.grok/config.toml`) declares `[mcp_servers.*]` keeps Grok's own auto mode: Sagax does not mount those servers, so the gate could not hold their calls.
+  - The xAI account's cloud connectors load only when host tools are withheld (an organization turn): Grok reaches them through `use_tool`, and a server Sagax did not mount keeps its card. A solo turn forces `GROK_MANAGED_MCPS_ENABLED=false`, because `default` mode can call those servers with no prompt. Gateway tools stay off. A tool selection turns the connectors off too.
   - Every MCP server, built-in or not, is mounted through `mcp-gate` with an approval socket (`server/mcp-gate-approval.ts`).
   - Only reviewed read-only tools run unasked:
     - agents: `READ_ONLY_AGENT_TOOL_NAMES`

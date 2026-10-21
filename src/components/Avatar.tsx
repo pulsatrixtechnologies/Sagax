@@ -196,6 +196,8 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
   primary?: boolean;
   /** The ring around the star, in the colour of what the avatar sits on. */
   primaryRingClassName?: string;
+  /** Draw the mascot as large as its box, as Grok Bot's sidebar does (avatarFillScale). */
+  fillBox?: boolean;
 };
 
 /** The Primary Bot mark: orange circle, white star, bottom-right. */
@@ -430,13 +432,34 @@ export function resolveBotAvatarOutcome(params: {
  * values and images that fail to load both fall back to the animated mascot,
  * so an old/corrupt profile can never leave a broken-image icon in the app.
  */
-export function BotAvatar({ primary, primaryRingClassName, ...props }: BotAvatarProps) {
-  if (!primary) return <BotAvatarImage {...props} />;
+/**
+ * Grok Bot's sidebar portrait fills its box (36px in a row, 60px on a pinned
+ * tile). A shape mascot's body only uses about 62% of its frame, the rest is
+ * room for its moves, so in the sidebar it is drawn 1.6 times larger to fill
+ * the same box. Scaled about the point that puts the bodies' centre in the
+ * box's centre; the box, its layout and the Primary Bot star do not change.
+ */
+export const SHAPE_FILL_SCALE = 1.6;
+const SHAPE_FILL_ORIGIN = "50% 38%";
+
+/** How much larger a bot's avatar is drawn when it must fill its box. */
+export function avatarFillScale(bot: BotAvatarProps["bot"]): number {
+  if (botAvatarProfile(bot).avatarUrl) return 1;
+  return botMascotLook(bot.mascotLook).character === "shape" ? SHAPE_FILL_SCALE : 1;
+}
+
+export function BotAvatar({ primary, primaryRingClassName, fillBox, ...props }: BotAvatarProps) {
+  const scale = fillBox ? avatarFillScale(props.bot) : 1;
+  if (!primary && scale === 1) return <BotAvatarImage {...props} />;
   const size = props.size ?? 44;
   return (
-    <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-primary-bot="">
-      <BotAvatarImage {...props} />
-      <PrimaryBotBadge size={size} ringClassName={primaryRingClassName} label={t("primaryBot.badge")} />
+    <span className="relative inline-flex shrink-0" style={{ width: size, height: size }} data-primary-bot={primary ? "" : undefined}>
+      {scale === 1 ? <BotAvatarImage {...props} /> : (
+        <span data-avatar-fill="" className="inline-flex" style={{ transform: `scale(${scale})`, transformOrigin: SHAPE_FILL_ORIGIN }}>
+          <BotAvatarImage {...props} />
+        </span>
+      )}
+      {primary && <PrimaryBotBadge size={size} ringClassName={primaryRingClassName} label={t("primaryBot.badge")} />}
     </span>
   );
 }

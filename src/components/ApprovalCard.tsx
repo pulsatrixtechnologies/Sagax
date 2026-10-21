@@ -462,9 +462,9 @@ export function ApprovalCard({
     return (
       <StepRow
         testId="approval-waiting"
-        data={{ "data-tour": "approval", "data-approval-waiting": card.requestId }}
+        data={{ "data-tour": "approval", "data-approval-waiting": card.requestId, ...(card.reviewing ? { "data-auto-review": "pending" } : {}) }}
         icon={<ShieldCheck size={13} aria-hidden="true" className="text-accent" />}
-        label={card.adminApproval ? t("approval.waitingForAdmin") : t("approval.status.waitingApproval")}
+        label={card.reviewing ? t("customRules.notice.reviewing") : card.adminApproval ? t("approval.waitingForAdmin") : t("approval.status.waitingApproval")}
         target={card.adminApproval ? adminWillAnswerLine(card.adminNames) : undefined}
       />
     );
@@ -561,6 +561,11 @@ export function ApprovalCard({
           <>
             {settled === "allow" && !expired ? <Check size={14} className="text-success" /> : <X size={14} />} {outcome}
             {byVoice}
+          </>
+        ) : card.reviewing ? (
+          <>
+            <ShieldCheck size={14} className="text-accent" />
+            <span data-auto-review="pending">{t("customRules.notice.reviewing")}</span>
           </>
         ) : (
           <>

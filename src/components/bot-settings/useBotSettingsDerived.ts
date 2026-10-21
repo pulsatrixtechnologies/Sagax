@@ -43,6 +43,7 @@ export type BotPatch = Partial<
     | "speakReplies"
     | "memoryEnabled"
     | "voice"
+    | "emailDrafts"
     | "chiefOfStaff"
     | "managedSections"
     | "approvePeerComms"

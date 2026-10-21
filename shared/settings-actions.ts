@@ -125,6 +125,7 @@ botField("bot.mascotExpression", "mascotExpression", "string", "Mascot expressio
 botField("bot.voice", "voice", "string?", "Voice", "Bot editor > Voice");
 botField("bot.speakReplies", "speakReplies", "boolean", "Speak replies", "Bot editor > Voice");
 botField("bot.voiceNotes", "voiceNotes", "boolean", "Voice notes", "Bot editor > Voice");
+botField("bot.emailDrafts", "emailDrafts", "boolean", "Email drafts", "Bot editor > Permissions > Email drafts");
 botField("bot.notifications", "notifications", "any", "Notifications", "Bot editor > Voice > Notifications");
 botField("bot.model", "modelSelection", "object", "Model and effort ({instanceId, model, effort})", "Bot editor > Model");
 add({
@@ -237,6 +238,47 @@ add({
 add({
   key: "bot.delete", family: "bot", target: "bot", value: "boolean", label: "Delete the bot (true)", where: "Bot editor > ... > Delete",
   write: (ids, v) => v === true ? { method: "DELETE", path: `/api/bots/${enc(ids.target!)}` } : "value is true.",
+  classes: always("delete"),
+});
+
+// ── bot templates behind a public link (routes/template-links.ts) ──────
+// "Make a public template of yourself": the bot first sets the New bot
+// defaults (server.newBotDefaults) from its own persona when asked, then
+// shares or updates the template. A public link reaches other people: card.
+const templateLinkId = (value: unknown): string | null => {
+  const id = typeof value === "string" ? value : value && typeof value === "object" ? (value as { id?: unknown }).id : undefined;
+  return typeof id === "string" && /^[A-Za-z0-9_-]{22}$/.test(id) ? id : null;
+};
+const templateBody = (value: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (value && typeof value === "object") {
+    for (const field of ["name", "description"] as const) {
+      const text = (value as Record<string, unknown>)[field];
+      if (typeof text === "string" && text.trim()) out[field] = text.trim();
+    }
+  }
+  return out;
+};
+add({
+  key: "template.share", family: "bot", target: "none", value: "object", label: "Share the New bot defaults as a public template link ({name?, description?}); get lists your links", where: "New bot > Share preset > Share the link",
+  read: () => ({ path: "/api/template-links", field: "links" }),
+  write: (_ids, v) => ({ method: "POST", path: "/api/template-links", body: templateBody(v) }),
+  classes: always("others"),
+});
+add({
+  key: "template.update", family: "bot", target: "none", value: "object", label: "Update a shared template under the same link ({id, name?, description?})", where: "New bot > Share preset > Share the link > Update the template",
+  write: (_ids, v) => {
+    const id = templateLinkId(v);
+    return id ? { method: "PUT", path: `/api/template-links/${id}`, body: templateBody(v) } : "value is {id, name?, description?} with the id of one of your links (get template.share).";
+  },
+  classes: always("others"),
+});
+add({
+  key: "template.remove", family: "bot", target: "none", value: "string", label: "Delete a shared template and turn its link off (its id)", where: "New bot > Share preset > Share the link > Turn off",
+  write: (_ids, v) => {
+    const id = templateLinkId(v);
+    return id ? { method: "DELETE", path: `/api/template-links/${id}` } : "value is the id of one of your links (get template.share).";
+  },
   classes: always("delete"),
 });
 
@@ -457,6 +499,8 @@ pref("appearance.highContrast", "appearance", "sagax.a11y.contrast.v1", "enum:sy
 pref("appearance.textSize", "appearance", "sagax.a11y.textSize.v1", "enum:default|large|xlarge", "Text size (default, large, extra large)", "Settings > Appearance > Accessibility");
 pref("appearance.hardwareAcceleration", "appearance", "sagax.hardwareAcceleration.v1", "boolean", "Use hardware acceleration (desktop app; needs a restart)", "Settings > Appearance > Desktop");
 pref("appearance.spellcheck", "appearance", "sagax.spellcheck.v1", "boolean", "Check spelling while typing (desktop app)", "Settings > Appearance > Desktop");
+pref("appearance.botHotkeys", "appearance", "sagax.botHotkeys.v1", "boolean", "Global shortcuts that open a bot (macOS menu bar list)", "Settings > Appearance > Desktop");
+pref("appearance.botHotkeyChord", "appearance", "sagax.botHotkeyModifier.v1", "enum:cmd-shift|cmd-alt|ctrl-alt", "Chord of the bots' global shortcuts (Cmd+Shift, Cmd+Option, Ctrl+Option, then the slot number)", "Settings > Appearance > Desktop");
 pref("appearance.sendKey", "appearance", "omb-send-key", "enum:enter|mod-enter", "Send key", "Settings > Appearance");
 pref("appearance.runCard", "appearance", "omb-show-run-card", "boolean", "This run card", "Settings > Appearance");
 pref("appearance.sidebarLogo", "appearance", "sagax-show-sidebar-logo", "boolean", "Sidebar logo", "Settings > Appearance");
@@ -492,6 +536,22 @@ add({
   key: "computer.remove", family: "computer", target: "none", value: "string", label: "Remove one of your other computers from the list (its name; refused while it is online)", where: "Settings > Computer > Other computers",
   write: (_ids, v) => ({ method: "POST", path: "/api/me/desktop-bridge/computers/remove", body: { computer: v } }),
   classes: always("delete"),
+});
+add({
+  key: "computer.messages", family: "computer", target: "none", value: "boolean",
+  label: "Use Messages on this Mac (read and send iMessage or SMS; solo desktop only)",
+  where: "Settings > Computer > Messages",
+  read: () => ({ path: "/api/messages", field: "useMessages" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/messages", body: { useMessages: v === true } }),
+  classes: always("rule-change"),
+});
+add({
+  key: "bot.lifecycleHooks", family: "bot", target: "bot", value: "boolean",
+  label: "Lifecycle hooks on the bot computer (never on the server)",
+  where: "Bot editor > Permissions > Lifecycle hooks",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/lifecycle-hooks`, field: "enabled" }),
+  write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/lifecycle-hooks`, body: { enabled: v === true } }),
+  classes: always("rule-change"),
 });
 
 const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio", "composio"]);

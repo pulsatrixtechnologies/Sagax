@@ -779,6 +779,9 @@ describe("agents-proxy MCP surface", () => {
       "identity",
       "flow",
       "flow_action",
+      "remote_support_open",
+      "remote_support_status",
+      "remote_support_close",
       "review_write",
     ]);
     const ask = list.result.tools.find((tool: { name: string }) => tool.name === "ask_bot");

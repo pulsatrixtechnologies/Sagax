@@ -343,11 +343,12 @@ import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
 import { createCustomRulesModelReviewer } from "./custom-rules-model.ts";
+import { modelReviewCardEligible } from "../shared/custom-rules.ts";
 import { createCustomRuleRoutes } from "./routes/custom-rules.ts";
 import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
-import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
+import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
 import {
@@ -619,7 +620,7 @@ import {
   THREADS_PROMPT,
   WIDGET_PROMPT,
   WIDGET_APPROVAL_PROMPT,
-  RICH_OUTPUT_PROMPT,
+  richOutputPrompt,
   LEARN_PROMPT,
   PROFILE_PROMPT,
   PROFILE_CREATOR_PROMPT,
@@ -969,9 +970,19 @@ import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
 import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
+import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
+import { createMessagesRoutes } from "./routes/messages.ts";
+import { handleMessagesMcp } from "./imessage-mcp.ts";
+import { bindImessageMessage, takeImessageSend } from "./imessage-cards.ts";
+import { createOsascriptSender } from "./imessage-send.ts";
+import { readMessagesSettings } from "./imessage-settings.ts";
+import { messagesOnBotMac } from "../shared/imessage.ts";
+import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEvent, type HookRun, type HookTarget } from "./lifecycle-hooks.ts";
+import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
 import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
+import { OrgBotSecrets } from "./org-bot-secrets.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
 import { parsePersonalMcpInput, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
@@ -3493,7 +3504,7 @@ type InternalCapability = {
   threadId: string;
   generation: string;
   depth: number;
-  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "perspicax" | "sandbox" | "desktop" | "workplace" | "personal-mcp" | "data";
+  kind: "agents" | "connectors" | "computer" | "browser" | "hooks" | "phone" | "messages" | "perspicax" | "sandbox" | "desktop" | "workplace" | "personal-mcp" | "data";
   /** Slice 5: the one Perspicax profile a "perspicax" capability relays for. */
   perspicaxProfile?: string;
   /** A "sandbox" capability: whose server environment it runs in. */
@@ -3831,6 +3842,7 @@ const phoneSecretEnvelopeSchema = z.object({
 const agentsProxyPath = SPAWNED_PROXIES.agents;
 const perspicaxBridgePath = SPAWNED_PROXIES.perspicax;
 const phoneProxyPath = SPAWNED_PROXIES.phone;
+const messagesProxyPath = SPAWNED_PROXIES.messages;
 // in the packaged app process.execPath is Electron — run the proxy as node
 const AGENTS_NODE_FLAG = { ELECTRON_RUN_AS_NODE: "1" };
 
@@ -3937,6 +3949,17 @@ function agentsIntegration(
       // The Perspicax gateway tools on an organization server linked to Perspicax;
       // /api/internal/perspicax/tool re-checks that a profile is mounted.
       SAGAX_PERSPICAX_TOOLS: IDENTITY.kind === "perspicax" && perspicaxMcp ? "1" : "0",
+      // Technician key for remote support: this computer only (desktop PC or
+      // the bot's cloud computer). The private file never goes in the env.
+      SAGAX_REMOTE_SUPPORT_DIR: join(DATA_DIR, "remote-support"),
+      ...(() => {
+        const speakerId = safetyPrincipal(threadId).principalId;
+        const speaker = speakerId ? principals.byId(speakerId) : undefined;
+        return {
+          SAGAX_TECHNICIAN_NAME: (personDisplayName(speaker) || cfg.profile?.name?.trim() || "").slice(0, 80),
+          SAGAX_ORG_NAME: (process.env.SAGAX_ORG_NAME?.trim() || "Pulsatrix").slice(0, 80),
+        };
+      })(),
       // Who the permission layer judges (server/mcp-permissions.ts).
       ...mcpIdentityEnv(mcpIdentityOf(botId, threadId)),
       ...mcpPolicyEnv(process.env),
@@ -5355,6 +5378,36 @@ function phoneIntegration(botId: string, threadId: string, generation: string) {
   return { command: process.execPath, args: [phoneProxyPath], env };
 }
 
+/** Messages tools, only on the solo Mac this process is. */
+function messagesWanted(): boolean {
+  return messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false }).ok
+    && readMessagesSettings(DATA_DIR).useMessages;
+}
+
+function messagesIntegration(botId: string, threadId: string, generation: string) {
+  const token = mintInternalCapability({
+    botId,
+    threadId,
+    generation,
+    depth: 0,
+    kind: "messages",
+    skillAuthoring: false,
+    createdBots: 0,
+    openedThreads: 0,
+  });
+  return {
+    command: process.execPath,
+    args: [messagesProxyPath],
+    env: {
+      ...AGENTS_NODE_FLAG,
+      SAGAX_MESSAGES_TOKEN: token,
+      SAGAX_HARNESS_URL: `http://127.0.0.1:${PORT}`,
+    },
+  };
+}
+
+const imessageSender = createOsascriptSender();
+
 // ── Perspicax MCP for the person who speaks (slice 5) ─────────────────
 /** An engine-side server name for a profile: `perspicax_<slug or id>`,
  * [a-z0-9_], at most 40 characters, with a suffix on a collision. */
@@ -6403,6 +6456,59 @@ if (userSandbox) {
     else userSandbox.personBack(person.id);
   });
 }
+
+/** Plugin hooks for this turn. Refuses the organization server's own host. */
+async function runLifecycleEvent(botId: string, threadId: string, eventName: string, payload: unknown, toolName?: string): Promise<{ blocked: boolean; context: string }> {
+  const event = lifecycleEvent(eventName);
+  if (!event || !botPlugins.lifecycleHooksEnabled(botId)) return { blocked: false, context: "" };
+  const live = turnWorkplaces.get(threadId);
+  const workplace = IDENTITY.kind === "perspicax" ? (live?.decision.target ?? "none") : "host" as const;
+  const target = chooseHookTarget({
+    identityKind: IDENTITY.kind,
+    workplace,
+    principal: live?.decision.principal ?? null,
+  });
+  const report = await Promise.race([
+    dispatchLifecycleHooks({
+      enabled: true,
+      event,
+      hooks: botPlugins.hooksOf(botId),
+      target,
+      payload,
+      ...(toolName ? { toolName } : {}),
+      files: botPlugins.hookFiles(botId),
+      exec: (where, run) => execLifecycleHook(botId, where, run),
+    }),
+    new Promise<{ blocked: boolean; context: string; ran: boolean; reason: "timeout" }>((resolve) => {
+      setTimeout(() => resolve({ blocked: false, context: "", ran: false, reason: "timeout" }), 2_000);
+    }),
+  ]);
+  return { blocked: report.blocked, context: report.context };
+}
+
+async function execLifecycleHook(botId: string, target: Exclude<HookTarget, { kind: "refuse" }>, run: HookRun) {
+  if (target.kind === "pc") return spawnPcHook(run, workspaceDir(botId), join(DATA_DIR, "bot-plugins", botId, "computer-hooks"));
+  const command = Object.keys(run.files).length ? commandWithFiles(run.command, run.files, run.stdin) : run.command;
+  const stdin = Object.keys(run.files).length ? "" : run.stdin;
+  if (target.kind === "sandbox") {
+    if (!userSandbox) return { stdout: "", code: 1 };
+    const result = await userSandbox.exec(target.principal, {
+      argv: ["/bin/sh", "-c", command],
+      stdinBase64: Buffer.from(stdin, "utf8").toString("base64"),
+      timeoutSec: Math.max(1, Math.ceil(run.timeoutMs / 1000)),
+      env: { LANG: "C.UTF-8" },
+      maxOutputBytes: 16_000,
+    }, botId);
+    return { stdout: result.stdout, code: result.exitCode ?? 1 };
+  }
+  const desktop = desktopBridges.current(target.principal);
+  if (!desktop || desktop.platform === "win32") return { stdout: "", code: 1 };
+  const line = commandWithFiles(run.command, run.files, run.stdin);
+  const result = await desktopBridges.request(target.principal, {
+    action: "run_command", command: line, timeout_seconds: Math.max(1, Math.ceil(run.timeoutMs / 1000)),
+  }, () => true) as { isError?: boolean; content?: Array<{ text?: string }> } | null;
+  return { stdout: result?.content?.map((part) => part.text ?? "").join("\n") ?? "", code: result?.isError ? 1 : 0 };
+}
 /** Turns that already got a cluster-wake row, by thread: `${generation}:${phase}`. */
 const sandboxWakeNoted = new Map<string, Set<string>>();
 /** The Kubernetes cluster of the server environments is starting (or did not
@@ -6559,6 +6665,14 @@ ROUTES.push(createCredentialVaultRoutes({
     return fresh ? null : { status: 403, body: { error: "Sign in again, then export your vault.", code: "reauth_required" } };
   },
   importGate: (auth) => credentialVaultPersonRefusal(auth),
+  // Reveal and a purchase answer are the person's. Their Primary Bot may
+  // answer a purchase when they asked, in this turn (actConfirmed).
+  ownerGate: (auth) => (actConfirmed()?.primary ? null : credentialVaultPersonRefusal(auth)),
+  viaPrimary: () => actConfirmed()?.primary?.botName ?? null,
+  purchaseStepUp: (auth, detail, stepUp) => settingsStepUpGate(
+    IDENTITY.kind === "perspicax" ? ruleManager(auth) : localPrincipalId(),
+    "purchase.allow", detail, stepUp,
+  ),
   cards: {
     find: (botId, threadId, messageId) => secretMessage(botId, threadId, messageId)?.secret ?? null,
     patch: (_botId, threadId, messageId, secret) => { store.patchMessage(threadId, messageId, { secret }); },
@@ -6669,6 +6783,7 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
 /** The organization's GitHub tokens (Settings > Organization > Plugins and
  * GitHub, server/org-github-tokens.ts). */
 const orgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
+const orgBotSecrets = new OrgBotSecrets(DATA_DIR, vaultKeySource);
 /** A token per bot and plugin marketplace (server/marketplace-tokens.ts). */
 const marketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
 /** Who reads a private GitHub repository for `actor`: their own GitHub
@@ -7125,6 +7240,20 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
     orgAudit({ category: "bot", action, target: auditBotTarget(bot.id), changed: ["plugins"], after: detail, actor: orgAuditActor(auth) });
   },
 }));
+ROUTES.push(createLifecycleHookRoutes({
+  plugins: botPlugins,
+  bot: (id) => store.bot(id) ?? undefined,
+  mayRead: (auth, bot) => viewerBotLevel(auth, bot) !== null || orgAdminCaller(auth),
+  mayChange: (auth, bot) => {
+    if (IDENTITY.kind !== "perspicax") return auth.kind !== "session" || auth.scopes.includes("admin");
+    const level = viewerBotLevel(auth, bot);
+    return level === "owner" || level === "manage" || orgAdminCaller(auth);
+  },
+}));
+ROUTES.push(createMessagesRoutes({
+  dataDir: DATA_DIR,
+  host: () => ({ platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false }),
+}));
 // Slice 4: the Perspicax team names (who is in a team lives on each person).
 const orgTeams = new OrgTeams({ path: join(DATA_DIR, "org-teams.json") });
 /** Slice 4 (D10): each person's own engine sign-ins, organization mode. */
@@ -7318,7 +7447,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "reactions", label: "Reactions", text: agentsMounted ? REACTION_PROMPT : "" },
     { id: "routine", label: "Routines", text: agentsMounted ? ROUTINE_PROMPT : "" },
     { id: "profile", label: "Profile changes", text: agentsMounted ? botProfilePrompt(bot) : "" },
-    { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
+    { id: "rich-output", label: "Rich output", text: richOutputPrompt(bot.emailDrafts !== false) },
     { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
     { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (agentsMounted ? TEAM_MEMORY_PROMPT : "") },
     teamAvailabilityPart(agentsMounted && coordination ? peers : []),
@@ -12464,6 +12593,9 @@ function ingestEngineHook(capability: InternalCapability, body: unknown): { ok: 
   const name = typeof event.event === "string" ? event.event : "";
   const payload = event.payload && typeof event.payload === "object" ? (event.payload as Record<string, unknown>) : {};
   const threadId = capability.threadId;
+  if (lifecycleEvent(name)) {
+    void runLifecycleEvent(capability.botId, threadId, name, payload, typeof payload.tool_name === "string" ? payload.tool_name : undefined).catch(() => {});
+  }
   // The engine compacting its own session (Claude Code's auto-compact in a
   // single very long turn, past the point where Sagax folds between turns)
   // is invisible to the person: no chat row, only the server log. Once it is
@@ -12602,6 +12734,8 @@ async function scheduleTurnDigest(input: {
     // The pre-turn commit has had its last reader (the diff above is queued
     // ahead of this in the shadow repo); the next snapshot may reclaim it.
     if (checkpoint) void checkpoints.release(checkpoint.botId, checkpoint.cwd, checkpoint.pin);
+    void runLifecycleEvent(input.botId, input.threadId, "after_agent_response", { text: input.reply.slice(0, 2_000) }).catch(() => {});
+    void runLifecycleEvent(input.botId, input.threadId, "stop", {}).catch(() => {});
   }
 }
 
@@ -14604,46 +14738,71 @@ bus.subscribe((event: RuntimeEvent) => {
       // Notify from HERE, not from a separate subscriber on request.opened:
       // this is the branch where a card actually reached a human. Anything
       // Full access answered took the early return above and never buzzes.
+      // 2026-10-21 (Grok Bot parity A1, extended by A1b, JC: comme Grok): a
+      // card the matcher left is judged by the model reviewer, including a
+      // routine, a webhook and another bot. The action stays untrusted
+      // data. A guest, an admin card, a hold, a sandbox widening, a
+      // question, a security key, an owner ask rule and an email draft stay
+      // with the person. While it judges, the card says so and nobody is
+      // notified yet.
+      const modelReview = Boolean(asker && event.requestId && customReview && customDecision && modelReviewCardEligible({
+        permission, requestId: true, reviewed: true,
+        decision: customDecision.kind === "none" && customDecision.riskBlocked ? "blocked" : customDecision.kind,
+        questions: Boolean(questions), strictCard, guest: guestDriven, adminApproval,
+        hold: safetyEffect?.kind === "hold", explicitApproval: event.requiresExplicitApproval === true,
+        ownerCall: Boolean(ownerCall), stepUp: ownerStepUp.length > 0, originRefused: ownerOriginRefused,
+        emailDraft: Boolean(emailDraftRequest),
+        ...(owner ? { owner: { kind: owner.kind, ...("reason" in owner ? { reason: owner.reason } : {}) } } : {}),
+      }));
       if (asker) {
         const card = store.messagesFor(event.threadId).find((candidate) => candidate.id === message.id)?.card;
         if (card && !card.answered) {
-          // the bot is not working now — it is waiting on a person
-          if (bot) store.setTaskActivity(bot.id, event.threadId, "waiting-on-you");
-          else if (asker.busy) store.setActivity(asker.id, "waiting-on-you");
-          if (event.requestId) showWaitingOnPersonChip(event.threadId, event.requestId, asker, permission ? "approval" : "answer");
-          const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || asker;
-          notify(deliverableNotification(
-            permission ? "approval" : "question",
-            notificationBot,
-            (routineRun && routineSourceThread(routineRun)) || event.threadId,
-            plain ? plain.line : event.summary,
-            {
-              ...(notificationBot.avatarUrl ? { avatarUrl: notificationBot.avatarUrl } : {}),
-              ...(plain ? { title: plain.title } : {}),
-              ...(event.requestId ? { requestId: event.requestId } : {}),
-            },
-          ));
+          const tellThePerson = () => {
+            // the bot is not working now. it is waiting on a person
+            if (bot) store.setTaskActivity(bot.id, event.threadId, "waiting-on-you");
+            else if (asker.busy) store.setActivity(asker.id, "waiting-on-you");
+            if (event.requestId) showWaitingOnPersonChip(event.threadId, event.requestId, asker, permission ? "approval" : "answer");
+            const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || asker;
+            notify(deliverableNotification(
+              permission ? "approval" : "question",
+              notificationBot,
+              (routineRun && routineSourceThread(routineRun)) || event.threadId,
+              plain ? plain.line : event.summary,
+              {
+                ...(notificationBot.avatarUrl ? { avatarUrl: notificationBot.avatarUrl } : {}),
+                ...(plain ? { title: plain.title } : {}),
+                ...(event.requestId ? { requestId: event.requestId } : {}),
+                // Allow on the phone opens Sagax: this class needs the person's key.
+                ...(permission && ownerStepUp.length > 0 ? { needsKey: true } : {}),
+              },
+            ));
+          };
+          const clearReviewing = () => {
+            const row = store.messagesFor(event.threadId).find((candidate) => candidate.id === message.id);
+            if (!row?.card?.reviewing) return row?.card;
+            const { reviewing: _reviewing, ...rest } = row.card;
+            store.patchMessage(event.threadId, row.id, { card: rest });
+            return store.messagesFor(event.threadId).find((candidate) => candidate.id === message.id)?.card;
+          };
+          if (!modelReview || !event.requestId || !customReview || !customDecision) {
+            tellThePerson();
+          } else {
+            store.patchMessage(event.threadId, message.id, { card: { ...card, reviewing: true } });
+            const finishReview = (verdict: { kind: string }) => {
+              const open = clearReviewing();
+              if (!open || open.answered || open.answeredBy || open.dismissed || open.expired) return;
+              if (verdict.kind !== "none" && verdict.kind !== "ask") return;
+              tellThePerson();
+            };
+            void customRulesModel.reviewCard({
+              threadId: event.threadId, requestId: event.requestId, botId: asker.id,
+              instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
+              rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
+              call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
+              language: cfg.language,
+            }).then(finishReview, () => finishReview({ kind: "none" }));
+          }
         }
-      }
-      // 2026-10-21 (Grok Bot parity A1, JC): a card the matcher left to the
-      // person is judged by the model reviewer against the same rules, on
-      // the same cards a custom allow may answer (the person's own turn, no
-      // admin card, hold, sandbox widening, question, guest or security key;
-      // no owner ask rule). Unsure or failed: the card stays.
-      if (permission && asker && event.requestId && customReview && customDecision?.kind === "none" && !questions
-        && !strictCard && !guestDriven && !adminApproval && safetyEffect?.kind !== "hold" && event.requiresExplicitApproval !== true
-        && ownerCall && ownerStepUp.length === 0 && !ownerOriginRefused && !emailDraftRequest && !unattended
-        // never a turn that is not the person's own words (a routine, a
-        // webhook, another bot, an automation): their text is the attacker's
-        && ownEnvironmentOrigin(asker, event.threadId) === "owner"
-        && (!owner || (owner.kind === "card" && (owner.reason === "no-rule" || owner.reason === "destructive")))) {
-        void customRulesModel.reviewCard({
-          threadId: event.threadId, requestId: event.requestId, botId: asker.id,
-          instanceId: event.providerInstanceId ?? asker.modelSelection.instanceId,
-          rules: customRules.rulesOf(cardAnswerer, asker.id), local: customDecision, facts: customReview.facts,
-          call: { tool: event.mcpTool ?? event.tool, ...(typeof event.input === "string" ? { input: event.input } : {}), summary: event.summary },
-          language: cfg.language,
-        });
       }
       break;
     }
@@ -15000,7 +15159,10 @@ bus.subscribe((event: RuntimeEvent) => {
             ? reply || routineRun.output || routineRun.routineName
             : reply;
           const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || bot;
-          notify(deliverableNotification("done", notificationBot, routineReportThread ?? event.threadId, completionDetail, { avatarUrl: notificationBot.avatarUrl }));
+          notify(deliverableNotification("done", notificationBot, routineReportThread ?? event.threadId, completionDetail, {
+            avatarUrl: notificationBot.avatarUrl,
+            ...(routineRun && routineRun.status === "completed" ? { routineRunId: routineRun.id, routineName: routineRun.routineName } : {}),
+          }));
         }
         if (screenPollers.has(event.threadId) && askedForView(latestPersonText(event.threadId), "screen")) {
           // views on request only (shared/requested-views.ts): the settled
@@ -17396,9 +17558,10 @@ const customRulesModel = createCustomRulesModelReviewer({
   settle: (card, verdict, notice) => {
     const row = store.messagesFor(card.threadId).find((candidate) => candidate.card?.requestId === card.requestId);
     if (row?.card) {
+      const { reviewing: _reviewing, ...kept } = row.card;
       store.patchMessage(card.threadId, row.id, {
         card: {
-          ...row.card,
+          ...kept,
           customRule: notice,
           ...(verdict.kind === "ask" ? {} : { answeredBy: { kind: "worker" as const, via: "auto-review" as const } }),
         },
@@ -17467,7 +17630,12 @@ async function confirmHeldCard(request: { threadId?: string; botId?: string; too
       ...(bot && request.fingerprint ? { ownerRule: { ...candidate, from: "hold" as const } } : {}),
     },
   });
-  if (bot) notify(deliverableNotification("approval", bot, threadId, summary, bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}));
+  const holdNeedsKey = Boolean(bot && autoAnswerStepUp(bot, threadId, { tool: request.tool ?? "action", summary }).length);
+  if (bot) notify(deliverableNotification("approval", bot, threadId, summary, {
+    ...(bot.avatarUrl ? { avatarUrl: bot.avatarUrl } : {}),
+    requestId: held.requestId,
+    ...(holdNeedsKey ? { needsKey: true } : {}),
+  }));
   const answer = await held.answer;
   if (answer === "timeout") {
     const stale = store.messagesFor(threadId).find((row) => row.id === message.id);
@@ -18926,6 +19094,7 @@ async function startTurn(
       if (selectedSkills.some((skill) => skill.manifest.requiredCapabilities.includes("phoneMcp"))) {
         integrations.phone = phoneIntegration(bot.id, threadId, dispatchClaimId);
       }
+      if (messagesWanted()) integrations.messages = messagesIntegration(bot.id, threadId, dispatchClaimId);
       // the user's connected apps, but only to a driver that can mount
       // them — a key in the config says the connections exist, not that
       // this engine can reach them — and only to a bot the user has not
@@ -19510,6 +19679,7 @@ async function startTurn(
       }
       if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
         integrations.hooks = hooksIntegration(bot.id, threadId, dispatchClaimId);
+        void runLifecycleEvent(bot.id, threadId, "before_submit_prompt", {}).catch(() => {});
       }
       // @mentions in the user's message (the composer's tagging UI) become
       // an explicit coordination nudge. The agent still chooses the matching
@@ -19688,7 +19858,7 @@ async function startTurn(
         { id: "routine-execution", label: "Routine execution", text: opts?.automationSource === "schedule" || opts?.automationSource === "manual" ? ROUTINE_EXECUTION_PROMPT : "" },
         { id: "profile", label: "Profile changes", text: profilePrompt },
         { id: "learn", label: "Skill authoring", text: learnPrompt },
-        { id: "rich-output", label: "Rich output", text: RICH_OUTPUT_PROMPT },
+        { id: "rich-output", label: "Rich output", text: richOutputPrompt((liveBot ?? bot).emailDrafts !== false) },
         { id: "dev-pods", label: "Coding view", text: devPodsPrompt(devPodsThreads.isOn(threadId)) },
         { id: "section-context", label: "Section context", text: sectionContextSystemPrompt(bot.section) },
         { id: "team-memory", label: "Team memory", text: teamMemory.systemPrompt(bot.section) + (integrations.agents ? TEAM_MEMORY_PROMPT : "") },
@@ -22195,6 +22365,7 @@ async function runGroupMemberTurn(
   }
   if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
     integrations.hooks = hooksIntegration(bot.id, threadId, internalGeneration);
+    void runLifecycleEvent(bot.id, threadId, "before_submit_prompt", {}).catch(() => {});
   }
   const latestUser = [...store.activePath(threadId)].reverse().find(
     (message) => message.role === "user" && message.kind === "text" && message.text,
@@ -22270,6 +22441,7 @@ async function runGroupMemberTurn(
   if (selectedSkills.some((skill) => skill.manifest.requiredCapabilities.includes("phoneMcp"))) {
     integrations.phone = phoneIntegration(bot.id, threadId, internalGeneration);
   }
+  if (messagesWanted()) integrations.messages = messagesIntegration(bot.id, threadId, internalGeneration);
   try {
     if (bot.composio !== false && composio.configured(cfg) && instance.adapter.capabilities.composioMcp === true) {
       const connection = await connectedAppsIntegration(bot, threadId, internalGeneration);
@@ -28799,9 +28971,30 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
           ...(card.ownerRule?.description ? { alwaysScope: card.ownerRule.description } : {}),
         });
       }
+      const vaultPerson = IDENTITY.kind === "perspicax" ? turn.person.toLowerCase() : LOCAL_VAULT_PRINCIPAL;
+      for (const purchase of credentialVault.pendingPurchases(vaultPerson)) {
+        out.push({
+          threadId: purchase.threadId,
+          requestId: purchase.id,
+          botId: purchase.botId,
+          botName: store.bot(purchase.botId)?.name || "Bot",
+          at: purchase.createdAt,
+          title: purchase.title,
+          line: purchase.line,
+          kind: "permission",
+          needsKey: securityKeys.required(vaultPerson, ["money"]).length > 0,
+          options: ["allow", "always_allow", "deny"],
+          always: "session",
+          alwaysScope: `pay ${purchase.merchant} with the card ending ${purchase.cardLast4}`,
+        });
+      }
       return out;
     },
     respond: (turn, card, body) => {
+      if (card.requestId.startsWith("pay_")) {
+        const decision = body.behavior === "deny" ? "deny" : body.always === true ? "always" : body.behavior === "allow" ? "once" : "";
+        return replay(turn, "POST", `/api/me/credentials/purchases/${card.requestId}/answer`, { decision }, card.threadId);
+      }
       const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
       const skill = message?.card?.skillRequest && body.behavior === "allow" ? reviewedSkillSha256(message.card.skillRequest) : undefined;
       return replay(turn, "POST", `/api/threads/${card.threadId}/respond`, { requestId: card.requestId, ...body, ...(skill ? { reviewedSha256: skill } : {}) }, card.threadId);
@@ -29192,6 +29385,9 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
   const target = emailDraftBot(auth, threadId, body.botId);
   if (!("bot" in target)) return target;
   const { bot } = target;
+  if (!emailDraftsEnabled(bot)) {
+    return { status: 409, body: { error: "Email drafts are turned off for this bot.", code: "email_drafts_off" } };
+  }
   const normalized = normalizeDraftForSend(body.draft);
   if ("problems" in normalized) return { status: 400, body: { error: normalized.problems.join("; "), code: "invalid_draft" } };
   // a room's people read its cards and messages: a Bcc there is not blind
@@ -29290,6 +29486,43 @@ function emailDraftStatus(auth: RequestAuth, threadId: string, draftKey: string)
 
 /** Allow on an email draft's card: the one send the person approved. Deny
  * closes the card and nothing is sent. False when the card is not a draft's. */
+/** Allow on a Messages card sends once, on this Mac. Deny sends nothing. */
+async function resolveImessageCard(res: ServerResponse, threadId: string, requestId: string, behavior: string): Promise<boolean> {
+  if (!requestId.startsWith("imsg-")) return false;
+  const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
+  const card = message?.card;
+  if (!message || !card) {
+    json(res, 409, { error: "The request is no longer open." });
+    return true;
+  }
+  if (card.answered || card.dismissed || card.expired) {
+    json(res, 409, { error: "The request is no longer open." });
+    return true;
+  }
+  const pending = takeImessageSend(requestId, threadId);
+  if (behavior !== "allow" || !pending) {
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny", subtitle: pending ? card.subtitle : "This send expired. Nothing was sent." } });
+    json(res, 200, { ok: true, outcome: "rejected" });
+    return true;
+  }
+  const host = messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false });
+  if (!host.ok || !readMessagesSettings(DATA_DIR).useMessages) {
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "deny", subtitle: "Messages is not available on this Mac. Nothing was sent." } });
+    json(res, 409, { error: "Messages is not available on this Mac.", code: "messages_not_on_this_mac" });
+    return true;
+  }
+  try {
+    await imessageSender.send({ to: pending.to, text: pending.text, service: pending.service });
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", subtitle: `Sent to ${pending.to}.` } });
+    json(res, 200, { ok: true, outcome: "allowed-once" });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Messages did not send.";
+    store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", subtitle: detail } });
+    json(res, 200, { ok: true, outcome: "allowed-once", send: "failed" });
+  }
+  return true;
+}
+
 async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, threadId: string, requestId: string, behavior: string): Promise<boolean> {
   if (!requestId.startsWith(EMAIL_SEND_REQUEST_PREFIX)) return false;
   const message = emailSendMessage(threadId, requestId);
@@ -32080,6 +32313,11 @@ if (IDENTITY.kind === "perspicax") {
     // Access tokens live in org-github-tokens.enc, not in config.json, so a
     // client id or marketplace save cannot drop them. The audit records the
     // operation, the count, the id and the label. Never the token.
+    botSecrets: {
+      list: () => orgBotSecrets.list(),
+      change: (change) => orgBotSecrets.change(change),
+      teamBot: (id) => Boolean(store.bot(id)),
+    },
     githubTokens: {
       list: () => orgGithubTokens.list(),
       change: (change, auth) => {
@@ -35937,6 +36175,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ? "data"
         : path === "/api/internal/phone/claim"
         ? "phone"
+        : path === "/api/internal/messages/mcp"
+        ? "messages"
         : path === "/api/internal/sandbox/mcp"
         ? "sandbox"
         : path === "/api/internal/desktop/mcp"
@@ -36676,6 +36916,46 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             });
           },
         }) });
+      }
+      if (method === "POST" && path === "/api/internal/messages/mcp") {
+        requireActiveInternalCapability();
+        const body = await readInternalBody();
+        const handled = await handleMessagesMcp(body, {
+          host: { platform: process.platform, identityKind: IDENTITY.kind, bridgeAction: false },
+          useMessages: readMessagesSettings(DATA_DIR).useMessages,
+          dbDir: messagesOnBotMac({ platform: process.platform, identityKind: IDENTITY.kind }).ok
+            ? join(homedir(), "Library", "Messages") : null,
+          allowedRecipients: internalSender.allowedRecipients,
+          grantsAllowed: standingGrantsAllowed(),
+          stepUp: (args) => autoAnswerStepUp(internalSender, internalCapability.threadId, {
+            tool: "send_message",
+            input: JSON.stringify(args),
+            summary: "Send a message",
+          }).length > 0,
+          sender: imessageSender,
+          botId: internalSender.id,
+          threadId: internalCapability.threadId,
+          openCard: (pending) => {
+            const preview = pending.text.length > 240 ? `${pending.text.slice(0, 240)}...` : pending.text;
+            const message = store.appendMessage(internalCapability.threadId, {
+              role: "bot",
+              kind: "options",
+              from: { botId: internalSender.id, name: internalSender.name, color: internalSender.color },
+              card: {
+                title: "Approval needed",
+                subtitle: `Message to ${pending.to}: ${preview}`,
+                options: ["Allow", "Deny"],
+                requestId: pending.requestId,
+                requestType: "permission",
+                tool: "send_message",
+                toolInput: JSON.stringify({ to: pending.to, text: pending.text, service: pending.service }),
+                plain: { title: `Message to ${pending.to}`, line: preview, risk: "write" },
+              },
+            });
+            bindImessageMessage(pending.requestId, message.id);
+          },
+        });
+        return json(res, 200, handled);
       }
       if (method === "POST" && path === "/api/internal/phone/claim") {
         // Lazy phone exclusivity (issue #1663): the turn holds computer:phone
@@ -39377,7 +39657,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             } else if (store.taskByThread(currentSender.id, threadId)?.busy) {
               store.setTaskActivity(currentSender.id, threadId, "waiting-on-you");
             }
-            notify(deliverableNotification("approval", currentSender, threadId, summary, { avatarUrl: currentSender.avatarUrl }));
+            const outboundNeedsKey = autoAnswerStepUp(currentSender, threadId, { tool: outboundTool, summary }).length > 0;
+            notify(deliverableNotification("approval", currentSender, threadId, summary, {
+              avatarUrl: currentSender.avatarUrl,
+              requestId: held.requestId,
+              ...(outboundNeedsKey ? { needsKey: true } : {}),
+            }));
             const answer = await held.answer;
             outboundRequests.forget(held.requestId);
             if (internalCapabilityIsActive(internalCapability)) {
@@ -42571,6 +42856,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (typeof body.voiceNotes !== "boolean") return json(res, 400, { error: "voiceNotes must be true or false" });
         patch.voiceNotes = body.voiceNotes;
       }
+      if (body.emailDrafts !== undefined) {
+        if (typeof body.emailDrafts !== "boolean") return json(res, 400, { error: "emailDrafts must be true or false" });
+        patch.emailDrafts = body.emailDrafts;
+      }
       if (body.memoryEnabled !== undefined) {
         if (typeof body.memoryEnabled !== "boolean") return json(res, 400, { error: "memoryEnabled must be true or false" });
         if (existingBot && (existingBot.busy || activeGroupTurnForBot(existingBot.id)) &&
@@ -44252,6 +44541,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (resolveAndSendTrust(res, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendCwAction(res, auth, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendEmailDraft(res, auth, bot.threadId, String(body.requestId), behavior)) return;
+        if (await resolveImessageCard(res, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendTeamSetup(res, {
           botId: bot.id, threadId: bot.threadId, requestId: String(body.requestId), behavior,
         }, auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
@@ -44374,6 +44664,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (resolveAndSendTrust(res, threadId, requestId, behavior)) return;
         if (await resolveAndSendCwAction(res, auth, threadId, requestId, behavior)) return;
         if (await resolveAndSendEmailDraft(res, auth, threadId, requestId, behavior)) return;
+        if (await resolveImessageCard(res, threadId, requestId, behavior)) return;
         const skillCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.skillRequest,
         );

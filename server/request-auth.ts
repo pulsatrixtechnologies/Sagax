@@ -703,7 +703,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // desktop capability); no answer carries a value.
   { methods: ["POST"], path: /^\/api\/me\/credentials(?:\/(?:list|import|export|onepassword\/(?:items|import)))?$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}$/ },
-  { methods: ["POST"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/(?:notes|grants)$/ },
+  { methods: ["POST"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/(?:notes|grants|reveal)$/ },
+  { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases$/ },
+  { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases\/pay_[a-f0-9]{16}\/answer$/ },
   { methods: ["DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/grants\/[\w-]{1,128}$/ },
   // A bot's login request card: the handler checks the card is the caller's.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss)$/ },
@@ -729,6 +731,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/plugins\/install$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, feature: "orgDirectory" },
+  // a plugin's configuration values (server/plugin-config.ts)
+  { methods: ["PUT"], path: /^\/api\/bots\/[\w-]+\/plugins\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:@|%40)[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/config$/, feature: "orgDirectory" },
   // Slice 5: the Perspicax MCP profiles a bot mounts. server/bot-perspicax.ts
   // decides (use reads, edit changes, adding needs holding the profile).
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/perspicax$/, feature: "orgDirectory" },

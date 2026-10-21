@@ -50,6 +50,10 @@ struct SettingsBotCard: View {
                 navigator.push(.rules)
             }
             CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Approval rules", accessory: .chevron, height: 43.33, identifier: "settings-approval-grants") {
+                navigator.push(.approvalGrants)
+            }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
             SettingsRow(
                 title: "Set Time Zone Automatically",
                 subtitle: "Your Bot's computer follows this device's time zone.",
