@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildTrayMenuTemplate, createSystemTray, normalizeRoster, rosterLabel, slotAccelerator, statusDotBitmap } from "./system-tray.mjs";
+import { buildTrayMenuTemplate, createSystemTray, macTrayImage, normalizeBotHotkeyConfig, normalizeRoster, normalizeTrayLabels, rosterLabel, slotAccelerator, statusDotBitmap } from "./system-tray.mjs";
 import { createBotHotkeys } from "./mascot-hotkey.mjs";
 
 const bot = (n, extra = {}) => ({ id: `b${n}`, name: `Bot ${n}`, color: "#FF0000", working: false, unread: 0, ...extra });
@@ -104,4 +104,48 @@ test("bot hotkeys follow the roster: one key per bot, released when it shrinks o
   keys.sync(2);
   keys.dispose();
   assert.equal(registered.size, 0);
+});
+
+test("the menu speaks the page's language, defaults to English, and drops unknown or long labels", () => {
+  const labels = normalizeTrayLabels({ bots: "Bots", open: "Ouvrir Sagax", quit: "Quitter Sagax", botsUnread: "Bots ({count} non lus)", evil: "x", working: "x".repeat(200) });
+  assert.equal(labels.working, "working");
+  assert.equal("evil" in labels, false);
+  const items = buildTrayMenuTemplate({ roster: [bot(1, { unread: 2 })], platform: "darwin", labels, onOpenBot() {}, onShow() {}, onQuit() {} });
+  assert.equal(items[0].label, "Bots (2 non lus)");
+  assert.equal(items.at(-3).label, "Ouvrir Sagax");
+  assert.equal(items.at(-1).label, "Quitter Sagax");
+  assert.equal(rosterLabel(bot(1, { unread: 3 }), normalizeTrayLabels({ unreadMany: "{count} non lus" })), "Bot 1 (3 non lus)");
+});
+
+test("the bots' shortcuts follow the setting: off shows no accelerator, a chord remaps them", () => {
+  assert.deepEqual(normalizeBotHotkeyConfig(null), { enabled: true, modifier: "cmd-shift" });
+  assert.deepEqual(normalizeBotHotkeyConfig({ enabled: false, modifier: "nope" }), { enabled: false, modifier: "cmd-shift" });
+  assert.equal(slotAccelerator(1, "darwin", "cmd-alt"), "CommandOrControl+Alt+1");
+  assert.equal(slotAccelerator(4, "darwin", "ctrl-alt"), "Control+Alt+4");
+  assert.equal(slotAccelerator(4, "darwin", "cmd-shift"), null);
+  const base = { roster: [bot(1)], platform: "darwin", onOpenBot() {}, onShow() {}, onQuit() {} };
+  assert.equal(buildTrayMenuTemplate({ ...base, hotkeys: { enabled: false, modifier: "cmd-shift" } })[1].accelerator, undefined);
+  assert.equal(buildTrayMenuTemplate({ ...base, hotkeys: { enabled: true, modifier: "cmd-alt" } })[1].accelerator, "CommandOrControl+Alt+1");
+});
+
+test("the macOS menu bar icon is a template image when the mark is there", () => {
+  let template = null;
+  const image = { isEmpty: () => false, setTemplateImage: (on) => { template = on; } };
+  const native = { createFromPath: (path) => (path === "mark.png" ? image : { resize: () => "colored" }) };
+  assert.equal(macTrayImage(native, "app.png", "mark.png"), image);
+  assert.equal(template, true);
+  const added = [];
+  const retina = { isEmpty: () => false, getSize: () => ({ width: 44, height: 40 }), toPNG: () => Buffer.from("png") };
+  const withRetina = {
+    isEmpty: () => false,
+    setTemplateImage() {},
+    addRepresentation: (rep) => added.push(rep),
+  };
+  macTrayImage({ createFromPath: (file) => (String(file).endsWith("@2x.png") ? retina : withRetina) }, "app.png", "mark.png");
+  assert.equal(added.length, 1);
+  assert.equal(added[0].scaleFactor, 2);
+  assert.equal(added[0].width, 22);
+  assert.equal(added[0].height, 20);
+  assert.equal(macTrayImage(native, "app.png", null), "colored");
+  assert.equal(macTrayImage({ createFromPath: (path) => (path === "mark.png" ? { isEmpty: () => true } : { resize: () => "colored" }) }, "app.png", "mark.png"), "colored");
 });

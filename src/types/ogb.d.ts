@@ -323,8 +323,8 @@ const __BASE_VERSION__: string;
       };
       /** Hardware acceleration and the spell checker (kept by main). */
       shellPreferences?: {
-        get(): { hardwareAcceleration: boolean; spellcheck: boolean } | null;
-        set(patch: { hardwareAcceleration?: boolean; spellcheck?: boolean }): Promise<{ hardwareAcceleration: boolean; spellcheck: boolean } | null>;
+        get(): { hardwareAcceleration: boolean; spellcheck: boolean; botHotkeys?: boolean; botHotkeyModifier?: "cmd-shift" | "cmd-alt" | "ctrl-alt" } | null;
+        set(patch: { hardwareAcceleration?: boolean; spellcheck?: boolean; botHotkeys?: boolean; botHotkeyModifier?: "cmd-shift" | "cmd-alt" | "ctrl-alt" }): Promise<{ hardwareAcceleration: boolean; spellcheck: boolean } | null>;
         /** The window's own zoom for the Text size choice (1 to 1.5). */
         setZoom?(factor: number): boolean;
       };
@@ -395,7 +395,7 @@ const __BASE_VERSION__: string;
       /** The id of a shell notification the person clicked. */
       onNotificationClick?(cb: (id: string, target?: { botId?: string; threadId?: string; groupId?: string; routineRunId?: string } | null) => void): () => void;
       /** The menu bar's bot list (electron/system-tray.mjs). */
-      setTrayRoster?(roster: Array<{ id: string; name: string; color: string; working: boolean; unread: number }>): void;
+      setTrayRoster?(roster: Array<{ id: string; name: string; color: string; working: boolean; unread: number }>, labels?: Record<string, string>): void;
       /** A bot chosen in the menu bar list or by its global shortcut. */
       onOpenBot?(cb: (botId: string) => void): () => void;
       /** Presence: the computer's idle state and seconds since the last

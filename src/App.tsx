@@ -292,9 +292,21 @@ function Shell() {
     })),
     [state.bots],
   );
-  const trayKey = JSON.stringify(trayRoster);
+  // the menu's words follow the app's language (the shell has no locale files)
+  const trayLabels = {
+    bots: t("tray.bots"),
+    botsUnread: t("tray.botsUnread", { count: "{count}" }),
+    working: t("tray.working"),
+    unread: t("tray.unread"),
+    unreadMany: t("tray.unreadMany", { count: "{count}" }),
+    open: t("tray.open"),
+    quit: t("tray.quit"),
+    tooltipUnread: t("tray.tooltipUnread", { count: "{count}" }),
+    tooltipWorking: t("tray.tooltipWorking", { count: "{count}" }),
+  };
+  const trayKey = JSON.stringify([trayRoster, trayLabels]);
   useEffect(() => {
-    window.ogb?.setTrayRoster?.(trayRoster);
+    window.ogb?.setTrayRoster?.(trayRoster, trayLabels);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trayKey]);
   const botsRef = useRef(state.bots);
