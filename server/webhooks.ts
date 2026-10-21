@@ -347,6 +347,7 @@ const webhookFileSchema = z.object({
   deliveries: z.array(deliveryReceiptSchema),
   attempts: z.array(webhookAttemptSchema).optional(),
 });
+const taskPayloadSchema = z.object({ task: z.string().optional(), message: z.string().optional() });
 const statusErrorSchema = z.object({ status: z.number().int().optional() });
 
 function fail(status: number, message: string): never {
@@ -1240,8 +1241,18 @@ function previewPayload(payload: JsonValue): string {
   return cutAt(serializePayload(payload).replace(/\s+/g, " ").trim(), 2_000);
 }
 
-/** Used when the owner configured no instructions. The payload never
- * supplies them: a `task` or `message` field stays inside the fence. */
+/** The bearer sender holds the owner's token, so a top-level `task` (or
+ * `message`) is the documented way to hand this bot a task. It only applies
+ * when the owner configured no instructions, and it is quoted so it cannot
+ * forge or close a fence. Every other field stays inside the fence. */
+function taskFromPayload(payload: JsonValue): string {
+  const parsed = taskPayloadSchema.safeParse(payload);
+  if (!parsed.success) return "";
+  const task = (parsed.data.task ?? parsed.data.message ?? "").trim();
+  return task ? cutAt(defang(cutAt(task, 20_000)), 20_000) : "";
+}
+
+/** Used when the owner configured no instructions and the payload carries no task. */
 export const DEFAULT_WEBHOOK_INSTRUCTIONS =
   "Review the event data below and act according to your standing instructions. Do not take external actions unless the event clearly requires them and existing permissions allow them.";
 
@@ -1256,9 +1267,12 @@ function eventPrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receive
     event.userAgent && `Sender: ${metadataValue(event.userAgent, 300)}`,
   ].filter(Boolean);
   const configured = trigger.prompt.trim();
+  const requestedTask = configured ? "" : taskFromPayload(event.payload);
   const instructionBlock = configured
     ? ["[USER-CONFIGURED WEBHOOK INSTRUCTIONS]", configured, "[/USER-CONFIGURED WEBHOOK INSTRUCTIONS]"]
-    : ["[DEFAULT WEBHOOK INSTRUCTIONS]", DEFAULT_WEBHOOK_INSTRUCTIONS, "[/DEFAULT WEBHOOK INSTRUCTIONS]"];
+    : requestedTask
+      ? ["[AUTHENTICATED WEBHOOK TASK]", requestedTask, "[/AUTHENTICATED WEBHOOK TASK]"]
+      : ["[DEFAULT WEBHOOK INSTRUCTIONS]", DEFAULT_WEBHOOK_INSTRUCTIONS, "[/DEFAULT WEBHOOK INSTRUCTIONS]"];
   return [
     ...instructionBlock,
     "",
