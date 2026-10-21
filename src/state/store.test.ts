@@ -479,7 +479,7 @@ describe("trusted approval-mode persistence", () => {
   });
 
   it("names the open conversation on an organization Full grant and keeps it off the ordinary patch", async () => {
-    const request = vi.fn(async () => ({ bot: announcement("full") }));
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("full") }));
     await persistBotUpdate(
       "bot-1",
       { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true, threadId: "talk", title: "Ops" },
