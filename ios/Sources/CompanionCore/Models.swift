@@ -1870,6 +1870,16 @@ public struct RoutineSuspension: Codable, Hashable, Sendable {
     public var at: Double
 }
 
+/// Runs skipped while the person was away (`RoutineAwaySkips`).
+/// Every field is optional so a partial object cannot drop the routine.
+public struct RoutineAwaySkips: Codable, Hashable, Sendable {
+    public var count: Int?
+    public var firstAt: Double?
+    public var lastAt: Double?
+    /// Set once the person is back and the count was reported.
+    public var reportedAt: Double?
+}
+
 public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var name: String
@@ -1908,6 +1918,10 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var canEdit: Bool? = nil
     /// Someone else's routine: no prompt, attachments or threads.
     public var redacted: Bool? = nil
+    /// Skip scheduled runs while the person is away. Absent means it runs.
+    public var onlyWhenPresent: Bool? = nil
+    /// Skipped runs to report once the person is back.
+    public var awaySkips: RoutineAwaySkips? = nil
 }
 
 public struct RoutineRun: Codable, Hashable, Identifiable, Sendable {
@@ -1984,6 +1998,9 @@ public struct RoutineInput: Encodable, Sendable {
     /// id, RunAsField); nil leaves it to the server (the routine's current
     /// person, else the caller).
     public var runAs: String? = nil
+    /// "Only when I'm here". Nil leaves the stored value alone on an edit
+    /// and means off on a create.
+    public var onlyWhenPresent: Bool? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",
@@ -2008,6 +2025,7 @@ public struct RoutineInput: Encodable, Sendable {
         self.attachments = attachments
         self.results = results
         self.completeSchedule = completeSchedule
+        self.onlyWhenPresent = nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -2274,6 +2292,8 @@ struct RoutinesResponse: Codable, Sendable {
 }
 
 struct RoutineResponse: Codable, Sendable { var routine: Routine }
+
+struct RoutineAwayStateResponse: Decodable, Sendable { var state: String }
 struct RoutineRunResponse: Codable, Sendable { var run: RoutineRun }
 
 struct ConnectorAuthorizationResponse: Codable, Sendable {

@@ -70684,6 +70684,181 @@
         }
       }
     },
+    "Ignore the question": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ignore the question" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ignorer la question" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ignorar a pergunta" } }
+      }
+    },
+    "Ignore without answering": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ignore without answering" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ignorer sans répondre" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ignorar sem responder" } }
+      }
+    },
+    "Ignore, closes automatically": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ignore, closes automatically" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ignorer, se ferme automatiquement" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ignorar, fecha automaticamente" } }
+      }
+    },
+    "Only when I'm here": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Only when I'm here" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Seulement quand je suis là" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Somente quando eu estiver aqui" } }
+      }
+    },
+    "While you are away (computer idle or locked), this routine skips its runs and tells you how many when you are back. A one-time routine waits for you.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "While you are away (computer idle or locked), this routine skips its runs and tells you how many when you are back. A one-time routine waits for you." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pendant votre absence (ordinateur inactif ou verrouillé), cette routine saute ses exécutions et vous dit combien à votre retour. Une routine ponctuelle vous attend." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Enquanto você estiver ausente (computador inativo ou bloqueado), esta rotina pula as execuções e diz quantas quando você voltar. Uma rotina única espera por você." } }
+      }
+    },
+    "You are away. Routines set to run only when you are here are skipping their runs.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You are away. Routines set to run only when you are here are skipping their runs." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous êtes absent. Les routines qui tournent seulement quand vous êtes là sautent leurs exécutions." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Você está ausente. As rotinas que rodam somente quando você está aqui estão pulando as execuções." } }
+      }
+    },
+    "Pause all": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pause all" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toutes les mettre en pause" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pausar todas" } }
+      }
+    },
+    "Resume routines": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Resume routines" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Reprendre les routines" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Retomar as rotinas" } }
+      }
+    },
+    "Every routine you can change stops until you resume it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Every routine you can change stops until you resume it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque routine que vous pouvez modifier s'arrête jusqu'à ce que vous la repreniez." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada rotina que você pode alterar para até você retomá-la." } }
+      }
+    },
+    "Routines paused while you were away": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Routines paused while you were away" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Routines mises en pause pendant votre absence" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Rotinas pausadas enquanto você esteve ausente" } }
+      }
+    },
+    "These routines run only when you are here. Run one now or mark it as seen.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "These routines run only when you are here. Run one now or mark it as seen." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ces routines tournent seulement quand vous êtes là. Lancez-en une maintenant ou marquez-la comme vue." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Estas rotinas rodam somente quando você está aqui. Execute uma agora ou marque como vista." } }
+      }
+    },
+    "1 run skipped": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 run skipped" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "1 exécution sautée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "1 execução ignorada" } }
+      }
+    },
+    "%lld runs skipped": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld runs skipped" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld exécutions sautées" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%lld execuções ignoradas" } }
+      }
+    },
+    "Got it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Got it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Compris" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Entendi" } }
+      }
+    },
+    "Leave them paused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Leave them paused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les laisser en pause" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Deixá-las em pausa" } }
+      }
+    },
+    "Let them run": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Let them run" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les laisser s'exécuter" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Deixá-las executar" } }
+      }
+    },
+    "Paused routine created": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Paused routine created" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Routine en pause créée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Rotina em pausa criada" } }
+      }
+    },
+    "This routine starts paused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This routine starts paused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette routine démarre en pause" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esta rotina começa em pausa" } }
+      }
+    },
+    "%@ wants to schedule a paused routine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ wants to schedule a paused routine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ veut planifier une routine en pause" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%@ quer agendar uma rotina em pausa" } }
+      }
+    },
+    "Triggers": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Triggers" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Déclencheurs" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Gatilhos" } }
+      }
+    },
+    "Every event": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Every event" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque événement" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Cada evento" } }
+      }
+    },
+    "1 delivery": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 delivery" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "1 livraison" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "1 entrega" } }
+      }
+    },
+    "No delivery yet": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No delivery yet" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune livraison pour l'instant" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhuma entrega por enquanto" } }
+      }
+    },
+    "Last delivery": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Last delivery" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dernière livraison" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Última entrega" } }
+      }
+    },
+    "Signing secret stays on the computer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Signing secret stays on the computer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le secret de signature reste sur l'ordinateur" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O segredo de assinatura fica no computador" } }
+      }
+    },
     "%lld more unread below": {
       "localizations": {
         "en": {

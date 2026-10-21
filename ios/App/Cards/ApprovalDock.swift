@@ -252,6 +252,7 @@ struct ApprovalDock: View {
     static func desktopLabel(_ pending: PendingApproval) -> String {
         switch ApprovalHeading.of(pending.card) {
         case .confirmRoutine: return String(localized: "Confirm this routine")
+        case .confirmPausedRoutine: return String(localized: "This routine starts paused")
         case .confirmRoutineChange: return String(localized: "Confirm this routine change")
         case .enableSkill: return String(localized: "Enable this learned skill")
         case .updateSkill: return String(localized: "Update this learned skill")
@@ -297,6 +298,7 @@ struct ApprovalDock: View {
             let name = pending.message.from?.name ?? chat.name
             return String(localized: "\(name) wants to \(Self.phrase(action))")
         case .confirmRoutine: return String(localized: "Confirm this routine")
+        case .confirmPausedRoutine: return String(localized: "This routine starts paused")
         case .confirmRoutineChange: return String(localized: "Confirm this routine change")
         case .enableSkill: return String(localized: "Enable this learned skill")
         case .updateSkill: return String(localized: "Update this learned skill")

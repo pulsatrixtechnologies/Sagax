@@ -51,6 +51,7 @@ struct RoutineEditorView: View {
     /// the person chosen here (nil: the routine's current person).
     @State private var runAsOptions: RoutineRunAsOptions?
     @State private var runAs: String?
+    @State private var onlyWhenPresent: Bool
 
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
     /// `seed`: a new routine from the Automations calendar ("More options"
@@ -73,6 +74,7 @@ struct RoutineEditorView: View {
         _results = State(initialValue: routine == nil ? .newThread : .keep)
         _attachments = State(initialValue: routine?.target == "room-goal" ? [] : routine?.attachments ?? [])
         _advancedExpanded = State(initialValue: false)
+        _onlyWhenPresent = State(initialValue: routine?.onlyWhenPresent == true)
     }
 
     private var advanced: Bool { session.surfaceGate.allows(.routineAdvancedEditor) }
@@ -316,6 +318,17 @@ struct RoutineEditorView: View {
             }
             .accessibilityIdentifier("routine-editor-repeat")
             RoutineScheduleFields(form: $form)
+            if !isTeamGoal {
+                Toggle(isOn: $onlyWhenPresent) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Only when I'm here")
+                        Text("While you are away (computer idle or locked), this routine skips its runs and tells you how many when you are back. A one-time routine waits for you.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .accessibilityIdentifier("routine-editor-only-when-present")
+            }
             if let problem = form.problem {
                 Text(verbatim: RoutineEditorWording.problem(problem))
                     .font(.footnote)
@@ -536,6 +549,7 @@ struct RoutineEditorView: View {
             completeSchedule: true
         )
         input.runAs = RoutineRunAsField.toSend(runAs, options: runAsOptions)
+        if !isTeamGoal { input.onlyWhenPresent = onlyWhenPresent }
         if await session.saveRoutine(input, original: routine) != nil {
             await onSaved()
             dismiss()

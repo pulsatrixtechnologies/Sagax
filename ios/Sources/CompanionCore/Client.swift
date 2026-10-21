@@ -1459,6 +1459,17 @@ public struct CompanionClient: Sendable {
         try await send(try makeRequest("DELETE", "/api/routines/\(id)"))
     }
 
+    /// `GET /api/routines/away`: present, away or unknown.
+    public func routineAwayState() async throws -> String {
+        try await send(makeRequest("GET", "/api/routines/away"), as: RoutineAwayStateResponse.self).state
+    }
+
+    /// The person read the skipped-run report (`POST /api/routines/:id/away-seen`).
+    public func markRoutineAwaySeen(id: String) async throws -> Routine {
+        guard Self.validRouteID(id) else { throw APIError.badURL }
+        return try await send(try makeRequest("POST", "/api/routines/\(id)/away-seen"), as: RoutineResponse.self).routine
+    }
+
     /// Make a room. The harness names it after the first member when `name`
     /// is empty, exactly as the desktop's dialog does.
     ///

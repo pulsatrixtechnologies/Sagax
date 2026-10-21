@@ -36,7 +36,8 @@ struct FlatQuestionCardView: View {
         if let card = message.card, !hidden {
             let colors = QuestionSheetColors(desktop: desktop)
             let settled = (card.requestId != nil && card.answered != nil) || sent != nil
-            let closed = card.answered != nil && card.answeredText == nil && (card.answered == "deny" || card.answered == "unavailable")
+            let skipped = QuestionIgnore.isSkip(card.answeredText) || QuestionIgnore.isSkip(sent)
+            let closed = skipped || (card.answered != nil && card.answeredText == nil && (card.answered == "deny" || card.answered == "unavailable"))
             let given = settled && !closed ? (card.answeredText ?? sent ?? (card.answered == "answer" || card.answered == "allow" ? "" : card.answered ?? "")) : ""
             let reading = AskQuestionAnswer.picks(in: given, labels: card.options)
             // no X: a waiting live question is answered, never silently
@@ -75,6 +76,10 @@ struct FlatQuestionCardView: View {
                         canSend: !custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !answering
                     ) { answer(card, custom) }
                 }
+                if !settled && QuestionIgnore.canIgnore(card) {
+                    QuestionIgnoreControl(colors: colors, expiresAt: card.expiresAt, disabled: answering, action: { ignore(card) })
+                        .accessibilityIdentifier("question-ignore-\(message.id)")
+                }
                 if closed {
                     QuestionSheetNote(colors: colors, text: String(localized: "Closed without an answer"), closed: true)
                 } else if settled && (!reading.rest.isEmpty || (reading.picked.isEmpty && given.isEmpty)) {
@@ -82,6 +87,17 @@ struct FlatQuestionCardView: View {
                 }
             }
             .accessibilityIdentifier("flat-question-\(message.id)")
+        }
+    }
+
+    private func ignore(_ card: OptionCard) {
+        guard sent == nil, !answering, let requestId = card.requestId, QuestionIgnore.canIgnore(card) else { return }
+        sent = QuestionIgnore.answer
+        answering = true
+        fieldFocused = false
+        Task {
+            await session.answer(threadId: chat.threadId, requestId: requestId, choice: QuestionIgnore.answer, isPermission: false)
+            answering = false
         }
     }
 
