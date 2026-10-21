@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeEvent } from "../shared/runtime-events.ts";
 import {
-  DEFAULT_LOOP_THRESHOLDS, LoopDetector, canonicalJson, loopDetectorConfigSchema, loopThresholds, makeLoopStopSubscriber,
-  type LoopDetectorConfig, type ToolCallObservation,
+  DEFAULT_LOOP_THRESHOLDS, LoopDetector, POLL_CYCLE_BUDGET, POLL_REPEAT_BUDGET, TRANSIENT_RETRY_BUDGET,
+  canonicalJson, dispatchLoopStop, loopDetectorConfigSchema, loopStopRoute, loopThresholds, makeLoopStopSubscriber,
+  toolCallIdentity, type LoopDetectorConfig, type ToolCallObservation,
 } from "./loop-detector.ts";
 
 const detector = (config?: LoopDetectorConfig) => new LoopDetector(loopThresholds(config)!);
@@ -37,11 +38,19 @@ describe("LoopDetector", () => {
     expect(verdicts.at(-1)!.reason).toBe("Grep returned the same result 3 times in a row for the same input");
   });
 
-  it("trips on the same error repeated, even with varying inputs", () => {
+  it("trips on the same error for the same input", () => {
     const d = detector();
-    const verdicts = feed(d, [1, 2, 3].map((i) => ({ tool: "Fetch", input: { url: `u${i}` }, result: "403 Forbidden", error: true })));
+    const call = { tool: "Fetch", input: { url: "http://example.test/item" }, result: "403 Forbidden", error: true };
+    const verdicts = feed(d, [call, call, call]);
     expect(verdicts.slice(0, 2)).toEqual([null, null]);
     expect(verdicts[2]).toMatchObject({ kind: "same-error", count: 3, reason: "Fetch failed with the same error 3 times in a row" });
+  });
+
+  it("trips when the same edit fails the same way", () => {
+    const d = detector();
+    const call = { tool: "Edit", input: { path: "a.txt", old: "x", next: "y" }, result: "Permission denied", error: true };
+    const verdicts = feed(d, [call, call, call]);
+    expect(verdicts[2]).toMatchObject({ kind: "same-error", count: 3 });
   });
 
   it("trips on an A/B ping-pong with unchanged results", () => {
@@ -129,5 +138,197 @@ describe("makeLoopStopSubscriber", () => {
     sub({ ...base, type: "turn.completed", ok: true } as unknown as RuntimeEvent);
     for (let i = 0; i < 2; i++) { sub(start(`y${i}`, "ls")); sub(done(`y${i}`, "same")); }
     expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("keys a call on the tool name and the full title, not the title's first word", () => {
+    expect(toolCallIdentity({ title: "Read a.txt" })).toEqual({ tool: "Read a.txt", input: "Read a.txt" });
+    expect(toolCallIdentity({ title: "Read b.txt" })?.tool).toBe("Read b.txt");
+    expect(toolCallIdentity({ tool: "Read", title: "Read a.txt", input: "a.txt" })).toEqual({ tool: "Read", input: "a.txt" });
+    expect(toolCallIdentity({ title: "Bash" })).toBeNull();
+  });
+
+  it("does not stop when different files fail the same way", () => {
+    const stop = vi.fn();
+    const sub = makeLoopStopSubscriber({ config: () => undefined, stop });
+    for (const file of ["a.txt", "b.txt", "c.txt"]) {
+      sub(start(file, undefined, `Read ${file}`));
+      sub(done(file, "File does not exist.", false));
+    }
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it("stops when the same file fails the same way", () => {
+    const stop = vi.fn();
+    const sub = makeLoopStopSubscriber({ config: () => undefined, stop });
+    for (let i = 0; i < 3; i++) {
+      sub(start(`same${i}`, undefined, "Read a.txt"));
+      sub(done(`same${i}`, "File does not exist.", false));
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets a latched detector when the turn's completion is ignored", () => {
+    const stop = vi.fn();
+    const sub = makeLoopStopSubscriber({
+      config: () => undefined,
+      stop,
+      ignore: (event) => event.type === "turn.completed" || event.type === "session.exited",
+    });
+    const burst = (prefix: string, turnId: string) => {
+      for (let i = 0; i < 3; i++) {
+        sub({ ...start(`${prefix}${i}`, '{"command":"ls"}'), turnId } as RuntimeEvent);
+        sub({ ...done(`${prefix}${i}`, "same"), turnId } as RuntimeEvent);
+      }
+    };
+    burst("a", "turn-a");
+    expect(stop).toHaveBeenCalledTimes(1);
+    sub({ ...base, type: "turn.completed", ok: false, turnId: "turn-a" } as unknown as RuntimeEvent);
+    burst("b", "turn-b");
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  it("resets when a new turn starts and the previous completion never arrived", () => {
+    const stop = vi.fn();
+    const sub = makeLoopStopSubscriber({ config: () => undefined, stop });
+    for (let i = 0; i < 3; i++) {
+      sub({ ...start(`a${i}`, '{"command":"ls"}'), turnId: "turn-a" } as RuntimeEvent);
+      sub({ ...done(`a${i}`, "same"), turnId: "turn-a" } as RuntimeEvent);
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 2; i++) {
+      sub({ ...start(`b${i}`, '{"command":"ls"}'), turnId: "turn-b" } as RuntimeEvent);
+      sub({ ...done(`b${i}`, "same"), turnId: "turn-b" } as RuntimeEvent);
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+    sub({ ...start("b2", '{"command":"ls"}'), turnId: "turn-b" } as RuntimeEvent);
+    sub({ ...done("b2", "same"), turnId: "turn-b" } as RuntimeEvent);
+    expect(stop).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a newer turn when an older completion arrives late", () => {
+    const stop = vi.fn();
+    const sub = makeLoopStopSubscriber({ config: () => undefined, stop });
+    sub({ ...start("b0", '{"command":"ls"}'), turnId: "turn-b" } as RuntimeEvent);
+    sub({ ...done("b0", "same"), turnId: "turn-b" } as RuntimeEvent);
+    sub({ ...base, type: "turn.completed", ok: false, turnId: "turn-a" } as unknown as RuntimeEvent);
+    for (let i = 1; i < 3; i++) {
+      sub({ ...start(`b${i}`, '{"command":"ls"}'), turnId: "turn-b" } as RuntimeEvent);
+      sub({ ...done(`b${i}`, "same"), turnId: "turn-b" } as RuntimeEvent);
+    }
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("waits, polls and retries", () => {
+  const times = (n: number, call: ToolCallObservation) => Array.from({ length: n }, () => call);
+
+  it("does not stop a status poll that is still pending", () => {
+    const d = detector();
+    const verdicts = feed(d, times(8, { tool: "Bash", input: "runner pr checks 7", result: "pending" }));
+    expect(verdicts.every((v) => v === null)).toBe(true);
+  });
+
+  it("does not stop a repeated sleep", () => {
+    const d = detector();
+    const verdicts = feed(d, times(8, { tool: "Bash", input: "sleep 60", result: "" }));
+    expect(verdicts.every((v) => v === null)).toBe(true);
+  });
+
+  it("does not stop a status poll whose output keeps changing", () => {
+    const d = detector();
+    const verdicts = feed(d, Array.from({ length: 8 }, (_, i) => ({
+      tool: "Bash", input: "runner get pod app", result: `phase ${i}`,
+    })));
+    expect(verdicts.every((v) => v === null)).toBe(true);
+  });
+
+  it("does not stop retries of one call after a transient error", () => {
+    for (const result of ["ETIMEDOUT", "timed out", "429", "503 Service Unavailable", "ECONNRESET"]) {
+      const d = detector();
+      const verdicts = feed(d, times(5, {
+        tool: "Fetch", input: { url: "http://example.test/item" }, result, error: true,
+      }));
+      expect(verdicts.every((v) => v === null)).toBe(true);
+    }
+  });
+
+  it("does not stop when different inputs fail with the same error", () => {
+    const timeouts = detector();
+    const timedOut = feed(timeouts, [1, 2, 3].map((i) => ({
+      tool: "Fetch", input: { url: `http://example.test/${i}` }, result: "Request timed out", error: true,
+    })));
+    expect(timedOut.every((v) => v === null)).toBe(true);
+    const denied = detector();
+    const files = feed(denied, ["a.txt", "b.txt", "c.txt"].map((path) => ({
+      tool: "Write", input: { path }, result: "Permission denied", error: true,
+    })));
+    expect(files.every((v) => v === null)).toBe(true);
+  });
+
+  it("does not stop a sleep and status-check cycle", () => {
+    const d = detector();
+    const round = [
+      { tool: "Bash", input: "sleep 60", result: "" },
+      { tool: "Bash", input: "curl -sf http://example.test/health", result: "pending" },
+    ];
+    const verdicts = feed(d, Array.from({ length: 6 }, () => round).flat());
+    expect(verdicts.every((v) => v === null)).toBe(true);
+  });
+
+  it("still stops a wait or a status poll that never ends", () => {
+    const sleep = detector();
+    const sleeps = feed(sleep, times(POLL_REPEAT_BUDGET, { tool: "Bash", input: "sleep 60", result: "" }));
+    expect(sleeps.slice(0, -1).every((v) => v === null)).toBe(true);
+    expect(sleeps.at(-1)).toMatchObject({ kind: "identical-result", count: POLL_REPEAT_BUDGET });
+
+    const poll = detector();
+    const polls = feed(poll, Array.from({ length: POLL_REPEAT_BUDGET }, (_, i) => ({
+      tool: "Bash", input: "runner get pod app", result: `phase ${i}`,
+    })));
+    expect(polls.at(-1)).toMatchObject({ kind: "identical-call", count: POLL_REPEAT_BUDGET });
+  });
+
+  it("still stops a transient retry that never succeeds", () => {
+    const d = detector();
+    const verdicts = feed(d, times(TRANSIENT_RETRY_BUDGET, {
+      tool: "Fetch", input: { url: "http://example.test/item" }, result: "ETIMEDOUT", error: true,
+    }));
+    expect(verdicts.at(-1)).toMatchObject({ kind: "same-error", count: TRANSIENT_RETRY_BUDGET });
+  });
+
+  it("still stops a poll cycle that never changes", () => {
+    const d = detector();
+    const round = [
+      { tool: "Bash", input: "sleep 60", result: "" },
+      { tool: "Bash", input: "curl -sf http://example.test/health", result: "pending" },
+    ];
+    const verdicts = feed(d, Array.from({ length: POLL_CYCLE_BUDGET }, () => round).flat());
+    expect(verdicts.slice(0, -1).every((v) => v === null)).toBe(true);
+    expect(verdicts.at(-1)).toMatchObject({ kind: "cycle", count: POLL_CYCLE_BUDGET });
+  });
+});
+
+describe("loop stop routing", () => {
+  it("sends a direct thread through the direct stop and a room through the room stop", () => {
+    expect(loopStopRoute({ botId: "bot-1" })).toEqual({ kind: "direct", botId: "bot-1" });
+    expect(loopStopRoute({ groupId: "room-1" })).toEqual({ kind: "room", groupId: "room-1" });
+    expect(loopStopRoute({ botId: "bot-1", groupId: "room-1" })).toEqual({ kind: "room", groupId: "room-1" });
+    expect(loopStopRoute({})).toEqual({ kind: "unowned" });
+
+    const stopDirect = vi.fn();
+    const stopRoom = vi.fn();
+    const onUnowned = vi.fn();
+    const seen = new Set<string>();
+    const actions = { stopDirect, stopRoom, onUnowned };
+    dispatchLoopStop("thread-direct", { botId: "bot-1" }, actions, seen);
+    dispatchLoopStop("thread-room", { groupId: "room-1" }, actions, seen);
+    dispatchLoopStop("thread-none", {}, actions, seen);
+    dispatchLoopStop("thread-none", {}, actions, seen);
+    expect(stopDirect).toHaveBeenCalledTimes(1);
+    expect(stopDirect).toHaveBeenCalledWith("bot-1", "thread-direct");
+    expect(stopRoom).toHaveBeenCalledTimes(1);
+    expect(stopRoom).toHaveBeenCalledWith("room-1", "thread-room");
+    expect(onUnowned).toHaveBeenCalledTimes(1);
+    expect(onUnowned).toHaveBeenCalledWith("thread-none");
   });
 });

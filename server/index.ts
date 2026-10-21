@@ -637,7 +637,7 @@ import { LocalVmIdleTimer } from "./local-vm-idle.ts";
 import { LocalVmLease, LocalVmLeasePool } from "./local-vm-lease.ts";
 import { LocalVmSeatPool, type LocalVmSeatHolder } from "./local-vm-seat-pool.ts";
 import { RepeatDetector, callKey } from "./repeat-detector.ts";
-import { makeLoopStopSubscriber } from "./loop-detector.ts";
+import { dispatchLoopStop, makeLoopStopSubscriber } from "./loop-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
 import * as vps from "./vps-computer.ts";
@@ -4337,12 +4337,22 @@ function clearThreadStopping(threadId: string): void {
   stoppingThreads.delete(threadId);
 }
 
-/** A person stops a thread's turn: what they sent into it is withdrawn,
- * and words sent while it stops wait for the next turn. */
-async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+/** Stop one direct thread the way the Stop button does. Mark the thread
+ * stopping so words sent while it settles wait for the next turn, withdraw
+ * input the running turn already took, then interrupt the engine.
+ *
+ * A stuck-loop stop uses this too. Those words went into a turn that is
+ * about to die, so they stay unreceived and the next turn can answer them. */
+async function stopDirectThread(botId: string, threadId: string): Promise<void> {
   if (threadBusy(botId, threadId)) markThreadStopping(threadId);
   handoffs.stoppedByPerson(threadId);
   await interruptDirectThread(botId, threadId);
+}
+
+/** A person stops a thread's turn: what they sent into it is withdrawn,
+ * and words sent while it stops wait for the next turn. */
+async function stopDirectThreadByPerson(botId: string, threadId: string): Promise<void> {
+  await stopDirectThread(botId, threadId);
 }
 
 async function interruptDirectThread(botId: string, threadId: string, options?: { preserveComputerResume?: boolean }): Promise<void> {
@@ -9409,6 +9419,38 @@ function coordinationLiveRosterBlock(recipient: BotRecord): string {
     lastActivityAt: newestPeerActivityAt(peer.id),
   }));
   return livePeerRosterBlock(livePeerRoster(team));
+}
+
+/** Stop the room threads the room's Stop button stops: cancel queued work
+ * first, then interrupt each live engine turn. `outcome` defaults to the
+ * person's Stop. A stuck-loop stop passes its own detail so a goal card
+ * names the loop, and still uses this function. */
+async function stopGroupThreads(
+  group: GroupRecord,
+  threadIds: readonly string[],
+  outcome?: { status: "stopped" | "limit-reached"; detail: string; byHarness?: boolean },
+): Promise<void> {
+  const interruptTargets = threadIds.map((threadId) => {
+    const speaker = groupSpeakers.get(threadId);
+    const busy = speaker
+      ? store.bot(speaker.botId)
+      : threadId === group.threadId && group.busyBotId
+        ? store.bot(group.busyBotId)
+        : undefined;
+    return {
+      threadId,
+      instance: busy ? runningTurnInstance(busy, threadId) : undefined,
+    };
+  });
+  // Abort every queued operation before the first provider round trip;
+  // otherwise one queued task could begin while Stop awaits interruption
+  // of the task ahead of it.
+  for (const { threadId } of interruptTargets) cancelGroupTurnOperations(group.id, threadId, outcome);
+  for (const { threadId, instance } of interruptTargets) {
+    revokeInternalCapabilitiesForThread(threadId);
+    await instance?.adapter.interruptTurn(threadId).catch(() => {});
+    closeOpenApprovals(threadId);
+  }
 }
 
 /** `outcome.byHarness`: the harness stopped the room (a provider save, a
@@ -16296,16 +16338,36 @@ bus.subscribe((event: RuntimeEvent) => {
 
 // A run going in circles is stopped, not only flagged (server/loop-detector.ts):
 // the same call, the same result, the same error, or a short cycle of calls
-// whose results never change. Stopped like Stop, with the reason recorded.
+// whose results never change. A direct thread stops through stopDirectThread,
+// the same steps as the person's Stop. A room thread, including one several
+// bots share, stops through stopGroupThreads, the same steps as the room's
+// Stop. A thread with neither is logged once and left running.
+const loopUnownedLogged = new Set<string>();
 bus.subscribe(makeLoopStopSubscriber({
   config: () => cfg.loopDetector,
   ignore: shouldIgnoreProviderEvent,
   stop: (threadId, reason) => {
-    const botId = store.botByThread(threadId)?.id;
-    if (!botId) return;
-    console.warn(`[loop] thread ${threadId.slice(0, 8)}: ${reason}`);
-    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: reason, ok: false } });
-    void interruptDirectThread(botId, threadId).catch(() => {});
+    const group = store.groupByThread(threadId);
+    const botId = group ? undefined : store.botByThread(threadId)?.id;
+    const note = () => {
+      console.warn(`[loop] thread ${threadId.slice(0, 8)}: ${reason}`);
+      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: reason, ok: false } });
+    };
+    dispatchLoopStop(threadId, { botId, groupId: group?.id }, {
+      stopDirect: (id, thread) => {
+        note();
+        void stopDirectThread(id, thread).catch(() => {});
+      },
+      stopRoom: (groupId, thread) => {
+        note();
+        const room = store.group(groupId);
+        if (!room) return;
+        void stopGroupThreads(room, [thread], { status: "stopped", detail: reason }).catch(() => {});
+      },
+      onUnowned: (thread) => {
+        console.warn(`[loop] thread ${thread.slice(0, 8)} is not a direct or room thread; not stopped`);
+      },
+    }, loopUnownedLogged);
   },
 }));
 
@@ -41437,27 +41499,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : activeOperations.length > 0
           ? [...new Set(activeOperations.map((operation) => operation.threadId))]
           : [group.threadId];
-      const interruptTargets = targetThreadIds.map((threadId) => {
-        const speaker = groupSpeakers.get(threadId);
-        const busy = speaker
-          ? store.bot(speaker.botId)
-          : threadId === group.threadId && group.busyBotId
-            ? store.bot(group.busyBotId)
-            : undefined;
-        return {
-          threadId,
-          instance: busy ? runningTurnInstance(busy, threadId) : undefined,
-        };
-      });
-      // Abort every queued operation before the first provider round trip;
-      // otherwise one queued task could begin while Stop awaits interruption
-      // of the task ahead of it.
-      for (const { threadId } of interruptTargets) cancelGroupTurnOperations(group.id, threadId);
-      for (const { threadId, instance } of interruptTargets) {
-        revokeInternalCapabilitiesForThread(threadId);
-        await instance?.adapter.interruptTurn(threadId).catch(() => {});
-        closeOpenApprovals(threadId);
-      }
+      await stopGroupThreads(group, targetThreadIds);
       return json(res, 200, { ok: true });
     }
 
