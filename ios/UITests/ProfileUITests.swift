@@ -65,6 +65,13 @@ final class ProfileUITests: XCTestCase {
         app.descendants(matching: .any)[id].firstMatch
     }
 
+    /// The panel's Routines row opens the routines page.
+    private func openRoutines(in app: XCUIApplication) {
+        let row = element("panel-overview.routines", in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "the Routines row is listed")
+        row.tap()
+    }
+
     private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
         let scroll = app.scrollViews["profile-scroll"].firstMatch
         for _ in 0..<6 where !element.isHittable {
@@ -311,6 +318,7 @@ final class ProfileUITests: XCTestCase {
     @MainActor
     func testRoutineDetailShowsTheScheduleAndTheActiveToggleSaves() throws {
         let app = launchProfile()
+        openRoutines(in: app)
         let row = element("profile-routine.Scan skills populaires mensuel", in: app)
         scrollTo(row, in: app)
         XCTAssertTrue(row.label.contains("CRON_TZ=America/Toronto 2 7 1-7 * 1"), row.label)
@@ -343,6 +351,7 @@ final class ProfileUITests: XCTestCase {
         let id = try XCTUnwrap(ara["id"] as? String)
         let name = "UI routine \(Int(Date().timeIntervalSince1970) % 100_000)"
         let app = launchProfile()
+        openRoutines(in: app)
         let add = element("profile-add-routine", in: app)
         scrollTo(add, in: app)
         add.tap()
