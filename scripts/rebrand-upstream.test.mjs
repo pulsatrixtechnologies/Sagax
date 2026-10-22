@@ -36,10 +36,10 @@ describe("rebrand-upstream narrow rules", () => {
   });
 
   it("reports npm install hints in docs without rewriting them", () => {
-    const doc = `run this:\nnpx ${OLD} serve\nnpm install --global --prefix "$HOME/.local" ${OLD}@X.Y.Z\n`;
+    const doc = `run this:\nnpx ${OLD} serve\nnpm install --global --prefix "$HOME/opt" ${OLD}@X.Y.Z\n`;
     expect(npmInstallHints("docs/self-hosting.md", doc)).toEqual([
       [2, `npx ${OLD}`],
-      [3, `npm install --global --prefix "$HOME/.local" ${OLD}`],
+      [3, `npm install --global --prefix "$HOME/opt" ${OLD}`],
     ]);
     expect(rebrandFile("docs/self-hosting.md", doc)).toBe(doc);
     expect(npmInstallHints("docs/verification/run-2026-09-07.md", doc)).toEqual([]);
