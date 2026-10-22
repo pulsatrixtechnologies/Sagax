@@ -988,7 +988,7 @@ import { MY_CHROME_PROFILE, MY_CHROME_SYSTEM_PROMPT, myChromeToolRefusal, runMyC
 import { MaintenanceScheduler, MaintenanceStore, oldCheckpointRepos, type DiskSaverTarget, type MaintainedComputer } from "./computer-care.ts";
 import { createPluginRoutes, pluginServerName, type InstalledPlugin } from "./routes/plugins.ts";
 import { createMarketplaceRoutes } from "./routes/marketplaces.ts";
-import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry } from "./plugin-marketplaces.ts";
+import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedServerEntry, type MarketplaceViewer } from "./plugin-marketplaces.ts";
 import { createAccountRoutes, type PerspicaxDeletion } from "./routes/account.ts";
 import { ACCOUNT_REAUTH_PATH, AccountReauth, perspicaxDeletion } from "./account-reauth.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
@@ -7089,6 +7089,19 @@ const botPlugins = new BotPlugins({
   if (migrated.bots || migrated.failed.length) {
     console.log(`[plugins] one marketplace list: ${migrated.bots} bot(s), ${migrated.marketplaces} marketplace(s), ${migrated.plugins} plugin(s) kept${migrated.renamed.length ? `, renamed ${migrated.renamed.join(", ")}` : ""}${migrated.failed.length ? `, failed for ${migrated.failed.join(", ")}` : ""}`);
   }
+  // Marketplaces without a visibility field (added before this version) now
+  // read as private to the person who added them (fail closed). Surface the
+  // ones that still back an installed plugin or a bot so an admin knows which
+  // sources are no longer listed to everyone; the installed plugins keep
+  // working (their MCP servers and skills are not touched). No URL is logged.
+  if (IDENTITY.kind === "perspicax") {
+    const nowPrivate = pluginMarketplaces.list({ seesAll: true })
+      .filter((market) => market.visibility === "private" && (market.bots > 0 || market.plugins.some((plugin) => plugin.installed)))
+      .map((market) => `${market.name} (${market.bots} bot(s)${pluginMarketplaces.record(market.name)?.addedBy ? `, added by ${pluginMarketplaces.record(market.name)!.addedBy}` : ", owner unknown"})`);
+    if (nowPrivate.length) {
+      console.log(`[plugins] marketplaces now private to their author (installs kept working, source no longer listed to others): ${nowPrivate.join("; ")}`);
+    }
+  }
 }
 const stdioRelay = new SandboxStdioRelay({
   open: (principalId, spec, botId) => {
@@ -7492,6 +7505,7 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
     return level === "owner" || level === "manage" || orgAdminCaller(auth);
   },
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
+  viewer: marketplaceViewer,
   managedByAdmin: integrationsLocked,
   mayManageMarketplaces: (auth) => mayManageMarketplaces(auth),
   policy: pluginMarketplacePolicy,
@@ -28419,6 +28433,25 @@ const pluginRegistry = createRegistrySearch();
 function mayManageMarketplaces(auth: RequestAuth): boolean {
   return computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces"));
 }
+/** Who is asking about marketplaces. On a solo server, or at the
+ * organization server's own console (loopback), the operator manages every
+ * marketplace (`seesAll`). Each signed-in person sees org-wide marketplaces
+ * and their own private ones only, so one person's private GitHub repo is
+ * never listed to, or reachable by, another person of the organization. */
+function marketplaceViewer(auth: RequestAuth): MarketplaceViewer {
+  if (IDENTITY.kind !== "perspicax") return { seesAll: true };
+  if (auth.kind === "loopback") return { seesAll: true };
+  const principal = sessionPrincipal(auth);
+  return principal ? { principal } : {};
+}
+/** Who may share a marketplace with the whole organization. Decision for JC
+ * (2026-10-21): a person who manages marketplaces may share their OWN
+ * marketplace org-wide (the default on add stays private). To reserve
+ * org-wide sharing to administrators instead, return `orgAdminCaller(auth)`
+ * (or, on a solo server, `computerOwner(auth)`) here. */
+function mayShareMarketplaceOrgWide(auth: RequestAuth): boolean {
+  return mayManageMarketplaces(auth);
+}
 /** Add a plugin's servers to `current` (written by the caller) under free
  * names; returns the plugin's name of each to the name it got. */
 function addMarketplaceServers(
@@ -28486,11 +28519,13 @@ ROUTES.push(createMarketplaceRoutes({
   workspace: botPlugins,
   mayManageTokens: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) || callerCan(auth, "server.settings") : computerOwner(auth)),
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
+  viewer: marketplaceViewer,
+  mayShareOrgWide: mayShareMarketplaceOrgWide,
   install: async (marketplace, plugin, { auth }) => {
     if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
       return { status: 409, body: { error: "This plugin is already installed. Uninstall it first to install it again.", code: "already_installed" } };
     }
-    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined, marketplaceViewer(auth));
     const skipped = [...plan.skipped];
     if (plan.servers.length && mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
     const serverNames: Record<string, string> = {};
@@ -28525,7 +28560,7 @@ ROUTES.push(createMarketplaceRoutes({
     const installed = pluginMarketplaces.installed().find((entry) => entry.key === `${plugin}@${marketplace}`);
     if (!installed) return { status: 404, body: { error: "That plugin is not installed.", code: "not_installed" } };
     if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
-    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined);
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined, marketplaceViewer(auth));
     const skipped = [...plan.skipped];
     const changes = planServerUpdate(plan, installed);
     const serverNames: Record<string, string> = {};

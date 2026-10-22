@@ -53,6 +53,7 @@ import {
   uninstallPlugin as uninstallBotPlugin,
   updateMarketplace as updateBotMarketplace,
   type BotPluginsView,
+  type MarketplaceVisibility,
 } from "@/lib/my-connections";
 import { botPluginState, botScopeMarketplaces, initialPluginScope, marketplaceRoute, pluginScopeBot, workspaceMarketplaceTokens, type PluginScope } from "@/lib/plugin-scope";
 import {
@@ -109,6 +110,10 @@ interface MarketplaceListing {
   bots?: number;
   /** a token is saved for it: the bot scope's bot, or everyone's (an admin's) in the workspace list; never the token */
   hasToken?: boolean;
+  /** "private" (the person who added it) or "org" (shared with everyone) */
+  visibility?: MarketplaceVisibility;
+  /** this viewer added it, so may change its visibility */
+  mine?: boolean;
   plugins: Array<{
     name: string; description?: string; version?: string; category?: string; installed: boolean; servers: string[]; skills: string[];
     installedVersion?: string; updateAvailable?: boolean;
@@ -486,12 +491,20 @@ export function PluginsPanel() {
     setBotView(view);
     if (workspaceMarkets) await loadMarketplaces();
   };
-  const addMarketplace = (source: string, ref: string, token?: string) => marketAction("add", async () => {
+  const addMarketplace = (source: string, ref: string, visibility: MarketplaceVisibility, token?: string) => marketAction("add", async () => {
     if (marketRoute === "bot" && scopeBotId) {
-      await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(token ? { token } : {}) }));
+      await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(token ? { token } : {}), visibility }));
       return;
     }
-    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}) }) });
+    const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), visibility }) });
+    setMarketplaces(result.marketplaces ?? []);
+    void loadBotView();
+  });
+  // Change a marketplace's visibility (the workspace Marketplaces page, for
+  // a marketplace the viewer added). The server refuses org-wide to anyone
+  // who may not share, and private-to-others is simply not found.
+  const setMarketplaceVisibility = (name: string, visibility: MarketplaceVisibility) => void marketAction(`refresh:${name}`, async () => {
+    const result = await api(`/api/marketplaces/${encodeURIComponent(name)}/visibility`, { method: "PUT", body: JSON.stringify({ visibility }) });
     setMarketplaces(result.marketplaces ?? []);
     void loadBotView();
   });
@@ -859,6 +872,8 @@ export function PluginsPanel() {
           onAdd={addMarketplace}
           onRefresh={refreshMarketplace}
           onRemove={removeMarketplace}
+          onSetVisibility={marketRoute === "workspace" ? setMarketplaceVisibility : undefined}
+          canChooseVisibility={marketRoute !== null}
           disabled={marketRoute === null}
           removeKeepsInstalls={marketRoute === "bot"}
           tokens={marketTokens}
