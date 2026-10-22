@@ -85,6 +85,10 @@ describe("computer routes", () => {
     expect(requiredScope("GET", "/api/computer/status")).toBe("client");
     expect(requiredScope("POST", "/api/computer/update")).toBe("client");
     expect(requiredScope("POST", "/api/computer/reset")).toBe("client");
+    // the phone's scheduled update (parity R7, O2): read and set, never the disk saver
+    expect(requiredScope("GET", "/api/computer/maintenance")).toBe("client");
+    expect(requiredScope("PUT", "/api/computer/maintenance")).toBe("client");
+    expect(requiredScope("POST", "/api/computer/disk-saver")).toBe("admin");
     expect(requiredScope("POST", "/api/me/server-environment/update", { orgDirectory: true })).toBe("client");
     expect(requiredScope("POST", "/api/me/server-environment/update")).toBe("admin");
   });
