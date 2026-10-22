@@ -143,6 +143,13 @@ describe("scopes", () => {
       ["POST", "/api/workers/laptop/drop"],
       ["POST", "/api/workers/queue/m1/cancel"],
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
+      // 2026-10-22 (JC): a webhook runs on the bot's own computer, so its
+      // owner creates and manages it without the server-settings right; the
+      // handler (webhookDelegateRefusal, webhookExecTargetAdminOnly) keeps the
+      // limits (an admin's bot, a Microsoft trigger, a server run target).
+      ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"],
+      ["POST", "/api/webhooks/w/test"], ["POST", "/api/webhooks/w/reveal"],
+      ["PATCH", "/api/webhooks/w"], ["DELETE", "/api/webhooks/w"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["PATCH", "/api/instances/claude"],
@@ -155,7 +162,7 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
       ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
-      ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"], ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
+      ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
       ["PATCH", "/api/bots/x/model"], ["POST", "/api/teams/import"], ["GET", "/api/teams/scout"],
       ["GET", "/api/bots/x/memory"], ["PUT", "/api/bots/x/memory"], ["PUT", "/api/section-context"], ["GET", "/api/threads/t/events"],
       // shared team memory: direct reads and writes stay admin; a member only
@@ -433,6 +440,11 @@ describe("resolveRequestAuth", () => {
     expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBe("host.shell");
     expect(routePermission("PATCH", "/api/config", org)).toBe("server.settings");
     expect(routePermission("PATCH", "/api/org/settings", org)).toBe("server.settings");
+    // 2026-10-22 (JC): webhooks are no longer gated behind server.settings;
+    // a normal owner creates and manages one on the bot's own computer.
+    expect(routePermission("POST", "/api/webhooks", org)).toBeNull();
+    expect(routePermission("PATCH", "/api/webhooks/w", org)).toBeNull();
+    expect(routePermission("POST", "/api/webhooks/w/rotate", org)).toBeNull();
     expect(routePermission("GET", "/api/workspace-backup/status", org)).toBe("backup.workspace");
     expect(routePermission("POST", "/api/workspace-backup/export", org)).toBe("backup.workspace");
     expect(routePermission("DELETE", "/api/auth/sessions/abc", org)).toBe("people.manage");

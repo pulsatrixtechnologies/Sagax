@@ -704,7 +704,8 @@ describe("a card waiting for an organization admin (2026-10-08)", () => {
       card: { title: "Approval needed", subtitle: "agents__vm_exec", options: ["Allow", "Deny"], requestId: "r-admin", requestType: "permission", tool: "other", adminApproval: true, adminNames: ["Alice"] },
     } as unknown as Message;
     const html = renderToStaticMarkup(createElement(ApprovalCard, { bot: { name: "Sprout" }, message }));
-    expect(html).toContain("This command runs on the server: waiting for an admin to approve it.");
+    expect(html).toContain("This command runs on the organization&#x27;s server: waiting for an admin to approve it.");
+    expect(html).toContain("On the bot&#x27;s own computer (its server environment, Local VM or cloud computer) it needs no admin.");
     expect(html).toContain("An admin (Alice) sees it in Settings &gt; Organization.");
   });
   it("tells the admin whose request it is", () => {

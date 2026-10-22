@@ -300,7 +300,7 @@
   "approval.voice.profile": "{requester} veut mettre à jour son profil : {title}. Vérifiez la modification à l'écran. Dois-je confirmer ?",
   "approval.voice.routine": "{requester} demande : {title} Vérifiez le calendrier et les instructions à l'écran. Dois-je confirmer ?",
   "approval.voice.skill": "{requester} demande : {title} Vérifiez la compétence à l'écran. Dois-je {action} cette compétence ?",
-  "approval.waitingForAdmin": "Cette commande s'exécute sur le serveur: en attente de l'approbation d'un admin.",
+  "approval.waitingForAdmin": "Cette commande s'exécute sur le serveur de l'organisation : en attente de l'approbation d'un admin. Sur l'ordinateur du bot (environnement serveur, VM locale ou ordinateur infonuagique), elle n'a besoin d'aucun admin.",
   "approvalMode.antigravity.desc": "Approuver automatiquement les demandes d'outils de ce bot, y compris les commandes, les modifications et les actions sur l'ordinateur. Aucune revue automatique.",
   "approvalMode.antigravity.label": "Automatique (accès complet)",
   "approvalMode.antigravityLocalOnly": "Automatique (accès complet) est disponible dans l'application de bureau installée.",

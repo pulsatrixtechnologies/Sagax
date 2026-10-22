@@ -715,6 +715,7 @@ import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
 import { listenWebhookIngress, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
 import { assertModelVariantSupported, memberTurnSelection } from "./member-turn.ts";
 import { WebhookManager } from "./webhooks.ts";
+import { orgServerExecRouting, webhookExecTargetAdminOnly, workplaceIsBotComputer } from "./exec-target.ts";
 import { GraphSubscriptions, graphConnectorOptions, type GraphTokenSource } from "./graph-subscriptions.ts";
 import { TriggerPollers } from "./trigger-pollers.ts";
 import { pollerCredentialInputSchema, TriggerPollerCredentials } from "./trigger-poller-credentials.ts";
@@ -11008,6 +11009,18 @@ const ADMIN_APPROVAL_REQUIRED = {
   error: "This command would run on the organization's server: an organization admin has to approve it. To approve the server commands of your own bots yourself, ask an admin to give you \"Run commands on the organization's server\" in Perspicax (Bot rights > Who has what).",
   code: "admin_approval_required",
 } as const;
+/** A webhook whose run target is the shared organization server: only an
+ * admin (or a server.settings delegate) may create it. One on the bot's own
+ * computer (This computer or its cloud computer) is the owner's own. */
+const WEBHOOK_SERVER_TARGET_ADMIN_ONLY = {
+  error: "Only an organization admin can create a webhook that runs on the organization's server. A webhook on this bot's own computer needs no admin.",
+  code: "server_target_admin_only",
+} as const;
+/** 2026-10-22 (JC): a member bot's command would run on the shared
+ * organization server (admin only), but the bot has its own computer: it runs
+ * there instead, never in a wait-for-an-admin dead end. */
+const EXEC_USE_BOT_COMPUTER =
+  "Refused: this would run on the organization's server, which only an admin may use. Run it on this bot's own computer instead (its server environment, its Local VM, This computer or its cloud computer, for example sagax-environment run_command, sagax-desktop, vm_exec or the computer tools), not a shell on the host.";
 
 /** The server-command approvals waiting for an organization admin. */
 /** Slice 7: every pending approval card (not answered, dismissed or
@@ -14642,6 +14655,32 @@ bus.subscribe((event: RuntimeEvent) => {
         appendDecision(DATA_DIR, {
           threadId: event.threadId, requestId: event.requestId, botId: asker.id, botName: asker.name,
           tool: event.tool, decision: "auto-denied", source: "confidential",
+        });
+        break;
+      }
+      // 2026-10-22 (JC): a member bot runs on its OWN computer by default, and
+      // only an admin targets the shared organization server. This covers the
+      // engine's native host shell (event.command: a Bash/shell call on the
+      // shared server), never the bot's own-computer tools (sagax-environment,
+      // sagax-desktop are already owner level) nor host MCP tools such as
+      // vm_exec, attach_file or shared_computer, which keep their own gating.
+      // When an admin (or a host.shell delegate) does not drive this turn and
+      // the bot has a computer of its own, that host-shell command no longer
+      // waits for an admin in a dead end (server/exec-target.ts
+      // orgServerExecRouting): the bot is told to run it on its own computer.
+      // With no computer of its own, the "runs on the server" card stays: only
+      // an admin runs on the shared server (its wording says the bot has none).
+      if (permission && asker && event.requestId && adminApproval && event.command
+        && orgServerExecRouting({
+          callerMayDriveOrgServer: turnDrivesOrgServer(event.threadId),
+          botHasOwnComputer: botHasOwnComputerForTurn(asker, event.threadId),
+        }) === "use-bot-computer") {
+        const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : registry.get(asker.modelSelection.instanceId);
+        void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny", message: EXEC_USE_BOT_COMPUTER }).catch(() => {});
+        pushMessage({ role: "bot", kind: "activity", tool: { name: EXEC_USE_BOT_COMPUTER, ok: false } });
+        appendDecision(DATA_DIR, {
+          threadId: event.threadId, requestId: event.requestId, botId: asker.id, botName: asker.name,
+          tool: event.tool, decision: "auto-denied", source: "exec-target",
         });
         break;
       }
@@ -30469,6 +30508,33 @@ function botOwnerOrgRole(bot: { ownerUserId?: unknown }): "admin" | "member" | u
 function memberOwnedInOrg(bot: { ownerUserId?: unknown }): boolean {
   return memberOwnedBot({ identity: IDENTITY.kind, ownerOrgRole: botOwnerOrgRole(bot) });
 }
+/** 2026-10-22 (JC): an organization admin or the local operator. */
+function principalIsOrgAdmin(principalId: string | undefined | null): boolean {
+  if (!principalId) return false;
+  const record = principals.byId(principalId.trim().toLowerCase());
+  return record?.local === true || record?.orgRole === "admin";
+}
+/** 2026-10-22 (JC): whether an admin (or the operator, or a person an admin
+ * gave host.shell) drives this turn, so the shared organization server is
+ * theirs to target and the "runs on the server" card stays. */
+function turnDrivesOrgServer(threadId: string): boolean {
+  const speaker = turnSpeakers.get(threadId);
+  if (speaker?.origin === "operator") return true;
+  const principalId = speaker && "principalId" in speaker ? speaker.principalId : undefined;
+  if (principalIsOrgAdmin(principalId)) return true;
+  return Boolean(principalId && principalCan(principalId.trim().toLowerCase(), "host.shell"));
+}
+/** 2026-10-22 (JC): whether this bot has a usable computer of its own this
+ * turn, so a command should run there rather than wait for the shared server
+ * (server/exec-target.ts workplaceIsBotComputer): its owner's server
+ * environment (always usable when configured), or its owner's own computer /
+ * Local VM only while their desktop app is connected (reason "desktop", never
+ * "pinned-desktop", where nothing runs there this turn). */
+function botHasOwnComputerForTurn(bot: BotRecord, threadId: string): boolean {
+  const workplace = turnWorkplaces.get(threadId);
+  if (workplace?.botId !== bot.id || !workplaceIsBotComputer(workplace.decision.target)) return false;
+  return workplace.decision.target !== "user-desktop" || workplace.decision.reason === "desktop";
+}
 /** 2026-10-16: whether a permission request of this bot acts in its
  * owner's own isolated environment, the one this turn mounted for this bot
  * (member-environment.ts). */
@@ -40948,6 +41014,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const webhookRefused = webhookDelegateRefusal(auth, [], body);
       if (webhookRefused) return json(res, 403, webhookRefused);
+      // 2026-10-22 (JC): a webhook runs on the bot's own computer (This
+      // computer or its cloud computer) by default; only a run target on the
+      // shared organization server is an admin's (server/exec-target.ts).
+      const createRunOn = body && typeof body === "object" && !Array.isArray(body) ? (body as { runOn?: unknown }).runOn : undefined;
+      if (webhookExecTargetAdminOnly(typeof createRunOn === "string" ? createRunOn : undefined) && !adminOrDelegate(auth, "server.settings")) {
+        return json(res, 403, WEBHOOK_SERVER_TARGET_ADMIN_ONLY);
+      }
       const taken = takePollerCredentials(body);
       const created = webhooks.create(taken.rest as Parameters<typeof webhooks.create>[0]);
       if (taken.credentials) {
@@ -41007,6 +41080,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const webhookRefused = webhookDelegateRefusal(auth, [webhookMatch[1]!], body);
       if (webhookRefused) return json(res, 403, webhookRefused);
+      const patchRunOn = body && typeof body === "object" && !Array.isArray(body) ? (body as { runOn?: unknown }).runOn : undefined;
+      if (typeof patchRunOn === "string" && webhookExecTargetAdminOnly(patchRunOn) && !adminOrDelegate(auth, "server.settings")) {
+        return json(res, 403, WEBHOOK_SERVER_TARGET_ADMIN_ONLY);
+      }
       const taken = takePollerCredentials(body);
       const webhook = webhooks.update(webhookMatch[1], taken.rest as Parameters<typeof webhooks.update>[1]);
       if (!webhook) return json(res, 404, { error: "no such webhook" });
