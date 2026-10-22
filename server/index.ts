@@ -193,6 +193,7 @@ import { instructionsLead } from "../shared/instructions-lead.ts";
 import { isEffortLevel, ROUTINE_CONVERSATION_HEADER, type BotVisibility, type CardAnswerer, type ResolvedSender, type SteerQueueReason, type WireAccessCard, type WireBot, type WireGroup, type WireTask } from "../shared/wire.ts";
 import { isPersistentQuestionCard, QUESTION_DISMISS_MESSAGE, shouldSettleRequestCard } from "../shared/ask-question.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
+import { resumeOpening, resumeRefusal, subagentRequest } from "./subagent-threads.ts";
 import type { TeamComputersPayload } from "../shared/team-computer.ts";
 import { boatCreateRecoverySnapshot, retireDeletedBoatCreate } from "./boat-create-idempotency.ts";
 import { boatDeletionSnapshot } from "./boat-delete-journal.ts";
@@ -17271,6 +17272,8 @@ async function startParallelTask(input: {
   voiceCall?: Message["voiceCall"];
   /** start_thread `workspace`: where its Auto turns start. */
   autoWorkspace?: AutoComputerTarget;
+  /** start_thread `read_only` (server/subagent-threads.ts): never wider than Ask. */
+  approvalMode?: "ask";
   /** route_message parallel: the person's row already in the conversation
    * (steered into the running turn) becomes the request line; no second row. */
   existingRequestId?: string;
@@ -17297,7 +17300,7 @@ async function startParallelTask(input: {
   const title = input.title?.trim() || parallelTaskTitle(input.text);
   const inherited = parentThreadModel(bot.id, input.threadId);
   const child = store.createTask(bot.id, title, false, parentTask.projectId, undefined,
-    inherited.approvalMode ?? (approvalModeFor(parentTask) === "full" ? "full" : undefined),
+    input.approvalMode ?? inherited.approvalMode ?? (approvalModeFor(parentTask) === "full" ? "full" : undefined),
     parentTask.ownerPrincipalId, inherited.modelSelection ?? parentTask.modelSelection,
     // a parallel task of a confidential conversation is confidential too, its owner's
     false, undefined, parentTask.confidential === true);
@@ -38927,7 +38930,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         const title = String(body.title ?? "").trim();
         const message = String(body.message ?? "").trim();
-        if (!title || !message) return json(res, 400, { error: "title and message are required" });
+        // sub-agents (parity D1, server/subagent-threads.ts): resume one by id, or run one read-only
+        const resumeId = typeof body.resumeThreadId === "string" ? body.resumeThreadId.trim() : "";
+        const readOnly = body.readOnly === true;
+        if (!message || (!title && !resumeId)) return json(res, 400, { error: "title and message are required" });
         if (title.length > 80) return json(res, 400, { error: "title must be at most 80 characters" });
         // the title is quoted into chips and the sidebar, one line each
         if (!fitsOnOneLine(title)) return json(res, 400, { error: "title must fit on one line" });
@@ -38973,6 +38979,30 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           projectId = project.id;
         }
         const sourceTitle = owner.group ? owner.group.name : (store.taskByThread(from.id, fromThreadId)?.title ?? "");
+        if ((readOnly || resumeId) && target.id !== from.id) {
+          return json(res, 400, { error: "read_only and thread_id are for a thread on yourself: a teammate works at its own level, in its own threads" });
+        }
+        if (resumeId) {
+          const resumed = store.taskByThread(from.id, resumeId);
+          const refused = resumeRefusal(resumed, from.id, fromThreadId);
+          if (refused || !resumed) return json(res, refused?.status ?? 404, { error: refused?.error ?? "no such thread" });
+          // nothing of a confidential conversation goes into one that is not
+          if (store.isConfidentialThread(fromThreadId) && !store.isConfidentialThread(resumeId)) return json(res, 403, { error: CONFIDENTIAL_PEER_REFUSED, code: "confidential_thread" });
+          internalCapability.openedThreads += 1;
+          const chip: Omit<Message, "id" | "at"> = {
+            role: "bot",
+            kind: "activity",
+            tool: { name: `Resumed thread #${resumed.title}`, ok: true },
+            threadRef: { botId: from.id, threadId: resumed.threadId, title: resumed.title },
+          };
+          if (owner.group) chip.from = { botId: from.id, name: from.name, color: from.color };
+          store.appendMessage(fromThreadId, chip);
+          const outcome = await startOrQueueOpenedThread(from.id, resumed.threadId, resumeOpening(message, sourceTitle, readOnly), isUnattended(from.id, fromThreadId), turnOrigin(internalCapability), fromThreadId);
+          return json(res, 201, {
+            threadId: resumed.threadId, title: resumed.title, botId: from.id, botName: from.name, self: true, resumed: true,
+            ...(readOnly ? { readOnly: true } : {}), ...outcome,
+          });
+        }
         // report_back: a parallel task of this conversation, whose card shows
         // here and whose result is posted back here (shared/parallel-tasks.ts).
         if (target.id === from.id && body.reportBack === true && !owner.group && store.taskByThread(from.id, fromThreadId)) {
@@ -38980,13 +39010,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const speaker = peerSpeaker(from.id, fromThreadId);
           try {
             const started = await startParallelTask({
-              botId: from.id, threadId: fromThreadId, text: message, title, byBot: true,
+              botId: from.id, threadId: fromThreadId, text: subagentRequest(message, readOnly), title, byBot: true,
+              ...(readOnly ? { approvalMode: "ask" as const } : {}),
               speaker, principalId: "principalId" in speaker ? speaker.principalId : undefined,
               ...(autoWorkspace ? { autoWorkspace } : {}),
             });
             return json(res, 201, {
               threadId: started.parallel.threadId, title: started.parallel.title, botId: from.id, botName: from.name,
               self: true, parallel: true, state: started.parallel.state, limit: botMaxParallelPerPerson(from, cfg),
+              ...(readOnly ? { readOnly: true } : {}),
               ...(autoWorkspace ? { workspace: autoWorkspace } : {}),
             });
           } catch (error) {
@@ -38997,7 +39029,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const inherited = parentThreadModel(from.id, fromThreadId);
           // a thread a confidential conversation opens is confidential, its owner's
           const task = store.createTask(from.id, title, false, projectId, { botId: from.id, name: from.name, at: Date.now() },
-            inherited.approvalMode, openedThreadOwner(from, fromThreadId, from), inherited.modelSelection, false, undefined, store.isConfidentialThread(fromThreadId));
+            readOnly ? "ask" : inherited.approvalMode, openedThreadOwner(from, fromThreadId, from), inherited.modelSelection, false, undefined, store.isConfidentialThread(fromThreadId));
           if (!task) return json(res, 500, { error: "couldn't create that thread" });
           if (autoWorkspace) store.patchTask(from.id, task.threadId, { autoWorkspace });
           threadStarters.set(task.threadId, openerFrom(fromThreadId));
@@ -39013,7 +39045,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // The first line is the bot's own words. Say so where the model
           // reads it, so a later turn in that thread never mistakes the
           // request for the person's.
-          const opening = `[Thread you opened yourself${sourceTitle ? ` from #${sourceTitle}` : ""}. The request below is your own words, not the person's: do the work here and end with a clear result they can read.]\n\n${message}`;
+          const opening = `[Thread you opened yourself${sourceTitle ? ` from #${sourceTitle}` : ""}. The request below is your own words, not the person's: do the work here and end with a clear result they can read.]\n\n${subagentRequest(message, readOnly)}`;
           const outcome = await startOrQueueOpenedThread(from.id, task.threadId, opening, isUnattended(from.id, fromThreadId), turnOrigin(internalCapability), fromThreadId);
           return json(res, 201, {
             threadId: task.threadId,
@@ -39022,6 +39054,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             botName: from.name,
             self: true,
             limit: botMaxConcurrentThreads(from, cfg),
+            ...(readOnly ? { readOnly: true } : {}),
             ...(autoWorkspace ? { workspace: autoWorkspace } : {}),
             ...outcome,
           });

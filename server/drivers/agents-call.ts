@@ -901,7 +901,16 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (folder) body.folder = folder;
     if (args.report_back === true) body.reportBack = true;
     if (typeof args.workspace === "string" && args.workspace) body.workspace = args.workspace;
+    if (args.read_only === true) body.readOnly = true;
+    const resumeId = typeof args.thread_id === "string" ? args.thread_id.trim() : "";
+    if (resumeId) body.resumeThreadId = resumeId;
     const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify(body) });
+    if (resumeId && (!r.error || r.state === "failed")) {
+      // a follow-up into a thread of its own (sub-agent resume, parity D1)
+      const into = `Sent a follow-up into #${String(r.title ?? title)} [thread id: ${String(r.threadId ?? resumeId)}]`;
+      if (r.state === "failed") return { text: `${into}, but it could not start: ${String(r.error ?? "unknown reason")}. Tell the person.`, isError: true };
+      return { text: `${into}. ${r.state === "queued" ? "It waits for a free slot, then runs" : "It is running now"} with that thread's history; its result stays in that thread. Mention it to the person as #${String(r.title ?? title)}.` };
+    }
     // A refusal opened nothing. A "failed" state opened the thread and could
     // not start its turn — that one still counts, and still has an id.
     if (r.error && r.state !== "failed") return { text: `Couldn't open that thread: ${String(r.error)}`, isError: true };
