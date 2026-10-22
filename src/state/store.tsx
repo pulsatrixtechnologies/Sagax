@@ -1289,7 +1289,7 @@ export interface AppState {
   /** The person's sidebar hidden keys (src/lib/sidebar-hidden.ts): a
    * restored or fallback selection never lands on one of them. */
   sidebarHiddenKeys: ReadonlySet<string>;
-  activeView: "chat" | "team-map" | "routines" | "code" | "approvals";
+  activeView: "chat" | "team-map" | "routines" | "code" | "approvals" | "remote-sessions";
   routines: Routine[];
   routineRuns: RoutineRun[];
   routinesLoadState: "loading" | "ready" | "error";
@@ -1549,6 +1549,7 @@ export type Action =
   | { type: "showCode"; runId?: string }
   /** The Approvals screen (src/components/approvals/ApprovalsPage.tsx). */
   | { type: "showApprovals" }
+  | { type: "showRemoteSessions" }
   | { type: "showChat" }
   | { type: "routinesHydrated"; routines: Routine[]; runs: RoutineRun[] }
   | { type: "routinesLoadFailed" }
@@ -2340,6 +2341,19 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         activeView: "approvals",
+        settingsOpen: false,
+        computerOpen: false,
+        inspectorOpen: false,
+        activityOpen: false,
+        appSettingsOpen: false,
+        achievementsOpen: false,
+        pluginsOpen: false,
+        triggersOpen: false,
+      };
+    case "showRemoteSessions":
+      return {
+        ...state,
+        activeView: "remote-sessions",
         settingsOpen: false,
         computerOpen: false,
         inspectorOpen: false,
@@ -4202,7 +4216,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const wrapped: React.Dispatch<Action> = (action) => {
       // Deferred folder creation may select its bot only while it is still
       // the latest navigation intent, even if the person went away and back.
-      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode", "showApprovals"].includes(action.type)) selectionRevision++;
+      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode", "showApprovals", "showRemoteSessions"].includes(action.type)) selectionRevision++;
       // Pin before any await or optimistic state change, including legacy
       // callers such as keyboard shortcuts and voice controls.
       action = pinBotThreadAction(action, stateRef.current.bots);

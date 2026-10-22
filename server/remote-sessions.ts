@@ -55,6 +55,9 @@ import {
 } from "./remote-session-probe.ts";
 import { existsCommand, LIST_TIMEOUT_MS, listDirCommand, readExists, readListing, type ListResult } from "./remote-session-files.ts";
 import { remoteJoin, safeRemoteDir, scpSafePath, sensitiveRemoteDir } from "../shared/remote-files.ts";
+import type { AdminSessionInput } from "../shared/remote-session-admin.ts";
+import type { RemoteSessionActionEvent } from "./remote-session-actions-audit.ts";
+import { remoteCommandReadOnly } from "./remote-session-exec.ts";
 
 const FILE = "remote-sessions.json";
 const UPLOAD_MAX = 8 * 1024 * 1024;
@@ -218,8 +221,12 @@ export function createRemoteSessionService(deps: {
   controlSpawn?: SpawnControl;
   /** The system ssh client tailcat execs (default: looked up on this host). */
   systemSsh?: () => string | null;
+  /** The per-session action audit (exec, file transfers), for the Remote
+   * Sessions logs view. The command is redacted again at the sink. */
+  actionsAudit?: { write(event: RemoteSessionActionEvent): void };
 }) {
   const systemSsh = deps.systemSsh ?? (() => resolveSystemSsh());
+  const actionsAudit = deps.actionsAudit;
   const now = deps.now ?? (() => Date.now());
   const run = deps.run ?? runCommand;
   const home = deps.home ?? defaultFlowHome;
@@ -533,6 +540,56 @@ export function createRemoteSessionService(deps: {
         return viewOf(session);
       });
     },
+    /** Every session this server knows, for the admin Remote Sessions page
+     * (server/remote-sessions-admin.ts). The page, not this store, decides who
+     * may see each row. No address or key leaves here. */
+    adminRows(): AdminSessionInput[] {
+      return rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        os: row.os,
+        ...(row.osGuessed ? { osGuessed: true } : {}),
+        elevated: row.elevated,
+        endAt: row.endAt,
+        state: row.state,
+        createdAt: row.createdAt,
+        ...(row.hostname ? { hostname: row.hostname } : {}),
+        ...(row.user ? { user: row.user } : {}),
+        ...(row.serial ? { serial: row.serial } : {}),
+        ownerId: row.principalId,
+        openedBy: row.principalId,
+        botId: row.botId,
+        ...(row.inventory ? { inventory: row.inventory } : {}),
+        reachable: Boolean(tunnelOf(row)),
+      }));
+    },
+    /** End any session by id, for the admin page (a workspace admin ends a
+     * session they do not own). Cuts live control and the tunnel, like close. */
+    async adminClose(id: string): Promise<boolean> {
+      const closing = await exclusive(() => {
+        prune();
+        const session = rows.find((row) => row.id === id);
+        if (!session) return null;
+        const wasConnected = session.state === "connected";
+        session.state = "ended";
+        session.focused = false;
+        writeCard(session);
+        persist();
+        return { session, wasConnected };
+      });
+      if (!closing) return false;
+      const { session, wasConnected } = closing;
+      controls.closeSession(session.id);
+      if (wasConnected) {
+        try { if (!session.osGuessed) await ssh(session, stopCommand(session.id, session.os), 8_000); } catch { /* the screen still closes */ }
+        if (sagaxOpened(session)) {
+          const dir = supportDir?.();
+          if (dir) await markSessionClosed(dir, session.code).catch(() => {});
+          try { await deps.closeRemote?.({ principalId: session.principalId, botId: session.botId, threadId: session.threadId, code: session.code }); } catch { /* Perspicax ends it at its end time */ }
+        }
+      }
+      return true;
+    },
     /** Open live control (screen + mouse + keyboard) for a session this
      * person owns and that is connected and reachable. Windows only for now;
      * the control manager answers an error otherwise. */
@@ -649,6 +706,7 @@ export function createRemoteSessionService(deps: {
         if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
         const copied = await run(tailcatCopyArgv(tailcatBin(), tunnel.keyPath, local, `${tunnel.address}:${remotePath}`), 60_000);
         if (copied.code !== 0) return { error: "The file did not arrive on the remote computer." };
+        actionsAudit?.write({ at: now(), sessionId: session.id, principalId: session.principalId, botId: session.botId, kind: "transfer", direction: "upload", file: safeName });
         return { name: safeName };
       } finally {
         rmSync(local, { force: true });
@@ -670,6 +728,10 @@ export function createRemoteSessionService(deps: {
         if (copied.code !== 0) return { error: "That file could not be read on the remote computer." };
         const bytes = readFileSync(local);
         if (bytes.length > DOWNLOAD_MAX) return { error: "That file is over 32 MB." };
+        // A real download is audited; the internal screenshot pull is not noise.
+        if (!safe.endsWith("px-sagax-shot.png")) {
+          actionsAudit?.write({ at: now(), sessionId: session.id, principalId: session.principalId, botId: session.botId, kind: "transfer", direction: "download", file: name });
+        }
         return { name, bytes };
       } catch {
         return { error: "That file could not be read on the remote computer." };
@@ -745,6 +807,10 @@ export function createRemoteSessionService(deps: {
       const result = await ssh(session, command, timeout);
       if (!result) return { error: "This server does not have the tunnel of that session." };
       if (result.code === TRANSPORT_FAILED && !result.stdout) return { error: "The remote computer did not answer (the tunnel is down or the session ended)." };
+      // Audit what ran (never the output): a read-only command needs no card;
+      // a write that reached here was approved (the route gates it first).
+      const readOnly = remoteCommandReadOnly(command, { os: session.os, known: !session.osGuessed });
+      actionsAudit?.write({ at: now(), sessionId: session.id, principalId: session.principalId, botId: session.botId, kind: "exec", command, readOnly, approved: !readOnly, exitCode: result.code });
       return {
         host: hostLabel(session),
         os: session.os,
