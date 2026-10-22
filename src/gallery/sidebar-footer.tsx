@@ -99,7 +99,7 @@ function ReferenceFoot() {
     <div className="flex flex-col rounded-xl border-[0.5px] border-hairline-weak bg-sidebar" style={{ width }} data-gallery="foot">
       <div className="h-24" />
       <div className="px-4 pb-4">
-        <div data-sidebar-account-row className="flex items-center gap-2">
+        <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
           <SidebarProfileMenu avatarOnly withName />
           <SidebarConnectApps onOpen={() => {}} />
           {params.get("pill") !== "0" && <SidebarUpdatePill />}

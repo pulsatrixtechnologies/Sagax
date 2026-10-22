@@ -237,12 +237,16 @@ describe("the wide foot's account pill (reference design)", () => {
 
   it("fills the row and keeps room for its name when Connect apps widens", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true, withName: true }));
-    // the outer box takes the rest of the row, never less than about eight
-    // characters of the name beside the avatar
+    // the outer box takes the rest of the row; its floor is low (the avatar
+    // and an ellipsis) so the English label is never cut from a 260px
+    // sidebar: the label's own cap (styles.css) keeps the name its avatar and
+    // about three characters when the label is longer
     const outer = /^<div class="([^"]*)"/.exec(html)?.[1] ?? "";
-    expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex-1", "min-w-[7.5rem]"]));
+    expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex-1", "min-w-[3.5rem]"]));
     const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
     expect(pill).toContain("w-full");
+    // tight insets, so "Jean…" still shows beside the open label at 280px
+    expect(pill.split(/[\s"]/)).toEqual(expect.arrayContaining(["gap-1", "pl-1", "pr-1.5"]));
     // the name is one line, cut only by the room it has (never in markup)
     const name = /<span data-account-pill-name="" class="([^"]*)"/.exec(html)?.[1] ?? "";
     expect(name.split(" ")).toEqual(expect.arrayContaining(["min-w-0", "flex-1", "truncate"]));

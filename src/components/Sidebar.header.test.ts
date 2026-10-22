@@ -136,6 +136,9 @@ describe("sidebar header", () => {
     const html = render();
     const foot = html.slice(html.indexOf("data-sidebar-foot"));
     expect(foot).toContain("data-sidebar-account-row");
+    // the row is the container the open label's cap measures (100cqw)
+    const row = /<div data-sidebar-account-row="[^"]*" class="([^"]*)"/.exec(foot)?.[1] ?? "";
+    expect(row.split(" ")).toEqual(expect.arrayContaining(["gap-1.5", "[container-type:inline-size]"]));
     expect(foot).not.toContain("data-sidebar-place=");
     expect(foot).not.toContain(">Browse Bots</span>");
     expect(foot).not.toContain("data-account-name");

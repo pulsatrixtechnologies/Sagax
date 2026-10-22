@@ -3261,8 +3261,13 @@ button:disabled.bg-danger {
    alone at rest, the label folded to nothing (no width, no opacity).
    Hovered, or focused from the keyboard (not a focus a click left behind:
    data-pointer-focus), the label slides in on their left and the pill
-   widens; the account pill beside it shrinks down to its own minimum, then
-   the label is cut. Reduced motion: no transition, the label simply shows. */
+   widens; the account pill beside it shrinks. The label always gets 6rem
+   (the English one whole from a 260px sidebar); past that, only what leaves
+   the account pill 80px (its avatar and about three characters) in the row
+   (the container, data-sidebar-account-row): 100cqw less 80px, the 6px row
+   gap and the pill's 62px without its label (borders 2, padding 16, the
+   label's 6px margin, three tiles 38). A longer label is then cut, never the
+   tiles. Reduced motion: no transition, the label simply shows. */
 .sidebar-apps-pill {
   flex: 0 1 auto;
 }
@@ -3275,9 +3280,9 @@ button:disabled.bg-danger {
   margin-inline-end: 0;
 }
 .sidebar-apps-pill:is(:hover, :focus-visible:not([data-pointer-focus])) [data-apps-pill-label] {
-  max-width: 14rem;
+  max-width: max(6rem, calc(100cqw - 148px));
   opacity: 1;
-  margin-inline-end: 8px;
+  margin-inline-end: 6px;
 }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion="true"]) .sidebar-apps-pill [data-apps-pill-label] {

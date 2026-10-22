@@ -11,7 +11,7 @@ import { setLocale } from "@/lib/i18n";
 import { initialState, reducer } from "@/state/store";
 import { readFileSync } from "node:fs";
 
-import { ConnectAppsPill, pillFit, SidebarConnectApps, sidebarPillApps, tilesWidth, type PillApp } from "./ConnectAppsPill";
+import { ConnectAppsPill, pillFit, SidebarConnectApps, sidebarPillApps, sidebarTilesWidth, tilesWidth, type PillApp } from "./ConnectAppsPill";
 
 const inventory = vi.hoisted(() => ({ services: {} as Record<string, { connected: boolean }> }));
 vi.mock("./plugins/connected-apps", async (importOriginal) => ({
@@ -110,6 +110,9 @@ describe("the sidebar's Connect apps pill", () => {
     expect(css).toMatch(/\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*max-width: 0;\s*opacity: 0;\s*margin-inline-end: 0;/);
     // it may give its label up, never its place in the row first
     expect(css).toMatch(/\.sidebar-apps-pill \{\s*flex: 0 1 auto;/);
+    // open, the label always gets 6rem (the English one whole), and past that
+    // what leaves the account pill its avatar and about three characters
+    expect(css).toMatch(/\[data-apps-pill-label\] \{\s*max-width: max\(6rem, calc\(100cqw - 148px\)\);\s*opacity: 1;\s*margin-inline-end: 6px;/);
     // the width moves only when motion is allowed
     expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*:root:not\(\[data-reduced-motion="true"\]\) \.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: max-width 220ms ease/);
     expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: none;/);
@@ -119,8 +122,15 @@ describe("the sidebar's Connect apps pill", () => {
   it("keeps its tiles whole and marks a focus that came from a click", () => {
     inventory.services = {};
     const button = renderSidebar().querySelector<HTMLButtonElement>("[data-sidebar-connect-apps]")!;
-    // never narrower than its three tiles and its padding
-    expect(button.style.minWidth).toBe(`${tilesWidth(3) + 22}px`);
+    // never narrower than its three tiles and its padding; at rest the tiles
+    // sit in the middle, the same padding on both sides
+    expect(sidebarTilesWidth(3)).toBe(38);
+    expect(button.style.minWidth).toBe(`${sidebarTilesWidth(3) + 18}px`);
+    expect(button.querySelector<HTMLElement>("[data-pill-tiles]")!.style.width).toBe("38px");
+    const tiles = [...button.querySelectorAll<HTMLElement>("[data-pill-tile]")];
+    expect(tiles.map((tile) => tile.className.includes("-ml-2"))).toEqual([false, true, true]);
+    expect(button.className).toContain("justify-center");
+    expect(button.className).toContain("px-2");
     expect(button.className).toContain("min-w-0");
     expect(button.className).not.toContain("shrink-0");
     const label = button.querySelector("[data-apps-pill-label]")!;

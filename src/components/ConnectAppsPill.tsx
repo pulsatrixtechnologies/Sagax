@@ -247,22 +247,31 @@ export function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen:
   return <SidebarAppsPill apps={sidebarPillApps(connected, cards)} onOpen={onOpen} label={label} />;
 }
 
-/** The pill's padding and border around its tiles (px-2.5 and 1px rings). */
-const SIDEBAR_PILL_CHROME = 22;
+/** The pill's padding and border around its tiles (px-2 and 1px rings). */
+const SIDEBAR_PILL_CHROME = 18;
+/** The foot's tiles overlap a little more than the conversation's (8px, not
+ * 6px), so the label has room beside the account pill. */
+const SIDEBAR_TILE_OVERLAP = 8;
+
+export function sidebarTilesWidth(count: number): number {
+  return count > 0 ? TILE + (Math.min(count, PILL_ICONS) - 1) * (TILE - SIDEBAR_TILE_OVERLAP) : 0;
+}
 
 /** The wide foot's compact pill (reference design): only the app tiles at
- * rest, 36px tall on the rail's raised card. Hovered or focused from the
- * keyboard it widens leftward to show its label (styles.css,
- * .sidebar-apps-pill; reduced motion shows it at once). It never takes the
- * account pill's minimum: past that the label is cut, never the tiles. The
- * accessible name is always the full label.
+ * rest, centred, 36px tall on the rail's raised card. Hovered or focused from
+ * the keyboard it widens leftward to show its whole label (styles.css,
+ * .sidebar-apps-pill; reduced motion shows it at once). The label always
+ * gets 6rem (the English one whole from a 260px sidebar), and past that only
+ * what leaves the account pill its avatar and about three characters; a
+ * longer label is then cut, never the tiles. The accessible name is always
+ * the full label.
  *
  * A mouse click leaves the button focused, and the next key pressed anywhere
  * would make that focus :focus-visible and hold the label open; the pointer
  * mark (data-pointer-focus, until the button loses focus) keeps it closed. */
 export function SidebarAppsPill({ apps, onOpen, label }: { apps: readonly PillApp[]; onOpen: () => void; label: string }) {
   const shown = apps.slice(0, PILL_ICONS);
-  const tiles = tilesWidth(shown.length);
+  const tiles = sidebarTilesWidth(shown.length);
   return (
     <button
       type="button"
@@ -274,7 +283,7 @@ export function SidebarAppsPill({ apps, onOpen, label }: { apps: readonly PillAp
       data-tour="nav-apps"
       data-sidebar-connect-apps=""
       style={{ minWidth: tiles + SIDEBAR_PILL_CHROME }}
-      className="connect-apps-pill sidebar-apps-pill inline-flex h-9 min-w-0 items-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card px-2.5 text-[14px] font-medium leading-5 text-sidebar-ink outline-none hover:bg-sidebar-elevated-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+      className="connect-apps-pill sidebar-apps-pill inline-flex h-9 min-w-0 items-center justify-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card px-2 text-[14px] font-medium leading-5 text-sidebar-ink outline-none hover:bg-sidebar-elevated-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
     >
       <span data-apps-pill-label="" aria-hidden="true" className="block min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
       <span
@@ -287,7 +296,7 @@ export function SidebarAppsPill({ apps, onOpen, label }: { apps: readonly PillAp
           <span
             key={app.slug}
             data-pill-tile={index === 0 ? "start" : index === shown.length - 1 ? "end" : "middle"}
-            className={cn("box-border inline-flex size-[18px] shrink-0 rounded-[6px] p-px", index > 0 && "-ml-1.5")}
+            className={cn("box-border inline-flex size-[18px] shrink-0 rounded-[6px] p-px", index > 0 && "-ml-2")}
             style={{ animationDelay: `${index * 50}ms` }}
           >
             <span className="flex size-4 items-center justify-center overflow-hidden rounded-[4px] border-[0.5px] border-black/10 bg-white">
