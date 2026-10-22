@@ -7,6 +7,8 @@ import {
   connectorPrincipalFor,
   createHarnessConnectorRoutes,
   engineConnectorsPrompt,
+  accountConnectorsForTurn,
+  grokCloudConnectorsForTurn,
   parseClaudeAuthStatus,
   parseClaudeMcpList,
   type ClaudeAiTurnInput,
@@ -61,6 +63,40 @@ describe("claudeAiConnectorsForTurn", () => {
     expect(claudeAiConnectorsPrompt(false)).toBe("");
     expect(claudeAiConnectorsPrompt(true)).toContain("mcp__claude_ai_");
     expect(claudeAiConnectorsPrompt(true)).not.toMatch(/[–—]/);
+  });
+});
+
+describe("whose account connectors a turn reaches (review of #943, point 5)", () => {
+  const base = { identity: "perspicax" as const, restrictedByPolicy: false, ownerPrincipalId: ADA, localPrincipalId: LOCAL };
+  it("the person's own sign-in: own, on Claude and on Grok", () => {
+    for (const driver of ["claudeAgent", "grokAgent"]) {
+      const input = { ...base, driver, via: "subscription" as const, payerPrincipalId: BOB, speaker: { origin: "person" as const, principalId: BOB } };
+      expect(accountConnectorsForTurn(input), driver).toBe("own");
+    }
+    expect(grokCloudConnectorsForTurn({ ...base, driver: "grokAgent", via: "subscription", payerPrincipalId: BOB, speaker: { origin: "person", principalId: BOB } })).toBe(true);
+  });
+  it("someone else's sign-in pays: foreign, nothing offered", () => {
+    for (const driver of ["claudeAgent", "grokAgent"]) {
+      const input = { ...base, driver, via: "subscription" as const, payerPrincipalId: ADA, speaker: { origin: "person" as const, principalId: BOB } };
+      expect(accountConnectorsForTurn(input), driver).toBe("foreign");
+      expect(claudeAiConnectorsForTurn(input)).toBe(false);
+      expect(grokCloudConnectorsForTurn(input)).toBe(false);
+    }
+  });
+  it("a key, a solo Grok turn or another engine: none", () => {
+    expect(accountConnectorsForTurn({ ...base, driver: "grokAgent", via: "org-key", speaker: { origin: "person", principalId: BOB } })).toBe("none");
+    expect(accountConnectorsForTurn({ ...base, identity: "solo", driver: "grokAgent", speaker: { origin: "operator" } })).toBe("none");
+    expect(accountConnectorsForTurn({ ...base, driver: "codex", via: "subscription", speaker: { origin: "person", principalId: BOB } })).toBe("none");
+  });
+  it("solo Claude: the operator owns the machine's login, anyone else is foreign", () => {
+    expect(accountConnectorsForTurn({ ...base, identity: "solo", driver: "claudeAgent", speaker: { origin: "operator" } })).toBe("own");
+    expect(accountConnectorsForTurn({ ...base, identity: "solo", driver: "claudeAgent", speaker: { origin: "person", principalId: BOB } })).toBe("foreign");
+  });
+  it("tells a foreign turn the connectors belong to someone else and offers nothing", () => {
+    const text = engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: false, foreign: true });
+    expect(text).toContain("belong to someone else");
+    expect(text).not.toContain("use_tool");
+    expect(text).not.toContain("ask_bot");
   });
 });
 

@@ -76,13 +76,15 @@ export function isOutboundTool(name: string): boolean {
   const tokens = actionTokens(name);
   if (tokens.length === 0) return false;
   if (READ_VERBS.has(tokens[0])) return false;
+  // A draft, a reply draft included, sends nothing until it is sent.
+  if (tokens.includes("DRAFT") && !tokens.includes("SEND") && !tokens.includes("SENDS")) return false;
   if (tokens.some((token) => SEND_VERBS.has(token))) return true;
-  // A mail, Teams, calendar or SharePoint connector mounted as an MCP server
-  // (the engines' own: claude.ai, the xAI account's cloud connectors) acts
-  // as the person outside the app: an event mails its attendees, a
-  // SharePoint write lands in a shared site (shared/engine-connectors.ts).
-  // Composio slugs keep their own reading (GOOGLECALENDAR_CREATE_EVENT).
-  if (name.includes("__") && connectorWriteKind(name)) return true;
+  // A mail, Teams, calendar or file connector acts as the person outside the
+  // app: an event mails its attendees, a SharePoint write lands in a shared
+  // site, and an engine's own connector server fails closed on any call that
+  // is not a read or a draft (shared/engine-connectors.ts). Same reading for
+  // an MCP tool and a Composio slug (GOOGLECALENDAR_CREATE_EVENT).
+  if (connectorWriteKind(name)) return true;
   if (tokens.includes("DRAFT")) return false;
   return tokens.some((token) => CREATE_VERBS.has(token)) && tokens.some((token) => SENT_NOUNS.has(token));
 }

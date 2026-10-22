@@ -457,7 +457,9 @@ function prettyJson(args: Record<string, unknown> | undefined, text: string | un
   return text && isTechnicalText(text) ? text : undefined;
 }
 
-const CONNECTOR_ACTION: Record<ConnectorWriteKind, string> = {
+/** "other-write" (an engine connector's call that names no known action)
+ * keeps the generic wording; it still always asks. */
+const CONNECTOR_ACTION: Record<Exclude<ConnectorWriteKind, "other-write">, string> = {
   "mail-send": "approval.connector.mailSend",
   "mail-auto-reply": "approval.connector.mailAutoReply",
   "teams-post": "approval.connector.teamsPost",
@@ -471,16 +473,21 @@ const CONNECTOR_ACTION: Record<ConnectorWriteKind, string> = {
 const RECIPIENT_KEYS = ["to", "cc", "bcc", "toRecipients", "ccRecipients", "recipients", "attendees", "requiredAttendees", "optionalAttendees", "members", "participants", "emails"];
 const SHOWN_RECIPIENTS = 3;
 
-/** One recipient as a person reads it: the name, else the address. */
+/** One recipient as a person reads it. The address always shows: a
+ * display name is the sender's to choose ("Ana Tremblay (GOX)" can sit on
+ * anyone's address), so it only ever comes beside the address, and a name
+ * that itself looks like an address or a domain is dropped. */
 function recipientName(value: unknown): string | undefined {
-  if (typeof value === "string") return value.trim() && value.length <= 120 ? value.trim() : undefined;
+  const clean = (text: unknown) => (typeof text === "string" && text.trim() && text.length <= 120 ? text.trim().replace(/\s+/g, " ") : undefined);
+  if (typeof value === "string") return clean(value);
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   const inner = record.emailAddress && typeof record.emailAddress === "object" ? record.emailAddress as Record<string, unknown> : undefined;
-  for (const candidate of [record.name, record.displayName, inner?.name, record.email, record.address, inner?.address]) {
-    if (typeof candidate === "string" && candidate.trim() && candidate.length <= 120) return candidate.trim();
-  }
-  return undefined;
+  const address = [record.email, record.address, inner?.address, record.mail, record.userPrincipalName].map(clean).find(Boolean);
+  const name = [record.name, record.displayName, inner?.name].map(clean).find(Boolean);
+  if (!address) return name ? `${name} (?)` : undefined;
+  if (!name || name.toLowerCase() === address.toLowerCase() || /[@<>]|\b[\w-]+\.[a-z]{2,}\b/i.test(name)) return address;
+  return `${name} <${address}>`;
 }
 
 /** "to Ana, bo@example.com and 2 more": who a mail, a post or an
@@ -547,7 +554,7 @@ export function describeApproval(
   const risk = riskFor(op, hints, builtin);
   const summary = summarizeArgs(args, text, now, words);
   const connector = connectorWriteKind(tool);
-  if (connector) {
+  if (connector && connector !== "other-write") {
     const store = /onedrive/i.test(tool) ? "OneDrive" : "SharePoint";
     const action = words.t(CONNECTOR_ACTION[connector], { store });
     const who = recipientsOf(args, words);

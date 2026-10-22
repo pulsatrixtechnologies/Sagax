@@ -329,6 +329,11 @@ export interface SendTurnInput {
    * Claude driver then drops --strict-mcp-config only; other drivers ignore
    * it. Their tools ride the normal permission flow, never pre-allowed. */
   claudeAiConnectors?: boolean;
+  /** Grok: load the cloud connectors of the xAI account this turn runs on,
+   * which is the person's own grok.com sign-in
+   * (harness-connectors.ts grokCloudConnectorsForTurn). Absent or false:
+   * off, whatever the organization turn (review of #943). */
+  grokCloudConnectors?: boolean;
   /** Claude Code plugins installed on the bot (server/bot-plugins.ts): one
    * folder each, already stripped of hooks, MCP and LSP servers. The Claude
    * driver loads each with --plugin-dir. Other drivers do not get these

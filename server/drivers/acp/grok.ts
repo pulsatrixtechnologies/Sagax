@@ -116,11 +116,14 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
  * servers with no prompt, so they stay off. A tool selection stays off too:
  * that turn refuses any MCP server it did not list. Gateway tools stay off
  * on every turn. */
-export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean): {
+export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean, ownAccount?: boolean): {
   GROK_MANAGED_MCPS_ENABLED?: "false";
   GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false";
 } {
-  if (toolScope !== undefined || withholdHostTools !== true) {
+  // Review of #943 (point 5): only on the person's own xAI sign-in
+  // (harness-connectors.ts grokCloudConnectorsForTurn), never on an account
+  // that pays for someone else's turn.
+  if (toolScope !== undefined || withholdHostTools !== true || ownAccount !== true) {
     return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
   }
   return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
@@ -968,11 +971,11 @@ const support: AcpSupport = {
   transformEnv: (env) => {
     delete env.XAI_API_KEY;
   },
-  applyTurnEnv: (env, { toolScope, withholdHostTools }) => {
+  applyTurnEnv: (env, { toolScope, withholdHostTools, accountConnectors }) => {
     // Cloud connectors of the signed-in xAI account reach this bot. A tool
     // selection still turns them off (grokCloudConnectorEnv). Gateway tools
     // stay off on every turn.
-    const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true);
+    const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true, accountConnectors === true);
     if (cloud.GROK_MANAGED_MCPS_ENABLED) env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
     else delete env.GROK_MANAGED_MCPS_ENABLED;
     env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = cloud.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED;

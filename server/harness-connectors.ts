@@ -79,15 +79,44 @@ export interface ClaudeAiTurnInput extends ConnectorPrincipalInput {
   driver: string;
   /** Organization server: how this turn's credentials were chosen. */
   via?: AccessVia;
+  /** Organization server: whose credentials they are (the plan's payer). */
+  payerPrincipalId?: string;
+}
+
+const ACCOUNT_CONNECTOR_DRIVERS = new Set(["claudeAgent", "grokAgent", "grok"]);
+
+/** Whose account connectors a turn would reach (review of #943, point 5):
+ * "own" when the account the turn runs on is the person the turn is for
+ * (connectorPrincipalFor: the speaker, a routine's owner), "foreign" when
+ * it is someone else's sign-in (another person's subscription, the
+ * machine's login in solo for anyone but the operator): those connectors
+ * are never offered, the turn says they belong to someone else. "none":
+ * an engine or an access (a key) that brings none. Grok's cloud
+ * connectors stay off on a solo server (#918). */
+export function accountConnectorsForTurn(input: ClaudeAiTurnInput): "own" | "foreign" | "none" {
+  if (input.restrictedByPolicy || !ACCOUNT_CONNECTOR_DRIVERS.has(input.driver)) return "none";
+  const principal = connectorPrincipalFor(input);
+  if (input.identity === "perspicax") {
+    if (input.via !== "subscription") return "none";
+    if (input.payerPrincipalId !== undefined && input.payerPrincipalId.trim().toLowerCase() !== principal) return "foreign";
+    return principal ? "own" : "foreign";
+  }
+  if (input.driver !== "claudeAgent") return "none";
+  return principal && principal === input.localPrincipalId.trim().toLowerCase() ? "own" : "foreign";
 }
 
 /** Whether a Claude turn keeps the claude.ai connectors of the account it
  * runs on: only when that account is the speaker's own. */
 export function claudeAiConnectorsForTurn(input: ClaudeAiTurnInput): boolean {
-  if (input.restrictedByPolicy || input.driver !== "claudeAgent") return false;
-  if (input.identity === "perspicax") return input.via === "subscription";
-  const principal = connectorPrincipalFor(input);
-  return Boolean(principal) && principal === input.localPrincipalId.trim().toLowerCase();
+  return input.driver === "claudeAgent" && accountConnectorsForTurn(input) === "own";
+}
+
+/** Whether a Grok turn may load the cloud connectors of the xAI account it
+ * runs on: an organization turn on the person's own grok.com sign-in only
+ * (the driver adds host tools withheld and no tool selection,
+ * grokCloudConnectorEnv). */
+export function grokCloudConnectorsForTurn(input: ClaudeAiTurnInput): boolean {
+  return GROK_DRIVERS.has(input.driver) && accountConnectorsForTurn(input) === "own";
 }
 
 /** The system note for a turn that keeps them: what they are and whose. */
@@ -96,7 +125,7 @@ export function claudeAiConnectorsPrompt(enabled: boolean): string {
   return "\nThis turn runs on the speaker's own Claude account, so its claude.ai connectors (for example Microsoft 365 for Outlook mail and calendar, or GitHub) may be mounted as MCP servers named \"claude.ai <Service>\", with tools prefixed mcp__claude_ai_. They act as that person, with that person's access: use them for that person's own mail, calendar, repositories and files when asked, never for anyone else. If one is missing or answers that it needs authentication, tell the person to connect it at https://claude.ai/customize/connectors.";
 }
 
-const OUTWARD_RULE = " Sending, forwarding or replying to mail, an automatic reply, posting or replying in Teams, starting a Teams chat, creating, changing or cancelling a calendar event (it mails the attendees), answering an invitation, and any SharePoint or OneDrive write each wait for the person's approval card: make the call with the exact recipients, subject, time and attendees, and say it is done only once the call succeeded. Drafts and reads do not ask.";
+const OUTWARD_RULE = " Sending, forwarding or replying to mail, an automatic reply, posting or replying in Teams, starting a Teams chat, creating, changing or cancelling a calendar event (it mails the attendees), answering an invitation, and any SharePoint or OneDrive write wait for the person's approval card unless this bot runs in Full access: make the call with the exact recipients, subject, time and attendees, and say it is done only once the call succeeded. Reads, drafts and reply drafts do not ask.";
 
 const GROK_DRIVERS = new Set(["grokAgent", "grok"]);
 
@@ -106,8 +135,11 @@ const GROK_DRIVERS = new Set(["grokAgent", "grok"]);
  * turn (grokCloudConnectorEnv let them load), or, for an engine that brings
  * none, which engine does. Sagax never switches the turn to another engine
  * itself: the bot offers to ask a teammate bot on that engine. */
-export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolean; grokCloud: boolean }): string {
+export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolean; grokCloud: boolean; foreign?: boolean }): string {
   if (input.claudeAi && input.driver === "claudeAgent") return `${claudeAiConnectorsPrompt(true)}${OUTWARD_RULE}`;
+  if (input.foreign && ACCOUNT_CONNECTOR_DRIVERS.has(input.driver)) {
+    return "\nThis turn runs on an engine account that is not the speaker's own (the bot owner's or another person's sign-in), so its mail, calendar, Microsoft Teams and SharePoint connectors are not used for this person: they belong to someone else. If asked for one of those, say so plainly, do not read or send anything through them, and do not claim anything was sent. The person can connect their own account to use their own.";
+  }
   if (input.grokCloud && GROK_DRIVERS.has(input.driver)) {
     return `\nThis turn runs on the xAI account of this Grok engine, so its cloud connectors (${GROK_CLOUD_CONNECTORS.map((connector) => connector.name).join(", ")}) may be reachable through use_tool when the account connected them. They act with that account's access. If one is missing or needs sign-in, tell the person to connect it at ${GROK_CONNECTORS_URL}.${OUTWARD_RULE}`;
   }
@@ -197,6 +229,16 @@ export class ClaudeAiConnectorInventory {
     this.run = options.run;
     this.now = options.now ?? Date.now;
     this.ttlMs = options.ttlMs ?? 5 * 60_000;
+  }
+
+  /** The cached inventory, whatever its age, without waiting; a missing
+   * or stale one is read again in the background when `input` is given.
+   * For a turn's connector switch (server/connector-switch.ts), which never
+   * waits on the CLI. */
+  peek(key: string, input?: { cli: string; env: NodeJS.ProcessEnv }): ClaudeAiInventory | undefined {
+    const cached = this.cache.get(key);
+    if (input && (!cached || this.now() - cached.at >= this.ttlMs)) void this.read(key, input).catch(() => {});
+    return cached;
   }
 
   forget(key: string): void {

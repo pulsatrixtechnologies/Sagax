@@ -13778,10 +13778,12 @@
       "connectApps.capabilities.sharepoint": "9b85c8e08043ba8862b926334fb78f312db3028545adf785a5cf69cb19752229",
       "connectApps.capabilities.files": "abc7e9892806b047b4d4786b3685285543f76ca314c4c76246d5f6544c7856c9",
       "connectApps.capabilities.none": "799df9911493ff135b703c0a672a29951984b3ead2524eeb99307af8aa42613d",
-      "connectApps.capabilities.approval": "338c1f4cd2d95ba84c9eefb54ba2c3b98c8b3b0b7f2cb258826769ba633ccaec",
-      "connectApps.capabilities.grokOrg": "306f6bd4fcaa3c10f4b737763033a4fc6277b2beeb0ad86dec1d8260c43686c1",
-      "engines.connectors.claude": "652997a3dd65aab515b7d85c2e4b84d880c4eb6fb7e0f75e84a795922a380cb0",
-      "engines.connectors.grok": "38c727e4abfccdd33b97705feb2de916349637dcdcdc4303760485739f054fb7"
+      "connectApps.capabilities.approval": "aaa7f255fc1db1fbc2a53b5131d36cfe7ac1a04e9d7f87746b4ab6eb9f9ec061",
+      "connectApps.capabilities.grokOrg": "e38b87689b624a9f6771b440526ca4341216d149515d7fe45ab2cb16431c7401",
+      "engines.connectors.claude": "6833dc878951f2770eea6c91fcfcc2a5ceb1f93492f498f74f24f35808d1b740",
+      "engines.connectors.grok": "9d264396fc456b8a5615d79a3d2fc80cc07ea45744ce01b06bf7acd4ffddd6c6",
+      "chat.connectorSwitch": "8c404265516355bc888749ab68d8ad7087c50555628d6759fed85300fe0f9237",
+      "approval.held.connectorNoDetails": "d9bc9c36754a96d653b37499a8ecb06f1c8c0e739a95cfdf380bb9257bce3a3f"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

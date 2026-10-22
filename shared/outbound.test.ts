@@ -39,8 +39,11 @@ describe("isOutboundTool", () => {
       "LINEAR_CREATE_ISSUE",
       "NOTION_CREATE_PAGE",
       "GOOGLESHEETS_BATCH_UPDATE",
-      "GOOGLECALENDAR_CREATE_EVENT",
       "mcp__claude_ai_Gmail__search_threads",
+      // a reply draft sends nothing until it is sent (review of #943)
+      "mcp__claude_ai_Microsoft_365__outlook_create_reply_draft",
+      "mcp__claude_ai_Microsoft_365__outlook_create_reply_all_draft",
+      "GMAIL_CREATE_REPLY_DRAFT",
       "mcp__claude_ai_Linear__save_issue",
       "mcp__computer__click",
       "Bash",
@@ -73,6 +76,11 @@ describe("isOutboundTool, the engines' mail, Teams, calendar and SharePoint conn
       expect(isOutboundTool(`mcp__claude_ai_Microsoft_365__${tool}`), tool).toBe(true);
     }
     expect(isOutboundTool("sharepoint__upload_file")).toBe(true);
+    // fail closed on an engine connector's unknown tool, and the same
+    // reading on the Composio path (review of #943)
+    expect(isOutboundTool("mcp__claude_ai_Microsoft_365__set_out_of_office")).toBe(true);
+    expect(isOutboundTool("onedrive__set_permissions")).toBe(true);
+    for (const slug of ["GOOGLECALENDAR_CREATE_EVENT", "OUTLOOK_CALENDAR_CREATE_EVENT", "SHAREPOINT_UPLOAD_FILE"]) expect(isOutboundTool(slug), slug).toBe(true);
     expect(isOutboundTool("outlook__create_event")).toBe(true);
   });
 

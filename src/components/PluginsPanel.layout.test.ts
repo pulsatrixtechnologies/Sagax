@@ -183,7 +183,7 @@ describe("Plugins panel views", () => {
     expect(providers).toContain("data-engine-capabilities");
     expect(providers).toMatch(/data-capability="teams"[^]*?Grok · Microsoft Teams/);
     expect(providers).toMatch(/data-capability="sharepoint"[^]*?Grok · SharePoint/);
-    expect(providers).toContain("Every email sent, Teams post, invitation and SharePoint write asks you first on its card.");
+    expect(providers).toContain("Every email sent, Teams post, invitation and SharePoint write asks you first on its card, except in Full access.");
     // a word the connector's name already says is not repeated
     expect(providers).not.toMatch(/data-grok-connector="sharepoint"[^<]*<span[^>]*>SharePoint<\/span><span data-connector-capabilities/);
     expect(providers).toMatch(/data-grok-connector="outlook"[^]*?Email · Calendar/);

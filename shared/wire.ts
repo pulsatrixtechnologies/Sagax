@@ -716,6 +716,10 @@ export interface WireMessage {
     /** 2026-10-19: a usage limit sent the turn to another engine, or it
      * came back (shared/limit-failover.ts); drawn in the reader's language. */
     limitFailover?: LimitFailoverLine;
+    /** 2026-10-21 (review of #943): a request ran on another engine that
+     * has the connector it needed (server/connector-switch.ts); drawn in
+     * the reader's language. */
+    connectorSwitch?: { engine: string; connector: string };
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's

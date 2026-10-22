@@ -9909,8 +9909,10 @@
   "connectApps.capabilities.sharepoint": "SharePoint",
   "connectApps.capabilities.files": "Fichiers",
   "connectApps.capabilities.none": "Aucun moteur pour l'instant",
-  "connectApps.capabilities.approval": "Chaque courriel envoyé, publication Teams, invitation et écriture SharePoint vous demande votre accord sur sa carte.",
-  "connectApps.capabilities.grokOrg": "Les connecteurs de Grok n'atteignent les bots que sur un serveur d'organisation.",
-  "engines.connectors.claude": "Courriel, calendrier, Teams et SharePoint par vos connecteurs claude.ai (Microsoft 365, Gmail, Google Calendar). Chaque envoi ou écriture demande d'abord.",
-  "engines.connectors.grok": "Courriel, calendrier, Teams et SharePoint par les connecteurs cloud du compte xAI, sur un serveur d'organisation. Chaque envoi ou écriture demande d'abord."
+  "connectApps.capabilities.approval": "Chaque courriel envoyé, publication Teams, invitation et écriture SharePoint vous demande votre accord sur sa carte, sauf en Full.",
+  "connectApps.capabilities.grokOrg": "Les connecteurs de Grok n'atteignent les bots que sur un serveur d'organisation, et seulement avec le compte Grok de la personne elle-même.",
+  "engines.connectors.claude": "Courriel, calendrier, Teams et SharePoint par vos connecteurs claude.ai (Microsoft 365, Gmail, Google Calendar). Chaque envoi ou écriture demande d'abord, sauf en Full.",
+  "engines.connectors.grok": "Courriel, calendrier, Teams et SharePoint par les connecteurs cloud de votre propre compte xAI, sur un serveur d'organisation. Chaque envoi ou écriture demande d'abord, sauf en Full.",
+  "chat.connectorSwitch": "Passé à {engine} pour {connector}",
+  "approval.held.connectorNoDetails": "Grok n'a pas transmis le détail de cet appel. Ne l'autorisez que si vous l'avez demandé."
 }

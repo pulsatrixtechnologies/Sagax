@@ -1723,6 +1723,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       effort: "high",
       approvalMode: "auto",
       withholdHostTools: true,
+      grokCloudConnectors: true,
       access: { via: "subscription", identity: "subscription:a", engineHome: homeA },
       integrations: { agents },
     });
@@ -3412,8 +3413,17 @@ describe("grokCloudConnectorEnv", () => {
     });
   });
 
-  it("lets an organization turn fetch the xAI account connectors", () => {
-    expect(grokCloudConnectorEnv(undefined, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" });
+  it("lets an organization turn on the person's own xAI sign-in fetch the account connectors", () => {
+    expect(grokCloudConnectorEnv(undefined, true, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" });
+  });
+
+  it("keeps them off when the account is not the person's own (review of #943: payer is not the speaker)", () => {
+    for (const own of [undefined, false]) {
+      expect(grokCloudConnectorEnv(undefined, true, own)).toEqual({
+        GROK_MANAGED_MCPS_ENABLED: "false",
+        GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
+      });
+    }
   });
 
   it("turns cloud connectors off when a tool selection cannot list them", () => {

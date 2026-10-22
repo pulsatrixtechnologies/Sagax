@@ -3755,23 +3755,46 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   Gemini bring none. Connect apps > Manage > Providers and the engine cards
   (Settings > Engines) show it; the names stay read-only ("Manage on ...").
 - A turn is told what its own engine reaches (`engineConnectorsPrompt` in
-  `server/harness-connectors.ts`, the "claude-ai" prompt section). A turn
-  whose engine has none of them says which engine does and offers to ask a
-  teammate bot on that engine (`ask_bot`). Sagax does not switch a turn to
-  another engine on its own (a JC decision, see the PR).
-- Grok rules of #918 are unchanged: the cloud connectors load only on an
-  organization turn (host tools withheld) with no tool selection;
-  `GROK_MANAGED_MCPS_ENABLED=false` on every other turn.
+  `server/harness-connectors.ts`, the "claude-ai" prompt section).
+- Whose connectors (review of #943): only the sign-in of the person the
+  turn is for (`accountConnectorsForTurn`: the speaker, a routine's owner).
+  When the account is someone else's (another person's subscription pays,
+  the machine's login in solo for anyone but the operator) the turn is
+  told they belong to someone else and nothing is offered; Grok's cloud
+  connectors stay off (`grokCloudConnectors` on the turn,
+  `grokCloudConnectorEnv(..., ownAccount)`).
+- Automatic engine switch (JC 2026-10-21, `server/connector-switch.ts`): a
+  person's request that needs mail, calendar, Teams or SharePoint
+  (`connectorNeed`) and whose bot's engine lacks it runs, for that request
+  only, on another engine of that person that has it (candidates:
+  `autoEnginesFor`, so allowed engines and models, approval level and cost
+  rules hold; reach: their own sign-in only, Claude from the cached
+  inventory, never waited on). Same bot, same thread, one line "Passé à
+  Claude pour Gmail" (`tool.connectorSwitch`); a card's continuation stays
+  there. No candidate: no switch, the turn says which engine has it.
+  Never for Auto, a warm-up, a routine or handed-out work.
+  `SAGAX_CONNECTOR_SWITCH=0` turns it off.
+- Grok rules of #918 are unchanged otherwise: organization turn (host
+  tools withheld), no tool selection.
 - Every outward call through a connector waits for the approval card
-  (`isOutboundTool` in `shared/outbound.ts` via `connectorWriteKind`):
-  sending, forwarding or replying to mail, an automatic reply, posting or
-  replying in Teams, creating a Teams chat, creating, changing or cancelling
-  a calendar event (it mails the attendees), answering an invitation, and
-  every SharePoint or OneDrive write (upload, update, create folder, move,
-  rename, copy, delete). Drafts and reads do not ask. The card reads the
-  call in plain words (`approval.connector.*`: "send a calendar invitation
-  in Microsoft 365", the subject, the time and the attendees). Full access
-  and the primary bot rule are unchanged: no new exception.
+  (`isOutboundTool` via `connectorWriteKind`, same reading for an MCP tool
+  and a Composio slug): sends, automatic replies (out of office, mailbox
+  settings), Teams posts and chats, events and meetings (create, insert,
+  change, cancel), answering an invitation, every SharePoint, OneDrive or
+  Google Drive write (upload, save, permissions, grant access). On an
+  engine connector server (`isEngineConnectorServer`) any call that is not
+  a read or a draft asks (fail closed). Reads, drafts and reply drafts do
+  not. Full access and the primary bot rule are unchanged.
+- An outward card never offers "always for this session", and the ACP
+  driver answers Grok's ask once, never `allow_always`
+  (`server/drivers/acp/connector-ask.ts`). A Grok `use_tool` call to a
+  server Sagax did not mount is an engine connector: the card gets its
+  `tool_input`, or says Grok did not share the details
+  (`approval.held.connectorNoDetails`), and is outward unless its name
+  plainly reads.
+- The card shows every recipient's address (`Name <address>`; a name that
+  looks like another address or a domain is dropped): a display name is
+  the sender's to choose.
 - Needs its own infrastructure, so not built here (flagged for JC): a
   dedicated inbound address per bot (B21, iOS CO5), a Teams app per bot
   (B20, needs a Bot Framework registration), a free message in a Meet or

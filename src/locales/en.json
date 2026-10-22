@@ -9909,8 +9909,10 @@
   "connectApps.capabilities.sharepoint": "SharePoint",
   "connectApps.capabilities.files": "Files",
   "connectApps.capabilities.none": "No engine yet",
-  "connectApps.capabilities.approval": "Every email sent, Teams post, invitation and SharePoint write asks you first on its card.",
-  "connectApps.capabilities.grokOrg": "Grok's connectors reach bots on an organization server only.",
-  "engines.connectors.claude": "Email, calendar, Teams and SharePoint through your claude.ai connectors (Microsoft 365, Gmail, Google Calendar). Each send or write asks first.",
-  "engines.connectors.grok": "Email, calendar, Teams and SharePoint through the cloud connectors of the xAI account, on an organization server. Each send or write asks first."
+  "connectApps.capabilities.approval": "Every email sent, Teams post, invitation and SharePoint write asks you first on its card, except in Full access.",
+  "connectApps.capabilities.grokOrg": "Grok's connectors reach bots on an organization server only, and only on the person's own Grok sign-in.",
+  "engines.connectors.claude": "Email, calendar, Teams and SharePoint through your claude.ai connectors (Microsoft 365, Gmail, Google Calendar). Each send or write asks first, except in Full access.",
+  "engines.connectors.grok": "Email, calendar, Teams and SharePoint through the cloud connectors of your own xAI account, on an organization server. Each send or write asks first, except in Full access.",
+  "chat.connectorSwitch": "Switched to {engine} for {connector}",
+  "approval.held.connectorNoDetails": "Grok did not share this call's details. Allow it only if you asked for it."
 }

@@ -41,6 +41,10 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   // back (shared/limit-failover.ts), in the reader's language.
   const limit = message.kind === "activity" ? message.tool?.limitFailover : undefined;
   if (limit) return { kind: "recovery", text: limitFailoverLineText(limit) };
+  // 2026-10-21: a request ran on the engine that has its connector
+  // (server/connector-switch.ts), in the reader's language.
+  const switched = message.kind === "activity" ? message.tool?.connectorSwitch : undefined;
+  if (switched) return { kind: "notice", text: t("chat.connectorSwitch", { engine: switched.engine, connector: switched.connector }) };
   if (name?.startsWith("recovery:")) return { kind: "recovery", text: name.slice("recovery:".length).trim() };
   // The Kubernetes cluster of the server environments is starting
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.

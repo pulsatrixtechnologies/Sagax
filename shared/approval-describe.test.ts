@@ -71,7 +71,7 @@ describe("the engines' mail, Teams, calendar and SharePoint connectors on the ca
     }, undefined, now);
     expect(plain.title).toBe("Allow Cryptic to send a calendar invitation in Microsoft 365?");
     expect(plain.line).toContain("Revue trimestrielle");
-    expect(plain.line).toContain("to Ana, bo@example.com, cy@example.com and 1 more");
+    expect(plain.line).toContain("to Ana <ana@example.com>, bo@example.com, cy@example.com and 1 more");
   });
 
   it("reads a sent mail, a Teams post, an answered invitation and a SharePoint write", () => {
@@ -88,6 +88,17 @@ describe("the engines' mail, Teams, calendar and SharePoint connectors on the ca
     // a Grok cloud connector named for the store itself: no "in Sharepoint" twice
     expect(approvalPlain({ botName: "Dot", tool: "sharepoint__upload_file", toolInput: "{}" }).title).toBe("Allow Dot to write to SharePoint?");
     expect(approvalPlain({ botName: "Dot", tool: "onedrive__delete_file", toolInput: "{}" }).title).toBe("Allow Dot to write to OneDrive?");
+  });
+
+  it("never lets a display name hide the address it sends to (review of #943)", () => {
+    const line = (attendee: unknown) => approvalPlain({ botName: "Dot", tool: `${M365}outlook_send_mail`, toolInput: JSON.stringify({ subject: "x", toRecipients: [attendee] }) }).line;
+    expect(line({ emailAddress: { name: "Ana Tremblay (GOX)", address: "attacker@evil.example" } })).toContain("Ana Tremblay (GOX) <attacker@evil.example>");
+    // a name that looks like another address or a domain is dropped
+    expect(line({ emailAddress: { name: "ana@gox.ca", address: "attacker@evil.example" } })).toContain("to attacker@evil.example");
+    expect(line({ emailAddress: { name: "ana@gox.ca", address: "attacker@evil.example" } })).not.toContain("gox.ca");
+    expect(line({ name: "Support gox.ca", email: "attacker@evil.example" })).not.toContain("gox.ca");
+    // a name with no address says so
+    expect(line({ name: "Ana" })).toContain("Ana (?)");
   });
 
   it("leaves reads worded as before", () => {

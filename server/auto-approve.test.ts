@@ -274,3 +274,18 @@ describe("delegatedApprovalMode", () => {
     }
   });
 });
+
+describe("an engine connector's outward call (review of #943)", () => {
+  it("the driver's outward reading holds the card like a send, at Auto and Ask", () => {
+    for (const mode of ["auto", "ask"] as const) {
+      expect(autoVerdict(mode, "other", { outbound: true, toolName: "outlook__whatever" })).toEqual({ approve: null, source: "outbound-guard" });
+    }
+  });
+  it("a safety review's read-only verdict never answers an outward call", () => {
+    expect(autoVerdict("auto", "other", { outbound: true, safetyAllow: true }).approve).toBeNull();
+    expect(autoVerdict("auto", "mcp__claude_ai_Microsoft_365__outlook_create_event", { safetyAllow: true }).approve).toBeNull();
+  });
+  it("Full access is unchanged (no new exception)", () => {
+    expect(autoVerdict("full", "other", { outbound: true }).source).toBe("full-access");
+  });
+});
