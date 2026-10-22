@@ -3765,15 +3765,22 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   `grokCloudConnectorEnv(..., ownAccount)`).
 - Automatic engine switch (JC 2026-10-21, `server/connector-switch.ts`): a
   person's request that needs mail, calendar, Teams or SharePoint
-  (`connectorNeed`) and whose bot's engine lacks it runs, for that request
-  only, on another engine of that person that has it (candidates:
-  `autoEnginesFor`, so allowed engines and models, approval level and cost
-  rules hold; reach: their own sign-in only, Claude from the cached
-  inventory, never waited on). Same bot, same thread, one line "Passé à
-  Claude pour Gmail" (`tool.connectorSwitch`); a card's continuation stays
-  there. No candidate: no switch, the turn says which engine has it.
-  Never for Auto, a warm-up, a routine or handed-out work.
-  `SAGAX_CONNECTOR_SWITCH=0` turns it off.
+  (`connectorNeed` on the person's raw message only, never the prompt
+  composed around it: page, mail or data context, a quoted reply, a
+  drained queue's prompt) and whose bot's engine lacks it runs, for that
+  request only, on another engine of that person that has it. Candidates:
+  `autoEnginesFor` (allowed engines and models, approval level); never a
+  model whose catalogue price is above the bot's own (unknown prices on
+  one side only: no switch); the bot's effort kept when accepted. Reach:
+  their own sign-in only and only when known (Claude from the cached
+  claude.ai inventory, never waited on, a cold cache is unknown; Grok's
+  connected connectors are never known, so Grok is neither a target nor a
+  reason). Unknown on the bot's engine: no switch. One line "Passé à
+  Claude pour Gmail" (`tool.connectorSwitch`) after admission. Card
+  continuations, compactions, computer choices, Auto, warm-ups, routines
+  and handed-out work stay on the bot's engine. Covered by
+  `server/connector-switch.e2e.test.ts`. `SAGAX_CONNECTOR_SWITCH=0` turns
+  it off.
 - Grok rules of #918 are unchanged otherwise: organization turn (host
   tools withheld), no tool selection.
 - Every outward call through a connector waits for the approval card
