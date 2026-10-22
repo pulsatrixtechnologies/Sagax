@@ -178,23 +178,100 @@ export interface PurchaseAsk {
   last4: string;
   brand: CardBrand;
   addressName?: string;
+  items?: PurchaseItem[];
+  flights?: PurchaseFlightLeg[];
+}
+
+/** One article of a purchase, as the page lists it. */
+export interface PurchaseItem {
+  name: string;
+  quantity: number;
+  /** "12.50", the line's price when the page shows one. */
+  price?: string;
+}
+
+/** One flight of a purchase. */
+export interface PurchaseFlightLeg {
+  from: string;
+  to: string;
+  /** YYYY-MM-DD */
+  date: string;
+  flight?: string;
+  passenger?: string;
+}
+
+export const PURCHASE_LIMITS = { items: 30, flights: 8 } as const;
+
+/** 13 to 19 digits in a row, spaces or dashes between: text the bot wrote
+ * on a card or a receipt never carries what reads as a card number. */
+const CARD_LIKE = /(?:\d[\s.\-_/]*){13,19}/;
+function bareText(value: unknown, max: number): string {
+  const text = clean(value, max);
+  return CARD_LIKE.test(text) ? "" : text;
+}
+
+/** "3 articles", "2 flights", or "" when the bot listed nothing. */
+export function purchaseContents(ask: { items?: readonly PurchaseItem[]; flights?: readonly PurchaseFlightLeg[] }): string {
+  const parts: string[] = [];
+  const count = (ask.items ?? []).reduce((sum, item) => sum + item.quantity, 0);
+  if (count) parts.push(`${count} ${count === 1 ? "item" : "items"}`);
+  const flights = ask.flights?.length ?? 0;
+  if (flights) parts.push(`${flights} ${flights === 1 ? "flight" : "flights"}`);
+  return parts.join(", ");
 }
 
 /** The approval card the person reads. No card number, no security code. */
 export function purchaseCardText(ask: PurchaseAsk): { title: string; line: string } {
   const ship = ask.addressName ? `, ship to ${ask.addressName}` : "";
+  const contents = purchaseContents(ask);
   return {
     title: `Pay ${ask.amount} ${ask.currency} to ${ask.merchant}?`,
-    line: `Card ending ${ask.last4} (${ask.brand})${ship}. The bot never sees the number or the security code.`,
+    line: `${contents ? `${contents}. ` : ""}Card ending ${ask.last4} (${ask.brand})${ship}. The bot never sees the number or the security code.`,
   };
 }
 
+/** The bot's list of articles. A string is the refusal; undefined, none given. */
+export function parsePurchaseItems(raw: unknown): PurchaseItem[] | string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length > PURCHASE_LIMITS.items) return `items: a list of at most ${PURCHASE_LIMITS.items} articles.`;
+  const out: PurchaseItem[] = [];
+  for (const entry of raw) {
+    const row = record(entry);
+    const name = bareText(row?.name, 120);
+    if (!row || !name) return "items: each article needs a name (at most 120 characters, no card number).";
+    const quantity = row.quantity === undefined ? 1 : row.quantity;
+    if (typeof quantity !== "number" || !Number.isInteger(quantity) || quantity < 1 || quantity > 999) return "items: quantity is a whole number from 1 to 999.";
+    const price = row.price === undefined ? null : parseAmount(row.price);
+    if (row.price !== undefined && !price) return "items: price is a positive amount, such as 12.50.";
+    out.push({ name, quantity, ...(price ? { price } : {}) });
+  }
+  return out.length ? out : undefined;
+}
+
+/** The bot's list of flights. A string is the refusal; undefined, none given. */
+export function parsePurchaseFlights(raw: unknown): PurchaseFlightLeg[] | string | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw) || raw.length > PURCHASE_LIMITS.flights) return `flights: a list of at most ${PURCHASE_LIMITS.flights} flights.`;
+  const out: PurchaseFlightLeg[] = [];
+  for (const entry of raw) {
+    const row = record(entry);
+    const from = bareText(row?.from, 80);
+    const to = bareText(row?.to, 80);
+    const date = typeof row?.date === "string" && realDate(row.date) ? row.date : "";
+    if (!row || !from || !to || !date) return "flights: each flight needs from, to and date (YYYY-MM-DD).";
+    const flight = bareText(row.flight, 20);
+    const passenger = bareText(row.passenger, 80);
+    out.push({ from, to, date, ...(flight ? { flight } : {}), ...(passenger ? { passenger } : {}) });
+  }
+  return out.length ? out : undefined;
+}
+
 /** What the bot is told. A handle only after the person allowed the fill. */
-export function purchaseBotNote(decision: "deny" | "once" | "always", ask: { merchant: string; amount: string; currency: string; handle?: string }): string {
+export function purchaseBotNote(decision: "deny" | "once", ask: { merchant: string; amount: string; currency: string; handle?: string }): string {
   if (decision === "deny") {
     return `Sagax purchase update: the person declined to pay ${ask.amount} ${ask.currency} at ${ask.merchant}. Do not ask for a card number. Continue without paying if you can.`;
   }
-  const when = decision === "once" ? " this time" : " from now on for this bot";
+  const when = " this time; the next payment asks again";
   const fill = ask.handle
     ? ` Fill it with fill_credential handle ${ask.handle} and field cardNumber, then cardExpiry, cardCvc and cardholder. You never receive the number.`
     : "";
@@ -208,6 +285,8 @@ export interface PurchaseCall {
   merchant?: string;
   address?: string;
   contact?: string;
+  items?: PurchaseItem[];
+  flights?: PurchaseFlightLeg[];
 }
 
 /** request_purchase arguments. A string is the refusal. */
@@ -224,7 +303,14 @@ export function parsePurchaseCall(params: unknown): PurchaseCall | string {
   const merchant = clean(row.merchant, 80);
   const address = typeof row.address === "string" && row.address.trim() ? row.address.trim() : undefined;
   const contact = typeof row.contact === "string" && row.contact.trim() ? row.contact.trim() : undefined;
-  return { credential, amount, currency, ...(merchant ? { merchant } : {}), ...(address ? { address } : {}), ...(contact ? { contact } : {}) };
+  const items = parsePurchaseItems(row.items);
+  if (typeof items === "string") return items;
+  const flights = parsePurchaseFlights(row.flights);
+  if (typeof flights === "string") return flights;
+  return {
+    credential, amount, currency, ...(merchant ? { merchant } : {}), ...(address ? { address } : {}), ...(contact ? { contact } : {}),
+    ...(items ? { items } : {}), ...(flights ? { flights } : {}),
+  };
 }
 
 export const REQUEST_PURCHASE_TOOL = "request_purchase";
@@ -232,7 +318,7 @@ export const REQUEST_PURCHASE_TOOL = "request_purchase";
 export const REQUEST_PURCHASE_TOOL_SPEC = {
   name: REQUEST_PURCHASE_TOOL,
   description:
-    "Ask the person to approve a payment with a card they saved in Sagax. credential is the card handle (cred_...). amount and currency are what the page charges (12.50, CAD). The page you are on is the merchant. Optional address and contact are handles of a saved address or contact to fill with the card. You never receive the card number or the security code. Nothing is charged until the person allows it on the approval card (or their Primary Bot, when they ask). Then call fill_credential with field cardNumber, cardExpiry, cardCvc and cardholder.",
+    "Ask the person to approve a payment with a card they saved in Sagax. credential is the card handle (cred_...). amount and currency are what the page charges (12.50, CAD): the total, taxes included. List the cart in items (or the flights) so the person sees what they pay for. The page you are on is the merchant. Optional address and contact are handles of a saved address or contact to fill with the card. You never receive the card number or the security code. Nothing is charged until the person allows it on the approval card (or their Primary Bot, when they ask). Then call fill_credential with field cardNumber, cardExpiry, cardCvc and cardholder, place the order, and call record_purchase on the confirmation page.",
   inputSchema: {
     type: "object",
     properties: {
@@ -242,8 +328,69 @@ export const REQUEST_PURCHASE_TOOL_SPEC = {
       merchant: { type: "string", description: "The shop name, as shown on the page" },
       address: { type: "string", description: "Optional address handle, cred_..." },
       contact: { type: "string", description: "Optional contact handle, cred_..." },
+      items: {
+        type: "array",
+        maxItems: PURCHASE_LIMITS.items,
+        description: "What the cart holds, as the page lists it: shown to the person on the card.",
+        items: { type: "object", properties: { name: { type: "string" }, quantity: { type: "integer" }, price: { type: "string" } }, required: ["name"], additionalProperties: false },
+      },
+      flights: {
+        type: "array",
+        maxItems: PURCHASE_LIMITS.flights,
+        description: "For a flight booking: each flight, shown to the person on the card.",
+        items: { type: "object", properties: { from: { type: "string" }, to: { type: "string" }, date: { type: "string", description: "YYYY-MM-DD" }, flight: { type: "string" }, passenger: { type: "string" } }, required: ["from", "to", "date"], additionalProperties: false },
+      },
     },
     required: ["credential", "amount", "currency"],
+    additionalProperties: false,
+  },
+} as const;
+
+/** A calendar date YYYY-MM-DD that exists. */
+function realDate(text: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day && year >= 2000 && year <= 2100;
+}
+
+export interface PurchaseReceiptCall {
+  orderRef?: string;
+  /** The total the confirmation page shows, "52.00". */
+  total?: string;
+  items?: PurchaseItem[];
+  flights?: PurchaseFlightLeg[];
+}
+
+/** record_purchase arguments. A string is the refusal. */
+export function parseReceiptCall(params: unknown): PurchaseReceiptCall | string {
+  const args = (params as { arguments?: unknown } | null)?.arguments;
+  const row = record(args) ?? {};
+  const orderRef = bareText(row.order_ref, 64);
+  const total = row.total === undefined ? null : parseAmount(row.total);
+  if (row.total !== undefined && !total) return "total: the amount the confirmation page shows, such as 52.00.";
+  const items = parsePurchaseItems(row.items);
+  if (typeof items === "string") return items;
+  const flights = parsePurchaseFlights(row.flights);
+  if (typeof flights === "string") return flights;
+  return { ...(orderRef ? { orderRef } : {}), ...(total ? { total } : {}), ...(items ? { items } : {}), ...(flights ? { flights } : {}) };
+}
+
+export const RECORD_PURCHASE_TOOL = "record_purchase";
+
+export const RECORD_PURCHASE_TOOL_SPEC = {
+  name: RECORD_PURCHASE_TOOL,
+  description:
+    "After the shop confirmed the order, on its confirmation page, record the purchase the person approved with request_purchase: the order number the page shows, and what was bought (items or flights) if it changed. The person sees the receipt in the conversation. A purchase approved once is closed by it: a new payment asks again.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      order_ref: { type: "string", description: "The order or booking number the page shows." },
+      total: { type: "string", description: "The total the confirmation page shows, such as 52.00. A total that is not the approved amount is shown to the person." },
+      items: REQUEST_PURCHASE_TOOL_SPEC.inputSchema.properties.items,
+      flights: REQUEST_PURCHASE_TOOL_SPEC.inputSchema.properties.flights,
+    },
     additionalProperties: false,
   },
 } as const;
@@ -253,10 +400,13 @@ function record(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+/** Zero-width and bidi controls: they hide or reorder what a card shows. */
+const INVISIBLE = /[\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
+
 function clean(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
   let text = "";
-  for (const char of value) {
+  for (const char of value.replace(INVISIBLE, "")) {
     const code = char.codePointAt(0) ?? 0;
     if (code >= 32 && code !== 127) text += char;
   }

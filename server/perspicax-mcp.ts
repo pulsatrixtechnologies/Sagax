@@ -25,6 +25,7 @@
 //     for this turn ended" (a disabled person mid-turn, S5-10);
 //   - no token is ever logged or put in an error.
 import { guardToolCall, type GuardOptions } from "./mcp-permissions.ts";
+import { telephonyRefusal } from "./telephony-guard.ts";
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { DirectoryProfile, ExchangeResult } from "./perspicax-link.ts";
 import { PERSPICAX_READ_ONLY_TOOLS } from "./drivers/acp/grok-read-only-tools.ts";
@@ -206,6 +207,25 @@ const RETRY_EXCHANGE_MS = 400;
 
 type Json = Record<string, unknown>;
 
+/** The telephony guard's refusal for a bot's own Twilio call
+ * (server/telephony-guard.ts), or null. */
+function telephonyBlock(frame: Json, twilioTools: ReadonlySet<string> | undefined): string | null {
+  if (frame.method !== "tools/call") return null;
+  const params = isObject(frame.params) ? frame.params : {};
+  return telephonyRefusal(String(params.name ?? ""), params.arguments, twilioTools ? { twilioTools } : {});
+}
+
+/** The tools of a tools/list answer that target Twilio under another name:
+ * their description names Twilio or its API host. */
+export function twilioToolsOf(body: unknown): string[] {
+  const result = isObject(body) && isObject(body.result) ? body.result : null;
+  const tools = result && Array.isArray(result.tools) ? result.tools : [];
+  return tools
+    .filter((tool): tool is Json => isObject(tool) && typeof tool.name === "string")
+    .filter((tool) => /twilio/i.test(`${String(tool.description ?? "")} ${JSON.stringify(tool._meta ?? {})}`))
+    .map((tool) => String(tool.name));
+}
+
 function isObject(value: unknown): value is Json {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -267,6 +287,8 @@ export class PerspicaxMcp {
   private readonly initParams = new Map<string, Json>();
   private reopens = 0;
   private nativeCalls = 0;
+  /** Per profile: tools whose tools/list entry names Twilio (telephony guard). */
+  private readonly twilioTools = new Map<string, Set<string>>();
   /** "At the same time": a 5 minute window, then a write is sent again. */
   private readonly writes = new WriteOnce<PerspicaxRelayAnswer>({ ttlMs: 5 * 60_000 });
 
@@ -461,7 +483,10 @@ export class PerspicaxMcp {
     if (!(this.options.botProfiles(input.botId) ?? []).includes(input.profileId)) {
       return { status: 403, body: { error: "this bot no longer lists that Perspicax profile", code: "profile_not_mounted" } };
     }
-    const blocked = input.judged ? null : await this.permissionBlock(entry, frame);
+    // a tools/call is always a request: one without an id would run with no
+    // answer and no guard (re-review of #956)
+    if (frame.method === "tools/call" && notification) return { status: 400, body: rpcError(null, -32600, "tools/call needs an id") };
+    const blocked = input.judged ? null : telephonyBlock(frame, this.twilioTools.get(input.profileId)) ?? await this.permissionBlock(entry, frame);
     if (blocked) return { status: 200, body: { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: blocked }], isError: true } } };
     const speaker = this.options.subjectOf(entry.principalId);
     if (!speaker || speaker.disabled) this.end(entry);
@@ -514,6 +539,10 @@ export class PerspicaxMcp {
     }
     try {
       const body = parseMcpBody(text, id);
+      if (frame.method === "tools/list" && body !== null) {
+        const named = twilioToolsOf(body);
+        if (named.length) this.twilioTools.set(input.profileId, new Set([...(this.twilioTools.get(input.profileId) ?? []), ...named].slice(-500)));
+      }
       return body === null ? { status: 200, body: rpcError(id, -32000, "Perspicax sent no answer") } : { status: 200, body };
     } catch {
       return { status: 200, body: rpcError(id, -32000, "Perspicax sent an answer that is not JSON") };

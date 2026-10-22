@@ -118,6 +118,7 @@ import { optionsCardRow } from "./OptionsCardRow";
 import { MessageBoundary, UnknownMessageCard, isUnknownMessageKind } from "./MessageBoundary";
 import { WidgetMessage } from "./widget/WidgetMessage";
 import { PagePublishCard } from "./PublishedPages";
+import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
@@ -1305,6 +1306,10 @@ const MessagesList = memo(function MessagesList({
           // a bot's page proposal: its approval card (src/components/PublishedPages.tsx)
           if (m.pagePublish && m.role === "bot") {
             return <MessageBoundary fallbackText={m.text ?? ""}><PagePublishCard message={m} /></MessageBoundary>;
+          }
+          // a phone call or a purchase on its card (src/components/OutboundCard.tsx)
+          if (m.outbound && m.role === "bot") {
+            return <MessageBoundary fallbackText={m.text ?? ""}><OutboundCard message={m} /></MessageBoundary>;
           }
           // a widget row whose tree never arrived still reads as its text
           switch (m.kind === "widget" && !m.widget ? "text" : m.kind) {

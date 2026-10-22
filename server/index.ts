@@ -106,6 +106,7 @@ import {
 } from "../shared/credential-request.ts";
 import { VAULT_LOGIN_TARGET, ONE_PASSWORD_WAITING } from "../shared/credential-vault.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
+import { outboundWiring, primaryOutboundDecision, primaryPurchaseCard } from "./outbound-wiring.ts";
 import { OnePassword } from "./onepassword.ts";
 import { createCredentialVaultRoutes, vaultPrincipalFor } from "./routes/credential-vault.ts";
 import { createCredentialVaultInternalRoutes } from "./routes/credential-vault-internal.ts";
@@ -6705,6 +6706,20 @@ const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
 // a value. 1Password is an optional read-only source (server/onepassword.ts),
 // off on an organization server.
 const credentialVault = new CredentialVault(DATA_DIR, vaultKeySource);
+// R13 (parité Grok Bot V4, 59, 83): phone call and purchase cards
+// (server/outbound-wiring.ts); every outward action keeps its card.
+const outbound = outboundWiring({
+  dataDir: DATA_DIR,
+  store,
+  botName: (botId) => store.bot(botId)?.name || "Bot",
+  // on whose behalf the call says it is made: the person, else the organization
+  personName: (botId, threadId) => store.taskByThread(botId, threadId)?.openedBy?.name || orgState.org?.name || "",
+  language: () => (cfg.language === "en" ? "en" : "fr"),
+  twilio: (turn, args) => perspicaxMcp
+    ? perspicaxMcp.callTool({ ...turn, name: "twilio_api__write", args })
+    : Promise.resolve({ ok: false as const, code: "profile_not_mounted" as const, error: "Perspicax is not linked on this server" }),
+  wake: (botId, threadId, messageId, prompt) => dispatchSecretResume({ botId, threadId, messageId, label: "outbound", outcome: "provided", prompt }),
+});
 const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax" });
 /** 2026-10-21 (parité R10, ligne 80): the app a screen action of this Mac
  * acts on (server/computer-app.ts), and the turns whose mounted computer is
@@ -6852,11 +6867,24 @@ ROUTES.push(createCredentialVaultRoutes({
     IDENTITY.kind === "perspicax" ? ruleManager(auth) : localPrincipalId(),
     "purchase.allow", detail, stepUp,
   ),
+  purchaseAnswered: (listing, note) => outbound.purchaseAnswered(listing, note),
   cards: {
     find: (botId, threadId, messageId) => secretMessage(botId, threadId, messageId)?.secret ?? null,
     patch: (_botId, threadId, messageId, secret) => { store.patchMessage(threadId, messageId, { secret }); },
     resume: (botId, threadId, messageId, outcome, prompt) => resumeSecretCard(botId, threadId, messageId, outcome, prompt),
   },
+}));
+ROUTES.push(outbound.routes({
+  principal: credentialVaultPrincipal,
+  ownerGate: (auth) => (actConfirmed()?.primary ? null : credentialVaultPersonRefusal(auth)),
+  viaPrimary: () => actConfirmed()?.primary?.botName ?? null,
+  isAdmin: (auth) => IDENTITY.kind === "perspicax" && orgAdminCaller(auth),
+  // a call costs money: the same key as a purchase
+  stepUp: (auth, detail, stepUp) => settingsStepUpGate(IDENTITY.kind === "perspicax" ? ruleManager(auth) : localPrincipalId(), "purchase.allow", detail, stepUp),
+  audit: (auth, action, detail) => appendAdminAction(DATA_DIR, {
+    category: "security", action, target: { kind: "person", id: credentialVaultPrincipal(auth) ?? "unknown" },
+    after: detail, actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
+  }),
 }));
 const cloudAgentStore = new CloudAgentStore(DATA_DIR);
 const cloudAgentCredentials = new CloudAgentCredentialStore(DATA_DIR, vaultKeySource);
@@ -27294,6 +27322,12 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
     route: (input) => routeSteeredMessage(input),
   }),
+  // place_phone_call (server/outbound-wiring.ts)
+  outbound.internalRoutes({
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    principalForThread: vaultPrincipalForThread,
+    inRoom: (threadId) => Boolean(store.groupByThread(threadId)),
+  }),
   // request_login (server/routes/credential-vault-internal.ts)
   createCredentialVaultInternalRoutes({
     vault: credentialVault,
@@ -29533,28 +29567,21 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
         });
       }
       const vaultPerson = IDENTITY.kind === "perspicax" ? turn.person.toLowerCase() : LOCAL_VAULT_PRINCIPAL;
+      // a phone call: Call or Do not call, never an Always allow
+      out.push(...outbound.primaryPending(vaultPerson, securityKeys.required(vaultPerson, ["money"]).length > 0));
+      // a purchase: allow this once or deny, never always (JC 2026-10-22)
       for (const purchase of credentialVault.pendingPurchases(vaultPerson)) {
-        out.push({
-          threadId: purchase.threadId,
-          requestId: purchase.id,
-          botId: purchase.botId,
-          botName: store.bot(purchase.botId)?.name || "Bot",
-          at: purchase.createdAt,
-          title: purchase.title,
-          line: purchase.line,
-          kind: "permission",
-          needsKey: securityKeys.required(vaultPerson, ["money"]).length > 0,
-          options: ["allow", "always_allow", "deny"],
-          always: "session",
-          alwaysScope: `pay ${purchase.merchant} with the card ending ${purchase.cardLast4}`,
-        });
+        out.push(primaryPurchaseCard(purchase, store.bot(purchase.botId)?.name || "Bot", securityKeys.required(vaultPerson, ["money"]).length > 0));
       }
       return out;
     },
     respond: (turn, card, body) => {
-      if (card.requestId.startsWith("pay_")) {
-        const decision = body.behavior === "deny" ? "deny" : body.always === true ? "always" : body.behavior === "allow" ? "once" : "";
-        return replay(turn, "POST", `/api/me/credentials/purchases/${card.requestId}/answer`, { decision }, card.threadId);
+      if (card.requestId.startsWith("call_") || card.requestId.startsWith("pay_")) {
+        const call = card.requestId.startsWith("call_");
+        const answer = primaryOutboundDecision(call ? "call" : "purchase", body);
+        if ("refused" in answer) return Promise.resolve({ status: 400, body: { error: answer.refused, code: "no_always" } });
+        const route = call ? `/api/me/phone-calls/${card.requestId}/answer` : `/api/me/credentials/purchases/${card.requestId}/answer`;
+        return replay(turn, "POST", route, { decision: answer.decision }, card.threadId);
       }
       const message = store.messagesFor(card.threadId).find((row) => row.card?.requestId === card.requestId);
       const skill = message?.card?.skillRequest && body.behavior === "allow" ? reviewedSkillSha256(message.card.skillRequest) : undefined;
@@ -37279,7 +37306,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // this bot and this conversation (server/credential-fill.ts).
         const vaultPrincipal = vaultPrincipalForThread(internalCapability.threadId);
         const credentials = vaultPrincipal
-          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, onePasswordReaderFor(internalCapability.threadId))
+          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, onePasswordReaderFor(internalCapability.threadId), (listing) => outbound.purchaseCard(listing))
           : undefined;
         const beforeDispatch = () => {
           requireActiveInternalCapability();

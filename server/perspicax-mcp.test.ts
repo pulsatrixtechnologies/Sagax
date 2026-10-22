@@ -546,6 +546,34 @@ describe("PerspicaxMcp permissions and callTool", () => {
     expect(rows.every((r) => r.decision === "allowed")).toBe(true);
   });
 
+  it("the telephony guard refuses a bot's own call or number purchase before it leaves, never a harness call", async () => {
+    const h = harness(answerWith("done"));
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    const bought = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("twilio_api__write", { resource: "IncomingPhoneNumbers", action: "create", set: { PhoneNumber: "+15145550142" } }, 30) });
+    expect(bought.body).toMatchObject({ id: 30, result: { isError: true } });
+    expect(JSON.stringify(bought.body)).toContain("never buys");
+    const called = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("twilio_api__write", { resource: "Calls", action: "create", set: { To: "+15145550142", Url: "https://x.test" } }, 31) });
+    expect(JSON.stringify(called.body)).toContain("place_phone_call");
+    expect(relayed(h)).toEqual([]);
+    const harnessCall = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("twilio_api__write", { resource: "Calls", action: "create", set: {} }, 32), judged: true });
+    expect(harnessCall.body).toMatchObject({ id: 32, result: { content: [{ text: "done" }] } });
+    expect(relayed(h)).toEqual(["twilio_api__write"]);
+  });
+
+  it("refuses a tools/call without an id, and guards a Twilio catalog named otherwise (re-review)", async () => {
+    const h = harness({ mcp: ({ body }: { body: any }) => body.method === "tools/list"
+      ? new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { tools: [{ name: "sms_gateway__write", description: "Write to the Twilio REST API (api.twilio.com)" }, { name: "cw_psa__write", description: "ConnectWise" }] } }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } })
+      : new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "done" }] } }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) });
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    const noId = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", method: "tools/call", params: { name: "cw_psa__query", arguments: {} } } });
+    expect(noId.status).toBe(400);
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 40, method: "tools/list" } });
+    const aliased = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("sms_gateway__write", { resource: "Calls", action: "create" }, 41) });
+    expect(JSON.stringify(aliased.body)).toContain("place_phone_call");
+    const other = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: toolsCall("cw_psa__write", { resource: "companies", action: "update" }, 42) });
+    expect(other.body).toMatchObject({ id: 42, result: { content: [{ text: "done" }] } });
+  });
+
   it("shadow lets a denial through and audits only the denial", async () => {
     const rows: McpAuditRecord[] = [];
     const h = harness({ ...answerWith("done"), guard: guardFor("viewer", "shadow", rows) });

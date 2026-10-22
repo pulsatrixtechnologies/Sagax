@@ -16,7 +16,7 @@
 // Nothing here returns a value to a caller other than resolveForFill, which
 // only the browser runtime's fill path calls (server/credential-fill.ts),
 // after the grant and the page's origin are checked. Listings carry booleans.
-import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -49,6 +49,8 @@ import {
   publicCard,
   purchaseBotNote,
   purchaseCardText,
+  type PurchaseFlightLeg,
+  type PurchaseItem,
   type PaymentFillField,
   type StoredAddress,
   type StoredCard,
@@ -125,11 +127,33 @@ const purchaseSchema = z.object({
   cardId: z.string().regex(/^[a-z0-9]{8,40}$/),
   addressId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
   contactId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
+  // "always" is only read from files written before JC's rule of
+  // 2026-10-22 (every purchase its own card): it never covers a payment
   status: z.enum(["pending", "once", "always", "denied"]),
   createdAt: z.number(),
   answeredAt: z.number().optional(),
   expiresAt: z.number().optional(),
   via: z.string().min(1).max(80).optional(),
+  // R13 (purchase agent): what the cart holds, and the receipt once the
+  // shop confirmed it (record_purchase)
+  items: z.array(z.object({ name: z.string().min(1).max(120), quantity: z.number().int().min(1).max(999), price: z.string().regex(/^\d{1,6}\.\d{2}$/).optional() }).strict()).max(30).optional(),
+  flights: z.array(z.object({ from: z.string().min(1).max(80), to: z.string().min(1).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), flight: z.string().min(1).max(20).optional(), passenger: z.string().min(1).max(80).optional() }).strict()).max(8).optional(),
+  // the approved cart above never changes; the shop's receipt sits beside
+  // it, as the bot declared it (record_purchase): Sagax does not read it
+  // from the page, and the card says so
+  receipt: z.object({
+    at: z.number(),
+    orderRef: z.string().min(1).max(64).optional(),
+    total: z.string().regex(/^\d{1,6}\.\d{2}$/).optional(),
+    items: z.array(z.object({ name: z.string().min(1).max(120), quantity: z.number().int().min(1).max(999), price: z.string().regex(/^\d{1,6}\.\d{2}$/).optional() }).strict()).max(30).optional(),
+    flights: z.array(z.object({ from: z.string().min(1).max(80), to: z.string().min(1).max(80), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), flight: z.string().min(1).max(20).optional(), passenger: z.string().min(1).max(80).optional() }).strict()).max(8).optional(),
+  }).strict().optional(),
+  // a once approval is used at the first payment field filled, of any
+  // kind: the other fields of that same form and page may follow for a few
+  // minutes, each once (re-review of #956)
+  cardFilledAt: z.number().optional(),
+  formKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  filledFields: z.array(z.string().min(1).max(40)).max(20).optional(),
 }).strict();
 
 const itemSchema = z.object({
@@ -183,6 +207,14 @@ export interface PurchaseListing {
   createdAt: number;
   title: string;
   line: string;
+  items?: PurchaseItem[];
+  flights?: PurchaseFlightLeg[];
+  orderRef?: string;
+  doneAt?: number;
+  /** What the shop confirmed, beside the approved cart. */
+  receipt?: { orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] };
+  /** The confirmed total is not the approved amount. */
+  mismatch?: boolean;
 }
 
 export class CredentialVaultError extends Error {
@@ -532,7 +564,7 @@ export class CredentialVault {
    * never put the value in a tool result, a message or a log. */
   async resolveForFill(
     principalId: string,
-    request: { handle: unknown; field: VaultFillField; botId: string; threadId: string; pageUrl: string },
+    request: { handle: unknown; field: VaultFillField; botId: string; threadId: string; pageUrl: string; form?: string },
     readOnePassword?: OnePasswordFieldReader,
   ): Promise<FillResolution> {
     const itemId = itemIdFromHandle(request.handle);
@@ -705,6 +737,7 @@ export class CredentialVault {
   openPurchase(principalId: string, input: {
     botId: string; threadId: string; merchant?: string; pageUrl: string;
     amount: unknown; currency: unknown; cardId: string; addressId?: string; contactId?: string;
+    items?: PurchaseItem[]; flights?: PurchaseFlightLeg[];
   }): { already: boolean; listing: PurchaseListing; note: string } {
     if (!BOT_ID.test(input.botId)) throw new CredentialVaultError("invalid bot", "invalid_bot");
     if (!THREAD_ID.test(input.threadId)) throw new CredentialVaultError("invalid conversation", "invalid_thread");
@@ -725,10 +758,13 @@ export class CredentialVault {
         const contact = items[input.contactId];
         if (!contact || contact.kind !== "contact") throw new CredentialVaultError("No such contact", "unknown_item", 404);
       }
-      const live = Object.values(purchases).find((row) => purchaseCovers(row, input.botId, input.threadId, domain, now) && row.cardId === card.id);
+      // the same approval only for the same amount, currency and cart (review of #956)
+      const cart = cartKey(input.items, input.flights);
+      const live = Object.values(purchases).find((row) => purchaseCovers(row, input.botId, input.threadId, domain, now) && row.cardId === card.id
+        && row.amount === amount && row.currency === currency && cartKey(row.items, row.flights) === cart && row.cardFilledAt === undefined);
       if (live && live.status !== "pending") {
         const listing = this.purchaseListing({ items }, live);
-        return { already: true, listing, note: purchaseBotNote(live.status === "always" ? "always" : "once", { merchant: live.merchant, amount: live.amount, currency: live.currency, handle: vaultHandle(card.id) }) };
+        return { already: true, listing, note: purchaseBotNote("once", { merchant: live.merchant, amount: live.amount, currency: live.currency, handle: vaultHandle(card.id) }) };
       }
       for (const row of Object.values(purchases)) {
         if (row.status === "pending" && row.botId === input.botId && row.cardId === card.id && row.domain === domain) delete purchases[row.id];
@@ -738,6 +774,7 @@ export class CredentialVault {
       const row: StoredPurchase = {
         id, botId: input.botId, threadId: input.threadId, merchant, domain, amount, currency,
         cardId: card.id, ...(input.addressId ? { addressId: input.addressId } : {}), ...(input.contactId ? { contactId: input.contactId } : {}),
+        ...(input.items?.length ? { items: input.items } : {}), ...(input.flights?.length ? { flights: input.flights } : {}),
         status: "pending", createdAt: now,
       };
       purchases[id] = row;
@@ -752,8 +789,9 @@ export class CredentialVault {
 
   /** The person's answer: deny, this time, or always for this bot on this site. */
   answerPurchase(principalId: string, purchaseId: string, decision: unknown, via?: string): { listing: PurchaseListing; note: string } {
-    if (decision !== "deny" && decision !== "once" && decision !== "always") {
-      throw new CredentialVaultError("decision must be deny, once or always", "invalid_decision");
+    // JC 2026-10-22: no standing grant for a purchase; each one is its own card
+    if (decision !== "deny" && decision !== "once") {
+      throw new CredentialVaultError("decision must be deny or once: every purchase needs its own approval", "invalid_decision");
     }
     const now = this.now();
     const name = via ? visibleText(via).slice(0, 80) : "";
@@ -770,6 +808,48 @@ export class CredentialVault {
     });
   }
 
+  /** The shop confirmed the order (record_purchase): the receipt goes on
+   * the purchase that let the bot pay on this site, and a purchase allowed
+   * once is closed by it. Null when no approved purchase covers the page. */
+  recordPurchase(principalId: string, input: {
+    botId: string; threadId: string; pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[];
+  }): PurchaseListing | null {
+    const domain = domainOfPage(input.pageUrl);
+    if (!domain) return null;
+    const now = this.now();
+    return this.mutate(principalId, (items, purchases) => {
+      const row = Object.values(purchases)
+        .filter((candidate) => candidate.receipt === undefined && candidate.status === "once" && candidate.botId === input.botId
+          && candidate.threadId === input.threadId && candidate.domain === domain && (candidate.answeredAt ?? 0) + VAULT_ONCE_GRANT_MS * 4 > now)
+        .sort((a, b) => (b.answeredAt ?? 0) - (a.answeredAt ?? 0))[0];
+      if (!row) return null;
+      const orderRef = input.orderRef ? visibleText(input.orderRef).slice(0, 64) : "";
+      row.receipt = {
+        at: now,
+        ...(orderRef ? { orderRef } : {}),
+        ...(input.total ? { total: input.total } : {}),
+        ...(input.items?.length ? { items: input.items } : {}),
+        ...(input.flights?.length ? { flights: input.flights } : {}),
+      };
+      // closed: the next payment asks again
+      row.expiresAt = now;
+      return this.purchaseListing({ items }, row);
+    });
+  }
+
+  /** One purchase as the owner sees it, or undefined. No card number. */
+  purchaseById(principalId: string, purchaseId: string): PurchaseListing | undefined {
+    const document = this.load(principalId);
+    const row = document.purchases?.[purchaseId];
+    return row ? this.purchaseListing(document, row) : undefined;
+  }
+
+  /** Every purchase kept, newest first. No card number. */
+  listPurchases(principalId: string): PurchaseListing[] {
+    const document = this.load(principalId);
+    return Object.values(document.purchases ?? {}).sort((a, b) => b.createdAt - a.createdAt).map((row) => this.purchaseListing(document, row));
+  }
+
   private purchaseListing(document: { items: Record<string, StoredVaultItem> }, row: StoredPurchase): PurchaseListing {
     const card = document.items[row.cardId];
     const address = row.addressId ? document.items[row.addressId] : undefined;
@@ -781,6 +861,8 @@ export class CredentialVault {
       last4: card?.card?.last4 ?? "••••",
       brand: card?.card?.brand ?? "card",
       ...(address ? { addressName: address.name } : {}),
+      ...(row.items ? { items: row.items } : {}),
+      ...(row.flights ? { flights: row.flights } : {}),
     });
     return {
       id: row.id, botId: row.botId, threadId: row.threadId, merchant: row.merchant, domain: row.domain,
@@ -790,20 +872,34 @@ export class CredentialVault {
       ...(contact ? { contactName: contact.name } : {}),
       status: row.status, ...(row.via ? { via: row.via } : {}), createdAt: row.createdAt,
       title: text.title, line: text.line,
+      ...(row.items ? { items: row.items } : {}), ...(row.flights ? { flights: row.flights } : {}),
+      ...(row.receipt?.orderRef ? { orderRef: row.receipt.orderRef } : {}), ...(row.receipt ? { doneAt: row.receipt.at } : {}),
+      ...(row.receipt ? {
+        receipt: {
+          ...(row.receipt.orderRef ? { orderRef: row.receipt.orderRef } : {}), ...(row.receipt.total ? { total: row.receipt.total } : {}),
+          ...(row.receipt.items ? { items: row.receipt.items } : {}), ...(row.receipt.flights ? { flights: row.receipt.flights } : {}),
+        },
+      } : {}),
+      ...(row.receipt?.total && row.receipt.total !== row.amount ? { mismatch: true } : {}),
     };
   }
 
   private resolvePayment(
     principalId: string,
     item: StoredVaultItem,
-    request: { field: PaymentFillField; botId: string; threadId: string; pageUrl: string },
+    request: { field: PaymentFillField; botId: string; threadId: string; pageUrl: string; form?: string },
   ): FillResolution {
     const domain = domainOfPage(request.pageUrl);
     const now = this.now();
+    const formKey = paymentFormKey(request.pageUrl, request.form);
     let purchase: StoredPurchase | undefined;
     try {
       purchase = Object.values(this.load(principalId).purchases ?? {}).find((row) => {
         if (!purchaseCovers(row, request.botId, request.threadId, domain ?? "", now)) return false;
+        // used at the first payment field: then only that form on that page,
+        // each field once, for a few minutes
+        if (row.cardFilledAt !== undefined && (row.cardFilledAt + PURCHASE_FORM_MS <= now || row.formKey !== formKey
+          || (row.filledFields ?? []).includes(request.field))) return false;
         if (request.field.startsWith("card")) return row.cardId === item.id;
         if (request.field.startsWith("address")) return row.addressId === item.id;
         return row.contactId === item.id;
@@ -816,6 +912,22 @@ export class CredentialVault {
     }
     const value = paymentField(item, request.field);
     if (!value) return { ok: false, code: "no_value", message: `"${item.name}" has no ${request.field} saved. Nothing was filled.` };
+    {
+      const used = purchase.id;
+      try {
+        this.mutate(principalId, (_items, purchases) => {
+          const row = purchases[used];
+          if (!row) return;
+          if (row.cardFilledAt === undefined) {
+            row.cardFilledAt = now;
+            row.formKey = formKey;
+          }
+          row.filledFields = [...(row.filledFields ?? []), request.field].slice(-20);
+        });
+      } catch (error) {
+        return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
+      }
+    }
     const stamp = this.now();
     try {
       this.mutate(principalId, (items) => {
@@ -913,9 +1025,30 @@ function domainOfPage(pageUrl: string): string | null {
 
 function purchaseCovers(row: StoredPurchase, botId: string, threadId: string, domain: string, now: number): boolean {
   if (row.botId !== botId || row.domain !== domain) return false;
-  if (row.status === "always") return true;
   if (row.status !== "once") return false;
   return row.threadId === threadId && (row.expiresAt ?? 0) > now;
+}
+
+/** How long the rest of a payment form may be filled after its card number. */
+const PURCHASE_FORM_MS = 10 * 60_000;
+
+/** The page and form a payment approval is used on: the page's address
+ * without its query or fragment, and the form's identity the browser read
+ * (its submit targets). */
+function paymentFormKey(pageUrl: string, form: string | undefined): string {
+  let page = pageUrl;
+  try {
+    const url = new URL(pageUrl);
+    page = `${url.origin}${url.pathname}`;
+  } catch {
+    // the raw address
+  }
+  return createHash("sha256").update(JSON.stringify([page, form ?? ""])).digest("hex");
+}
+
+/** The cart a purchase approval is bound to. */
+function cartKey(items: readonly PurchaseItem[] | undefined, flights: readonly PurchaseFlightLeg[] | undefined): string {
+  return JSON.stringify([items ?? [], flights ?? []]);
 }
 
 function newPurchaseId(purchases: Record<string, StoredPurchase>): string {
@@ -955,10 +1088,13 @@ export function fillResolverFor(
   vault: CredentialVault,
   context: { principalId: string; botId: string; threadId: string },
   readOnePassword?: OnePasswordFieldReader,
+  /** A purchase was asked or recorded: the conversation shows its card. */
+  onPurchase?: (listing: PurchaseListing) => void,
 ): {
-  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code: string }>;
+  resolve(request: { handle: string; field: VaultFillField; pageUrl: string; form?: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code: string }>;
   armed(): boolean;
-  requestPurchase(input: { pageUrl: string; amount: string; currency: string; cardId: string; merchant?: string; addressId?: string; contactId?: string }): { ok: true; message: string } | { ok: false; message: string };
+  requestPurchase(input: PurchaseRequestInput): { ok: true; message: string } | { ok: false; message: string };
+  recordPurchase(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
 } {
   return {
     async resolve(request) {
@@ -979,12 +1115,39 @@ export function fillResolverFor(
           ...(input.merchant ? { merchant: input.merchant } : {}),
           ...(input.addressId ? { addressId: input.addressId } : {}),
           ...(input.contactId ? { contactId: input.contactId } : {}),
+          ...(input.items ? { items: input.items } : {}),
+          ...(input.flights ? { flights: input.flights } : {}),
         });
+        if (!opened.already) notify(opened.listing);
         return { ok: true as const, message: opened.note };
       } catch (error) {
         const message = error instanceof Error ? error.message : "The purchase could not be asked.";
         return { ok: false as const, message };
       }
     },
+    recordPurchase(input) {
+      try {
+        const listing = vault.recordPurchase(context.principalId, { ...input, botId: context.botId, threadId: context.threadId });
+        if (!listing) return { ok: false as const, message: "No approved purchase covers this page: nothing was recorded. A payment needs request_purchase first." };
+        notify(listing);
+        const mismatch = listing.mismatch ? ` The confirmed total ${listing.receipt?.total} ${listing.currency} does not match the approved ${listing.amount}: tell the person plainly.` : "";
+        return { ok: true as const, message: `Recorded: ${listing.merchant}, ${listing.amount} ${listing.currency}${listing.orderRef ? `, order ${listing.orderRef}` : ""}. The person sees the receipt in this conversation. Tell them it is done.${mismatch}` };
+      } catch (error) {
+        return { ok: false as const, message: error instanceof Error ? error.message : "The purchase could not be recorded." };
+      }
+    },
   };
+  function notify(listing: PurchaseListing): void {
+    try {
+      onPurchase?.(listing);
+    } catch {
+      // the card is a convenience: the purchase itself stands
+    }
+  }
+}
+
+export interface PurchaseRequestInput {
+  pageUrl: string; amount: string; currency: string; cardId: string;
+  merchant?: string; addressId?: string; contactId?: string;
+  items?: PurchaseItem[]; flights?: PurchaseFlightLeg[];
 }

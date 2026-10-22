@@ -84,6 +84,7 @@ Reading the table:
 | artifacts:list | sagax | `list_artifacts` | `artifacts:list` | covered |
 | artifacts:delete | sagax | `delete_artifact` | `artifacts:delete` | covered |
 | pages:propose | sagax | `propose_page` | `pages:propose` | covered |
+| phone:call | sagax | `place_phone_call` | `phone:call` | covered |
 | cards:options | sagax | `create_options_card` | `cards:options` | covered |
 | rooms:react | sagax | `react_to_message` | `rooms:react` | covered |
 | rooms:unreact | sagax | `remove_reaction` | `rooms:unreact` | covered |

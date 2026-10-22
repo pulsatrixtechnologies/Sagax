@@ -16,6 +16,7 @@ import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/o
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
+import { PLACE_PHONE_CALL_TOOL_SPEC } from "../../shared/outbound-call.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
 import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
@@ -1714,7 +1715,7 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "read_transcript", "read_transcript_cold", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads",
   "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",
   "workspace_read", "workspace_search", "session_read", "close_thread", "list_threads",
-  "request_login",
+  "request_login", "place_phone_call",
   // The person's iPhone (agents-phone-tools.ts): rare, and long.
   "phone_tool",
   // A post into a room from a 1:1 chat: rare.
@@ -1802,6 +1803,9 @@ function catalogTools(profile: CatalogProfile) {
   const base = [
     ...core,
     ...(profile.perspicax && !profile.externalRuntime ? PERSPICAX_TOOLS : []),
+    // a call through the speaker's Twilio profile on Perspicax, on a card
+    // (server/outbound-calls.ts); never in a room
+    ...(profile.perspicax && !profile.externalRuntime && !profile.coordinating ? [PLACE_PHONE_CALL_TOOL_SPEC] : []),
     ...(profile.claims && !profile.externalRuntime ? CLAIM_TOOLS : []),
     ...(profile.phoneTools?.length && !profile.externalRuntime ? [phoneToolDefinition(profile.phoneTools)] : []),
   ];

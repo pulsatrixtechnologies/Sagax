@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { vaultHandle } from "../shared/credential-vault.ts";
-import { luhnOk, purchaseCardText } from "../shared/payment-vault.ts";
+import { luhnOk, parsePurchaseCall, parseReceiptCall, purchaseCardText } from "../shared/payment-vault.ts";
+import { fillResolverFor } from "./credential-vault.ts";
 import { CredentialVault, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 
@@ -90,18 +91,134 @@ describe("payment vault", () => {
     expect(purchaseCardText({ merchant: "Example Shop", amount: "12.50", currency: "CAD", last4: "4242", brand: "visa" }).line).not.toContain(PAN);
   });
 
-  it("keeps an always grant and does not ask again", () => {
+  it("refuses an always grant: every purchase asks again (JC 2026-10-22)", () => {
     const store = vault();
     const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
     const page = "https://shop.example.test/pay";
     const asked = store.openPurchase(LOCAL_VAULT_PRINCIPAL, {
       botId: "bot-a", threadId: "thread-1", pageUrl: page, amount: "4", currency: "USD", cardId: saved.id,
     });
-    store.answerPurchase(LOCAL_VAULT_PRINCIPAL, asked.listing.id, "always");
+    expect(() => store.answerPurchase(LOCAL_VAULT_PRINCIPAL, asked.listing.id, "always")).toThrow(/deny or once/);
+    expect(store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)).toHaveLength(1);
+  });
+
+  it("ignores an always grant saved before the rule: no fill, a new card", async () => {
+    let clock = 1_700_000_000_000;
+    const store = vault(() => clock);
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+    const page = "https://shop.example.test/pay";
+    const asked = store.openPurchase(LOCAL_VAULT_PRINCIPAL, {
+      botId: "bot-a", threadId: "thread-1", pageUrl: page, amount: "4", currency: "USD", cardId: saved.id,
+    });
+    store.answerPurchase(LOCAL_VAULT_PRINCIPAL, asked.listing.id, "once");
+    // an old file: the row reads "always", from before the rule
+    const raw = (store as unknown as { load(p: string): { purchases: Record<string, { status: string; expiresAt?: number }> } }).load(LOCAL_VAULT_PRINCIPAL);
+    raw.purchases[asked.listing.id]!.status = "always";
+    delete raw.purchases[asked.listing.id]!.expiresAt;
+    clock += 60_000;
+    const fill = await store.resolveForFill(LOCAL_VAULT_PRINCIPAL, { handle: vaultHandle(saved.id), field: "cardNumber", botId: "bot-a", threadId: "thread-2", pageUrl: page });
+    expect(fill.ok).toBe(false);
     const again = store.openPurchase(LOCAL_VAULT_PRINCIPAL, {
       botId: "bot-a", threadId: "thread-2", pageUrl: page, amount: "4", currency: "USD", cardId: saved.id,
     });
-    expect(again.already).toBe(true);
-    expect(store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)).toEqual([]);
+    expect(again.already).toBe(false);
+  });
+
+  it("shows the cart on the card and records the receipt, closing a purchase allowed once", () => {
+    const store = vault();
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+    const page = "https://shop.example.test/pay";
+    const seen: string[] = [];
+    const access = fillResolverFor(store, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "thread-1" }, undefined, (listing) => seen.push(`${listing.status}:${listing.orderRef ?? ""}`));
+    expect(access.recordPurchase({ pageUrl: page, orderRef: "A-1" }).ok).toBe(false);
+    const asked = access.requestPurchase({
+      pageUrl: page, amount: "45.20", currency: "CAD", cardId: saved.id, merchant: "Example Shop",
+      items: [{ name: "Cable USB-C", quantity: 2, price: "10.00" }, { name: "Chargeur", quantity: 1 }],
+    });
+    expect(asked.ok).toBe(true);
+    const pending = store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)[0]!;
+    expect(pending.line).toMatch(/^3 items\. Card ending 4242/);
+    expect(pending.items).toHaveLength(2);
+    store.answerPurchase(LOCAL_VAULT_PRINCIPAL, pending.id, "once");
+    const recorded = access.recordPurchase({ pageUrl: "https://shop.example.test/thanks", orderRef: "A-1" });
+    expect(recorded).toMatchObject({ ok: true });
+    expect(recorded.message).toContain("order A-1");
+    expect(seen).toEqual(["pending:", "once:A-1"]);
+    // the approved cart stays as approved; the receipt sits beside it
+    const done = store.purchaseById(LOCAL_VAULT_PRINCIPAL, pending.id)!;
+    expect(done.items).toHaveLength(2);
+    // allowed once: closed by the receipt, the next payment asks again
+    expect(access.recordPurchase({ pageUrl: page, orderRef: "A-2" }).ok).toBe(false);
+    const again = access.requestPurchase({ pageUrl: page, amount: "5", currency: "CAD", cardId: saved.id });
+    expect(again.message).toContain("Nothing was charged");
+    expect(JSON.stringify(seen)).not.toContain(PAN);
+  });
+
+  it("parses flights and refuses a bad cart", () => {
+    const flights = parsePurchaseCall({ arguments: { credential: "cred_x", amount: "812.40", currency: "CAD", flights: [{ from: "YUL", to: "YVR", date: "2026-11-02", flight: "AC 301" }, { from: "YVR", to: "YUL", date: "2026-11-09" }] } });
+    expect(typeof flights !== "string" && flights.flights).toHaveLength(2);
+    expect(purchaseCardText({ merchant: "Air", amount: "812.40", currency: "CAD", last4: "4242", brand: "visa", flights: [{ from: "YUL", to: "YVR", date: "2026-11-02" }, { from: "YVR", to: "YUL", date: "2026-11-09" }] }).line).toMatch(/^2 flights\./);
+    expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", flights: [{ from: "YUL", to: "YVR", date: "demain" }] } })).toMatch(/flights/);
+    expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", items: [{ name: "x", quantity: 0 }] } })).toMatch(/quantity/);
+    expect(parseReceiptCall({ arguments: { order_ref: "B-9" } })).toEqual({ orderRef: "B-9" });
+    expect(parseReceiptCall({ arguments: { order_ref: "4242 4242 4242 4242" } })).toEqual({});
+    expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", items: [{ name: "carte 4242-4242-4242-4242" }] } })).toMatch(/no card number/);
+  });
+
+  it("binds a once approval to the amount, the currency and the cart (review)", () => {
+    const store = vault();
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+    const page = "https://shop.example.test/pay";
+    const ask = (amount: string, items?: Array<{ name: string; quantity: number }>) => store.openPurchase(LOCAL_VAULT_PRINCIPAL, {
+      botId: "bot-a", threadId: "thread-1", pageUrl: page, amount, currency: "CAD", cardId: saved.id, ...(items ? { items } : {}),
+    });
+    const first = ask("10.00", [{ name: "Câble", quantity: 1 }]);
+    store.answerPurchase(LOCAL_VAULT_PRINCIPAL, first.listing.id, "once");
+    expect(ask("10.00", [{ name: "Câble", quantity: 1 }]).already).toBe(true);
+    expect(ask("99.00", [{ name: "Câble", quantity: 1 }]).already).toBe(false);
+    expect(ask("10.00", [{ name: "Câble", quantity: 3 }]).already).toBe(false);
+  });
+
+  it("uses a once approval at the first card field of any kind, each field once, on that one form (re-review)", async () => {
+    let clock = 1_700_000_000_000;
+    const store = vault(() => clock);
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+    const page = "https://shop.example.test/pay";
+    const asked = store.openPurchase(LOCAL_VAULT_PRINCIPAL, { botId: "bot-a", threadId: "thread-1", pageUrl: page, amount: "10.00", currency: "CAD", cardId: saved.id });
+    store.answerPurchase(LOCAL_VAULT_PRINCIPAL, asked.listing.id, "once");
+    const fill = (field: "cardNumber" | "cardCvc" | "cardExpiry", form = "form-a", url = page) => store.resolveForFill(LOCAL_VAULT_PRINCIPAL, { handle: vaultHandle(saved.id), field, botId: "bot-a", threadId: "thread-1", pageUrl: url, form });
+    // a card on file: the site asks only for the security code
+    expect((await fill("cardCvc")).ok).toBe(true);
+    // the same code again is a second payment: refused
+    expect((await fill("cardCvc")).ok).toBe(false);
+    // another form, or another page of the same site: refused
+    expect((await fill("cardExpiry", "form-b")).ok).toBe(false);
+    expect((await fill("cardExpiry", "form-a", "https://shop.example.test/other")).ok).toBe(false);
+    // the rest of the same form, once each, within the window
+    expect((await fill("cardNumber")).ok).toBe(true);
+    expect((await fill("cardNumber")).ok).toBe(false);
+    clock += 11 * 60_000;
+    expect((await fill("cardExpiry")).ok).toBe(false);
+  });
+
+  it("flags a receipt whose total is not the approved amount", () => {
+    const store = vault();
+    const saved = store.create(LOCAL_VAULT_PRINCIPAL, card);
+    const page = "https://shop.example.test/pay";
+    const access = fillResolverFor(store, { principalId: LOCAL_VAULT_PRINCIPAL, botId: "bot-a", threadId: "thread-1" });
+    access.requestPurchase({ pageUrl: page, amount: "45.20", currency: "CAD", cardId: saved.id, items: [{ name: "Câble", quantity: 1 }] });
+    store.answerPurchase(LOCAL_VAULT_PRINCIPAL, store.pendingPurchases(LOCAL_VAULT_PRINCIPAL)[0]!.id, "once");
+    const recorded = access.recordPurchase({ pageUrl: page, orderRef: "A-1", total: "52.00", items: [{ name: "Autre", quantity: 4 }] });
+    expect(recorded.message).toContain("does not match");
+    const row = store.purchaseById(LOCAL_VAULT_PRINCIPAL, store.listPurchases(LOCAL_VAULT_PRINCIPAL)[0]!.id)!;
+    expect(row.items).toEqual([{ name: "Câble", quantity: 1 }]);
+    expect(row.receipt).toMatchObject({ orderRef: "A-1", total: "52.00", items: [{ name: "Autre", quantity: 4 }] });
+    expect(row.mismatch).toBe(true);
+  });
+
+  it("filters card-like text with dots, flight places, and bad dates (review)", () => {
+    expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", items: [{ name: "4242.4242.4242.4242" }] } })).toMatch(/card number/);
+    expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", flights: [{ from: "4242 4242 4242 4242", to: "YVR", date: "2026-11-02" }] } })).toMatch(/flights/);
+    expect(parsePurchaseCall({ arguments: { credential: "cred_x", amount: "1", currency: "CAD", flights: [{ from: "YUL", to: "YVR", date: "2026-13-45" }] } })).toMatch(/flights/);
   });
 });

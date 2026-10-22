@@ -785,6 +785,7 @@ describe("agents-proxy MCP surface", () => {
       "remote_support_status",
       "remote_support_close",
       "review_write",
+      "place_phone_call",
     ]);
     const ask = list.result.tools.find((tool: { name: string }) => tool.name === "ask_bot");
     const delegate = list.result.tools.find((tool: { name: string }) => tool.name === "delegate_bot");
