@@ -200,16 +200,29 @@ export function parseCandidates(text: string, today: string, max = MAX_CANDIDATE
 /** Candidates not already in the notebook, and not repeated among
  * themselves, by the exact identity rule (signs, symbols and case kept). */
 export function newCandidates(candidates: readonly Candidate[], notebook: string): Candidate[] {
-  const seen = notebookIdentities(notebook);
-  const out: Candidate[] = [];
+  return splitCandidates(candidates, notebook).fresh;
+}
+
+/** The same split, with how many the notebook already held (a "noted"
+ * About me candidate included): the "already known" half of the capture
+ * receipt. A repeat inside one answer is neither new nor known. */
+export function splitCandidates(candidates: readonly Candidate[], notebook: string): { fresh: Candidate[]; known: number } {
+  const held = notebookIdentities(notebook);
+  const seen = new Set<string>();
+  const fresh: Candidate[] = [];
+  let known = 0;
   for (const candidate of candidates) {
-    if (candidate.noted) continue;
     const key = factIdentity(candidate.text);
+    if (candidate.noted || (key && held.has(key))) {
+      if (key && !seen.has(key)) known += 1;
+      if (key) seen.add(key);
+      continue;
+    }
     if (!key || seen.has(key)) continue;
     seen.add(key);
-    out.push(candidate);
+    fresh.push(candidate);
   }
-  return out;
+  return { fresh, known };
 }
 
 export interface CaptureBatch {

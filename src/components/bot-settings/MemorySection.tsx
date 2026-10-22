@@ -595,6 +595,9 @@ export function MemoryUpkeepCard({
     ? t("botPanel.memory.lastTidy", { when: relativeTime(status.lastTidy.at), summary: tidySummary(status.lastTidy).toLowerCase() })
     : t("botPanel.memory.notTidied");
   const noticed = status?.lastCapture ? noticedCount(status.lastCapture) : 0;
+  // the receipt's other half (parity M3): what the capture found already there
+  const known = status?.lastCapture?.known ?? 0;
+  const knownText = known ? t(known === 1 ? "botPanel.memory.knownOne" : "botPanel.memory.knownMany", { count: String(known) }) : "";
   return (
     <PaneSection title={t("botPanel.memory.upkeep")}>
       <SwitchRow
@@ -620,8 +623,10 @@ export function MemoryUpkeepCard({
               ? t(noticed === 1 ? "botPanel.memory.noticedOne" : "botPanel.memory.noticedMany", {
                 count: String(noticed),
                 when: relativeTime(status.lastCapture.at),
-              })
-              : ""}
+              }) + knownText
+              : status?.lastCapture && known
+                ? t("botPanel.memory.nothingNew", { when: relativeTime(status.lastCapture.at) }) + knownText
+                : ""}
           </span>
         </div>
       )}

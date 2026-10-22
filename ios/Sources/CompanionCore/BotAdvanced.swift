@@ -549,6 +549,9 @@ public struct CaptureReport: Decodable, Hashable, Sendable {
     public var added: Int
     public var topics: Int?
     public var aboutMe: Int?
+    /// Facts memory already held: the "N already known" of the receipt
+    /// (parity M3). Absent on a report written before it.
+    public var known: Int?
 
     /// `noticedCount`: facts filed in MEMORY.md and topic files.
     public var noticed: Int { added + (topics ?? 0) }
