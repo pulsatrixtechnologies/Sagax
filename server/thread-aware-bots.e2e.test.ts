@@ -400,6 +400,17 @@ describe("start_thread on yourself", () => {
       // resuming opens no row: the main thread, the person's own and the read-only one
       expect((await botState(bot.id)).tasks).toHaveLength(3);
       release(looked.body.threadId);
+      await expect.poll(async () => (await taskOf(bot.id, looked.body.threadId))?.busy, { timeout: 15_000 }).toBe(false);
+
+      // a thread opened at the bot's level, resumed read-only, drops to Ask
+      const wide = await api("POST", "/api/internal/threads", { title: "Wide", message: "Fix the typo." }, token);
+      expect(await taskOf(bot.id, wide.body.threadId)).toMatchObject({ approvalMode: "edits" });
+      release(wide.body.threadId);
+      await expect.poll(async () => (await taskOf(bot.id, wide.body.threadId))?.busy, { timeout: 15_000 }).toBe(false);
+      const narrowed = await api("POST", "/api/internal/threads", { message: "Only look this time.", resumeThreadId: wide.body.threadId, readOnly: true }, token);
+      expect(narrowed.body).toMatchObject({ resumed: true, readOnly: true });
+      expect(await taskOf(bot.id, wide.body.threadId)).toMatchObject({ approvalMode: "ask", alwaysAllow: [] });
+      release(wide.body.threadId);
       release(bot.threadId);
       await expect.poll(async () => (await botState(bot.id))?.busy, { timeout: 15_000 }).toBe(false);
     } finally {

@@ -38984,10 +38984,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
         if (resumeId) {
           const resumed = store.taskByThread(from.id, resumeId);
-          const refused = resumeRefusal(resumed, from.id, fromThreadId);
+          // named from here only as list_threads would name it (lending view,
+          // confidential threads), and for the same person's work
+          const visible = (!cloudLendingView(internalCapability) || cloudOwnerOnlyThread(resumeId)) && !store.isConfidentialThread(resumeId);
+          const refused = resumeRefusal(resumed, from.id, fromThreadId, {
+            visible, ...(privateThreads() ? { ownerPrincipalId: openedThreadOwner(from, fromThreadId, from) } : {}),
+          });
           if (refused || !resumed) return json(res, refused?.status ?? 404, { error: refused?.error ?? "no such thread" });
           // nothing of a confidential conversation goes into one that is not
-          if (store.isConfidentialThread(fromThreadId) && !store.isConfidentialThread(resumeId)) return json(res, 403, { error: CONFIDENTIAL_PEER_REFUSED, code: "confidential_thread" });
+          if (store.isConfidentialThread(fromThreadId)) return json(res, 403, { error: CONFIDENTIAL_PEER_REFUSED, code: "confidential_thread" });
+          // read-only narrows the thread for good: Ask, no standing grants
+          if (readOnly) store.patchTask(from.id, resumed.threadId, { approvalMode: "ask", autoApprove: false, alwaysAllow: [] });
           internalCapability.openedThreads += 1;
           const chip: Omit<Message, "id" | "at"> = {
             role: "bot",
