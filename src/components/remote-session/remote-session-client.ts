@@ -1,4 +1,5 @@
 // Browser calls for one Tailcat session. The address never travels here.
+import type { RemoteListing } from "../../../shared/remote-files";
 import { api } from "@/state/store";
 
 const sessionPath = (botId: string, id: string, action: string) =>
@@ -40,8 +41,21 @@ export function uploadFileName(name: string): string {
   return /^[A-Za-z0-9]/.test(cleaned) ? cleaned : `file_${cleaned || "bin"}`;
 }
 
-export async function uploadRemoteFile(botId: string, id: string, file: File): Promise<string | null> {
-  if (file.size <= 0 || file.size > 8 * 1024 * 1024) return "The file must be under 8 MB.";
+/** One folder of the remote computer ("" = the user's profile). */
+export async function listRemoteDir(botId: string, id: string, path: string): Promise<RemoteListing | { error: string }> {
+  try {
+    return await api<RemoteListing>(sessionPath(botId, id, "ls"), { method: "POST", body: JSON.stringify({ path }) });
+  } catch (error) {
+    return { error: failure(error, "That folder could not be listed.") };
+  }
+}
+
+export const REMOTE_UPLOAD_MAX = 8 * 1024 * 1024;
+
+/** `dir`: the folder chosen in the remote file browser; without it the file
+ * lands in the transfer folder. */
+export async function uploadRemoteFile(botId: string, id: string, file: File, dir?: string): Promise<string | null> {
+  if (file.size <= 0 || file.size > REMOTE_UPLOAD_MAX) return "The file must be under 8 MB.";
   const dataBase64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -55,7 +69,7 @@ export async function uploadRemoteFile(botId: string, id: string, file: File): P
   try {
     await api(sessionPath(botId, id, "upload"), {
       method: "POST",
-      body: JSON.stringify({ name: uploadFileName(file.name), dataBase64 }),
+      body: JSON.stringify({ name: uploadFileName(file.name), dataBase64, ...(dir ? { dir } : {}) }),
     });
     return null;
   } catch (error) {

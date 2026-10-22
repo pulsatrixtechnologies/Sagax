@@ -66,7 +66,9 @@ describe("remote session card", () => {
     expect(html).toContain('data-remote-details-toggle=""');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain(t("remoteSession.details"));
-    for (const hidden of ["SN1", "OptiPlex", "Intel Core i5", "16 Go", "120 Go libres sur 476 Go"]) {
+    // the folded row sums up the model and the memory, nothing more
+    expect(html).toContain("OptiPlex · 16 Go");
+    for (const hidden of ["SN1", "Intel Core i5", "120 Go libres sur 476 Go", "data-remote-field=\"serial\""]) {
       expect(html).not.toContain(hidden);
     }
   });

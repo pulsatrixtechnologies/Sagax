@@ -1,3 +1,4 @@
+import { AlertTriangle, ArrowUpRight, Cpu, HardDrive, MemoryStick, Rocket, ShieldCheck, Sparkles, type LucideIcon } from "lucide-react";
 import { publicText, type RemoteSessionView } from "../../../shared/remote-session";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
@@ -26,6 +27,16 @@ const SUGGESTION_PROMPT: Record<string, LocaleKey> = {
   startup: "remoteSession.prompt.startup",
 };
 
+const SUGGESTION_ICON: Record<string, LucideIcon> = {
+  "disk-critical": HardDrive,
+  "disk-low": HardDrive,
+  "ram-low": MemoryStick,
+  rights: ShieldCheck,
+  cpu: Cpu,
+  errors: AlertTriangle,
+  startup: Rocket,
+};
+
 /** The short prompt a suggestion chip sends. Unknown ids send nothing. */
 export function remoteSuggestionText(id: string, host: string): string | null {
   const key = SUGGESTION_PROMPT[id];
@@ -41,24 +52,35 @@ export function RemoteSessionCard({ botId, threadId, view, detailsOpen = false }
     if (!text) return;
     dispatch({ type: "send", botId, threadId, text });
   };
+  const hints = view.state === "connected" ? view.suggestions.filter((hint) => SUGGESTION_LABEL[hint.id]) : [];
   return (
-    <div data-remote-session-card="" data-remote-state={view.state} className="overflow-hidden rounded-xl border border-hairline text-ink">
+    <div data-remote-session-card="" data-remote-state={view.state} className="@container/remote overflow-hidden rounded-xl border border-hairline text-ink">
       <RemoteSessionFacts view={view} detailsOpen={detailsOpen} />
-      {view.state === "connected" && view.suggestions.length > 0 && (
-        <div className="border-t border-hairline/40 px-3 py-3">
-          <div className="mb-2 text-[12px] text-ink-secondary">{t("remoteSession.hints")}</div>
-          <div className="flex flex-wrap gap-1.5">
-            {view.suggestions.map((hint) => (
-              <button
-                key={hint.id}
-                type="button"
-                data-remote-hint={hint.id}
-                onClick={() => ask(hint.id)}
-                className="rounded-full border border-hairline/50 px-2.5 py-1 text-[12px] text-ink hover:bg-raised"
-              >
-                {t(SUGGESTION_LABEL[hint.id] ?? "remoteSession.hints")}
-              </button>
-            ))}
+      {hints.length > 0 && (
+        <div data-remote-hints="" className="border-t border-hairline/40 px-3 pb-3 pt-2.5">
+          <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-ink-tertiary">
+            <Sparkles size={13} aria-hidden="true" />
+            <span>{t("remoteSession.hints")}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5 @min-[440px]/remote:grid-cols-2">
+            {hints.map((hint) => {
+              const Icon = SUGGESTION_ICON[hint.id] ?? Sparkles;
+              return (
+                <button
+                  key={hint.id}
+                  type="button"
+                  data-remote-hint={hint.id}
+                  onClick={() => ask(hint.id)}
+                  className="group flex h-9 min-w-0 items-center gap-2.5 rounded-lg border-[0.5px] border-border bg-elevated pl-1.5 pr-2.5 text-left text-[13px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 motion-reduce:transition-none"
+                >
+                  <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-inset text-ink-secondary group-hover:text-ink">
+                    <Icon size={14} aria-hidden="true" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{t(SUGGESTION_LABEL[hint.id]!)}</span>
+                  <ArrowUpRight size={14} aria-hidden="true" className="shrink-0 text-ink-tertiary opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none" />
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

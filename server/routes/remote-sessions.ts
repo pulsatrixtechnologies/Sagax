@@ -116,7 +116,7 @@ export function createRemoteSessionRoutes(deps: {
       return json(res, 200, { hostLabel: opened.hostLabel, messageId: opened.messageId });
     }
     if (action === "upload" && method === "POST") {
-      let body: { name?: unknown; dataBase64?: unknown };
+      let body: { name?: unknown; dataBase64?: unknown; dir?: unknown };
       try {
         body = await readJson(req, UPLOAD_JSON_MAX);
       } catch (error) {
@@ -132,7 +132,9 @@ export function createRemoteSessionRoutes(deps: {
       } catch {
         return json(res, 400, { error: "Choose a file to send." });
       }
-      const sent = await deps.sessions.upload(principalId, botId, id, name, bytes);
+      // the folder chosen in the remote file browser, if any (checked by the service)
+      if (body.dir !== undefined && typeof body.dir !== "string") return json(res, 400, { error: "That folder cannot receive a file." });
+      const sent = await deps.sessions.upload(principalId, botId, id, name, bytes, body.dir);
       if ("error" in sent) return json(res, 409, { error: sent.error });
       return json(res, 200, sent);
     }

@@ -791,6 +791,7 @@ import { recallSupportSession } from "./remote-support-local.ts";
 import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
+import { createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
@@ -35367,6 +35368,7 @@ ROUTES.push(createRemoteControlRoutes({
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),
 }));
+ROUTES.push(createRemoteSessionFileRoutes({ sessions: remoteSessions, principalId: terminalPrincipalId }));
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds
 // the WebRTC audio; the harness creates the session with the key (which
