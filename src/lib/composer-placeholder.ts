@@ -16,19 +16,21 @@ export interface ComposerPlaceholderInput {
   botName: string;
 }
 
-/** What the empty composer says. A 1:1 chat always says the same plain
- * thing, idle or working (JC, 2026-10-09): how Enter behaves then is shown by the chip or sheet that
- * appears on send, not by a long line in the placeholder. */
+/** What the empty composer says. A 1:1 chat names its bot, idle or working
+ * ("Message <name>"): how Enter behaves then is shown by the chip or sheet
+ * that appears on send, not by a long line in the placeholder. */
 export function composerPlaceholder(input: ComposerPlaceholderInput): string {
   if (input.approval) return t("composer.placeholder.approval");
   if (input.attachmentPending) return t("composer.placeholder.attaching");
   if (input.recording) return t("composer.placeholder.listening");
   if (input.question) return t("composer.placeholder.question");
+  if (input.groupName === undefined) return botPlaceholder(input.botName);
   if (input.busy) return t("composer.placeholder.write");
-  if (input.groupName !== undefined) {
-    return input.goalMode
-      ? t("composer.placeholder.goal", { name: input.groupName })
-      : t("composer.placeholder.group", { name: input.groupName, hint: input.groupHint?.() ?? "" });
-  }
-  return t("composer.placeholder.write");
+  return input.goalMode
+    ? t("composer.placeholder.goal", { name: input.groupName })
+    : t("composer.placeholder.group", { name: input.groupName, hint: input.groupHint?.() ?? "" });
+}
+
+function botPlaceholder(name: string): string {
+  return name.trim() ? t("composer.placeholder.bot", { name }) : t("composer.placeholder.write");
 }

@@ -2120,11 +2120,11 @@ body {
   }
 }
 .turn-mascot-in {
-  transform-origin: 18px 18px;
+  transform-origin: 10px 50%;
   animation: turn-mascot-in 0.38s var(--ease-emphasized) both;
 }
 .turn-mascot-out {
-  transform-origin: 18px 18px;
+  transform-origin: 10px 50%;
   animation: turn-mascot-out 0.28s var(--ease-emphasized) both;
 }
 .turn-answer {
@@ -2250,28 +2250,46 @@ body {
   background: var(--color-ultracode);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ultracode) 25%, var(--color-sidebar));
 }
-.turn-presence.ultracode-active .turn-mascot-in > :first-child {
-  filter: drop-shadow(0 0 10px var(--color-ultracode-glow));
+.turn-presence.ultracode-active .bot-activity-dots,
+.turn-presence.ultracode-active [data-presence-mascot] {
+  filter: drop-shadow(0 0 6px var(--color-ultracode-glow));
 }
-/* rotating presence phrase: the old phrase fades out where the new one
-   fades in, in the same grid cell */
-@keyframes turn-phrase-in {
-  from { opacity: 0; }
+/* The bot's activity line (BotActivityIndicator): three dots in the bot's
+   colour, one brighter and larger at a time, a wave left to right. Only
+   transform and opacity move, so the compositor draws it. */
+@keyframes bot-activity-wave {
+  0%, 60%, 100% { transform: scale(0.75); opacity: 0.35; }
+  25% { transform: scale(1.15); opacity: 1; }
 }
-@keyframes turn-phrase-out {
-  to { opacity: 0; }
+.bot-activity-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.turn-phrase-in { animation: shimmer 2s linear infinite, turn-phrase-in 0.32s ease-out both; }
-.turn-phrase-out { animation: shimmer 2s linear infinite, turn-phrase-out 0.32s ease-in both; pointer-events: none; }
+.bot-activity-dots > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--bot-activity-color, var(--color-accent));
+  transform: scale(0.75);
+  opacity: 0.55;
+}
+.bot-activity-wave > span {
+  animation: bot-activity-wave 1.2s ease-in-out infinite;
+}
+.bot-activity-wave > span:nth-child(2) { animation-delay: 0.2s; }
+.bot-activity-wave > span:nth-child(3) { animation-delay: 0.4s; }
+:root[data-reduced-motion="true"] .bot-activity-wave > span { animation: none; }
+:root[data-reduced-motion="true"] .bot-activity .thinking-shimmer { animation: none; background: none; color: var(--color-ink-secondary); }
 @media (prefers-reduced-motion: reduce) {
+  .bot-activity-wave > span { animation: none; }
   .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .ultracode-shimmer { background: none; color: var(--color-ultracode-ink); }
   .ultracode-sidebar-dot { animation: none; opacity: 0.85; }
-  .turn-presence.ultracode-active .turn-mascot-in > :first-child { filter: none; }
-  .turn-phrase-in { animation: none; }
-  .turn-phrase-out { display: none; }
+  .turn-presence.ultracode-active .bot-activity-dots,
+  .turn-presence.ultracode-active [data-presence-mascot] { filter: none; }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
   .animate-rise, .animate-spot-in { animation: none; }
   .animate-ripple, .animate-bolt { animation: none; }
@@ -3256,6 +3274,49 @@ button:disabled.bg-danger {
 :root[data-reduced-motion="true"] .connect-apps-pill,
 :root[data-reduced-motion="true"] .connect-apps-pill [data-pill-tiles] {
   transition-property: background-color;
+}
+/* The wide foot's compact Connect apps pill (SidebarAppsPill): the tiles
+   alone at rest, the label folded to nothing (no width, no opacity).
+   Hovered, or focused from the keyboard (not a focus a click left behind:
+   data-pointer-focus), the label slides in on their left and the pill
+   widens; the account pill beside it shrinks. The label always gets 6rem
+   (the English one whole from a 260px sidebar); past that, only what leaves
+   the account pill 80px (its avatar and about three characters) in the row
+   (the container, data-sidebar-account-row): 100cqw less 80px, the 6px row
+   gap and the pill's 62px without its label (borders 2, padding 16, the
+   label's 6px margin, three tiles 38). A longer label is then cut, never the
+   tiles. Reduced motion: no transition, the label simply shows. */
+.sidebar-apps-pill {
+  flex: 0 1 auto;
+}
+.sidebar-apps-pill [data-pill-tiles] {
+  margin-inline-start: 0;
+}
+.sidebar-apps-pill [data-apps-pill-label] {
+  max-width: 0;
+  opacity: 0;
+  margin-inline-end: 0;
+}
+.sidebar-apps-pill:is(:hover, :focus-visible:not([data-pointer-focus])) [data-apps-pill-label] {
+  max-width: max(6rem, calc(100cqw - 148px));
+  opacity: 1;
+  margin-inline-end: 6px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) .sidebar-apps-pill [data-apps-pill-label] {
+    transition: max-width 220ms ease, opacity 220ms ease, margin-inline-end 220ms ease;
+  }
+  :root:not([data-reduced-motion="true"]) .sidebar-apps-pill[data-pointer-focus]:not(:hover) [data-pill-tile] {
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-apps-pill [data-apps-pill-label] {
+    transition: none;
+  }
+}
+:root[data-reduced-motion="true"] .sidebar-apps-pill [data-apps-pill-label] {
+  transition: none;
 }
 /* The foot's update button (SidebarUpdatePill): round, the avatar's size;
    hovered, focused or just landed, it widens to show its word and the

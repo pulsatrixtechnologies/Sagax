@@ -29,6 +29,7 @@ import { BOT_HOTKEY_MODIFIERS, botHotkeyModifierChoice, botHotkeysChoice, hardwa
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
+import { setBotAccentEnabled, useBotAccentEnabled } from "@/lib/bot-accent";
 import { AppIconPicker, appIconAvailable } from "./AppIconPicker";
 import { BackgroundEffectsPicker } from "./BackgroundEffectsPicker";
 
@@ -169,6 +170,16 @@ function FreshTopicRow() {
           label: choice === 0 ? t("settings.freshTopic.never") : t("settings.freshTopic.hours", { count: choice }),
         }))}
       />
+    </DescribedRow>
+  );
+}
+
+/** The open bot's colour as the app's accent (src/lib/bot-accent.ts). */
+function BotAccentRow() {
+  const enabled = useBotAccentEnabled();
+  return (
+    <DescribedRow label={t("settings.botAccent.title")} description={t("settings.botAccent.subtitle")} rowId="botAccent">
+      <Switch checked={enabled} aria-label={t("settings.botAccent.title")} onClick={() => setBotAccentEnabled(!enabled)} />
     </DescribedRow>
   );
 }
@@ -370,6 +381,7 @@ export function AppearanceSettings() {
       <div data-settings-card="appearance.skin">
         <SettingsGroup title={t("settings.skin.title")} groupId="skin">
           <SkinPicker />
+          <BotAccentRow />
         </SettingsGroup>
       </div>
       {/* the effect behind the conversation, chosen as the skins are (the

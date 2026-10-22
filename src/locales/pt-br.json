@@ -2203,6 +2203,8 @@
   "settings.share.title": "Acesso ao computador · {name}",
   "settings.share.waiting": "Aguardando o servidor conectar",
   "settings.skin.title": "Tema",
+  "settings.botAccent.title": "Usar a cor do bot como destaque",
+  "settings.botAccent.subtitle": "O destaque segue a cor do bot aberto.",
   "settings.thisComputer.local": "Bots e conversas locais",
   "settings.thisComputer.menuError": "Não foi possível abrir a lista de servidores. Tente o menu Servidor.",
   "settings.thisComputer.switch": "Trocar de servidor: {name}",

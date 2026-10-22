@@ -11,7 +11,7 @@ import { setLocale } from "@/lib/i18n";
 import { initialState, reducer } from "@/state/store";
 import { readFileSync } from "node:fs";
 
-import { ConnectAppsPill, pillFit, SidebarConnectApps, sidebarPillApps, tilesWidth, type PillApp } from "./ConnectAppsPill";
+import { ConnectAppsPill, pillFit, SidebarConnectApps, sidebarPillApps, sidebarTilesWidth, tilesWidth, type PillApp } from "./ConnectAppsPill";
 
 const inventory = vi.hoisted(() => ({ services: {} as Record<string, { connected: boolean }> }));
 vi.mock("./plugins/connected-apps", async (importOriginal) => ({
@@ -79,24 +79,77 @@ describe("the sidebar's Connect apps pill", () => {
     return container;
   }
 
-  it("is the conversation's pill, full width, and opens Connect apps", () => {
+  it("is a compact tiles pill that names itself in full and opens Connect apps", () => {
     inventory.services = {};
     const onOpen = vi.fn();
     const container = renderSidebar(onOpen);
     const button = container.querySelector<HTMLButtonElement>("[data-sidebar-connect-apps]")!;
-    expect(button.textContent).toBe("Connect apps");
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.getAttribute("aria-label")).toBe("Connect apps");
     expect(button.className).toContain("rounded-full");
-    expect(button.className).toContain("w-full");
+    expect(button.className).toContain("sidebar-apps-pill");
+    expect(button.className).toContain("focus-visible:ring-2");
+    // the label is there to slide in on hover and focus, hidden from the
+    // accessibility tree (the button's own name says it)
+    const label = button.querySelector("[data-apps-pill-label]")!;
+    expect(label.textContent).toBe("Connect apps");
+    expect(label.getAttribute("aria-hidden")).toBe("true");
+    expect(button.querySelectorAll("[data-pill-tile]").length).toBe(3);
     expect(button.getAttribute("data-tour")).toBe("nav-apps");
-    expect(button.querySelectorAll("img").length).toBeLessThanOrEqual(3);
     flushSync(() => button.click());
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("widens on hover and keyboard focus only, at once under reduced motion", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    // a focus a click left behind never holds it open
+    expect(css).toContain(".sidebar-apps-pill:is(:hover, :focus-visible:not([data-pointer-focus])) [data-apps-pill-label]");
+    expect(css).not.toContain(".sidebar-apps-pill:is(:hover, :focus-visible) [data-apps-pill-label]");
+    // at rest the label takes no width at all
+    expect(css).toMatch(/\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*max-width: 0;\s*opacity: 0;\s*margin-inline-end: 0;/);
+    // it may give its label up, never its place in the row first
+    expect(css).toMatch(/\.sidebar-apps-pill \{\s*flex: 0 1 auto;/);
+    // open, the label always gets 6rem (the English one whole), and past that
+    // what leaves the account pill its avatar and about three characters
+    expect(css).toMatch(/\[data-apps-pill-label\] \{\s*max-width: max\(6rem, calc\(100cqw - 148px\)\);\s*opacity: 1;\s*margin-inline-end: 6px;/);
+    // the width moves only when motion is allowed
+    expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*:root:not\(\[data-reduced-motion="true"\]\) \.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: max-width 220ms ease/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: none;/);
+    expect(css).toMatch(/:root\[data-reduced-motion="true"\] \.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: none;/);
+  });
+
+  it("keeps its tiles whole and marks a focus that came from a click", () => {
+    inventory.services = {};
+    const button = renderSidebar().querySelector<HTMLButtonElement>("[data-sidebar-connect-apps]")!;
+    // never narrower than its three tiles and its padding; at rest the tiles
+    // sit in the middle, the same padding on both sides
+    expect(sidebarTilesWidth(3)).toBe(38);
+    expect(button.style.minWidth).toBe(`${sidebarTilesWidth(3) + 18}px`);
+    expect(button.querySelector<HTMLElement>("[data-pill-tiles]")!.style.width).toBe("38px");
+    const tiles = [...button.querySelectorAll<HTMLElement>("[data-pill-tile]")];
+    expect(tiles.map((tile) => tile.className.includes("-ml-2"))).toEqual([false, true, true]);
+    expect(button.className).toContain("justify-center");
+    expect(button.className).toContain("px-2");
+    expect(button.className).toContain("min-w-0");
+    expect(button.className).not.toContain("shrink-0");
+    const label = button.querySelector("[data-apps-pill-label]")!;
+    expect(label.className).toContain("text-ellipsis");
+    expect(label.className).toContain("min-w-0");
+    // the label comes before the tiles, so the tiles never move when it opens
+    expect(button.firstElementChild).toBe(label);
+    expect(button.lastElementChild?.hasAttribute("data-pill-tiles")).toBe(true);
+    button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(button.hasAttribute("data-pointer-focus")).toBe(true);
+    button.focus();
+    button.blur();
+    expect(button.hasAttribute("data-pointer-focus")).toBe(false);
   });
 
   it("says Connecter des applications in French", () => {
     setLocale("fr");
     const button = renderSidebar().querySelector("[data-sidebar-connect-apps]")!;
-    expect(button.textContent).toBe("Connecter des applications");
+    expect(button.querySelector("[data-apps-pill-label]")!.textContent).toBe("Connecter des applications");
     expect(button.getAttribute("aria-label")).toBe("Connecter des applications");
   });
 

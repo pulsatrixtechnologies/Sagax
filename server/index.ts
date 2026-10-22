@@ -75,6 +75,7 @@ import { CLOUD_COMPUTER_BUSY_ERROR } from "../shared/computer-contention.ts";
 import { threadLinkUrl } from "../shared/thread-link.ts";
 import { failedTurnCause, failedTurnTool } from "../shared/failed-turn.ts";
 import { STOPPED_TURN_NAME, assistantTranscript, errorTranscript } from "../shared/client-cancel.ts";
+import { isStopIntent } from "../shared/stop-intent.ts";
 import { phonePairingLink } from "../shared/pairing-link.ts";
 import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 import {
@@ -41932,6 +41933,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!ownsThread) {
         return json(res, 409, { error: "the channel switched tasks before it could receive the message" });
       }
+      // "stop" alone while this room thread works: POST /interrupt for that
+      // thread (shared/stop-intent.ts), never a queued follow-up.
+      if (isStopIntent(text) && groupThreadIsWorking(group.id, threadId)) {
+        await stopGroupThreads(group, [threadId]);
+        return json(res, 200, { ok: true, threadId, stopped: true });
+      }
       // An engine command for one member that the chat cannot run is refused
       // before it is recorded, like in a 1:1 (server/harness-commands.ts).
       const commandRoute = groupEngineCommandRoute(group, text, group.memberIds.map((id) => store.bot(id)).filter((member): member is BotRecord => Boolean(member && !member.hidden)), channelMode);
@@ -44228,6 +44235,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (messageMisuse) return json(res, messageMisuse.status, { error: messageMisuse.message, code: messageMisuse.code });
       const postedSafety = safetyHttpRefusal({ text, surface: "message", triage: postedActor.triage, ...(postedActor.principalId ? { principalId: postedActor.principalId } : {}), botId: bot.id, threadId });
       if (postedSafety) return json(res, postedSafety.status, { error: postedSafety.message, code: postedSafety.code });
+      // "stop", "arrête", "cancel" alone while this thread works: the same
+      // stop as POST /interrupt for this thread (shared/stop-intent.ts),
+      // never words steered into the turn it asks to end. The turn's own
+      // stopped row records it.
+      if (!pressed && !voiceCall && threadBusy(bot.id, threadId) && isStopIntent(text)) {
+        const run = routines!.activeBotRunForBot(bot.id);
+        if (run?.threadId === threadId) await routines!.cancelRun(run.id);
+        else await stopDirectThreadByPerson(bot.id, threadId);
+        return json(res, 200, { ok: true, threadId, stopped: true });
+      }
       if (pressKey) widgetPressesInFlight.set(pressKey, sendId);
       const receipt = await sendSequencer.run(
         sendId ? `bot:${bot.id}:${threadId}:${sendId}` : undefined,

@@ -3498,11 +3498,13 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             </div>
           </>
         ) : (
-          // Grok Bot's foot: your avatar (it opens the account menu, Browse
-          // bots included), 8px, then the wide Connect apps pill, then the
-          // update button while an update downloads or waits.
-          <div data-sidebar-account-row className="flex items-center gap-2">
-            <SidebarProfileMenu avatarOnly places={accountPlaces} />
+          // The foot (reference design): the account pill, your avatar and
+          // name (it opens the account menu, Browse bots included), 6px,
+          // then the compact Connect apps pill, then the update button while
+          // an update downloads or waits. The row is the container the open
+          // label's width is capped against (styles.css, .sidebar-apps-pill).
+          <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
+            <SidebarProfileMenu avatarOnly withName places={accountPlaces} />
             <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
             {/* a waiting update, right of the pill, which gives way when it
                 widens (JC, 2026-10-18) */}

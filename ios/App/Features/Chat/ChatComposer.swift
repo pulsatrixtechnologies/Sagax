@@ -374,6 +374,6 @@ extension ChatView {
     var composerPrompt: String {
         if sendingMessage { return String(localized: "Sending…") }
         if dictation.isListening { return String(localized: "Listening…") }
-        return String(localized: "Ask \(current.name)")
+        return String(localized: "Message \(current.name)")
     }
 }

@@ -103,6 +103,8 @@
   "settings.profile.subtitle": "會顯示在側邊欄，並隨時自動儲存。",
   "settings.profile.name": "你的名稱",
   "settings.skin.title": "外觀主題",
+  "settings.botAccent.title": "使用機器人顏色作為強調色",
+  "settings.botAccent.subtitle": "強調色跟隨目前開啟的機器人的顏色。",
   "settings.threadDisplay.title": "對話",
   "settings.threadDisplay.show": "顯示對話",
   "settings.roomTurns.title": "聊天室回合",

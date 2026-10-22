@@ -22,6 +22,7 @@ import { RemoteSessionsSection } from "./remote-session/RemoteSessionsSection";
 import { RemoteSessionControl } from "./remote-session/RemoteSessionControl";
 import { computerTabIsRemoteOnly, visiblePanelTabs, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
+import { SuggestionsSection } from "./bot-settings/SuggestionsSection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
 import { PackageProvenance } from "./bot-settings/PackageProvenance";
 import { BOT_PROFILE_LIMITS } from "../../shared/bot-profile";
@@ -261,6 +262,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
 
           {tab === "details" && (
             <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
+              <SuggestionsSection bot={bot} routineCount={derived.botRoutines.length} />
               <ActivitySection bot={bot} />
               <RemoteSessionsSection bot={bot} />
               <section data-bot-settings-section="routines" className="flex flex-col gap-2">

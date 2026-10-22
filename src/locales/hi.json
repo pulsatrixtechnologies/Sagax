@@ -21,6 +21,8 @@
   "settings.profile.subtitle": "साइडबार में दिखता है। लिखते ही सहेजा जाता है।",
   "settings.profile.name": "आपका नाम",
   "settings.skin.title": "थीम",
+  "settings.botAccent.title": "बॉट के रंग को एक्सेंट बनाएँ",
+  "settings.botAccent.subtitle": "एक्सेंट खुले बॉट के रंग का अनुसरण करता है।",
   "settings.roomTurns.title": "समूह की बारी",
   "settings.roomTurns.minutes": "मिनट",
   "settings.roomTurns.error": "समूह बारी की सीमा सहेजी नहीं जा सकी।",

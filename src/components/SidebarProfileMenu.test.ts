@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,7 @@ import { APP_REPOSITORY, DOCS_URL, HELP_CENTER_URL, LICENSE_URL, platformLabel }
 import type { UpdaterState } from "@/lib/updater";
 import { setLocale } from "@/lib/i18n";
 
+const SOURCE = readFileSync(new URL("./SidebarProfileMenu.tsx", import.meta.url), "utf8");
 const state = (patch: Partial<UpdaterState>): UpdaterState => ({ status: "idle", ...patch }) as UpdaterState;
 
 describe("profileInitials", () => {
@@ -167,7 +169,7 @@ describe("outward links", () => {
 describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
-    onAutomations: noop, onApprovals: noop, onCode: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
     onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
@@ -185,20 +187,16 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     ...patch,
   });
 
-  it("is Usage, Help, Settings, Automations, Approvals and Achievements, in that order; Code only where it can work", () => {
-    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "approvals", "achievements"]);
-    expect(items({ codeVisible: true }).map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "approvals", "code", "achievements"]);
+  it("is Usage, Help, Settings, Automations and Achievements, in that order", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "achievements"]);
   });
 
-  it("opens Approvals and Code with their routes, and counts waiting approvals", () => {
-    const calls: string[] = [];
-    const menu = items({ codeVisible: true, approvalsWaiting: 3, handlers: { ...handlers, onApprovals: () => calls.push("approvals"), onCode: () => calls.push("code") } });
-    const approvals = menu.find((entry) => entry.key === "approvals")!;
-    expect(approvals.trailing).toBeTruthy();
-    expect(items().find((entry) => entry.key === "approvals")!.trailing).toBeUndefined();
-    approvals.onSelect();
-    menu.find((entry) => entry.key === "code")!.onSelect();
-    expect(calls).toEqual(["approvals", "code"]);
+  it("lists neither Approvals nor Code: both open from their address (#approvals, #code)", () => {
+    const labels = items().flatMap((entry) => [entry.key, entry.label]);
+    for (const gone of ["approvals", "code", "Approvals", "Code"]) expect(labels).not.toContain(gone);
+    expect(SOURCE).not.toMatch(/showCode|data-menu-count="approvals"/);
+    // the avatar's approvals dot is the one way in from the foot
+    expect(SOURCE.match(/showApprovals/g)).toHaveLength(1);
   });
 
   it("has no Team map: it opens from the Automations header and the palette (JC, 2026-10-18)", () => {

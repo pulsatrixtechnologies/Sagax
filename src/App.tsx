@@ -48,7 +48,7 @@ import { focusComposer } from "@/lib/composer-focus";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
-import { isInboxHash } from "../shared/approvals-inbox";
+import { clearLeftViewHash, watchViewHash } from "@/lib/view-hash";
 import { takeSettingsReturn } from "@/lib/settings-return";
 import { saveSidebarAttentionPinned, toggleSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -65,6 +65,7 @@ import { ChatNotice } from "@/components/ChatErrorBanner";
 import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 import { navigate } from "@/lib/view-transitions";
 import { MAUS_COLORS } from "@/lib/mascot";
+import { useBotAccent } from "@/lib/bot-accent";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -112,11 +113,18 @@ function Shell() {
     openThreadTarget.current = null;
     openNotificationTarget(dispatch, target, state, showThreads);
   }, [state.bots, state.groups, dispatch]);
-  // The Approvals screen keeps its filters in the address (#approvals?…):
-  // opened with one, the screen opens with them.
+  // `#approvals` (its filters stay in the address) and `#code` (or
+  // `#code/<run>`, which then leaves the address) open their screen, at load
+  // and when the hash changes in an open tab.
+  useEffect(() => watchViewHash(dispatch), [dispatch]);
+  // leaving Approvals or Code drops its address, so the same link opens it
+  // again; only on leaving, so a link read at load keeps its filters
+  const viewHashFrom = useRef(state.activeView);
   useEffect(() => {
-    if (isInboxHash(window.location.hash)) dispatch({ type: "showApprovals" });
-  }, [dispatch]);
+    const from = viewHashFrom.current;
+    viewHashFrom.current = state.activeView;
+    if (from !== state.activeView && (from === "approvals" || from === "code")) clearLeftViewHash(state.activeView);
+  }, [state.activeView]);
   // Back from a sign-in a Settings page asked for (Settings > Security: the
   // first key needs a fresh one): that page opens again.
   useEffect(() => {
@@ -625,6 +633,14 @@ function Shell() {
   );
 }
 
+/** The open bot's colour as the accent, when Settings > Appearance says so. */
+function BotAccentSync() {
+  const { state } = useStore();
+  const bot = state.bots.find((candidate) => candidate.id === state.selectedId);
+  useBotAccent(bot ? MAUS_COLORS[bot.color] : null);
+  return null;
+}
+
 function Application() {
   useEffect(() => {
     initAnalytics();
@@ -640,6 +656,7 @@ function Application() {
         <GuidedTour />
         <LiveCallHost />
         <DataWindowViewSync />
+        <BotAccentSync />
       </StoreProvider>
     </DesktopCapabilitiesProvider>
   );

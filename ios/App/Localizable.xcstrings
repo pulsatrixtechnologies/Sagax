@@ -10557,24 +10557,24 @@
         }
       }
     },
-    "Ask %@": {
+    "Message %@": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask %@"
+            "value": "Message %@"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Demander à %@"
+            "value": "Écrire un message à %@"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pergunte a %@"
+            "value": "Mensagem para %@"
           }
         }
       }

@@ -106,15 +106,15 @@ describe("thread control placement", () => {
       expect(simple.row).not.toContain('data-testid="place-chip"');
       expect(advanced.row).not.toContain('data-testid="place-chip"');
       expect(advanced.row).toBe(simple.row);
-      expect(simple.props).toMatchObject({ align: "left", variant: "row" });
-      expect(Object.keys(simple.props ?? {})).toEqual(Object.keys(advanced.props ?? {}));
-      // one + (attach files, then the approval row), the message field, then the model chip
+      // the approval level lives in the bot's settings, not in the composer
+      expect(simple.props).toBeNull();
+      expect(advanced.props).toBeNull();
+      // one + (attach files), the message field, then the headless model picker
       const row = simple.row;
       expect(row).not.toContain("data-composer-approval");
+      expect(row).not.toContain("data-test-approval-control");
       expect(row).not.toContain('aria-label="Attach a file"');
       expect(row.indexOf('data-composer-plus-item="attach"')).toBeGreaterThan(-1);
-      expect(row.indexOf("data-test-approval-control")).toBeGreaterThan(row.indexOf('data-composer-plus-item="attach"'));
-      expect(row.indexOf("data-test-approval-control")).toBeLessThan(row.indexOf("<textarea"));
       expect(row.indexOf("data-test-model-control")).toBeGreaterThan(row.indexOf("data-composer-actions"));
     } finally {
       setAdvancedMode(false);
@@ -129,18 +129,6 @@ describe("thread control placement", () => {
     } finally {
       setAdvancedMode(false);
     }
-  });
-
-  it("offers trusted modes in the composer without requiring a Full bot default", () => {
-    const fullBot = { ...bot, busy: false, approvalMode: "full" as const };
-    expect(renderToStaticMarkup(createElement(ChatView, { bot: fullBot }))).not.toContain("Use bot’s Full access for this thread");
-    window.ogb = { approvals: { setMode: vi.fn() } } as unknown as NonNullable<Window["ogb"]>;
-    expect(renderToStaticMarkup(createElement(ChatView, { bot: fullBot }))).not.toContain("Use bot’s Full access for this thread");
-    renderToStaticMarkup(createElement(ChatView, { bot }));
-    expect(fixture.approval?.trustedModesAvailable).toBe(true);
-    fixture.approval!.onSelect("custom");
-    expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "updateTask", botId: "bot", threadId: "selected", patch: { approvalMode: "custom" } });
-    delete window.ogb;
   });
 
   it("explains provider safety errors without offering an ineffective Retry", () => {
@@ -414,18 +402,14 @@ describe("thread control placement", () => {
     expect(renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false } }))).not.toContain("primary-bot-badge");
   });
 
-  it("keeps the selected thread's model in the composer and permissions inside the composer pill", () => {
+  it("keeps the selected thread's model in the composer, and no approval control there", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, { bot }));
     expect(markup.match(/data-test-model-control/g)).toHaveLength(1);
     expect(markup.indexOf("data-test-model-control")).toBeGreaterThan(markup.indexOf('data-tour="composer"'));
     expect(markup.indexOf('data-tour="composer"')).toBeGreaterThan(-1);
-    expect(markup.indexOf("data-test-approval-control")).toBeGreaterThan(markup.indexOf('data-tour="composer"'));
-    expect(markup.indexOf("data-test-approval-control")).toBeLessThan(markup.indexOf("data-test-model-control"));
+    expect(markup).not.toContain("data-test-approval-control");
     expect(markup).not.toContain('aria-label="Thread settings"');
     expect(fixture.model).toMatchObject({ threadId: "selected", bot: { busy: false, modelSelection: { model: "thread-model" } } });
-    expect(fixture.approval).toMatchObject({ approvalMode: "ask", disabled: false, trustedModesAvailable: false });
-    fixture.approval!.onSelect("auto");
-    expect(fixture.dispatch).toHaveBeenLastCalledWith({ type: "updateTask", botId: "bot", threadId: "selected", patch: { approvalMode: "auto" } });
   });
 
   it("keeps both controls hidden for remote clients", () => {
@@ -447,11 +431,13 @@ describe("screen reader announcements", () => {
     expect(markup).toMatch(/role="log" aria-live="off" aria-label="Conversation with Pepper"/);
   });
 
-  it("does not make the working label a second live region", async () => {
+  it("announces the working line once, never its rotating phrase", async () => {
     const { TurnPresence } = await import("./TurnPresence");
-    const markup = renderToStaticMarkup(createElement(TurnPresence, { avatar: null, visible: true, label: "Running a command", since: 1 }));
+    const markup = renderToStaticMarkup(createElement(TurnPresence, { bot: { name: "Pepper", color: "blue" }, visible: true, label: "Running a command" }));
     expect(markup).toContain("Running a command");
+    expect(markup).toMatch(/role="status" aria-live="polite"[^>]*><span class="sr-only">Pepper is thinking<\/span>/);
     expect(markup).not.toMatch(/thinking-shimmer[^"]*" aria-live/);
+    expect(markup).toMatch(/<span aria-hidden="true" class="flex items-baseline"><span data-presence-phrase=""/);
   });
 
   it("renders one visually hidden status line for finished replies", () => {

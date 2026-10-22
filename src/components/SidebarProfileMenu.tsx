@@ -38,10 +38,8 @@ import {
   Check,
   CloudDownload,
   CalendarDays,
-  Code2,
   Gauge,
   Info,
-  Inbox,
   Keyboard,
   Laptop,
   Loader2,
@@ -76,7 +74,6 @@ import { openUpdatePrompt, requestUpdateCheck } from "@/lib/update-prompt";
 import { brand } from "../lib/brand";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { codeRowVisible, useCodeStatus } from "@/lib/code-runs";
 import { useAchievements } from "@/lib/achievements";
 import { isRoutineProblemRun } from "@/lib/routines";
 import { useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
@@ -283,8 +280,6 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 
 export interface ProfileMenuHandlers {
   onAutomations: () => void;
-  onApprovals: () => void;
-  onCode: () => void;
   onSettings: () => void;
   onAchievements: () => void;
   onShortcuts: () => void;
@@ -312,12 +307,6 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   automationsActive: boolean;
-  /** Approvals: conversations waiting on the person's answer, from every bot */
-  approvalsWaiting?: number;
-  approvalsActive?: boolean;
-  /** Code: only where Code can work (codeRowVisible) */
-  codeVisible?: boolean;
-  codeActive?: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -418,31 +407,6 @@ export function profileMenuItems(input: {
       active: input.automationsActive,
       onSelect: input.handlers.onAutomations,
     },
-    {
-      key: "approvals",
-      label: t("approvals.title"),
-      icon: <Inbox size={18} />,
-      active: input.approvalsActive,
-      trailing: input.approvalsWaiting ? (
-        <span
-          data-menu-count="approvals"
-          aria-label={`${t("approvals.title")}, ${input.approvalsWaiting}`}
-          className="shrink-0 rounded-full bg-warning px-1.5 text-[10.5px] font-semibold leading-4 tabular-nums text-black/80"
-        >
-          {input.approvalsWaiting > 99 ? "99+" : input.approvalsWaiting}
-        </span>
-      ) : undefined,
-      onSelect: input.handlers.onApprovals,
-    },
-    ...(input.codeVisible
-      ? [{
-          key: "code",
-          label: t("code.title"),
-          icon: <Code2 size={18} />,
-          active: input.codeActive,
-          onSelect: input.handlers.onCode,
-        }]
-      : []),
     ...(input.achievementsLabel
       ? [{
           key: "achievements",
@@ -509,10 +473,13 @@ function useAccountMenuData(enabled: boolean): AccountMenuData {
   };
 }
 
-export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine = true }: {
+export function SidebarProfileMenu({ avatarOnly = false, withName = false, places = [], memberLine = true }: {
   /** just the avatar, for the collapsed (icons) rail; the name moves to the
    * tooltip and the menu keeps its width */
   avatarOnly?: boolean;
+  /** with avatarOnly: the wide foot's rounded pill, the avatar then the
+   * name (the foot's own update and routines buttons stay beside it) */
+  withName?: boolean;
   /** Items listed before the profile items (Archived bots). */
   places?: SidebarMenuItem[];
   /** the title and points line under the name; false while the sidebar
@@ -527,7 +494,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
   const achievements = useAchievements();
-  const codeStatus = useCodeStatus();
   // conversations waiting on the person's answer (a plain count, no hook)
   const approvalsWaiting = state.bots
     .filter((bot) => !bot.hidden)
@@ -569,10 +535,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
-    approvalsWaiting,
-    approvalsActive: state.activeView === "approvals",
-    codeVisible: codeRowVisible(codeStatus),
-    codeActive: state.activeView === "code",
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: lockedServer ? [] : account.targets,
@@ -580,8 +542,6 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
     signOut: lockedServer,
     handlers: {
       onAutomations: () => dispatch({ type: "showRoutines" }),
-      onApprovals: () => dispatch({ type: "showApprovals" }),
-      onCode: () => dispatch({ type: "showCode" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
       onShortcuts: () => {
@@ -623,16 +583,33 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
       ) : (
         <InitialsAvatar initials={initials} size={size} />
       )}
-      {approvalsWaiting > 0 && (
-        <span
-          data-avatar-approvals={approvalsWaiting}
-          title={`${t("approvals.title")}, ${approvalsWaiting}`}
-          aria-label={`${t("approvals.title")}, ${approvalsWaiting}`}
-          className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-sidebar bg-warning"
-        />
-      )}
     </span>
   );
+
+  // The approvals dot on the avatar's bottom-right corner opens the
+  // Approvals screen (the #approvals screen). It is a button of its own, a
+  // sibling laid over the account button (never nested in it), so a click
+  // never opens the account menu. Placed from the avatar's box in each
+  // variant: its left edge, its size, centred vertically in the trigger.
+  const dotAt = avatarOnly && withName ? { left: 5, size: 28 } : avatarOnly ? { left: 0, size: 36 } : { left: 0, size: 40 };
+  const openApprovals = () => dispatch({ type: "showApprovals" });
+  const approvalsDotLabel = t("sidebar.profile.openApprovals", { count: approvalsWaiting });
+  const approvalsDot = approvalsWaiting > 0 ? (
+    <button
+      type="button"
+      data-avatar-approvals={approvalsWaiting}
+      title={approvalsDotLabel}
+      aria-label={approvalsDotLabel}
+      // a native button: Enter and Space arrive as this same click
+      onClick={(event) => {
+        event.stopPropagation();
+        openApprovals();
+      }}
+      style={{ left: dotAt.left + dotAt.size - 10, top: `calc(50% + ${dotAt.size / 2 - 10}px)` }}
+      // 12px on screen, a 24px target through the invisible ::before
+      className="absolute size-3 rounded-full border-2 border-sidebar bg-warning before:absolute before:-inset-1.5 before:rounded-full before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar"
+    />
+  ) : null;
 
   // The routines count opens Automations, so it stays outside the menu
   // button. The highlight is the wrapper around both, one rounded block.
@@ -641,7 +618,39 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
       items={items}
       ariaLabel={name}
       menuClassName={avatarOnly ? "left-0 w-max min-w-[228px] max-w-[300px]" : undefined}
-      renderTrigger={({ open }) => avatarOnly ? (
+      renderTrigger={({ open }) => avatarOnly && withName ? (
+        // The wide foot's account pill (reference design): the avatar and
+        // the name in one rounded pill, the update dot on the avatar.
+        <span
+          ref={triggerRef}
+          title={name}
+          data-sidebar-account-pill=""
+          data-menu-opened={open || undefined}
+          className={cn(
+            "flex h-9 w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1.5 text-left transition-colors [button:focus-visible>&]:ring-2 [button:focus-visible>&]:ring-focus",
+            open ? "bg-sidebar-elevated-hover ring-2 ring-accent/60" : "hover:bg-sidebar-elevated-hover",
+          )}
+        >
+          <span className="relative flex shrink-0">
+            {avatar(28)}
+            {noteworthy && (
+              <span
+                title={noteworthy.label}
+                aria-label={noteworthy.label}
+                className={cn(
+                  "absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-sidebar",
+                  noteworthy.phase === "error" ? "bg-danger" : "bg-accent",
+                )}
+              />
+            )}
+          </span>
+          <WhenOpen open={open} onOpen={() => setMenuOpened(true)} />
+          <span data-account-pill-name="" className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-sidebar-ink">{name}</span>
+          {placeAttention && !open && (
+            <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
+          )}
+        </span>
+      ) : avatarOnly ? (
         <span
           ref={triggerRef}
           title={name}
@@ -739,9 +748,9 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   ) : null;
 
   return (
-    <div className="relative">
+    <div className={cn("relative", avatarOnly && withName && "min-w-[3.5rem] flex-1")}>
       {avatarOnly && approvalsBadge}
-      {avatarOnly ? accountRow : (
+      {avatarOnly ? <div className="relative">{accountRow}{approvalsDot}</div> : (
         <div className="flex items-center gap-2">
           <div
             data-sidebar-account-row=""
@@ -755,7 +764,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
             )}
           >
             <div className="flex items-center gap-1">
-              <div className="min-w-0 flex-1">{accountRow}</div>
+              <div className="relative min-w-0 flex-1">{accountRow}{approvalsDot}</div>
               {approvalsBadge}
               {routinesBadge}
             </div>
