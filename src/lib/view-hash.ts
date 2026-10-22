@@ -24,6 +24,20 @@ export function followViewHash(
   return true;
 }
 
+/** Drops a `#approvals…` or `#code…` hash once its screen is no longer
+ * shown, so following the same address again fires a hash change and opens
+ * it. True when it cleared one. */
+export function clearLeftViewHash(
+  activeView: string,
+  loc: Pick<Location, "hash" | "pathname" | "search"> = location,
+  historyApi: Pick<History, "replaceState" | "state"> | null = globalThis.history ?? null,
+): boolean {
+  const left = (isInboxHash(loc.hash) && activeView !== "approvals") || (codeHashTarget(loc.hash) !== null && activeView !== "code");
+  if (!left) return false;
+  try { historyApi?.replaceState(historyApi.state, "", `${loc.pathname}${loc.search}`); } catch { /* ignore */ }
+  return true;
+}
+
 /** Follows the hash now and on every later change; returns the cleanup. */
 export function watchViewHash(dispatch: (action: ViewHashAction) => void): () => void {
   followViewHash(dispatch);

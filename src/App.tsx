@@ -47,7 +47,7 @@ import { focusComposer } from "@/lib/composer-focus";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
-import { watchViewHash } from "@/lib/view-hash";
+import { clearLeftViewHash, watchViewHash } from "@/lib/view-hash";
 import { takeSettingsReturn } from "@/lib/settings-return";
 import { saveSidebarAttentionPinned, toggleSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -116,6 +116,14 @@ function Shell() {
   // `#code/<run>`, which then leaves the address) open their screen, at load
   // and when the hash changes in an open tab.
   useEffect(() => watchViewHash(dispatch), [dispatch]);
+  // leaving Approvals or Code drops its address, so the same link opens it
+  // again; only on leaving, so a link read at load keeps its filters
+  const viewHashFrom = useRef(state.activeView);
+  useEffect(() => {
+    const from = viewHashFrom.current;
+    viewHashFrom.current = state.activeView;
+    if (from !== state.activeView && (from === "approvals" || from === "code")) clearLeftViewHash(state.activeView);
+  }, [state.activeView]);
   // Back from a sign-in a Settings page asked for (Settings > Security: the
   // first key needs a fresh one): that page opens again.
   useEffect(() => {
