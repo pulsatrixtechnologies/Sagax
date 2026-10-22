@@ -5,7 +5,10 @@
 //                                               (and their bots' earlier
 //                                               per-bot Allow keys, `legacy`)
 //   PATCH  /api/approval-rules/:id           { behavior?, description?, botId?, anyTarget? }
-//   DELETE /api/approval-rules/:id
+//   DELETE /api/approval-rules/:id           (also an Always allow someone
+//                                               else saved on an admin's card
+//                                               of a bot the caller owns or
+//                                               administers, 2026-10-21)
 //   GET    /api/bots/:id/permission-mode     -> { mode, canBypass }
 //   PUT    /api/bots/:id/permission-mode     { mode, confirmBypass? }
 //
@@ -33,6 +36,15 @@ export interface OwnerApprovalRouteDeps {
   /** A bot's name for the list (a rule saved on a bot someone else owns,
    * an admin's rule on a member's bot), or undefined when it is gone. */
   botName?: (botId: string) => string | undefined;
+  /** 2026-10-21 (JC): the rules saved on an admin's card of this bot
+   * (`from: "admin"`) by someone else, that this person may see and remove:
+   * the bot's owner and an organization admin. Empty for anyone else. */
+  sharedBotRules?: (personId: string, botId: string) => OwnerRule[];
+  /** Whether this person manages this bot's rules without owning it (an
+   * organization admin). */
+  managesBot?: (personId: string, botId: string) => boolean;
+  /** The name of the person who saved a rule, never an id. */
+  personName?: (personId: string) => string | undefined;
   /** An earlier per-bot Allow key in plain words. */
   describeLegacy: (key: string) => string;
   /** Remove an earlier Allow key from a bot and its conversations. */
@@ -89,12 +101,23 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       const me = deps.manager(auth);
       if (!me) return json(res, 403, { error: "Sign in to see your approval rules." });
       const botId = url.searchParams.get("botId") ?? undefined;
-      if (botId && !deps.ownedBots(me).some((bot) => bot.id === botId)) return json(res, 404, { error: "no such bot" });
+      const owned = !botId || deps.ownedBots(me).some((bot) => bot.id === botId);
+      if (botId && !owned && !deps.managesBot?.(me, botId)) return json(res, 404, { error: "no such bot" });
       const named = (rows: OwnerRule[]) => rows.map((row) => {
         const name = row.botId && deps.botName ? deps.botName(row.botId) : undefined;
         return name ? { ...row, botName: name } : row;
       });
-      return json(res, 200, { rules: named([...deps.store.rulesOf(me, botId), ...legacyRules(me, botId)]) });
+      // 2026-10-21 (JC): an Always allow saved on an admin's card of this
+      // bot by someone else is listed too, to remove (never to edit)
+      const shared = botId ? (deps.sharedBotRules?.(me, botId) ?? []).filter((row) => !same(row.ownerId, me)) : [];
+      const own = owned ? deps.store.rulesOf(me, botId) : deps.store.rulesOf(me).filter((row) => row.botId === botId);
+      return json(res, 200, { rules: [
+        ...named([...own, ...(owned ? legacyRules(me, botId) : [])]),
+        ...named(shared).map((row) => {
+          const savedBy = deps.personName?.(row.ownerId);
+          return { ...row, byOther: true as const, ...(savedBy ? { savedBy } : {}) };
+        }),
+      ] });
     }
 
     // each route sits beside its method guard (scripts/tool-policy/route-inventory.ts)
@@ -159,6 +182,14 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         if (refused) return json(res, refused.status, refused.body);
       }
       if (method === "DELETE") {
+        // 2026-10-21 (JC): the bot's owner or an admin removes an Always
+        // allow someone else saved on an admin's card of that bot
+        const shared = existing ? undefined : deps.store.adminRuleById(id);
+        if (shared?.botId && deps.sharedBotRules?.(me, shared.botId).some((row) => row.id === id && !same(row.ownerId, me))) {
+          if (!deps.store.remove(shared.ownerId, id)) return json(res, 404, { error: "no such rule" });
+          deps.audit({ action: "approval.rule.remove", botId: shared.botId, personId: me, before: { rule: id } }, auth);
+          return json(res, 200, { ok: true });
+        }
         if (!deps.store.remove(me, id)) return json(res, 404, { error: "no such rule" });
         deps.audit({ action: "approval.rule.remove", personId: me, before: { rule: id } }, auth);
         return json(res, 200, { ok: true });

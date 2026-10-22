@@ -7894,6 +7894,8 @@
   "botPanel.rules.save": "Save",
   "botPanel.rules.cancel": "Cancel",
   "botPanel.rules.migrated": "Earlier rule",
+  "botPanel.rules.savedBy": "Saved by {name} on an admin's card",
+  "botPanel.rules.savedBySomeone": "Saved on an admin's card",
   "botPanel.rules.kind.delete": "Deletions",
   "botPanel.rules.kind.bulk": "Bulk changes",
   "botPanel.rules.kind.externalMessage": "External messages",

@@ -11615,8 +11615,11 @@ async function answerRequest(
   always?: boolean,
   rememberCommand?: boolean,
 ): Promise<RequestOutcome> {
-  // A member's bot on an organization server is approved one action at a
-  // time: no session allow and no saved command, whatever the answer asks.
+  // A member's bot on an organization server takes no session allow (the
+  // engine's own suggestion could reach past the bot) and no entry in the
+  // installation's saved command list. Its Always allow is an owner rule
+  // for this bot (saveOwnerRuleFromCard, 2026-10-21: the program on an
+  // admin's card), which the bot's owner or an admin may remove.
   const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
   if (decidingBot && memberOwnedInOrg(decidingBot)) {
     always = false;
@@ -14545,12 +14548,20 @@ bus.subscribe((event: RuntimeEvent) => {
         ? (() => {
           // 2026-10-20 (security review): a card that never had a rule (an
           // admin's, a held one, a turn not the person's own) keeps the
-          // whole request, every argument, never only its target
+          // whole request, every argument, never only its target; an
+          // engine's own shell line on an admin's card excepted (below)
+          // 2026-10-21 (JC: "Toujours permettre" on a member's bot must
+          // stick): on an admin's card (or a holder's), the engine's own
+          // shell line is kept like on a solo bot, as its one program in its
+          // folder (else its exact text), for this bot only. The whole
+          // request never matched again: the engine writes a new
+          // `description` beside each command.
+          const nativeShell = ruleFrom === "admin" && typeof event.command?.command === "string" && event.command.command.trim().length > 0;
           const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language), {
-            wholeCall: ruleFrom !== undefined,
+            wholeCall: ruleFrom !== undefined && !nativeShell,
             // 2026-10-20 (JC): a command is kept as its one program, except
-            // on an admin's card or a held one, which keep the very request
-            programScope: ruleFrom !== "admin" && ruleFrom !== "hold",
+            // on a held card, which keeps the very request
+            programScope: ruleFrom !== "hold" && (ruleFrom !== "admin" || nativeShell),
           });
           return scopeKeepable(candidate.scope) ? { ...candidate, ...(ruleFrom ? { from: ruleFrom } : {}) } : undefined;
         })()
@@ -27365,6 +27376,24 @@ ROUTES.push(createOwnerApprovalRoutes({
   manager: ruleManager,
   ownedBots: botsOwnedBy,
   botName: (botId) => store.bot(botId)?.name,
+  // 2026-10-21 (JC): an Always allow kept on an admin's card of a member's
+  // bot is the bot's: its owner and the people who answer such cards (an
+  // admin, a holder of host.shell) see it and may remove it
+  sharedBotRules: (personId, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    const me = personId.trim().toLowerCase();
+    const owner = effectiveBotOwner(bot).trim().toLowerCase() === me;
+    return owner || strictRuleQualifies(me, bot, "admin") ? ownerApprovals.adminRulesForBot(botId) : [];
+  },
+  managesBot: (personId, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot && IDENTITY.kind === "perspicax" && strictRuleQualifies(personId.trim().toLowerCase(), bot, "admin"));
+  },
+  personName: (personId) => {
+    const person = principals.byId(personId.trim().toLowerCase());
+    return person?.name?.trim() || person?.email?.trim() || undefined;
+  },
   ownerOf: (botId) => {
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot) : null;
@@ -44526,7 +44555,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const adminCheck = adminApprovalCheck(auth, bot.threadId, String(body.requestId));
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "On this card, Always allow keeps a rule for this bot; a session allow or a saved command is not offered." });
       const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
@@ -44649,7 +44678,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const adminCheck = adminApprovalCheck(auth, threadId, requestId);
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "On this card, Always allow keeps a rule for this bot; a session allow or a saved command is not offered." });
       const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
