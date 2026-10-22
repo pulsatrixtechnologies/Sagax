@@ -132,7 +132,7 @@ import { commandReceipt } from "./commands.ts";
 import { buildTurnDigest, coverageForDriver, digestPromptLine, renderDigest, toolEvidence } from "./digest.ts";
 import { expireApprovalsAfterRestart } from "./approval-restart.ts";
 import { appendDecision, bindConfidentialDecisions, bindDecisionRetention, boundRetentionDays, decisionRetentionDays, decisionsCsv, flushDecisionLog, pruneDecisions, readDecisionRange, readDecisions, scrubThreadDecisions, withDecisionActor, type DecisionActor } from "./decision-log.ts";
-import { validateBotCwd } from "./bot-cwd.ts";
+import { validateBotCwd, validateBotCwdFor } from "./bot-cwd.ts";
 import {
   ATTACHMENTS_DIR,
   attachmentExists,
@@ -43976,7 +43976,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (backendError) return json(res, 409, { error: backendError });
       }
       if (body.cwd !== undefined) {
-        const checked = validateBotCwd(body.cwd);
+        const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: m[1], sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
         patch.cwd = checked.cwd ?? undefined;
       }
@@ -45957,7 +45957,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!auth.scopes.includes("admin")) {
           return json(res, 403, { error: "Choosing a working folder requires the admin scope" });
         }
-        const checked = validateBotCwd(body.cwd);
+        const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: bot.id, sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
         if (!checked.cwd) return json(res, 400, { error: "Choose an existing working folder, or omit cwd to use the bot's default" });
         cwd = checked.cwd;
