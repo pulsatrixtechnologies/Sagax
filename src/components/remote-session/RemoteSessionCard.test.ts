@@ -97,29 +97,24 @@ describe("remote session surfaces", () => {
       null,
       createElement(RemoteSessionsSection, { bot: { id: "melonie" } as Bot }),
     ));
-    expect(empty).toContain("data-remote-sessions");
-    expect(empty).toContain("Sessions à distance");
-    expect(empty).toContain("data-remote-sessions-empty");
-    expect(empty.replaceAll("&#x27;", "'")).toContain(t("remoteSession.empty"));
-    const emptyPanel = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+    // no active session: the whole section is hidden (header and text)
+    expect(empty).not.toContain("data-remote-sessions");
+    expect(empty).not.toContain("Sessions à distance");
+    const emptyProps = {
       botId: "melonie",
-      rows: [],
+      rows: [] as RemoteSessionView[],
       confirmId: null,
       error: null,
       onTakeControl: () => undefined,
       onClose: () => undefined,
-    }));
-    expect(emptyPanel).toContain(t("remoteSession.section"));
-    expect(emptyPanel).not.toContain(t("remoteSession.takeControl"));
+    };
+    expect(renderToStaticMarkup(createElement(RemoteSessionsPanel, emptyProps))).toBe("");
     setLocale("en");
-    expect(renderToStaticMarkup(createElement(RemoteSessionsPanel, {
-      botId: "melonie",
-      rows: [],
-      confirmId: null,
-      error: null,
-      onTakeControl: () => undefined,
-      onClose: () => undefined,
-    }))).toContain("No remote session is open.");
+    expect(renderToStaticMarkup(createElement(RemoteSessionsPanel, emptyProps))).toBe("");
+    // at least one session: the section shows with its row
+    const withRow = renderToStaticMarkup(createElement(StoreProvider, null, createElement(RemoteSessionsPanel, { ...emptyProps, rows: [view] })));
+    expect(withRow).toContain("data-remote-sessions");
+    expect(withRow).toContain("data-remote-session-row");
     setLocale("fr");
 
     const shown: RemoteSessionView = {

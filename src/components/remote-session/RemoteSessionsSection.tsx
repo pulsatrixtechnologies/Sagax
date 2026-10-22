@@ -62,7 +62,7 @@ export function takeRemoteControl(input: {
   input.openWindow();
 }
 
-/** The sidebar list. Always there: an empty list says so in one line. */
+/** The sidebar list. Hidden entirely when no session is active. */
 export function RemoteSessionsPanel({
   botId,
   rows,
@@ -78,15 +78,13 @@ export function RemoteSessionsPanel({
   onTakeControl: (view: RemoteSessionView) => void;
   onClose: (view: RemoteSessionView) => void;
 }) {
+  if (rows.length === 0) return null;
   return (
     <section data-remote-sessions="" data-remote-sessions-count={rows.length} className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
         <Monitor size={16} className="text-ink-secondary" />
         <h2 className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("remoteSession.section")}</h2>
       </div>
-      {rows.length === 0 && (
-        <p data-remote-sessions-empty="" className="text-[13px] leading-[18px] text-ink-secondary">{t("remoteSession.empty")}</p>
-      )}
       {rows.length > 0 && (
         <div className={GROUPED_CARD}>
           {rows.map((view) => {
