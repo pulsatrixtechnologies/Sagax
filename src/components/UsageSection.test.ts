@@ -368,7 +368,7 @@ describe("Limite de dépenses", () => {
     expect(within).toContain("Remove limit");
     const reached = renderToStaticMarkup(createElement(SpendCapCard, { initial: cap({ spentUsd: 55, percent: 110, warn: true, exceeded: true }), read: () => new Promise<never>(() => {}) }));
     expect(reached).toContain('data-cap-status="reached"');
-    expect(reached).toContain("new turns are refused until you raise it");
+    expect(reached).toContain("next turns are refused until you raise it");
     const near = renderToStaticMarkup(createElement(SpendCapCard, { initial: cap({ percent: 85, warn: true }), read: () => new Promise<never>(() => {}) }));
     expect(near).toContain('data-cap-status="near"');
   });

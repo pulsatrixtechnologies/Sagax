@@ -26,7 +26,15 @@ export interface PersonalCapState {
 
 const path = (dataDir: string, file = FILE) => join(dataDir, "usage", file);
 
+let organizationServer = false;
+/** An organization server has no personal limit yet: a leftover file (the
+ * server was solo once) is ignored there. Set once at boot. */
+export function setPersonalCapOrganization(organization: boolean): void {
+  organizationServer = organization;
+}
+
 export function readPersonalCap(dataDir: string): number | null {
+  if (organizationServer) return null;
   try {
     const value = (JSON.parse(readFileSync(path(dataDir), "utf8")) as { monthlyUsd?: unknown }).monthlyUsd;
     return typeof value === "number" && Number.isFinite(value) && value >= MIN_PERSONAL_CAP_USD ? value : null;

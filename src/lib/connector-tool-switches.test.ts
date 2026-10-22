@@ -50,4 +50,15 @@ describe("clearing connector preferences", () => {
     expect(save.mock.calls).toEqual([["github", []], ["linear", []]]);
     expect(await clearConnectorPreferences(async () => ({ services: {}, disabledTools: {} }), save)).toBe(0);
   });
+
+  it("is all or nothing: a failing app puts back the ones already reset", async () => {
+    const calls: Array<[string, string[]]> = [];
+    const save = vi.fn(async (slug: string, tools: string[]) => {
+      calls.push([slug, tools]);
+      if (slug === "linear") throw new Error("refused");
+    });
+    const load = async () => ({ services: {}, disabledTools: { github: ["a", "b"], linear: ["x"], slack: ["s"] } });
+    await expect(clearConnectorPreferences(load, save)).rejects.toThrow("refused");
+    expect(calls).toEqual([["github", []], ["linear", []], ["github", ["a", "b"]]]);
+  });
 });

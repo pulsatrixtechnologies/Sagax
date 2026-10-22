@@ -9711,7 +9711,7 @@
   "usage.cap.title": "Limite de dépenses",
   "usage.cap.monthly": "Limite mensuelle (USD)",
   "usage.cap.spent": "{spent} sur {cap} ({percent} %)",
-  "usage.cap.reached": "Limite atteinte : les nouveaux tours sont refusés tant que vous ne la relevez pas.",
+  "usage.cap.reached": "Limite atteinte : les prochains tours sont refusés tant que vous ne la relevez pas.",
   "usage.cap.nearing": "Près de la limite",
   "usage.cap.within": "Sous la limite",
   "usage.cap.none": "Aucune limite n'est fixée. Vos bots dépensent sans restriction.",
@@ -9722,11 +9722,12 @@
   "usage.cap.raise": "Modifier la limite",
   "usage.cap.set": "Fixer la limite",
   "usage.cap.invalid": "Saisissez un montant d'au moins {min}, comme 25 ou 25,50.",
-  "usage.cap.hint": "Compte chaque tour de bot sur cet ordinateur ce mois-ci. Une fois la limite atteinte, aucun tour ne démarre tant que vous ne la relevez pas ou ne la retirez pas. Vous êtes prévenu à 80 % et à la limite.",
+  "usage.cap.hint": "Compte chaque tour de bot et chaque requête vocale sur cet ordinateur ce mois-ci (la voix est estimée). La limite arrête le prochain tour : un tour déjà en cours peut se terminer et la dépasser. Vous êtes prévenu à 80 % et à la limite.",
   "myConnections.preferences.title": "Préférences de connecteurs",
-  "myConnections.preferences.subtitle": "Réactive tous les outils de connecteur désactivés, par vous ou par les Bots d'équipe. Les comptes restent connectés.",
+  "myConnections.preferences.subtitle": "Réactive tous les outils de connecteur désactivés pour tout l'espace de travail, y compris ceux qu'un administrateur a désactivés. Les comptes restent connectés.",
   "myConnections.preferences.clear": "Effacer les préférences de connecteurs",
-  "myConnections.preferences.confirm": "Confirmer : tout réactiver",
-  "myConnections.preferences.cleared": "Effacées",
-  "microphone.promptUnanswered": "Le microphone est indisponible : la demande d'autorisation est restée sans réponse."
+  "myConnections.preferences.confirm": "Confirmer : tout l'espace de travail",
+  "myConnections.preferences.cleared": "Applications réinitialisées : {count}.",
+  "myConnections.preferences.nothing": "Rien à effacer.",
+  "microphone.waitingForPermission": "Le microphone attend votre autorisation : répondez à la demande du système et il démarrera."
 }

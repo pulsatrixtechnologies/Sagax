@@ -8,7 +8,7 @@ import { dictationLevels, frameLevel, joinDictated, type DictationEngine } from 
 import { encodeWav, toPcm16 } from "@/lib/voice-mode/audio";
 import { attachVoiceCapture, type CaptureContext, type CaptureSource, type VoiceCapture } from "@/lib/voice-mode/capture-worklet";
 import { transcribeVoiceMode } from "@/lib/voice-mode/api";
-import { MicrophonePromptUnanswered, openPreferredMicrophone } from "@/lib/audio-input";
+import { openPreferredMicrophone } from "@/lib/audio-input";
 
 export type DictationPhase = "idle" | "recording" | "processing";
 
@@ -19,9 +19,9 @@ interface Microphone {
 }
 
 /** Opens the microphone: frames for the xAI clip, loudness for the bars. */
-async function openMicrophone(onLevel: (level: number) => void, keep: boolean): Promise<Microphone> {
+async function openMicrophone(onLevel: (level: number) => void, keep: boolean, onWaiting?: () => void): Promise<Microphone> {
   // the microphone chosen in Settings (lib/audio-input), else the default
-  const stream = await openPreferredMicrophone({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+  const stream = await openPreferredMicrophone({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }, undefined, onWaiting);
   const context = new AudioContext({ latencyHint: "interactive" });
   const source = context.createMediaStreamSource(stream);
   const frames: Float32Array[] = [];
@@ -172,10 +172,11 @@ export function useComposerDictation({
       return;
     }
     try {
-      mic.current = await openMicrophone((level) => levelRef.current.push(level), true);
+      mic.current = await openMicrophone((level) => levelRef.current.push(level), true, () => setError(t("microphone.waitingForPermission")));
+      setError(null);
       setPhase("recording");
-    } catch (failure) {
-      setError(failure instanceof MicrophonePromptUnanswered ? failure.message : t("composer.dictation.permission"));
+    } catch {
+      setError(t("composer.dictation.permission"));
       running.current = null;
     }
   }, [engine, phase, text]);

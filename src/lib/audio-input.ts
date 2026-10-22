@@ -6,8 +6,6 @@
 // system default rather than failing the recording.
 import { useCallback, useEffect, useState } from "react";
 
-import { t } from "@/lib/i18n";
-
 export const AUDIO_INPUT_KEY = "sagax.audioInput.v1";
 
 export interface AudioInput {
@@ -72,32 +70,18 @@ function defaultGetUserMedia(): GetUserMedia {
 }
 
 /** How long the system's permission prompt may stay unanswered before the
- * microphone is called unavailable (it can also sit behind another window). */
+ * person is told the microphone is waiting for them (it can sit behind
+ * another window). The request itself is never abandoned: a slow answer
+ * still opens the microphone. */
 export const MICROPHONE_PROMPT_MS = 30_000;
 
-/** The permission request got no answer: neither allowed nor refused. */
-export class MicrophonePromptUnanswered extends Error {
-  constructor() {
-    super(t("microphone.promptUnanswered"));
-    this.name = "MicrophonePromptUnanswered";
-  }
-}
-
-/** The microphone, or MicrophonePromptUnanswered when the request stays
- * pending. A stream that arrives after the wait is released, not kept open. */
-function withPromptTimeout(open: Promise<MediaStream>, ms: number): Promise<MediaStream> {
-  return new Promise<MediaStream>((resolve, reject) => {
-    let late = false;
-    const timer = setTimeout(() => { late = true; reject(new MicrophonePromptUnanswered()); }, ms);
-    open.then(
-      (stream) => {
-        clearTimeout(timer);
-        if (late) { for (const track of stream.getTracks?.() ?? []) track.stop(); return; }
-        resolve(stream);
-      },
-      (error) => { clearTimeout(timer); if (!late) reject(error); },
-    );
-  });
+/** Runs `onWaiting` once if the request is still pending after `ms`. */
+function watchPrompt(open: Promise<MediaStream>, ms: number, onWaiting?: () => void): Promise<MediaStream> {
+  if (!onWaiting) return open;
+  const timer = setTimeout(onWaiting, ms);
+  const done = () => clearTimeout(timer);
+  open.then(done, done);
+  return open;
 }
 
 /** getUserMedia that retries once without the device when the saved one is
@@ -106,20 +90,21 @@ export async function getUserMediaWithFallback(
   constraints: MediaStreamConstraints,
   getUserMedia: GetUserMedia = defaultGetUserMedia(),
   promptMs = MICROPHONE_PROMPT_MS,
+  onWaiting?: () => void,
 ): Promise<MediaStream> {
   try {
-    return await withPromptTimeout(getUserMedia(constraints), promptMs);
+    return await watchPrompt(getUserMedia(constraints), promptMs, onWaiting);
   } catch (error) {
     const audio = constraints.audio;
     if (!deviceMissing(error) || !audio || typeof audio !== "object" || !audio.deviceId) throw error;
     const { deviceId: _dropped, ...rest } = audio;
-    return withPromptTimeout(getUserMedia({ ...constraints, audio: rest }), promptMs);
+    return watchPrompt(getUserMedia({ ...constraints, audio: rest }), promptMs, onWaiting);
   }
 }
 
 /** Opens the saved microphone (or the default) with these audio settings. */
-export function openPreferredMicrophone(audio: MediaTrackConstraints, getUserMedia?: GetUserMedia): Promise<MediaStream> {
-  return getUserMediaWithFallback({ audio: withPreferredInput(audio), video: false }, getUserMedia);
+export function openPreferredMicrophone(audio: MediaTrackConstraints, getUserMedia?: GetUserMedia, onWaiting?: () => void): Promise<MediaStream> {
+  return getUserMediaWithFallback({ audio: withPreferredInput(audio), video: false }, getUserMedia, MICROPHONE_PROMPT_MS, onWaiting);
 }
 
 /** The audio inputs, without the browser's "default" and "communications"

@@ -49,14 +49,26 @@ export function slugsWithDisabledTools(disabledTools: Record<string, string[]>):
   return Object.entries(disabledTools).filter(([, tools]) => tools.length > 0).map(([slug]) => slug).sort();
 }
 
-/** "Effacer les préférences de connecteurs": every tool a person turned off
- * comes back on, app by app. Accounts stay connected. Returns how many apps
+/** "Effacer les préférences de connecteurs": every tool switched off for the
+ * whole workspace (including by an admin) comes back on, app by app. Accounts
+ * stay connected. All or nothing: when one app fails, the apps already reset
+ * are put back as they were and the error is thrown. Returns how many apps
  * were reset. */
 export async function clearConnectorPreferences(
   load: () => Promise<ConnectorToolsInventory> = loadConnectorTools,
   save: (slug: string, disabledTools: string[]) => Promise<unknown> = saveDisabledTools,
 ): Promise<number> {
-  const slugs = slugsWithDisabledTools((await load()).disabledTools);
-  for (const slug of slugs) await save(slug, []);
+  const before = (await load()).disabledTools;
+  const slugs = slugsWithDisabledTools(before);
+  const done: string[] = [];
+  try {
+    for (const slug of slugs) {
+      await save(slug, []);
+      done.push(slug);
+    }
+  } catch (failure) {
+    for (const slug of done.reverse()) await save(slug, before[slug] ?? []).catch(() => undefined);
+    throw failure;
+  }
   return slugs.length;
 }

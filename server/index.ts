@@ -333,8 +333,9 @@ import { isMemberBotField } from "../shared/viewer-capabilities.ts";
 import { effectivePermissions, permissionList, type EffectivePermissions } from "./org-permissions.ts";
 import { allowedProviderTestUrl, checkProviderKey, PROVIDER_KEY_KINDS, providerBaseUrl, type ProviderKeyKind } from "./provider-key-check.ts";
 import { forgetKey, noteKeyAccepted, noteKeyRejected, onKeyRejectionChange } from "./key-rejections.ts";
-import { personalCapNotice } from "./personal-spend-cap.ts";
+import { personalCapNotice, setPersonalCapOrganization } from "./personal-spend-cap.ts";
 import { startLowDiskWatch } from "./low-disk-alert.ts";
+import { voiceCostUsd } from "./voice-cost.ts";
 import { assertWithinBudget, noteSpend, spendAlertText, spendState, takeSpendAlert } from "./spend.ts";
 import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts";
 import { entitled } from "./enterprise.ts";
@@ -26796,6 +26797,7 @@ const meetingService: MeetingService = createMeetingService({
     if (!bot) return { error: "unknown bot" };
     const who: VoiceSpeaker = (speaker as VoiceSpeaker | null | undefined) ?? { principalId: "" };
     const key = await resolveVoiceKey(voiceModeDeps, who);
+    try { assertWithinBudget(cfg, DATA_DIR); } catch (error) { return { error: error instanceof Error ? error.message : String(error) }; }
     if (!key.ok) {
       return { error: key.cause === "no_credentials"
         ? "Meeting notes need speech to text: add an xAI key in Settings > Models and voice."
@@ -28356,6 +28358,7 @@ cloudAgentManager = new CloudAgentManager({
 
 const CLOUD_AGENT_SYNC_MS = 15_000;
 setInterval(() => { void cloudAgentManager.syncActive(); }, CLOUD_AGENT_SYNC_MS).unref?.();
+setPersonalCapOrganization(IDENTITY.kind === "perspicax");
 // The disk holding the data folder is nearly full (server/low-disk-alert.ts).
 startLowDiskWatch({ dir: DATA_DIR, notify: (text) => broadcast({ kind: "notify", notification: { kind: "spend", botId: "", botName: "", threadId: "", title: text.title, body: text.body } }, { adminOnly: true }) });
 
@@ -32795,6 +32798,7 @@ const voiceModeDeps: VoiceModeDeps = {
       broadcastVoiceCallEnded(target.threadId, callId, "person", auth);
     },
   },
+  assertWithinBudget: () => assertWithinBudget(cfg, DATA_DIR),
   recordUsage: (usage) => {
     const bot = store.bot(usage.target.botId);
     const row: UsageRow = {
@@ -32807,7 +32811,9 @@ const voiceModeDeps: VoiceModeDeps = {
       model: usage.model,
       input: usage.input,
       output: 0,
-      costUsd: null,
+      // xAI reports no price here: an estimate, so voice counts toward the spend limits
+      costUsd: voiceCostUsd(usage.model, usage.input),
+      costSource: "estimated" as const,
       trigger: usage.speaker.principalId && IDENTITY.kind === "perspicax" ? { kind: "user", principalId: usage.speaker.principalId } : { kind: "owner" },
       ...(IDENTITY.kind === "perspicax" ? { access: usage.via, ...(bot ? { ownerPrincipalId: effectiveBotOwner(bot) } : {}) } : {}),
       ...(usage.payerPrincipalId ? { payerPrincipalId: usage.payerPrincipalId } : {}),

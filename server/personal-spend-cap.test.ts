@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { assertWithinBudget, resetSpendAlertsForTests, resetSpendCacheForTests } from "./spend.ts";
-import { clearPersonalCap, personalCapAlert, personalCapState, readPersonalCap, writePersonalCap, MIN_PERSONAL_CAP_USD } from "./personal-spend-cap.ts";
+import { setPersonalCapOrganization, clearPersonalCap, personalCapAlert, personalCapState, readPersonalCap, writePersonalCap, MIN_PERSONAL_CAP_USD } from "./personal-spend-cap.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 import { appendUsage, flushUsageLedger } from "./usage-ledger.ts";
 
@@ -28,6 +28,20 @@ describe("personal monthly spend cap", () => {
     expect(readPersonalCap(dataDir)).toBe(25);
     clearPersonalCap(dataDir);
     expect(readPersonalCap(dataDir)).toBeNull();
+  });
+
+  it("ignores a leftover file on an organization server", async () => {
+    writePersonalCap(dataDir, 1);
+    await book(5);
+    setPersonalCapOrganization(true);
+    try {
+      expect(readPersonalCap(dataDir)).toBeNull();
+      expect(personalCapState(dataDir, now)).toBeNull();
+      expect(() => assertWithinBudget({}, dataDir, now, () => false)).not.toThrow();
+      expect(personalCapAlert(dataDir, now)).toBeNull();
+    } finally {
+      setPersonalCapOrganization(false);
+    }
   });
 
   it("refuses a cap under the minimum or not a number", () => {

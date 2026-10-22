@@ -65,8 +65,9 @@ export function MyConnectionsSettings({ initial }: { initial?: MyConnections }) 
   );
 }
 
-/** "Effacer les préférences de connecteurs": every connector tool turned off
- * comes back on (team bots use the same switches). Accounts stay connected. */
+/** "Effacer les préférences de connecteurs": every connector tool switched off
+ * for the whole workspace comes back on (team bots use the same switches, and
+ * so do the ones an admin turned off). Accounts stay connected. */
 export function ConnectorPreferencesCard({ clear = clearConnectorPreferences }: { clear?: () => Promise<number> }) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -74,8 +75,8 @@ export function ConnectorPreferencesCard({ clear = clearConnectorPreferences }: 
     setBusy(true);
     setNotice(null);
     try {
-      await clear();
-      setNotice({ tone: "ok", text: t("myConnections.preferences.cleared") });
+      const count = await clear();
+      setNotice({ tone: "ok", text: count > 0 ? t("myConnections.preferences.cleared", { count }) : t("myConnections.preferences.nothing") });
     } catch (failure) {
       setNotice({ tone: "error", text: message(failure) });
     } finally {

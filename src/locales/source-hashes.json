@@ -13580,7 +13580,7 @@
       "usage.cap.title": "c5c8127122ec6a5a8529b2c809172dc8eee5c3bb8531a829153cfb2c6f29bf21",
       "usage.cap.monthly": "4d4578b6f9235495c877b80ea1fa63acb12ab19975e163d150a406124852bb8b",
       "usage.cap.spent": "270e8d382aeda7290d29cc7e6f37b4a8346a0648c1d86f73d85455affca3a9c6",
-      "usage.cap.reached": "39c9ccab9dd0dd6a0f0402547a1c7e0d2517c7bfb458f1a9c8b39dfb169552c2",
+      "usage.cap.reached": "83ba3cc701b38d1b9378b69d379ae7c2b032609257baee7afd2f5614d06bbea3",
       "usage.cap.nearing": "26581fa5409b586252838764b67f9a69aaf6e4ad208955f530428b3f38d08b23",
       "usage.cap.within": "08cd544ebb398fa7ff07728cbfe7acc6edc3cfb9ea659e64ba949686045440f4",
       "usage.cap.none": "6462228d4e492f17dedbc81d0585b61b6848510ac83344564b030f4bd45478c6",
@@ -13591,13 +13591,14 @@
       "usage.cap.raise": "7a1056da1b3a55679896dc3be636302b078d4c00cc60a547650f4cdd499151ed",
       "usage.cap.set": "9f3e46f4440e81c6ed4d7423820e8c53fa6d22708a3660c2f831aedd7df8441a",
       "usage.cap.invalid": "f9c23d62fc80159682372d43858e783354ceafb69a4840833a41a5810b63b116",
-      "usage.cap.hint": "f3104c46665a97a6d0f7aaaa85362281a3ec3afe9f42891371580853d40e0e01",
+      "usage.cap.hint": "54f15de0c864dbb33e68ea376b158fe36e0a4cdb9f8888e53931cc0e2a18dcf5",
       "myConnections.preferences.title": "3cdbf95055f16486c1f6480f975f5790c993dc978a482482142f2720ba0a62a0",
-      "myConnections.preferences.subtitle": "e4eb88c61c18ab2167a2b0299c9967f26a36e98450779fd528266325d6948985",
+      "myConnections.preferences.subtitle": "bc9bbac53e2dc65d44fa4bea01145c68898433416c99f0cd12da1f5d813386da",
       "myConnections.preferences.clear": "4d7c8e08b05bf44608bfe0b695b1bfa5d073eb1322b00d12f6ab3e33f724d154",
-      "myConnections.preferences.confirm": "acd187ae95522c443c0ed5995c8597d3dd5b524da329ea4f0e9a2994f69bd043",
-      "myConnections.preferences.cleared": "15f3a2898addfc6c5c4c3795f83a5211e2a895ad7df243746aeeefd4f070f574",
-      "microphone.promptUnanswered": "d49c788932a4c7f1a92d1155131242eed8b599e9e325551f7dbf67ba6ba50991"
+      "myConnections.preferences.confirm": "cfa7fd9cb926f297154eab11466661bbe8c86b2ccb082b828d32c5b4aea4ec25",
+      "myConnections.preferences.cleared": "603163d3e5e3c829aff1759a8e3486cf25149a338e046a3094ddba63fcfc7496",
+      "myConnections.preferences.nothing": "e9ffd1e117a2d5a984993e91df26c8a3f297cdd1de853eccf38037ad65f9bcb9",
+      "microphone.waitingForPermission": "09cf80355f18b85550de5e898a5929a84de87ae9d42aec72d53a06f43c24e129"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
