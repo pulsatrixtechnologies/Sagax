@@ -44,6 +44,7 @@ export function RemoteSessionActions({ botId, view, onTakeControl }: { botId: st
   const [browser, setBrowser] = useState<RemoteBrowserMode | null>(null);
   const [browserError, setBrowserError] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [conflict, setConflict] = useState(false);
   const live = view.state === "connected";
 
   const shell = async () => {
@@ -70,18 +71,29 @@ export function RemoteSessionActions({ botId, view, onTakeControl }: { botId: st
   const closeBrowser = () => {
     setBrowser(null);
     setBrowserError(null);
+    setConflict(false);
     setFile(null);
   };
 
-  const transfer = async (path: string) => {
+  const transfer = async (path: string, overwrite = false) => {
     if (!browser || pending) return;
     const kind = browser.kind;
     setPending(kind);
     setBrowserError(null);
-    const failed = kind === "upload"
-      ? (file ? await uploadRemoteFile(botId, view.id, file, path) : t("remoteSession.browser.tooLarge"))
-      : await downloadRemoteFile(botId, view.id, path);
-    setPending(null);
+    let failed: string | null = null;
+    if (kind === "upload") {
+      const refused = file ? await uploadRemoteFile(botId, view.id, file, { dir: path, overwrite }) : { error: t("remoteSession.browser.tooLarge") };
+      setPending(null);
+      if (refused?.code === "exists") {
+        // the browser asks whether to replace it, naming the file and folder
+        setConflict(true);
+        return;
+      }
+      failed = refused?.error ?? null;
+    } else {
+      failed = await downloadRemoteFile(botId, view.id, path);
+      setPending(null);
+    }
     if (failed) {
       setBrowserError(failed);
       return;
@@ -146,7 +158,9 @@ export function RemoteSessionActions({ botId, view, onTakeControl }: { botId: st
           mode={browser}
           busy={busy}
           error={browserError}
-          onPick={(path) => void transfer(path)}
+          conflict={conflict}
+          onPick={(path, overwrite) => void transfer(path, overwrite)}
+          onBack={() => { setConflict(false); setBrowserError(null); }}
           onClose={closeBrowser}
         />
       )}

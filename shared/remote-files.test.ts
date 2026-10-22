@@ -4,6 +4,8 @@ import {
   parseRemoteListing,
   REMOTE_LIST_MAX,
   remoteCrumbs,
+  scpSafePath,
+  sensitiveRemoteDir,
   remoteJoin,
   remoteParent,
   safeRemoteDir,
@@ -38,6 +40,12 @@ describe("safeRemoteDir", () => {
     for (const bad of ["home/usager", "~/Documents", "/tmp/../etc", "/a\tb", "C:\\Users"]) {
       expect(safeRemoteDir(bad, "linux")).toBeNull();
     }
+  });
+
+  it("keeps leading and trailing spaces inside folder names", () => {
+    expect(safeRemoteDir("/home/usager/ dossier /notes ", "linux")).toBe("/home/usager/ dossier /notes ");
+    expect(safeRemoteDir("C:\\Users\\ espace ", "windows")).toBe("C:\\Users\\ espace ");
+    expect(safeRemoteDir(" C:\\Users", "windows")).toBeNull();
   });
 
   it("refuses an address-shaped path and a path over 400 characters", () => {
@@ -148,5 +156,36 @@ describe("parseRemoteListing", () => {
     expect(parseRemoteListing("ERR\tdenied\n", "linux")).toEqual({ error: "denied" });
     expect(parseRemoteListing("", "linux")).toEqual({ error: "unreadable" });
     expect(parseRemoteListing("PWD\trelative/path\n", "linux")).toEqual({ error: "unreadable" });
+  });
+});
+
+describe("transfer safety", () => {
+  it("accepts plain paths for scp and refuses shell or glob characters", () => {
+    for (const ok of ["C:\\Users\\usager\\Documents", "/home/usager/Rapports 2026", "C:\\Program Files (x86)\\App", "/tmp/a-b_c.d"]) {
+      expect(scpSafePath(ok)).toBe(true);
+    }
+    for (const bad of ["/tmp/$(id)", "/tmp/`id`", "/tmp/a;b", "/tmp/it's", "/tmp/\"x\"", "/tmp/*", "/tmp/a?", "/tmp/a|b", "/tmp/a&b", "/tmp/a>b", "/tmp/a\nb", "C:\\%TEMP%", "C:\\a!b"]) {
+      expect(scpSafePath(bad)).toBe(false);
+    }
+  });
+
+  it("names the system folders a file must never be dropped into", () => {
+    const windows = [
+      "C:\\Windows",
+      "C:\\Windows\\System32",
+      "c:\\windows\\system32\\drivers\\etc",
+      "C:\\Users\\usager\\.ssh",
+      "C:\\Users\\usager\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+      "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\StartUp",
+    ];
+    for (const dir of windows) expect(sensitiveRemoteDir(dir, "windows")).toBe(true);
+    const unix = [
+      "/etc", "/etc/cron.d", "/home/usager/.ssh", "/root/.ssh", "/Users/usager/Library/LaunchAgents",
+      "/Library/LaunchDaemons", "/System/Library/LaunchDaemons", "/var/spool/cron/crontabs", "/var/at/tabs", "/usr/lib/cron",
+      "/etc/systemd/system", "/home/usager/.config/systemd/user", "/home/usager/.config/autostart",
+    ];
+    for (const dir of unix) expect(sensitiveRemoteDir(dir, dir.startsWith("/Users") || dir.startsWith("/Library") || dir.startsWith("/System") ? "macos" : "linux")).toBe(true);
+    for (const dir of ["C:\\Users\\usager\\Documents", "D:\\Partage", "C:\\Users\\usager\\Windows notes"]) expect(sensitiveRemoteDir(dir, "windows")).toBe(false);
+    for (const dir of ["/home/usager", "/home/usager/etc", "/Users/usager/Desktop", "/tmp"]) expect(sensitiveRemoteDir(dir, "linux")).toBe(false);
   });
 });

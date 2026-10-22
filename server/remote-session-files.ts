@@ -12,24 +12,32 @@ const b64 = (text: string) => Buffer.from(text, "utf8").toString("base64");
 
 const shQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
 
-// $1 is the folder, base64. Hidden entries (dot files) are left out.
+const UNIX_DECODE = "p=$(printf %s \"$1\" | base64 -d 2>/dev/null || printf %s \"$1\" | base64 -D 2>/dev/null)";
+
+// $1 is the folder, base64. Hidden entries (dot files) are left out. Folders
+// are listed in a first pass and files in a second, each in name order, so
+// the cap cuts files before it ever cuts a folder.
 const UNIX_SCRIPT = [
-  "p=$(printf %s \"$1\" | base64 -d 2>/dev/null || printf %s \"$1\" | base64 -D 2>/dev/null)",
+  UNIX_DECODE,
   "[ -n \"$p\" ] || p=\"$HOME\"",
   "[ -e \"$p\" ] || { printf 'ERR\\tnotfound\\n'; exit 0; }",
   "[ -d \"$p\" ] || { printf 'ERR\\tnotdir\\n'; exit 0; }",
   "cd -- \"$p\" 2>/dev/null || { printf 'ERR\\tdenied\\n'; exit 0; }",
   "[ -r . ] || { printf 'ERR\\tdenied\\n'; exit 0; }",
   "printf 'PWD\\t%s\\nHOME\\t%s\\nROOT\\t/\\n' \"$(pwd -P)\" \"$HOME\"",
-  "T=$(printf '\\t'); NL=$(printf '\\nx'); NL=${NL%x}; n=0",
-  "for f in *; do",
-  "  [ -e \"$f\" ] || [ -L \"$f\" ] || continue",
-  "  case \"$f\" in *\"$T\"*|*\"$NL\"*) continue;; esac",
-  `  n=$((n+1)); if [ "$n" -gt ${REMOTE_LIST_MAX} ]; then printf 'MORE\\n'; break; fi`,
-  "  if [ -d \"$f\" ]; then k=d; else k=f; fi",
-  "  st=$(stat -L -c '%s %Y' -- \"$f\" 2>/dev/null || stat -L -f '%z %m' -- \"$f\" 2>/dev/null)",
-  "  case \"$st\" in *' '*) sz=${st% *}; mt=${st#* };; *) sz=; mt=;; esac",
-  "  printf '%s\\t%s\\t%s\\t%s\\n' \"$k\" \"$sz\" \"$mt\" \"$f\"",
+  "T=$(printf '\\t'); NL=$(printf '\\nx'); NL=${NL%x}; n=0; more=",
+  "for pass in d f; do",
+  "  [ -n \"$more\" ] && break",
+  "  for f in *; do",
+  "    [ -e \"$f\" ] || [ -L \"$f\" ] || continue",
+  "    case \"$f\" in *\"$T\"*|*\"$NL\"*) continue;; esac",
+  "    if [ -d \"$f\" ]; then k=d; else k=f; fi",
+  "    [ \"$k\" = \"$pass\" ] || continue",
+  `    n=$((n+1)); if [ "$n" -gt ${REMOTE_LIST_MAX} ]; then printf 'MORE\\n'; more=1; break; fi`,
+  "    st=$(stat -L -c '%s %Y' -- \"$f\" 2>/dev/null || stat -L -f '%z %m' -- \"$f\" 2>/dev/null)",
+  "    case \"$st\" in *' '*) sz=${st% *}; mt=${st#* };; *) sz=; mt=;; esac",
+  "    printf '%s\\t%s\\t%s\\t%s\\n' \"$k\" \"$sz\" \"$mt\" \"$f\"",
+  "  done",
   "done",
 ].join("\n");
 
@@ -47,6 +55,7 @@ function windowsScript(pathB64: string): string {
     "\"HOME`t\"+$env:USERPROFILE",
     "foreach($d in [IO.DriveInfo]::GetDrives()){if($d.IsReady){\"ROOT`t\"+$d.Name}}",
     "$e=0",
+    "$items=@($items|Where-Object{$_.PSIsContainer}|Sort-Object Name)+@($items|Where-Object{-not $_.PSIsContainer}|Sort-Object Name)",
     "foreach($c in $items){",
     ` $e++; if($e -gt ${REMOTE_LIST_MAX}){'MORE';break}`,
     " $m=[int64](($c.LastWriteTimeUtc-[datetime]'1970-01-01').TotalSeconds)",
@@ -64,6 +73,29 @@ export function listDirCommand(os: RemoteSessionOs, dir: string): string {
     return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`;
   }
   return `sh -c ${shQuote(UNIX_SCRIPT)} sagax-ls ${pathB64 || "''"}`;
+}
+
+/** Asks whether `file` (already validated) exists, as `yes` or `no`. A
+ * broken link counts as there: scp would write through it. */
+export function existsCommand(os: RemoteSessionOs, file: string): string {
+  const pathB64 = b64(file);
+  if (os === "windows") {
+    const script = [
+      "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)",
+      `$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${pathB64}'))`,
+      "if(Test-Path -LiteralPath $p){'yes'}else{'no'}",
+    ].join("\n");
+    return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, "utf16le").toString("base64")}`;
+  }
+  const script = [UNIX_DECODE, "if [ -e \"$p\" ] || [ -L \"$p\" ]; then printf yes; else printf no; fi"].join("\n");
+  return `sh -c ${shQuote(script)} sagax-exists ${pathB64}`;
+}
+
+/** true / false, or null when the computer did not say. */
+export function readExists(result: CommandResult | null): boolean | null {
+  if (!result || result.code !== 0) return null;
+  const answer = result.stdout.trim();
+  return answer === "yes" ? true : answer === "no" ? false : null;
 }
 
 /** `ssh` exits 255 when the tunnel itself failed. */

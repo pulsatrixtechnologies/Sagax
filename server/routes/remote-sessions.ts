@@ -17,6 +17,7 @@ import type { RouteHandler } from "./table.ts";
 import type { InternalRouteHandler } from "./internal-route.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import type { PublishRemoteSession, RemoteSessionService } from "../remote-sessions.ts";
+import { remoteCallerIsAgent } from "./remote-session-files.ts";
 
 const LIST = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions$/;
 const ONE = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions\/([a-f0-9]{12})(?:\/(close|focus|shell|upload|download|screen))?$/;
@@ -116,7 +117,7 @@ export function createRemoteSessionRoutes(deps: {
       return json(res, 200, { hostLabel: opened.hostLabel, messageId: opened.messageId });
     }
     if (action === "upload" && method === "POST") {
-      let body: { name?: unknown; dataBase64?: unknown; dir?: unknown };
+      let body: { name?: unknown; dataBase64?: unknown; dir?: unknown; overwrite?: unknown };
       try {
         body = await readJson(req, UPLOAD_JSON_MAX);
       } catch (error) {
@@ -132,10 +133,22 @@ export function createRemoteSessionRoutes(deps: {
       } catch {
         return json(res, 400, { error: "Choose a file to send." });
       }
-      // the folder chosen in the remote file browser, if any (checked by the service)
+      // the folder chosen in the remote file browser (checked by the service),
+      // and overwrite: the person confirmed replacing a file already there
       if (body.dir !== undefined && typeof body.dir !== "string") return json(res, 400, { error: "That folder cannot receive a file." });
-      const sent = await deps.sessions.upload(principalId, botId, id, name, bytes, body.dir);
-      if ("error" in sent) return json(res, 409, { error: sent.error });
+      if (body.overwrite !== undefined && typeof body.overwrite !== "boolean") return json(res, 400, { error: "overwrite must be true or false." });
+      if (remoteCallerIsAgent(req, auth) && (body.dir !== undefined || body.overwrite === true)) {
+        return json(res, 403, { error: "A bot sends files only to the transfer folder and never replaces one. Ask the person to choose another folder in the remote session card." });
+      }
+      const sent = await deps.sessions.upload(principalId, botId, id, name, bytes, {
+        ...(body.dir !== undefined ? { dir: body.dir } : {}),
+        ...(body.overwrite === true ? { overwrite: true } : {}),
+      });
+      if ("error" in sent) {
+        if (sent.code === "sensitive") return json(res, 403, { error: sent.error, code: "sensitive" });
+        if (sent.code === "exists") return json(res, 409, { error: sent.error, code: "exists" });
+        return json(res, 409, { error: sent.error });
+      }
       return json(res, 200, sent);
     }
     if (action === "download" && method === "POST") {

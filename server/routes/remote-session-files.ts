@@ -2,10 +2,27 @@
 // remote computer for the person who owns the session, read only. The path
 // comes in the body (not the URL, so it stays out of access logs); the tunnel
 // address, the node key and the session id never come back.
+import type { IncomingMessage } from "node:http";
+
 import { PASS } from "./table.ts";
 import type { RouteHandler } from "./table.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import type { RemoteSessionService } from "../remote-sessions.ts";
+
+/** Set by performBotActRoute (server/index.ts) on every request a bot makes
+ * through `act`. It only ever narrows what a request may do, so it needs no
+ * secret: a caller that adds it restricts itself. */
+export const BOT_ACT_ROUTE_HEADER = "x-sagax-bot-act";
+
+/** A bot or a tool calls, not the person at the screen: a bot's `act` call,
+ * a short-lived session copy (bot act, member API), or a loopback caller that
+ * is a bot's shell on a shared server. Such a caller may upload only into the
+ * transfer folder and never replace a file. */
+export function remoteCallerIsAgent(req: Pick<IncomingMessage, "headers">, auth: RequestAuth): boolean {
+  if (req.headers[BOT_ACT_ROUTE_HEADER] !== undefined) return true;
+  if (auth.kind === "session") return auth.session.ephemeral === true;
+  return auth.trust === "service";
+}
 
 const LS = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions\/([a-f0-9]{12})\/ls$/;
 

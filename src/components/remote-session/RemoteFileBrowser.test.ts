@@ -49,12 +49,15 @@ const LISTINGS: Record<string, RemoteListing> = {
     entries: [{ name: "contrat signé.pdf", kind: "file", size: 512_000 }],
   },
   "C:\\Users": { path: "C:\\Users", parent: "C:\\", home: HOME, roots: ["C:\\", "D:\\"], truncated: false, entries: [{ name: "usager", kind: "dir" }] },
+  "C:\\Windows": { path: "C:\\Windows", parent: "C:\\", home: HOME, roots: ["C:\\"], truncated: false, entries: [{ name: "System32", kind: "dir" }] },
+  "C:\\Users\\usager\\O'Brien": { path: "C:\\Users\\usager\\O'Brien", parent: HOME, home: HOME, roots: ["C:\\"], truncated: false, entries: [] },
   "D:\\": { path: "D:\\", parent: null, home: HOME, roots: ["C:\\", "D:\\"], truncated: true, entries: [{ name: "Partage", kind: "dir" }] },
 };
 
 let host: HTMLDivElement;
 let root: Root;
 let calls: Array<{ action: string; body: Record<string, unknown> }>;
+let existing: Set<string>;
 
 const respond = (body: unknown, status = 200, type = "application/json") =>
   new Response(typeof body === "string" ? body : JSON.stringify(body), { status, headers: { "content-type": type } });
@@ -62,6 +65,7 @@ const respond = (body: unknown, status = 200, type = "application/json") =>
 beforeEach(() => {
   setLocale("fr");
   calls = [];
+  existing = new Set();
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const action = url.split("/").pop() ?? "";
@@ -71,7 +75,10 @@ beforeEach(() => {
       const path = String(body.path || HOME);
       return LISTINGS[path] ? respond(LISTINGS[path]) : respond({ error: "That folder does not exist on the remote computer." }, 404);
     }
-    if (action === "upload") return respond({ name: body.name });
+    if (action === "upload") {
+      if (!body.overwrite && existing.has(`${String(body.dir)}\\${String(body.name)}`)) return respond({ error: `${String(body.name)} is already in that folder.`, code: "exists" }, 409);
+      return respond({ name: body.name });
+    }
     if (action === "download") return new Response("bytes", { headers: { "content-type": "application/octet-stream", "content-disposition": 'attachment; filename="contrat signé.pdf"' } });
     return respond({});
   }));
@@ -227,6 +234,13 @@ describe("remote file browser: upload", () => {
     await click("[data-remote-entry=dir][data-name=Documents]");
     expect($("[data-remote-destination]")?.textContent).toContain(DOCS);
     await click("[data-remote-browser-pick]");
+    // a confirmation names the file and the folder before anything is sent
+    expect(calls.at(-1)?.action).toBe("ls");
+    expect($("[data-remote-confirm]")?.getAttribute("data-remote-confirm")).toBe("send");
+    expect($("[data-remote-confirm]")!.textContent).toContain(t("remoteSession.browser.confirmSend", { name: "facture octobre.pdf" }));
+    expect($("[data-remote-confirm-path]")!.textContent).toBe(DOCS);
+    expect($<HTMLButtonElement>("[data-remote-browser-up]")!.disabled).toBe(true);
+    await click("[data-remote-confirm-go]");
     expect(calls.at(-1)).toEqual({ action: "upload", body: { name: "facture octobre.pdf", dataBase64: "…", dir: DOCS } });
     expect(dialog()).toBeNull();
     expect(document.body.textContent).toContain(t("remoteSession.sent", { name: "facture octobre.pdf" }));
@@ -245,10 +259,78 @@ describe("remote file browser: upload", () => {
   it("keeps the browser open with the reason when the transfer fails", async () => {
     act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view })));
     await chooseLocalFile(new File(["pdf"], "a.pdf"));
-    vi.mocked(fetch).mockImplementationOnce(async () => respond({ error: "That folder cannot receive a file." }, 409));
     await click("[data-remote-browser-pick]");
+    vi.mocked(fetch).mockImplementationOnce(async () => respond({ error: "That folder cannot receive a file." }, 409));
+    await click("[data-remote-confirm-go]");
     expect(dialog()).not.toBeNull();
     expect(dialog()!.textContent).toContain("That folder cannot receive a file.");
+  });
+});
+
+describe("remote file browser: replace and refused folders", () => {
+  it("asks before replacing a file already there, naming it and its folder, then sends overwrite", async () => {
+    existing.add(`${HOME}\\notes.txt`);
+    act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view })));
+    await chooseLocalFile(new File(["x"], "notes.txt"));
+    await click("[data-remote-browser-pick]");
+    await click("[data-remote-confirm-go]");
+    expect(calls.at(-1)).toEqual({ action: "upload", body: { name: "notes.txt", dataBase64: "…", dir: HOME } });
+    expect($("[data-remote-confirm]")?.getAttribute("data-remote-confirm")).toBe("replace");
+    expect($("[data-remote-confirm]")!.textContent).toContain(t("remoteSession.browser.confirmReplace", { name: "notes.txt" }));
+    expect($("[data-remote-confirm-path]")!.textContent).toBe(HOME);
+    expect($("[data-remote-confirm-go]")!.textContent).toContain(t("remoteSession.browser.replace"));
+
+    // Retour goes back to browsing, nothing replaced
+    const back = [...dialog()!.querySelectorAll("button")].find((button) => button.textContent === t("remoteSession.browser.back"))!;
+    await act(async () => { back.click(); });
+    await settle();
+    expect($("[data-remote-confirm]")).toBeNull();
+    expect(calls.filter((call) => call.action === "upload")).toHaveLength(1);
+
+    await click("[data-remote-browser-pick]");
+    await click("[data-remote-confirm-go]");
+    await click("[data-remote-confirm-go]");
+    expect(calls.at(-1)).toEqual({ action: "upload", body: { name: "notes.txt", dataBase64: "…", dir: HOME, overwrite: true } });
+    expect(dialog()).toBeNull();
+  });
+
+  it("refuses a system folder and a folder name scp cannot carry, before any confirmation", async () => {
+    act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view })));
+    await chooseLocalFile(new File(["x"], "a.txt"));
+    // the next listing the browser asks for answers this folder
+    const open = async (path: string) => {
+      vi.mocked(fetch).mockImplementationOnce(async () => respond(LISTINGS[path]));
+      await click("[data-remote-browser-home]");
+    };
+    await open("C:\\Windows");
+    expect($("[data-remote-dest-note]")?.textContent).toBe(t("remoteSession.browser.systemFolder"));
+    expect($<HTMLButtonElement>("[data-remote-browser-pick]")!.disabled).toBe(true);
+    await open("C:\\Users\\usager\\O'Brien");
+    expect($("[data-remote-dest-note]")?.textContent).toBe(t("remoteSession.browser.unsafeName"));
+    expect($<HTMLButtonElement>("[data-remote-browser-pick]")!.disabled).toBe(true);
+    expect(calls.some((call) => call.action === "upload")).toBe(false);
+  });
+
+  it("locks the stale listing after a failed folder: no parent, no breadcrumb", async () => {
+    act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view })));
+    await click("[data-remote-action=download]");
+    vi.mocked(fetch).mockImplementationOnce(async () => respond({ error: "The remote computer did not answer. Try again in a moment." }, 409));
+    await click("[data-remote-entry=dir][data-name=Documents]");
+    expect(dialog()?.querySelector("[role=alert]")).not.toBeNull();
+    expect($<HTMLButtonElement>("[data-remote-browser-up]")!.disabled).toBe(true);
+    for (const crumb of document.querySelectorAll<HTMLButtonElement>("[data-remote-crumb]")) expect(crumb.disabled).toBe(true);
+    expect($<HTMLButtonElement>("[data-remote-browser-home]")!.disabled).toBe(false);
+    expect($("nav")!.getAttribute("title")).toBe(HOME);
+  });
+
+  it("keeps the focus in the window after a folder opens, so Escape still closes it", async () => {
+    act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view })));
+    await click("[data-remote-action=download]");
+    $("[data-remote-entry=dir][data-name=Documents]")!.focus();
+    await click("[data-remote-entry=dir][data-name=Documents]");
+    expect(dialog()!.contains(document.activeElement)).toBe(true);
+    await act(async () => { document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); });
+    expect(dialog()).toBeNull();
   });
 });
 

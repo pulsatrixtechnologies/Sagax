@@ -16,8 +16,9 @@ import { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
 import type { RunCommand } from "./remote-session-probe.ts";
 import { rememberSession } from "./remote-support-local.ts";
-import { listDirCommand, readListing } from "./remote-session-files.ts";
-import { createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
+import { existsCommand, listDirCommand, readExists, readListing } from "./remote-session-files.ts";
+import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes, remoteCallerIsAgent } from "./routes/remote-session-files.ts";
+import { createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import { dispatchRoutes } from "./routes/table.ts";
 
 const ADDRESS = "tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd";
@@ -98,6 +99,48 @@ describe("listDirCommand", () => {
     expect(readListing({ code: 0, stdout: await run(path.join(root, "nope")), stderr: "" }, os)).toMatchObject({ status: 404 });
     expect(readListing({ code: 0, stdout: await run(path.join(odd, "notes à lire.txt")), stderr: "" }, os)).toMatchObject({ status: 400 });
   });
+  it.skipIf(process.platform === "win32")("keeps folders first when a folder holds more than the cap", async () => {
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    const root = temp("sagax-cap-");
+    for (let i = 0; i < 505; i++) writeFileSync(path.join(root, `a-${String(i).padStart(4, "0")}.txt`), "");
+    mkdirSync(path.join(root, "zz-dossier"));
+    const stdout = await new Promise<string>((resolve) => {
+      execFile("/bin/sh", ["-c", listDirCommand(os, root)], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (_error, out) => resolve(out));
+    });
+    const listed = readListing({ code: 0, stdout, stderr: "" }, os);
+    if (!("listing" in listed)) throw new Error(listed.error);
+    expect(listed.listing.truncated).toBe(true);
+    expect(listed.listing.entries[0]).toMatchObject({ name: "zz-dossier", kind: "dir" });
+    expect(listed.listing.entries).toHaveLength(500);
+  }, 30_000);
+});
+
+describe("existsCommand", () => {
+  it("asks Windows with an encoded Test-Path that holds only base64", () => {
+    const path = "C:\\Users\\O'Brien\\a.txt\"; Remove-Item C:\\";
+    const script = decodeWindows(existsCommand("windows", path));
+    expect(script).toContain("Test-Path -LiteralPath");
+    expect(script).not.toContain("Remove-Item");
+    expect(readExists({ code: 0, stdout: "yes\r\n", stderr: "" })).toBe(true);
+    expect(readExists({ code: 0, stdout: "no", stderr: "" })).toBe(false);
+    expect(readExists({ code: 255, stdout: "", stderr: "" })).toBeNull();
+    expect(readExists(null)).toBeNull();
+    expect(readExists({ code: 0, stdout: "maybe", stderr: "" })).toBeNull();
+  });
+
+  it.skipIf(process.platform === "win32")("answers for a real file, a broken link and a missing one, and runs nothing it was given", async () => {
+    const os = process.platform === "darwin" ? "macos" : "linux";
+    const root = temp("sagax-exists-");
+    writeFileSync(path.join(root, "there $(touch pwned).txt"), "x");
+    symlinkSync(path.join(root, "nowhere"), path.join(root, "lien"));
+    const ask = (file: string) => new Promise<boolean | null>((resolve) => {
+      execFile("/bin/sh", ["-c", existsCommand(os, file)], { cwd: root, encoding: "utf8" }, (_error, stdout) => resolve(readExists({ code: 0, stdout, stderr: "" })));
+    });
+    expect(await ask(path.join(root, "there $(touch pwned).txt"))).toBe(true);
+    expect(await ask(path.join(root, "lien"))).toBe(true);
+    expect(await ask(path.join(root, "absent.txt"))).toBe(false);
+    expect(existsSync(path.join(root, "pwned"))).toBe(false);
+  });
 });
 
 describe("readListing", () => {
@@ -149,16 +192,31 @@ async function connected(run: RunCommand, os: "windows" | "linux" = "windows") {
 
 const WINDOWS_LISTING = "PWD\tC:\\Users\\usager\r\nHOME\tC:\\Users\\usager\r\nROOT\tC:\\\r\nROOT\tD:\\\r\nd\t0\t1761051600\tDocuments\r\nf\t2048\t1761051600\trapport.pdf\r\n";
 
-/** Answers the listing command, records every command and copy. */
-function recorder() {
+const TRANSFER = "C:\\Users\\usager\\AppData\\Local\\Temp\\sagax-transfer";
+
+/** The path a listing or exists command carries, decoded. */
+function carriedPath(command: string): string {
+  const script = command.includes("-EncodedCommand") ? decodeWindows(command) : command;
+  const b64 = /FromBase64String\('([A-Za-z0-9+/=]*)'\)/.exec(script)?.[1] ?? / sagax-(?:ls|exists) ([A-Za-z0-9+/=]+)$/.exec(command)?.[1] ?? "";
+  return Buffer.from(b64, "base64").toString("utf8");
+}
+
+/** Answers the listing, exists and transfer-folder commands; records every
+ * command and copy. `existing` are the remote files already there. */
+function recorder(existing: Set<string> = new Set()) {
   const commands: string[][] = [];
   const run: RunCommand = async (argv) => {
     commands.push(argv);
     const last = argv.at(-1) ?? "";
+    if (argv[1] === "cp") return { code: 0, stdout: "", stderr: "" };
+    if (last.includes("sagax-transfer") && !last.includes("-EncodedCommand")) return { code: 0, stdout: `${TRANSFER}\r\n`, stderr: "" };
+    const script = last.includes("-EncodedCommand") ? decodeWindows(last) : last;
+    if (script.includes("Test-Path") || script.includes("sagax-exists")) return { code: 0, stdout: existing.has(carriedPath(last)) ? "yes" : "no", stderr: "" };
     if (last.includes("-EncodedCommand")) return { code: 0, stdout: WINDOWS_LISTING, stderr: "" };
     return { code: 0, stdout: "", stderr: "" };
   };
-  return { run, commands };
+  const copies = () => commands.filter((argv) => argv[1] === "cp");
+  return { run, commands, copies };
 }
 
 describe("the session's listDir and upload destination", () => {
@@ -197,36 +255,76 @@ describe("the session's listDir and upload destination", () => {
     expect(await svc.listDir(A, BOT, ID, "")).toMatchObject({ status: 403 });
   });
 
-  it("sends a file into the folder the person chose, without asking for the transfer folder", async () => {
-    const { run, commands } = recorder();
+  it("sends a file into the folder the person chose, after checking nothing is there", async () => {
+    const { run, commands, copies } = recorder();
     const svc = await connected(run);
     commands.length = 0;
-    expect(await svc.upload(A, BOT, ID, "rapport.pdf", Buffer.from("pdf"), "D:/Partage")).toEqual({ name: "rapport.pdf" });
-    expect(commands).toHaveLength(1);
-    expect(commands[0]![1]).toBe("cp");
-    expect(commands[0]!.at(-1)).toBe(`${ADDRESS}:D:\\Partage\\rapport.pdf`);
+    expect(await svc.upload(A, BOT, ID, "rapport.pdf", Buffer.from("pdf"), { dir: "D:/Partage" })).toEqual({ name: "rapport.pdf" });
+    expect(commands.map((argv) => carriedPath(argv.at(-1) ?? ""))[0]).toBe("D:\\Partage\\rapport.pdf");
+    expect(copies()).toHaveLength(1);
+    expect(copies()[0]!.at(-1)).toBe(`${ADDRESS}:D:\\Partage\\rapport.pdf`);
   });
 
-  it("refuses a bad destination, and keeps the 8 MB limit", async () => {
+  it("never replaces a file that is already there unless asked to", async () => {
+    const { run, copies } = recorder(new Set(["D:\\Partage\\rapport.pdf", `${TRANSFER}\\notes.txt`]));
+    const svc = await connected(run);
+    expect(await svc.upload(A, BOT, ID, "rapport.pdf", Buffer.from("pdf"), { dir: "D:\\Partage" })).toEqual({ error: expect.stringContaining("already"), code: "exists" });
+    expect(await svc.upload(A, BOT, ID, "notes.txt", Buffer.from("x"))).toMatchObject({ code: "exists" });
+    expect(copies()).toEqual([]);
+    expect(await svc.upload(A, BOT, ID, "rapport.pdf", Buffer.from("pdf"), { dir: "D:\\Partage", overwrite: true })).toEqual({ name: "rapport.pdf" });
+    expect(copies()).toHaveLength(1);
+  });
+
+  it("refuses when it cannot tell whether the file is there", async () => {
+    const svc = await connected(async (argv) => {
+      const last = argv.at(-1) ?? "";
+      const script = last.includes("-EncodedCommand") ? decodeWindows(last) : last;
+      if (script.includes("Test-Path")) return { code: 255, stdout: "", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.from("x"), { dir: "C:\\Partage" })).toEqual({ error: expect.any(String) });
+  });
+
+  it("refuses system folders, scp-unsafe folders and bad destinations, and keeps the 8 MB limit", async () => {
     const { run, commands } = recorder();
     const svc = await connected(run);
     commands.length = 0;
-    expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.from("x"), "..\\x")).toEqual({ error: expect.any(String) });
-    expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.alloc(8 * 1024 * 1024 + 1), "C:\\")).toEqual({ error: "The file must be under 8 MB." });
-    expect(await svc.upload(B, BOT, ID, "a.txt", Buffer.from("x"), "C:\\")).toEqual({ error: "That remote session is not open." });
+    for (const dir of ["C:\\Windows\\System32", "C:\\Users\\usager\\.ssh", "C:\\Users\\usager\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"]) {
+      expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.from("x"), { dir })).toEqual({ error: expect.any(String), code: "sensitive" });
+    }
+    for (const dir of ["C:\\Users\\O'Brien", "C:\\a$b", "C:\\a;b", "C:\\a`b", "C:\\*", "C:\\%TEMP%"]) {
+      expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.from("x"), { dir })).toEqual({ error: expect.any(String) });
+    }
+    expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.from("x"), { dir: "..\\x" })).toEqual({ error: expect.any(String) });
+    expect(await svc.upload(A, BOT, ID, "a.txt", Buffer.alloc(8 * 1024 * 1024 + 1), { dir: "C:\\" })).toEqual({ error: "The file must be under 8 MB." });
+    expect(await svc.upload(B, BOT, ID, "a.txt", Buffer.from("x"), { dir: "C:\\" })).toEqual({ error: "That remote session is not open." });
+    expect(commands).toEqual([]);
+  });
+
+  it("refuses to download a path scp could read as shell", async () => {
+    const { run, commands } = recorder();
+    const svc = await connected(run);
+    commands.length = 0;
+    expect(await svc.download(A, BOT, ID, "C:\\Users\\$(calc).txt")).toEqual({ error: expect.any(String) });
     expect(commands).toEqual([]);
   });
 });
 
-async function serve(sessions: Parameters<typeof createRemoteSessionFileRoutes>[0]["sessions"]) {
-  const routes = [createRemoteSessionFileRoutes({
-    sessions,
-    principalId: (auth) => (auth.kind === "session" ? auth.session.principalId : undefined),
-  })];
+type Sessions = Parameters<typeof createRemoteSessionFileRoutes>[0]["sessions"] & Partial<Parameters<typeof createRemoteSessionRoutes>[0]["sessions"]>;
+
+async function serve(sessions: Sessions) {
+  const principalId = (auth: { kind: string; session?: { principalId?: string } }) => (auth.kind === "session" ? auth.session?.principalId : undefined);
+  const routes = [
+    createRemoteSessionFileRoutes({ sessions, principalId }),
+    createRemoteSessionRoutes({ sessions: sessions as never, principalId }),
+  ];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const who = req.headers["x-viewer"];
-    const auth = typeof who === "string" ? { kind: "session", scopes: ["admin"], session: { id: who, principalId: who } } : { kind: "loopback", scopes: ["admin"] };
+    const botCopy = req.headers["x-test-bot-copy"] === "1";
+    const auth = typeof who === "string"
+      ? { kind: "session", via: "bearer", scopes: ["admin"], session: { id: who, principalId: who, ...(botCopy ? { ephemeral: true, label: "Bot act" } : {}) } }
+      : { kind: "loopback", scopes: ["admin"] };
     const handled = await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth: auth as never, json, readBody });
     if (!handled) json(res, 404, { from: "inline routes" });
   });
@@ -234,6 +332,57 @@ async function serve(sessions: Parameters<typeof createRemoteSessionFileRoutes>[
   await new Promise<void>((ready) => server.listen(0, "127.0.0.1", ready));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
+
+describe("remoteCallerIsAgent", () => {
+  it("knows a bot's act call from the person at the screen", () => {
+    const req = (headers: Record<string, string>) => ({ headers }) as never;
+    const person = { kind: "session", session: { id: "s", principalId: A } } as never;
+    expect(remoteCallerIsAgent(req({}), person)).toBe(false);
+    expect(remoteCallerIsAgent(req({ [BOT_ACT_ROUTE_HEADER]: "1" }), person)).toBe(true);
+    expect(remoteCallerIsAgent(req({}), { kind: "session", session: { id: "s", ephemeral: true, label: "Bot act" } } as never)).toBe(true);
+    expect(remoteCallerIsAgent(req({}), { kind: "session", session: { id: "s", ephemeral: true, label: "Member API" } } as never)).toBe(true);
+    expect(remoteCallerIsAgent(req({}), { kind: "loopback", scopes: [], trust: "service" } as never)).toBe(true);
+  });
+});
+
+describe("POST /api/bots/:id/remote-sessions/:sid/upload (destination and replace)", () => {
+  const upload = async (base: string, body: Record<string, unknown>, headers: Record<string, string> = {}) => {
+    const res = await fetch(`${base}/api/bots/${BOT}/remote-sessions/${ID}/upload`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-viewer": A, ...headers },
+      body: JSON.stringify({ name: "rapport.pdf", dataBase64: Buffer.from("pdf").toString("base64"), ...body }),
+    });
+    return { status: res.status, body: await res.json() as Record<string, unknown> };
+  };
+
+  it("answers 409 exists for a file already there, and replaces it only with overwrite", async () => {
+    const { run, copies } = recorder(new Set(["C:\\Partage\\rapport.pdf"]));
+    const base = await serve(await connected(run));
+    expect(await upload(base, { dir: "C:\\Partage" })).toEqual({ status: 409, body: { error: expect.any(String), code: "exists" } });
+    expect(copies()).toEqual([]);
+    expect(await upload(base, { dir: "C:\\Partage", overwrite: true })).toEqual({ status: 200, body: { name: "rapport.pdf" } });
+    expect((await upload(base, { dir: "C:\\Partage", overwrite: "yes" })).status).toBe(400);
+  });
+
+  it("refuses a system folder with 403 sensitive", async () => {
+    const { run } = recorder();
+    const base = await serve(await connected(run));
+    expect(await upload(base, { dir: "C:\\Windows\\System32" })).toEqual({ status: 403, body: { error: expect.any(String), code: "sensitive" } });
+  });
+
+  it("lets a bot's act call send only to the transfer folder, never replacing a file", async () => {
+    const { run, copies } = recorder(new Set([`${TRANSFER}\\vieux.txt`]));
+    const base = await serve(await connected(run));
+    for (const headers of [{ [BOT_ACT_ROUTE_HEADER]: "1" }, { "x-test-bot-copy": "1" }] as Array<Record<string, string>>) {
+      expect((await upload(base, { dir: "C:\\Partage" }, headers)).status).toBe(403);
+      expect((await upload(base, { overwrite: true }, headers)).status).toBe(403);
+      expect((await upload(base, { name: "vieux.txt" }, headers))).toMatchObject({ status: 409, body: { code: "exists" } });
+    }
+    expect(copies()).toEqual([]);
+    expect(await upload(base, {}, { [BOT_ACT_ROUTE_HEADER]: "1" })).toEqual({ status: 200, body: { name: "rapport.pdf" } });
+    expect(copies()[0]!.at(-1)).toBe(`${ADDRESS}:${TRANSFER}\\rapport.pdf`);
+  });
+});
 
 describe("POST /api/bots/:id/remote-sessions/:sid/ls", () => {
   const ls = async (base: string, body: unknown, viewer: string | null = A, sid = ID, method = "POST") => {
@@ -272,7 +421,8 @@ describe("POST /api/bots/:id/remote-sessions/:sid/ls", () => {
   it("leaves other session paths to the session routes", async () => {
     const { run } = recorder();
     const base = await serve(await connected(run));
-    const res = await fetch(`${base}/api/bots/${BOT}/remote-sessions/${ID}/download`, { method: "POST", body: "{}" });
-    expect(await res.json()).toEqual({ from: "inline routes" });
+    const res = await fetch(`${base}/api/bots/${BOT}/remote-sessions/${ID}/download`, { method: "POST", headers: { "x-viewer": A }, body: "{}" });
+    // answered by the session routes, not by the listing route
+    expect(await res.json()).toEqual({ error: "That path cannot be downloaded." });
   });
 });

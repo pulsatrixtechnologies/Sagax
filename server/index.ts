@@ -791,7 +791,7 @@ import { recallSupportSession } from "./remote-support-local.ts";
 import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
-import { createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
+import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
@@ -29868,6 +29868,8 @@ async function performBotActRoute(actor: PerformActor, target: RouteTarget, maxC
   }
   const headers = new Headers();
   headers.set("accept", "application/json");
+  // narrows only: a remote session upload then keeps to the transfer folder
+  headers.set(BOT_ACT_ROUTE_HEADER, "1");
   if (mark.onBehalf) headers.set(ON_BEHALF_HEADER, ON_BEHALF_SECRET);
   // only a confidential thread needs the token: an ordinary one takes the follow-up as before
   if (mark.continuation && store.isConfidentialThread(mark.continuation)) {

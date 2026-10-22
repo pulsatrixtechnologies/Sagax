@@ -42,8 +42,9 @@ export function safeRemoteDir(value: unknown, os: RemoteSessionOs): string | nul
   if (value === undefined || value === null) return "";
   if (typeof value !== "string") return null;
   if (CONTROL.test(value)) return null;
-  const raw = value.trim();
-  if (!raw) return "";
+  // spaces at either end of a folder name are part of it: never trimmed
+  if (!value.trim()) return "";
+  const raw = value;
   if (raw.length > PATH_MAX || TUNNEL.test(raw)) return null;
   if (raw.split(/[\\/]/).some((part) => part === "..")) return null;
   if (windows(os)) {
@@ -58,6 +59,42 @@ export function safeRemoteDir(value: unknown, os: RemoteSessionOs): string | nul
   const trimmed = raw.replace(/\/+$/, "");
   if (trimmed.includes("//")) return null;
   return trimmed || "/";
+}
+
+// Characters scp must never see in a remote path: a legacy (non-SFTP) scp
+// hands the path to the remote shell, and tailcat cp runs the system scp.
+// oxlint-disable-next-line no-control-regex -- control characters are refused too
+const SCP_UNSAFE = /[$`;"'*?|&<>!%\u0000-\u001f\u007f]/;
+
+/** A path that may go to `tailcat cp` (the system scp) as is. */
+export function scpSafePath(path: string): boolean {
+  return !SCP_UNSAFE.test(path);
+}
+
+// Folders a file is never sent into, even by the owner: what lands there runs
+// at sign-in or start-up, or replaces a key or a system file. Matched on whole
+// path segments, case-insensitively on Windows and macOS.
+const SENSITIVE_WINDOWS = [
+  /^[a-z]:\\windows(\\|$)/,
+  /\\\.ssh(\\|$)/,
+  /\\start menu\\programs\\startup(\\|$)/,
+];
+const SENSITIVE_UNIX = [
+  /^\/etc(\/|$)/,
+  /^\/(usr\/lib|var\/spool)\/cron(\/|$)/,
+  /^\/var\/at(\/|$)/,
+  /\/\.ssh(\/|$)/,
+  /\/launch(agents|daemons)(\/|$)/,
+  /^\/library\/startupitems(\/|$)/,
+  /^\/system(\/|$)/,
+  /\/\.config\/(systemd|autostart)(\/|$)/,
+];
+
+/** A system folder Sagax refuses as an upload destination (start-up, keys,
+ * scheduled tasks, the OS itself). */
+export function sensitiveRemoteDir(path: string, os: RemoteSessionOs): boolean {
+  const lower = path.toLowerCase();
+  return (windows(os) ? SENSITIVE_WINDOWS : SENSITIVE_UNIX).some((rule) => rule.test(lower));
 }
 
 export function remoteJoin(dir: string, name: string, os: RemoteSessionOs): string {
