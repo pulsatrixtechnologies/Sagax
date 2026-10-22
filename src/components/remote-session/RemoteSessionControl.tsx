@@ -2,13 +2,16 @@ import { useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
 import { useFocusedRemoteSession } from "@/lib/remote-session-focus";
+import { controlSupportedOs } from "@/lib/remote-control-os";
+import { RemoteControlSurface } from "./RemoteControlSurface";
 import { RemoteSessionActions } from "./RemoteSessionActions";
 import { RemoteSessionFacts } from "./RemoteSessionFacts";
+import { useRemoteControl } from "./use-remote-control";
 import { useRemoteSessions } from "./use-remote-sessions";
 
 /** The Computer tab picture. A failed fetch says the screen is unavailable.
- * Read-only for now (`data-remote-input="none"`): live mouse and keyboard
- * control will be a layer over this picture, added here, not a new tab. */
+ * This is the view-only picture kept from stage 1; live control is the layer
+ * added over it in RemoteSessionControl, not a separate tab. */
 export function RemoteSessionScreen({ shot, missed }: { shot: string | null; missed: boolean }) {
   return (
     <div data-remote-session-screen="" data-remote-input="none">
@@ -25,26 +28,20 @@ export function RemoteSessionScreen({ shot, missed }: { shot: string | null; mis
   );
 }
 
-/** The Computer tab while a remote session is the one in focus. Read-only screen. */
-export function RemoteSessionControl({ botId, showEmpty = false }: { botId: string; showEmpty?: boolean }) {
-  const { rows } = useRemoteSessions(botId);
-  const focusedId = useFocusedRemoteSession(botId);
-  const session = rows.find((row) => row.id === focusedId) ?? rows.find((row) => row.focused) ?? rows[rows.length - 1] ?? null;
+/** Poll the read-only screenshot every few seconds. Used while control is not
+ * active (or on a computer where live control is not available). */
+function useScreenPoll(botId: string, sessionId: string | undefined, enabled: boolean) {
   const [shot, setShot] = useState<string | null>(null);
   const [missed, setMissed] = useState(false);
-
   useEffect(() => {
-    if (!session) return;
+    if (!sessionId || !enabled) return;
     let stop = false;
     let current: string | null = null;
     const tick = async () => {
       try {
-        const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/remote-sessions/${encodeURIComponent(session.id)}/screen`);
+        const res = await fetch(`/api/bots/${encodeURIComponent(botId)}/remote-sessions/${encodeURIComponent(sessionId)}/screen`);
         if (stop) return;
-        if (!res.ok) {
-          setMissed(true);
-          return;
-        }
+        if (!res.ok) { setMissed(true); return; }
         const blob = await res.blob();
         if (stop) return;
         const next = URL.createObjectURL(blob);
@@ -58,12 +55,22 @@ export function RemoteSessionControl({ botId, showEmpty = false }: { botId: stri
     };
     void tick();
     const timer = setInterval(() => void tick(), 4000);
-    return () => {
-      stop = true;
-      clearInterval(timer);
-      if (current) URL.revokeObjectURL(current);
-    };
-  }, [botId, session?.id]);
+    return () => { stop = true; clearInterval(timer); if (current) URL.revokeObjectURL(current); };
+  }, [botId, sessionId, enabled]);
+  return { shot, missed };
+}
+
+/** The Computer tab for the session in focus: the screen with a live-control
+ * layer over it (Windows), the hardware facts, and the shell/file actions. */
+export function RemoteSessionControl({ botId, showEmpty = false }: { botId: string; showEmpty?: boolean }) {
+  const { rows } = useRemoteSessions(botId);
+  const focusedId = useFocusedRemoteSession(botId);
+  const session = rows.find((row) => row.id === focusedId) ?? rows.find((row) => row.focused) ?? rows[rows.length - 1] ?? null;
+  const controllable = session ? controlSupportedOs(session.os) : false;
+  const control = useRemoteControl(botId, session?.id);
+  const active = control.phase === "active";
+  // The read-only poll runs only while control is not driving the picture.
+  const { shot, missed } = useScreenPoll(botId, session?.id, !active);
 
   if (!session) {
     return showEmpty
@@ -72,7 +79,22 @@ export function RemoteSessionControl({ botId, showEmpty = false }: { botId: stri
   }
   return (
     <div data-remote-session-control="" className="mb-4 overflow-hidden rounded-xl border border-hairline">
-      <RemoteSessionScreen shot={shot} missed={missed} />
+      <RemoteControlSurface
+        controllable={controllable}
+        active={active}
+        connecting={control.phase === "connecting"}
+        frameUrl={active ? control.frameUrl : shot}
+        aspect={control.aspect}
+        error={control.error}
+        missed={missed}
+        onToggle={controllable ? control.toggle : undefined}
+        surfaceRef={control.surfaceRef}
+        onPointerMove={control.onPointerMove}
+        onPointerDown={control.onPointerDown}
+        onPointerUp={control.onPointerUp}
+        onContextMenu={control.onContextMenu}
+        onWheel={control.onWheel}
+      />
       <RemoteSessionFacts view={session} />
       <RemoteSessionActions botId={botId} view={session} />
     </div>

@@ -10,6 +10,7 @@ import { CalendarClock, Plus } from "lucide-react";
 import type { RemoteSessionView } from "../../shared/remote-session";
 import { RemoteSessionCard } from "../components/remote-session/RemoteSessionCard";
 import { RemoteSessionControl } from "../components/remote-session/RemoteSessionControl";
+import { RemoteControlSurface } from "../components/remote-session/RemoteControlSurface";
 import { RemoteSessionsSection } from "../components/remote-session/RemoteSessionsSection";
 import { RoutineList } from "../components/routines/RoutineList";
 import { setLocale, t } from "../lib/i18n";
@@ -69,9 +70,23 @@ function Gallery() {
       <aside data-gallery-computer="" className="w-[380px] shrink-0 rounded-xl border border-hairline/40 bg-panel px-4 pt-4">
         <RemoteSessionControl botId="melonie" />
       </aside>
+      <aside data-gallery-control="" className="flex w-[380px] shrink-0 flex-col gap-4">
+        <div className="overflow-hidden rounded-xl border border-hairline bg-panel">
+          <RemoteControlSurface controllable active connecting={false} frameUrl={MOCK_FRAME} aspect={16 / 9} error={null} missed={false} onToggle={() => {}} />
+        </div>
+        <div className="overflow-hidden rounded-xl border border-hairline bg-panel">
+          <RemoteControlSurface controllable={false} active={false} connecting={false} frameUrl={null} aspect={16 / 10} error={null} missed={false} />
+        </div>
+      </aside>
     </div>
   );
 }
+
+// A mocked frame (a neutral desktop) so a headless capture shows the live
+// control surface without a real session: never a real screen.
+const MOCK_FRAME = "data:image/svg+xml;utf8," + encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360'><rect width='640' height='360' fill='#1f2933'/><rect x='0' y='0' width='640' height='28' fill='#111827'/><circle cx='320' cy='190' r='40' fill='#374151'/><text x='320' y='320' fill='#9ca3af' font-family='sans-serif' font-size='16' text-anchor='middle'>POSTE-01</text></svg>`,
+);
 
 // the capture serves this list; ?rows=0 serves an empty one
 (window as unknown as { __remoteRows: RemoteSessionView[] }).__remoteRows = params.get("rows") === "0" ? [] : [view];

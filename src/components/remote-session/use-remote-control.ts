@@ -1,0 +1,185 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import type { ControlEvent } from "../../../shared/remote-control";
+import { t } from "@/lib/i18n";
+import {
+  charVk,
+  controlMessage,
+  grantMessage,
+  isForwardedKey,
+  keyToVk,
+  mouseButton,
+  normalizedPoint,
+  wheelDelta,
+} from "@/lib/remote-control-input";
+
+type Phase = "idle" | "connecting" | "active";
+
+/** Opens the control WebSocket for a session, draws its frames, and forwards
+ * the technician's mouse and keyboard while control is active. Input leaves
+ * only after the grant, and the socket closes (control released) when the
+ * component unmounts or the caller toggles off. */
+export function useRemoteControl(botId: string, sessionId: string | undefined) {
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [frameUrl, setFrameUrl] = useState<string | null>(null);
+  const [aspect, setAspect] = useState<number | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const socketRef = useRef<WebSocket | null>(null);
+  const frameRef = useRef<string | null>(null);
+  const pending = useRef<ControlEvent[]>([]);
+  const flushTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+
+  const stop = useCallback(() => {
+    if (flushTimer.current) { clearInterval(flushTimer.current); flushTimer.current = null; }
+    const socket = socketRef.current;
+    socketRef.current = null;
+    if (socket) {
+      try { if (socket.readyState === WebSocket.OPEN) socket.send(grantMessage(false)); } catch { /* closing */ }
+      try { socket.close(); } catch { /* already closing */ }
+    }
+    if (frameRef.current) { URL.revokeObjectURL(frameRef.current); frameRef.current = null; }
+    setFrameUrl(null);
+    setPhase("idle");
+  }, []);
+
+  const flush = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || pending.current.length === 0) return;
+    const batch = pending.current;
+    pending.current = [];
+    try { socket.send(controlMessage(batch)); } catch { /* the socket is closing */ }
+  }, []);
+
+  const queue = useCallback((event: ControlEvent) => {
+    pending.current.push(event);
+    if (event.t !== "m") flush(); // send clicks and keys at once; moves batch
+  }, [flush]);
+
+  const start = useCallback(() => {
+    if (!sessionId || typeof WebSocket === "undefined" || socketRef.current) return;
+    setError(null);
+    setPhase("connecting");
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const url = `${scheme}://${window.location.host}/api/bots/${encodeURIComponent(botId)}/remote-sessions/${encodeURIComponent(sessionId)}/control`;
+    const socket = new WebSocket(url);
+    socket.binaryType = "arraybuffer";
+    socketRef.current = socket;
+    socket.onopen = () => {
+      setPhase("active");
+      try { socket.send(grantMessage(true)); } catch { /* closed */ }
+      flushTimer.current = setInterval(flush, 40);
+    };
+    socket.onmessage = (message) => {
+      if (typeof message.data === "string") {
+        let obj: Record<string, unknown>;
+        try { obj = JSON.parse(message.data) as Record<string, unknown>; } catch { return; }
+        if (obj.t === "meta" && typeof obj.w === "number" && typeof obj.h === "number" && obj.h > 0) {
+          setAspect(obj.w / obj.h);
+        } else if (obj.t === "error") {
+          setError(typeof obj.message === "string" ? obj.message : t("remoteControl.lost"));
+        } else if (obj.t === "closed") {
+          setError(t("remoteControl.lost"));
+        }
+        return;
+      }
+      const blob = new Blob([message.data as ArrayBuffer], { type: "image/jpeg" });
+      const next = URL.createObjectURL(blob);
+      if (frameRef.current) URL.revokeObjectURL(frameRef.current);
+      frameRef.current = next;
+      setFrameUrl(next);
+    };
+    socket.onclose = () => { if (socketRef.current === socket) stop(); };
+    socket.onerror = () => { setError(t("remoteControl.lost")); };
+  }, [botId, sessionId, flush, stop]);
+
+  // Release control when the session changes or the component unmounts.
+  useEffect(() => stop, [sessionId, stop]);
+
+  const toggle = useCallback(() => {
+    if (phase === "idle") start();
+    else stop();
+  }, [phase, start, stop]);
+
+  const rect = () => surfaceRef.current?.getBoundingClientRect();
+
+  const onPointerMove = useCallback((event: { clientX: number; clientY: number }) => {
+    const r = rect();
+    if (!r) return;
+    const point = normalizedPoint(event.clientX, event.clientY, r);
+    queue({ t: "m", x: point.x, y: point.y });
+  }, [queue]);
+
+  const onPointerDown = useCallback((event: { clientX: number; clientY: number; button: number; preventDefault(): void }) => {
+    event.preventDefault();
+    surfaceRef.current?.focus();
+    const r = rect();
+    if (r) { const point = normalizedPoint(event.clientX, event.clientY, r); queue({ t: "m", x: point.x, y: point.y }); }
+    const button = mouseButton(event.button);
+    if (button !== null) queue({ t: "d", b: button });
+  }, [queue]);
+
+  const onPointerUp = useCallback((event: { button: number; preventDefault(): void }) => {
+    event.preventDefault();
+    const button = mouseButton(event.button);
+    if (button !== null) queue({ t: "u", b: button });
+  }, [queue]);
+
+  const onContextMenu = useCallback((event: { preventDefault(): void }) => { event.preventDefault(); }, []);
+
+  const onWheel = useCallback((event: { deltaY: number; preventDefault(): void }) => {
+    event.preventDefault();
+    const d = wheelDelta(event.deltaY);
+    if (d !== 0) queue({ t: "w", d });
+  }, [queue]);
+
+  // Keyboard is captured on the window while the surface holds focus.
+  useEffect(() => {
+    if (phase !== "active") return;
+    const owns = () => surfaceRef.current && document.activeElement === surfaceRef.current;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!owns()) return;
+      const mods = { ctrl: event.ctrlKey, alt: event.altKey, meta: event.metaKey };
+      if (!isForwardedKey(event.code, mods)) return; // printable text comes through beforeinput
+      event.preventDefault();
+      const vk = keyToVk(event.code) ?? charVk(event.key);
+      if (vk !== null) queue({ t: "k", k: vk, d: 1 });
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!owns()) return;
+      const mods = { ctrl: event.ctrlKey, alt: event.altKey, meta: event.metaKey };
+      if (!isForwardedKey(event.code, mods)) return;
+      event.preventDefault();
+      const vk = keyToVk(event.code) ?? charVk(event.key);
+      if (vk !== null) queue({ t: "k", k: vk, d: 0 });
+    };
+    const onBeforeInput = (event: Event) => {
+      if (!owns()) return;
+      const data = (event as InputEvent).data;
+      if (typeof data === "string" && data.length > 0) queue({ t: "x", s: data });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    surfaceRef.current?.addEventListener("beforeinput", onBeforeInput as EventListener);
+    const node = surfaceRef.current;
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      node?.removeEventListener("beforeinput", onBeforeInput as EventListener);
+    };
+  }, [phase, queue]);
+
+  return {
+    phase,
+    frameUrl,
+    aspect,
+    error,
+    surfaceRef,
+    toggle,
+    onPointerMove,
+    onPointerDown,
+    onPointerUp,
+    onContextMenu,
+    onWheel,
+  };
+}
