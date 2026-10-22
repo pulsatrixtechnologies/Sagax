@@ -4925,17 +4925,25 @@ it after an upstream merge instead of renaming by hand.
   helpers, the App Store text) says Sagax; resource names keep the old word.
   Android release signing reads `SAGAX_KEYSTORE_FILE`,
   `SAGAX_KEYSTORE_PASSWORD`, `SAGAX_KEY_ALIAS` and `SAGAX_KEY_PASSWORD`
-  first, and still reads the `OPENMAUSBOT_*` names for two releases.
-- Not kept: the deploy stack (`deploy/docker-compose.yml`) runs this
-  project's own image, `ghcr.io/pulsatrixtechnologies/sagax`, never the
-  upstream author's. The docs never point at the `openmausbot` npm package
-  (not this project's) nor at an unpublished one: they run the CLI from a
-  checkout (`pnpm omb <command>`) or in the container. The rebrand script
-  re-applies the image, the native copy and the signing names after a merge,
-  and reports `npx openmausbot` or `npm install -g openmausbot` in the docs
-  for a person to replace.
+  first, and still reads the `OPENMAUSBOT_*` names for two releases. A
+  `SAGAX_*` variable that is set but empty counts as unset.
+- Not kept: the deploy stack (`deploy/docker-compose.yml`) builds its image
+  from the checkout as `sagax:local`, never the upstream author's image.
+  There is no public Sagax image yet. The self-hosting and VPS docs run the
+  CLI from a checkout (`pnpm omb <command>`) or in the container. Some npm
+  install hints still name the `openmausbot` npm package, which is not this
+  project's. They wait on purpose for the change that publishes
+  `@pulsatrix/sagax`: `docs/verification/fleet.md` (the VPS recipe), the npx
+  cache warning in `server/service-unit.ts`, the npm package README
+  (`scripts/build-npm-package.mjs`), the npm line of the release notes
+  (`.github/workflows/npm-package.yml`) and `fleet upgrade` in
+  `server/fleet.ts`. The rebrand script re-applies the image, the native copy
+  and the signing names after a merge, and reports `npx openmausbot` or
+  `npm install -g openmausbot` in the docs for a person to replace.
 - Legal and history: `LICENSE-APACHE`, the OpenMausBot lines of `NOTICE`, the README attribution,
-  About's "Based on OpenMausBot", "Where work goes" and "Upstream sync" below.
+  About's "Based on OpenMausBot" in every language, CONTRIBUTING's licensing
+  note, the upstream pull requests a port names ("port of OpenMausBot #N"),
+  "Where work goes" and "Upstream sync" below.
 
 ## iOS communication notifications (2026-10-11)
 
