@@ -254,6 +254,15 @@ const __BASE_VERSION__: string;
             modelSelection?: import("../state/store").ModelSelection; updateBotDefault?: boolean },
         ): Promise<import("../state/store").Bot>;
       };
+      /** Per-loopback-server API keys for local models, kept encrypted on
+       * this computer only. `keyBases` lists which loopback bases have a key
+       * (never the key value); `setKey`/`clearKey` store or remove one and
+       * re-probe. Absent on remote server pages and in older desktop builds. */
+      localModels?: {
+        keyBases(): Promise<string[]>;
+        setKey(base: string, key: string): Promise<boolean>;
+        clearKey(base: string): Promise<boolean>;
+      };
       localControl: {
         status(): Promise<LinuxLocalControlStatus>;
         enable(): Promise<LinuxLocalControlStatus>;
