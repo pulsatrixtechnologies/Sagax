@@ -29,6 +29,7 @@ import type { CwAction } from "./cw-widgets/actions.ts";
 import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { RemoteSessionView } from "./remote-session.ts";
+import type { ResourceUsageView } from "./resource-usage.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { VaultLoginTarget, VaultRequestCardData } from "./credential-vault.ts";
@@ -843,6 +844,8 @@ export interface WireMessage {
   terminalEmbed?: TerminalEmbed;
   /** A Tailcat remote-support session. The tunnel address is never on this object. */
   remoteSession?: RemoteSessionView;
+  /** A live usage card (shared/resource-usage.ts), shown only when asked. Labels only. */
+  resourceUsage?: ResourceUsageView;
 }
 
 export interface OptionCardData {

@@ -270,6 +270,8 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
   terminalEmbed?: import("../../shared/terminal-resources").TerminalEmbed;
   /** Tailcat remote-support card. The tunnel address is never on this object. */
   remoteSession?: import("../../shared/remote-session").RemoteSessionView;
+  /** Live usage card (shared/resource-usage.ts), shown only when asked. */
+  resourceUsage?: import("../../shared/resource-usage").ResourceUsageView;
   connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** Lifecycle mirror for a routine whose real work lives in a fresh task. */

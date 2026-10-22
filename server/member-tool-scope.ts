@@ -110,6 +110,9 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   list_terminal_resources: "read",
   offer_shell_terminal: "conversation",
   publish_remote_session: "conversation",
+  // a usage card (server/resource-usage/): read-only, on a computer this
+  // person already reaches; the target's own rights are checked
+  resource_usage: "conversation",
   // join_meeting only stages a consent card; the person approves each join
   join_meeting: "conversation",
 });

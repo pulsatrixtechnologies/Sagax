@@ -555,6 +555,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/people\\/(pr_[0-9a-f-]{36})\\/label$","tier":"write","readOnly":false,"scope":"people:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/people\\/[\\w-]{1,80}\\/avatar(?:\\?v=[0-9A-Za-z_-]{1,64})?$","tier":"write","readOnly":false,"scope":"people:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/profile\\/learned\\/([\\w-]+)\\/remove$","tier":"admin","readOnly":false,"scope":"profile:admin","defaultEnabled":false,"destructive":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/resource-usage\\/(ru_[a-f0-9]{18})(?:\\/(live|resume|pause))?$","tier":"write","readOnly":false,"scope":"resource-usage:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/routine-runs\\/([\\w-]+)\\/","tier":"write","readOnly":false,"scope":"routine-runs:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/routine-runs\\/([\\w-]+)\\/(cancel|seen)$","tier":"write","readOnly":false,"scope":"routine-runs:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/routines\\/([\\w-]{1,128})\\/away-seen$","tier":"write","readOnly":false,"scope":"routines:write","defaultEnabled":true},

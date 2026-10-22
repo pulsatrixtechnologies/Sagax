@@ -29,6 +29,7 @@ const { personLabel: directoryPersonLabel } = await import("@/components/OrgDire
 const { runAsOptionLabel } = await import("@/components/routines/RunAsField");
 const { ownerLabel } = await import("@/components/settings/OrgSharing");
 const { recipientLabel } = await import("@/components/bot-settings/AllowedRecipientsRow");
+const { ResourceUsageBody } = await import("@/components/resource-usage/ResourceUsageCard");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -125,6 +126,16 @@ describe("no UUID on screen", () => {
     }));
     expectNoUuid(text);
     expect(text).toContain("ssh build-01");
+  });
+
+  it("the usage card names the computer, never a sampler id or a UUID in its host name", () => {
+    const text = visibleText(createElement(ResourceUsageBody, {
+      view: { samplerId: "ru_0123456789abcdef01", target: "host", label: "Serveur web", hostLabel: BOT_ID },
+      snapshot: { id: "ru_0123456789abcdef01", state: "live", host: { hostname: `srv ${THREAD_ID}`, os: "Linux" }, frames: [{ t: 1, cpu: { total: 5 }, mem: null, disk: null, net: null, volumes: [{ name: `/mnt/${PERSON_ID}`, used: 1, total: 2 }] }] },
+      scheme: "light",
+    }));
+    expectNoUuid(text);
+    expect(text).not.toContain("ru_0123456789abcdef01");
   });
 
   it("allowed recipients name a bot, never its id (parité 1C)", () => {
