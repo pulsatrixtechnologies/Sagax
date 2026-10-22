@@ -1,5 +1,5 @@
 // `openmausbot` on the command line: run the server anywhere and pair devices
-// to it. One implementation for three homes — `npx openmausbot` (the npm
+// to it. One implementation for three homes — `openmausbot` (an installed
 // package), `node dist-server/cli.js` (the container image) and
 // `pnpm omb` (a checkout) — because scripts/bundle-server.mjs bundles this
 // file next to the server.
@@ -296,7 +296,8 @@ fleet   many client workspaces on one Linux server, each its own account,
 --local     start locally this time, ignoring saved remote-access settings
 
 Install once with \`npm install -g openmausbot\`, then type \`openmausbot\`.
-Or run without a global install: \`npx openmausbot\`. Node 24+ is required.
+From a checkout: \`pnpm install && pnpm build\`, then \`pnpm omb <command>\`.
+Node 24+ is required.
 `;
 
 /** Terminal in, terminal out; tests substitute all three. */
@@ -1127,7 +1128,7 @@ export async function runOnboardingCommand(
 ): Promise<number> {
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
   if (options.command === "setup" && !interactive) {
-    io.error("Setup needs an interactive terminal. Run `npx openmausbot setup` in a terminal, then use `npx openmausbot serve` for unattended starts.");
+    io.error("Setup needs an interactive terminal. Run `openmausbot setup` (or `pnpm omb setup` from a checkout) in a terminal, then use `openmausbot serve` for unattended starts.");
     return 1;
   }
   // The default folder moves from ~/.openmausbot to ~/.sagax here, once,
@@ -1149,7 +1150,7 @@ export async function runOnboardingCommand(
   try {
     if (options.command === "setup" || !(await isSetupComplete(options.dataDir))) {
       if (!interactive) {
-        io.error("No completed setup was found. Run `npx openmausbot setup` in an interactive terminal first, or use `npx openmausbot serve` with an existing configuration.");
+        io.error("No completed setup was found. Run `openmausbot setup` (or `pnpm omb setup` from a checkout) in an interactive terminal first, or use `openmausbot serve` with an existing configuration.");
         return 1;
       }
       if (!(await runSetup({ dataDir: options.dataDir, port: options.port }))) {
@@ -1174,7 +1175,7 @@ export async function runOnboardingCommand(
       saveCliStartup(options.dataDir, startupPreferences(launch));
     }
     if (options.command === "setup") {
-      io.log("\nAll set. Start with: openmausbot (or npx openmausbot without a global install).");
+      io.log("\nAll set. Start with: openmausbot (or pnpm omb from a checkout).");
       if (!options.dataDirIsDefault || options.port !== 8799) {
         io.log(`Use the same --data-dir (${options.dataDir}) and --port (${options.port}) options when starting.`);
       }

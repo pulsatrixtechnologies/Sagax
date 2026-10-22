@@ -656,7 +656,7 @@
   "onboarding.reel.automations.title": "設定好就放著不管",
   "onboarding.reel.automations.body": "把機器人放到行事曆上，它就會自行執行。給外部應用程式一個 webhook 位址，機器人就會在被呼叫時醒來。",
   "onboarding.reel.terminal.title": "也能從終端機執行",
-  "onboarding.reel.terminal.body": "輸入 npx openmausbot，選一個大腦，同一個應用程式就會在你的瀏覽器中開啟。也可以配對手機，或把它放到伺服器上。",
+  "onboarding.reel.terminal.body": "在儲存庫副本中執行 pnpm omb，選一個大腦，同一個應用程式就會在你的瀏覽器中開啟。也可以配對手機，或把它放到伺服器上。",
   "onboarding.back": "返回",
   "onboarding.progress": "第 {current} 步，共 {total} 步",
   "onboarding.dialog": "歡迎導覽",

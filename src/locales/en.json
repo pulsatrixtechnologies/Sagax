@@ -4027,7 +4027,7 @@
   "onboarding.reel.scenes": "Scenes",
   "onboarding.reel.setup.body": "Start a message with /setup and describe the job. The bot asks a few questions, then sets up its own name, schedule, apps, and working folder. It tells you what's left for you, like signing in to an app.",
   "onboarding.reel.setup.title": "Type /setup and it sets itself up",
-  "onboarding.reel.terminal.body": "Type npx openmausbot, pick a brain, and the same app opens in your browser. Pair a phone, or put it on a server.",
+  "onboarding.reel.terminal.body": "Run pnpm omb from a checkout, pick a brain, and the same app opens in your browser. Pair a phone, or put it on a server.",
   "onboarding.reel.terminal.title": "Run it from the terminal too",
   "onboarding.reel.title": "What your bots can do",
   "onboarding.server.body": "Connect to your organization's server.",

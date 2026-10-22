@@ -6741,7 +6741,7 @@
   "onboarding.reel.scenes": "Scènes",
   "onboarding.reel.setup.body": "Commencez un message par /setup et décrivez le travail. Le bot pose quelques questions, puis règle lui-même son nom, son horaire, ses applications et son dossier de travail. Il vous dit ce qui vous reste, comme vous connecter à une application.",
   "onboarding.reel.setup.title": "Tapez /setup et il se configure tout seul",
-  "onboarding.reel.terminal.body": "Tapez npx openmausbot, choisissez un modèle, et la même app s'ouvre dans votre navigateur. Jumelez un téléphone, ou installez-la sur un serveur.",
+  "onboarding.reel.terminal.body": "Lancez pnpm omb depuis une copie du dépôt, choisissez un modèle, et la même app s'ouvre dans votre navigateur. Jumelez un téléphone, ou installez-la sur un serveur.",
   "onboarding.reel.terminal.title": "Lancez-la aussi depuis le terminal",
   "onboarding.reel.title": "Ce que vos bots peuvent faire",
   "onboarding.shared.body": "Les bots, les conversations et les fichiers d'ici sont partagés avec votre équipe. Votre administrateur configure les modèles d'IA et les réglages : vous pouvez discuter tout de suite.",

@@ -1,20 +1,14 @@
 # Terminal setup
 
-Install [Node.js](https://nodejs.org/) 24 or newer, then choose either way to run Sagax:
+Install [Node.js](https://nodejs.org/) 24 or newer and pnpm, then build a checkout of Sagax once and run it from there:
 
 ```sh
-# Install once, then use the short command:
-npm install -g openmausbot
-openmausbot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax
+pnpm install && pnpm build
+pnpm omb
 ```
 
-Or, without a global install:
-
-```sh
-npx openmausbot
-```
-
-Use the same command next time. The first launch guides you through setup; later launches reuse your saved AI connection and phone-access choice. `openmausbot start` is the same as the bare command. If that workspace is already running, Sagax opens it instead of starting a second server.
+An npm package is planned; until it is published, the checkout is the install. Use the same command, from the same folder, next time. The first launch guides you through setup; later launches reuse your saved AI connection and phone-access choice. `pnpm omb start` is the same as the bare command. If that workspace is already running, Sagax opens it instead of starting a second server.
 
 ## First launch
 
@@ -48,29 +42,29 @@ After the connection is ready:
 
 Choose **Connect** on the phone. Scanning alone is not a successful pairing. The code is private, single-use, and expires after five minutes. Guided phone pairing grants client access for chat and approvals, not settings or pairing administration.
 
-If the workspace starts but its HTTPS check fails, the local workspace remains usable and no phone code is created. Fix the connection and run `openmausbot pair` in another terminal to try again. A missing account, connector, or Tailscale prerequisite can prevent startup; follow the printed error, or use `openmausbot --local`. To add phone access after skipping it, stop the server, run `openmausbot setup`, then start it again.
+If the workspace starts but its HTTPS check fails, the local workspace remains usable and no phone code is created. Fix the connection and run `pnpm omb pair` in another terminal to try again. A missing account, connector, or Tailscale prerequisite can prevent startup; follow the printed error, or use `pnpm omb --local`. To add phone access after skipping it, stop the server, run `pnpm omb setup`, then start it again.
 
 ## Commands
 
-The examples below assume a global install; prefix them with `npx` otherwise.
+Run the examples below from the checkout folder.
 
 | Command | Use |
 | --- | --- |
-| `openmausbot` | Set up once, then start with saved settings. |
-| `openmausbot setup` | Revisit AI and optional phone setup, save, and exit without starting. This is not a reset. |
-| `openmausbot --no-open` | Start without opening a browser. |
-| `openmausbot --local` | Ignore saved remote access for this launch; keep the saved choice for next time. |
-| `openmausbot --no-pair` | Suppress phone setup prompts and pairing invitations. This does **not** turn off saved remote access; use `--local` for that. |
-| `openmausbot pair` | Create another phone invitation while the configured workspace and HTTPS connection are running. |
-| `openmausbot sessions` | List paired devices; `openmausbot sessions revoke ID` signs one out. |
-| `openmausbot serve` | Start without onboarding prompts or automatic browser opening; specify remote-access flags explicitly for a service. |
-| `openmausbot login` | Sign in to a Sagax account for `--tunnel`; this does not sign in to an AI provider or start the tunnel. |
+| `pnpm omb` | Set up once, then start with saved settings. |
+| `pnpm omb setup` | Revisit AI and optional phone setup, save, and exit without starting. This is not a reset. |
+| `pnpm omb --no-open` | Start without opening a browser. |
+| `pnpm omb --local` | Ignore saved remote access for this launch; keep the saved choice for next time. |
+| `pnpm omb --no-pair` | Suppress phone setup prompts and pairing invitations. This does **not** turn off saved remote access; use `--local` for that. |
+| `pnpm omb pair` | Create another phone invitation while the configured workspace and HTTPS connection are running. |
+| `pnpm omb sessions` | List paired devices; `pnpm omb sessions revoke ID` signs one out. |
+| `pnpm omb serve` | Start without onboarding prompts or automatic browser opening; specify remote-access flags explicitly for a service. |
+| `pnpm omb login` | Sign in to a Sagax account for `--tunnel`; this does not sign in to an AI provider or start the tunnel. |
 
 `start` accepts the same server options as `serve`, including `--port`, `--data-dir`, `--tailscale`, `--tunnel`, and `--public-url`. Keep using your custom data directory and port when starting or pairing:
 
 ```sh
-openmausbot setup --data-dir /path/to/omb-data --port 8799
-openmausbot --data-dir /path/to/omb-data --port 8799
+pnpm omb setup --data-dir /path/to/omb-data --port 8799
+pnpm omb --data-dir /path/to/omb-data --port 8799
 ```
 
 Setup needs an interactive terminal. Later starts can run without one once setup is complete. Stop a running server before changing its setup or access mode: `--local` does not turn off a remote connection belonging to a server that is already running. You do not need to delete configuration, bots, or conversations to reconfigure it.
@@ -79,6 +73,6 @@ Setup needs an interactive terminal. Later starts can run without one once setup
 
 API keys are hidden while typed or pasted. New API connections save their key in the data directory's `config.json` as **plaintext, not encrypted**, with owner-only permissions (`0600`) on Unix. Managed-access account credentials in `tunnel-account.json` are also plaintext with `0600` permissions on Unix. Keep these files and backups private. Native provider sign-in credentials are managed by the provider's own CLI.
 
-Ctrl-C during AI setup leaves unsaved OMB changes unapplied. Installations and provider sign-ins already completed remain available. Ctrl-C during the later phone step keeps the AI setup you already saved, exits without starting a server, and does not undo an account sign-in already completed. Run `openmausbot setup` to continue; no destructive reset is needed.
+Ctrl-C during AI setup leaves unsaved OMB changes unapplied. Installations and provider sign-ins already completed remain available. Ctrl-C during the later phone step keeps the AI setup you already saved, exits without starting a server, and does not undo an account sign-in already completed. Run `pnpm omb setup` to continue; no destructive reset is needed.
 
 For remote access and background deployment options, see [self-hosting](self-hosting.md) and [the VPS guide](deploy-vps.md).
