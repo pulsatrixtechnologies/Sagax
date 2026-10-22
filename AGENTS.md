@@ -5813,6 +5813,84 @@ publiées). Keep these rules, covered by `server/published-pages.test.ts`,
   (the page keeps its own history), the phone apps' card (they show the
   row's text).
 
+### Pages: edit, comments, annotation, Presentation, link switch (lot R8, 2026-10-21)
+
+Grok Bot parity, chat rows 31 to 34. Covered by
+`server/published-pages-editing.test.ts`, the second case of
+`server/published-pages.e2e.test.ts` and `src/components/PageViewer.test.ts`.
+
+- Full-page viewer (`src/components/PageViewer.tsx`, opened from the card's
+  and the Settings row's Open full page): rename, version picker, Annotate,
+  Present, Edit, Comments, Share. The page is always the preview wrapper and
+  its frame, never a srcdoc. Shared controls: `src/components/page-controls.tsx`.
+  ChatView is untouched (the card renders the dialog itself).
+- Rename: `PATCH /api/pages/:id { title }` in any state (`page.title`, used by
+  the summary, the wrapper and the frame `<title>`). Access and expiry still
+  need a published page.
+- The person's edit: `GET /api/pages/:id/versions/:n/source` (their own pages
+  only) and `POST /api/pages/:id/versions { kind, content, title? }`: a new
+  `proposed` version with `author: "person"`, under the same caps, secret-shaped
+  text removed (`redact`, wired to `redactSecretsInText`). Readers keep the
+  published version until the person publishes the new one (Save and publish
+  reuses the page's access and a future expiry only).
+- Comments: `GET|POST /api/pages/:id/comments`, `DELETE .../comments/:cid`;
+  200 per page, 2000 characters, optional version and anchor. Never in the
+  summary (a count only), the wrapper or the frame.
+- Annotation: `/pages/preview/<id>/<n>?annotate=1` (the page's person only)
+  frames `...?t=<ticket>&a=1`, which adds `ANNOTATE_SOURCE`
+  (`server/published-pages-render.ts`): clicks are caught before the page
+  sees them, the element gets a numbered badge, and `{ type:
+  "sagax-page-annotation", v: 1, n, tag, text, path }` is posted to
+  `window.top`. Nothing else: no network. A Markdown page or a presentation
+  runs it by a per-response nonce (`script-src 'nonce-...'`, sandbox
+  `allow-scripts` for that response only); an HTML page inline after the
+  prelude. A reading link never gets it, whatever its query. The app keeps a
+  message only when `event.source` is the frame inside its own wrapper and
+  `parseAnnotationMessage` accepts it (plain text, capped); the page's own
+  scripts can forge one, which only adds a line the person sees. Send writes
+  one ordinary message to the page's bot in the page's conversation
+  (`annotationPrompt`: title and version, never an id).
+- Presentation: `kind: "presentation"` (tool `propose_page`, the editor):
+  Markdown slides split on a line of three dashes (`splitSlides`), rendered by
+  our escaper into full-height sections with scroll snapping and Previous /
+  Next as in-page anchors: no script at all, same sandbox and CSP as
+  Markdown. Present asks the frame element for full screen; the banner stays.
+- Public-link switch: `GET /api/pages/policy` (any person),
+  `GET|PUT /api/admin/pages/policy { linkSharing }` (admins, audited
+  `page.policy`), stored in `published-pages.json` (`policy`, absent = on).
+  Off: publish or PATCH to `link` is 403 `link_sharing_off`, and a page
+  already shared by link reads as `org` (signed-in people only) until it is on
+  again; the link itself is kept. Settings action `org.pagesLinkSharing`
+  (class org: a card at every level). On by default (the page itself still
+  starts private and asks a second press for a link).
+- Review of #952: every PATCH field is checked before anything changes (no
+  rename kept behind a refused access); switching a published page to a link
+  asks the same second press as a first publish; a refusal for a closed link
+  switch reads "Choisissez « Mon organisation »" (`pageErrorText`). At most 50
+  annotations; the message quotes the page's text as untrusted, never as
+  instructions, and the panel shows it in full before Send; an anchor's text
+  and path lose secret-shaped text. The editor, comment and reader-comment
+  routes are one regex per line with their method, so each has its own
+  tool-policy row, all `defaultEnabled: false`.
+- Reader comments (JC 2026-10-21): per page, off by default
+  (`PATCH /api/pages/:id { readerComments }`), and an admin policy
+  (`readerComments` in the pages policy, on = allowed; off: no page takes or
+  shows them; settings action `org.pagesReaderComments`). On a reading link
+  with them on, the wrapper adds a plain form (no script; `form-action` pinned
+  to `/pages/comment/<token>`) and the approved comments, escaped. `POST
+  /pages/comment/<token>` (before the auth gate): only a reader of a published
+  page with them open, an Origin (when sent) of this host, never
+  `Sec-Fetch-Site: cross-site`, urlencoded, 16 KB,
+  name 60 and text 1000 characters, secret-shaped text removed, honeypot
+  `website` thanked and dropped, 5 posts per address per 10 minutes
+  (`requestSource`), 50 pending and 200 kept per page. Each waits as
+  `pending` and is never shown before its person approves it in the viewer
+  (`GET /api/pages/:id/reader-comments`, `POST .../:cid/approve`, `DELETE
+  .../:cid`). Page history: `reader-comments`, `reader-comment`,
+  `reader-comment-approve`, `reader-comment-remove`.
+- Not done here: iOS (C11, annotation is desktop only on Grok too; #937 holds
+  the phone screens), multi-file pages.
+
 ## Voice notes, microphone choice, logs and feedback (2026-10-16)
 
 - Voice notes (+ > Record a voice note, `src/components/useVoiceNoteRecorder.ts`,

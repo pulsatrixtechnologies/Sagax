@@ -7015,6 +7015,8 @@ ROUTES.push(createPublishedPageRoutes({
   isAdmin: (auth) => IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) || callerCan(auth, "people.manage") : computerOwner(auth),
   mayActOn: (auth, owner) => IDENTITY.kind !== "perspicax" || mayActOnPerson(auth, owner),
   audit: (auth, req, row) => appendAdminAction(DATA_DIR, { category: "security", ...row, actor: adminActorFor(auth, req) }),
+  // a person's own edit loses secret-shaped text, as a bot's proposal does
+  redact: redactSecretsInText,
 }));
 
 /** Who is reading a published page (handlePublishedPagePublic): a session
