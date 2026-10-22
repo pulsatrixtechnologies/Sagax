@@ -1,6 +1,18 @@
 import { atLocalTime } from "@/lib/routine-calendar";
 import type { RoutineSchedule } from "@/lib/routines";
-import { cronScheduleLabel } from "../../shared/cron-label";
+import { activeLocale } from "@/lib/i18n";
+import { cronRawText, cronScheduleLabel } from "../../shared/cron-label";
+
+/** Cron wording follows the app language: French (Québec) or English. */
+export function cronLocale(): "fr" | "en" {
+  return activeLocale().toLowerCase().startsWith("fr") ? "fr" : "en";
+}
+
+/** The exact expression (and zone) of a cron schedule, for a tooltip or
+ * Copy; null for every other kind of schedule. */
+export function scheduleRawCron(schedule: RoutineSchedule | { type: string }): string | null {
+  return schedule.type === "cron" ? cronRawText(schedule as Extract<RoutineSchedule, { type: "cron" }>) : null;
+}
 
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 
@@ -62,7 +74,7 @@ function windowNote(schedule: { type: string; timing?: string; windowEarlyMinute
 export function scheduleLabel(schedule: RoutineSchedule | { type: "once"; at: number } | { type: "daily"; time: string; weekdays: number[] }): string {
   if (schedule.type === "cron") {
     const note = windowNote(schedule);
-    const label = cronScheduleLabel(schedule);
+    const label = cronScheduleLabel(schedule, cronLocale());
     return note ? `${label} · around the time ${note}` : label;
   }
   if (schedule.type === "once") return `${niceDate(schedule.at)}, ${niceTime(schedule.at)}`;
@@ -87,7 +99,7 @@ export function scheduleLabel(schedule: RoutineSchedule | { type: "once"; at: nu
 export function scheduleSentence(schedule: RoutineSchedule): string {
   const note = windowNote(schedule);
   if (schedule.type === "cron") {
-    const label = cronScheduleLabel(schedule);
+    const label = cronScheduleLabel(schedule, cronLocale());
     return note ? `${label} · around the time ${note}` : label;
   }
   if (schedule.type === "interval") {

@@ -16,7 +16,7 @@ import { StepRow } from "@/components/StepRow";
 import { CustomRuleNoticeLine, CustomRuleSavedInset } from "@/components/CustomRuleNotice";
 import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
 import { composioActionPhrase, outboundSummary } from "@/lib/approval-summary";
-import { niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
+import { cronLocale, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
 import { cronScheduleLabel } from "../../shared/cron-label";
 import { PROFILE_REQUEST_FIELDS, type ProfileRequestField } from "../../shared/profile-request";
 import type { RoutineRequestSchedule } from "../../shared/routine-request";
@@ -260,7 +260,7 @@ function plainWhen(schedule: RoutineRequestSchedule): string {
       : `${niceDate(schedule.at)}, ${niceTime(schedule.at)}`;
   }
   if (schedule.type === "cron") {
-    const label = cronScheduleLabel(schedule);
+    const label = cronScheduleLabel(schedule, cronLocale());
     return label.startsWith("Cron ") ? "" : label;
   }
   if (schedule.type === "interval") return scheduleLabel({ ...schedule, anchorAt: schedule.anchorAt ?? 0 });
