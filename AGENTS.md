@@ -801,6 +801,14 @@ covered by `server/bot-inbound-mail.test.ts`,
   ignored, reason?: "no_trigger"}`; 429 `rate_limited` only when every
   trigger refused on its rate. A paused bot's triggers (`disableForBot`)
   receive nothing.
+- Dedupe window (second review, 2026-10-22): the keys live in the typed
+  triggers' delivery ring (`MAX_DELIVERIES`, 2000, in server/webhooks.ts),
+  ONE ring for every trigger of the server, kept in `webhooks.json`. A
+  retry of the same mail is caught while its key is among the last 2000
+  deliveries of all triggers; past that (a busy server, hours later) a
+  retry would run again. Perspicax keeps its own one-hour memory by
+  `dedupeKey` and does not re-count a retry. A per-trigger ring was judged
+  not worth it here (it changes the persisted shape every trigger shares).
 - Source `botmail` (`shared/trigger-sources.ts`, label "Bot email", fr
   "Courriel du bot"; the Outlook `email` source is a different thing):
   `secretMode: "relay"`, no secret and no endpoint. Create and PATCH refuse
@@ -817,6 +825,16 @@ covered by `server/bot-inbound-mail.test.ts`,
   may opt in with `source.allowFullTools` (off by default, a switch with a
   warning in the trigger editor). A webhook run whose trigger is gone is
   confined (fail closed).
+- Confinement follows no work out (second review, 2026-10-22), on every
+  server, a Cloud home or not: while `botmailConfined(threadId)` holds, the
+  internal routes by which a run makes another bot, a room or a new
+  conversation act for it answer 403 `botmail_confined`
+  (`botmailConfinedInternalRefusal`: ask-bot, delegate-bot,
+  coordinate-bots, post-to-room, create-room, manage-room, threads (a
+  parallel task), retry-thread, create-bot, team-setup-requests,
+  routine-requests, act, settings, approvals). A room turn of a confined
+  run is confined too (`roomGuestConfined`). M10 proves the refusals on a
+  real server.
 - The mail is untrusted data: the run prompt is the owner's instructions,
   then `[BOT EMAIL RULES]` (the sender is not the owner, the email is not a
   request from the owner, answer only through a mail connector's send tool
@@ -851,8 +869,11 @@ covered by `server/bot-inbound-mail.test.ts`,
   here), the format `^[a-z0-9]([a-z0-9.-]{0,38}[a-z0-9])?$` is checked here,
   then Perspicax (`POST .../addresses/{botId}/local-part`, link token,
   `owner_sub` of the person acting) checks uniqueness and reserved names;
-  400 invalid, 403 not_owner, 404 no_bot, 409 taken, else 503, each with a
-  readable reason. The cache is dropped; one audit row `bot-mail.address-changed`
+  400 invalid, 403 not_owner, 404 no_bot, 409 taken, 429 rate_limited
+  (Perspicax's own limit per bot and per owner), else 503, each with a
+  readable reason. Sagax allows at most 5 changes a minute per bot and per
+  owner (`LOCAL_PART_CHANGES_PER_MINUTE`, counted only when Perspicax is
+  asked), else 429 `rate_limited` with `Retry-After: 60`. The cache is dropped; one audit row `bot-mail.address-changed`
   (the bot and its new address).
 - App: `GET /api/bots/:id/inbound-mail` (client-scoped, the bot visibility
   check applies) answers `{available, address, enabled, canChange}`.

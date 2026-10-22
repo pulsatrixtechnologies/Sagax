@@ -11,7 +11,9 @@
 // bot's OWNER picks the part before the @. Checked here first (the person
 // acting owns the bot, the format), then Perspicax checks uniqueness and
 // reserved names with the owner's Perspicax user id. One audit row
-// (metadata: the bot and its new address).
+// (metadata: the bot and its new address). At most 5 changes a minute per
+// bot and per owner (second review, 2026-10-22), counted only when Perspicax
+// is asked; Perspicax keeps its own limit too (429 `rate_limited`).
 //
 // Client-scoped in server/request-auth.ts; the bot visibility check every
 // client route passes (bot-visibility.ts pathSubject) answers a hidden bot
@@ -30,17 +32,41 @@ export interface BotInboundMailReadDeps {
   ownerSub(auth: RequestAuth, botId: string): string | null;
   setLocalPart(botId: string, ownerSub: string, localPart: string): Promise<LocalPartResult>;
   record(auth: RequestAuth, row: { botId: string; address: string }): void;
+  /** Clock for the change limit (tests). */
+  now?(): number;
 }
+
+/** Changes a minute per bot and per owner. */
+export const LOCAL_PART_CHANGES_PER_MINUTE = 5;
+const LIMIT_WINDOW_MS = 60_000;
 
 const REFUSALS: Record<Exclude<LocalPartResult, { ok: true }>["error"], { status: number; message: string }> = {
   invalid: { status: 400, message: "Use 1 to 40 lowercase letters, digits, dots or dashes, starting and ending with a letter or a digit. Some names are reserved." },
   not_owner: { status: 403, message: "Only the bot's owner can change its address." },
   no_bot: { status: 404, message: "Perspicax does not know this bot yet. Try again in a few minutes." },
   taken: { status: 409, message: "This address is already taken. Pick another one." },
+  rate_limited: { status: 429, message: "Too many address changes. Wait a minute, then try again." },
   unavailable: { status: 503, message: "Perspicax could not change the address right now. Try again later." },
 };
 
 export function createBotInboundMailReadRoutes(deps: BotInboundMailReadDeps): RouteHandler {
+  const now = deps.now ?? Date.now;
+  // Times of the recent changes, by "bot:<id>" and "owner:<sub>".
+  const recent = new Map<string, number[]>();
+  const fresh = (key: string, at: number): number[] => {
+    const kept = (recent.get(key) ?? []).filter((time) => at - time < LIMIT_WINDOW_MS);
+    if (kept.length) recent.set(key, kept);
+    else recent.delete(key);
+    return kept;
+  };
+  /** Counts one change unless the bot or the owner is at the limit. */
+  const admit = (botId: string, sub: string): boolean => {
+    const at = now();
+    const keys = [`bot:${botId}`, `owner:${sub}`];
+    if (keys.some((key) => fresh(key, at).length >= LOCAL_PART_CHANGES_PER_MINUTE)) return false;
+    for (const key of keys) recent.set(key, [...(recent.get(key) ?? []), at]);
+    return true;
+  };
   return async ({ req, res, path, method, auth, json, readBody }) => {
     const m = /^\/api\/bots\/([\w-]+)\/inbound-mail$/.exec(path);
     if (!m || (method !== "GET" && method !== "PUT")) return PASS;
@@ -58,12 +84,16 @@ export function createBotInboundMailReadRoutes(deps: BotInboundMailReadDeps): Ro
       return json(res, 200, { available: answer.available, address: answer.address, enabled: answer.enabled, canChange: answer.available && deps.ownerSub(auth, bot.id) !== null });
     }
     if (!deps.organization()) return json(res, 404, { error: "no such route" });
-    const refuse = (error: keyof typeof REFUSALS) => json(res, REFUSALS[error].status, { error, message: REFUSALS[error].message });
+    const refuse = (error: keyof typeof REFUSALS) => {
+      if (error === "rate_limited") res.setHeader("retry-after", "60");
+      return json(res, REFUSALS[error].status, { error, message: REFUSALS[error].message });
+    };
     const sub = deps.ownerSub(auth, bot.id);
     if (!sub) return refuse("not_owner");
     const body = await readBody(req);
     const localPart = body && typeof body === "object" && !Array.isArray(body) ? (body as { localPart?: unknown }).localPart : undefined;
     if (typeof localPart !== "string" || !BOT_MAIL_LOCAL_PART.test(localPart)) return refuse("invalid");
+    if (!admit(bot.id, sub)) return refuse("rate_limited");
     const result = await deps.setLocalPart(bot.id, sub, localPart);
     if (!result.ok) return refuse(result.error);
     deps.record(auth, { botId: bot.id, address: result.mail.address! });

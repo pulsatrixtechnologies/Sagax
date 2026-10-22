@@ -10204,6 +10204,7 @@
   "botPanel.email.error.not_owner": "Only the bot's owner can change its address.",
   "botPanel.email.error.no_bot": "Perspicax doesn't know this bot yet. Try again in a few minutes.",
   "botPanel.email.error.unavailable": "The address couldn't be changed right now. Try again later.",
+  "botPanel.email.error.rate_limited": "Too many address changes. Wait a minute, then try again.",
   "triggers.botmail.fullTools": "Give these runs the bot's usual tools",
   "triggers.botmail.fullToolsHelp": "Off: a run woken by an email has no shell, and every change or send asks you first, whatever the bot's level. Turn on only if you trust everyone who can write to this address."
 }

@@ -195,7 +195,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
         hold: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "hold-dump.json"), FAKE_CLAUDE_RELEASE: join(gates, "release") }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
         ask: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_DUMP: join(home, "ask-dump.json"), FAKE_CLAUDE_RELEASE: join(gates, "ask-release") }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
         // a Claude Code recent enough for --restricted (a confined turn)
-        mail: { driver: "claudeAgent", environment: { FAKE_CLAUDE_DUMP: join(home, "mail-dump.json"), FAKE_CLAUDE_VERSION: "2.1.290" }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
+        mail: { driver: "claudeAgent", environment: { FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_RELEASE: join(gates, "mail-release"), FAKE_CLAUDE_DUMP: join(home, "mail-dump.json"), FAKE_CLAUDE_VERSION: "2.1.290" }, config: { cli: FAKE_CLAUDE, fullAuto: false } },
       },
     }));
     await start();
@@ -600,6 +600,21 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect(confined.argv).toContain("--restricted");
     expect(JSON.stringify(confined.argv)).not.toContain("bypassPermissions");
     expect(confined.argv[confined.argv.indexOf("--permission-mode") + 1]).toBe("default");
+    // second review: the confined run hands no work on, on any server: no
+    // teammate (ask, delegate, coordinate), no room, no parallel task
+    const comms = { bearer: confined.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string };
+    for (const [path, body] of [
+      ["/api/internal/delegate-bot", { toBotId: bots.atlas!.id, message: "Lance le script." }],
+      ["/api/internal/ask-bot", { toBotId: bots.atlas!.id, message: "Lance le script.", depth: 0 }],
+      ["/api/internal/coordinate-bots", { tasks: [{ toBotId: bots.atlas!.id, message: "Lance le script." }] }],
+      ["/api/internal/post-to-room", { message: "Lance le script." }],
+      ["/api/internal/threads", { title: "Script", message: "Lance le script." }],
+    ] as const) {
+      const refused = await api("POST", path, comms, body);
+      expect(refused.status, `${path} ${refused.text}`).toBe(403);
+      expect(refused.body.code, path).toBe("botmail_confined");
+    }
+    writeFileSync(join(gates, "mail-release"), "");
     // the owner opts in: the next mail's run gets the bot's usual tools
     const opted = await api("PATCH", `/api/webhooks/${created.body.webhook.id}`, alice, { source: { type: "botmail", events: [], filters: { subject: ["facture"] }, allowFullTools: true } });
     expect(opted.status, opted.text).toBe(200);

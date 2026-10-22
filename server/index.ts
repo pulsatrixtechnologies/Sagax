@@ -963,7 +963,7 @@ import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./h
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
-import { BOT_MAIL_ASSERTION_ACTORS, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
+import { BOT_MAIL_ASSERTION_ACTORS, botmailConfinedInternalRefusal, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
 import { isRelaySource } from "../shared/trigger-sources.ts";
 import { BotMailAddresses } from "./bot-mail-addresses.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
@@ -22868,8 +22868,9 @@ async function runGroupMemberTurn(
   // A room turn a guest drives on a Cloud home is confined like a guest's
   // own conversation, or refused on an engine that cannot be.
   if (!groupSpeakers.has(threadId)) guestDrivenTurns.delete(threadId);
-  const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId);
-  const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined" ? guestEngineRefusal(threadId) : undefined;
+  const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId) || botmailConfined(threadId);
+  const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined"
+    ? (cloudGuestDriven(threadId) || !botmailConfined(threadId) ? guestEngineRefusal(threadId) : BOTMAIL_ENGINE_REFUSAL) : undefined;
   if (!instance || roomPolicyRefusal || roomGuestRefusal) {
     const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_MESSAGE);
     store.appendMessage(threadId, {
@@ -37167,6 +37168,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (store.isConfidentialThread(internalCapability.threadId)) {
         const confidentialRefusal = confidentialInternalRefusal(path, method);
         if (confidentialRefusal) return json(res, 403, confidentialRefusal);
+      }
+      // A confined mail-woken run (S2) hands no work on: its confinement
+      // would not follow it to a teammate, a room or a parallel task.
+      if (botmailConfined(internalCapability.threadId)) {
+        const mailRefusal = botmailConfinedInternalRefusal(path, method);
+        if (mailRefusal) return json(res, 403, mailRefusal);
       }
       if (internalCapability.generation === EXTERNAL_RUNTIME_GENERATION && !externalRuntimeMayCall(method, path)) {
         return json(res, 403, { error: "an external runtime can only list, ask and delegate to its peers and read its delegations" });

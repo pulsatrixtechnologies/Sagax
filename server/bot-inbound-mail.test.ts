@@ -20,6 +20,8 @@ import {
   parseInboundMail,
   senderDomain,
   botmailRunConfined,
+  botmailConfinedInternalRefusal,
+  BOTMAIL_CONFINED_PEER_REFUSED,
   type BotMailRouteDeps,
 } from "./bot-inbound-mail.ts";
 import type { ConsoleAssertion } from "./oidc-rp.ts";
@@ -471,5 +473,37 @@ describe("botmailRunConfined (v2, S2): a mail-woken run is confined unless its o
     expect(botmailRunConfined(null, () => trigger())).toBe(false);
     expect(botmailRunConfined({ triggerSource: "schedule", webhookId: undefined }, () => trigger())).toBe(false);
     expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => ({ source: { type: "github" as const, events: [], filters: {} } }))).toBe(false);
+  });
+});
+
+describe("botmailConfinedInternalRefusal (second review, S2 through delegation): a confined run makes no other bot or conversation act for it", () => {
+  const PEER_ROUTES = [
+    "/api/internal/ask-bot",
+    "/api/internal/delegate-bot",
+    "/api/internal/coordinate-bots",
+    "/api/internal/post-to-room",
+    "/api/internal/create-room",
+    "/api/internal/manage-room",
+    "/api/internal/threads",
+    "/api/internal/retry-thread",
+    "/api/internal/create-bot",
+    "/api/internal/team-setup-requests",
+    "/api/internal/routine-requests",
+    "/api/internal/act",
+    "/api/internal/settings",
+    "/api/internal/approvals",
+  ];
+  it.each(PEER_ROUTES)("refuses POST %s", (path) => {
+    expect(botmailConfinedInternalRefusal(path, "POST")).toEqual({ error: BOTMAIL_CONFINED_PEER_REFUSED, code: "botmail_confined" });
+  });
+  it("leaves reads and the run's own tools alone", () => {
+    expect(botmailConfinedInternalRefusal("/api/internal/agents", "GET")).toBeNull();
+    expect(botmailConfinedInternalRefusal("/api/internal/threads", "GET")).toBeNull();
+    expect(botmailConfinedInternalRefusal("/api/internal/options-card", "POST")).toBeNull();
+    expect(botmailConfinedInternalRefusal("/api/internal/connectors/mcp", "POST")).toBeNull();
+  });
+  it("says why in a plain sentence the model can relay", () => {
+    expect(BOTMAIL_CONFINED_PEER_REFUSED).toMatch(/woken by an email/);
+    expect(BOTMAIL_CONFINED_PEER_REFUSED).not.toMatch(/[\u2013\u2014]/);
   });
 });

@@ -145,6 +145,38 @@ export function botmailRunConfined(
   return trigger.source?.type === "botmail" && trigger.source.allowFullTools !== true;
 }
 
+/** Second review (S2 through delegation, 2026-10-22): the internal routes
+ * by which a run makes another bot, room or conversation act for it, or acts
+ * as the person elsewhere. A confined mail-woken run calls none of them, on
+ * any server (a Cloud home or not): its confinement would not follow the
+ * work, so the teammate, the room turn or the parallel task would run with
+ * its usual tools. Reads and the run's own tools (cards, connectors) pass. */
+const BOTMAIL_CONFINED_ROUTES = new Set([
+  "/api/internal/ask-bot",
+  "/api/internal/delegate-bot",
+  "/api/internal/coordinate-bots",
+  "/api/internal/post-to-room",
+  "/api/internal/create-room",
+  "/api/internal/manage-room",
+  // a parallel task is a new conversation, with no mail run to confine it
+  "/api/internal/threads",
+  "/api/internal/retry-thread",
+  "/api/internal/create-bot",
+  "/api/internal/team-setup-requests",
+  "/api/internal/routine-requests",
+  "/api/internal/act",
+  "/api/internal/settings",
+  "/api/internal/approvals",
+]);
+
+export const BOTMAIL_CONFINED_PEER_REFUSED = "This run was woken by an email: it can't hand work to another bot, a room or a new conversation. Do what you can here; the owner can continue from an ordinary conversation, or turn on full tools for this Bot email trigger.";
+
+/** The refusal for an internal write from a confined mail-woken run, or null. */
+export function botmailConfinedInternalRefusal(path: string, method: string): { error: string; code: "botmail_confined" } | null {
+  if (method !== "POST" || !BOTMAIL_CONFINED_ROUTES.has(path)) return null;
+  return { error: BOTMAIL_CONFINED_PEER_REFUSED, code: "botmail_confined" };
+}
+
 /** One admin activity row, metadata only. */
 export interface BotMailDeliveryRow {
   botId: string;

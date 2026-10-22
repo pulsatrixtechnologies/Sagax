@@ -15,7 +15,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SettingsGroup } from "../SettingsPrimitives";
 
-const ERRORS = ["invalid", "taken", "not_owner", "no_bot", "unavailable"] as const;
+const ERRORS = ["invalid", "taken", "not_owner", "no_bot", "rate_limited", "unavailable"] as const;
 
 /** A refusal's code in words; an unknown code reads as "try later". */
 export function localPartError(code: string): string {

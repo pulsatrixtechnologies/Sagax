@@ -49,10 +49,11 @@ describe("Bot email address", () => {
   });
 
   it("names every refusal in words", () => {
-    for (const code of ["invalid", "taken", "not_owner", "no_bot", "unavailable", "something-else"]) {
+    for (const code of ["invalid", "taken", "not_owner", "no_bot", "rate_limited", "unavailable", "something-else"]) {
       expect(localPartError(code)).not.toMatch(/^botPanel\./);
     }
     expect(localPartError("something-else")).toBe(localPartError("unavailable"));
+    expect(localPartError("rate_limited")).toBe("Too many address changes. Wait a minute, then try again.");
   });
 
   it("renders nothing when unavailable, loading or empty", () => {

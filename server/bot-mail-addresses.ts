@@ -27,7 +27,7 @@ export const BOT_MAIL_LOCAL_PART = /^[a-z0-9]([a-z0-9.-]{0,38}[a-z0-9])?$/;
 /** The owner's change of address, as Sagax reports it. */
 export type LocalPartResult =
   | { ok: true; mail: BotInboundMail }
-  | { ok: false; error: "invalid" | "not_owner" | "no_bot" | "taken" | "unavailable" };
+  | { ok: false; error: "invalid" | "not_owner" | "no_bot" | "taken" | "rate_limited" | "unavailable" };
 
 /** One of this server's bots, as contract B names it. */
 export interface BotMailBot {
@@ -142,8 +142,9 @@ export class BotMailAddresses {
       return { ok: true, mail: { available: true, address: body.address, enabled: body.enabled } };
     }
     const code = (result.body as { error?: unknown } | undefined)?.error;
-    const known: Record<number, string> = { 400: "invalid", 403: "not_owner", 404: "no_bot", 409: "taken" };
-    if (result.status && known[result.status] === code) return { ok: false, error: code as "invalid" | "not_owner" | "no_bot" | "taken" };
+    // 429 `rate_limited`: Perspicax's own limit per bot and per owner.
+    const known: Record<number, string> = { 400: "invalid", 403: "not_owner", 404: "no_bot", 409: "taken", 429: "rate_limited" };
+    if (result.status && known[result.status] === code) return { ok: false, error: code as "invalid" | "not_owner" | "no_bot" | "taken" | "rate_limited" };
     return { ok: false, error: "unavailable" };
   }
 

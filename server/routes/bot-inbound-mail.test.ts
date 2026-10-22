@@ -125,6 +125,8 @@ describe("PUT /api/bots/:id/inbound-mail (v2, JC decision 4): the owner changes 
     ["not_owner", 403],
     ["no_bot", 404],
     ["unavailable", 503],
+    // Perspicax's own per bot and per owner limit (second review)
+    ["rate_limited", 429],
   ] as const)("maps Perspicax's %s to %i with a readable reason, no audit row", async (error, status) => {
     answerChange = () => ({ ok: false, error });
     const base = await serve();
@@ -134,6 +136,31 @@ describe("PUT /api/bots/:id/inbound-mail (v2, JC decision 4): the owner changes 
     expect(body.error).toBe(error);
     expect(typeof body.message).toBe("string");
     expect(audits).toEqual([]);
+  });
+
+  it("second review: 5 changes a minute per bot and per owner, then 429 with a reason and Retry-After, without asking Perspicax", async () => {
+    let now = 1_000_000;
+    const base = await serve({ now: () => now });
+    for (let i = 0; i < 5; i++) expect((await put(base, "bot_abc", { localPart: `essai${i}` })).status).toBe(200);
+    const limited = await put(base, "bot_abc", { localPart: "essai5" });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+    const body = await limited.json() as { error: string; message: string };
+    expect(body.error).toBe("rate_limited");
+    expect(body.message).toMatch(/minute/);
+    expect(changes).toHaveLength(5);
+    // the same owner's other bot shares the owner's budget
+    expect((await put(base, "bot_off", { localPart: "autre" })).status).toBe(429);
+    expect(changes).toHaveLength(5);
+    // a minute later it works again
+    now += 61_000;
+    expect((await put(base, "bot_abc", { localPart: "reprise" })).status).toBe(200);
+  });
+
+  it("a malformed local part is not counted (Perspicax is never asked)", async () => {
+    const base = await serve({ now: () => 5_000 });
+    for (let i = 0; i < 8; i++) expect((await put(base, "bot_abc", { localPart: "Mauvais" })).status).toBe(400);
+    expect((await put(base, "bot_abc", { localPart: "bon" })).status).toBe(200);
   });
 
   it("off on a solo server", async () => {

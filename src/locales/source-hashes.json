@@ -14067,6 +14067,7 @@
       "botPanel.email.error.not_owner": "e4e92f9f6026260710f1c0470a350f30e79ac319d2f657267513a96cdad3e3c3",
       "botPanel.email.error.no_bot": "39c178e069ecab86ec90f6e69b2f2b23a4c96f38ab066f7ae7f0077d2be5d366",
       "botPanel.email.error.unavailable": "ebcce2f63ca015fdb30e85fb5434b32334d7d85bf6cd1ef1413f7cbee3f8884a",
+      "botPanel.email.error.rate_limited": "5ee33b458d3078f2bc37f4b1d69ad5906a70207a9650b41768ca364476594b38",
       "triggers.botmail.fullTools": "83d46bdc0dd1959bfb358f5d5e7f0c5afe8b30e9e20f57021987832c16166574",
       "triggers.botmail.fullToolsHelp": "a5927f5db47d881e58ecac1af0c7690310c34ad6e8827940592eb8b3845cea0c"
     },

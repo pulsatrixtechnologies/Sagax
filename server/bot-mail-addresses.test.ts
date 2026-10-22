@@ -199,6 +199,9 @@ describe("BotMailAddresses: re-sync and the owner's new address (v2)", () => {
     [403, { error: "not_owner" }, "not_owner"],
     [404, { error: "no_bot" }, "no_bot"],
     [409, { error: "taken" }, "taken"],
+    // second review: Perspicax's per bot and per owner limit
+    [429, { error: "rate_limited" }, "rate_limited"],
+    [429, { error: "other" }, "unavailable"],
     [404, { error: "not_found" }, "unavailable"],
     [500, { error: "boom" }, "unavailable"],
   ])("maps Perspicax's %s %j to %s", async (status, body, error) => {
