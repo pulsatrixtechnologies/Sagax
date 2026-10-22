@@ -167,18 +167,17 @@ describe("Settings > General > Advanced", () => {
 });
 
 describe("Settings > Organization (cards from General > Advanced, 2026-10-15)", () => {
-  it("shows routines, group turns and MCP calls with their current values", async () => {
+  it("shows group turns and MCP calls with their current values", async () => {
     fixture.features = { routinesInConversation: true };
     fixture.section = "organization";
     const html = await render();
-    expect(html).toContain('data-settings-card="organization.routinesInConversation"');
-    expect(html).toContain("Routines in the conversation");
-    expect(switchNamed("Run routines in the conversation")?.checked).toBe(true);
+    // 2026-10-22 (JC): routines always run in the background; the switch is gone
+    expect(html).not.toContain('data-settings-card="organization.routinesInConversation"');
+    expect(switchNamed("Run routines in the conversation")).toBeUndefined();
     expect(html).toContain('data-settings-card="organization.roomTurns"');
     // 0.5.6: a row with its minutes field, no folded card
     expect(html).toMatch(/id="room-turn-timeout"[^>]*value="12"/);
     expect(html).toContain('data-settings-card="organization.mcpCalls"');
-    expect(html.indexOf("Routines in the conversation")).toBeLessThan(html.indexOf("Group turns"));
     // the cards another branch moves to each bot are not here
     expect(html).not.toContain('data-settings-card="general.toolAccess"');
     expect(html).not.toContain('data-settings-card="general.threadCleanup"');

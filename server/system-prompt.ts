@@ -8,6 +8,7 @@
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { teammateAvailabilityPrompt, type RosterMember } from "./peer-roster.ts";
+import { ROUTINE_REPORT_CONTRACT } from "./routine-report.ts";
 import { CW_FAMILIES, CW_REQUIRED_FIELDS, CW_VIEWS, CW_WIDGET_EXAMPLE, cwOrList } from "../shared/cw-widgets/schema.ts";
 
 export type PromptPart = { id: string; label: string; text: string };
@@ -294,7 +295,10 @@ const PROPOSAL_RESULT_PROMPT =
 export const ROUTINE_PROMPT =
   " If the user explicitly asks to list or review, schedule, run, or change routines, use list_routines and propose_routine or propose_routine_action. Keep run_on omitted or maus to use the bot's current model and configured computer, including its VPS. A routine's box (legacy cloud) destination runs on the bot's cloud computer, not the configured VPS; choose it only when the user explicitly wants the cloud computer. Convert calendar requests such as the first or last day of each month or the second Monday to a five-field cron expression with an explicit IANA timezone; use interval for elapsed every-N-minutes work. Never replace a calendar rule with daily AI date checking or an approximate weekly schedule; clarify ambiguous or unsupported requests." + PROPOSAL_RESULT_PROMPT;
 export const ROUTINE_EXECUTION_PROMPT =
-  " Execute this routine now: use available peer tools for required handoffs rather than merely announcing that you will wait; after an accepted delegation, end this turn for automatic resumption, and report a concrete blocker if no handoff is possible.";
+  " Execute this routine now: use available peer tools for required handoffs rather than merely announcing that you will wait; after an accepted delegation, end this turn for automatic resumption, and report a concrete blocker if no handoff is possible." +
+  // 2026-10-22: the run is in the background; nothing reaches the person's
+  // chat unless it needs them (server/routine-report.ts).
+  ROUTINE_REPORT_CONTRACT;
 export const LEARN_PROMPT =
   " If the user sends /learn or asks you to save a reusable procedure from this work, use skills_list and skill_manage. Create new skills; update an existing learned skill only when the user explicitly asks to revise that exact name. Include source provenance." + PROPOSAL_RESULT_PROMPT;
 export const WEBHOOK_PROMPT =

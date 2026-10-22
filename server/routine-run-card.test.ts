@@ -31,4 +31,12 @@ describe("routineRunCard", () => {
     expect(routineRunCard(run({ threadId: "main", status: "waiting", attention: "Approve the write" }), "main").summary).toBe("Approve the write");
     expect(routineRunCard(run({ threadId: "main", status: "failed", error: "cluster down" }), "main").error).toBe("cluster down");
   });
+
+  // 2026-10-22: a run that waited on the person, then ended with nothing to
+  // report, leaves its one message saying so, without a report.
+  it("a quiet run reads as nothing to report", () => {
+    const card = routineRunCard(run({ quiet: true }), "main");
+    expect(card.status).toBe("nothing_to_report");
+    expect(card.summary).toBeUndefined();
+  });
 });

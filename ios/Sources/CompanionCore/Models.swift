@@ -644,9 +644,13 @@ public struct BotTask: Codable, Hashable, Sendable {
     /// a link or the bot's activity, never in the list, previews, unread or
     /// notifications.
     public var hidden: Bool? = nil
-    /// Out of the person's thread list: a routine run's execution or an AI
-    /// client's hidden conversation.
-    public var isHiddenFromPerson: Bool { routineRunId != nil || hidden == true }
+    /// An automatic "<routine> · Results" thread (2026-10-22): a routine's
+    /// reports now go to the person's own conversation, so this old thread is
+    /// kept but never listed, previewed or counted unread.
+    public var routineResults: Bool? = nil
+    /// Out of the person's thread list: a routine run's execution, an
+    /// automatic routine results thread or an AI client's hidden conversation.
+    public var isHiddenFromPerson: Bool { routineRunId != nil || routineResults == true || hidden == true }
     /// A confidential thread ("Fil confidentiel"): never remembered,
     /// exported or shared beyond its owner. Permanent once set; only
     /// deleting the thread ends it. Absent means an ordinary thread.
@@ -918,7 +922,7 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
         (AvatarFraming.clampZoom(avatarZoom), AvatarFraming.clampFocus(avatarFocusX), AvatarFraming.clampFocus(avatarFocusY))
     }
 
-    /// Routine results are ordinary tasks; only their per-run executions are hidden.
+    /// Routine runs' executions and automatic results threads are hidden.
     public var visibleTasks: [BotTask] {
         (tasks ?? []).filter { !$0.isHiddenFromPerson }
     }

@@ -67,7 +67,7 @@ import { roomRetryRequest } from "@/lib/room-retry";
 import { botEngine, failedTurnCause } from "@/lib/failed-turn";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
-import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
 import { GroupCostNotice, WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
@@ -1476,7 +1476,6 @@ export function GroupView({ group: stored }: { group: Group }) {
         )}
       </div>}
 
-      <SavedMessagesNotice threadId={group.threadId} archived={group.tasks?.some((task) => task.threadId === group.threadId && task.archivedAt != null) === true} />
 
       {/* Pinned message banner — resolves against the room's full transcript */}
       {(() => {

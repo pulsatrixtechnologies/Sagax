@@ -336,7 +336,6 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Conversation cleanup | Settings > General > Advanced > Threads | `sagax_settings` get, set `server.threads` | simple; organisation : organisation |
 | Show tool calls | Settings > Appearance | `sagax_settings` get, set `server.showToolCalls` | simple; organisation : organisation |
 | Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker}) | Settings > Experimental | `sagax_settings` get, set `server.feature` | simple; organisation : organisation |
-| Routines in conversation | Settings > Organization > Bots | `sagax_settings` get, set `server.routinesInConversation` | simple; organisation : organisation |
 | Room turn limit | Settings > Organization > Rooms | `sagax_settings` get, set `server.roomTurnTimeout` | simple; organisation : organisation |
 | MCP call time limit | Settings > Organization | `sagax_settings` get, set `server.mcpCallTimeout` | simple; organisation : organisation |
 

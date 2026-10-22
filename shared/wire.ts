@@ -164,6 +164,11 @@ export interface WireTask {
   projectId?: string;
   /** Detached routine execution, reachable through its visible results card. */
   routineRunId?: string;
+  /** An automatic "<routine> · Results" thread (2026-10-22): kept and listed
+   * with threads shown, but never a segment of the single stream, never a row
+   * under the bot with threads hidden, never unread. New reports go to the
+   * person's own conversation instead. Only `true` is stored. */
+  routineResults?: true;
   /** A hidden conversation: an AI client (the Perspicax MCP `sagax_send`,
    * the member API) works with the bot here on the person's behalf, the way
    * Grok Bot keeps its subagents' conversations out of the chat (#291). Never

@@ -259,6 +259,12 @@ describe("shared sentences", () => {
     }
   });
 
+  it("tells a routine run it works in the background and how to say nothing to report (JC 2026-10-22)", () => {
+    expect(ROUTINE_EXECUTION_PROMPT).toContain("the person does not see this conversation");
+    expect(ROUTINE_EXECUTION_PROMPT).toContain("Never restate or quote the routine's instructions");
+    expect(ROUTINE_EXECUTION_PROMPT).toContain("end your final message with the line NOTHING_TO_REPORT on its own");
+  });
+
   it("tells a bot offered create_bot that its person's own request may create one bot (2026-10-17)", () => {
     expect(PROFILE_CREATOR_PROMPT).toContain("create it with create_bot");
     expect(PROFILE_CREATOR_PROMPT).toContain("cannot create bots itself");

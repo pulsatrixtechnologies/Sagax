@@ -8,6 +8,7 @@ import { DATA_DIR } from "./config.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { routineReportOutcome } from "./routine-report.ts";
 import { stopCause } from "./drivers/engine-errors.ts";
 import {
   evaluateRoutinePrecheck,
@@ -294,6 +295,9 @@ export interface RoutineRun {
   attention?: string;
   /** Why a `nothing_to_report` run had nothing to do. */
   quietReason?: string;
+  /** 2026-10-22: a completed run whose final message had nothing for the
+   * person (server/routine-report.ts): nothing is posted to their chat. */
+  quiet?: true;
   error?: string;
   cost?: number | null;
   denials?: string[];
@@ -2598,6 +2602,7 @@ export class RoutineManager {
         run.status = "completed";
         run.attention = undefined;
         run.finishedAt = this.now();
+        this.settleReport(run);
         // A run that completes ends the owner's open notices for its bot.
         this.ownerNotices = this.ownerNotices.filter((notice) => notice.botId !== run.botId);
       }
@@ -2609,6 +2614,15 @@ export class RoutineManager {
     this.emitRun(run);
     if (event.type === "turn.completed") queueMicrotask(() => void this.tick());
     return cloneRun(run);
+  }
+
+  /** Whether the completed run has anything for the person (JC 2026-10-22):
+   * a quiet run keeps its note in the logs, without the marker. */
+  private settleReport(run: RoutineRun) {
+    const outcome = routineReportOutcome(run.output, run.prompt ?? this.routines.find((r) => r.id === run.routineId)?.prompt);
+    run.output = outcome.report || undefined;
+    if (outcome.quiet) run.quiet = true;
+    else delete run.quiet;
   }
 
   failThread(threadId: string, message: string, facts: RoutineFailureFacts = {}) {
@@ -2660,7 +2674,10 @@ export class RoutineManager {
       run.attention = undefined;
       run.finishedAt = this.now();
       run.error = undefined;
-      if (status !== "stopped") run.output = safeDetail.slice(0, 2_000) || undefined;
+      if (status !== "stopped") {
+        run.output = safeDetail.slice(0, 2_000) || undefined;
+        this.settleReport(run);
+      }
       this.save();
       this.emitRun(run);
     }

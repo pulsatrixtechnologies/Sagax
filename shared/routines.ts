@@ -92,6 +92,16 @@ export function isRoutineProblemRun(run: { status: RoutineRunStatus }): boolean 
  * indicators count, or one exact status. */
 export type RoutineRunStatusFilter = "all" | "problems" | RoutineRunStatus;
 
+/** Whether a run shows under a logs status filter. A completed run that had
+ * nothing for the person (`quiet`, 2026-10-22) is listed as Nothing to
+ * report, with the pre-check's quiet runs. */
+export function routineRunMatchesStatus(run: { status: RoutineRunStatus; quiet?: true }, filter: RoutineRunStatusFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "problems") return isRoutineProblemRun(run);
+  const status = run.status === "completed" && run.quiet ? "nothing_to_report" : run.status;
+  return status === filter;
+}
+
 export interface Routine {
   id: string;
   name: string;
@@ -179,6 +189,9 @@ export interface RoutineRun {
   startedAt?: number;
   finishedAt?: number;
   output?: string;
+  /** 2026-10-22: a completed run that had nothing for the person; nothing
+   * was posted to their conversation (server/routine-report.ts). */
+  quiet?: true;
   error?: string;
   /** Set when the run used its one automatic second start, and why. */
   retried?: RoutineRetryCause;

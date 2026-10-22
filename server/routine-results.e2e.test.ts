@@ -55,8 +55,9 @@ it("reports every run into the bot's main thread while fresh executions, approva
     expect(cards).toHaveLength(2);
     for (const run of completed) expect(cards.find((message) => message.routineRun.runId === run.id)?.routineRun)
       .toMatchObject({ status: "completed", scheduledFor: run.scheduledFor, executionThreadId: run.threadId, summary: "hello from fake claude" });
-    // A phone without the card reads only the text, so it carries the result.
-    for (const card of cards) expect(card.text).toBe("Routine “Persistent report” completed\n\nhello from fake claude");
+    // A phone without the card reads only the text, so it carries the
+    // result: the bot's report, the routine named under it (2026-10-22).
+    for (const card of cards) expect(card.text).toBe("hello from fake claude\n\nRoutine “Persistent report”");
     const currentBot = async () => (await api("GET", "/api/bots")).bots.find((candidate: any) => candidate.id === bot.id);
     const savedBot = await currentBot();
     expect(savedBot.threadId).toBe(originalThread);

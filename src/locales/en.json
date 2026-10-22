@@ -10175,5 +10175,8 @@
   "app.title": "Interactive app",
   "app.live": "Live",
   "app.escaped": "The app tried to leave its sandbox and was reset.",
-  "app.blocked": "The app kept leaving its sandbox and was stopped."
+  "app.blocked": "The app kept leaving its sandbox and was stopped.",
+  "routines.post.routine": "Routine: {name}",
+  "routines.post.openRun": "View run",
+  "routines.post.review": "Review"
 }
