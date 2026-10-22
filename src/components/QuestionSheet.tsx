@@ -90,6 +90,7 @@ export function QuestionSheet({
             <button
               type="button"
               onClick={onDismiss}
+              data-question-dismiss=""
               aria-label={dismissLabel}
               title={dismissLabel}
               className="-me-1.5 -mt-1 flex size-7 shrink-0 items-center justify-center rounded-full text-ink-tertiary hover:bg-ink/[0.07] hover:text-ink"

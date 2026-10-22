@@ -18,6 +18,11 @@
 export const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
 export const QUESTION_DISMISS_MESSAGE = "The user closed this question without answering. Use your best judgment and continue.";
 
+/** Sent as an ordinary answer when the person skips a waiting question (the
+ * Ignore button, or writing about something else). The server only takes
+ * QUESTION_DISMISS_MESSAGE after an answer, so skipping is an answer. */
+export const QUESTION_SKIP_MESSAGE = "The user skipped this question and moved on. Use your best judgment and continue.";
+
 /** Caps. Claude Code's own limits are smaller (1-4 questions, 2-4 options);
  * these leave room for a provider that widens them without letting a card
  * grow without bound. */
@@ -59,6 +64,9 @@ export interface QuestionRequestCardData {
    * Computer engine left in older conversations). Only drives the
    * agent-composed badge; it never changes how a card is answered. */
   origin?: "tool" | "output";
+  /** Epoch ms when the question closes by itself, as a dismissal. Absent
+   * for a question that waits as long as it takes (the default). */
+  autoDismissAt?: number;
 }
 
 /** Older live question cards predate requestType and only omit the permission

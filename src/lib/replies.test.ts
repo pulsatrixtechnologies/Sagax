@@ -20,6 +20,12 @@ describe("reply display", () => {
     expect(replySnippet("123456", 5)).toBe("1234…");
   });
 
+  it("names a link-only message by its site, not its address", () => {
+    expect(replySnippet("https://www.example.com/a/b?x=1")).toBe("[link] example.com");
+    expect(replySnippet("[the docs](https://docs.example.org/start)")).toBe("the docs");
+    expect(replySnippet("see https://example.com/x for more")).toBe("see https://example.com/x for more");
+  });
+
   it("uses readable citation content without leaking metadata", () => {
     const citation = citationAttachment(
       { ownerType: "bot", ownerId: "b1", threadId: "t1", messageId: "m1" },

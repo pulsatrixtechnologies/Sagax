@@ -11,6 +11,8 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
 import { composerPlaceholder } from "@/lib/composer-placeholder";
+import { pendingQuestions } from "@/lib/pending-question";
+import { QUESTION_SKIP_MESSAGE } from "../../shared/ask-question";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -216,6 +218,9 @@ export function Composer({
   const parallelApprovals = useParallelApprovals(group ? undefined : bot);
   const approvals = [...pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []), ...parallelApprovals];
   const approval = approvals[0];
+  // A bot's question waits in the chat; the composer stays free. Writing
+  // about something else closes it (see send).
+  const openQuestions = pendingQuestions(group ? group.messages : bot ? visibleMessages(bot) : []);
   const approvalBotFor = (pending: Pending) => group
     ? members?.find((member) => member.id === pending.message.from?.botId) ??
       members?.find((member) => member.id === groupBusyBotId)
@@ -908,6 +913,10 @@ export function Composer({
       threadId,
       channelMode: group ? effectiveChannelMode : undefined,
     };
+    // talking past a waiting question is an answer of its own: "not choosing"
+    for (const question of openQuestions) {
+      dispatch({ type: "decideRequest", threadId, requestId: question.card!.requestId!, behavior: "answer", message: QUESTION_SKIP_MESSAGE });
+    }
     if (group) {
       dispatch({
         type: "sendGroup",
@@ -1511,6 +1520,7 @@ export function Composer({
           aria-busy={bot?.awaitingThreadSnapshot || undefined}
           placeholder={composerPlaceholder({
             approval: Boolean(approval),
+            question: openQuestions.length > 0,
             attachmentPending,
             recording,
             busy,
