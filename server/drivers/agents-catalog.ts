@@ -20,6 +20,8 @@ import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
 import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
+import { phoneToolDefinition, phoneToolsFromEnv } from "./agents-phone-tools.ts";
+import type { PhoneToolId } from "../../shared/phone-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
 /** Which tools a turn is shown. The harness decides each of these when it
@@ -76,6 +78,9 @@ export interface CatalogProfile {
   /** The claim tools (server/perspicax-claims.ts): a Perspicax profile is
    * mounted for the person speaking in this turn. Absent is off. */
   claims?: boolean;
+  /** The tools a phone of the person speaking offers right now (phone_tool,
+   * agents-phone-tools.ts). Absent or empty is off, so the wire goldens stay. */
+  phoneTools?: PhoneToolId[];
 }
 
 /** The profile a spawned proxy was given. Everything is off unless the
@@ -104,6 +109,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     agentApi: env.SAGAX_AGENT_API === "1",
     perspicax: !externalRuntime && env.SAGAX_PERSPICAX_TOOLS === "1",
     claims: env.SAGAX_CLAIMS === "1",
+    phoneTools: externalRuntime ? [] : phoneToolsFromEnv(env.SAGAX_PHONE_TOOLS),
   };
 }
 
@@ -1694,6 +1700,8 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",
   "workspace_read", "workspace_search", "session_read", "close_thread", "list_threads",
   "request_login",
+  // The person's iPhone (agents-phone-tools.ts): rare, and long.
+  "phone_tool",
   // A post into a room from a 1:1 chat: rare.
   "list_rooms", "post_to_room",
 ]);
@@ -1780,6 +1788,7 @@ function catalogTools(profile: CatalogProfile) {
     ...core,
     ...(profile.perspicax && !profile.externalRuntime ? PERSPICAX_TOOLS : []),
     ...(profile.claims && !profile.externalRuntime ? CLAIM_TOOLS : []),
+    ...(profile.phoneTools?.length && !profile.externalRuntime ? [phoneToolDefinition(profile.phoneTools)] : []),
   ];
   if (!profile.agentApi || profile.externalRuntime) return base;
   return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || (tool.name !== "create_agent" && tool.name !== "delete_agent"))];

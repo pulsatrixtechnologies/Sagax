@@ -1073,6 +1073,12 @@ import { createRoutineAwayRoutes } from "./routes/routine-away.ts";
 import { createMeetingRoutes } from "./routes/meetings.ts";
 import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
+// Phone tools (audit row 81): the person's own iPhone, approved on the phone.
+import { createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./routes/phone-tools.ts";
+import { createPhoneToolBroker, phoneToolTurn } from "./phone-tools.ts";
+import { phoneConnectionTransport } from "../shared/phone-transport.ts";
+import { ipcPeer } from "./request-auth.ts";
+import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT, PHONE_TOOLS_FRAME, phoneToolsFrameAllowed } from "../shared/phone-tools.ts";
 import { createArtifactStore } from "./artifacts.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
 import { createArtifactRefresher } from "./artifact-refresh.ts";
@@ -1371,6 +1377,37 @@ const pushHub = new PushHub({
       return true;
     }
   },
+});
+/** Turns another bot's words joined as an aside (tryAsideDelivery): no phone
+ * tool for the rest of that turn (review of #960). Cleared when a turn starts. */
+const phoneToolTaintedThreads = new Set<string>();
+// Phone tools (server/phone-tools.ts): a frame tells the person's phones to
+// fetch, a push wakes a closed app; the audit names the decision, never data.
+const phoneTools = createPhoneToolBroker({
+  dataDir: DATA_DIR,
+  notify: (person) => broadcast({ kind: PHONE_TOOLS_FRAME, audience: person }),
+  push: (person, request) => pushHub.submit({
+    kind: "approval",
+    // a question category: no Allow on the lock screen, the phone answers in the app
+    prompt: "question",
+    personId: person,
+    threadId: request.threadId,
+    botId: request.botId,
+    requestId: request.id,
+    title: request.botName,
+    body: "Wants to use a tool on your phone. Open Sagax to answer.",
+    // the app's own catalog key (ios/App/Localizable.xcstrings), in the phone's language
+    bodyLocKey: "Wants to use a tool on your phone. Open Sagax to answer.",
+    at: Date.now(),
+  }),
+  pushable: (person) => pushHub.enabled && pushDevices.list(person).length > 0,
+  audit: (row) => appendAdminAction(DATA_DIR, {
+    category: "approval",
+    action: `phoneTool.${row.outcome}`,
+    target: { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name },
+    changed: [`${row.tool}:${row.access}`],
+    actor: { kind: "person", principalId: row.person, via: "sagax" },
+  }),
 });
 /** Count server events for a person and tell their streams what unlocked. Never throws. */
 function recordAchievements(person: string | null | undefined, events: readonly AchievementEvent[]): void {
@@ -4003,6 +4040,23 @@ function agentsIntegration(
       // join_meeting: Settings > Experimental > Meeting notetaker, direct
       // conversations only. The internal route re-checks both.
       SAGAX_MEETINGS: meetingNotetakerEnabled(cfg) && !store.groupByThread(threadId) ? "1" : "0",
+      // phone_tool: the person speaking owns this bot, in a 1:1 turn of their
+      // own, and a phone of theirs offers tools now. The route re-checks.
+      SAGAX_PHONE_TOOLS: (() => {
+        const bot = store.bot(botId);
+        if (!bot) return "";
+        const turn = phoneToolTurn({
+          ownsThread: true,
+          inRoom: Boolean(store.groupByThread(threadId)),
+          depth,
+          speakerOrigin: turnSpeakers.get(threadId)?.origin,
+          speakerPrincipal: turnSpeakerPrincipals.get(threadId),
+          ownerPrincipal: effectiveBotOwner(bot),
+          ownTurn: ownEnvironmentOrigin(bot, threadId) === "owner",
+          tainted: phoneToolTaintedThreads.has(threadId),
+        });
+        return "error" in turn ? "" : phoneTools.availableTools(turn.person).join(",");
+      })(),
       // recall_topic: a person's turn in a single-stream segment
       // (server/single-stream.ts). The route re-checks.
       SAGAX_SINGLE_STREAM: depth === 0 && store.taskByThread(botId, threadId)?.streamSegment === true ? "1" : "0",
@@ -11690,6 +11744,8 @@ function sseFrameFor(
   if (payload?.kind === "org.approvals" && !orgAdminStream(client)) return null;
   // a person's unlocks reach that person's streams only
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  // a person's phone tool requests reach that person's own streams only
+  if (payload?.kind === PHONE_TOOLS_FRAME && !phoneToolsFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   // a person's preferences reach that person's own devices only
   if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
   if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
@@ -14251,8 +14307,10 @@ bus.subscribe((event: RuntimeEvent) => {
           const widget = event.ok && event.resultText ? cwToolRowWidget(toolName, existing?.input, event.resultText, latestPersonText(event.threadId)) : null;
           // How long the call ran, for the step row's quiet duration.
           const durationMs = row ? Math.max(0, Date.now() - row.at) : undefined;
+          // what a phone answered goes to the turn, never into the transcript
+          const output = isPhoneToolCallName(toolName) ? PHONE_TOOL_OUTPUT_NOT_KEPT : event.output;
           store.patchMessage(event.threadId, messageId, {
-            tool: { ...existing, name: toolName, ok: event.ok, output: event.output, ...(durationMs !== undefined ? { durationMs } : {}), ...(widget ? { widget } : {}) },
+            tool: { ...existing, name: toolName, ok: event.ok, output, ...(durationMs !== undefined ? { durationMs } : {}), ...(widget ? { widget } : {}) },
           });
           toolMessageByItem.delete(itemKey);
         }
@@ -19026,6 +19084,8 @@ async function startTurn(
   if (!opts.cardContinuation || (opts.coordination && !opts.coordination.resumed) || (warmOnly && opts.warmCoordination === true)) {
     turnSpeakers.set(threadId, speaker);
     turnSpeakerPrincipals.set(threadId, orgSpeakerPrincipal(bot, speaker));
+    // a fresh turn of its own: an earlier aside no longer taints it (phone tools)
+    if (!warmOnly) phoneToolTaintedThreads.delete(threadId);
     if (routineLineage(speaker)) {
       turnRoutineLineage.add(threadId);
       const payer = turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId;
@@ -27282,6 +27342,25 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
     speaker: (threadId) => safetyPrincipal(threadId).principalId,
   }),
+  // phone_tool (server/routes/phone-tools.ts)
+  createPhoneToolInternalRoutes({
+    broker: () => phoneTools,
+    turn: (capability) => {
+      const bot = store.bot(capability.botId);
+      if (!bot) return { error: "unknown bot" };
+      const turn = phoneToolTurn({
+        ownsThread: Boolean(connectorThread(capability.botId, capability.threadId)),
+        inRoom: Boolean(store.groupByThread(capability.threadId)),
+        depth: capability.depth ?? 0,
+        speakerOrigin: turnSpeakers.get(capability.threadId)?.origin,
+        speakerPrincipal: turnSpeakerPrincipals.get(capability.threadId),
+        ownerPrincipal: effectiveBotOwner(bot),
+        ownTurn: ownEnvironmentOrigin(bot, capability.threadId) === "owner",
+        tainted: phoneToolTaintedThreads.has(capability.threadId),
+      });
+      return "error" in turn ? turn : { person: turn.person, botName: bot.name };
+    },
+  }),
   // join_meeting (server/routes/meeting-internal.ts)
   createMeetingInternalRoutes({
     meetings: () => meetingService,
@@ -32600,6 +32679,35 @@ function broadcastPresence(view: PresenceView): void {
   broadcast({ kind: "presence.changed", audience: principalId, people: [{ ...view, principalId, ...(hidden ? { hidden: true } : {}) }] });
 }
 const presence = new PresenceTracker({ onChange: broadcastPresence });
+// The person's own iPhone answers phone tool requests (server/routes/phone-tools.ts):
+// a paired phone through the companion (its vouched device), or a signed-in
+// device session; never a bot's session, a browser, or a service.
+ROUTES.push(createPhoneToolRoutes({
+  broker: () => phoneTools,
+  // Only native clients (review of #960): a phone the companion vouched for,
+  // or the native app's bearer session (never a browser's cookie, a bot's
+  // session or an ephemeral one). The transport is the connection's own.
+  phone: (req, auth) => {
+    const person = actorPrincipalId(auth);
+    if (!person) return null;
+    if (auth.kind === "loopback") {
+      const device = req.headers["x-openmausbot-companion-device"];
+      if (req.headers["x-openmausbot-companion"] !== "1" || typeof device !== "string" || !/^[\w-]{1,128}$/.test(device)) return null;
+      const transport = req.headers["x-openmausbot-companion-transport"] === "protected" ? "protected" as const : "local" as const;
+      return { person, deviceId: `companion:${device}`, transport };
+    }
+    if (auth.via !== "bearer" || auth.session.ephemeral || isBotActSession(auth.session)) return null;
+    const forwarded = req.headers["x-forwarded-proto"];
+    const transport = phoneConnectionTransport({
+      encrypted: Boolean((req.socket as { encrypted?: boolean } | undefined)?.encrypted),
+      ipc: ipcPeer(req),
+      remoteAddress: req.socket?.remoteAddress,
+      forwardedProto: Array.isArray(forwarded) ? forwarded[0] : forwarded,
+    });
+    return { person, deviceId: `session:${auth.session.id}`, transport };
+  },
+  botName: (botId) => store.bot(botId)?.name,
+}));
 // This person's phones for APNs pushes (server/routes/push-devices.ts).
 ROUTES.push(createPushDeviceRoutes({
   person: (auth) => actorPrincipalId(auth) || undefined,
@@ -38439,6 +38547,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const asideSpeaker = peerSpeaker(from.id, fromThreadId);
           if (!orgJoinsRunningTurn(target, target.threadId, asideSpeaker)) return null;
           const steer = instance.adapter.steer;
+          // another bot's words join the owner's live turn: no phone tool in it
+          phoneToolTaintedThreads.add(target.threadId);
           queueAsideMessage(toBotId, target.threadId, message, {
             fromBotId: from.id,
             fromBotName: from.name,

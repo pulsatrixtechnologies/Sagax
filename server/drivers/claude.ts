@@ -49,6 +49,7 @@ import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type EffortLevel, type TurnAccessInput } from "../contracts.ts";
 import { askInputDetail, askInputSummary, commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
+import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT } from "../../shared/phone-tools.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, USAGE_LIMIT } from "./retry.ts";
 import { engineFailureMessage, type EngineFailureKind } from "./engine-errors.ts";
@@ -2839,10 +2840,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               if (b.type === "tool_result") {
                 const toolName = typeof b.tool_use_id === "string" ? session.toolNames.get(b.tool_use_id) : undefined;
                 emit({
-                  ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error, output: toolDetailPreview(b.content),
+                  ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error,
+                  // a phone's answer reaches the model, never the event log or the chat (phone_tool)
+                  output: isPhoneToolCallName(toolName) ? PHONE_TOOL_OUTPUT_NOT_KEPT : toolDetailPreview(b.content),
                   ...(b.is_error ? {} : cwToolResult(toolName, b.content)),
                 });
-                for (const img of extractMcpImages(b.content)) {
+                // photos a phone sent go to the model only, never into the chat (phone_tool)
+                for (const img of isPhoneToolCallName(toolName) ? [] : extractMcpImages(b.content)) {
                   emit({ ...base(threadId, currentTurnId()), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }
                 if (!b.is_error && isArtifactTool(toolName)) {

@@ -377,6 +377,13 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "POST", path: /^\/api\/me\/achievements\/events$/ },
   { method: "PUT", path: /^\/api\/me\/achievements\/settings$/ },
   { method: "GET", path: /^\/api\/achievements\/public$/ },
+  //   phone tools (server/routes/phone-tools.ts): what this phone offers, the
+  //   requests waiting on it, the person's answer, and "Toujours permettre"
+  { method: "POST", path: /^\/api\/me\/phone-tools\/device$/ },
+  { method: "GET", path: /^\/api\/me\/phone-tools\/requests$/ },
+  { method: "POST", path: /^\/api\/me\/phone-tools\/requests\/[\w-]+$/ },
+  { method: "GET", path: /^\/api\/me\/phone-tools\/grants$/ },
+  { method: "DELETE", path: /^\/api\/me\/phone-tools\/grants$/ },
   // Inline video widgets: proxied media (also open without a device token,
   // see denyReason) and YouTube transcripts (session auth).
   { method: "GET", path: /^\/api\/media\/proxy\/.+/ },

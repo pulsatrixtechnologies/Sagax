@@ -390,6 +390,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/achievements\/events$/ },
   { methods: ["PUT"], path: /^\/api\/me\/achievements\/settings$/ },
   { methods: ["GET"], path: /^\/api\/achievements\/public$/ },
+  // own phone tools (server/routes/phone-tools.ts: the session's person and
+  // this device only; a bot's session is refused by the handler)
+  { methods: ["POST"], path: /^\/api\/me\/phone-tools\/device$/ },
+  { methods: ["GET"], path: /^\/api\/me\/phone-tools\/requests$/ },
+  { methods: ["POST"], path: /^\/api\/me\/phone-tools\/requests\/[\w-]+$/ },
+  { methods: ["GET", "DELETE"], path: /^\/api\/me\/phone-tools\/grants$/ },
   // People's custom labels (server/routes/person-labels.ts): everyone reads
   // them; the handler lets a person change their own, an organization admin
   // anyone's and a team manager their team's people.

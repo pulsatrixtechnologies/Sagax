@@ -448,6 +448,74 @@ show Usage. A bot's Overview is a client route since the iOS feature parity
 work, held to the bot's owner by its handler (see below). `/api/me/engines` is a client route
 on an organization server (`orgDirectory`), as before.
 
+## Phone tools (2026-10-21, Grok Bot parity row 81)
+
+A bot can ask the person's own iPhone for something only the phone knows:
+its position once, a contact by name (only the fields asked for), reminders
+and calendar events (read, or add one), photos the person picks, one of
+their Shortcuts by name, the clipboard text, and battery, network and Focus.
+Health is not offered.
+
+- Only over a protected transport (JC 2026-10-21): hosted HTTPS or
+  Tailscale, read from the connection, never from what the phone says
+  (`shared/phone-transport.ts`; through the sidecar, `companion/src/transport.ts`
+  sends `x-openmausbot-companion-transport`: the guardian's socket or a
+  tailnet address is protected). On plain local Wi-Fi the server offers
+  nothing from that phone and says why; the phone also refuses with the
+  reason, and Settings > Approval rules says the tools are off there.
+- Only native clients answer: a phone the companion vouched for, or the
+  native app's bearer session; never a browser cookie, a bot's session or
+  an ephemeral one. The routes are `admin` rows in the tool policy
+  (`defaultEnabled: false`): a bot's `act` never reaches them.
+- Never in a turn another bot's words joined (an aside folded into the
+  owner's live turn), nor in one `ownEnvironmentOrigin` does not call the
+  owner's (internal turn, routine lineage, automation, unattended run).
+  Parallel tasks the owner opens in their own turn inherit the owner's
+  access; the card on the phone still asks.
+- The bot sees one tool, `phone_tool` (`server/drivers/agents-phone-tools.ts`),
+  only in a 1:1 turn the bot's owner started, and only while a phone of
+  theirs offers tools (it registered in the last 15 minutes, or in the last
+  day when the server can push to it). Its `tool` enum lists exactly what
+  the phone offers. Never in a room, a routine, a webhook turn or a turn
+  another bot started; never another member's phone.
+- Each request shows a card on the phone (Refuser / Toujours permettre /
+  Permettre une fois, `Features/PhoneTools`), never on the lock screen: the
+  push uses the question category, without Allow. Toujours permettre is
+  saved for exactly what was allowed (`<data>/phone-tools/grants.json`):
+  status, the approximate position, contacts with that very set of fields,
+  reading reminders or the calendar. Never for a precise position,
+  creating a reminder or an event, a shortcut, the clipboard or photos. It
+  runs only while the app is open on screen, and a banner says which bot
+  used which tool each time. After a refusal the same bot cannot show the
+  same tool's card again for a minute. Settings > Approval rules lists the tools this
+  phone offers (a switch each) and the grants (Remove).
+- The phone runs the iOS call after the yes, asks iOS for its own permission
+  the first time (usage descriptions in `project.yml`, French in
+  `App/InfoPlist.xcstrings`) and sends only the asked fields
+  (`PhoneToolShaping`); the server cuts the answer again
+  (`checkPhoneToolResult`, a position is rounded to about 100 m unless the
+  bot asked precise). The answer stays in memory until the waiting turn
+  reads it, once (a timer drops what nobody read); the transcript and the
+  event log keep "Phone data not kept in the conversation." instead of the
+  output, and photos go to the model only, never into the chat. The admin
+  activity row names the tool and the decision (`approval`, `phoneTool.*`).
+  What Sagax cannot control: the engine's own session files (Claude Code,
+  Codex) keep the tool result like any other.
+- The card shows everything that would be created (title, dates, place,
+  list, notes), a shortcut's whole input with a warning that it can send,
+  pay or change things, and the clipboard's text as read before it goes.
+  The first time the phone offers tools, a sheet lists them (all on, each
+  request still asks; Settings > Approval rules turns any off).
+- A call holds the turn 45 s at most (under every engine's tool timeout),
+  then hands the bot a request id to wait on again. A request expires after
+  5 minutes. At most 5 wait on one person.
+- Routes: `POST /api/me/phone-tools/device`, `GET /api/me/phone-tools/requests`,
+  `POST /api/me/phone-tools/requests/:id`, `GET` and `DELETE /api/me/phone-tools/grants`
+  (companion `ALLOWED` and `CLIENT_ALLOW`); the harness accepts them only
+  from the companion's vouched phone or a person's own device session, never
+  a bot's session. The `phone-tools` frame carries no data and reaches the
+  person's own streams only.
+
 ## iOS feature parity routes (2026-10-03)
 
 From the feature parity matrix
