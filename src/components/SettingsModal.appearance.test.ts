@@ -164,8 +164,8 @@ describe("Settings → Appearance", () => {
   it("is laid out as Grok Bot's pages: grey headings, compact rows, pill menus, no help text", () => {
     const html = render();
     const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
-    expect(groups).toEqual(["interface", "skin", "backgroundEffects", "conversation", "sidebar", "accessibility", "desktop"]);
-    for (const heading of ["Interface", "Skin", "Background effects", "Conversations", "Sidebar", "Accessibility", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
+    expect(groups).toEqual(["interface", "skin", "backgroundEffects", "conversation", "sidebar", "mascots", "accessibility", "desktop"]);
+    for (const heading of ["Interface", "Skin", "Background effects", "Conversations", "Sidebar", "Mascots", "Accessibility", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
     // no native select on the page itself, only the narrow-window section menu
     const page = html.slice(html.indexOf('data-settings-group="interface"'));
     expect(page).not.toContain("<select");

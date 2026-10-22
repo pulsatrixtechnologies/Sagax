@@ -13895,7 +13895,10 @@
       "remoteFolder.noComputer": "f13830537db286744823b9cd92b2e42419c63d930b522e17e79202da12fd5d86",
       "remoteFolder.loading": "ba3bbbe10d8bef66441c88536ce7b8e724e2829b59a3da658654f4961cd61ae5",
       "remoteFolder.noSubfolder": "cc507bbf64faadc0f0cf21c3601f26e537965126ec6a466ac3123ec0809b122a",
-      "remoteFolder.choose": "0f3b2318287c5ccd63e867c847a8fc7326408130401a912f0d59a10e383fa22d"
+      "remoteFolder.choose": "0f3b2318287c5ccd63e867c847a8fc7326408130401a912f0d59a10e383fa22d",
+      "settings.group.mascots": "cee1a434e9f6122d1717621f5b884bb0247793d9b45bb1da86727ffbe78cce38",
+      "settings.hdMascots.title": "ed014121147b76d51212966cf9281f0187d84ff92df5e36e1cb16840b76e5577",
+      "settings.hdMascots.subtitle": "e797d87584643b266f2171f240454af44d2dcbec4289100a6918941148c1d7ae"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -22461,7 +22464,10 @@
       "teamMemory.settled.declined": "197912a1e812ce2ac04aa9cdd10bc46ba5ad027dfc926fd482805bae0b31054f",
       "teamMemory.settled.gone": "7504d800d8845b1e8b4663c28dd30f1c72873098ac3c7efebbae8a77a3d4da3e",
       "teamMemory.settled.someoneAccepted": "4cc98bfdc2efd5f21753e97853781bfd553dc4cb99312406e71dd7001735dceb",
-      "teamMemory.settled.someoneDeclined": "2a04c1c45c8bf8e157256d231a9fd01748f5e6f338527eef308ef81a186b1d0e"
+      "teamMemory.settled.someoneDeclined": "2a04c1c45c8bf8e157256d231a9fd01748f5e6f338527eef308ef81a186b1d0e",
+      "settings.group.mascots": "cee1a434e9f6122d1717621f5b884bb0247793d9b45bb1da86727ffbe78cce38",
+      "settings.hdMascots.title": "ed014121147b76d51212966cf9281f0187d84ff92df5e36e1cb16840b76e5577",
+      "settings.hdMascots.subtitle": "e797d87584643b266f2171f240454af44d2dcbec4289100a6918941148c1d7ae"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
