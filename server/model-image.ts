@@ -28,6 +28,7 @@ import type { renderAsync as RenderAsync } from "@resvg/resvg-js";
 import { ATTACHMENTS_DIR, modelImageCopyPath } from "./attachments.ts";
 import type { TurnImageInput } from "./contracts.ts";
 import { nativeRequire } from "./data/engine.ts";
+import { makeWebpScale } from "./webp-scale.ts";
 
 /** Claude's recommended long edge; beyond it a model only scales down itself. */
 export const MODEL_IMAGE_MAX_EDGE = 1568;
@@ -39,6 +40,15 @@ const MIN_EDGE = 512;
 const MAX_SOURCE_SIDE = 20_000;
 /** Most pixels drawn for one picture (resvg holds them all, 4 bytes each). */
 const MAX_SOURCE_PIXELS = 50_000_000;
+/** A WebP is decoded to RGBA in memory (4 bytes a pixel, on the main thread):
+ * a larger one is sent as stored. */
+const MAX_WEBP_PIXELS = 24_000_000;
+
+function isWebp(bytes: Uint8Array, mime: string): boolean {
+  if (mime === "image/webp") return true;
+  const view = Buffer.from(bytes.buffer, bytes.byteOffset, Math.min(bytes.byteLength, 12));
+  return view.length === 12 && view.toString("latin1", 0, 4) === "RIFF" && view.toString("latin1", 8, 12) === "WEBP";
+}
 
 export interface RasterSize {
   width: number;
@@ -116,14 +126,18 @@ export interface FittedImage {
 
 /** Fit one picture: long edge at most MODEL_IMAGE_MAX_EDGE, at most
  * MODEL_IMAGE_MAX_BYTES. Null when it cannot be read or drawn. */
-export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime"], render: ScaleRenderer = resvgScale): Promise<FittedImage | null> {
+export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime"], renderer?: ScaleRenderer): Promise<FittedImage | null> {
   const size = rasterSize(bytes);
   if (!size || size.width > MAX_SOURCE_SIDE || size.height > MAX_SOURCE_SIDE || size.width * size.height > MAX_SOURCE_PIXELS) return null;
-  // resvg 2.6 draws a WebP as an empty frame: it goes as it is (engines take
-  // WebP, and scale a large one down themselves).
-  if (mime === "image/webp" || (Math.max(size.width, size.height) <= MODEL_IMAGE_MAX_EDGE && bytes.length <= MODEL_IMAGE_MAX_BYTES)) {
+  if (Math.max(size.width, size.height) <= MODEL_IMAGE_MAX_EDGE && bytes.length <= MODEL_IMAGE_MAX_BYTES) {
     return { bytes, mime, size, resized: false };
   }
+  // resvg 2.6 draws a WebP as an empty frame, so a WebP is decoded by libwebp
+  // (webp-scale.ts) and comes out as a PNG like any other format. One too
+  // large to decode in memory, or an animated or damaged one, goes as stored.
+  const webp = isWebp(bytes, mime);
+  if (webp && size.width * size.height > MAX_WEBP_PIXELS) return { bytes, mime, size, resized: false };
+  const render = renderer ?? (webp ? makeWebpScale() : resvgScale);
   let edge = Math.min(MODEL_IMAGE_MAX_EDGE, Math.max(size.width, size.height));
   let smallest: FittedImage | null = null;
   for (;;) {

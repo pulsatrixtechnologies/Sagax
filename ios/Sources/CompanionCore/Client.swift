@@ -1301,7 +1301,7 @@ public struct CompanionClient: Sendable {
         guard AttachmentPolicy.imageMIMETypes.contains(normalizedMime),
               data.count <= Self.maximumImageUploadBytes
         else {
-            throw APIError.transport("Choose a PNG, JPEG, GIF, or WebP image up to 10 MB.")
+            throw APIError.transport("Choose a PNG, JPEG, GIF, or WebP image up to \(AttachmentPolicy.maximumImageMegabytes) MB.")
         }
         var request = try makeRequest(
             "POST",
