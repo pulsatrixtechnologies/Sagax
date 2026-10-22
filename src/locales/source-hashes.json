@@ -13452,7 +13452,7 @@
       "tray.tooltipUnread": "50268aa1c95fa440db607b6520e4f9414a4f5b0bcf9d243e468b5a70da0e9234",
       "tray.tooltipWorking": "a7c6b2addee0d6fef34d578979bf5fbbdd0784e76b7219bca469b11c9c09bbb5",
       "settings.botHotkeys.title": "6cfde8bb5717a6b80f7771ba3dc6ba6ee15e02f1393353c5d9e9414051fe5815",
-      "settings.botHotkeys.note": "e6c86e70f903a15828683c6583d9c4642d1632c5031236f122b727ea464dea52",
+      "settings.botHotkeys.note": "4281e5d0c6b85e2dacb361527d2a309a0a63971c1b6857b02b5c441f4f083e57",
       "settings.botHotkeys.chord": "69eba228b1e311b7a3dc53be8fa95e56148cc985019ce63f000936c76f3e29ac",
       "settings.botHotkeys.chord.cmd-shift": "cc79c9255270833cf72715712a28093259722c312d982e988e91475b1de7d378",
       "settings.botHotkeys.chord.cmd-alt": "159789529d07ffc8144ca321a781597210be40a219de17babc9e31161669976c",
@@ -13547,7 +13547,12 @@
       "computerCare.updateNow.button": "c1c1009d3f37ec058070a62e22caf9ac9dae2169d452487c5c271a8bcf57a291",
       "computerCare.updateNow.confirm": "a0fbe4d710cf09b559538bb96737193d80c2e2d913bbbc1148b609d67ddb83d7",
       "computerCare.updateNow.running": "649e6ddd34f75a7820bcd14823041ad4746731734c1353c4e8cf48a9afda279c",
-      "computerCare.updateNow.error": "eca99dab10966df9752fbad93215af25286ffa0612a436708c9b37b0322120ec"
+      "computerCare.updateNow.error": "eca99dab10966df9752fbad93215af25286ffa0612a436708c9b37b0322120ec",
+      "screenCapture.unavailable": "2259c101286b23bf57df22642e2c4623c5e638b50f272688213cfe500d45e1a1",
+      "screenCapture.noBot": "ec2b8c2efb3a3be7233b5cfa54a3c45483ac71acf6d3990e72408f1368d6e404",
+      "screenCapture.noImages": "2442b976c5b690a06daf33e873fea5106cdf2ef6272f5e77ce7bc57b053204dc",
+      "screenCapture.tooLarge": "654c0e035675f238e53e8a63cbbe7d0c7fc8307a2961d5e9402bd6d82ab0e45a",
+      "screenCapture.uploadFailed": "cb8811d2992425176e60317b96927f6aa4dbf0bae2282184d1ffa4379600202f"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

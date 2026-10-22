@@ -88,6 +88,7 @@ import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-wi
 import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
 import { createDataWindows } from "./data-window.mjs";
 import { createBotHotkeys, createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
+import { captureAccelerator, captureThumbnailSize, createCaptureHotkey, pickCaptureSource } from "./screen-capture-hotkey.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -4218,6 +4219,38 @@ function applyBotHotkeyConfig() {
   desktopTray?.setHotkeys(config);
   botHotkeys.dispose();
   if (process.platform === "darwin") botHotkeys.sync(trayRoster.length, config.enabled);
+  applyCaptureHotkey();
+}
+// The bots' chord with 0: one picture of the screen under the pointer, put
+// in the open bot's composer by the page, never sent by itself
+// (electron/screen-capture-hotkey.mjs). The picture goes to the main window
+// only, is never logged and never written to disk here.
+const captureHotkey = createCaptureHotkey({
+  globalShortcut,
+  onPress: () => captureScreenToBot(),
+  log: (line) => slog(line),
+});
+function applyCaptureHotkey() {
+  const config = botHotkeyConfig();
+  captureHotkey.sync(captureAccelerator(process.platform, config.modifier), config.enabled);
+}
+async function captureScreenToBot() {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win) return;
+  let png = null;
+  try {
+    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: captureThumbnailSize(display) });
+    const image = pickCaptureSource(sources, display.id)?.thumbnail;
+    if (image && !image.isEmpty()) png = image.toPNG();
+  } catch (error) {
+    slog(`capture hotkey: the screen could not be captured (${error?.name ?? "error"})`);
+  }
+  if (win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.send("desktop:screen-capture", png ? { png: png.toString("base64") } : { error: "unavailable" });
 }
 const botHotkeys = createBotHotkeys({
   globalShortcut,
@@ -4914,6 +4947,7 @@ app.whenReady().then(async () => {
       slog(`system tray unavailable: ${error?.message ?? error}`);
     }
   }
+  applyCaptureHotkey();
   // The loading screen opens just after the local server is forked
   // (startServerOn): building its window takes the main thread for about a
   // tenth of a second, and the server's start no longer waits behind it.
@@ -5303,6 +5337,7 @@ app.on("before-quit", (e) => {
   dataWindows.closeAll();
   mascotHotkey.dispose();
   botHotkeys.dispose();
+  captureHotkey.dispose();
   startupScreen?.dispose();
   companyBackupSchedule?.close();
   orgLibrary?.close();
@@ -5366,5 +5401,5 @@ function releaseDesktopDataDirLease() {
 app.on("will-quit", releaseDesktopDataDirLease);
 app.on("will-quit", () => desktopTray?.destroy());
 // the global key goes with the app, whatever path the quit took
-app.on("will-quit", () => { mascotHotkey.dispose(); botHotkeys.dispose(); });
+app.on("will-quit", () => { mascotHotkey.dispose(); botHotkeys.dispose(); captureHotkey.dispose(); });
 process.once("exit", releaseDesktopDataDirLease);

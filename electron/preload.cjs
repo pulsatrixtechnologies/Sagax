@@ -375,6 +375,17 @@ const bridge = {
     ipcRenderer.on("desktop:open-bot", listener);
     return () => ipcRenderer.removeListener("desktop:open-bot", listener);
   },
+  /** The bots' chord with 0 took a picture of the screen (base64 PNG), or
+   * could not (Screen Recording not granted): the page attaches it to the
+   * open bot's composer. Never sent by itself. */
+  onScreenCapture: (cb) => {
+    const listener = (_event, value) => {
+      if (value && typeof value.png === "string") cb({ png: value.png });
+      else cb({ error: "unavailable" });
+    };
+    ipcRenderer.on("desktop:screen-capture", listener);
+    return () => ipcRenderer.removeListener("desktop:screen-capture", listener);
+  },
   /** Presence: whether the person is at this computer ("active", "idle",
    * "locked" or "unknown") and the seconds since their last input. Safe on
    * an organization page: a state and a number, nothing else. */
