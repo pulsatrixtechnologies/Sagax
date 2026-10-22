@@ -2535,6 +2535,18 @@ function viewerUsesTeamSection(viewer: AuthzViewer | undefined, section: string)
     sectionContextKey(bot.section) === key && canOnBot(viewer, "bot.use", botFacts(bot)));
 }
 
+/** Delivery of a team-memory card to someone who is not its bot's owner:
+ * the same people cardAnswerRefusal lets answer it as a section member (a
+ * shared server, never a Cloud home, a person who can use a bot of the
+ * card's current section), and never in a confidential thread. Admins
+ * answer by their scope and keep reaching it as they do for any card. */
+function teamMemoryMemberMayAnswer(threadId: string, card: { teamMemoryRequest?: { section?: unknown } } | null | undefined, viewerId: string | undefined): boolean {
+  const section = card?.teamMemoryRequest?.section;
+  if (typeof section !== "string" || !viewerId) return false;
+  if (CLOUD_HOME || !teamMemoryShared() || store.isConfidentialThread(threadId)) return false;
+  return viewerUsesTeamSection(authzViewerFromId(viewerId), section);
+}
+
 /** The team-memory dialog is an admin page (the route needs admin scope,
  * server/request-auth.ts). A local service (a bot's own shell) proposes
  * through the internal route and waits for a card; it never writes the
@@ -11051,6 +11063,12 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       if (orgAdmin) { scope = "org"; decidable = true; }
       else if (ownerId === viewer.principalId) { scope = "org"; decidable = false; waitingOn = "admin"; }
       else continue;
+    } else if (ownerId !== viewer.principalId && teamMemoryMemberMayAnswer(threadId, card, viewer.principalId)
+      && !cardAnswerRefusal(auth, threadId, card.requestId!, "allow")) {
+      // a team-memory card is also the team's: a member of its current
+      // section who may confirm it finds it here, as in the conversation
+      scope = "mine";
+      decidable = true;
     } else if (ownerId === viewer.principalId) {
       // the same answerer rules as the card in the conversation
       scope = "mine";
@@ -11278,10 +11296,7 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   if (!isApprovalCardMessage(row)) return message;
   // A team-memory card is the team's (cardAnswerRefusal): a person who can
   // use a bot of that section gets the card itself, not "waiting on owner".
-  const teamMemory = (row.card as { teamMemoryRequest?: { section?: unknown } } | undefined)?.teamMemoryRequest;
-  if (teamMemory && typeof teamMemory.section === "string" && viewer.userId &&
-    teamMemoryShared() &&
-    viewerUsesTeamSection(authzViewerFromId(viewer.userId), teamMemory.section)) return message;
+  if (teamMemoryMemberMayAnswer(threadId, row.card as { teamMemoryRequest?: { section?: unknown } } | undefined, viewer.userId)) return message;
   const bot = botForApproval(threadId, row);
   const audience = bot
     ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, row.card as { destinationAnswerer?: unknown } | undefined), host: approvalHostOf(bot) })
@@ -11440,7 +11455,11 @@ function scopeChannelApproval(
     const bot = approvalBot(note);
     if (!bot) return { action: "drop" };
     const audience = approvalAudience({ ownerUserId: cardAnswererId(bot, typeof note.threadId === "string" ? note.threadId : undefined, noteCard(note.threadId, (note as { requestId?: unknown }).requestId)), host: approvalHostOf(bot) });
-    return receivesApprovalCard(viewer, audience) ? { action: "same" } : { action: "drop" };
+    if (receivesApprovalCard(viewer, audience)) return { action: "same" };
+    // A team-memory card also reaches the section members who may confirm it.
+    // cheap exits first: the card is looked up only for a viewer who could be a member
+    if (!viewer.userId || CLOUD_HOME || !teamMemoryShared()) return { action: "drop" };
+    return teamMemoryMemberMayAnswer(String(note.threadId ?? ""), noteCard(note.threadId, (note as { requestId?: unknown }).requestId), viewer.userId) ? { action: "same" } : { action: "drop" };
   }
   if (kind === "runtime") {
     const event = payload.event;
@@ -30097,7 +30116,7 @@ function cardAnswererId(bot: BotRecord, threadId: string | undefined, card: { de
   return answerer || approvalOwnerId(bot, threadId);
 }
 /** The card of an approval notification or row, when it names one. */
-function noteCard(threadId: unknown, requestId: unknown): { destinationAnswerer?: unknown } | undefined {
+function noteCard(threadId: unknown, requestId: unknown): NonNullable<Message["card"]> | undefined {
   if (typeof threadId !== "string" || typeof requestId !== "string") return undefined;
   return store.messagesFor(threadId).find((row) => row.card?.requestId === requestId)?.card;
 }
@@ -37627,6 +37646,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           threadId: body.fromThreadId, requestId: proposed.entry.id, botId: from.id, botName: from.name,
           tool: "propose_team_memory", summary, decision: "card-shown", source: "team-memory",
         });
+        notify(deliverableNotification("approval", from, body.fromThreadId, summary, {
+          avatarUrl: from.avatarUrl,
+          title: "Remember this for the team?",
+          requestId: proposed.entry.id,
+          ...(owner.group ? { group: { id: owner.group.id, name: owner.group.name } } : {}),
+        }));
         return json(res, 201, { status: "proposed", requestId: proposed.entry.id, messageId: card.id, summary });
       }
       if (method === "POST" && path === "/api/internal/profile-requests") {

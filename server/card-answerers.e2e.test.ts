@@ -24,6 +24,8 @@
 //      owner; someone outside the team is refused; a bot moved to another
 //      section since its proposal no longer lets its old team confirm; the
 //      dialog's direct writes stay admin; a local service confirms none
+//  10. that card also notifies, and lists in the inbox of, the members who may
+//      confirm it (never a stranger, never another kind of approval)
 //
 // No new card, prompt or gate appears anywhere: the provider's own approval
 // is the card, and these only decide whose answer it accepts.
@@ -147,7 +149,7 @@ async function cardFrom(bot: { id: string }, threadId: string, sender?: string, 
 
 const refusal = /Only the bot owner can answer this approval/;
 
-const teamMemoryRefusal = /Only a member of this team, or a workspace admin, can review its shared memory/;
+const teamMemoryRefusal = /Only a member of this team, or an organization admin, can review its shared memory/;
 
 /** A bot of BOSS in `section`, shared only with `members`. */
 async function makeTeamBot(name: string, section: string, members: string[]) {
@@ -178,6 +180,40 @@ async function proposeTeamMemory(bot: { id: string }, threadId: string, name: st
   expect(proposed.status, JSON.stringify(body)).toBe(201);
   expect(body.status).toBe("proposed");
   return body.requestId;
+}
+
+/** A person's live event stream, parsed frame by frame. */
+function openStream(as: string) {
+  const controller = new AbortController();
+  const frames: any[] = [];
+  const state: { hello: any } = { hello: null };
+  void (async () => {
+    try {
+      const res = await fetch(`${BASE}/api/events`, { headers: { authorization: `Bearer ${tokens[as]}` }, signal: controller.signal });
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let end: number;
+        while ((end = buffer.indexOf("\n\n")) >= 0) {
+          const chunk = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          for (const line of chunk.split("\n")) {
+            if (!line.startsWith("data: ")) continue;
+            const frame = JSON.parse(line.slice(6));
+            if (frame.kind === "hello") state.hello = frame;
+            else if (frame.kind !== "ping") frames.push(frame);
+          }
+        }
+      }
+    } catch {
+      /* aborted */
+    }
+  })();
+  return { frames, ready: () => waitFor(async () => state.hello, 10_000), close: () => controller.abort() };
 }
 
 const teamEntry = async (section: string, name: string) =>
@@ -391,12 +427,51 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     const threadId = task.body.task.threadId as string;
     const requestId = await proposeTeamMemory(mover, threadId, "East board");
     expect((await api("PATCH", `/api/bots/${mover.id}`, { section: "Warehouse" }, BOSS)).status).toBe(200);
+    // delivery follows the answer: the old team no longer gets a card it cannot confirm
+    const afterMove = (await api("GET", `/api/threads/${threadId}/messages`, undefined, ADA)).body.messages as any[];
+    expect(afterMove.some((m) => m.card?.requestId === requestId)).toBe(false);
+    expect((await api("GET", "/api/approvals", undefined, ADA)).body.pending.some((item: any) => item.requestId === requestId)).toBe(false);
     const refused = await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "allow" }, ADA);
     expect(refused.status, JSON.stringify(refused.body)).toBe(403);
     expect(refused.body.error).toMatch(teamMemoryRefusal);
     expect((await teamEntry("Dispatch East", "East board"))?.status).toBe("proposed");
     // an admin still decides it
     expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "deny" }, BOSS)).status).toBe(200);
+  }, 90_000);
+
+  it("notifies a team-memory card and lists it in the inbox of the section members who may confirm it", async () => {
+    const bot = await makeTeamBot("Notifier", "Dispatch Night", [ADA]);
+    await makeTeamBot("Sales night", "Sales Night", [BOB]);
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Ada's night" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    const streams = { ada: openStream(ADA), bob: openStream(BOB), boss: openStream(BOSS) };
+    try {
+      await Promise.all(Object.values(streams).map((stream) => stream.ready()));
+      const requestId = await proposeTeamMemory(bot, threadId, "Night board");
+      const notified = (stream: ReturnType<typeof openStream>) => waitFor(async () =>
+        stream.frames.find((frame) => frame.kind === "notify" && frame.notification?.requestId === requestId) ?? null, 5_000);
+      // the member who may confirm it, and the bot's owner, hear of it; a stranger does not
+      expect(await notified(streams.ada)).not.toBeNull();
+      expect(await notified(streams.boss)).not.toBeNull();
+      expect(await notified(streams.bob)).toBeNull();
+      const inbox = async (as: string) => ((await api("GET", "/api/approvals", undefined, as)).body.pending ?? [])
+        .filter((item: any) => item.requestId === requestId);
+      const mine = await waitFor(async () => { const rows = await inbox(ADA); return rows.length ? rows : null; }, 10_000);
+      expect(mine, "the member finds the card in the inbox").toHaveLength(1);
+      expect(mine![0]).toMatchObject({ threadId, decidable: true });
+      expect(await inbox(BOB)).toEqual([]);
+      // answering from the inbox is the same decision as in the conversation
+      expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "deny" }, ADA)).status).toBe(200);
+      expect(await inbox(ADA)).toEqual([]);
+      // another kind of approval on the same bot stays the owner's: no inbox row, no notification for Ada
+      const command = await cardFrom(bot, threadId, ADA);
+      expect(streams.ada.frames.some((frame) => frame.kind === "notify" && frame.notification?.requestId === command)).toBe(false);
+      expect(await inbox(ADA)).toEqual([]);
+      expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: command, behavior: "deny" }, BOSS)).status).toBe(200);
+    } finally {
+      for (const stream of Object.values(streams)) stream.close();
+    }
   }, 90_000);
 
   it("lets a session-less local service answer no approval under service trust", async () => {

@@ -7,7 +7,7 @@ describe("team memory review", () => {
     expect(teamMemoryReviewRefusal({ admin: false, shared: true, memberOfSection: true })).toBeNull();
   });
 
-  it("lets a workspace admin confirm any section", () => {
+  it("lets an organization admin confirm any section", () => {
     expect(teamMemoryReviewRefusal({ admin: true, shared: true, memberOfSection: false })).toBeNull();
   });
 
