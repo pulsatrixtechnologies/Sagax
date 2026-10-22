@@ -75,9 +75,23 @@ test("the DwarfStar /v1/models shape yields ids, names and context windows", asy
   ]);
   assert.equal(probed.anthropic, true);
   assert.deepEqual(await probeLoopbackModels("http://127.0.0.1:8002/v1", fetchImpl), ["qwen3.8-flash-next", "qwen3.8-flash-next-chat"]);
+  assert.equal(probed.status, "answered");
+  // An invalid loopback base is the only null: a reachable base always carries
+  // a status for the Settings panel.
   assert.equal(await probeLoopbackCatalog("http://10.0.0.8:8002/v1", fetchImpl), null);
-  assert.equal(await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => new Response("down", { status: 503 })), null);
-  assert.equal(await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => { throw new Error("ECONNREFUSED"); }), null);
+  assert.equal((await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => new Response("down", { status: 503 }))).status, "offline");
+  assert.equal((await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => { throw new Error("ECONNREFUSED"); })).status, "offline");
+  // A server that is up but wants an API key reads as "needs_key", not dropped as "offline".
+  for (const code of [401, 403]) {
+    const needsKey = await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => new Response("unauthorized", { status: code }));
+    assert.equal(needsKey.status, "needs_key", `status ${code}`);
+    assert.deepEqual(needsKey.models, []);
+    assert.equal(await probeLoopbackModels("http://127.0.0.1:8002/v1", async () => new Response("no", { status: code })), null);
+  }
+  // A 200 with no usable model is "empty", never "answered".
+  const empty = await probeLoopbackCatalog("http://127.0.0.1:8002/v1", async () => new Response(JSON.stringify({ data: [{ id: "nomic-embed-text" }] }), { status: 200, headers: { "content-type": "application/json" } }));
+  assert.equal(empty.status, "empty");
+  assert.deepEqual(empty.models, []);
 });
 
 test("the bridge publishes names, falls back for an older server, and probes again when the picker opens", async () => {
@@ -121,8 +135,9 @@ test("the bridge publishes names, falls back for an older server, and probes aga
   try {
     bridge.sync();
     for (let tries = 0; tries < 100 && publishes.length === 0; tries++) await new Promise(resolve => setTimeout(resolve, 20));
-    // Down at launch: nothing published, and the failure is not remembered.
-    assert.deepEqual(publishes[0], { endpoints: [] });
+    // Down at launch: nothing published as a model, but the panel learns the
+    // server did not answer. The failure itself is not remembered for probing.
+    assert.deepEqual(publishes[0], { endpoints: [], probes: [{ id: "desk8002", status: "offline" }] });
     await new Promise(resolve => setTimeout(resolve, 350));
     modelServerUp = true;
     await bridge.refreshLocalModels();
@@ -293,7 +308,7 @@ test("a server that stops answering /models forgets its Anthropic answer", async
   };
   assert.equal((await probeLoopbackCatalog(base, server)).anthropic, true);
   up = false;
-  assert.equal(await probeLoopbackCatalog(base, server), null);
+  assert.equal((await probeLoopbackCatalog(base, server)).status, "offline");
   // Another server on the same port, busy at its first probe: not taken as the old one.
   up = true;
   messages = 0;

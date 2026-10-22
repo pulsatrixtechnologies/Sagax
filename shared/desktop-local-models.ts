@@ -12,6 +12,20 @@ export interface LoopbackEndpoint {
   baseUrl: string;
 }
 
+/** Outcome of the desktop's last probe of one loopback server, for the
+ * Settings panel so the owner can tell "listed", "running but empty",
+ * "reachable but needs an API key" and "not responding" apart instead of a
+ * single blank "nothing answered". It never gates the picker: only a server
+ * that answered /v1/models with usable models becomes a selectable row. */
+export type LoopbackProbeStatus = "answered" | "empty" | "needs_key" | "offline";
+
+export interface LoopbackProbe {
+  id: string;
+  status: LoopbackProbeStatus;
+}
+
+export const LOOPBACK_PROBE_STATUSES: readonly LoopbackProbeStatus[] = ["answered", "empty", "needs_key", "offline"];
+
 /** Suggested loopback servers. A host is published only after /v1/models answers. */
 export const SEED_ENDPOINTS: readonly LoopbackEndpoint[] = [
   { id: "desk8002", label: "DwarfStar", baseUrl: "http://127.0.0.1:8002/v1" },

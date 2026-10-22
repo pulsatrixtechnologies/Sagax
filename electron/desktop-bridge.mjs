@@ -473,6 +473,10 @@ export function createDesktopBridge({
             if (!record?.expose) { localCatalog.clear(); localAnthropic.clear(); return; }
             const next = new Map();
             const published = [];
+            // Per-endpoint probe outcome for the Settings panel: "answered",
+            // "empty", "needs_key" or "offline". Only "answered" becomes a
+            // picker row; the rest tell the owner why a server is not listed.
+            const probes = [];
             // All endpoints at once: one slow server (the Anthropic probe
             // waits up to 8 s) never holds back the others or the next tick.
             const candidates = (Array.isArray(record.endpoints) ? record.endpoints : [])
@@ -481,7 +485,9 @@ export function createDesktopBridge({
             const results = await Promise.all(candidates.map(({ base }) => probeLoopbackCatalog(base, fetchUrl)));
             candidates.forEach(({ endpoint, base }, index) => {
               const probed = results[index];
-              if (!probed?.models.length) return;
+              if (!probed) return;
+              probes.push({ id: endpoint.id, status: probed.status });
+              if (!probed.models.length) return;
               next.set(endpoint.id, base);
               published.push({ id: endpoint.id, label: String(endpoint.label ?? "").slice(0, 80), models: probed.models, details: probed.details, anthropic: probed.anthropic === true });
             });
@@ -495,9 +501,10 @@ export function createDesktopBridge({
               return;
             }
             try {
-              await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: published }, live, secret);
+              await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: published, probes }, live, secret);
             } catch (error) {
-              // A server that predates model names refuses the extra field. Send ids only.
+              // A server that predates model names or probe status refuses the
+              // extra field. Send ids only, with no probes.
               if (error?.status !== 400) throw error;
               plainCatalog = true;
               await request(env, `/api/desktop-bridge/${id}/local-models`, { endpoints: plain() }, live, secret);
