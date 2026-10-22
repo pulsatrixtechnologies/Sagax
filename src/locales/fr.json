@@ -9713,6 +9713,7 @@
   "vault.phoneScan.denied": "Refusé sur l'iPhone.",
   "vault.phoneScan.expired": "L'iPhone n'a pas répondu à temps.",
   "vault.phoneScan.failed": "La carte n'a pas pu être lue. Tapez-la plutôt.",
+  "vault.phoneScan.code": "Code {code} : vérifiez que l'iPhone affiche le même.",
   "vault.field.recipient": "Destinataire",
   "vault.field.line1": "Rue",
   "vault.field.city": "Ville",

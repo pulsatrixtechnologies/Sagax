@@ -9,6 +9,7 @@ import { json, readBody } from "../harness/http.ts";
 import { createPhoneToolBroker, type PhoneToolBroker } from "../phone-tools.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { dispatchInternalRoutes } from "./internal-route.ts";
+import { createCardScanKey, openSealedCard, sealCardForTest } from "../../shared/phone-card-seal.ts";
 import { createPhoneCardScanRoutes, createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./phone-tools.ts";
 import { dispatchRoutes } from "./table.ts";
 
@@ -181,30 +182,40 @@ describe("Scanner avec l'iPhone (row 84)", () => {
     expect((await call("POST", "/api/me/phone-tools/card-scan", {})).status).toBe(403);
   });
 
-  it("the phone scans, the computer gets the number, expiry and name once, never the security code", async () => {
+  it("the server relays only a sealed envelope the form opens; it never holds the number (JC 2026-10-21)", async () => {
     const call = await serve();
     await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
-    const started = await call("POST", "/api/me/phone-tools/card-scan", {}, desk);
+    // the form's one-time key is required
+    expect((await call("POST", "/api/me/phone-tools/card-scan", {}, desk)).status).toBe(400);
+    const key = await createCardScanKey();
+    const started = await call("POST", "/api/me/phone-tools/card-scan", { publicKey: key.publicKey }, desk);
     const id = String(started.body.requestId);
     expect(started.status).toBe(200);
     const pending = await call("GET", "/api/me/phone-tools/requests", undefined, phone);
-    expect(pending.body.requests).toMatchObject([{ id, tool: "card_scan", allowAlways: false }]);
+    expect(pending.body.requests).toMatchObject([{ id, tool: "card_scan", allowAlways: false, args: { publicKey: key.publicKey } }]);
     expect((await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, desk)).body).toEqual({ status: "pending", requestId: id });
-    await call("POST", `/api/me/phone-tools/requests/${id}`, { decision: "once", result: { number: "4111 1111 1111 1111", expMonth: 9, expYear: 2029, holder: "ANN", cvc: "123" } }, phone);
+    // a phone that sends the number in clear is refused
+    expect((await call("POST", `/api/me/phone-tools/requests/${id}`, { decision: "once", result: { number: "4111111111111111" } }, phone)).status).toBe(400);
+    await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
+    const second = String((await call("POST", "/api/me/phone-tools/card-scan", { publicKey: key.publicKey }, desk)).body.requestId);
+    const sealed = await sealCardForTest(key.publicKey, second, { number: "4111 1111 1111 1111", expMonth: 9, expYear: 2029, holder: "ANN", cvc: "123" });
+    expect((await call("POST", `/api/me/phone-tools/requests/${second}`, { decision: "once", result: sealed }, phone)).status).toBe(200);
     // another person's computer reads nothing
-    expect((await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, { "x-desktop": "bob" })).status).toBe(404);
-    const done = await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, desk);
-    expect(done.body).toEqual({ status: "done", card: { number: "4111111111111111", expMonth: 9, expYear: 2029, holder: "ANN" } });
-    expect(JSON.stringify(done.body)).not.toContain("123\"");
+    expect((await call("POST", `/api/me/phone-tools/card-scan/${second}/wait`, {}, { "x-desktop": "bob" })).status).toBe(404);
+    const done = await call("POST", `/api/me/phone-tools/card-scan/${second}/wait`, {}, desk);
+    expect(done.body).toEqual({ status: "done", sealed });
+    expect(JSON.stringify(done.body)).not.toContain("4111");
+    await expect(openSealedCard(key, second, done.body.sealed as typeof sealed)).resolves.toEqual({ number: "4111111111111111", expMonth: 9, expYear: 2029, holder: "ANN" });
     // read once
-    expect((await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, desk)).status).toBe(404);
+    expect((await call("POST", `/api/me/phone-tools/card-scan/${second}/wait`, {}, desk)).status).toBe(404);
   });
 
   it("the computer can cancel, and a phone cannot answer Toujours permettre", async () => {
     const call = await serve();
     await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
-    const first = String((await call("POST", "/api/me/phone-tools/card-scan", {}, desk)).body.requestId);
-    expect((await call("POST", `/api/me/phone-tools/requests/${first}`, { decision: "always", result: { number: "4111111111111111" } }, phone)).status).toBe(400);
+    const key = await createCardScanKey();
+    const first = String((await call("POST", "/api/me/phone-tools/card-scan", { publicKey: key.publicKey }, desk)).body.requestId);
+    expect((await call("POST", `/api/me/phone-tools/requests/${first}`, { decision: "always", result: await sealCardForTest(key.publicKey, first, { number: "4111111111111111" }) }, phone)).status).toBe(400);
     expect((await call("DELETE", `/api/me/phone-tools/card-scan/${first}`, undefined, desk)).body).toEqual({ ok: true, cancelled: true });
     expect((await call("GET", "/api/me/phone-tools/requests", undefined, phone)).body.requests).toEqual([]);
   });

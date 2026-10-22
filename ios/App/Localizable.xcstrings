@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Code %@ %@: check your computer shows the same before you scan.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code %@ %@: check your computer shows the same before you scan."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code %@ %@ : vérifiez que votre ordinateur affiche le même avant de scanner."
+          }
+        }
+      }
+    },
+    "This request cannot be sealed for your computer. Ask again from the New card form.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This request cannot be sealed for your computer. Ask again from the New card form."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette demande ne peut pas être scellée pour votre ordinateur. Redemandez depuis le formulaire Nouvelle carte."
+          }
+        }
+      }
+    },
+    "This iPhone needs iOS 17 to seal a card for your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This iPhone needs iOS 17 to seal a card for your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet iPhone a besoin d'iOS 17 pour sceller une carte pour votre ordinateur."
+          }
+        }
+      }
+    },
     "Scan a card for your computer": {
       "localizations": {
         "en": {

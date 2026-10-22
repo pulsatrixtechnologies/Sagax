@@ -14,6 +14,8 @@ type State = "idle" | "waiting" | "done" | "denied" | "expired" | "failed";
 export function PhoneCardScanButton({ onRead, available: forced }: { onRead: (card: ScannedCard) => void; available?: boolean }) {
   const [available, setAvailable] = useState(forced ?? false);
   const [state, setState] = useState<State>("idle");
+  // the six digits the iPhone shows too: same code, same one-time key
+  const [code, setCode] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -32,7 +34,8 @@ export function PhoneCardScanButton({ onRead, available: forced }: { onRead: (ca
     abort.current = controller;
     setState("waiting");
     try {
-      const outcome = await runCardScan(controller.signal);
+      setCode(null);
+      const outcome = await runCardScan(controller.signal, setCode);
       if (outcome.status === "cancelled") return setState("idle");
       if (outcome.status === "done") {
         onRead(outcome.card);
@@ -53,6 +56,7 @@ export function PhoneCardScanButton({ onRead, available: forced }: { onRead: (ca
           ? <button type="button" className={PILL} onClick={() => abort.current?.abort()}>{t("vault.phoneScan.cancel")}</button>
           : <button type="button" className={PILL} onClick={() => void start()}>{t("vault.phoneScan.button")}</button>}
         {state === "waiting" && <span className="text-[12px] text-ink-secondary" role="status">{t("vault.phoneScan.waiting")}</span>}
+        {state === "waiting" && code && <span className="text-[12px] text-ink-secondary" data-phone-card-scan-code>{t("vault.phoneScan.code", { code: `${code.slice(0, 3)} ${code.slice(3)}` })}</span>}
       </div>
       {state !== "idle" && state !== "waiting" && (
         <p className="text-[12px] text-ink-secondary" role="status">{t(`vault.phoneScan.${state}` as const)}</p>

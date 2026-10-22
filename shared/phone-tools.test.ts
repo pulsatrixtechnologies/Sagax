@@ -102,10 +102,10 @@ describe("card scan (row 84)", () => {
     expect(phoneToolGrantKey("card_scan", {})).toBeNull();
   });
 
-  it("sends back the number, expiry and name only, a real card number only", () => {
-    const checked = checkPhoneToolResult("card_scan", {}, { number: "4111 1111 1111 1111", expMonth: 9, expYear: 2029, holder: "MARIE TREMBLAY", cvc: "123" });
-    expect(checked).toEqual({ ok: true, result: { number: "4111111111111111", expMonth: 9, expYear: 2029, holder: "MARIE TREMBLAY" } });
-    expect(checkPhoneToolResult("card_scan", {}, { number: "4111111111111112" }).ok).toBe(false);
-    expect(checkPhoneToolResult("card_scan", {}, { number: "4111111111111111", expMonth: 13 }).ok).toBe(false);
+  it("accepts only a sealed envelope, never a number in clear (JC 2026-10-21)", () => {
+    const enc = "B" + "A".repeat(86);
+    const sealed = { encapsulatedKey: enc, ciphertext: "A".repeat(80) };
+    expect(checkPhoneToolResult("card_scan", {}, { number: "4111111111111111" }).ok).toBe(false);
+    expect(checkPhoneToolResult("card_scan", {}, { ...sealed, number: "4111111111111111" })).toEqual({ ok: true, result: sealed });
   });
 });

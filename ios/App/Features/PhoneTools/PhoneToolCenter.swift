@@ -161,6 +161,14 @@ final class PhoneToolCenter: ObservableObject {
         await next()
     }
 
+    /// The phone could not do it and says why (the asker reads the reason).
+    func refuse(_ reason: String) async {
+        guard let request = current else { return }
+        close()
+        await send(request, PhoneToolAnswer.refused(reason))
+        await next()
+    }
+
     private func run(_ request: PhoneToolRequest, decision: PhoneToolDecision, photos: [Data]? = nil, prepared: WidgetJSON? = nil) async {
         clipboardText = nil
         let answer: PhoneToolAnswer

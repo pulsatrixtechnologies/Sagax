@@ -202,6 +202,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"exact","route":"/api/me/github/token","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/mcp/servers","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
   {"method":"ANY","kind":"prefix","route":"/api/me/mcp/servers/","tier":"write","readOnly":false,"scope":"me:write","defaultEnabled":true},
+  {"method":"GET","kind":"exact","route":"/api/me/phone-tools/card-scan","tier":"admin","readOnly":true,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/phone-tools/device","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/phone-tools/grants","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},
   {"method":"ANY","kind":"exact","route":"/api/me/phone-tools/requests","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false},

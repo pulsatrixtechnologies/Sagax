@@ -265,6 +265,24 @@ private struct PhoneCardScanCard: View {
     @State private var read: CardScanResult?
     @State private var working = false
 
+    private var publicKey: String? { request.string("publicKey") }
+    private var matchCode: String? { publicKey.flatMap { try? PhoneCardSeal.matchCode($0) } }
+
+    /// Sealed here for the form's one-time key (JC 2026-10-21): the server
+    /// relays the envelope and never sees the number.
+    private func send(number: String, read: CardScanResult) async {
+        guard let publicKey else { return await PhoneToolCenter.shared.choose(.deny) }
+        guard #available(iOS 17.0, *) else {
+            return await PhoneToolCenter.shared.refuse(String(localized: "This iPhone needs iOS 17 to seal a card for your computer."))
+        }
+        do {
+            let sealed = try PhoneCardSeal.seal(number: number, expMonth: read.expMonth, expYear: read.expYear, holder: read.holder, publicKey: publicKey, requestId: request.id)
+            await PhoneToolCenter.shared.choose(.once, card: sealed)
+        } catch {
+            await PhoneToolCenter.shared.refuse("The card could not be sealed for the computer.")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
@@ -276,7 +294,17 @@ private struct PhoneCardScanCard: View {
             }
             Text(PhoneToolWords.what(request))
                 .fixedSize(horizontal: false, vertical: true)
-            if !protectedTransport {
+            if let code = matchCode, protectedTransport {
+                // the same six digits the computer's form shows: same one-time key
+                Text("Code \(String(code.prefix(3))) \(String(code.suffix(3))): check your computer shows the same before you scan.")
+                    .font(.callout.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if matchCode == nil {
+                Text("This request cannot be sealed for your computer. Ask again from the New card form.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else if !protectedTransport {
                 Text("This needs a secure connection (HTTPS or Tailscale). Type the card on your computer instead.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -291,7 +319,7 @@ private struct PhoneCardScanCard: View {
                 }
                 Button {
                     working = true
-                    Task { await PhoneToolCenter.shared.choose(.once, card: PhoneToolShaping.scannedCard(number: number, expMonth: read.expMonth, expYear: read.expYear, holder: read.holder)) }
+                    Task { await send(number: number, read: read) }
                 } label: {
                     Text("Send to the computer").frame(maxWidth: .infinity)
                 }

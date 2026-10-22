@@ -16,6 +16,7 @@ import { z } from "zod";
 import { parsePhoneToolArgs, phoneAnswerSchema, phoneDeviceSchema, PHONE_TOOL_CALL_WAIT_MS } from "../../shared/phone-tools.ts";
 import { PhoneToolUnavailable, type PhoneToolBroker } from "../phone-tools.ts";
 import type { RequestAuth } from "../request-auth.ts";
+import { isCardSealPublicKey } from "../../shared/phone-card-seal.ts";
 import type { PhoneTransport } from "../../shared/phone-transport.ts";
 import type { InternalCapabilityView, InternalRouteHandler } from "./internal-route.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -142,7 +143,6 @@ export function createPhoneToolInternalRoutes(deps: PhoneToolInternalDeps): Inte
 //   DELETE /api/me/phone-tools/card-scan/:id        the form gave up
 // The card number crosses this route once, to the form that asked; the
 // server keeps it only in memory until that read and never logs it.
-const CARD_SCAN = "/api/me/phone-tools/card-scan";
 const CARD_SCAN_ID = /^\/api\/me\/phone-tools\/card-scan\/([\w-]{1,64})(\/wait)?$/;
 
 export interface PhoneCardScanRouteDeps {
@@ -154,19 +154,23 @@ export interface PhoneCardScanRouteDeps {
 }
 
 export function createPhoneCardScanRoutes(deps: PhoneCardScanRouteDeps): RouteHandler {
-  return async ({ req, res, path, method, auth, json }) => {
+  return async ({ req, res, path, method, auth, json, readBody }) => {
     const match = CARD_SCAN_ID.exec(path);
-    if (path !== CARD_SCAN && !match) return PASS;
+    // a literal path, so scripts/tool-policy reads it (an admin row: never a bot's)
+    if (path !== "/api/me/phone-tools/card-scan" && !match) return PASS;
     res.setHeader("cache-control", "no-store");
     const person = deps.desktop(req, auth);
     if (!person) return json(res, 403, { error: "Only you, at your computer, can ask your phone to scan a card." });
     const broker = deps.broker();
     const owner = { botId: "", threadId: `card-scan:${person.trim().toLowerCase()}` };
-    if (path === CARD_SCAN) {
+    if (path === "/api/me/phone-tools/card-scan") {
       if (method === "GET") return json(res, 200, { available: broker.availableTools(person).includes("card_scan") });
       if (method !== "POST") return json(res, 405, { error: "GET or POST" });
+      // the form's one-time key: the phone seals the card for it alone
+      const body = (await readBody(req).catch(() => ({}))) as { publicKey?: unknown };
+      if (!isCardSealPublicKey(body.publicKey)) return json(res, 400, { error: "send { publicKey }: the form's one-time P-256 key, base64url" });
       try {
-        const request = broker.request({ person, botId: owner.botId, botName: "", threadId: owner.threadId, tool: "card_scan", args: {} });
+        const request = broker.request({ person, botId: owner.botId, botName: "", threadId: owner.threadId, tool: "card_scan", args: { publicKey: body.publicKey } });
         return json(res, 200, { requestId: request.id, expiresAt: request.expiresAt });
       } catch (error) {
         if (error instanceof PhoneToolUnavailable) return json(res, error.status, { error: error.message });
@@ -178,7 +182,8 @@ export function createPhoneCardScanRoutes(deps: PhoneCardScanRouteDeps): RouteHa
       if (method !== "POST") return json(res, 405, { error: "POST" });
       const outcome = await broker.wait(requestId, owner, deps.waitMs ?? PHONE_TOOL_CALL_WAIT_MS);
       if (outcome.status === "unknown") return json(res, 404, { error: "No such scan." });
-      if (outcome.status === "done") return json(res, 200, { status: "done", card: outcome.result });
+      // the sealed envelope as the phone sent it: only the form can open it
+      if (outcome.status === "done") return json(res, 200, { status: "done", sealed: outcome.result });
       return json(res, 200, outcome);
     }
     if (method !== "DELETE") return json(res, 405, { error: "DELETE" });

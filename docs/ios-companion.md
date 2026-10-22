@@ -518,13 +518,17 @@ Health is not offered.
 - **Scanner avec l'iPhone** (row 84): the vault's New card form on the
   computer asks the person's phone to read a card (`card_scan`, never a bot
   tool: `/api/me/phone-tools/card-scan`, the computer only, never a bot's
-  shell or session nor a phone). The phone shows the card, reads it on the
-  device (`CardPhotoScanner`, Vision), shows the last four digits, and sends
-  the number, the expiry and the name only when the person taps Send; the
-  security code is never read. Only over HTTPS or Tailscale. The server
-  checks the number (Luhn), keeps it in memory until the form reads it once,
-  and never logs it; the form fills the fields and the person saves the card
-  as if typed.
+  shell or session nor a phone). End to end (JC 2026-10-21): the form makes
+  a one-time P-256 key and sends its public half; the phone reads the card
+  on the device (`CardPhotoScanner`, Vision), shows the last four digits and
+  seals the number, the expiry and the name for that key
+  (`PhoneCardSeal.swift`, `shared/phone-card-seal.ts`: HPKE base mode,
+  P-256, HKDF-SHA256, AES-256-GCM, bound to the request and the key). The
+  server relays the envelope and never holds the number in clear, not even
+  in memory; the form opens it and fills the fields. Both screens show a
+  six digit code drawn from the key: the person checks they match (a key
+  swapped on the way shows another code). The security code is never read.
+  Only over HTTPS or Tailscale, iOS 17 or later.
 
 ## iOS feature parity routes (2026-10-03)
 

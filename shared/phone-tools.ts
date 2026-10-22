@@ -15,6 +15,8 @@
 // before the bot sees it.
 import { z } from "zod";
 
+import { isSealedCard } from "./phone-card-seal.ts";
+
 export const PHONE_TOOLS = ["location", "contacts", "reminders", "calendar", "photos", "shortcut", "clipboard", "status"] as const;
 export type PhoneToolId = typeof PHONE_TOOLS[number];
 
@@ -196,29 +198,11 @@ export const phoneToolResultSchemas = {
     }).optional(),
     focus: z.object({ focused: z.boolean() }).optional(),
   }),
-  // read on the phone (Vision), for the computer's New card form: never the security code
-  card_scan: z.object({
-    number: z.string().max(40),
-    expMonth: z.number().int().min(1).max(12).optional(),
-    expYear: z.number().int().min(2000).max(2100).optional(),
-    holder: text(80).optional(),
-  }),
+  // read on the phone (Vision) and sealed there for the computer's form
+  // (shared/phone-card-seal.ts): the server sees only this envelope
+  card_scan: z.object({ encapsulatedKey: z.string().max(200), ciphertext: z.string().max(1_024) }),
 } satisfies Record<PhoneRequestKind, z.ZodTypeAny>;
 
-/** Luhn check of a 13 to 19 digit card number. */
-export function luhnValid(digits: string): boolean {
-  if (!/^\d{13,19}$/.test(digits)) return false;
-  let sum = 0;
-  for (let index = 0; index < digits.length; index += 1) {
-    let value = Number(digits[digits.length - 1 - index]);
-    if (index % 2 === 1) {
-      value *= 2;
-      if (value > 9) value -= 9;
-    }
-    sum += value;
-  }
-  return sum % 10 === 0;
-}
 
 /** Six decimals is about 10 cm; three is about 100 m, enough for "near
  * which street" and the default unless the bot asked for precise. */
@@ -234,17 +218,9 @@ export function checkPhoneToolResult(tool: PhoneRequestKind, args: Record<string
   if (!parsed.success) return { ok: false, error: "The phone's answer could not be read." };
   const result = parsed.data as Record<string, unknown>;
   if (tool === "card_scan") {
-    const number = String(result.number).replace(/[\s-]/g, "");
-    if (!luhnValid(number)) return { ok: false, error: "The phone did not read a valid card number." };
-    return {
-      ok: true,
-      result: {
-        number,
-        ...(typeof result.expMonth === "number" ? { expMonth: result.expMonth } : {}),
-        ...(typeof result.expYear === "number" ? { expYear: result.expYear } : {}),
-        ...(typeof result.holder === "string" && result.holder.trim() ? { holder: result.holder.trim() } : {}),
-      },
-    };
+    // an opaque envelope for the form; a card number in clear never passes
+    if (!isSealedCard(result)) return { ok: false, error: "The phone's answer could not be read." };
+    return { ok: true, result: { encapsulatedKey: result.encapsulatedKey, ciphertext: result.ciphertext } };
   }
   if (tool === "location") {
     const digits = args.precise === true ? 6 : 3;
