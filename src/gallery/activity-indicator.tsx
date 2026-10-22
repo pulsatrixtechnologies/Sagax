@@ -30,7 +30,7 @@ function Conversation({ mode }: { mode: BotActivityMode }) {
         <p className="max-w-[80%] rounded-[18px] bg-bubble-user px-4 py-2 text-[14px] text-bubble-user-ink">{asked}</p>
       </div>
       <div className="flex items-center ps-1">
-        <BotActivityIndicator bot={bot} mode={mode} seed="gallery" since={Date.now() - 4_000} />
+        <BotActivityIndicator bot={bot} mode={mode} seed="gallery" />
       </div>
     </section>
   );

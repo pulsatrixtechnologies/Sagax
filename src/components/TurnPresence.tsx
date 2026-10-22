@@ -16,7 +16,6 @@ export function TurnPresence({
   phase,
   seed = "",
   answering = false,
-  since = null,
   ultracode = false,
   streamThreadId = null,
   typing,
@@ -32,8 +31,6 @@ export function TurnPresence({
   /** turn identity, so one turn always reads the same and two turns differ */
   seed?: string;
   answering?: boolean;
-  /** Turn start (epoch ms) — shows a self-ticking elapsed readout while working. */
-  since?: number | null;
   /** Ultracode effort: purple activity shimmer while the turn runs. */
   ultracode?: boolean;
   /** the thread whose in-flight answer text (useStreaming) means typing */
@@ -86,7 +83,6 @@ export function TurnPresence({
             phrases={list}
             phase={phase ?? (list ? `label:${list[0]}` : THINKING_PHASE)}
             seed={seed}
-            since={since}
             ultracode={ultracode}
             active={presencePhase === "think"}
           />

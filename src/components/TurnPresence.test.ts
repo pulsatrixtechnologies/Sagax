@@ -19,7 +19,7 @@ let host: HTMLDivElement;
 let root: Root;
 
 function render(props: Record<string, unknown>) {
-  act(() => root.render(createElement(TurnPresence, { bot, visible: true, seed, since: null, ...props })));
+  act(() => root.render(createElement(TurnPresence, { bot, visible: true, seed, ...props })));
 }
 
 const phrase = () => host.querySelector("[data-presence-phrase]")?.textContent;
@@ -69,7 +69,7 @@ describe("TurnPresence", () => {
   });
 
   it("still takes a plain label, as the sidebar-era callers pass", () => {
-    const markup = renderToStaticMarkup(createElement(TurnPresence, { bot, visible: true, label: "Running a command", since: 1 }));
+    const markup = renderToStaticMarkup(createElement(TurnPresence, { bot, visible: true, label: "Running a command" }));
     expect(markup).toContain("Running a command");
     expect(markup).toContain("thinking-shimmer");
   });

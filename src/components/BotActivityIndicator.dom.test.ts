@@ -54,6 +54,13 @@ describe("thinking", () => {
     expect(color).toBe(botActivityColor("orange"));
   });
 
+  it("shows no elapsed time, even after a while", () => {
+    render();
+    act(() => void vi.advanceTimersByTime(5_000));
+    expect(host.querySelector(".tabular-nums")).toBeNull();
+    expect(status()?.textContent).not.toMatch(/\d+\s*s\b/);
+  });
+
   it("rotates the phrase every few seconds and stops its timer on unmount", () => {
     render();
     const step = `${seed}|${THINKING_PHASE}`;
@@ -73,7 +80,7 @@ describe("thinking", () => {
     render();
     act(() => void vi.advanceTimersByTime(PHRASE_HOLD_MS));
     const shown = phrase();
-    render({ since: null });
+    render();
     expect(phrase()).toBe(shown);
   });
 
@@ -121,7 +128,7 @@ describe("reduced motion", () => {
 
 describe("screen readers", () => {
   it("hear one stable line, never the rotating phrase", () => {
-    render({ since: Date.now() });
+    render();
     const region = status();
     expect(region?.getAttribute("aria-live")).toBe("polite");
     expect(region?.querySelector(".sr-only")?.textContent).toBe("Pepper is thinking");

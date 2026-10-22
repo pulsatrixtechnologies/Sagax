@@ -2370,7 +2370,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             phase={activity.phase}
             seed={`${bot.id}:${bot.threadId ?? ""}:${busySince ?? ""}`}
             answering={popping !== null}
-            since={busySince}
           />
         </div>
       </div>

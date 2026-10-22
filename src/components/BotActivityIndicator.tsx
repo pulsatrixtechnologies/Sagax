@@ -9,7 +9,7 @@
 //
 // Reduced motion (the system setting or :root[data-reduced-motion]): still
 // dots, no sheen, the first phrase only. Screen readers hear one stable line
-// ("Pepper is thinking"), never each rotation or the elapsed time.
+// ("Pepper is thinking"), never each rotation.
 import { useEffect, useState, type CSSProperties } from "react";
 import type { LocaleKey } from "@/locales";
 import { cn } from "@/lib/cn";
@@ -19,7 +19,6 @@ import { normalizeHex } from "@/lib/bot-accent";
 import { isColorless } from "@/lib/voice-cta";
 import { phraseAt } from "@/lib/live-activity";
 import { BotAvatar, type BotAvatarProps } from "@/components/Avatar";
-import { WorkingTimer } from "@/components/WorkingIndicator";
 import { useReducedMotion } from "@/components/skin-fx/skin-fx";
 import { MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
 
@@ -87,7 +86,6 @@ export function BotActivityIndicator({
   phrases,
   phase = THINKING_PHASE,
   seed = "",
-  since = null,
   ultracode = false,
   active = true,
 }: {
@@ -99,8 +97,6 @@ export function BotActivityIndicator({
   phase?: string;
   /** turn identity, so one turn always reads the same and two turns differ */
   seed?: string;
-  /** turn start (epoch ms): a self-ticking elapsed readout while thinking */
-  since?: number | null;
   /** Ultracode effort: the purple sheen */
   ultracode?: boolean;
   /** false while the line leaves: stops the rotation */
@@ -138,11 +134,8 @@ export function BotActivityIndicator({
           <span />
         </span>
       )}
-      <span aria-hidden="true" className="flex items-baseline gap-2">
+      <span aria-hidden="true" className="flex items-baseline">
         <Sheen key={mode} text={phrase} ultracode={ultracode} still={reduced} />
-        {mode === "thinking" && since !== null && (
-          <WorkingTimer since={since} className="text-[11.5px] text-ink-tertiary" />
-        )}
       </span>
     </span>
   );
