@@ -4,8 +4,12 @@
 // receives the public nodekey only. The model is not asked for either.
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { isTailcatAddress, TAILCAT_ADDRESS_MAX } from "../shared/remote-session.ts";
+import { normPrincipal, supportFolderOwner } from "./remote-session-probe.ts";
+import { resolveTailcatBinary } from "./tailcat-bin.ts";
 
 /** Frozen template Perspicax renders (gateway remote_support::template). */
 export const REMOTE_SUPPORT_TEMPLATE = "tailcat-0.7.0/2";
@@ -13,13 +17,12 @@ export const TECHNICIAN_MAX = 80;
 const NODEKEY = /^nodekey:[0-9a-f]{64}$/;
 const SESSION = /^[0-9a-f]{12}$/;
 const CODE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
-const ADDRESS = /^tc\S{8,8000}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const DEFAULT_MS = 2 * 60 * 60 * 1000;
 const MAX_MS = 24 * 60 * 60 * 1000;
 const KEY_FILE = "technician.private.json";
 const PUB_FILE = "technician.nodekey";
-const MISSING = "tailcat is not installed on this computer, so the technician key cannot be created. Install tailcat on the computer this bot connects from (the desktop PC, or the bot's cloud computer), then ask again.";
+const MISSING = "tailcat is not installed with this Sagax, so the technician key cannot be created. The private key was not sent. Do not download tailcat and do not copy it into a system directory.";
 const CREATE_FAILED = "The technician key could not be created on this computer. The private key was not sent.";
 
 export interface TailcatRunResult {
@@ -29,7 +32,7 @@ export interface TailcatRunResult {
   error?: "missing";
 }
 
-/** One tailcat invocation. Tests pass a fake. The default spawns `tailcat` and kills only that child. */
+/** One tailcat invocation. Tests pass a fake. The default spawns the binary Sagax ships and kills only that child. */
 export type TailcatRun = (args: readonly string[], opts: { timeoutMs: number }) => Promise<TailcatRunResult>;
 
 export interface RemoteSupportContext {
@@ -39,6 +42,17 @@ export interface RemoteSupportContext {
   now?: () => Date;
   run?: TailcatRun;
   sessionId?: () => string;
+  /** Who this turn speaks for and which bot, when the server did not say
+   * (the answer of /api/internal/perspicax/tool carries `owner`, which wins:
+   * a proxy kept across turns may hold an older speaker). */
+  principalId?: string;
+  botId?: string;
+}
+
+/** Who opened a session: written into open.json, checked before a tunnel resolves. */
+export interface SupportOwner {
+  principalId: string;
+  botId: string;
 }
 
 export interface ToolAnswer {
@@ -54,6 +68,8 @@ export function remoteSupportFromEnv(env: NodeJS.ProcessEnv): RemoteSupportConte
     dir,
     technicianName: env.SAGAX_TECHNICIAN_NAME?.trim() ?? "",
     orgName: env.SAGAX_ORG_NAME?.trim() ?? "",
+    principalId: env.SAGAX_REMOTE_SUPPORT_PRINCIPAL?.trim() ?? "",
+    botId: env.SAGAX_BOT_ID?.trim() ?? "",
   };
 }
 
@@ -66,10 +82,11 @@ export function newSessionId(): string {
   return randomBytes(6).toString("hex");
 }
 
-/** Spawn tailcat and stop that child only. No shell. */
-export function spawnTailcat(bin = "tailcat"): TailcatRun {
+/** Spawn tailcat and stop that child only. No shell. The command is an absolute path when Sagax can see its own copy. */
+export function spawnTailcat(bin?: string): TailcatRun {
   return (args, { timeoutMs }) => new Promise((resolve) => {
-    const child = spawn(bin, [...args], { stdio: ["ignore", "pipe", "pipe"] });
+    const command = bin ?? resolveTailcatBinary() ?? "tailcat";
+    const child = spawn(command, [...args], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -242,9 +259,22 @@ export function presentOpen(raw: unknown): { ok: true; text: string; code: strin
   const page = typeof obj?.page_url === "string" ? obj.page_url : "";
   if (!code || !page) return { ok: false, error: "Perspicax did not answer with a link and a code." };
   const lines = [`Link: ${page}`, `Code: ${code}`];
-  if (typeof obj?.line_windows === "string" && obj.line_windows) lines.push(`Windows: ${obj.line_windows}`);
-  if (typeof obj?.line_unix === "string" && obj.line_unix) lines.push(`macOS or Linux: ${obj.line_unix}`);
+  const windows = typeof obj?.line_windows === "string" ? oneLine(obj.line_windows) : "";
+  const unix = typeof obj?.line_unix === "string" ? oneLine(obj.line_unix) : "";
+  if (windows) lines.push(`Windows: ${windows}`);
+  if (unix) lines.push(`macOS or Linux: ${unix}`);
+  if (windows || unix) {
+    lines.push("", "Put this in your first reply exactly as written, fences included. Never run it or pass it through a shell on this computer (a Mac shell eats its $ variables).");
+    if (windows) lines.push("", "Windows (PowerShell):", "```powershell", windows, "```");
+    if (unix) lines.push("", "macOS or Linux (Terminal):", "```sh", unix, "```");
+  }
   return { ok: true, text: lines.join("\n"), code };
+}
+
+/** A script line the end user pastes: one line, no fence that could close ours. */
+function oneLine(value: string): string {
+  // oxlint-disable-next-line no-control-regex -- a pasted line keeps no control characters
+  return value.replace(/[\u0000-\u001f\u007f]/g, " ").replaceAll("```", "").trim();
 }
 
 function compactCode(code: string): string | null {
@@ -252,13 +282,85 @@ function compactCode(code: string): string | null {
   return CODE.test(compact) ? compact : null;
 }
 
-export async function rememberSession(dir: string, code: string, session: string): Promise<void> {
+/** What the open asked for, kept beside the session id so a card can be posted
+ * after a restart. Never the address, never a key. */
+export interface RememberedOpen {
+  rights?: "standard" | "elevated";
+  end_at?: string;
+  os?: "windows" | "macos" | "linux";
+  /** The person whose Perspicax credentials opened it, and the bot. */
+  principalId?: string;
+  botId?: string;
+}
+
+/** The owner the server named in its answer, else the turn's env. Null when neither is known. */
+export function ownerOf(body: Record<string, unknown>, local: RemoteSupportContext): SupportOwner | null {
+  const said = body.owner && typeof body.owner === "object" && !Array.isArray(body.owner) ? body.owner as Record<string, unknown> : null;
+  const principalId = typeof said?.principalId === "string" && said.principalId.trim() ? said.principalId : local.principalId ?? "";
+  const botId = typeof said?.botId === "string" && said.botId.trim() ? said.botId : local.botId ?? "";
+  if (!principalId.trim() || !botId.trim()) return null;
+  return { principalId: normPrincipal(principalId), botId: botId.trim() };
+}
+
+/** False when the code's folder names another person or bot as its opener. */
+function folderAllows(dir: string, code: string, owner: SupportOwner | null): boolean {
+  const folder = supportFolderOwner(dir, code);
+  if (!folder || (!folder.principalId && !folder.botId)) return true;
+  return Boolean(owner) && folder.principalId === owner!.principalId && folder.botId === owner!.botId;
+}
+
+const NOT_YOURS = "That support code was opened by someone else on this computer. Open a new session with remote_support_open.";
+
+export async function rememberSession(dir: string, code: string, session: string, open: RememberedOpen = {}): Promise<void> {
   const compact = compactCode(code);
   if (!compact || !SESSION.test(session)) return;
   const folder = join(dir, "sessions", compact);
   await mkdir(folder, { recursive: true, mode: 0o700 });
   await chmod(folder, 0o700);
   await writeFile(join(folder, "session"), `${session}\n`, { mode: 0o600 });
+  const meta: RememberedOpen = {
+    ...(open.rights === "elevated" ? { rights: "elevated" } : { rights: "standard" }),
+    ...(typeof open.end_at === "string" ? { end_at: open.end_at } : {}),
+    ...(open.os ? { os: open.os } : {}),
+    ...(open.principalId?.trim() ? { principalId: normPrincipal(open.principalId) } : {}),
+    ...(open.botId?.trim() ? { botId: open.botId.trim() } : {}),
+  };
+  await writeFile(join(folder, "open.json"), `${JSON.stringify(meta)}\n`, { mode: 0o600 });
+}
+
+/** The session id, rights, end and OS kept for a code by rememberSession, or null. */
+export function recallSupportSession(dir: string, code: string): { id: string; code: string; elevated: boolean; endAt: string; os?: "windows" | "macos" | "linux"; principalId?: string; botId?: string } | null {
+  const compact = compactCode(code);
+  if (!compact) return null;
+  const folder = join(dir, "sessions", compact);
+  let id = "";
+  let meta: RememberedOpen = {};
+  try {
+    id = readFileSync(join(folder, "session"), "utf8").trim();
+  } catch {
+    return null;
+  }
+  if (!SESSION.test(id)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(join(folder, "open.json"), "utf8")) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) meta = parsed as RememberedOpen;
+  } catch {
+    return null;
+  }
+  const end = typeof meta.end_at === "string" ? Date.parse(meta.end_at) : Number.NaN;
+  if (!Number.isFinite(end)) return null;
+  const os = meta.os === "windows" || meta.os === "macos" || meta.os === "linux" ? meta.os : undefined;
+  const principalId = typeof meta.principalId === "string" && meta.principalId.trim() ? normPrincipal(meta.principalId) : undefined;
+  const botId = typeof meta.botId === "string" && meta.botId.trim() ? meta.botId.trim() : undefined;
+  return {
+    id,
+    code: compact,
+    elevated: meta.rights === "elevated",
+    endAt: new Date(end).toISOString(),
+    ...(os ? { os } : {}),
+    ...(principalId ? { principalId } : {}),
+    ...(botId ? { botId } : {}),
+  };
 }
 
 async function storeAddress(dir: string, code: string, address: string): Promise<boolean> {
@@ -302,14 +404,17 @@ export async function absorbStatus(input: {
     return { text: redact(JSON.stringify(obj), address ? [address] : []), markConnected: false };
   }
   let side = "";
-  if (address && ADDRESS.test(address)) {
+  if (address && isTailcatAddress(address)) {
     const stored = await storeAddress(input.dir, input.code, address);
     if (!stored || !input.keyPath) side = "missing";
     else {
       const ping = await input.run(["--key", input.keyPath, "ping", "--timeout=8s", address], { timeoutMs: 12_000 });
       side = ping.error === "missing" ? "missing" : ping.code === 0 ? "ready" : "failed";
     }
-  } else if (address) side = "failed";
+  } else if (address) {
+    side = "failed";
+    obj.technician_error = `Perspicax sent a tunnel address this computer does not accept (it must start with tc, have no spaces, and be at most ${TAILCAT_ADDRESS_MAX} characters). Close this session and open a new one.`;
+  }
   if (side) obj.technician_side = side;
   return { text: redact(JSON.stringify(obj), address ? [address] : []), markConnected: side === "ready" };
 }
@@ -354,7 +459,13 @@ async function openCall(input: {
   if (error) return { text: error, isError: true };
   const shown = presentOpen(posted.body.text);
   if (!shown.ok) return { text: shown.error, isError: true };
-  await rememberSession(input.local.dir, shown.code, prepared.session);
+  const owner = ownerOf(posted.body, input.local);
+  await rememberSession(input.local.dir, shown.code, prepared.session, {
+    ...owner,
+    rights: prepared.args.rights === "elevated" ? "elevated" : "standard",
+    end_at: String(prepared.args.end_at),
+    ...(prepared.args.os === "windows" || prepared.args.os === "macos" || prepared.args.os === "linux" ? { os: prepared.args.os } : {}),
+  });
   return { text: shown.text };
 }
 
@@ -370,13 +481,22 @@ async function statusCall(input: {
   const posted = await input.post("remote_support_status", forwarded);
   const error = refused(posted.status, posted.body);
   if (error) return { text: error, isError: true };
+  if (!folderAllows(input.local.dir, code, ownerOf(posted.body, input.local))) return { text: NOT_YOURS, isError: true };
   const key = await loadTechnicianKey(input.local.dir);
   const absorbed = await absorbStatus({ dir: input.local.dir, raw: posted.body.text, code, run, keyPath: key?.keyPath ?? null });
-  if (!absorbed.markConnected || input.args.mark_connected === true) return { text: absorbed.text };
+  if (!absorbed.markConnected || input.args.mark_connected === true) return { text: withConnectedNote(absorbed.text) };
   const again = await input.post("remote_support_status", { code, mark_connected: true });
   if (refused(again.status, again.body)) return { text: absorbed.text };
   const marked = await absorbStatus({ dir: input.local.dir, raw: again.body.text, code, run, keyPath: key?.keyPath ?? null });
-  return { text: marked.text };
+  return { text: withConnectedNote(marked.text) };
+}
+
+export const CONNECTED_NOTE = "Connected. Sagax posts the session card in this chat and the row in the bot panel by itself, and the screen shows in the Computer tab. Tell the person it is connected. Do not write a screenshot to the Desktop and do not open Preview.";
+
+/** A connected status tells the bot the card is coming, so it stops checking. */
+function withConnectedNote(text: string): string {
+  const obj = asObject(text);
+  return obj?.state === "connected" ? `${text}\n${CONNECTED_NOTE}` : text;
 }
 
 async function closeCall(input: {
@@ -390,7 +510,7 @@ async function closeCall(input: {
   const posted = await input.post("remote_support_close", { code, outcome });
   const error = refused(posted.status, posted.body);
   if (error) return { text: error, isError: true };
-  await forgetAddress(input.local.dir, code);
+  if (folderAllows(input.local.dir, code, ownerOf(posted.body, input.local))) await forgetAddress(input.local.dir, code);
   const text = typeof posted.body.text === "string" && posted.body.text ? redact(posted.body.text) : "Done.";
   return { text };
 }

@@ -19,6 +19,11 @@
 //   8. Undo on a change that applied without a person follows the same
 //      rule: the owner may, a member may not, even the one who started the
 //      thread
+//   9. (PR #934) a team-memory card is the team's: a member who can use a
+//      bot of that section confirms it on either route, though not the bot's
+//      owner; someone outside the team is refused; a bot moved to another
+//      section since its proposal no longer lets its old team confirm; the
+//      dialog's direct writes stay admin; a local service confirms none
 //
 // No new card, prompt or gate appears anywhere: the provider's own approval
 // is the card, and these only decide whose answer it accepts.
@@ -141,6 +146,43 @@ async function cardFrom(bot: { id: string }, threadId: string, sender?: string, 
 }
 
 const refusal = /Only the bot owner can answer this approval/;
+
+const teamMemoryRefusal = /Only a member of this team, or a workspace admin, can review its shared memory/;
+
+/** A bot of BOSS in `section`, shared only with `members`. */
+async function makeTeamBot(name: string, section: string, members: string[]) {
+  const created = await api("POST", "/api/bots", { name }, BOSS);
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, { modelSelection: { instanceId: "grok", model: "fake-model" }, approvalMode: "ask", computer: "off", section }, BOSS);
+  expect(patched.status, JSON.stringify(patched.body)).toBe(200);
+  for (const email of members) {
+    const granted = await api("POST", `/api/bots/${created.body.bot.id}/direct-grants`, { userId: email }, BOSS);
+    expect(granted.status, JSON.stringify(granted.body)).toBe(200);
+  }
+  return created.body.bot as { id: string; threadId: string };
+}
+
+/** The bot's shell proposes a team-memory entry from this thread. */
+async function proposeTeamMemory(bot: { id: string }, threadId: string, name: string) {
+  const minted = await fetch(`${BASE}/api/testing/internal-capability`, {
+    method: "POST", headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+    body: JSON.stringify({ botId: bot.id, threadId, kind: "agents" }),
+  });
+  expect(minted.status).toBe(201);
+  const { token } = await minted.json() as { token: string };
+  const proposed = await fetch(`${BASE}/api/internal/team-memory`, {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ fromBotId: bot.id, fromThreadId: threadId, kind: "term", name, detail: `${name} means the dispatch board` }),
+  });
+  const body = await proposed.json() as { status: string; requestId: string };
+  expect(proposed.status, JSON.stringify(body)).toBe(201);
+  expect(body.status).toBe("proposed");
+  return body.requestId;
+}
+
+const teamEntry = async (section: string, name: string) =>
+  ((await api("GET", `/api/team-memory?section=${encodeURIComponent(section)}`, undefined, BOSS)).body.entries ?? [])
+    .find((entry: { name: string }) => entry.name === name) as { status: string } | undefined;
 
 posixOnly("who may answer an approval card on a shared workspace", () => {
   beforeAll(async () => {
@@ -302,6 +344,61 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     expect((await api("GET", "/api/bots?messages=0", undefined, BOSS)).body.bots.find((candidate: { id: string }) => candidate.id === bot.id).title).toBe("");
   }, 90_000);
 
+  it("lets a member of the team, not its owner, confirm a team-memory card; a stranger is refused", async () => {
+    // Juniper is BOSS's, in Dispatch, shared with Ada (Zachary's place). Bob uses no Dispatch bot.
+    const juniper = await makeTeamBot("Juniper", "Dispatch", [ADA]);
+    await makeTeamBot("Sales desk", "Sales", [BOB]);
+    const task = await api("POST", `/api/bots/${juniper.id}/tasks`, { title: "Ada's dispatch" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+
+    const viaThread = await proposeTeamMemory(juniper, threadId, "Board A");
+    // Ada gets the card itself in her conversation, not "waiting on owner"
+    const seen = (await api("GET", `/api/threads/${threadId}/messages`, undefined, ADA)).body.messages
+      .find((m: any) => m.card?.requestId === viaThread);
+    expect(seen?.card?.teamMemoryRequest?.section, JSON.stringify(seen)).toBe("Dispatch");
+    const stranger = await api("POST", `/api/threads/${threadId}/respond`, { requestId: viaThread, behavior: "allow" }, BOB);
+    expect(stranger.status, JSON.stringify(stranger.body)).toBeOneOf([403, 404]);
+    if (stranger.status === 403) expect(stranger.body.error).toMatch(teamMemoryRefusal);
+    expect((await teamEntry("Dispatch", "Board A"))?.status).toBe("proposed");
+    const accepted = await api("POST", `/api/threads/${threadId}/respond`, { requestId: viaThread, behavior: "allow" }, ADA);
+    expect(accepted.status, JSON.stringify(accepted.body)).toBe(200);
+    expect((await teamEntry("Dispatch", "Board A"))?.status).toBe("accepted");
+
+    const viaBot = await proposeTeamMemory(juniper, threadId, "Board B");
+    const strangerBot = await api("POST", `/api/bots/${juniper.id}/respond`, { requestId: viaBot, behavior: "allow", threadId }, BOB);
+    expect(strangerBot.status, JSON.stringify(strangerBot.body)).toBeOneOf([403, 404]);
+    const acceptedBot = await api("POST", `/api/bots/${juniper.id}/respond`, { requestId: viaBot, behavior: "allow", threadId }, ADA);
+    expect(acceptedBot.status, JSON.stringify(acceptedBot.body)).toBe(200);
+    expect((await teamEntry("Dispatch", "Board B"))?.status).toBe("accepted");
+
+    // the dialog's direct writes stay admin: the card is a member's only way in
+    expect((await api("POST", "/api/team-memory?section=Dispatch", { kind: "term", name: "Direct", detail: "no card" }, ADA)).status).toBe(403);
+    expect((await api("DELETE", `/api/team-memory/${viaThread}?section=Dispatch`, undefined, ADA)).status).toBe(403);
+    expect((await teamEntry("Dispatch", "Board A"))?.status).toBe("accepted");
+    // any other approval on Juniper stays its owner's
+    const command = await cardFrom(juniper, threadId, ADA);
+    const notOwner = await api("POST", `/api/threads/${threadId}/respond`, { requestId: command, behavior: "allow" }, ADA);
+    expect(notOwner.status).toBe(403);
+    expect(notOwner.body.error).toMatch(refusal);
+    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: command, behavior: "deny" }, BOSS)).status).toBe(200);
+  }, 90_000);
+
+  it("refuses the old team once the proposing bot moved to another section", async () => {
+    const mover = await makeTeamBot("Mover", "Dispatch East", [ADA]);
+    const task = await api("POST", `/api/bots/${mover.id}/tasks`, { title: "Ada's east" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    const requestId = await proposeTeamMemory(mover, threadId, "East board");
+    expect((await api("PATCH", `/api/bots/${mover.id}`, { section: "Warehouse" }, BOSS)).status).toBe(200);
+    const refused = await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "allow" }, ADA);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.error).toMatch(teamMemoryRefusal);
+    expect((await teamEntry("Dispatch East", "East board"))?.status).toBe("proposed");
+    // an admin still decides it
+    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "deny" }, BOSS)).status).toBe(200);
+  }, 90_000);
+
   it("lets a session-less local service answer no approval under service trust", async () => {
     const bot = await makeBot("Serviced");
     await waitForExit(child, { signal: "SIGTERM" });
@@ -345,5 +442,20 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
     expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: slackCard.card.requestId, behavior: "allow" }, ADA)).status).toBe(403);
     const approved = await api("POST", `/api/threads/${threadId}/respond`, { requestId: slackCard.card.requestId, behavior: "allow" }, BOSS);
     expect(approved.status, JSON.stringify(approved.body)).toBe(200);
+  }, 90_000);
+
+  it("lets a local service under service trust neither confirm a team-memory card nor write team memory", async () => {
+    // still on the service-trust server the previous case started
+    const bot = await makeTeamBot("Serviced team", "Dispatch", [ADA]);
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Ada's serviced" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    const requestId = await proposeTeamMemory(bot, threadId, "Serviced term");
+    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "allow" })).status).toBe(403);
+    expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId, behavior: "allow", threadId }, undefined, true)).status).toBe(403);
+    expect((await api("POST", "/api/team-memory?section=Dispatch", { kind: "term", name: "Service", detail: "no card" })).status).toBe(403);
+    expect((await teamEntry("Dispatch", "Serviced term"))?.status).toBe("proposed");
+    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "allow" }, ADA)).status).toBe(200);
+    expect((await teamEntry("Dispatch", "Serviced term"))?.status).toBe("accepted");
   }, 90_000);
 });

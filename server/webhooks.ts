@@ -11,6 +11,7 @@ import {
   POLLER_INTERVAL_MAX,
   POLLER_KINDS_FOR,
   POLLER_LEAD_MAX,
+  TRIGGER_CATALOG_VERSION,
   TRIGGER_FILTER_KEYS,
   TRIGGER_POLLER_KINDS,
   TRIGGER_RATE_LIMIT_DEFAULT,
@@ -251,6 +252,8 @@ const sourceConfigSchema = z.object({
   type: z.enum(TRIGGER_SOURCE_TYPES),
   events: z.array(z.string().max(100)).max(30).default([]),
   filters: z.partialRecord(z.enum(TRIGGER_FILTER_KEYS), filterValuesSchema).default({}),
+  catalog: z.number().int().min(1).max(TRIGGER_CATALOG_VERSION).optional(),
+  includeBotComments: z.boolean().optional(),
   rateLimitPerMinute: z.number().int().min(1).max(TRIGGER_RATE_LIMIT_MAX).optional(),
   tenantId: z.string().trim().max(100).optional(),
   graph: graphConfigSchema.optional(),
@@ -424,7 +427,12 @@ function cleanSource(input: z.input<typeof sourceConfigSchema>): TriggerSourceCo
     const clean = Array.from(new Set((values ?? []).map((value) => value.trim()).filter(Boolean)));
     if (clean.length) filters[filterKey] = clean;
   }
-  const config: TriggerSourceConfig = { type: parsed.data.type, events: Array.from(new Set(parsed.data.events)), filters };
+  // Saved now: “every event” means today's catalog. An older one comes
+  // only from a bot export that carried it.
+  const config: TriggerSourceConfig = {
+    type: parsed.data.type, events: Array.from(new Set(parsed.data.events)), filters, catalog: parsed.data.catalog ?? TRIGGER_CATALOG_VERSION,
+  };
+  if (parsed.data.includeBotComments && config.type === "github") config.includeBotComments = true;
   if (parsed.data.rateLimitPerMinute !== undefined) config.rateLimitPerMinute = parsed.data.rateLimitPerMinute;
   if (parsed.data.tenantId) config.tenantId = parsed.data.tenantId;
   const { graph, poller } = parsed.data;

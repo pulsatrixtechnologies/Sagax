@@ -251,17 +251,17 @@ describe("bot zip round trip", () => {
     if (inspected.kind !== "zip") throw new Error("zip expected");
     const exported = inspected.reader.json("webhooks.json") as Array<Record<string, unknown>>;
     expect(exported.find((hook) => hook.name === "Mail")!.source).toEqual({
-      type: "email", events: ["email.received"], filters: { sender: ["*@partner.example"] }, rateLimitPerMinute: 5,
+      type: "email", events: ["email.received"], filters: { sender: ["*@partner.example"] }, catalog: 1, rateLimitPerMinute: 5,
       poller: { kind: "imap", host: "imap.example.com", mailbox: "INBOX", intervalMinutes: 10 },
     });
-    expect(exported.find((hook) => hook.name === "Teams")!.source).toEqual({ type: "teams", events: [], filters: {}, tenantId: "t-1", graph: { connector: "ms365", resource: "teams/1/channels/2/messages" } });
+    expect(exported.find((hook) => hook.name === "Teams")!.source).toEqual({ type: "teams", events: [], filters: {}, catalog: 1, tenantId: "t-1", graph: { connector: "ms365", resource: "teams/1/channels/2/messages" } });
     const text = JSON.stringify(exported);
     for (const secret of ["whsec_SIGNING_SECRET", "whsec_PENDING", "f".repeat(64), "sub-SECRET", "pollerCursor", "me@example.com", "acct-abcdef"]) expect(text).not.toContain(secret);
     const result = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });
     inspected.reader.close();
     const copies = fx.webhooks.hooks.filter((hook) => hook.botId === result.botId);
     expect(copies.find((hook) => hook.name === "Mail")).toMatchObject({ enabled: false, source: { type: "email", poller: { kind: "imap", host: "imap.example.com" } } });
-    expect(copies.find((hook) => hook.name === "Alerts")).toMatchObject({ enabled: false, source: { type: "pagerduty", filters: { urgency: ["high"] } } });
+    expect(copies.find((hook) => hook.name === "Alerts")).toMatchObject({ enabled: false, source: { type: "pagerduty", filters: { urgency: ["high"] }, catalog: 1 } });
     expect(JSON.stringify(copies)).not.toContain("whsec_SIGNING_SECRET");
     expect(result.warnings).toEqual(expect.arrayContaining([
       "Trigger Mail needs the user name and password before it is turned on.",

@@ -71590,6 +71590,356 @@
           }
         }
       }
+    },
+    "Pull request opened": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull request opened" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pull request ouverte" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pull request aberta" } }
+      }
+    },
+    "Pull request updated (new commits)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull request updated (new commits)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pull request mise à jour (nouveaux commits)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pull request atualizada (novos commits)" } }
+      }
+    },
+    "Pull request merged": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull request merged" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pull request fusionnée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pull request mesclada" } }
+      }
+    },
+    "Pull request closed without merge": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pull request closed without merge" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pull request fermée sans fusion" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pull request fechada sem mesclar" } }
+      }
+    },
+    "Review requested": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review requested" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Revue demandée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Revisão solicitada" } }
+      }
+    },
+    "Any review submitted": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Any review submitted" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toute revue soumise" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Qualquer revisão enviada" } }
+      }
+    },
+    "Review approves": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review approves" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une revue approuve" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Uma revisão aprova" } }
+      }
+    },
+    "Review requests changes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review requests changes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une revue demande des modifications" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Uma revisão pede alterações" } }
+      }
+    },
+    "Review comments only": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review comments only" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une revue commente seulement" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Uma revisão apenas comenta" } }
+      }
+    },
+    "PR comment posted": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "PR comment posted" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Commentaire de PR publié" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Comentário de PR publicado" } }
+      }
+    },
+    "Inline review comment": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Inline review comment" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Commentaire de revue en ligne" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Comentário de revisão em linha" } }
+      }
+    },
+    "Review thread resolved": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review thread resolved" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fil de revue résolu" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Conversa de revisão resolvida" } }
+      }
+    },
+    "Review thread reopened": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review thread reopened" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fil de revue rouvert" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Conversa de revisão reaberta" } }
+      }
+    },
+    "CI failed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "CI failed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "CI en échec" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "CI falhou" } }
+      }
+    },
+    "CI succeeded": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "CI succeeded" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "CI réussie" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "CI concluída com sucesso" } }
+      }
+    },
+    "Issue opened": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue opened" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue ouverte" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue aberta" } }
+      }
+    },
+    "Push": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Push" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Push" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Push" } }
+      }
+    },
+    "Release published": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Release published" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Version publiée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Release publicada" } }
+      }
+    },
+    "Merge request opened": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Merge request opened" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Merge request ouverte" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Merge request aberta" } }
+      }
+    },
+    "Merge request merged": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Merge request merged" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Merge request fusionnée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Merge request mesclada" } }
+      }
+    },
+    "Merge request closed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Merge request closed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Merge request fermée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Merge request fechada" } }
+      }
+    },
+    "Pipeline failed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pipeline failed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pipeline en échec" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pipeline falhou" } }
+      }
+    },
+    "Pipeline succeeded": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pipeline succeeded" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pipeline réussi" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Pipeline concluído com sucesso" } }
+      }
+    },
+    "@mention of the app": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "@mention of the app" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "@mention de l'application" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "@menção ao app" } }
+      }
+    },
+    "Reaction added": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reaction added" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Réaction ajoutée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Reação adicionada" } }
+      }
+    },
+    "Message in a channel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Message in a channel" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Message dans un canal" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mensagem em um canal" } }
+      }
+    },
+    "New message": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "New message" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nouveau message" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nova mensagem" } }
+      }
+    },
+    "Message edited": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Message edited" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Message modifié" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Mensagem editada" } }
+      }
+    },
+    "Email received": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Email received" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Courriel reçu" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "E-mail recebido" } }
+      }
+    },
+    "Event created": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Event created" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Événement créé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Evento criado" } }
+      }
+    },
+    "Event updated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Event updated" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Événement modifié" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Evento atualizado" } }
+      }
+    },
+    "Event cancelled": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Event cancelled" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Événement annulé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Evento cancelado" } }
+      }
+    },
+    "Event starting (connector)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Event starting (connector)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Début d'événement (connecteur)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Evento começando (conector)" } }
+      }
+    },
+    "Issue created": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue created" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue créée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue criada" } }
+      }
+    },
+    "Issue resolved": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue resolved" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue résolue" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue resolvida" } }
+      }
+    },
+    "Issue assigned": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue assigned" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue assignée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue atribuída" } }
+      }
+    },
+    "Issue archived": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue archived" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue archivée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue arquivada" } }
+      }
+    },
+    "Issue unresolved again": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue unresolved again" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue redevenue non résolue" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue voltou a não resolvida" } }
+      }
+    },
+    "Alert triggered": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Alert triggered" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Alerte déclenchée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Alerta disparado" } }
+      }
+    },
+    "Error captured": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Error captured" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Erreur capturée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Erro capturado" } }
+      }
+    },
+    "Incident triggered": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Incident triggered" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Incident déclenché" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Incidente disparado" } }
+      }
+    },
+    "Incident acknowledged": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Incident acknowledged" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Incident pris en charge" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Incidente reconhecido" } }
+      }
+    },
+    "Incident escalated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Incident escalated" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Incident escaladé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Incidente escalado" } }
+      }
+    },
+    "Incident reassigned": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Incident reassigned" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Incident réassigné" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Incidente reatribuído" } }
+      }
+    },
+    "Incident resolved": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Incident resolved" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Incident résolu" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Incidente resolvido" } }
+      }
+    },
+    "Issue updated": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue updated" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue modifiée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue atualizada" } }
+      }
+    },
+    "Issue status changed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue status changed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Statut de l'issue changé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Status da issue alterado" } }
+      }
+    },
+    "Issue removed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Issue removed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Issue supprimée" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Issue removida" } }
+      }
+    },
+    "Comment added": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Comment added" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Commentaire ajouté" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Comentário adicionado" } }
+      }
+    },
+    "Cycle completed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cycle completed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cycle terminé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ciclo concluído" } }
+      }
     }
   },
   "version": "1.0"

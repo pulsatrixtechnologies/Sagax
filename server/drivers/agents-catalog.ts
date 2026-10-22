@@ -747,7 +747,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "offer_shell_terminal",
     description:
-      "Offer an in-chat terminal card when the person wants to drive a machine (connect, debug live) or must type a secret; never to have them run a command or paste output for you. Default destination: where you work; set provider (and resource_id) only to pick another. They can change it on the card. Nothing opens until they approve; you type only if they allow bot input.",
+      "Offer an in-chat terminal. When a Tailcat remote session is connected in this conversation and you name no destination, the shell opens on that computer at once. Otherwise this posts a card; nothing opens until the person approves, and you type only if they allow bot input. Never ask them to paste a password or a tunnel address.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -761,6 +761,31 @@ const toolDefinitions = (externalRuntime: boolean) => [
         },
       },
       required: ["reason"],
+    },
+  },
+  {
+    name: "publish_remote_session",
+    description:
+      "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        flow_session_id: { type: "string", description: "12 lowercase hex id of the session folder." },
+        code: { type: "string", description: "The 6-character support code." },
+        os: { type: "string", enum: ["windows", "macos", "linux"] },
+        rights: { type: "string", enum: ["standard", "elevated"] },
+        end_at: { type: "string", description: "ISO-8601 end time, within a day." },
+        hostname: { type: "string" },
+        user: { type: "string" },
+        model: { type: "string" },
+        serial: { type: "string" },
+        cpu: { type: "string" },
+        ram: { type: "string" },
+        disk: { type: "string" },
+        os_name: { type: "string" },
+      },
+      required: ["flow_session_id", "code", "os", "rights", "end_at"],
     },
   },
   {
@@ -1210,7 +1235,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "propose_team_memory",
     description:
-      "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a workspace admin to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
+      "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a member of this team, or a workspace admin, to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1719,14 +1744,14 @@ export const PERSPICAX_TOOLS = [
   // Remote support (Perspicax 1.8.43, Tailcat). The bot does not supply a
   // nodekey: server/remote-support-local.ts creates the technician key once
   // on this computer and forwards only the public half.
-  pxTool("remote_support_open", "Remote support (Tailcat, assistance a distance). When the person asks for a link for their client, a remote session, or assistance a distance, call this with no key. Sagax creates the technician key once on this computer (the desktop PC or the bot's cloud computer) and never sends the private key. Do not ask for a nodekey, a template or a session id, and do not run tailcat serve, an exit node or file sharing. Defaults, unless the person says otherwise: the technician is their name and organization, the session ends in 2 hours (24 hours at most), the page detects the OS, and rights stay standard (pass rights elevated only when they ask). Answers a code and a page link: give those to the person. Then poll remote_support_status (this computer connects on the technician side) and always end with remote_support_close. Refused with remote_support_disabled while an admin has not turned it on, and absent without the remote support permission.", {
+  pxTool("remote_support_open", "Remote support (Tailcat, assistance a distance). When the person asks for a link for their client, a remote session, or assistance a distance, call this with no key: it is the first of at most three calls (open, one status when the person says it is launched, then the status that connects). No schema search, no cloud fallback. Sagax creates the technician key once on this computer (the desktop PC or the bot's cloud computer) and never sends the private key. Do not ask for a nodekey, a template or a session id, and do not run tailcat serve, an exit node or file sharing: never expose the person's own computer. Sagax ships tailcat 0.7.0 beside the app. Do not download tailcat and do not copy it into a system directory. Defaults, unless the person says otherwise: the technician is their name and organization, the session ends in 2 hours (24 hours at most), the page detects the OS, and rights stay standard, a session without administrator rights (pass rights elevated only when they ask). Answers a code, a page link and the script lines, already in code fences: put them in your first reply exactly as given, and never pass a line through a shell on this computer (a Mac shell eats its $ variables). Then call remote_support_status when the person says it is launched, and always end with remote_support_close. Refused with remote_support_disabled while an admin has not turned it on, and absent without the remote support permission.", {
     rights: { type: "string", enum: ["standard", "elevated"], description: "standard unless the person asks for elevated (one administrator consent on the end user's computer)" },
     technician: { type: "string", maxLength: 80, description: "optional override. Omit it: Sagax uses the person's name and the organization" },
     os: { type: ["string", "null"], enum: ["windows", "macos", "linux", null], description: "omit it. The support page detects the OS. Pass one only when the person named it" },
     end_at: { type: "string", description: "optional RFC 3339 end. Omit it for 2 hours from now. Never later than 24 hours" },
     start_minutes: { type: "integer", minimum: 5, maximum: 30, description: "minutes allowed before the first script fetch (default 15)" },
   }),
-  pxTool("remote_support_status", "The state of a remote support session you opened: waiting, fetched, started, connected, ended or expired. When the end user has started, this computer connects with the local technician key. The address stays on this computer: it is not in this result, and you do not repeat it or run tailcat yourself. fetch_ip_count above 1 means someone else read the code: do not connect, close it (cancelled) and open a new one. Pass the code remote_support_open answered.", { code: { type: "string", description: "the code remote_support_open answered" }, mark_connected: { type: "boolean", description: "omit it. Sagax marks the session connected after the local key reaches the computer" } }, ["code"]),
+  pxTool("remote_support_status", "The state of a remote support session you opened: waiting, fetched, started, connected, ended or expired. Call it when the person says the script is launched, not in a loop. fetch_ip_count must be exactly 1 (one address took the script): above 1 someone else read the code, do not connect, close it (cancelled) and open a new one. When the end user has started, this same call connects this computer with the local technician key and marks the session connected; if it still says started, call it once more. Once connected, Sagax posts the session card in the chat and the row in the bot panel by itself, and the screen shows in the Computer tab: never write a screenshot to the Desktop or open Preview. The address stays on this computer: it is not in this result, and you do not repeat it or run tailcat yourself. Pass the code remote_support_open answered.", { code: { type: "string", description: "the code remote_support_open answered" }, mark_connected: { type: "boolean", description: "omit it. Sagax marks the session connected after the local key reaches the computer" } }, ["code"]),
   pxTool("remote_support_close", "Close a remote support session you opened: outcome ended for a session that ran, cancelled for one that never connected. The end user's script stops the tunnel within 10 s. Always call it at the end.", { code: { type: "string", description: "the code remote_support_open answered" }, outcome: { type: "string", enum: ["ended", "cancelled"] } }, ["code", "outcome"]),
   pxTool("review_write", "Approve or refuse a write waiting for an approver: the review id from the pending answer and decision approve or refuse. Only the named approver can decide it.", { id: { type: "string" }, decision: { type: "string", enum: ["approve", "refuse"] } }, ["id", "decision"]),
 ];

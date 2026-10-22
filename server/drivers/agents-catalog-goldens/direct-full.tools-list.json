@@ -1236,7 +1236,7 @@
     },
     {
       "name": "offer_shell_terminal",
-      "description": "Offer an in-chat terminal card when the person wants to drive a machine (connect, debug live) or must type a secret; never to have them run a command or paste output for you. Default destination: where you work; set provider (and resource_id) only to pick another. They can change it on the card. Nothing opens until they approve; you type only if they allow bot input.",
+      "description": "Offer an in-chat terminal. When a Tailcat remote session is connected in this conversation and you name no destination, the shell opens on that computer at once. Otherwise this posts a card; nothing opens until the person approves, and you type only if they allow bot input. Never ask them to paste a password or a tunnel address.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1257,6 +1257,74 @@
         },
         "required": [
           "reason"
+        ]
+      }
+    },
+    {
+      "name": "publish_remote_session",
+      "description": "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "flow_session_id": {
+            "type": "string",
+            "description": "12 lowercase hex id of the session folder."
+          },
+          "code": {
+            "type": "string",
+            "description": "The 6-character support code."
+          },
+          "os": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "macos",
+              "linux"
+            ]
+          },
+          "rights": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "elevated"
+            ]
+          },
+          "end_at": {
+            "type": "string",
+            "description": "ISO-8601 end time, within a day."
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "serial": {
+            "type": "string"
+          },
+          "cpu": {
+            "type": "string"
+          },
+          "ram": {
+            "type": "string"
+          },
+          "disk": {
+            "type": "string"
+          },
+          "os_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "flow_session_id",
+          "code",
+          "os",
+          "rights",
+          "end_at"
         ]
       }
     },
@@ -2308,7 +2376,7 @@
     },
     {
       "name": "propose_team_memory",
-      "description": "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a workspace admin to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
+      "description": "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a member of this team, or a workspace admin, to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,

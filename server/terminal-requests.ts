@@ -51,7 +51,9 @@ export function defaultTerminalDestination(resources: readonly TerminalResource[
     const here = personal(workPlace);
     if (here) return here;
   }
-  return personal("sandbox") ?? personal("local-vm") ?? personal("desktop") ?? resources[0]!;
+  // A Tailcat session is opened by the remote-session offer, never as the
+  // workplace fallback. It must not steal the card when it happens to be first.
+  return personal("sandbox") ?? personal("local-vm") ?? personal("desktop") ?? resources.find((row) => row.provider !== "tailcat") ?? null;
 }
 
 function choiceOf(resource: TerminalResource): TerminalDestinationChoice {

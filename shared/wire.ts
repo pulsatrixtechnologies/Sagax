@@ -28,6 +28,7 @@ import type { CwWidget } from "./cw-widgets/types.ts";
 import type { CwAction } from "./cw-widgets/actions.ts";
 import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
+import type { RemoteSessionView } from "./remote-session.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { VaultLoginTarget, VaultRequestCardData } from "./credential-vault.ts";
@@ -840,6 +841,8 @@ export interface WireMessage {
   queueId?: string;
   /** In-chat terminal opened on a shell-capable resource. */
   terminalEmbed?: TerminalEmbed;
+  /** A Tailcat remote-support session. The tunnel address is never on this object. */
+  remoteSession?: RemoteSessionView;
 }
 
 export interface OptionCardData {

@@ -7,8 +7,10 @@ import { availableTools } from "./drivers/agents-catalog.ts";
 import type { HarnessClient } from "./drivers/agents-client.ts";
 import { GUIDES } from "../scripts/self-knowledge/guides.ts";
 import {
+  CONNECTED_NOTE,
   REMOTE_SUPPORT_TEMPLATE,
   ensureTechnicianNodekey,
+  recallSupportSession,
   handleRemoteSupportCall,
   type TailcatRun,
 } from "./remote-support-local.ts";
@@ -88,7 +90,13 @@ describe("remote support on this computer", () => {
     const { run } = fakeRun({ missing: true });
     const created = await ensureTechnicianNodekey(dir, run);
     expect(created.ok).toBe(false);
-    if (!created.ok) expect(created.error).toContain("not installed");
+    if (!created.ok) {
+      expect(created.error).toContain("not installed");
+      expect(created.error).not.toContain("Install tailcat");
+      expect(created.error).not.toContain("/usr/bin");
+      expect(created.error).not.toContain("nodekey:");
+      expect(created.error).not.toMatch(/copy tailcat into/i);
+    }
     expect(created.ok === false && created.error.includes(PRIVATE)).toBe(false);
   });
 
@@ -128,7 +136,22 @@ describe("remote support on this computer", () => {
       `Code: ${CODE}`,
       `Windows: irm https://support.example.test/tc/${CODE}/win | iex`,
       `macOS or Linux: curl -fsSL https://support.example.test/tc/${CODE}/sh | sh`,
+      "",
+      "Put this in your first reply exactly as written, fences included. Never run it or pass it through a shell on this computer (a Mac shell eats its $ variables).",
+      "",
+      "Windows (PowerShell):",
+      "```powershell",
+      `irm https://support.example.test/tc/${CODE}/win | iex`,
+      "```",
+      "",
+      "macOS or Linux (Terminal):",
+      "```sh",
+      `curl -fsSL https://support.example.test/tc/${CODE}/sh | sh`,
+      "```",
     ].join("\n"));
+    // what the open asked for is kept beside the session id, never the address
+    expect(recallSupportSession(dir, CODE)).toEqual({ id: "0123456789ab", code: CODE, elevated: false, endAt: "2026-10-22T15:00:00.000Z" });
+    expect(statSync(join(dir, "sessions", CODE, "open.json")).mode & 0o777).toBe(0o600);
     expect(answer.text).not.toContain(PUBLIC);
     expect(answer.text).not.toContain(PRIVATE);
     expect(answer.text).not.toContain("address");
@@ -184,6 +207,10 @@ describe("remote support on this computer", () => {
     expect(answer.isError).toBeUndefined();
     expect(answer.text).not.toContain(ADDRESS);
     expect(answer.text).toContain("connected");
+    // the bot learns the card comes by itself and the screen is in Sagax
+    expect(answer.text).toContain(CONNECTED_NOTE);
+    expect(CONNECTED_NOTE).toContain("Do not write a screenshot to the Desktop");
+    expect(CONNECTED_NOTE).toContain("Preview");
     expect(posted[0]).toEqual({ code: "K7Q-MNP" });
     expect(posted[1]).toEqual({ code: "K7Q-MNP", mark_connected: true });
     expect(calls.some((args) => args.includes("ping") && args.includes(ADDRESS))).toBe(true);
@@ -224,8 +251,38 @@ describe("remote support on this computer", () => {
     const guide = GUIDES.find((entry) => entry.id === "remote-support");
     expect(guide?.text).not.toContain("tailcat_session.py");
     expect(guide?.text).toContain("creates the technician key once");
+    expect(open?.description).toContain("Do not download tailcat");
+    expect(guide?.text).toContain("Do not download tailcat");
     expect(guide?.text).toContain("donne-moi le lien");
     expect(guide?.text).not.toMatch(/[–—]/);
+  });
+
+  it("encodes the fast process: standard by default, three calls, script in the first reply, no jpg", () => {
+    const tools = availableTools({
+      externalRuntime: false, coordinating: false, ownThreadCreation: false, skillAuthoring: false,
+      sharedComputers: false, voiceNotes: false, cloudHome: false, chief: false, botId: "b", perspicax: true,
+    }) as Array<{ name: string; description: string }>;
+    const open = tools.find((tool) => tool.name === "remote_support_open")?.description ?? "";
+    const status = tools.find((tool) => tool.name === "remote_support_status")?.description ?? "";
+    const publish = tools.find((tool) => tool.name === "publish_remote_session")?.description ?? "";
+    const guide = GUIDES.find((entry) => entry.id === "remote-support")?.text ?? "";
+    for (const text of [open, guide]) {
+      expect(text).toContain("at most three calls");
+      expect(text).toMatch(/without administrator rights/);
+      expect(text).toContain("first reply");
+      expect(text).toContain("Mac shell eats");
+      expect(text).toContain("no cloud fallback");
+      expect(text).toMatch(/never expose the person's own computer/i);
+    }
+    expect(guide).toContain("powershell code fence");
+    expect(guide).toContain("fetch_ip_count must be exactly 1");
+    expect(guide).toContain("do not open Preview");
+    expect(guide).toContain("Sessions à distance");
+    expect(status).toContain("fetch_ip_count must be exactly 1");
+    expect(status).toContain("never write a screenshot to the Desktop or open Preview");
+    expect(status).toContain("posts the session card in the chat");
+    expect(publish).toContain("posted by itself");
+    for (const text of [open, status, publish, guide]) expect(text).not.toMatch(/[–—]/);
   });
 });
 

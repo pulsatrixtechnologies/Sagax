@@ -52,6 +52,13 @@ RUN arch="$(node -p 'process.arch === "arm64" ? "arm64" : "x64"')" \
   && node --input-type=module -e "import { stageDuckdb } from './scripts/prepare-duckdb.mjs'; await stageDuckdb({ root: process.cwd(), targets: [{ platform: 'linux', arch: '$arch' }] });" \
   && mv "dist-native/duckdb/linux-$arch" dist-native/duckdb/linux \
   && chmod -R go-w dist-native/duckdb
+# Tailcat 0.7.0 for the technician side. One arch-independent path for the
+# runtime stage. The container does not download it again.
+RUN node scripts/prepare-tailcat.mjs --current \
+  && arch="$(node -p 'process.arch')" \
+  && mkdir -p dist-native/tailcat/linux \
+  && cp "dist-native/tailcat/linux-${arch}/tailcat" dist-native/tailcat/linux/tailcat \
+  && chmod 0755 dist-native/tailcat/linux/tailcat
 RUN pnpm build:server && pnpm exec vite build
 
 FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
@@ -154,6 +161,7 @@ RUN node /app/engines/harden-image-deps.mjs --root /opt/sagax-engines --root /us
     /root/.npm /root/.cache /tmp/*
 # DuckDB and resvg change on a version bump, not per commit: beneath the app files.
 COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux ./duckdb
+COPY --from=build --chmod=0755 /src/dist-native/tailcat/linux/tailcat /usr/local/bin/tailcat
 # The app itself last: a code change rebuilds only these layers.
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist

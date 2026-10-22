@@ -2,6 +2,8 @@ import { t } from "@/lib/i18n";
 
 export interface ComposerPlaceholderInput {
   approval: boolean;
+  /** A bot's question waits in the chat: answer it there or talk past it. */
+  question?: boolean;
   attachmentPending: boolean;
   recording: boolean;
   /** The bot or room is working. */
@@ -21,6 +23,7 @@ export function composerPlaceholder(input: ComposerPlaceholderInput): string {
   if (input.approval) return t("composer.placeholder.approval");
   if (input.attachmentPending) return t("composer.placeholder.attaching");
   if (input.recording) return t("composer.placeholder.listening");
+  if (input.question) return t("composer.placeholder.question");
   if (input.groupName === undefined) return botPlaceholder(input.botName);
   if (input.busy) return t("composer.placeholder.write");
   return input.goalMode

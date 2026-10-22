@@ -98,6 +98,9 @@ export function installTerminalFeature(deps: {
   /** The person's own environments, when this server has them. */
   personal?: Partial<Record<"sandbox" | "local-vm" | "desktop", PersonalTerminalDeps>>;
   now?: () => number;
+  /** When the person asks for a shell and a Tailcat session is already
+   * connected, open it instead of a workplace card. Null: no session. */
+  openRemoteShell?(args: { botId: string; threadId: string }): Promise<{ hostLabel: string; messageId: string } | { error: string } | null>;
 }): TerminalFeature {
   const now = deps.now ?? (() => Date.now());
   const audit = createTerminalAuditLog(deps.dataDir);
@@ -132,7 +135,11 @@ export function installTerminalFeature(deps: {
     registry,
     sessions,
     requests,
-    internalRoute: createTerminalInternalRoutes({ requests, ownsThread: deps.ownsThread }),
+    internalRoute: createTerminalInternalRoutes({
+      requests,
+      ownsThread: deps.ownsThread,
+      ...(deps.openRemoteShell ? { openRemoteShell: deps.openRemoteShell } : {}),
+    }),
     wire(routes, options) {
       routes.push(createTerminalRoutes({ requests, sessions, principalId: deps.principalId, upgrade: options.upgrade, live: options.live }));
     },

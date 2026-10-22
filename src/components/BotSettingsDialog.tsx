@@ -14,11 +14,13 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { reportAchievement } from "@/lib/achievements";
 import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
-import { simpleHidesPanelTab } from "@/lib/interface-visibility";
+import { endRemoteControl, useRemoteControlBot } from "@/lib/remote-session-focus";
 import { BotActionsMenu, type BotActionsMenuAnchor } from "./bot-settings/BotActionsMenu";
 import { LibraryTab } from "./bot-settings/LibraryTab";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
-import { PANEL_TABS, type PanelTab } from "./bot-settings/panel-tabs";
+import { RemoteSessionsSection } from "./remote-session/RemoteSessionsSection";
+import { RemoteSessionControl } from "./remote-session/RemoteSessionControl";
+import { computerTabIsRemoteOnly, visiblePanelTabs, type PanelTab } from "./bot-settings/panel-tabs";
 import { ActivitySection } from "./bot-settings/ActivitySection";
 import { SuggestionsSection } from "./bot-settings/SuggestionsSection";
 import { InlineEditableText } from "./bot-settings/InlineEditableText";
@@ -56,10 +58,15 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   // The Computer tab is the store's computer view, so every existing
   // "open the computer" link still lands on it. A bot that works nowhere
   // (Works on: Off) has no computer to show; Works on stays in the editor.
-  const panelTabs = PANEL_TABS.filter((id) => (advanced || !simpleHidesPanelTab(id)) && (id !== "computer" || bot.computer !== "off"));
-  // Simple never shows the computer tab. An open computer panel is closed
-  // by the shell; until that lands, the tab the person picked stays up.
-  const tab: PanelTab = advanced && state.computerOpen && panelTabs.includes("computer") ? "computer" : pickedTab;
+  // Prendre le contrôle on a remote session opens it in every mode.
+  const remoteControl = useRemoteControlBot() === bot.id;
+  const computerOff = bot.computer === "off";
+  const panelTabs = visiblePanelTabs({ advanced, computerOff, remoteControl });
+  // Simple shows the computer tab only for a remote session in control. An
+  // open computer panel is otherwise closed by the shell; until that lands,
+  // the tab the person picked stays up.
+  const tab: PanelTab = (advanced || remoteControl) && state.computerOpen && panelTabs.includes("computer") ? "computer" : pickedTab;
+  const remoteOnly = computerTabIsRemoteOnly({ advanced, computerOff });
   // the Library holds the bot's files (an achievement teaches it)
   useEffect(() => {
     if (tab === "library") reportAchievement("files.opened");
@@ -71,9 +78,11 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       return;
     }
     if (state.computerOpen || !collapsed) dispatch({ type: "toggleSettings", open: true });
+    endRemoteControl();
     setPickedTab(next);
   };
   const closePanel = () => {
+    endRemoteControl();
     dispatch({ type: "toggleSettings", open: false });
     dispatch({ type: "toggleComputer", open: false });
   };
@@ -124,6 +133,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       if (dialog && event.target instanceof Node && !dialog.contains(event.target)) return;
       if (event.key === "Escape") {
         event.preventDefault();
+        endRemoteControl();
         dispatch({ type: "toggleSettings", open: false });
         dispatch({ type: "toggleComputer", open: false });
       }
@@ -254,6 +264,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
               <SuggestionsSection bot={bot} routineCount={derived.botRoutines.length} />
               <ActivitySection bot={bot} />
+              <RemoteSessionsSection bot={bot} />
               <section data-bot-settings-section="routines" className="flex flex-col gap-2">
                 <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} grouped />
               </section>
@@ -265,7 +276,9 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
 
           {tab === "computer" && (
             <div className="px-4 pt-2">
-              <ComputerPanel bot={bot} onOpenVmWorkspace={onOpenVmWorkspace} embedded />
+              {remoteOnly
+                ? <RemoteSessionControl botId={bot.id} showEmpty />
+                : <ComputerPanel bot={bot} onOpenVmWorkspace={onOpenVmWorkspace} embedded />}
             </div>
           )}
 

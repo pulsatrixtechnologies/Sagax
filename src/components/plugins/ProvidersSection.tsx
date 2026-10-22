@@ -8,7 +8,8 @@ import { ExternalLink } from "lucide-react";
 import { openExternalLink } from "@/lib/app-links";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { accountDetail, providerGroups } from "@/lib/providers-model";
+import { accountDetail, grokProviderConfigured, providerGroups } from "@/lib/providers-model";
+import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors";
 import type { InstanceInfo } from "@/state/store";
 import { HarnessConnectorsSection } from "../HarnessConnectorsSection";
 import { InstanceProviderMark } from "../ProviderIcons";
@@ -63,9 +64,18 @@ export function ProvidersSection({ instances }: { instances: readonly InstanceIn
           {group.bringsConnectors ? (
             <div className="mt-3"><HarnessConnectorsSection placement="provider" /></div>
           ) : (
-            <p role="status" className="mt-2 text-[12px] text-ink-secondary">
-              {STATUS_LINE[group.id] ? t(STATUS_LINE[group.id]!) : t("connectApps.providers.other", { name: group.name })}
-            </p>
+            <div className="mt-2">
+              <p role="status" className="text-[12px] text-ink-secondary">
+                {STATUS_LINE[group.id] ? t(STATUS_LINE[group.id]!) : t("connectApps.providers.other", { name: group.name })}
+              </p>
+              {group.id === "xai" && grokProviderConfigured(group.accounts) && (
+                <ul data-grok-cloud-connectors className="mt-2 space-y-1">
+                  {GROK_CLOUD_CONNECTORS.map((connector) => (
+                    <li key={connector.id} data-grok-connector={connector.id} className="truncate text-[12.5px] text-ink">{connector.name}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       ))}

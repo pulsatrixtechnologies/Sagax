@@ -12,6 +12,9 @@
 //         faire") the owner asks their Primary Bot "mets Zed en Full" and
 //         also "mets-toi en Full": sagax_settings with their words turns it
 //         on at once, with their own rights; without their words it waits
+//   FA-5  (PR #934 review) the Full grant from the bot's settings names the
+//         open conversation: the owner's own thread follows and is audited;
+//         another person's thread on the same bot is left alone
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -253,7 +256,8 @@ posixOnly("organization Full access", () => {
     // itself, while it answers: applies from its next message
     const self = await settings({ action: "set", key: "bot.approvalMode", value: "full", quote: "mets-toi en Full" });
     expect(self.body.text, JSON.stringify(self.body)).toMatch(/^Done/);
-    expect(auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && JSON.stringify(row.target ?? {}).includes(ivy.id))).toBe(true);
+    // the audit line lands just after the reply
+    await waitFor(async () => auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && JSON.stringify(row.target ?? {}).includes(ivy.id)));
     // and this conversation, which keeps its own level
     const here = await settings({ action: "set", key: "thread.approvalMode", value: "full", quote: "mets-toi en Full" });
     expect(here.body.text, JSON.stringify(here.body)).toMatch(/^Done/);
@@ -261,5 +265,37 @@ posixOnly("organization Full access", () => {
     // (a member's message lands in her own conversation with the bot)
     expect(mine.tasks.map((task: { approvalMode: string }) => task.approvalMode)).toContain("full");
     await api("POST", `/api/bots/${ivy.id}/interrupt`, erin, { threadId: ivy.threadId });
+  }, 60_000);
+
+  it("FA-5: the Full grant follows the owner's open thread, never another person's", async () => {
+    await waitFor(async () => !(await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string; busy?: boolean }) => bot.id === zed.id)?.busy);
+    // Alice (shared on Zed) has her own private thread on it
+    const aliceThread = (await api("GET", `/api/bots`, alice)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.threadId as string;
+    expect(aliceThread).toBeTruthy();
+    expect(aliceThread).not.toBe(zed.threadId);
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
+    const threadMode = async (who: Auth, threadId: string) =>
+      ((await api("GET", `/api/bots`, who)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.tasks ?? [])
+        .find((task: { threadId: string }) => task.threadId === threadId)?.approvalMode;
+    // started while Zed defaulted to Full (FA-4): Alice lowers her own
+    const lowered = await api("PATCH", `/api/bots/${zed.id}/tasks/${aliceThread}`, alice, { approvalMode: "ask" });
+    expect(lowered.status, lowered.text).toBe(200);
+    const aliceBefore = await threadMode(alice, aliceThread);
+    expect(aliceBefore).toBe("ask");
+
+    // the owner names another person's conversation: the bot default changes, that thread does not
+    const foreign = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", threadId: aliceThread });
+    expect(foreign.status, foreign.text).toBe(200);
+    expect(await threadMode(alice, aliceThread)).toBe(aliceBefore);
+    expect(auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === aliceThread)).toBe(false);
+
+    // the owner's own open conversation follows and the change is audited with it
+    expect(await threadMode(erin, zed.threadId)).toBe("ask");
+    const threadRows = () => auditRows().filter((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === zed.threadId).length;
+    const rowsBefore = threadRows();
+    const own = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", threadId: zed.threadId });
+    expect(own.status, own.text).toBe(200);
+    expect(await threadMode(erin, zed.threadId)).toBe("full");
+    await waitFor(async () => threadRows() === rowsBefore + 1);
   }, 60_000);
 });

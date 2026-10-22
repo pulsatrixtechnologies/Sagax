@@ -27,6 +27,14 @@ describe("composerPlaceholder", () => {
     expect(composerPlaceholder({ ...base, busy: true, groupName: "Launch" })).toBe("Écrivez un message…");
   });
 
+  it("invites an answer to a waiting question, and says it stays open", () => {
+    expect(composerPlaceholder({ ...base, question: true })).toBe("Answer the question above, or write something else: it stays open");
+    setLocale("fr");
+    expect(composerPlaceholder({ ...base, question: true, busy: true })).toBe("Répondez à la question ci-dessus, ou écrivez autre chose : elle restera ouverte");
+    // an approval still wins: it takes the composer over
+    expect(composerPlaceholder({ ...base, question: true, approval: true })).toBe(t("composer.placeholder.approval"));
+  });
+
   it("keeps the other states", () => {
     expect(composerPlaceholder({ ...base, groupName: "Launch", groupHint: () => "@ a member" })).toBe(t("composer.placeholder.group", { name: "Launch", hint: "@ a member" }));
     expect(composerPlaceholder({ ...base, groupName: "Launch", goalMode: true })).toBe(t("composer.placeholder.goal", { name: "Launch" }));

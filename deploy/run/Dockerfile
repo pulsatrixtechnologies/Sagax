@@ -67,6 +67,8 @@ RUN set -eux; \
     /usr/local/bin/node --version; \
     /usr/local/bin/claude --version; \
     /usr/local/bin/codex --version; \
+    test -x /usr/local/bin/tailcat; \
+    /usr/local/bin/tailcat version | grep -F v0.7.0; \
     find /usr/local /opt/sagax-runner -xdev -type f -perm /6000 -exec chmod a-s {} + ; \
     chmod -R go-w /opt/sagax-runner; \
     rm -rf /tmp/* /tmp/.[!.]* 2>/dev/null || true

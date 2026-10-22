@@ -75,12 +75,26 @@ export function PermissionsSection({
   const perspicaxOrg = usePerspicaxOrg();
   const viewerId = state.config?.viewer?.principalId ?? null;
   const orgFullAccess = draft ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
+  // The menu shows the open conversation. The grant names that conversation
+  // so the saved level is the one still on screen after the reply.
+  const grantOrgFull = (target: string, confirm: boolean) => {
+    dispatch({
+      type: "updateBot",
+      botId: target,
+      patch: {
+        approvalMode: "full",
+        organizationFullAccess: true,
+        ...(confirm ? { confirmFullAccess: true } : {}),
+        ...(bot.id === target ? { threadId: bot.threadId } : {}),
+      },
+    });
+  };
   const setApprovalMode = (mode: ApprovalMode) => {
     if (bot.busy || mode === approvalMode) return;
     if (mode === "full" && orgFullAccess !== undefined) {
       if (orgFullAccess !== "allowed") return;
       if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
-      else dispatch({ type: "updateBot", botId: bot.id, patch: { approvalMode: "full", organizationFullAccess: true } });
+      else grantOrgFull(bot.id, false);
       return;
     }
     if (mode === "full") {
@@ -260,7 +274,7 @@ export function PermissionsSection({
           setFullAccessTarget(null);
           if (!target) return;
           if (orgFullAccess !== undefined) {
-            dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true } });
+            grantOrgFull(target, true);
             return;
           }
           dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: allThreads } });
