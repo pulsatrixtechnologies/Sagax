@@ -26,7 +26,7 @@ import { EnginesSettings } from "./EnginesSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
 import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
-import { canEditConfig, canManageBackups, canManageComputers, viewerCan } from "@/lib/viewer";
+import { canEditConfig, canManageBackups, canManageComputers, canManageExperimental, viewerCan } from "@/lib/viewer";
 import { OrganizationSettings } from "./OrganizationSettings";
 import { CompactRow, DescribedRow, PILL, PillSelect, type PillOption, requestSettingsCard, SettingRow, SettingsGroup, Switch, takeRequestedSettingsCard } from "./SettingsPrimitives";
 import { OrgMemorySettings } from "./OrgMemorySettings";
@@ -181,8 +181,14 @@ export function memberHidesSection(id: AppSettingsSection, input: {
   manageComputers: boolean;
   manageBackups: boolean;
   organization: boolean;
+  /** server.experimental (implied by server.settings). Defaults to editConfig
+   * for an older server that sends no permission list. */
+  manageExperimental?: boolean;
 }): boolean {
-  if (id === "experimental" || id === "connectedApps" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
+  // Experimental is its own delegable right (server.experimental): a member an
+  // admin gave it sees the section without the rest of the installation.
+  if (id === "experimental") return !(input.manageExperimental ?? input.editConfig);
+  if (id === "connectedApps" || id === "decisionModel" || id === "workspaces") return !input.editConfig;
   if (id === "backups" || id === "import") return !input.manageBackups;
   if (id === "computer") return !input.manageComputers && !input.organization;
   return false;
@@ -494,6 +500,7 @@ export function SettingsModal() {
   const editConfig = canEditConfig(state.config);
   const manageComputers = canManageComputers(state.config);
   const manageBackups = canManageBackups(state.config);
+  const manageExperimental = canManageExperimental(state.config);
   // Server mode: this app shows its organization's server only (src/lib/launch.ts).
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active ? serverMode : null;
@@ -533,7 +540,7 @@ export function SettingsModal() {
     // (2026-10-09: and to a person whose profile includes people.activityLog)
     if (id === "activity" && !(servedPage() && (ownerOrAdmin === true || (perspicaxOrg !== null && viewerCan(state.config, "people.activityLog"))))) return false;
     // Installation writes the server refuses with 403: hide the section.
-    if (memberHidesSection(id, { editConfig, manageComputers, manageBackups, organization })) return false;
+    if (memberHidesSection(id, { editConfig, manageComputers, manageBackups, organization, manageExperimental })) return false;
     // Decision model and Connected apps (Composio) are experimental, off until their switch is on.
     if (id === "decisionModel" && !decisionModelEnabled(state.config)) return false;
     if (id === "connectedApps" && !connectedAppsEnabled(state.config)) return false;

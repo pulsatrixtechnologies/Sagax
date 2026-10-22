@@ -17,6 +17,7 @@ import { BrowserUnavailableNote } from "../SettingsLink";
 import { DescribedRow, HelpTip, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
+import { canEditConfig } from "@/lib/viewer";
 
 type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow" | "meetingNotetaker";
 
@@ -101,6 +102,11 @@ export function ExperimentalSettings() {
   const browserInstallable = state.config?.browserEngine?.installable === true;
   const browserBlockedOnWindows = typeof window !== "undefined" && window.ogb?.platform === "win32" && !desktopBrowser && !browserInstallable;
   const profiles = state.config?.browserProfiles ?? [];
+  // The browser profiles and the "my Chrome" link write the installation
+  // (browserProfiles and more): only a viewer who may edit the config sees
+  // them. A server.experimental-only delegate keeps the feature switches,
+  // which are all this right opens (shared/permissions.ts).
+  const editConfig = canEditConfig(state.config);
   const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
   const [error, setError] = useState("");
 
@@ -159,9 +165,9 @@ export function ExperimentalSettings() {
           note={!desktopBrowser && browserInstallable ? t("settings.experimental.browserInstall") : undefined}
           busy={busy}
           onToggle={() => void toggle("browser", !browser)}
-          below={(browser || profiles.length > 0) && <BrowserProfilesBelow count={profiles.length} />}
+          below={editConfig && (browser || profiles.length > 0) && <BrowserProfilesBelow count={profiles.length} />}
         />
-        {browser && <MyChromeSettings />}
+        {browser && editConfig && <MyChromeSettings />}
         <div data-experimental-connected-apps="">
           <FeatureRow
             feature="connectedApps"

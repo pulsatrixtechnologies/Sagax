@@ -29,6 +29,7 @@ import {
   requestSource,
   requiredScope,
   routePermission,
+  routePermissions,
   PERMISSION_ROUTES,
   readWorkerRelayToken,
   resolveLoopbackTrust,
@@ -431,7 +432,12 @@ describe("resolveRequestAuth", () => {
     expect(routePermission("POST", "/api/instances/claude/leftover-files/remove", org)).toBeNull();
     // 2026-10-19: the four admin keys an admin gives in Perspicax
     expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBe("host.shell");
+    // 2026-10-22 (JC): the config write opens to EITHER server.settings OR the
+    // separate server.experimental key (no implication). A refusal names the
+    // primary (server.settings); routePermissions lists both.
     expect(routePermission("PATCH", "/api/config", org)).toBe("server.settings");
+    expect(routePermission("PUT", "/api/config", org)).toBe("server.settings");
+    expect([...routePermissions("PATCH", "/api/config", org)!]).toEqual(["server.settings", "server.experimental"]);
     expect(routePermission("PATCH", "/api/org/settings", org)).toBe("server.settings");
     expect(routePermission("GET", "/api/workspace-backup/status", org)).toBe("backup.workspace");
     expect(routePermission("POST", "/api/workspace-backup/export", org)).toBe("backup.workspace");
