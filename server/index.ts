@@ -330,7 +330,7 @@ import { GroupUsageReader } from "./group-thread-usage.ts";
 import { ledgerCost, listPriceFor } from "./model-prices.ts";
 import type { PriceList } from "./prices.ts";
 import type { RequestAuth } from "./request-auth.ts";
-import { BOT_FIELD_PERMISSIONS, can, permissionRefusal, type PermissionKey } from "../shared/permissions.ts";
+import { BOT_FIELD_PERMISSIONS, can, experimentalOnlyConfigViolation, permissionRefusal, type PermissionKey } from "../shared/permissions.ts";
 import { isMemberBotField } from "../shared/viewer-capabilities.ts";
 import { effectivePermissions, permissionList, type EffectivePermissions } from "./org-permissions.ts";
 import { allowedProviderTestUrl, checkProviderKey, PROVIDER_KEY_KINDS, providerBaseUrl, type ProviderKeyKind } from "./provider-key-check.ts";
@@ -866,7 +866,7 @@ import {
   requestOrigin,
   requestSource,
   requiredScope,
-  routePermission,
+  routePermissions,
   readWorkerRelayToken,
   resolveLoopbackTrust,
   loopbackBrowserRefused,
@@ -36424,9 +36424,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const needed = requiredScope(method, path, features);
         if (!scopes.includes(needed)) {
           // 2026-10-09: a route a permission opens (PERMISSION_ROUTES).
-          const permission = needed === "admin" && scopes.includes("client") ? routePermission(method, path, features) : null;
-          if (!permission) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
-          if (!sessionPermits(auth.session, permission)) return json(res, 403, permissionRefusal(permission));
+          const grants = needed === "admin" && scopes.includes("client") ? routePermissions(method, path, features) : null;
+          if (!grants) return json(res, 403, { error: `forbidden: this session lacks the ${needed} scope` });
+          if (!grants.some((key) => sessionPermits(auth.session, key))) return json(res, 403, permissionRefusal(grants[0]));
         }
       }
     }
@@ -47432,6 +47432,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               : "Only an organization admin can change this part of the settings.",
           code: "admin_only_field", field,
         });
+        // 2026-10-22 (JC): the config write now opens to server.experimental
+        // (request-auth.ts). A delegate who holds only that key, not
+        // server.settings, may flip the experiments of Settings > Experimental
+        // and nothing else: refuse any other field here (defense in depth; the
+        // client hides those controls from them too).
+        if (!callerCan(auth, "server.settings")) {
+          const forbidden = experimentalOnlyConfigViolation(body);
+          if (forbidden) return json(res, 403, { ...permissionRefusal("server.settings"), code: "admin_only_field", field: forbidden });
+        }
       }
       if (hostedModels && ["instances", "anthropic", "openai", "openrouter", "openaiCompat", "xai", "mistral", "cerebras", "groq", "opencodeGo"].some(key => Object.hasOwn(body, key))) return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });
       if (profileManagedFor(auth) && writesManagedProfile(body)) return json(res, 403, MANAGED_PROFILE_REFUSAL);

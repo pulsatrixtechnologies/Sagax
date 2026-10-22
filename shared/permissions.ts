@@ -309,6 +309,22 @@ const definitions = [
       fr: "Changer les réglages de l'installation, les webhooks, les applications connectées, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils, la fenêtre de rattachement intérimaire et les clés de fournisseurs du serveur (OpenRouter, OpenAI, Anthropic, voix, Composio...) restent aux admins.",
     },
   },
+  // 2026-10-22 (JC): the experimental features of the server (Settings >
+  // Experimental), delegable on its own. It governs who sees and toggles the
+  // early features there (skill authoring, the built-in browser, connected
+  // apps, the decision model, the data window, the meeting notetaker). These
+  // are server-wide switches, so it is implied by server.settings (a person
+  // who may change the settings may always manage the experiments): see
+  // server/org-permissions.ts. A person given only this key never reaches any
+  // other installation setting.
+  {
+    key: "server.experimental", group: "server", memberDefault: false, adminOnly: false,
+    label: { en: "Manage experimental features", fr: "Gérer les fonctionnalités expérimentales" },
+    description: {
+      en: "See Settings > Experimental and turn its early features on or off for the whole server (skill authoring, the built-in browser, connected apps, the decision model, the data window, the meeting notetaker). It reaches no other installation setting. Anyone who can change the server's settings already has it.",
+      fr: "Voir Réglages > Expérimental et activer ou désactiver ses fonctionnalités en avant-première pour tout le serveur (rédaction de compétences, navigateur intégré, applications connectées, modèle de décision, fenêtre de données, preneur de notes de réunion). Elle n'atteint aucun autre réglage de l'installation. Toute personne qui peut changer les réglages du serveur l'a déjà.",
+    },
+  },
   {
     key: "server.link", group: "server", memberDefault: false, adminOnly: true,
     label: { en: "Link the server", fr: "Lier le serveur" },
@@ -517,4 +533,41 @@ export function permissionRefusal(key: PermissionKey): { error: "forbidden"; per
 /** The catalogue as GET /api/org/admin/capabilities returns it. */
 export function permissionCatalogue(): { version: number; groups: readonly PermissionGroup[]; permissions: readonly PermissionDefinition<PermissionKey>[] } {
   return { version: PERMISSION_CATALOGUE_VERSION, groups: PERMISSION_GROUPS, permissions: PERMISSIONS };
+}
+
+/** The server-wide `features` keys that `server.experimental` governs, i.e.
+ * the switches of Settings > Experimental (src/components/settings/
+ * ExperimentalSettings.tsx). A person holding only `server.experimental` may
+ * PATCH /api/config with these feature keys and nothing else; the client
+ * hides every other control from them. The host-reaching feature switches
+ * (sharedComputers, claudeUserMcp, vpsComputer, boatComputer) are NOT here:
+ * those stay with admins whatever right a delegate holds. Stable: the server
+ * refusal and the client gate both read this one list. */
+export const EXPERIMENTAL_FEATURE_KEYS: readonly string[] = [
+  "skillAuthoring", "browser", "connectedApps", "decisionModel", "dataWindow", "meetingNotetaker",
+];
+
+const EXPERIMENTAL_FEATURE_SET = new Set<string>(EXPERIMENTAL_FEATURE_KEYS);
+
+export function isExperimentalFeatureKey(key: string): boolean {
+  return EXPERIMENTAL_FEATURE_SET.has(key);
+}
+
+/** The first field a `server.experimental`-only caller (no `server.settings`,
+ * not an admin) may not send to PUT/PATCH /api/config, or null when the body
+ * is a features-only patch touching those experimental keys alone. It lets
+ * such a delegate flip the experiments of the server and nothing else. */
+export function experimentalOnlyConfigViolation(body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "body";
+  const record = body as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "features") return key;
+  }
+  const features = record.features;
+  if (features === undefined) return null;
+  if (!features || typeof features !== "object" || Array.isArray(features)) return "features";
+  for (const key of Object.keys(features as object)) {
+    if (!EXPERIMENTAL_FEATURE_SET.has(key)) return `features.${key}`;
+  }
+  return null;
 }

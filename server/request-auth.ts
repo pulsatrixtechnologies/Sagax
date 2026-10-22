@@ -831,7 +831,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
  * (an engine's program path stays admin, see server/index.ts). A route not
  * listed here stays admin scope, which the catalogue names server.settings
  * or another admin-only key. */
-export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path: RegExp; permission: PermissionKey }> = [
+export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path: RegExp; permission: PermissionKey | readonly PermissionKey[] }> = [
   // the usage ledger and its export (server/routes/usage.ts)
   { methods: ["GET"], path: /^\/api\/usage(?:\.csv)?$/, permission: "usage.view" },
   // the admin activity log and its export
@@ -868,7 +868,14 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   // backup.workspace: the export, never the restore
   { methods: ["GET", "POST"], path: /^\/api\/workspace-backup\/(?:status|client-state|export|download\/[\w.-]{1,200})$/, permission: "backup.workspace" },
   // server.settings
-  { methods: ["PUT", "PATCH"], path: /^\/api\/config$/, permission: "server.settings" },
+  // 2026-10-22 (JC): the config write opens to EITHER server.settings (the
+  // whole installation) OR server.experimental (the switches of Settings >
+  // Experimental only). The two are separate rights; any one admits the
+  // request at the gate. The handler then holds a caller who lacks
+  // server.settings to the experiments alone (shared/permissions.ts
+  // experimentalOnlyConfigViolation). A refusal names server.settings, the
+  // primary key.
+  { methods: ["PUT", "PATCH"], path: /^\/api\/config$/, permission: ["server.settings", "server.experimental"] },
   { methods: ["POST"], path: /^\/api\/keys\/test$/, permission: "server.settings" },
   { methods: ["POST"], path: /^\/api\/webhooks$/, permission: "server.settings" },
   { methods: ["POST"], path: /^\/api\/webhooks\/[\w-]+\/(?:rotate|test|reveal)$/, permission: "server.settings" },
@@ -892,14 +899,23 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["GET", "POST"], path: /^\/api\/admin\/pages(?:\/[\w-]+\/revoke)?$/, permission: "people.manage" },
 ];
 
-/** The permission that opens this admin-scope route to a person, or null. */
-export function routePermission(method: string, path: string, features: ClientFeatures = {}): PermissionKey | null {
+/** Every permission that opens this admin-scope route to a person (holding any
+ * one of them suffices), or null when no rule matches. */
+export function routePermissions(method: string, path: string, features: ClientFeatures = {}): readonly PermissionKey[] | null {
   if (features.orgDirectory !== true) return null;
   const upper = method.toUpperCase();
   for (const rule of PERMISSION_ROUTES) {
-    if (rule.path.test(path) && rule.methods.includes(upper)) return rule.permission;
+    if (rule.path.test(path) && rule.methods.includes(upper)) {
+      return Array.isArray(rule.permission) ? rule.permission : [rule.permission as PermissionKey];
+    }
   }
   return null;
+}
+
+/** The primary permission that opens this route, i.e. the one a refusal names
+ * when the client holds none of the route's keys, or null. */
+export function routePermission(method: string, path: string, features: ClientFeatures = {}): PermissionKey | null {
+  return routePermissions(method, path, features)?.[0] ?? null;
 }
 
 export function requiredScope(method: string, path: string, features: ClientFeatures = {}): Scope {
@@ -1118,9 +1134,9 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     }
     const needed = requiredScope(method, path, options.features ?? {});
     if (!session.scopes.includes(needed)) {
-      const permission = needed === "admin" && session.scopes.includes("client") ? routePermission(method, path, options.features ?? {}) : null;
-      if (!permission) return deny(403, `forbidden: this session lacks the ${needed} scope`);
-      if (!options.permits?.(session, permission)) return { auth: null, status: 403, error: "forbidden", permission };
+      const grants = needed === "admin" && session.scopes.includes("client") ? routePermissions(method, path, options.features ?? {}) : null;
+      if (!grants) return deny(403, `forbidden: this session lacks the ${needed} scope`);
+      if (!grants.some((key) => options.permits?.(session, key))) return { auth: null, status: 403, error: "forbidden", permission: grants[0] };
     }
     // Only a request that passed both checks counts as use of the session,
     // and only a request the client made itself: redeeming a stream ticket
