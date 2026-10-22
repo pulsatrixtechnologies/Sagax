@@ -235,6 +235,19 @@ describe("the wide foot's account pill (reference design)", () => {
     expect(html).not.toContain("data-sidebar-account-row");
   });
 
+  it("fills the row and keeps room for its name when Connect apps widens", () => {
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true, withName: true }));
+    // the outer box takes the rest of the row, never less than about eight
+    // characters of the name beside the avatar
+    const outer = /^<div class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex-1", "min-w-[7rem]"]));
+    const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
+    expect(pill).toContain("w-full");
+    // the name is one line, cut only by the room it has (never in markup)
+    const name = /<span data-account-pill-name="" class="([^"]*)"/.exec(html)?.[1] ?? "";
+    expect(name.split(" ")).toEqual(expect.arrayContaining(["min-w-0", "flex-1", "truncate"]));
+  });
+
   it("is wired in the sidebar's wide foot, the rail keeps the bare avatar", () => {
     const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
     expect(source).toContain("<SidebarProfileMenu avatarOnly withName places={accountPlaces} />");

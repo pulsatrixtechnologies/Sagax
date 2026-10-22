@@ -103,9 +103,37 @@ describe("the sidebar's Connect apps pill", () => {
 
   it("widens on hover and keyboard focus only, at once under reduced motion", () => {
     const css = readFileSync("src/styles.css", "utf8");
-    expect(css).toContain(".sidebar-apps-pill:is(:hover, :focus-visible) [data-apps-pill-label]");
-    expect(css).toMatch(/\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*max-width: 0;/);
+    // a focus a click left behind never holds it open
+    expect(css).toContain(".sidebar-apps-pill:is(:hover, :focus-visible:not([data-pointer-focus])) [data-apps-pill-label]");
+    expect(css).not.toContain(".sidebar-apps-pill:is(:hover, :focus-visible) [data-apps-pill-label]");
+    // at rest the label takes no width at all
+    expect(css).toMatch(/\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*max-width: 0;\s*opacity: 0;\s*margin-inline-end: 0;/);
+    // it may give its label up, never its place in the row first
+    expect(css).toMatch(/\.sidebar-apps-pill \{\s*flex: 0 1 auto;/);
+    // the width moves only when motion is allowed
+    expect(css).toMatch(/@media \(prefers-reduced-motion: no-preference\) \{\s*:root:not\(\[data-reduced-motion="true"\]\) \.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: max-width 220ms ease/);
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s*\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: none;/);
     expect(css).toMatch(/:root\[data-reduced-motion="true"\] \.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: none;/);
+  });
+
+  it("keeps its tiles whole and marks a focus that came from a click", () => {
+    inventory.services = {};
+    const button = renderSidebar().querySelector<HTMLButtonElement>("[data-sidebar-connect-apps]")!;
+    // never narrower than its three tiles and its padding
+    expect(button.style.minWidth).toBe(`${tilesWidth(3) + 22}px`);
+    expect(button.className).toContain("min-w-0");
+    expect(button.className).not.toContain("shrink-0");
+    const label = button.querySelector("[data-apps-pill-label]")!;
+    expect(label.className).toContain("text-ellipsis");
+    expect(label.className).toContain("min-w-0");
+    // the label comes before the tiles, so the tiles never move when it opens
+    expect(button.firstElementChild).toBe(label);
+    expect(button.lastElementChild?.hasAttribute("data-pill-tiles")).toBe(true);
+    button.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(button.hasAttribute("data-pointer-focus")).toBe(true);
+    button.focus();
+    button.blur();
+    expect(button.hasAttribute("data-pointer-focus")).toBe(false);
   });
 
   it("says Connecter des applications in French", () => {

@@ -732,7 +732,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   ) : null;
 
   return (
-    <div className={cn("relative", avatarOnly && withName && "min-w-0 flex-1")}>
+    <div className={cn("relative", avatarOnly && withName && "min-w-[7rem] flex-1")}>
       {avatarOnly && approvalsBadge}
       {avatarOnly ? accountRow : (
         <div className="flex items-center gap-2">

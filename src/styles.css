@@ -3258,9 +3258,14 @@ button:disabled.bg-danger {
   transition-property: background-color;
 }
 /* The wide foot's compact Connect apps pill (SidebarAppsPill): the tiles
-   alone at rest; hovered or focused from the keyboard, the label slides in
-   on their left and the pill widens (the account pill beside it shrinks).
-   Reduced motion: the label shows at once. */
+   alone at rest, the label folded to nothing (no width, no opacity).
+   Hovered, or focused from the keyboard (not a focus a click left behind:
+   data-pointer-focus), the label slides in on their left and the pill
+   widens; the account pill beside it shrinks down to its own minimum, then
+   the label is cut. Reduced motion: no transition, the label simply shows. */
+.sidebar-apps-pill {
+  flex: 0 1 auto;
+}
 .sidebar-apps-pill [data-pill-tiles] {
   margin-inline-start: 0;
 }
@@ -3268,12 +3273,19 @@ button:disabled.bg-danger {
   max-width: 0;
   opacity: 0;
   margin-inline-end: 0;
-  transition: max-width var(--transition-duration-moderate) var(--ease-out-quint), opacity var(--transition-duration-moderate) var(--ease-out-quint), margin-inline-end var(--transition-duration-moderate) var(--ease-out-quint);
 }
-.sidebar-apps-pill:is(:hover, :focus-visible) [data-apps-pill-label] {
+.sidebar-apps-pill:is(:hover, :focus-visible:not([data-pointer-focus])) [data-apps-pill-label] {
   max-width: 14rem;
   opacity: 1;
   margin-inline-end: 8px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion="true"]) .sidebar-apps-pill [data-apps-pill-label] {
+    transition: max-width 220ms ease, opacity 220ms ease, margin-inline-end 220ms ease;
+  }
+  :root:not([data-reduced-motion="true"]) .sidebar-apps-pill[data-pointer-focus]:not(:hover) [data-pill-tile] {
+    transform: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar-apps-pill [data-apps-pill-label] {

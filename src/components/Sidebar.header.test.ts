@@ -143,7 +143,9 @@ describe("sidebar header", () => {
     const pill = (foot.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0] ?? "";
     expect(pill).toContain('data-tour="nav-apps"');
     expect(pill).toContain("rounded-full");
-    expect(pill).toContain("shrink-0");
+    // it gives its label up before the account pill's minimum (styles.css)
+    expect(pill).toContain("min-w-0");
+    expect(pill).not.toContain("shrink-0");
     expect(pill).toContain("h-9");
     expect(pill).toContain('aria-label="Connect apps"');
     expect(foot).toContain("data-apps-pill-label");
