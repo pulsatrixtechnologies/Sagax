@@ -140,10 +140,18 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!owns()) return;
       const mods = { ctrl: event.ctrlKey, alt: event.altKey, meta: event.metaKey };
-      if (!isForwardedKey(event.code, mods)) return; // printable text comes through beforeinput
-      event.preventDefault();
-      const vk = keyToVk(event.code) ?? charVk(event.key);
-      if (vk !== null) queue({ t: "k", k: vk, d: 1 });
+      if (isForwardedKey(event.code, mods)) {
+        event.preventDefault();
+        const vk = keyToVk(event.code) ?? charVk(event.key);
+        if (vk !== null) queue({ t: "k", k: vk, d: 1 });
+        return;
+      }
+      // A printable character with no modifier: type it as text so the host's
+      // own keyboard layout turns it into the right key (accents included).
+      if (event.key.length === 1) {
+        event.preventDefault();
+        queue({ t: "x", s: event.key });
+      }
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (!owns()) return;
@@ -153,19 +161,11 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
       const vk = keyToVk(event.code) ?? charVk(event.key);
       if (vk !== null) queue({ t: "k", k: vk, d: 0 });
     };
-    const onBeforeInput = (event: Event) => {
-      if (!owns()) return;
-      const data = (event as InputEvent).data;
-      if (typeof data === "string" && data.length > 0) queue({ t: "x", s: data });
-    };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
-    surfaceRef.current?.addEventListener("beforeinput", onBeforeInput as EventListener);
-    const node = surfaceRef.current;
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
-      node?.removeEventListener("beforeinput", onBeforeInput as EventListener);
     };
   }, [phase, queue]);
 
