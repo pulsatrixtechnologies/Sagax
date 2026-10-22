@@ -4920,7 +4920,20 @@ it after an upstream merge instead of renaming by hand.
 - Stored field names that predate a rename of their own, such as a bot's
   `chiefOfStaff` (the Primary Bot, see above).
 - The native apps (`ios/`, `android/`): bundle ids, keychain services and
-  package names change only with a store release of their own.
+  package names change only with a store release of their own. Their
+  user-visible copy (Android string values and the English copy of its
+  helpers, the App Store text) says Sagax; resource names keep the old word.
+  Android release signing reads `SAGAX_KEYSTORE_FILE`,
+  `SAGAX_KEYSTORE_PASSWORD`, `SAGAX_KEY_ALIAS` and `SAGAX_KEY_PASSWORD`
+  first, and still reads the `OPENMAUSBOT_*` names for two releases.
+- Not kept: the deploy stack (`deploy/docker-compose.yml`) runs this
+  project's own image, `ghcr.io/pulsatrixtechnologies/sagax`, never the
+  upstream author's. The docs never point at the `openmausbot` npm package
+  (not this project's) nor at an unpublished one: they run the CLI from a
+  checkout (`pnpm omb <command>`) or in the container. The rebrand script
+  re-applies the image, the native copy and the signing names after a merge,
+  and reports `npx openmausbot` or `npm install -g openmausbot` in the docs
+  for a person to replace.
 - Legal and history: `LICENSE-APACHE`, the OpenMausBot lines of `NOTICE`, the README attribution,
   About's "Based on OpenMausBot", "Where work goes" and "Upstream sync" below.
 

@@ -18,7 +18,10 @@
 // names (SKIP_EXACT). Some old spellings are protected on
 // purpose (PROTECT): live endpoints and wire contracts of services this
 // project does not run, store identities of shipped apps, and identifiers
-// written into files people already have.
+// written into files people already have. A few narrow rules (the deploy
+// image, the native apps' copy files, the Android signing variables) also
+// reach the paths the general pass skips; npm install hints in the docs are
+// only reported, since their replacement depends on the page.
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -165,6 +168,34 @@ const RULES = [
   [re(`~/\\.${OLD}(?![A-Za-z0-9-])`), "~/.sagax"],
 ];
 
+/** Narrow rules that also reach the paths the general pass skips (deploy/,
+ * ios/, android/), each limited to the thing it re-applies. */
+
+// The deploy stack runs this project's image, never the upstream author's.
+// Applied before PROTECT (which keeps the upstream repositories), so it wins
+// over it for the image reference alone; other upstream repositories stay.
+const IMAGE_RULE = [re(`ghcr\\.io/milind-soni/${OLD}(?![A-Za-z0-9_-])`), "ghcr.io/pulsatrixtechnologies/sagax"];
+
+// The product name in the native apps' user-visible copy files only (string
+// values, App Store text); code and resource names keep their own pace.
+const NATIVE_COPY = /^(?:android\/app\/src\/main\/res\/values[^/]*\/strings\.xml|ios\/AppStore\/.+\.txt)$/;
+const NATIVE_COPY_RULES = [
+  [re(`\\b([Aa])n (?=OpenMausBot)`), "$1 "],
+  [re(`OpenMausBot`), "Sagax"],
+];
+
+// The Android release signing variables. The old name is still read as a
+// fallback passed right after the new one; that argument stays.
+const SIGNING_RULE = [re(`${OLD.toUpperCase()}_(KEY(?:STORE)?_[A-Z]+)`), "SAGAX_$1"];
+const SIGNING_FALLBACK = re(`(?<="SAGAX_KEY(?:STORE)?_[A-Z]+", )"${OLD.toUpperCase()}_KEY(?:STORE)?_[A-Z]+"`);
+
+// Reported, never rewritten: the npm package these name is not this
+// project's, and the right replacement (a checkout, the container) depends
+// on the page.
+const DOC_FILE = /^(?:(?:docs|apps\/docs\/content)\/.+\.mdx?|README\.md)$/;
+const HISTORICAL_RECORD = /^docs\/verification\/.+-\d{4}-\d{2}-\d{2}\.md$/;
+const NPM_INSTALL_HINT = re(`\\bnpx (?:--yes )?${OLD}\\b|\\bnpm (?:install|i) (?:-g|--global)\\b[^\\n]*?\\b${OLD}\\b`);
+
 function protectedSpans(text, patterns) {
   const spans = [];
   for (const pattern of patterns) {
@@ -181,12 +212,11 @@ function protectedSpans(text, patterns) {
   return merged;
 }
 
-/** Rewrite one text, leaving protected spans as they are. */
-export function rebrand(text, { native = false } = {}) {
-  const spans = protectedSpans(text, native ? [...PROTECT, ...PROTECT_NATIVE] : PROTECT);
+function applyOutside(text, patterns, rules) {
+  const spans = protectedSpans(text, patterns);
   let out = "";
   let at = 0;
-  const apply = (chunk) => RULES.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), chunk);
+  const apply = (chunk) => rules.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), chunk);
   for (const [start, end] of spans) {
     out += apply(text.slice(at, start)) + text.slice(start, end);
     at = end;
@@ -194,7 +224,34 @@ export function rebrand(text, { native = false } = {}) {
   return out + apply(text.slice(at));
 }
 
+/** Rewrite one text, leaving protected spans as they are. */
+export function rebrand(text, { native = false } = {}) {
+  return applyOutside(text, native ? [...PROTECT, ...PROTECT_NATIVE] : PROTECT, RULES);
+}
+
 const isNative = (file) => file.startsWith("ios/") || file.startsWith("android/");
+
+/** Rewrite one tracked file's text: the general pass where it applies, then
+ * the narrow rules above. */
+export function rebrandFile(file, text) {
+  let next = text.replace(...IMAGE_RULE);
+  if (!skipped(file)) next = rebrand(next, { native: isNative(file) });
+  if (NATIVE_COPY.test(file)) next = applyOutside(next, [...PROTECT, ...PROTECT_NATIVE], NATIVE_COPY_RULES);
+  if (file.startsWith("android/")) next = applyOutside(next, [...PROTECT, ...PROTECT_NATIVE, SIGNING_FALLBACK], [SIGNING_RULE]);
+  return next;
+}
+
+/** The npm install hints of a doc, as `line: text` pairs, for a person to fix. */
+export function npmInstallHints(file, text) {
+  if (!DOC_FILE.test(file) || HISTORICAL_RECORD.test(file)) return [];
+  const hints = [];
+  text.split("\n").forEach((line, index) => {
+    NPM_INSTALL_HINT.lastIndex = 0;
+    const match = NPM_INSTALL_HINT.exec(line);
+    if (match) hints.push([index + 1, match[0]]);
+  });
+  return hints;
+}
 
 function trackedFiles() {
   return execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "utf8" }).split("\0").filter(Boolean);
@@ -204,30 +261,43 @@ function skipped(file) {
   return SKIP_EXACT.has(file) || SKIP_PREFIX.some((prefix) => file.startsWith(prefix));
 }
 
+/** Paths no rule ever touches, the narrow ones included. */
+const UNTOUCHED_PREFIX = ["third_party/", ".git/", "node_modules/", "evals/live/judge/prompts/"];
+function untouched(file) {
+  return SKIP_EXACT.has(file) || UNTOUCHED_PREFIX.some((prefix) => file.startsWith(prefix));
+}
+
 function main(argv) {
   const write = argv.includes("--write");
   // --only a/,b/ limits the pass to those path prefixes (one category at a time)
   const onlyAt = argv.indexOf("--only");
   const only = onlyAt >= 0 ? argv[onlyAt + 1].split(",") : null;
   let changedFiles = 0;
+  let hintCount = 0;
   const moves = [];
   for (const file of trackedFiles()) {
-    if (skipped(file) || (only && !only.some((prefix) => file.startsWith(prefix)))) continue;
+    if (untouched(file) || (only && !only.some((prefix) => file.startsWith(prefix)))) continue;
     const path = join(ROOT, file);
     let buffer;
     try { buffer = readFileSync(path); } catch { continue; }
     if (!buffer.includes(0)) {
       const text = buffer.toString("utf8");
-      const next = rebrand(text, { native: isNative(file) });
+      const next = rebrandFile(file, text);
       if (next !== text) {
         changedFiles += 1;
         if (write) writeFileSync(path, next);
         else console.log(`edit ${file}`);
       }
+      for (const [line, hint] of npmInstallHints(file, next)) {
+        hintCount += 1;
+        console.warn(`warn ${file}:${line}: \`${hint}\` names an npm package this project does not publish; replace it by hand`);
+      }
     }
+    if (skipped(file)) continue;
     const target = rebrand(file, { native: false });
     if (target !== file) moves.push([file, target]);
   }
+  if (hintCount) console.warn(`${hintCount} npm install hint(s) to replace by hand`);
   for (const [from, to] of moves) {
     if (write) {
       mkdirSync(join(ROOT, dirname(to)), { recursive: true });
