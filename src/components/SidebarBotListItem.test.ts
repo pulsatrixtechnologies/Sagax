@@ -212,7 +212,7 @@ describe("BotListItem", () => {
   });
 
 
-  // Grok Bot's row (JC, 2026-10-15): the role (Bot settings > Title) is a
+  // The reference design's row (JC, 2026-10-15): the role (Bot settings > Title) is a
   // pill right after the name, in the same line.
   it("draws the role as a pill right after the name", () => {
     const markup = renderRow(bot({ title: "ConnectWise Ops & MS 365" }));
@@ -387,7 +387,7 @@ describe("bot deletion feedback", () => {
       expect(renderRow(bot({ busy: true }))).toContain('data-testid="working-dot"');
       expect(renderRow(bot({ activity: "waiting-on-you" }))).toContain('data-testid="waiting-dot"');
       const unread = renderRow(bot({ unread: true }));
-      // Grok Bot's unread: the name keeps its weight, a blue dot sits at the
+      // The reference design's unread: the name keeps its weight, a blue dot sits at the
       // row's end, and the screen-reader label stays.
       expect(unread).toMatch(/sr-only[^>]*>Unread threads</);
       expect(unread).not.toContain("font-semibold");

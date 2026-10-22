@@ -409,7 +409,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
 }
 
 /** In an organization, keys are for an owner, an admin, the server's
- * operator, or a member whose profile includes engines.manage (JC,
+ * operator, or a member whose profile includes engines.manage (the maintainer,
  * 2026-10-16: as before). Elsewhere whoever may manage the installation's
  * keys. Never in a remote window, where the key store is not this
  * server's. */
@@ -421,7 +421,7 @@ export function keysShown(input: { member: boolean; remote: boolean; organizatio
   return viewer.operator || viewerIsOrgAdmin(input.config) || viewerCan(input.config, "engines.manage");
 }
 
-/** Settings > Models and voice (2026-10-14), laid out as Grok Bot's settings
+/** Settings > Models and voice (2026-10-14), laid out as the reference design's settings
  * pages since 0.5.6: grey headings outside rounded cards, compact rows.
  * Engines first (Auto, the ready engines in view, the others folded under
  * "Needs setup" with their count), then every key (model, voice and image)

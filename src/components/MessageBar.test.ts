@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // The bar beside a 1:1 message: react, reply and … in a row (the tray of
-// MessageHoverActions, Grok Bot's shapes), the time under them. Copy, Copy
+// MessageHoverActions, the reference design's shapes), the time under them. Copy, Copy
 // request ID and every other control are labelled entries of the … menu.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";

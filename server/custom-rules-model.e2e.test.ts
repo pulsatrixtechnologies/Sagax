@@ -45,7 +45,7 @@ it("judges a card against the person's free rules: allow answers it with the rea
   const api = client(fixture);
   const sockets: Socket[] = [];
   try {
-    const bot = (await api("POST", "/api/bots", { name: "Katarina", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
+    const bot = (await api("POST", "/api/bots", { name: "Ottoline", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
     const threadId = bot.threadId as string;
     await api("PATCH", `/api/bots/${bot.id}/tasks/${threadId}`, { approvalMode: "ask" });
     const allowRule = (await api("POST", "/api/custom-rules", { when: "tout ce qui touche au projet Sagax", behavior: "allow", botId: bot.id, riskScope: [] }, 201)).rule;

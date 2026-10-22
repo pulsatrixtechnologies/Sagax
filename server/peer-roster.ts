@@ -144,7 +144,7 @@ export function peerInScope(from: RosterMember, target: RosterMember): boolean {
   return !peerScope || peerScope(from, target);
 }
 
-/** Which bots a Primary Bot covers whatever their team (2026-10-20, JC: the
+/** Which bots a Primary Bot covers whatever their team (2026-10-20: the
  * Primary Bot sees and changes every bot its person owns or may manage, no
  * managed-team setting needed). index.ts sets it on an organization server
  * (same owner, or a manage level for the person); unset (a solo server, one

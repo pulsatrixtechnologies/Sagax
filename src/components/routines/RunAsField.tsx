@@ -1,4 +1,4 @@
-// "Runs as" in the routine modal (JC, 2026-10-08). On an organization server
+// "Runs as" in the routine modal (2026-10-08). On an organization server
 // a routine acts with one person's access: their routine delegation and
 // their rights on the bot. An admin may pick any active person, a team
 // manager the people of their teams (else themselves and the bot's owner);

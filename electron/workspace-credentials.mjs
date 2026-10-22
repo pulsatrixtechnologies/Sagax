@@ -87,7 +87,7 @@ export function foldGrokVoiceCredential(credentials) {
 
 /** The log line for foldGrokVoiceCredential's outcome. */
 export function grokVoiceFoldLog(outcome) {
-  if (outcome === "moved") return "credentials: the Grok voice key is now the xAI key (Grok voice and Grok bots share one key)";
+  if (outcome === "moved") return "credentials: the Grok voice key is now the xAI key (Grok voice and bots on Grok share one key)";
   if (outcome === "dropped") return "credentials: Grok voice key not kept: an xAI key is already stored and Grok voice uses it";
   return null;
 }

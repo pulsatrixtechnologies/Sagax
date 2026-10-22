@@ -5,7 +5,7 @@ import { MessageHoverActions, MessageMenuItem, type HoverReactions } from "./Mes
 export { MessageMenuItem };
 
 /** The quiet controls beside a 1:1 message: react, reply and "…" in a row
- * (MessageHoverActions.tsx, Grok Bot's tray, JC 2026-10-15), the time under
+ * (MessageHoverActions.tsx, the reference design's tray, 2026-10-15), the time under
  * them. The "…" menu starts with the quick reactions, then Reply, Copy,
  * Copy request ID, then the entries passed as children (edit, regenerate,
  * pin), then the `view` entries (read aloud, raw markdown).

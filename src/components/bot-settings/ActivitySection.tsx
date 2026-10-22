@@ -312,7 +312,7 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
   return (
     <>
       {/* Work other bots do for this one is not shown here: it is seen in the
-          chat (the bot-to-bot conversation card), JC 2026-10-19. */}
+          chat (the bot-to-bot conversation card), 2026-10-19. */}
       {showCoding && (
         <section data-bot-settings-section="coding" className="flex flex-col gap-2">
           <SectionHeader

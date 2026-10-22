@@ -1,4 +1,4 @@
-// Settings > General laid out as Grok Bot's (0.5.6, JC): grey headings
+// Settings > General laid out as the reference design's (0.5.6, JC): grey headings
 // (Account, Appearance, System) over cards of compact rows, Language as a
 // pill menu (the skin is chosen in Appearance only, 2026-10-19), Updates on a page of its own, and General >
 // Advanced described by what it holds today.
@@ -41,7 +41,7 @@ afterEach(() => {
   setLocale("en");
 });
 
-describe("Settings > General, Grok Bot's layout", () => {
+describe("Settings > General, the reference design's layout", () => {
   it("draws Account, Appearance and System as grey headings over their cards, in that order", () => {
     const html = render();
     const order = ['data-settings-group="account"', 'data-settings-group="appearance"', 'data-settings-group="system"'];

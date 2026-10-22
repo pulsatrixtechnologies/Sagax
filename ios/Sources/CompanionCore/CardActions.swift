@@ -801,7 +801,7 @@ public enum ApprovalHeading: Hashable, Sendable {
         return .wantsTo(.of(tool: card.tool))
     }
 
-    /// The server's plain title ("Allow Cryptic to view the schedule in
+    /// The server's plain title ("Allow Quasar to view the schedule in
     /// ConnectWise PSA?") for a plain tool ask, when the phone reads English:
     /// those words are English, and a mixed sentence is worse than the app's
     /// own localized "wants to" heading.

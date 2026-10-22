@@ -3,7 +3,7 @@
 // the budgets, add one, rename it, switch it on or off, reorder them, save a
 // set's text, delete one.
 //
-// The Soul edit's gate, like the workspace routes (JC, 2026-10-09: members
+// The Soul edit's gate, like the workspace routes (2026-10-09: members
 // manage their own bots): an admin, the bot's owner, or someone granted edit
 // on it; a person who may only use shared bots is refused. The scope rule
 // (server/request-auth.ts CLIENT_ALLOW) lets a client session reach the

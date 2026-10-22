@@ -14,7 +14,7 @@
 - Real-network PR runs are non-gating observations; release acceptance enforces the same gates.
 - Reports contain p50, p90, and max for endpoint, STT final, LLM first token, TTS first byte, first audio out, and total.
 - English and Québec French, interruptions, corrections, two concurrent topics, and tool calls are mandatory.
-- Missing reference input is recorded as `not-provided`; no Grok Bot number is inferred or fabricated.
+- Missing reference input is recorded as `not-provided`; no the reference design number is inferred or fabricated.
 - Every server and provider run is isolated from user data and cleaned up in `finally`.
 - Credentials never appear in reports, logs, argv, or generated artifacts.
 

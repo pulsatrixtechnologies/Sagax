@@ -170,7 +170,7 @@ const engineCredentialFolderAt = (parts: string[], i: number): boolean =>
   (/^credentials$/i.test(parts[i]!) && (i === 0 || (i === 1 && parts[0]!.startsWith(".")))) ||
   (/^gh$/i.test(parts[i]!) && i > 0 && /^\.config$/i.test(parts[i - 1]!));
 
-/** An engine's saved sign-in in an engine home of the data folder (JC,
+/** An engine's saved sign-in in an engine home of the data folder (the maintainer,
  * 2026-10-18: « Exclure les jetons »). A workspace backup keeps each
  * engine's settings, skills and sessions, never its tokens or keys: after a
  * restore each person signs in to their engines again. Like the hook tokens
@@ -615,7 +615,7 @@ export function exportedSecretFile(relativePath: string, zip: () => boolean): bo
  * back from the destination's own copy (carryDestinationSecrets). */
 export const CLAUDE_AUTH_FIELDS = ["oauthAccount", "primaryApiKey", "customApiKeyResponses"] as const;
 
-/** Secrets Sagax keeps itself (JC, 2026-10-18 15:55: « Exclure tout »):
+/** Secrets Sagax keeps itself (2026-10-18 15:55: « Exclure tout »):
  * every sealed store or key, `*.enc` and `*.key` at any depth of the data
  * folder (a person's engine provider keys, personal connections, credential
  * vault, MCP sign-ins and cloud agent keys under `principals/<id>/`; the

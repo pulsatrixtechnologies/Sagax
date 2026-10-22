@@ -268,7 +268,7 @@ const ROUTINE_FIELDS_SCHEMA = {
 // propose_profile's one sentence about for_bot_id, which a bot that is not a
 // Primary Bot is not shown (catalogTools), along with the parameter itself.
 const CHIEF_PROFILE_TARGET = " A Primary Bot may pass for_bot_id (from list_bots) for a requested change to any bot of its person.";
-// 2026-10-20 (JC: "le bot principal fait tout"): the person's own words,
+// 2026-10-20 ("le bot principal fait tout"): the person's own words,
 // for a Primary Bot the person asked now; the change then applies at once.
 const PERSON_QUOTE = {
   type: "string", maxLength: 600,
@@ -1515,7 +1515,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
 
 
 /** The agent-to-agent tools (server/agent-api.ts, docs/agent-api.md): the
- * names, parameters and limits of Grok Bot's own agent tools. Every send
+ * names, parameters and limits of the reference design's own agent tools. Every send
  * lands in a hidden conversation the calling bot owns on that agent. */
 const AGENT_ID = { type: "string", description: "The agent's id, exactly as list_agents or find_agents returned it." } as const;
 const AGENT_CURSOR = { type: "string", description: "next_cursor of the previous page: entries before it." } as const;
@@ -1664,7 +1664,7 @@ export const SHARED_COMPUTER_TOOL_NAMES = new Set(["list_shared_computers", "sha
 const VOICE_TOOL_NAMES = new Set(["send_voice_note"]);
 const CALL_TOOL_NAMES = new Set(["end_call"]);
 // On a live call the bot answers by voice: a reaction would land silently in
-// the transcript while the person is listening (JC, 2026-10-18).
+// the transcript while the person is listening (2026-10-18).
 const NOT_ON_CALL_TOOL_NAMES = new Set(["react_to_message", "remove_reaction"]);
 // The meeting notetaker is experimental and off by default: join_meeting is
 // shown only while it is on (SAGAX_MEETINGS); its routes refuse otherwise.

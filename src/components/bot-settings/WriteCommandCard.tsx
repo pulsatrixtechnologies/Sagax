@@ -66,7 +66,7 @@ export function WriteCommandCard({ bot, taken, onSaved }: { bot: Bot; taken: rea
   };
 
   return (
-    // 2026-10-16 (JC): a grey heading over a Settings card; the hint is
+    // 2026-10-16 : a grey heading over a Settings card; the hint is
     // behind the info button.
     <section className="flex flex-col gap-2" data-write-command="">
       <div className="flex items-center gap-1.5 px-1">

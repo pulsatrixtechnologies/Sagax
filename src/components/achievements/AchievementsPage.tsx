@@ -97,7 +97,7 @@ function AchievementCard({ item, state, unlocks }: { item: AchievementDefinition
   const progress = state && !unlocked && (mastery ? !secret && state.target > 0 : state.target > 1 && state.current > 0) ? state.current / state.target : null;
   const reward = item.rewards[0];
   const line = reward && !secret && !mastery ? displayReward(reward, unlocks) : null;
-  // 2026-10-16 (JC): a tile, as the skin tiles of Settings > Appearance
+  // 2026-10-16 : a tile, as the skin tiles of Settings > Appearance
   // (#582): the badge on a small framed ground, the name and the rest under it.
   return (
     <li
@@ -178,7 +178,7 @@ export function AchievementsPage({ category = "all" }: { category?: AchievementC
   const titles = ACHIEVEMENTS.flatMap((item) => (states.get(item.id)?.unlockedAt ? item.rewards : [])).filter((reward) => reward.kind === "title");
   const recent = snapshot.recent.map((id) => ACHIEVEMENTS.find((item) => item.id === id)).filter((item): item is AchievementDefinition => Boolean(item));
 
-  // 2026-10-16 (JC): drawn like Settings: the progress card, then grey
+  // 2026-10-16 : drawn like Settings: the progress card, then grey
   // headings over the recent unlocks, the tiles and the card of settings.
   return (
     <div className="flex flex-col gap-5" data-achievements-page="">

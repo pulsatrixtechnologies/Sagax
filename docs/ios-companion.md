@@ -542,7 +542,7 @@ Health is not offered.
 
 From the feature parity matrix
 (`docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md`, packages S1,
-S2 and S3, with JC's decisions D1 yes, D3 yes, D4 keep).
+S2 and S3, with the decisions D1 yes, D3 yes, D4 keep).
 
 **Through the companion (S1, D1, D3).** A companion request is the computer's
 owner to the harness, so these get the owner checks the desktop's own renderer
@@ -602,7 +602,7 @@ Tests: `companion/test/routes.test.ts` ("iOS feature parity (S1, D1, D3)"),
 `companion/test/proxy.test.ts` (the routes reach a real harness; the voice
 engine route; the routine edit), `server/request-auth.test.ts`,
 `server/routes/tts-provider.test.ts`, `server/ios-parity.e2e.test.ts` ("holds
-the owner routes of a client session to the owner").
+The owner routes of a client session to the owner").
 
 ## Visual parity routes (2026-10)
 

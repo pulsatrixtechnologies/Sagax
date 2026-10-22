@@ -10,7 +10,7 @@ function setup(mode: ToolGuardMode = "shadow") {
   const guard = createAgentCardGuard({ grants, mode: () => mode, audit: (row) => rows.push(row) });
   return { grants, rows, guard };
 }
-const bot = { id: "bot-1", name: "Cryptic" };
+const bot = { id: "bot-1", name: "Quasar" };
 
 describe("agent tool guard before the card (B2.1)", () => {
   it("ignores non-agent tools", () => {

@@ -998,8 +998,8 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const botId = params.id!;
         let threadId = input.threadId as string | undefined;
         if (threadId && deps.confidential?.(threadId)) return fail(404, "not_found", "No such conversation.");
-        // An AI client works in a hidden conversation (#291), the way Grok
-        // Bot keeps its subagents out of the chat: never the person's open
+        // An AI client works in a hidden conversation (#291), the way the reference
+        // design keeps its subagents out of the chat: never the person's open
         // chat, never their sidebar, unread or notifications. A named
         // threadId is honored as given. The Perspicax console is the person
         // typing, so it keeps their own conversation.

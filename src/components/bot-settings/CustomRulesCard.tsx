@@ -1,5 +1,5 @@
 // Custom rules (2026-10-16): the person's own approval rules in plain words,
-// like Grok Bot's "Règles personnalisées": "Quand <bot> veut :" a short
+// like the reference design's "Règles personnalisées": "Quand <bot> veut :" a short
 // phrase, "Il devrait :" Autoriser automatiquement, Demander d'abord or
 // Refuser. Refuser wins over Demander d'abord, which wins over Autoriser.
 // An allow covers a risky action (a deletion, something irreversible, money,
@@ -10,7 +10,7 @@
 // both sides by shared/custom-rules.ts: the editor warns when the words name
 // nothing the reviewer can test, since such a rule allows nothing.
 //
-// 2026-10-21 (Grok Bot parity lot 1A): the organization's rules come first,
+// 2026-10-21 (the reference design parity lot 1A): the organization's rules come first,
 // marked "Exigé par votre administrateur", with no way to change them; while
 // the organization turned Always allow off, allow rules show as paused and
 // none can be added. At Full access a note says allow rules change nothing.

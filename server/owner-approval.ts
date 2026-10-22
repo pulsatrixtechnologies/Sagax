@@ -1,11 +1,11 @@
-// What a bot's owner decided ahead of time (2026-10-14, JC):
+// What a bot's owner decided ahead of time (2026-10-14):
 // docs/superpowers/specs/2026-10-14-bot-owner-permissions.md.
 //
 // A bot acts with its owner's rights. A permission card that stays within
 // those rights (the "owner" route of engine-access.ts) is answered by the
 // owner's own rules and the bot's permission mode before it reaches them:
 //
-// - rules belong to a person (the owner), optionally narrowed to one bot,
+// - rules belong to a person (The owner), optionally narrowed to one bot,
 //   and name one tool plus a scope read from the call's arguments (the
 //   target: resource, operation, repository, host...), never "this tool,
 //   whatever it does" unless the owner widened it on purpose;
@@ -55,7 +55,7 @@ export interface OwnerRule {
   behavior: RuleBehavior;
   /** Plain words, made from the card, editable by the owner. */
   description: string;
-  /** 2026-10-19 (JC: "Toujours permettre" on every card): the situation
+  /** 2026-10-19 ("Toujours permettre" on every card): the situation
    * of the card the rule was saved from, when it is one an ordinary rule
    * never answers. "admin": an admin's (or a host.commands holder's) card
    * of a member's bot, answered later only while the rule's person still
@@ -108,7 +108,7 @@ export function normalizeRuleTool(tool: string): string {
  * Always allow for ticket updates never covers ticket creates. */
 const TARGET_KEYS = ["api", "resource", "resource_prefix", "entity", "operation", "method", "verb", "action", "repo", "repository", "server", "domain", "url", "board", "channel", "to", "cc", "bcc"] as const;
 const MAX_SCOPE_VALUE = 120;
-/** 2026-10-19 (JC: a precise scope on every "Always allow"): keys kept on
+/** 2026-10-19 (a precise scope on every "Always allow"): keys kept on
  * top of the four above, compared exactly (case included). A shell line is
  * its exact text, a file its exact path: "Always allow" on `npm test` never
  * covers `npm test; rm -rf ~`, and on one file never another. A value too
@@ -245,7 +245,7 @@ export function callScopeFor(call: Pick<RuleCall, "input" | "cwd" | "app">): Rul
     const made = sagaxFolder(cwd);
     scope.cwd = made && made.rest.length === 0 ? `sagax:${made.kind}` : cwd.length <= MAX_EXACT_VALUE ? cwd : EXACT_TOO_LONG;
   }
-  // 2026-10-20 (JC): the one program a plain command line runs, which a
+  // 2026-10-20: the one program a plain command line runs, which a
   // "Toujours permettre" rule saved for that program matches
   const program = singleProgramOf(scope.command ?? scope.cmd);
   if (program) scope[PROGRAM_KEY] = program;
@@ -363,12 +363,12 @@ export function ownerDecision(input: {
   autonomyRefused?: boolean;
   /** The call reaches someone else's environment or data (a guest's turn,
    * another person's destination): no rule of anyone answers it and none is
-   * offered. 2026-10-19 (JC): the one situation "Always allow" never widens. */
+   * offered. 2026-10-19 : the one situation "Always allow" never widens. */
   crossPerson?: boolean;
 }): OwnerDecision {
   if (input.adminRoute) return { kind: "card", reason: "admin" };
   if (input.crossPerson) return { kind: "card", reason: "cross-person" };
-  // 2026-10-19 (JC: "Toujours permettre" on every card): a held card (a
+  // 2026-10-19 ("Toujours permettre" on every card): a held card (a
   // safety hold, a sandbox widening) and a turn that is not the person's own
   // are answered only by an allow rule the person saved from that same kind
   // of card; deny and ask rules answer as before.
@@ -431,7 +431,7 @@ export function describeRule(tool: string, scope: RuleScope, words: ApprovalWord
 
 export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints" | "cwd">, words: ApprovalWords = ENGLISH_WORDS, options: { wholeCall?: boolean; programScope?: boolean } = {}): RuleCandidate {
   const full = callScopeFor(call);
-  // 2026-10-20 (JC: "Toujours permettre" in one click, this program and not
+  // 2026-10-20 ("Toujours permettre" in one click, this program and not
   // the exact string): a plain command line of one program is kept as that
   // program (and its folder); anything else keeps the exact command.
   const program = options.programScope ? full[PROGRAM_KEY] : undefined;

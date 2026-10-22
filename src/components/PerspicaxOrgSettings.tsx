@@ -10,7 +10,7 @@
 // An admin also allows or refuses Full access for every bot (2026-10-01,
 // OrgFullAccessPolicy, server/org-full-access.ts).
 // People, teams and invitations live in Perspicax, never here.
-// 2026-10-15 (JC): Sharing in the organization (every bot of the
+// 2026-10-15 : Sharing in the organization (every bot of the
 // organization with its owner) is hidden from the app, like Activity, Email,
 // People and Installations (#518, #524): the app shows the person signed in,
 // views of everyone belong to Sagax Business and the Perspicax console.
@@ -118,7 +118,7 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
     }
   };
 
-  // 0.5.6 (JC): Grok Bot's layout. "Organization": its name, the link and
+  // 0.5.6: the reference design's layout. "Organization": its name, the link and
   // the viewer's role on one grey line, Manage in Perspicax as a pill; the
   // people from before Perspicax folded behind a count. "Organization's
   // bots": the commands waiting for an admin (folded, with a count), Full

@@ -60,7 +60,7 @@ export function LocalModelsSettings() {
     save({ endpoints: [...settings.endpoints.filter((row) => row.baseUrl !== baseUrl), { id: "", label: "", baseUrl }] });
   };
 
-  // 2026-10-18 (JC): a group of rows, as the other pages draw them
+  // 2026-10-18 : a group of rows, as the other pages draw them
   // (SettingsPrimitives); the loopback servers fold under their row.
   return (
     <div data-settings-card="computer.localModels" data-local-models={settings.expose ? "on" : "off"} data-local-models-share={settings.share ? "on" : "off"}>

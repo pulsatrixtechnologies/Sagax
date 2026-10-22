@@ -106,7 +106,7 @@ describe("temporary agents: the stored record", () => {
 describe("temporary agents: the profile sections", () => {
   it("finds the persona, rules, voice and anti-jobs by their headings, in French or English", () => {
     const soul = [
-      "Tu es Orion, le répartiteur de GOX.",
+      "Tu es Orion, le répartiteur d'Acme.",
       "## Règles",
       "- Jamais de temps inventé.",
       "### Détail",
@@ -119,7 +119,7 @@ describe("temporary agents: the profile sections", () => {
       "ConnectWise.",
     ].join("\n");
     const sections = profileSections(soul);
-    expect(sections.persona).toBe("Tu es Orion, le répartiteur de GOX.");
+    expect(sections.persona).toBe("Tu es Orion, le répartiteur d'Acme.");
     expect(sections.rules).toBe("- Jamais de temps inventé.\n### Détail\nUTC dans ConnectWise.");
     expect(sections.voice).toBe("Français québécois, phrases courtes.");
     expect(sections.anti_jobs).toBe("Pas de facturation.");

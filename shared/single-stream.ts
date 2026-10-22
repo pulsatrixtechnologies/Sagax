@@ -1,7 +1,7 @@
 // Single stream (thread mode off): one continuous conversation per bot.
 //
 // With Settings > Appearance > Show threads off, the person sees one
-// conversation per bot, like Grok Bot. "New topic" does not hide what came
+// conversation per bot, like the reference design. "New topic" does not hide what came
 // before: it starts a fresh engine context (a new thread on the server) and
 // the app draws a divider in the same stream. Each thread of that stream is a
 // "segment". The data model is the existing threads: nothing is moved or

@@ -66,7 +66,7 @@ export interface ViewerCapabilities {
 export function viewerCapabilities(input: { admin: boolean; pairDevices?: boolean; viewUsage?: boolean; editConfig?: boolean; manageComputers?: boolean; manageBackups?: boolean }): ViewerCapabilities {
   const admin = input.admin;
   return {
-    // 2026-10-19 (JC): an organization member an admin gave server.settings,
+    // 2026-10-19: an organization member an admin gave server.settings,
     // host.shell or backup.workspace in Perspicax sees those screens too.
     editConfig: admin || input.editConfig === true,
     manageKeys: admin || input.editConfig === true,

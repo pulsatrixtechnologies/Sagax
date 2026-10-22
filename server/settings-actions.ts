@@ -1,5 +1,5 @@
 // sagax_settings: a bot reads and changes any setting of the app for the
-// person speaking to it (JC, 2026-10-19). The registry
+// person speaking to it (2026-10-19). The registry
 // (shared/settings-actions.ts) names the route the screen calls; the policy
 // (shared/settings-actions-policy.ts) decides run or card; the act engine
 // (server/bot-act.ts) replays the route with the person's own session, so
@@ -124,7 +124,7 @@ export function askedChange(message: string, key: string, value: unknown, botNam
   }
   if ((key.endsWith("approvalMode") || key === "bot.permissionMode") && typeof value === "string") {
     // security review 2026-10-20: the level and its bot are in the quote
-    // itself ("ne mets pas Katarina en Full, mets Zed en Full" sets Zed only)
+    // itself ("ne mets pas Maya en Full, mets Zed en Full" sets Zed only)
     const said = normalizeWords(quote);
     const words = LEVEL_WORDS[value] ?? [value];
     if (!words.some((word) => said.includes(` ${normalizeWords(word).trim()}`))) return `the person's words (quote) do not name the level ${value}`;
@@ -135,7 +135,7 @@ export function askedChange(message: string, key: string, value: unknown, botNam
   return true;
 }
 
-/** 2026-10-20 (JC: "le bot principal fait tout"): beyond levels and rules,
+/** 2026-10-20 ("le bot principal fait tout"): beyond levels and rules,
  * a Primary Bot changes these settings of the person's own bots and
  * routines at once when the person asks for it in their message. Each key
  * needs its own words in the quote (security review 2026-10-20: one quote
@@ -429,7 +429,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // a person allows, or its keys and fingerprint when it is long; a
     // secret's value never
     const summary = `${spec.label} (${spec.key}${where ? `, ${where}` : ""})${secret ? `: ${Object.keys(value && typeof value === "object" ? value : {}).join(", ")}` : `: ${describe(value)}`}`;
-    // 2026-10-19 (JC: "Toujours permettre" on every card): what Always allow
+    // 2026-10-19 ("Toujours permettre" on every card): what Always allow
     // keeps: this setting of this target, and its exact value when the
     // change is more than a simple one
     const exactValue = classes.some((name) => name !== "own");

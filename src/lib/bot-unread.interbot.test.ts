@@ -3,13 +3,13 @@
 import { describe, expect, it } from "vitest";
 import { botShowsUnread, isInterBotThread, taskHiddenFromSidebar } from "./bot-unread";
 
-const work = { threadId: "w", unread: true, openedBy: { botId: "cryptic" } };
+const work = { threadId: "w", unread: true, openedBy: { botId: "quasar" } };
 describe("bot-to-bot threads", () => {
   it("are hidden from the sidebar of the bot they were opened on", () => {
     expect(isInterBotThread("agreements", work)).toBe(true);
     expect(taskHiddenFromSidebar(work, "agreements")).toBe(true);
     // a bot's own thread is not one
-    expect(isInterBotThread("cryptic", work)).toBe(false);
+    expect(isInterBotThread("quasar", work)).toBe(false);
     expect(taskHiddenFromSidebar({}, "agreements")).toBe(false);
   });
 

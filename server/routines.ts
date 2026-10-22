@@ -174,7 +174,7 @@ export interface Routine {
 /** Slice 6 (D9): why an organization routine is paused by the server. */
 export type RoutineSuspendReason = "person_out" | "no_right";
 export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["person_out", "no_right"];
-/** Pauses from before 2026-10-08 (JC: a routine always acts in its owner's
+/** Pauses from before 2026-10-08 (a routine always acts in its owner's
  * name): a routine loaded with one of these resumes from now. */
 export const RETIRED_SUSPEND_REASONS: readonly string[] = ["delegation_missing", "delegation_ended", "delegation_revoked"];
 export interface RoutineSuspension { reason: RoutineSuspendReason; at: number }

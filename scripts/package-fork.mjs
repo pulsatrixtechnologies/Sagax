@@ -35,7 +35,7 @@ const args = [
   `-c.extraMetadata.baseVersion=${base}`,
 ];
 // SAGAX_MAC_IDENTITY names a Developer ID Application identity in the local
-// keychain (its name, e.g. "Jean-Christophe Proulx (TEAMID)", or its SHA-1
+// keychain (its name, e.g. "Alex Martin (TEAMID)", or its SHA-1
 // hash when two identities share that name) for a signed, hardened build.
 // Without it the macOS build stays unsigned.
 const macIdentity = process.env.SAGAX_MAC_IDENTITY?.trim();

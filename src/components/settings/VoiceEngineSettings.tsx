@@ -98,7 +98,7 @@ export function VoiceEngineSettings({ keysLink = true }: { keysLink?: boolean })
 
   if (!tts) return null;
 
-  // 0.5.6: rows of the Voice group (Grok Bot's settings rows). The engine in
+  // 0.5.6: rows of the Voice group (the reference design's settings rows). The engine in
   // a pill menu, its key in the grey line under it.
   const engines = ([
     { value: "elevenlabs", label: t("voice.engine.elevenlabs"), available: true },

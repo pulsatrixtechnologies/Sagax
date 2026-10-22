@@ -3411,7 +3411,7 @@ function createWindow({ deferNavigation = false } = {}) {
       contextIsolation: true,
       // Cache V8's compiled code from the very first load instead of after
       // a script has run hot a few times: the renderer bundle starts faster
-      // from the second launch on (Grok Bot does the same).
+      // from the second launch on (the reference design does the same).
       v8CacheOptions: "bypassHeatCheck",
       preload: path.join(__dirname, "preload.cjs"),
       // Settings > Appearance > Desktop: the spell checker (on by default);

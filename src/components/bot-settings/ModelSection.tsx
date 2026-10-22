@@ -45,7 +45,7 @@ export function ModelSection({ bot }: { bot: Bot }) {
     : modelVariants
       ? (draft ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
       : `${t("botPanel.model.effortHelp")}${shown.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`;
-  // 2026-10-16 (JC): drawn like Settings: one group of rows (the model's
+  // 2026-10-16 : drawn like Settings: one group of rows (the model's
   // pill, the effort's pill menu), then recovery and backups as groups.
   return (
     <div className="flex flex-col gap-5">

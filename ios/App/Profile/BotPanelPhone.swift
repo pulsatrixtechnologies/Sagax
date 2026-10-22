@@ -286,7 +286,7 @@ private struct PhoneBotPanelContent: View {
                 out.append(menuItem(item, plan: plan, divider: divider, heading: heading))
             }
         }
-        // Copy ID (Grok Bot's profile menu), after the identity group
+        // Copy ID (the reference design's profile menu), after the identity group
         let copyId = GlassMenuItem(id: "copy-id", title: Text("Copy ID"), systemImage: "doc.on.clipboard") {
             UIPasteboard.general.string = current.id
             Haptics.selection()

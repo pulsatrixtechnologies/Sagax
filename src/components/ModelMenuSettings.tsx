@@ -1,7 +1,7 @@
-// The settings of the model in use, under the composer's model list (JC,
+// The settings of the model in use, under the composer's model list (the maintainer,
 // 2026-10-13, after Cursor's model menu): Fast (only when the model has a
 // fast twin) and Effort › (only the levels this model takes,
-// src/../shared/model-capabilities.ts). JC, 2026-10-14: no Model › (the
+// src/../shared/model-capabilities.ts). The maintainer, 2026-10-14: no Model › (the
 // provider submenus above already list the engine's models) and no Context
 // line (information, not a choice). Effort › opens its list over the whole
 // menu; Escape, the left arrow or Back returns to these rows with the focus

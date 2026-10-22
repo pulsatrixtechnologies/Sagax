@@ -4,7 +4,7 @@ import { applyReaction, BOT_REACTIONS, botReactionActorId, botReactionEmoji, nor
 
 const ALICE: ReactionActor = { id: "pr_alice", kind: "person", name: "Alice" };
 const BOB: ReactionActor = { id: "pr_bob", kind: "person", name: "Bob" };
-const CRYPTIC: ReactionActor = { id: botReactionActorId("cryptic"), kind: "bot", name: "Cryptic" };
+const QUASAR: ReactionActor = { id: botReactionActorId("quasar"), kind: "bot", name: "Quasar" };
 
 describe("reactionEmoji", () => {
   it("takes every quick reaction and real emoji sequences", () => {
@@ -34,10 +34,10 @@ describe("applyReaction", () => {
   });
 
   it("adds and removes without toggling, and reports a no-op", () => {
-    const added = applyReaction([], "✅", CRYPTIC, "add", 1);
-    expect(applyReaction(added.reactions, "✅", CRYPTIC, "add", 2)).toMatchObject({ changed: false });
-    expect(applyReaction(added.reactions, "👀", CRYPTIC, "remove", 2)).toMatchObject({ changed: false });
-    expect(applyReaction(added.reactions, "✅", CRYPTIC, "remove", 2)).toMatchObject({ changed: true, reactions: [] });
+    const added = applyReaction([], "✅", QUASAR, "add", 1);
+    expect(applyReaction(added.reactions, "✅", QUASAR, "add", 2)).toMatchObject({ changed: false });
+    expect(applyReaction(added.reactions, "👀", QUASAR, "remove", 2)).toMatchObject({ changed: false });
+    expect(applyReaction(added.reactions, "✅", QUASAR, "remove", 2)).toMatchObject({ changed: true, reactions: [] });
   });
 
   it("caps the distinct emojis of one message", () => {
@@ -54,18 +54,18 @@ describe("applyReaction", () => {
 describe("normalizeReactions", () => {
   it("reads the stored shape and drops what is malformed", () => {
     expect(normalizeReactions([
-      { emoji: "👍", actors: [BOB, { id: "bot:cryptic", name: "Cryptic" }, { name: "nobody" }], at: 5 },
+      { emoji: "👍", actors: [BOB, { id: "bot:quasar", name: "Quasar" }, { name: "nobody" }], at: 5 },
       { emoji: "nope", actors: [ALICE], at: 6 },
       { emoji: "🎉", actors: [], at: 7 },
       "junk",
-    ])).toEqual([{ emoji: "👍", actors: [BOB, CRYPTIC], at: 5 }]);
+    ])).toEqual([{ emoji: "👍", actors: [BOB, QUASAR], at: 5 }]);
     expect(normalizeReactions(undefined)).toEqual([]);
   });
 
   it("merges legacy { emoji, by } entries by emoji, naming the desktop's person when known", () => {
-    const legacy = [{ emoji: "👍", by: "user" }, { emoji: "👍", by: "cryptic" }, { emoji: "❤️", by: "user" }];
+    const legacy = [{ emoji: "👍", by: "user" }, { emoji: "👍", by: "quasar" }, { emoji: "❤️", by: "user" }];
     expect(normalizeReactions(legacy)).toEqual([
-      { emoji: "👍", actors: [{ id: "user", kind: "person", name: "" }, { id: "bot:cryptic", kind: "bot", name: "cryptic" }], at: 0 },
+      { emoji: "👍", actors: [{ id: "user", kind: "person", name: "" }, { id: "bot:quasar", kind: "bot", name: "quasar" }], at: 0 },
       { emoji: "❤️", actors: [{ id: "user", kind: "person", name: "" }], at: 0 },
     ]);
     expect(normalizeReactions(legacy, ALICE)[0]!.actors[0]).toEqual(ALICE);

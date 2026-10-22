@@ -1,18 +1,18 @@
 // The Primary Bot answers its person's cards at their request (JC,
-// 2026-10-20, Grok Bot parity: "le bot principal doit pouvoir absolument
+// 2026-10-20, the reference design parity: "le bot principal doit pouvoir absolument
 // tout faire"), through a real isolated server and fake engines only:
 //
-//   answer     Katarina's card waits; the person tells their Primary Bot
+//   answer     Ottoline's card waits; the person tells their Primary Bot
 //              "oui vas-y, approuve-la": the same answer as the click, the
-//              card reads via Cryptic, the journal names bot and message
+//              card reads via Quasar, the journal names bot and message
 //   no ask     words that do not ask, a quote not in the message, a card
 //              raised after the person spoke: refused, nothing answered
 //   teammate   a bot that is not the Primary Bot: refused
 //   always     "toujours permettre": the person's rule is saved, the same
 //              command then runs with no card
-//   cancel     "annule-la": Katarina's turn stops
-//   cards off  "mets Katarina en auto": sagax_settings with the quote runs at
-//              once from a Primary Bot at Ask (no card); Katarina's next call
+//   cancel     "annule-la": Ottoline's turn stops
+//   cards off  "mets Ottoline en auto": sagax_settings with the quote runs at
+//              once from a Primary Bot at Ask (no card); Ottoline's next call
 //              shows no card. Without the quote it waits on a card.
 //   latest     (JC 2026-10-20) two cards of a confidential thread wait; a long
 //              "oui, vas-y" naming none answers the latest one, listed and
@@ -71,7 +71,7 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     await api("POST", `/api/bots/${botId}/interrupt`, { threadId });
     await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).bots.find((bot: any) => bot.id === botId)?.busy ?? false, { timeout: 15_000 }).toBe(false);
   };
-  /** Ask the broker like Katarina's engine; the reply settles when someone answers. */
+  /** Ask the broker like Ottoline's engine; the reply settles when someone answers. */
   const ask = async (socketPath: string, command: string) => {
     const socket = connect(socketPath);
     sockets.push(socket);
@@ -94,29 +94,29 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     return readdirSync(dir).flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
   };
   try {
-    const katarina = (await api("POST", "/api/bots", { name: "Katarina", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
-    const cryptic = (await api("POST", "/api/bots", { name: "Cryptic", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
+    const ottoline = (await api("POST", "/api/bots", { name: "Ottoline", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
+    const quasar = (await api("POST", "/api/bots", { name: "Quasar", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
     const helper = (await api("POST", "/api/bots", { name: "Helper", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
-    await api("POST", `/api/bots/${cryptic.id}/primary`, {});
-    // Katarina and Cryptic both ask: every card is a real card
-    await api("PATCH", `/api/bots/${katarina.id}`, { approvalMode: "ask" });
-    await api("PATCH", `/api/bots/${cryptic.id}`, { approvalMode: "ask" });
-    await api("PATCH", `/api/bots/${cryptic.id}/tasks/${cryptic.threadId}`, { approvalMode: "ask" });
+    await api("POST", `/api/bots/${quasar.id}/primary`, {});
+    // Ottoline and Quasar both ask: every card is a real card
+    await api("PATCH", `/api/bots/${ottoline.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${quasar.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${quasar.id}/tasks/${quasar.threadId}`, { approvalMode: "ask" });
     const card = async (id: string) =>
-      (await api("GET", `/api/threads/${katarina.threadId}/messages?limit=200`)).messages.find((message: any) => message.card?.requestId === id)?.card;
+      (await api("GET", `/api/threads/${ottoline.threadId}/messages?limit=200`)).messages.find((message: any) => message.card?.requestId === id)?.card;
     const shown = (id: string) => expect.poll(async () => Boolean(await card(id)), { timeout: 15_000 }).toBe(true);
 
-    const kat = await turn(katarina.id, katarina.threadId, "Run the checks.");
+    const kat = await turn(ottoline.id, ottoline.threadId, "Run the checks.");
     const first = await ask(kat.socket, "printf primary-one");
     await shown(first.id);
 
-    // ── answer: the person's words, the click's effect, via Cryptic ─────
-    let main = await turn(cryptic.id, cryptic.threadId, "Oui vas-y, approuve-la.");
+    // ── answer: the person's words, the click's effect, via Quasar ─────
+    let main = await turn(quasar.id, quasar.threadId, "Oui vas-y, approuve-la.");
     const listed = await approvals(main.comms, { action: "list" });
     expect(listed.status, JSON.stringify(listed.body)).toBe(200);
     const ref = /card (c[0-9a-f]{7})/.exec(listed.body.text)?.[1];
     expect(ref, listed.body.text).toBeTruthy();
-    expect(listed.body.text).toContain("Katarina");
+    expect(listed.body.text).toContain("Ottoline");
     expect(listed.body.text).not.toContain(first.id);
     // no request in the words given: nothing answered
     expect((await approvals(main.comms, { action: "answer", card: ref, decision: "allow" })).body.code).toBe("no_quote");
@@ -126,16 +126,16 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     const answered = await approvals(main.comms, { action: "answer", card: ref, decision: "allow", quote: "approuve-la" });
     expect(answered.status, JSON.stringify(answered.body)).toBe(200);
     await expect.poll(() => first.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
-    expect((await card(first.id)).answeredBy).toMatchObject({ via: "primary-bot", bot: "Cryptic" });
+    expect((await card(first.id)).answeredBy).toMatchObject({ via: "primary-bot", bot: "Quasar" });
     await expect.poll(() => journal().find((row) => row.action === "approval.answer" && row.after?.requestId === first.id)?.after, { timeout: 5_000 })
-      .toMatchObject({ decision: "allow", via: "primary-bot", bot: cryptic.id, botName: "Cryptic" });
+      .toMatchObject({ decision: "allow", via: "primary-bot", bot: quasar.id, botName: "Quasar" });
 
     // a card raised after the person spoke: they never saw it
     const later = await ask(kat.socket, "printf primary-later");
     await shown(later.id);
     const laterRef = /card (c[0-9a-f]{7})/.exec((await approvals(main.comms, { action: "list" })).body.text)?.[1];
     expect((await approvals(main.comms, { action: "answer", card: laterRef, decision: "allow", quote: "approuve-la" })).body.code).toBe("card_after_request");
-    await stop(cryptic.id, cryptic.threadId);
+    await stop(quasar.id, quasar.threadId);
 
     // ── teammate: never ─────────────────────────────────────────────────
     const mate = await turn(helper.id, helper.threadId, "Oui vas-y, approuve-la.");
@@ -146,61 +146,61 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     await stop(helper.id, helper.threadId);
 
     // ── always: the person's rule, then no card for the same command ────
-    main = await turn(cryptic.id, cryptic.threadId, "Toujours permettre ça pour Katarina.");
-    const always = await approvals(main.comms, { action: "answer", card: laterRef, decision: "always_allow", quote: "Toujours permettre ça pour Katarina" });
+    main = await turn(quasar.id, quasar.threadId, "Toujours permettre ça pour Ottoline.");
+    const always = await approvals(main.comms, { action: "answer", card: laterRef, decision: "always_allow", quote: "Toujours permettre ça pour Ottoline" });
     expect(always.status, JSON.stringify(always.body)).toBe(200);
     await expect.poll(() => later.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     const rules = (await api("GET", "/api/approval-rules")).rules as any[];
     // the card's own Always allow: the program, as the click keeps it
-    expect(rules.find((row) => row.botId === katarina.id && row.scope?.program === "printf")).toMatchObject({ behavior: "allow" });
+    expect(rules.find((row) => row.botId === ottoline.id && row.scope?.program === "printf")).toMatchObject({ behavior: "allow" });
     const again = await ask(kat.socket, "printf primary-later");
     await expect.poll(() => again.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     expect(await card(again.id)).toBeUndefined();
-    await stop(cryptic.id, cryptic.threadId);
+    await stop(quasar.id, quasar.threadId);
 
-    // ── cancel: Katarina's turn stops ───────────────────────────────────
+    // ── cancel: Ottoline's turn stops ───────────────────────────────────
     const doomed = await ask(kat.socket, "echo primary-doomed");
     await shown(doomed.id);
-    main = await turn(cryptic.id, cryptic.threadId, "Annule la carte de Katarina.");
+    main = await turn(quasar.id, quasar.threadId, "Annule la carte de Ottoline.");
     const doomedRef = /card (c[0-9a-f]{7})/.exec((await approvals(main.comms, { action: "list" })).body.text)?.[1];
     expect((await approvals(main.comms, { action: "cancel", card: doomedRef, quote: "oui" })).body.code).toBe("not_their_words");
     const cancelled = await approvals(main.comms, { action: "cancel", card: doomedRef, quote: "Annule la carte" });
     expect(cancelled.status, JSON.stringify(cancelled.body)).toBe(200);
-    await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).bots.find((bot: any) => bot.id === katarina.id)?.busy ?? false, { timeout: 15_000 }).toBe(false);
-    await stop(cryptic.id, cryptic.threadId);
+    await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).bots.find((bot: any) => bot.id === ottoline.id)?.busy ?? false, { timeout: 15_000 }).toBe(false);
+    await stop(quasar.id, quasar.threadId);
 
-    // ── cards off: Katarina to Approve for me, asked by the person ──────
-    // at Ask (the person set her conversation so), Katarina's own change waits on a card
-    await api("PATCH", `/api/bots/${katarina.id}/tasks/${katarina.threadId}`, { approvalMode: "ask" });
-    let own = await turn(katarina.id, katarina.threadId, "Rename yourself.");
-    expect((await settings(own.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Night shift" })).body.text).toContain("Approval needed.");
-    await stop(katarina.id, katarina.threadId);
-    main = await turn(cryptic.id, cryptic.threadId, "Mets Katarina en auto et retire la règle printf de la conversation, je ne veux plus de cartes.");
-    const held = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: katarina.id, value: "auto" });
+    // ── cards off: Ottoline to Approve for me, asked by the person ──────
+    // at Ask (the person set her conversation so), Ottoline's own change waits on a card
+    await api("PATCH", `/api/bots/${ottoline.id}/tasks/${ottoline.threadId}`, { approvalMode: "ask" });
+    let own = await turn(ottoline.id, ottoline.threadId, "Rename yourself.");
+    expect((await settings(own.comms, { action: "set", key: "bot.title", target: ottoline.id, value: "Night shift" })).body.text).toContain("Approval needed.");
+    await stop(ottoline.id, ottoline.threadId);
+    main = await turn(quasar.id, quasar.threadId, "Mets Ottoline en auto et retire la règle printf de la conversation, je ne veux plus de cartes.");
+    const held = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: ottoline.id, value: "auto" });
     expect(held.body.text, JSON.stringify(held.body)).toContain("Approval needed.");
-    const off = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: katarina.id, value: "auto", quote: "Mets Katarina en auto" });
+    const off = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: ottoline.id, value: "auto", quote: "Mets Ottoline en auto" });
     expect(off.body.text, JSON.stringify(off.body)).toMatch(/^Done/);
-    expect((await api("GET", "/api/bots?messages=0")).bots.find((bot: any) => bot.id === katarina.id).approvalMode).toBe("auto");
+    expect((await api("GET", "/api/bots?messages=0")).bots.find((bot: any) => bot.id === ottoline.id).approvalMode).toBe("auto");
     // her conversation keeps its own level: the same request sets it too
-    const conversation = await settings(main.comms, { action: "set", key: "thread.approvalMode", target: katarina.threadId, value: "auto", quote: "Mets Katarina en auto" });
+    const conversation = await settings(main.comms, { action: "set", key: "thread.approvalMode", target: ottoline.threadId, value: "auto", quote: "Mets Ottoline en auto" });
     expect(conversation.body.text, JSON.stringify(conversation.body)).toMatch(/^Done/);
     // the person's words turn cards off, nothing else: another setting keeps its card
     // 2026-10-20: any setting of the person's own bot runs on their words,
     // but a new title must be their own words
-    expect((await settings(main.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Night shift", quote: "Mets Katarina en auto" })).body.text).toContain("Approval needed.");
+    expect((await settings(main.comms, { action: "set", key: "bot.title", target: ottoline.id, value: "Night shift", quote: "Mets Ottoline en auto" })).body.text).toContain("Approval needed.");
     // a quote that is not the person's: the card, as before
     const forged = await settings(main.comms, { action: "set", key: "bot.approvalMode", target: helper.id, value: "auto", quote: "set everything to auto" });
     expect(forged.body.text, JSON.stringify(forged.body)).toContain("Approval needed.");
     // the person's Always allow rule removed on request (their message
     // names it), without a card
-    const removed = await settings(main.comms, { action: "set", key: "rules.ownerDelete", target: rules.find((row) => row.botId === katarina.id).id, value: true, quote: "retire la règle printf de la conversation" });
+    const removed = await settings(main.comms, { action: "set", key: "rules.ownerDelete", target: rules.find((row) => row.botId === ottoline.id).id, value: true, quote: "retire la règle printf de la conversation" });
     expect(removed.body.text, JSON.stringify(removed.body)).toMatch(/^Done/);
-    expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.botId === katarina.id)).toBe(false);
-    await stop(cryptic.id, cryptic.threadId);
-    // Katarina's next change shows no card
-    own = await turn(katarina.id, katarina.threadId, "Rename yourself.");
-    expect((await settings(own.comms, { action: "set", key: "bot.title", target: katarina.id, value: "Night shift" })).body.text).toMatch(/^Done/);
-    await stop(katarina.id, katarina.threadId);
+    expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.botId === ottoline.id)).toBe(false);
+    await stop(quasar.id, quasar.threadId);
+    // Ottoline's next change shows no card
+    own = await turn(ottoline.id, ottoline.threadId, "Rename yourself.");
+    expect((await settings(own.comms, { action: "set", key: "bot.title", target: ottoline.id, value: "Night shift" })).body.text).toMatch(/^Done/);
+    await stop(ottoline.id, ottoline.threadId);
 
     // ── latest: a bare yes in a long message, a confidential thread ────
     await api("PATCH", `/api/bots/${helper.id}`, { approvalMode: "ask" });
@@ -214,7 +214,7 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     await expect.poll(async () => Boolean(await helperCard(newer.id)), { timeout: 15_000 }).toBe(true);
     // the person read it: a card raised in the last seconds asks which
     await new Promise((resolve) => setTimeout(resolve, 3_200));
-    main = await turn(cryptic.id, cryptic.threadId, "Oui, vas-y, je te fais confiance pour celle qui attend en ce moment.");
+    main = await turn(quasar.id, quasar.threadId, "Oui, vas-y, je te fais confiance pour celle qui attend en ce moment.");
     const hidden = await approvals(main.comms, { action: "list" });
     expect(hidden.body.text, JSON.stringify(hidden.body)).toContain("confidential conversation");
     expect(hidden.body.text).not.toContain("secret-");
@@ -224,8 +224,8 @@ it("the Primary Bot answers, always allows and cancels the person's cards at the
     expect(yes.body.text).not.toContain("secret-");
     await expect.poll(() => newer.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     expect(older.answer()).toBeUndefined();
-    expect((await helperCard(newer.id)).answeredBy).toMatchObject({ via: "primary-bot", bot: "Cryptic" });
-    await stop(cryptic.id, cryptic.threadId);
+    expect((await helperCard(newer.id)).answeredBy).toMatchObject({ via: "primary-bot", bot: "Quasar" });
+    await stop(quasar.id, quasar.threadId);
     await stop(helper.id, helper.threadId);
   } finally {
     for (const socket of sockets) socket.destroy();

@@ -1,5 +1,5 @@
 // Routines that run only while their person is there (2026-10-16, parity
-// with Grok Bot's "Routines paused while you were away", per routine here).
+// with the reference design's "Routines paused while you were away", per routine here).
 //
 // A routine with `onlyWhenPresent` (the editor's "Only when I'm here"
 // switch, off by default) creates no run while its person is away:

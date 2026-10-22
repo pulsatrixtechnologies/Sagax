@@ -118,7 +118,7 @@ describe("who gets the welcome flow", () => {
     // (reduced bridge) and the server's answer decides, never a guess
     vi.stubGlobal("window", REMOTE_PAGE);
     store.api.mockResolvedValueOnce({
-      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Jean-Christophe", email: "jc@example.test",
+      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Alex", email: "jc@example.test",
       profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.example.test/console/me",
     });
     let viewer: WelcomeViewer | null = null;
@@ -134,7 +134,7 @@ describe("who gets the welcome flow", () => {
     fixture.values = [];
     const { tree } = gate(viewer);
     expect(tree?.type).toBe(WelcomeFlow);
-    expect(tree?.props.profileManaged).toEqual({ by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Jean-Christophe", email: "jc@example.test" });
+    expect(tree?.props.profileManaged).toEqual({ by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" });
     // a solo server's flow is unchanged
     fixture.values = [];
     expect(gate({ hosted: false, canSave: true }).tree?.props.profileManaged).toBeUndefined();

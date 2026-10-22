@@ -1,4 +1,4 @@
-// The organization's approval policy (2026-10-21, Grok Bot parity lot 1A):
+// The organization's approval policy (2026-10-21, the reference design parity lot 1A):
 // what an organization admin sets for every person of the server, above
 // their own rules.
 //

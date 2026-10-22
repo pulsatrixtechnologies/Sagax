@@ -1,4 +1,4 @@
-// The sidebar's avatar menu, after Grok Bot's (JC, 2026-10-16, for 0.5.7):
+// The sidebar's avatar menu, after the reference design's (2026-10-16, for 0.5.7):
 //
 //   Usage · N% used ›      (the person's own plan; no percent without one)
 //   Get Sagax on mobile    (only once there is a public link to send)

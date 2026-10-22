@@ -2,7 +2,7 @@
 // Code, Codex), grouped Objective (a room's /goal and its subcommands),
 // Sagax, Engine, Plugins, MCP (in a group: under each bot's name), each with
 // its argument hint. What the chat cannot run stays listed, dimmed, with the
-// reason. Esc closes it, said in the footer (Grok Bot's prompt editor).
+// reason. Esc closes it, said in the footer (the reference design's prompt editor).
 import type { RefObject } from "react";
 import { Activity, BookOpen, Pause, Play, Plug, Puzzle, RefreshCw, Square, Target, Terminal, Wand2 } from "lucide-react";
 

@@ -198,7 +198,7 @@ function Shell() {
   useOrgMemoryAuto(org !== null);
   // Simple does not offer the inspector or the computer panel. Closing them
   // leaves their saved settings as they were. Connect apps stays open in
-  // Simple (JC, 2026-10-16): its pill is in every sidebar, and a person who
+  // Simple (2026-10-16): its pill is in every sidebar, and a person who
   // chose Simple must still reach it. What they may change inside is the
   // server's call.
   useEffect(() => {
@@ -221,7 +221,7 @@ function Shell() {
   // its first run, and every bot until then, is the engine sign-in.
 
   // App-wide shortcuts: ⌘N new bot · ⌘1–9 jump to bot · ⌘⇧[ / ⌘⇧] prev/next · ⌘/ or ? shortcuts cheat sheet,
-  // and Grok Bot's ⌘B sidebar · ⌘I composer · ⌘⇧F search · ⌘⇧N group chat (appShortcutFor;
+  // and the reference design's ⌘B sidebar · ⌘I composer · ⌘⇧F search · ⌘⇧N group chat (appShortcutFor;
   // ⌘L, quote the selection, lives with the selection in CitationUI).
   // Kept deliberately small; every panel already closes on Esc.
   useEffect(() => {

@@ -1,14 +1,14 @@
 # Bot concurrency: fan-out membership, serialized turns, queued wakes
 
 Status: decision record (Sep 2, 2026). Scopes the "parallel runtime" part of
-`2026-08-22-channels-plan.md` against how Grok Bot actually behaves.
+`2026-08-22-channels-plan.md` against how the reference design actually behaves.
 
 Update (Sep 9): the direct-conversation decision below is superseded by
 [independent threads and projects](2026-09-09-independent-threads.md).
 The earlier audit remains useful history; multi-bot channel turns still use
 the conservative per-bot lane described here.
 
-## What Grok Bot does (verified against docs.x.ai/grok-bot and hands-on reports)
+## What the reference design does (verified against docs.x.ai/grok-bot and hands-on reports)
 
 - **Membership fans out.** One bot can sit in many group chats; xAI's own guide reuses the same
   Coder/Researcher/Writer across project channels. Bots are personas, not copies.
@@ -33,7 +33,7 @@ the conservative per-bot lane described here.
    "finishing another conversation" note; past the wait cap the round moves on with a chip that says
    so. Stop on the room releases the wait. This closes the "busy member → skipped/failed" fragility
    for chat rooms the way #702 closed it for goals.
-2. **A user's DM outranks background work** (Grok Bot's rule): the steer queue already holds it for
+2. **A user's DM outranks background work** (the reference design's rule): the steer queue already holds it for
    the next settle; Stop remains the redirect.
 3. **Parallel turns for one bot are an explicit opt-in, not the default** — the channels plan's
    turn-lease design (`maxConcurrentTurnsPerBot > 1`, exclusive leases on the bot's computer and any

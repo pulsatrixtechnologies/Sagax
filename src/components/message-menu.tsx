@@ -48,7 +48,7 @@ export function useBotMessageMenu({
   pin?: PinAction;
 }): MessageMenuItem[] {
   const speak = useSpeakAction({ text, botId, messageId, voiceId, tts, localVoice });
-  // What changes the message first, then how it is shown (JC, 2026-10-16).
+  // What changes the message first, then how it is shown (2026-10-16).
   const items: MessageMenuItem[] = [];
   if (onRegenerate) items.push({ key: "regenerate", icon: <RefreshCw {...ACTION_ICON} />, label: t("chat.regenerate"), onSelect: onRegenerate });
   items.push(...pinItem(pin));

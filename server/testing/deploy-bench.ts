@@ -1,4 +1,4 @@
-// The "full deploy" bench (2026-10-20, JC: zero sign-out from a deploy).
+// The "full deploy" bench (2026-10-20: zero sign-out from a deploy).
 // Several people, each with several sessions (web, desktop, phone), on a
 // real organization server and a fake Perspicax that rotates refresh tokens
 // with its 30 s reuse grace. Then, one after the other:

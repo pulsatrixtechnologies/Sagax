@@ -94,7 +94,7 @@ export function OrgMemoryPanel({ bridge, orgName, initial = null, initialOpenPro
     }
   };
 
-  // 0.5.6 (JC): Grok-style rows of "This computer": the memory (its state
+  // 0.5.6: Grok-style rows of "This computer": the memory (its state
   // and last sync on one grey line, Open in Obsidian as a pill), then what
   // waits for a review, as a count.
   const notes = (

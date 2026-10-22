@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Grok Bot's pill menu (Settings > General: Theme, Language): a listbox that
+// The reference design's pill menu (Settings > General: Theme, Language): a listbox that
 // opens under the pill, answers the keyboard like a native select, and gives
 // the focus back to the pill when it closes.
 import { act, createElement } from "react";

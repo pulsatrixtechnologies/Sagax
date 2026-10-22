@@ -11,6 +11,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadAllowlist, scanPackage } from "./npm-package-terms.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "release", "npm");
@@ -164,4 +165,14 @@ it does not start the tunnel itself.
 · [Hosting guide](${REPOSITORY}/blob/main/docs/self-hosting.md)
 `,
 );
-console.log(`npm package assembled at ${out} (${NAME}@${version})`);
+// Nothing packed may name the company, a person or the reference design,
+// except the third-party names listed with a reason in the allowlist.
+const terms = scanPackage(out, loadAllowlist(join(root, "scripts", "npm-package-allowlist.json")));
+if (terms.blocked.length) {
+  for (const hit of terms.blocked.slice(0, 50)) {
+    console.error(`${hit.file}: ${hit.term} in ...${hit.context.replace(/\s+/g, " ")}...`);
+  }
+  console.error(`npm package refused: ${terms.blocked.length} forbidden term(s); fix the source or justify them in scripts/npm-package-allowlist.json`);
+  process.exit(1);
+}
+console.log(`npm package assembled at ${out} (${NAME}@${version}); term scan clean, ${terms.allowed.length} allowlisted interop name(s)`);

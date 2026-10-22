@@ -34,7 +34,7 @@ export function personDisplayName(person: { name?: string; email?: string; login
   return emailLocalPart(person?.email) || login || name;
 }
 
-/** "Zachary Sellam" gives "ZS", "zack.s@x.ca" gives "ZS", "" gives "?". */
+/** "Sam Taylor" gives "ST", "zack.s@x.ca" gives "ZS", "" gives "?". */
 export function personInitials(label: string): string {
   const parts = label.trim().split(/[\s@._-]+/).filter(Boolean);
   const letters = parts.slice(0, 2).map((part) => Array.from(part)[0] ?? "").join("");

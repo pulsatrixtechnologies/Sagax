@@ -76,7 +76,7 @@ function ServerInvitesDirectory() {
 }
 
 /** Settings → Organization is Perspicax (or a solo server's own invitations).
- * The hosted Sagax Admin portal is not offered here. 0.5.6 (JC): Grok Bot's
+ * The hosted Sagax Admin portal is not offered here. 0.5.6: the reference design's
  * layout, grey headings over cards of rows. On an organization server:
  * Organization, Organization's bots (with routines, group turns and MCP
  * calls in Advanced mode), This computer (its access for the bots, the

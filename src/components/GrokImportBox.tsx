@@ -1,7 +1,7 @@
-// Import a shared Grok Bot (port of OpenMausBot #3073, without its Cursor
+// Import a bot shared on x.ai (port of OpenMausBot #3073, without its Cursor
 // sign-in). Three ways in: paste the x.ai link (the server reads the public
-// card: POST /api/team-library/grok), paste the reply the person's own Grok
-// Bot writes to GROK_EXPORT_PROMPT, or drop that reply saved as a .json file
+// card: POST /api/team-library/grok), paste the reply the person's own x.ai
+// bot writes to GROK_EXPORT_PROMPT, or drop that reply saved as a .json file
 // (also pi-grokbot-import's grokbot-bundle/v1). Every way ends in the usual
 // team import preview (skills off, routines paused, no model, no keys), with
 // what could not come over listed under Left out.

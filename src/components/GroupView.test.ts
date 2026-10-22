@@ -160,18 +160,18 @@ describe("room header", () => {
   });
 
   it("draws an accepted nudge as its own line, for the sender and the other person", () => {
-    const note = { fromId: "pr_jean", fromName: "Jean-Christophe", toId: "pr_ada", toName: "Ada" };
+    const note = { fromId: "pr_jean", fromName: "Alex", toId: "pr_ada", toName: "Ada" };
     expect(nudgeLineText(note, "pr_jean")).toBe("You sent a nudge to Ada.");
-    expect(nudgeLineText(note, "pr_ada")).toBe("Jean-Christophe sent you a nudge.");
+    expect(nudgeLineText(note, "pr_ada")).toBe("Alex sent you a nudge.");
     const groupNote = { ...note, toId: "room", toName: "Launch planning", groupId: "room" };
     expect(nudgeLineText(groupNote, "pr_jean")).toBe("You sent a nudge in Launch planning.");
-    expect(nudgeLineText(groupNote, "pr_ada")).toBe("Jean-Christophe sent a nudge in this chat.");
+    expect(nudgeLineText(groupNote, "pr_ada")).toBe("Alex sent a nudge in this chat.");
     setLocale("fr");
     try {
       expect(nudgeLineText(note, "pr_jean")).toBe("Vous avez envoyé une secousse à Ada.");
-      expect(nudgeLineText(note, "PR_ADA")).toBe("Jean-Christophe vous a envoyé une secousse.");
+      expect(nudgeLineText(note, "PR_ADA")).toBe("Alex vous a envoyé une secousse.");
       expect(nudgeLineText(groupNote, "pr_jean")).toBe("Vous avez envoyé une secousse dans Launch planning.");
-      expect(nudgeLineText(groupNote, "pr_ada")).toBe("Jean-Christophe a envoyé une secousse dans cette conversation.");
+      expect(nudgeLineText(groupNote, "pr_ada")).toBe("Alex a envoyé une secousse dans cette conversation.");
     } finally {
       setLocale("en");
     }
@@ -188,7 +188,7 @@ describe("room header", () => {
         role: "bot",
         kind: "nudge",
         at: 2,
-        nudge: { fromId: "local-owner", fromName: "Jean-Christophe", toId: "pr_ada", toName: "Ada" },
+        nudge: { fromId: "local-owner", fromName: "Alex", toId: "pr_ada", toName: "Ada" },
       }],
     };
     let markup: string;

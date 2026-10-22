@@ -1,4 +1,4 @@
-// One section of a bot editor page, drawn like a Settings group (JC
+// One section of a bot editor page, drawn like a Settings group (the maintainer
 // 2026-10-16: every window follows Settings): a short grey heading outside
 // the card, an optional info button for the longer explanation, an optional
 // action at the right of the heading, then the controls in one rounded

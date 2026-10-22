@@ -13,7 +13,7 @@ const STATE_KEY = {
 } as const;
 
 /** Settings > General > Advanced: the tool grants given to people (B3b).
- * A bot's own grants moved to its editor, under Permissions (JC 2026-10-15,
+ * A bot's own grants moved to its editor, under Permissions (2026-10-15, 
  * bot-settings/BotToolAccess.tsx). Sagax has no form for a person's grant
  * (they come through POST /api/tool-grants), so this card shows only when
  * some exist, for review and Revoke. Admins only; the server refuses
@@ -64,7 +64,7 @@ export function PeopleToolAccessSettings({ confirm = (text: string) => window.co
   };
 
   if (!rows?.length) return null;
-  // 0.5.6 (JC): one Grok-style row (its count pill unfolds the grants);
+  // 0.5.6: one Grok-style row (its count pill unfolds the grants);
   // Revoke is a red pill that asks first.
   return (
     <SettingsGroup title={t("settings.toolAccess.people.title")} groupId="peopleToolAccess">

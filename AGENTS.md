@@ -38,7 +38,7 @@ A connected Tailcat session is a first-class card (`remoteSession` on the messag
 
 ## Never a UUID/GUID on screen (2026-10-19)
 
-JC: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID
+Decision: "N'affiche JAMAIS des GUID, on ne comprend rien." Jamais d'UUID/GUID
 visible ; libellé humain, identifiant seulement en info-bulle ou action
 Copier. On desktop, web, iOS and Android:
 
@@ -66,7 +66,7 @@ Copier. On desktop, web, iOS and Android:
 
 ## Local access hardened: port of OpenMausBot #2930 (2026-10-19)
 
-JC: PORT COMPLET of upstream a5f9183bc. Three walls, each with tests:
+Decision: PORT COMPLET of upstream a5f9183bc. Three walls, each with tests:
 
 - **Browsers never get loopback trust** (`server/request-auth.ts`
   `fromBrowser`): a session-less loopback request carrying `Sec-Fetch-Site`,
@@ -97,7 +97,7 @@ JC: PORT COMPLET of upstream a5f9183bc. Three walls, each with tests:
 
 ## Widgets check themselves before they show (2026-10-19)
 
-JC: "Le bot doit être capable de se contre-valider et de l'ajuster
+Decision: "Le bot doit être capable de se contre-valider et de l'ajuster
 dynamiquement quand il le construit." A bot passes the HTML of a ```widget
 fence to `check_widget` (`server/drivers/agents-widget-tools.ts`) before it
 shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
@@ -125,7 +125,7 @@ shows it; the system prompt says so (`WIDGET_SELF_CHECK_PROMPT`).
 
 ## Every setting is an action: sagax_settings (2026-10-19)
 
-JC: "Tout doit être modifiable via les bots. Absolument tout. [...] Arrête
+Decision: "Tout doit être modifiable via les bots. Absolument tout. [...] Arrête
 la paranoïa." A bot reads and changes any setting for the person speaking
 to it with `sagax_settings` (agents catalog, `server/drivers/agents-settings-tools.ts`,
 permission `settings:change`, member scope `own-setup`, deferred on Claude):
@@ -169,7 +169,7 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
 
 ## Always allow on every card (2026-10-19)
 
-JC: "On doit avoir des cartes, mais avoir la possibilité de faire TOUJOURS
+Decision: "On doit avoir des cartes, mais avoir la possibilité de faire TOUJOURS
 le Toujours permettre." Every approval card offers Always allow to the
 person who answers it, with the exact scope written on the card
 (`approval.always.scopeLine`): this bot, this tool or kind of action, this
@@ -277,7 +277,7 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
 
 ## The Primary Bot answers the person's cards (2026-10-20)
 
-JC: "le bot principal doit pouvoir absolument tout faire" (Grok Bot
+Decision: "le bot principal doit pouvoir absolument tout faire" (the reference design
 parity). A person's Primary Bot answers, cancels and turns off the
 approval cards that wait on that person, when the person asks for it:
 
@@ -292,8 +292,8 @@ approval cards that wait on that person, when the person asks for it:
   `performBotActRouteOutsideConfidential` with the person's session and a
   one-shot act confirmation carrying `primary` (bot, message). Every check
   of the click applies (whose card, an admin's card for an admin only, a
-  security key). No card kind is excluded (JC: payments and sends
-  included). A card of the person's own confidential thread too (JC
+  security key). No card kind is excluded (payments and sends
+  included). A card of the person's own confidential thread too (the maintainer
   2026-10-20): its replay carries a one-shot owner continuation bound to
   that exact method and path (`mintOwnerContinuation` with `route`), and
   `list` and the answer give the bot "<bot>'s card in a confidential
@@ -310,7 +310,7 @@ approval cards that wait on that person, when the person asks for it:
   card is bound to the yes: the message names it (its bot, only when no
   other card is that bot's, the bot that asked, or the handle,
   `messageNamesCard`), or it is the latest card the person could see when
-  they wrote (`latestSeen`, JC 2026-10-20: "oui" answers the latest, the
+  they wrote (`latestSeen`, 2026-10-20: "oui" answers the latest, the
   answer says which). Security review 2026-10-20: an unnamed yes answers
   one card per message (no cascade); a long message's bare yes counts only
   when the message speaks of a card (`SPEAKS_OF_A_CARD` or a card's bot);
@@ -320,7 +320,7 @@ approval cards that wait on that person, when the person asks for it:
   the person's own words (`personWrote`); a card raised after the message
   is never answered. This is the only defense against injection: keep it.
 - Trace: the card's `answeredBy` gets `via: "primary-bot"` and `bot`
-  ("· via Cryptic", `approval.status.viaBot`); the admin journal writes
+  ("· via Nova", `approval.status.viaBot`); the admin journal writes
   `approval.answer` with `via: primary-bot`, the bot and the message id.
 - Cards off: `sagax_settings` takes the same `quote`; for the keys of
   `PERSON_ASKED_KEYS` only (approval levels, owner mode, Always allow,
@@ -332,7 +332,7 @@ approval cards that wait on that person, when the person asks for it:
   Always allow rules and their removal at once, at any level of the
   speaking bot. A key, a secret, another person, a bulk change, the
   organization and the desktop-only Full of a personal server keep theirs.
-  On an organization server Full runs at once too (JC 2026-10-20), through
+  On an organization server Full runs at once too (2026-10-20), through
   the route's own rules (the organization allows Full, the person owns the
   bot and holds `bots.fullAccess`). The settings replay carries `primary`
   (`PlannedAct.primary`), so a level also changes while that bot works
@@ -342,7 +342,7 @@ approval cards that wait on that person, when the person asks for it:
 
 ## The Primary Bot changes the person's bots at once (2026-10-20)
 
-JC: "le bot principal fait tout". Asked by the person in their message
+Decision: "le bot principal fait tout". Asked by the person in their message
 (same `quote` proof), the Primary Bot changes any of the person's bots or
 routines at once, no card, several bots in one order (one call per bot):
 
@@ -390,7 +390,7 @@ routines at once, no card, several bots in one order (one call per bot):
 
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
-JC: the bots know everything Sagax and Perspicax can do, kept up to date,
+Decision: the bots know everything Sagax and Perspicax can do, kept up to date,
 without a bigger system prompt. A bot calls `sagax_help` (agents catalog,
 `server/drivers/agents-help-tools.ts`, read-only, permission `help:read`)
 and gets a few short sections: what, where in the app (English and French
@@ -459,7 +459,7 @@ namespace, so shards do not collide.
 
 ## Bot quality: approvals and tools where the bot works (2026-10-19)
 
-JC's GO on points 1 and 2 of the bot quality diagnostic. Rules:
+The maintainer's GO on points 1 and 2 of the bot quality diagnostic. Rules:
 
 - Claude's Approve for me never launches `--permission-mode auto`: its
   classifier refused external writes in silence. It is `acceptEdits` plus
@@ -502,7 +502,7 @@ JC's GO on points 1 and 2 of the bot quality diagnostic. Rules:
 
 ## Workspace: always Auto, the bot chooses (2026-10-18)
 
-JC: "It should ALWAYS stick to default, and the bot chooses. So basically bot
+Decision: "It should ALWAYS stick to default, and the bot chooses. So basically bot
 always have access to all of them, he is in control." Nobody picks a place
 for a bot or a conversation any more:
 
@@ -532,7 +532,7 @@ for a bot or a conversation any more:
   the person's app connected for their computer, routines on the owner's
   computer only when allowed. Known gap, as before for every Auto bot: the
   Approve for me warning is keyed on Works on This computer, so it does not
-  show for an Auto bot (a decision for JC whether Auto should show it).
+  show for an Auto bot (a decision for the maintainer whether Auto should show it).
 - Linux: Auto never takes this computer (`server/local-routing.ts`), so a
   Linux bot that worked on This computer loses it (narrower, not wider).
 - The Perspicax console lists an Auto bot under both the server
@@ -545,7 +545,7 @@ for a bot or a conversation any more:
 
 ## Workspace: Auto remembers no place (2026-10-16)
 
-JC: "Il doit toujours être en automatique, et le mode choisi à chaque tour
+Decision: "Il doit toujours être en automatique, et le mode choisi à chaque tour
 lui-même." On every server (solo and organization):
 
 - Auto picks where to work on each turn from the request. No turn writes
@@ -563,7 +563,7 @@ lui-même." On every server (solo and organization):
   bot's Works on (log line "auto-pinned thread(s)").
 - The thread's Workspace lines (`shared/workspace-line.ts`): the server still
   writes "On your computer" (`lastAutoPlace` reads it), but no client draws
-  it (JC 2026-10-18: "No need to specify 'On your computer'"): desktop
+  it (2026-10-18: "No need to specify 'On your computer'"): desktop
   `isHiddenStatusActivity` (`src/lib/activity-runs.ts`: the transcript,
   bot exchanges, rooms; `lastNonReceipt` for the sidebar), iOS and Android
   `isHiddenStatusNotice` (transcript rows and the Updates lines). The cloud,
@@ -722,7 +722,7 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
 
 ## Confidential threads: kept to their owner (2026-10-16)
 
-JC: a « Fil confidentiel » is a 1:1 bot thread nothing of which is
+Decision: a « Fil confidentiel » is a 1:1 bot thread nothing of which is
 remembered, exported, logged or shared beyond its owner
 (`server/confidential-threads.ts`, full table in
 `docs/confidential-threads.md`). Rules, none optional:
@@ -839,7 +839,7 @@ remembered, exported, logged or shared beyond its owner
 
 ## Workspace backup: no secret at all (2026-10-18)
 
-JC, 15:55: « Exclure tout ». A workspace backup (`.sagaxbackup`,
+The maintainer, 15:55: « Exclure tout ». A workspace backup (`.sagaxbackup`,
 `server/workspace-backup.ts`, also what a cloud move and the desktop's
 company backups carry) holds no secret: every rule is in
 `server/workspace-backup-policy.ts`, covered by
@@ -1370,7 +1370,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   New bot and says "Votre administrateur vous permet d'utiliser les robots
   partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
   `server/authz.test.ts`).
-- A routine always acts in its owner's name (JC, 2026-10-08). No consent,
+- A routine always acts in its owner's name (2026-10-08). No consent,
   no switch, no settings card, no "Reconnect my routines": Sagax issues the
   routine delegation itself from the person's live sign-in, by RFC 8693
   token exchange through the link (`issueRoutineDelegation`, asking a
@@ -1383,7 +1383,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   neutral line. `/api/org/routine-delegation` is GET only. A disabled or
   deleted account still stops its routines. Needs Perspicax to accept that
   exchange (it refuses it up to 1.8.13: the run is then skipped).
-- Who a routine runs as is chosen in the routine modal (JC, 2026-10-08;
+- Who a routine runs as is chosen in the routine modal (2026-10-08;
   `server/routine-run-as.ts`, `src/components/routines/RunAsField.tsx`).
   The record keeps `runAs` (a principal id); a routine without one runs as
   its bot's owner (`effectiveRunAs`), so older records need no migration.
@@ -1412,7 +1412,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   modal says "Will run once Name signs in"; a run then is skipped with
   #149's line, never paused. Choosing another person clears the previous
   person's pause.
-- Run now (JC, 2026-10-08; `src/components/routines/RunNowButton.tsx`):
+- Run now (2026-10-08; `src/components/routines/RunNowButton.tsx`):
   first in the bot panel routine footer (Run now, Pause, Edit, delete) and
   in the calendar details footer. `POST /api/routines/:id/run` (the
   scheduler's own path, `RoutineManager.runNow`: the routine's run-as
@@ -1427,7 +1427,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   (`trigger: "manual"`, the run id and run-as person, who clicked) to the
   admin activity log; the run reaches the lists at once through the run
   event and `routineRunPatched`.
-- The calendar's routine details modal is wide (JC, 2026-10-08):
+- The calendar's routine details modal is wide (2026-10-08):
   `min(92vw, 960px)` from 720 px, height capped to the viewport, two
   columns when there are instructions (left 320 px: schedule, next runs,
   clock-change note, bot, Runs as, limits, last run; right: the
@@ -1512,7 +1512,7 @@ Perspicax have it read now. Keep these rules, covered by
 ## Automations scope (organization mode, 2026-10-09)
 
 Anyone may be allowed to see the automation schedule beyond their own
-routines (JC). `server/routine-scope.ts` (rules), `shared/routine-scope.ts`
+routines. `server/routine-scope.ts` (rules), `shared/routine-scope.ts`
 (names), `src/components/routines/RoutineScopeBar.tsx` and
 `src/lib/use-routine-scope.ts` (page). Rules, covered by
 `server/routine-scope.test.ts`, `server/org-routines-scope.e2e.test.ts` and
@@ -1554,7 +1554,7 @@ routines (JC). `server/routine-scope.ts` (rules), `shared/routine-scope.ts`
 
 ## Automations calendar: upcoming panel, bots dragged from the sidebar (2026-10-18)
 
-The calendar's right panel is the month, then **Upcoming** (JC): the
+The calendar's right panel is the month, then **Upcoming** : the
 routines that will run, soonest first (`upcomingRoutines` in
 `src/lib/routine-display.ts`: enabled, not suspended, with a `nextRunAt`),
 narrowed by the same scope, status and bot filters as the page. The rows are
@@ -1643,7 +1643,7 @@ rules, covered by `server/owner-approval.test.ts`,
   workspace, a host-level `agents` tool or built-in MCP server (`computer`,
   `browser`, `shell`...), an unknown server or tool. A remote or personal MCP
   server, Sagax's own `perspicax_*` mounts, Composio and a web search are
-  the owner's (`ownerScopedTool`, `ownerScopedMcpServerFor`).
+  The owner's (`ownerScopedTool`, `ownerScopedMcpServerFor`).
 - On the owner route, the owner's rules then the bot's mode answer before a
   card (`ownerDecision`): deny wins, then ask, then allow. A rule is one
   tool plus a target read from the arguments, kept per person
@@ -1733,7 +1733,7 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   A server's readOnlyHint never makes a call a read. Tools are named whole,
   server included; products match known server ids (or a Perspicax or
   Composio gateway's tool prefix).
-- Model reviewer (examen automatique, 2026-10-21, Grok Bot parity A1, JC:
+- Model reviewer (examen automatique, 2026-10-21, the reference design parity A1, Decision:
   "OUI, comme Grok"; `server/custom-rules-model.ts`, contract
   `customRulesJudgePrompt` / `modelCustomDecision` in shared/custom-rules.ts):
   a card the matcher left to the person (`none`, no risk-blocked allow) is
@@ -1743,7 +1743,7 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   person's rules and the organization's (R1..Rn, organization first, exact
   command rules left out; the call between untrusted delimiters). The same
   cards a custom allow may answer, including a routine, a webhook and
-  another bot (lot A1b, JC: comme Grok). Still never an admin card, a hold,
+  another bot (lot A1b, Decision: comme Grok). Still never an admin card, a hold,
   a sandbox widening, a question, a guest, a security key, an owner ask
   rule or an email draft. The card shows "Examen en cours" and the
   notification waits until the verdict. Allow or deny only when it names a
@@ -1818,7 +1818,7 @@ draft shows the status and a send error inline; Retry asks again.
 
 ## One look for every interactive question (2026-10-20)
 
-JC's capture: every question a bot asks looks the same. Under the bot's
+The maintainer's capture: every question a bot asks looks the same. Under the bot's
 bubble, a separate card in the bubble's own fill (`bg-card`), 16px corners
 and padding, the bubble's width; the question in bold; one row per answer:
 a 22px rounded key (A, B, C, a lighter fill and a hairline) then the label
@@ -1930,7 +1930,7 @@ onboarding tests:
 ## Settings layout: one card level, sub-pages for long settings
 
 Every page uses the shared pieces of `SettingsPrimitives.tsx` (2026-10-18,
-JC): `SettingsIntro` for the page's opening sentence (level with the
+The maintainer): `SettingsIntro` for the page's opening sentence (level with the
 title), `SettingsNotice` for its errors and messages (a one-row card),
 `SettingsGroup` (grey heading, one card of rows), rows with the row insets
 (`DescribedRow`, `CompactRow`, `SettingsTextRow`, `FieldRow`), `FIELD`,
@@ -2103,7 +2103,7 @@ only; the iOS app (native) has none. Keep these rules, covered by
 
 ## Seen by: read receipts (2026-10-08)
 
-Who has seen a message, people and bots (JC, 2026-10-08). Keep these rules,
+Who has seen a message, people and bots (2026-10-08). Keep these rules,
 covered by `server/read-receipts.test.ts`, `server/read-receipts.e2e.test.ts`,
 `src/lib/read-receipts.test.ts`, `src/components/SeenBy.test.ts` and
 `src/components/GroupView.seenBy.test.ts`:
@@ -2141,7 +2141,7 @@ covered by `server/read-receipts.test.ts`, `server/read-receipts.e2e.test.ts`,
   to those conversations so clients fetch again.
 - UI: a room or a people DM draws a `SeenByRow` (16px overlapping avatars,
   oldest reader first, on the viewer's side under their own line, tooltip
-  "Seen by Alice at 14:02, Cryptic at 14:03") under the newest drawn bubble
+  "Seen by Alice at 14:02, Nova at 14:03") under the newest drawn bubble
   at or before each position that the reader did not write; the viewer is
   never drawn. A 1:1 with a bot draws only a `SeenCaption` ("Seen", or "Seen
   at 14:03" a minute or more later) under the last line the bot consumed,
@@ -2210,7 +2210,7 @@ launch screen hands this computer's own values over once at join
 
 ## Composer: one bar in Simple and Advanced (2026-10-08)
 
-JC's decision: the chat bar is the same in both modes, and it is the
+the decision: the chat bar is the same in both modes, and it is the
 Advanced one. `src/components/Composer.tsx` reads no interface mode. Keep
 these rules, covered by `src/components/ChatView.controls.test.ts` ("renders
 the same composer row in Simple and Advanced mode"),
@@ -2222,7 +2222,7 @@ the same composer row in Simple and Advanced mode"),
   (the model in use, effort included, at the row's end), the approval level
   and its full menu (a warning sign for Full access, the command allowlist
   for an owner or admin). No "where the bot works" chip, no model chip and
-  no emoji button in the bar (JC, 2026-10-18); no approval chip or cards in
+  no emoji button in the bar (2026-10-18); no approval chip or cards in
   Simple.
 - The slash menu lists the same commands in both modes.
 - Guards stay where they are, whatever the mode: the Full access and local
@@ -2235,9 +2235,9 @@ the same composer row in Simple and Advanced mode"),
 
 ## Model picker
 
-Two surfaces, one list (JC, 2026-10-12, after Cursor's composer menu):
+Two surfaces, one list (2026-10-12, after Cursor's composer menu):
 
-- The composer's model menu lives in its + menu (JC, 2026-10-18): the
+- The composer's model menu lives in its + menu (2026-10-18): the
   row "Model › <model in use>" (`ComposerModelRow` in `ComposerControls.tsx`)
   opens it beside the + menu. The picker stays mounted in the composer
   without a chip (`ModelPicker` `inComposer headless`, driven through
@@ -2271,7 +2271,7 @@ Two surfaces, one list (JC, 2026-10-12, after Cursor's composer menu):
 - The list is `ModelMenu.tsx` (`ModelSearchList`, popover tokens in the
   menu, page tokens in the window); its rules are `src/lib/model-menu.ts`.
   Effort words are translated (`effortLabel`, `model.effortLevel.*`).
-- Per-model efforts (JC, 2026-10-13): each catalog row carries the levels
+- Per-model efforts (2026-10-13): each catalog row carries the levels
   its model takes and its default (`effortLevels`, `defaultEffort`), copied
   from the engine: Grok's `initialize` `_meta.reasoningEfforts` (or
   `models_cache.json`; grok-4.5 has no X-High), Codex's `model/list`
@@ -2500,7 +2500,7 @@ A person replay uses a 60-second memory-only copy of their live session
 (`sessions.delegate`), with the same scopes. The desktop owner replays
 through the loopback owner header. A routine, a webhook, a guest, an
 unproven turn, and a shared server with nobody to act as do not become
-the owner.
+The owner.
 
 Reads and screen changes run now. A write waits for Allow on a card unless
 this bot's approval mode is auto or full. The card stores the summary only:
@@ -2641,7 +2641,7 @@ An organization server runs an engine's turn only when the engine gets NO
 shell, file system or outbound network tool of its own on the Sagax server:
 the model call plus the MCP tools Sagax injects (agents, Perspicax, the
 person's allowed MCP servers through the desktop link) and nothing else
-(decision 2026-10-04, widened to every provider at JC's request on
+(decision 2026-10-04, widened to every provider at the maintainer's request on
 2026-10-08). The driver says so with `withholdsHostTools`; the server checks
 it on every turn (`server/org-engine-admission.ts`) and otherwise answers
 409 `host_tools` with the engine's reason (`shared/org-engines.ts`), the
@@ -2687,7 +2687,7 @@ or `src/components/ModelPicker.interaction.test.ts`:
 
 ## Providers the organization hides (2026-10-18)
 
-JC: "I have hidden providers from the Perspicax menu, but they are still
+Decision: "I have hidden providers from the Perspicax menu, but they are still
 visible in a lot of menus through Sagax." One function answers which
 engines are offered to a person: `shared/offered-engines.ts`
 (`engineOffer`, `offeredEngines`). Solo: every engine, unchanged. On an
@@ -2715,7 +2715,7 @@ pays for but has not given the person (`sagax_server_engines`,
 
 ## First engine at an organization sign-in (2026-10-18)
 
-JC: "Si aucun LLM/moteur fonctionnel n'est présent lors de la première
+Decision: "Si aucun LLM/moteur fonctionnel n'est présent lors de la première
 connexion en organisation, il faut que le setup de ton premier compte soit
 dans le setup initial, comme on fait en mode sans serveur."
 `shared/org-engine-readiness.ts` (`orgEngineReadiness`, on top of
@@ -2723,7 +2723,7 @@ dans le setup initial, comme on fait en mode sans serveur."
 
 - `ready`: an engine offered to pick, admitted (`withholdsHostTools`),
   installed and paid by something (`myTurns` not `none`). The
-  organization's xAI key alone does not count (voice only, JC 2026-10-16).
+  organization's xAI key alone does not count (voice only, 2026-10-16).
   Nothing changes.
 - `connect`: none, but an allowed engine the person can connect with their
   own account (subscription sign-in or a Perspicax key; one row per driver).
@@ -2756,7 +2756,7 @@ Settings or Transcript expand it into a card over the thread that closes on
 Escape or a click outside; hold lives in the settings card; states pinned
 by `VoiceModeBar.layout.test.ts`; on the desktop this pill is the whole call
 UI, no folded row and no full-column stage, restored from 0.4.8 on
-2026-10-08 at JC's request; the iPhone keeps its own call screen and the
+2026-10-08 at the maintainer's request; the iPhone keeps its own call screen and the
 call card in the conversation, under `ios/`), when `GET /api/bots/<id>/voice/status` says
 xAI voice mode serves the person; otherwise a solo Mac keeps the older call
 (macOS dictation helper). Keep these rules, each covered by
@@ -3113,7 +3113,7 @@ Electron restart (no HMR); launch-test them before committing.
   stays out of the gallery until its hidden command earns it (an easter egg
   behind a secret achievement; do not write the command down). Bunbu and
   every skin above Common unlock with their achievement. Every skin card
-  shows (JC, 2026-10-14): a locked one greyed with the padlock, not
+  shows (2026-10-14): a locked one greyed with the padlock, not
   selectable (`aria-disabled`, a click does nothing), its tooltip and label
   naming the achievement that unlocks it. An earned skin unlocks its
   character (Trombi excepted), worn in that skin. A locked reward stays out
@@ -3129,7 +3129,7 @@ Electron restart (no HMR); launch-test them before committing.
   finishes from `shape-skins.tsx` plus Plush and Velvet); its signature ear
   flop is the `ruffle` clip (the registry's `moveLabels`). iOS shows the owl
   for it until ported (`ios/README.md`).
-- Shiba (direction C, "aplat net", approved by JC on 2026-10-09) is an
+- Shiba (direction C, "aplat net", approved by the maintainer on 2026-10-09) is an
   original drawing: a front-facing cartoon dog in flat tones, no photo or
   pose traced. Its art is data in `shiba-art.ts` (draw ops with paint roles,
   sixteen faces with the Shapes ids, sit, stand and lie stances, the bust
@@ -3162,7 +3162,7 @@ Electron restart (no HMR); launch-test them before committing.
   scoped to `:not(.crab-rig)`. Do not brand it Claude or Clawd. iOS draws it
   from `CrabArt.swift` (hand-written rects, palettes fixture-checked).
 - Shapes: clean-room, 2026-10-08. The Shapes character matches the look
-  and behaviour JC measured on a public avatar studio, written entirely in
+  and behaviour the maintainer measured on a public avatar studio, written entirely in
   our own code: no code, data table, path or asset of that site was copied
   (it has no licence; do not open or paste from it). Facts matched: one SVG
   body from 64 radii smoothed into a closed outline, radius unit R; eight
@@ -3227,7 +3227,7 @@ redeployed.
 
 ## Never signed out by a deploy (2026-10-20)
 
-JC's rule: a person is signed out only when their session is revoked, their
+the rule: a person is signed out only when their session is revoked, their
 account disabled, or after 30 days without use (`SESSION_TTL_MS`). Never by
 a Sagax or Perspicax deploy or restart, an app update, a failed refresh or a
 sensitive action. Keep these, each covered by a test:
@@ -3323,7 +3323,7 @@ not open a shared machine. Keep these rules, each covered by `server/user-sandbo
 - The environment's desktop (`deploy/sandbox/sagax-desktop`, Xvnc on
   127.0.0.1 inside the sandbox only) starts on demand: computer use
   (`computer_list_tools`, `computer_use`, fixed argv, never a shell line) or
-  the owner's live view. The view (`/api/desktop-viewer/sandbox/me`) is built
+  The owner's live view. The view (`/api/desktop-viewer/sandbox/me`) is built
   from the caller's own session principal, never an id; read-only by default
   (view-only VNC password), `?control=1` for control; its WebSocket starts
   nothing and reaches the VNC port only through the provisioner's signed
@@ -3715,7 +3715,7 @@ the account it runs on when that account is the speaker's own
 these rules, each covered by `server/harness-connectors.test.ts` or
 `server/drivers/claude.test.ts`:
 
-- Organization server: only an access `via: "subscription"` (the owner
+- Organization server: only an access `via: "subscription"` (The owner
   speaking, from their own login directory). Owner key, org key and server
   turns get none. Solo server: the operator and the operator's routines only.
 - The Claude driver drops `--strict-mcp-config` for such a turn (it also
@@ -3900,7 +3900,7 @@ the bot engine's (`shared/harness-commands.ts`, `server/harness-commands.ts`,
 
 ## Bot panel
 
-The chat header's bot pill (`BotHeaderPill.tsx`, Grok Bot parity,
+The chat header's bot pill (`BotHeaderPill.tsx`, the reference design parity,
 2026-10-18) is mascot, name, then a small gray chevron (`ChevronRight`,
 `data-bot-header-chevron`) that turns down while the panel is open. It
 toggles: a click opens the panel, a click while any tab of it (Details,
@@ -3991,7 +3991,7 @@ of that thread. The owner's notification of such a run names no thread, only
 
 ## Coding branches: the person acts on them (2026-10-19)
 
-JC: "Mets le même encadré pour les éléments de coding" and "Je devrais
+Decision: "Mets le même encadré pour les éléments de coding" and "Je devrais
 pouvoir interagir (commit, push, etc.), archiver". Details > Coding's pull
 requests, branches and commits sit in the Routines card (`GROUPED_CARD`,
 `GROUPED_ROW` in `src/lib/grouped-card.ts`, used by `RoutineList` grouped
@@ -4075,12 +4075,12 @@ A message sent to a busy 1:1 conversation carries `busyMode`
 (`shared/parallel-tasks.ts`): `steer` joins the running turn (live steer or
 the queue), `after` waits in the queue, `parallel` runs it as its own task.
 A send that names no mode joins the running turn (the API, relays, older
-builds). Since 2026-10-18 nobody is asked (JC: the bot orchestrates); see
+builds). Since 2026-10-18 nobody is asked (the bot orchestrates); see
 "Busy sends: the bot routes them" below.
 
 ## Busy sends: the bot routes them (2026-10-18)
 
-JC: "Le message est livré au bot tout de suite et le bot (orchestrateur)
+Decision: "Le message est livré au bot tout de suite et le bot (orchestrateur)
 décide." No chooser any more, desktop or iOS (`BusySendChooser` and the
 iOS `BusySendChooserView` are gone, so are the personal `sagax.busySend.v1`
 default and the bot editor's busy-send row; `busySend` is still stored,
@@ -4211,7 +4211,7 @@ exported and read by older builds, no client reads it). Rules, covered by
 
 ## Stale engine sessions and small talk (2026-10-20)
 
-JC: "Hello Cryptic" resumed a 6.4 MB Claude session whose last turn, 15 h
+A "Hello Nova" message resumed a 6.4 MB Claude session whose last turn, 15 h
 earlier, had stopped on a pending `gh auth login -w`: the bot picked it back
 up (cloud computer woken, three commands, text at +67 s). Rules:
 
@@ -4297,7 +4297,7 @@ none optional:
 
 ## Fresh topic on return (single stream, 2026-10-18)
 
-JC: coming back to a bot's conversation lands on a new, empty topic, with
+Decision: coming back to a bot's conversation lands on a new, empty topic, with
 less on screen; the bot keeps everything (the "Earlier topics" digest and
 `recall_topic`). Rules, none optional (`shared/fresh-topic.ts`, desktop
 `src/lib/fresh-topic.ts`, iOS `ios/Sources/CompanionCore/FreshTopic.swift`
@@ -4413,7 +4413,7 @@ PL-4), `src/lib/person-labels.test.ts`, `src/components/PersonLabel.test.ts`,
 
 ## Presence: online, away, offline (organization server, 2026-10-08)
 
-JC asked for an online / away / offline indicator on people. Keep these
+The maintainer asked for an online / away / offline indicator on people. Keep these
 rules, covered by `shared/presence.test.ts`, `server/presence.test.ts`,
 `server/routes/presence.test.ts`, `server/presence.e2e.test.ts`,
 `src/lib/presence.test.ts`, `src/components/PresenceDot.test.ts` and
@@ -4478,7 +4478,7 @@ rules, covered by `shared/presence.test.ts`, `server/presence.test.ts`,
 ## Single stream is the default (thread mode off, 2026-10-17)
 
 Thread mode (Settings > Appearance > Conversation threads: One conversation,
-in the header, or in the sidebar) is OFF for a person who never set it (JC,
+in the header, or in the sidebar) is OFF for a person who never set it (the maintainer,
 2026-10-17: "this will be the default mode"; before that it was on). Off is
 the single stream: one conversation per bot (section "Single stream when
 threads are off" below). The preference is the renderer's `omb-show-threads`
@@ -4496,7 +4496,7 @@ their stream UI lands).
 ## Sidebar sections are personal
 
 On an organization server a sidebar section is one person's folder and
-shares nothing (JC, 2026-10-02). Keep these rules, covered by
+shares nothing (2026-10-02). Keep these rules, covered by
 `src/lib/personal-sections.test.ts`, `server/section-channels.test.ts` and
 `src/components/bot-settings/SharingSection.test.ts`:
 
@@ -4518,7 +4518,7 @@ shares nothing (JC, 2026-10-02). Keep these rules, covered by
 
 ## Which bots a bot reaches (organization server, 2026-10-06)
 
-Owner report: a member's bots kept naming a bot ("Cryptic") the member
+Owner report: a member's bots kept naming a bot ("Nova") the member
 could not see. Why: once sections became personal, `bot.section` stayed
 empty for everyone, so the section rule of `reachablePeers`
 (`server/peer-roster.ts`) put every person's bots in one "General" team.
@@ -4562,7 +4562,7 @@ its structural `src/styles/retro98.css`) and Meadow. Each skin is one mode
 
 ### Skin families (2026-10-19)
 
-JC: "chaque skin devrait avoir ses propres variantes au lieu d'avoir des
+Decision: "chaque skin devrait avoir ses propres variantes au lieu d'avoir des
 skins très proches visuellement". Settings > Appearance > Skin shows
 FAMILIES (`src/lib/skin-families.ts`), then the chosen family's Variant
 (swatches, like Background effects' Colour) and its Mode (Light, Dark,
@@ -4966,7 +4966,7 @@ and `sidebar-logo-preferences.test.ts`:
   `DesktopTheme.swift`) mirrors the head (no logo), tiles, headers with the
   folded count and rows.
 
-## Side thread and compact sidebar (Grok Bot parity, 2026-10-16)
+## Side thread and compact sidebar (the reference design parity, 2026-10-16)
 
 - Side thread (`src/lib/side-thread.ts`, `SideThreadPanel.tsx`): a bot
   thread opens in a resizable column right of the main chat from its row's
@@ -5018,7 +5018,7 @@ name `chiefOfStaff` (`shared/wire.ts`); everything a person reads says
 
 ## Any bot creates bots (2026-10-17)
 
-JC: "allow non primary bot to create other bots". Every bot of a person may
+Decision: "allow non primary bot to create other bots". Every bot of a person may
 call `create_bot` (`POST /api/internal/create-bot`), not only the Primary
 Bot (rules in `server/bot-creation.ts`). Keep:
 
@@ -5153,7 +5153,7 @@ kernel OOM-killed engine children within two minutes of each start.
 
 ## Engine memory guard (2026-10-19)
 
-The GOX server (5 GiB container) was OOM-killed four times on 2026-10-19:
+A production organization server (5 GiB container) was OOM-killed four times on 2026-10-19:
 the kernel's task lists showed 11 to 15 `claude` CLIs (~125 MiB each) and
 133 to 174 Node MCP proxies (~21 MiB each, ~13 per Claude session), so about
 400 MiB per live session, kept ten minutes after each turn with no bound;
@@ -5176,7 +5176,7 @@ the kernel then killed the server itself. `server/engine-memory-guard.ts`:
 
 Port of OpenMausBot #3074 (backup engine, back after the reset, with the
 clock fix #3120) and #2754 (another engine when one runs out), adapted to
-JC's rule: no card, the turn continues at once.
+the rule: no card, the turn continues at once.
 
 - A failed turn whose cause is a usage limit (`limitKindOf` in
   `server/limit-reset-time.ts`: the shared `quota` class, a spent balance,
@@ -5215,7 +5215,7 @@ JC's rule: no card, the turn continues at once.
 ## App icon: the Pulsatrix logo (2026-10-14)
 
 The app's default icon is the official Pulsatrix owl mark (white outline,
-blue eyes and heartbeat line) on a night blue tile (JC, 2026-10-14). Every
+blue eyes and heartbeat line) on a night blue tile (2026-10-14). Every
 surface comes from one generator, `pnpm icons:generate`
 (`scripts/generate-app-icon.mjs`, helpers in `scripts/app-icon.mjs`): it
 composes the SVG sources from `public/brand/pulsatrix-owl-mark-color-tight.svg`
@@ -5536,7 +5536,7 @@ capability on its own starter rename).
 ## My Chrome: a bot drives the person's own Chrome (2026-10-19)
 
 Port of OpenMausBot #2706 (My Chrome) with what Sagax needs of #2925, #2928,
-#2939 and #2949, narrowed by JC's rules. Off by default. Settings >
+#2939 and #2949, narrowed by the maintainer's rules. Off by default. Settings >
 Experimental > My Chrome (`src/components/settings/MyChromeSettings.tsx`,
 under the built-in browser row) turns it on and lists the allowed sites, each
 one exact origin (`https://host[:port]`, `http://localhost:port` the only
@@ -5592,7 +5592,7 @@ An organization server never offers it unless that file says
   (Electron's capability); a headless server's loopback (a bot's shell) is
   refused.
 - A bot with a shell (command tool) on the same computer as the person's
-  Chrome is never given My Chrome (JC 2026-10-20, after #838): it could read
+  Chrome is never given My Chrome (2026-10-20, after #838): it could read
   Chrome's `DevToolsActivePort` and talk to Chrome without the gate. It keeps
   its own bot browser. `server/browser/my-chrome/shell.ts`
   (`hasShellOnThisComputer`: every engine has a shell, so only a cloud-only
@@ -5651,20 +5651,20 @@ banner's Stop (a trusted click) and Sagax's Stop cut at once. With
 `SAGAX_TEST_AGENT_BROWSER=<agent-browser binary>` the last suite drives the
 real tool path: cards for delete, payment and send, refusals, Stop.
 
-## Import a shared Grok Bot (2026-10-19)
+## Import a bot shared on x.ai (2026-10-19)
 
 Port of OpenMausBot #3073, without its optional Cursor sign-in (a third-party
 account token Sagax does not keep). Settings > Import
 (`src/components/settings/ImportSettings.tsx`, section `import`, hidden like
-Backups for whoever cannot manage backups, and in Simple mode), and a Grok
-Bot export dropped on Bot templates > Import (`TemplateTools` readFile).
+Backups for whoever cannot manage backups, and in Simple mode), and an x.ai
+bot export dropped on Bot templates > Import (`TemplateTools` readFile).
 `src/components/GrokImportBox.tsx` reads an `https://x.ai/bot/<id>` link or a
 marketplace page through `POST /api/team-library/grok`
 (`server/routes/team-library-grok.ts`, admin scope; `server/team-library.ts`
 `fetchGrokTemplateCard` fetches only x.ai, redirects must stay there, 20 s,
 2 MB) and shows the public card (name, creator, description) with Start
 from the description (`grokStarterPackage`). The full setup comes from the
-person's own Grok Bot: Copy export prompt (`GROK_EXPORT_PROMPT`), then paste
+person's own x.ai bot: Copy export prompt (`GROK_EXPORT_PROMPT`), then paste
 its JSON reply or choose it saved as a `.json` file (`openmaus.grok/1`, or
 pi-grokbot-import's `grokbot-bundle/v1`; the format ids stay upstream's).
 `shared/grok-import.ts` turns it into an `openmaus.package` v2 with one bot:
@@ -5678,7 +5678,7 @@ original text. The preview and Add are the templates' own
 `server/fixtures/grok-share-page*.html`),
 `server/routes/team-library-grok.test.ts`,
 `src/components/settings/ImportSettings.dom.test.ts` (the export fixture
-`shared/fixtures/grok-import/shared-grok-bot.json`).
+`shared/fixtures/grok-import/shared-xai-bot.json`).
 
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 
@@ -5726,7 +5726,7 @@ build its own bubble. Gallery: `src/gallery/chat-widgets.html`
 
 ## Views in the chat only on request (2026-10-20)
 
-JC: « je veux pas de widget qui pop dans le chat pour aucune raison ».
+Decision: « je veux pas de widget qui pop dans le chat pour aucune raison ».
 One rule, `shared/requested-views.ts` (`askedForView`): a view a tool result
 would add on its own appears only when the person's message of that turn
 asked for that kind of view; views the bot writes itself follow the same rule
@@ -5830,7 +5830,7 @@ the person asked for are not views.
 
 ## Team Bot from a conversation, template links, away routines, emoji (2026-10-16)
 
-Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
+Parity with the reference design (audit items 10, 11, 14 and the emoji picker). Keep:
 
 - Team Bot from a conversation (thread menu, `TeamBotFromThreadDialog.tsx`,
   `server/routes/team-bot-from-thread.ts`, `server/team-bot-draft.ts`): the
@@ -5838,7 +5838,7 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
   (`threadTitleGate`, the generated-title path), conversation as data, text
   lines only, secrets scrubbed; a fallback draft from the title and lines
   when the model cannot. Plugins and connectors of the source bot are ticked
-  boxes. Since 2026-10-21 (JC: a copy, never the private memory) the copy
+  boxes. Since 2026-10-21 (a copy, never the private memory) the copy
   starts from the source bot's persona (the drafted text one click away),
   copies its rule sets, copies each ticked plugin's saved configuration
   (never a secret field) and joins its team, whose shared memory
@@ -5868,11 +5868,11 @@ Parity with Grok Bot (audit items 10, 11, 14 and the emoji picker). Keep:
 - Emoji: the full catalogue (`src/lib/emoji-catalog.ts`, emojibase-data,
   English and French words, lazy chunks) in reactions (`EmojiCatalogGrid`);
   stored in the bare form (`canonicalEmoji`) so a reaction makes one chip
-  whatever form it was typed in. The composer has no emoji button (JC,
+  whatever form it was typed in. The composer has no emoji button (the maintainer,
   2026-10-18): the system's picker (Ctrl+Cmd+Space) inserts one in the
   field.
 
-## Published pages (2026-10-16, Grok Bot canvases)
+## Published pages (2026-10-16, the reference design canvases)
 
 A bot proposes a page (HTML, Markdown or a small one-file static app) with
 the agents tool `propose_page`; the person publishes it from its card
@@ -6167,7 +6167,7 @@ A bot saves a widget as an artifact (`save_artifact`, `update_artifact`,
 
 ## Bot reactions to the person's message (2026-10-18)
 
-JC: "make sure the bots use, when needed, reactions to the user message".
+Decision: "make sure the bots use, when needed, reactions to the user message".
 `react_to_message` and `remove_reaction` (docs/messages-reactions.md) are in
 every engine's agents catalogue and in rooms. Keep:
 
@@ -6247,7 +6247,7 @@ never pushed). The Pod comes from the run provisioner
 
 ## Engine parity: approvals decide in Sagax on every engine (2026-10-19)
 
-JC: whatever the provider (Grok, Claude, Codex, Gemini, Kimi, pi, local
+Decision: whatever the provider (Grok, Claude, Codex, Gemini, Kimi, pi, local
 models), a bot behaves the same. Approve for me never hands the decision to
 an engine's own classifier when Sagax can hold the call: Claude runs
 Auto-accept edits plus a fixed allowlist (#797), and Grok Auto runs the

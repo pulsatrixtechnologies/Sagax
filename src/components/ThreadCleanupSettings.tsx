@@ -155,7 +155,7 @@ export function ThreadCleanupSettings() {
     void save({ eventLogMaxBytes: bytes }, "cap");
   };
 
-  // 0.5.6 (JC): Grok Bot's rows under the page's "Event log cleanup"
+  // 0.5.6: the reference design's rows under the page's "Event log cleanup"
   // heading. Each knob is a switch with its value beside it; the one grey
   // line says what is never deleted, the errors take its place.
   return (

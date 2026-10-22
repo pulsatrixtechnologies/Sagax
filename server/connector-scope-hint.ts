@@ -1,4 +1,4 @@
-// A connected-app call refused for a missing OAuth permission (MOCA-273).
+// A connected-app call refused for a missing OAuth permission.
 //
 // Google answers 403 ACCESS_TOKEN_SCOPE_INSUFFICIENT when the account's grant
 // lacks a scope the action needs, such as gmail.settings.basic for a filter.

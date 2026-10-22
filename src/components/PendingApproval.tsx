@@ -222,7 +222,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
    * and nothing else about a pending approval changes with the language. */
   locale?: string;
 }) {
-  // 2026-10-20 (JC, after Grok Bot): no explanatory paragraph on the card
+  // 2026-10-20 (after the reference design): no explanatory paragraph on the card
   // ("the provider requires your approval", "this sends something on your
   // behalf"): the title says what waits. Only the person's own ask rule
   // keeps its line, so they know why their rule stopped it.
@@ -281,7 +281,7 @@ export const PendingApprovalPanel = memo(function PendingApprovalPanel({
         ) : undefined}
       />
       {!proposal && (visibleText || view?.args || pending.tool) && (
-        // 2026-10-20 (JC, after Grok Bot): one short line of what runs, the
+        // 2026-10-20 (after the reference design): one short line of what runs, the
         // rest folded under Details
         <div className="mt-1.5" data-approval-preview={detailsOpen ? "open" : "closed"}>
           <button
@@ -376,10 +376,10 @@ export function PendingApprovalActions({
   const durableRequest = isRoutineRequest || isSkillRequest || isProfileRequest || isTeamSetup;
   // 2026-10-14: the owner's own rule this card can remember (Always allow /
   // Always deny), which replaces the older per-bot grants on the card.
-  // 2026-10-19 (JC: "Toujours permettre" on every card): an admin's card
+  // 2026-10-19 ("Toujours permettre" on every card): an admin's card
   // offers it too, to the admin who answers it (Always allow only).
   const ownerRule = pending.message.card?.ownerRule;
-  // 2026-10-20 (JC): the card offers Deny, Always allow and Allow once
+  // 2026-10-20 : the card offers Deny, Always allow and Allow once
   // only; Always deny and the detailed editor live in Settings > Security.
   const canRememberCommand = ownerOrAdmin === true && !durableRequest && !ownerRule && !pending.allowKey && Boolean(pending.commandAllowlist);
   const reviewedSha256 = pending.message.card?.skillRequest
@@ -435,7 +435,7 @@ export function PendingApprovalActions({
       ? t("approval.action.confirm")
       : t("approval.action.allowOnce");
   const denyLabel = isSuggestion ? t("approval.action.notNow") : isRoutineRequest || isProfileRequest || isTeamSetup ? t("approval.action.cancel") : t("approval.action.deny");
-  // 2026-10-20 (JC, after Grok Bot): one "Always allow", one click. It
+  // 2026-10-20 (after the reference design): one "Always allow", one click. It
   // keeps the card's default rule (this bot, this kind of action or this
   // program, never a second panel), answers this request and closes the
   // card. The detailed rule editor lives in Settings > Security only.
@@ -627,7 +627,7 @@ function AlwaysAllowRecipients({ bot, keys, className, onSaved }: {
 /** "Always allow" for a card whose rule is the person's own words (a custom
  * rule the server proposed, 2026-10-16): one click saves it for this bot,
  * as proposed, then answers this request. No editor on the card
- * (2026-10-20, JC): the rule can be changed in Settings > Security. */
+ * (2026-10-20): the rule can be changed in Settings > Security. */
 function AlwaysAllowCandidate({ candidate, bot, threadId, requestId, className, onSaved }: {
   candidate: NonNullable<NonNullable<Message["card"]>["customRuleCandidate"]>;
   bot: Bot;

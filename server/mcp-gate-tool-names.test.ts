@@ -3,7 +3,7 @@
 // advertises must come out under exactly one name Grok admits, and calling
 // that name must run the server's own tool. A mismatch fails the build.
 // Regression: 2026-10-11, Perspicax profile perspicax_profil_jean_christophe_limited
-// lost cw_psa__query, cw_psa__write and cw_psa__action on every Grok bot.
+// lost cw_psa__query, cw_psa__write and cw_psa__action on every bot on Grok.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { once } from "node:events";

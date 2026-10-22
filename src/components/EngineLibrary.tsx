@@ -37,7 +37,7 @@ export function EngineCard({ instance, personal, children }: {
   // Some CLIs return their executable name rather than a version. Do not show
   // duplicated labels such as “Grok · grok”; retain the raw value in details.
   const version = instance.snapshot.version?.match(/\d+\.\d+(?:\.\d+)?(?:[-+][\w.-]+)?/)?.[0];
-  // 0.5.6 (JC): a compact row of the Engines group, as Grok Bot's settings
+  // 0.5.6: a compact row of the Engines group, as the reference design's settings
   // rows: the mark, the name and one grey line at the left, the version or
   // what is missing at the right; the row opens in place.
   return (

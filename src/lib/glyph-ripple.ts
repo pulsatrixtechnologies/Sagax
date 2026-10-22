@@ -4,7 +4,7 @@
 // the characters it crosses scramble and light up in the skin's tint, then
 // the ring fades and the field is back to rest.
 //
-// Cost rules (JC, 2026-10-16: at least as fast as Grok Bot):
+// Cost rules (2026-10-16: at least as fast as the reference design):
 // - one canvas, pointer-events none, sized to devicePixelRatio;
 // - glyphs pre-rendered once into an atlas (one row in ink, one in the tint):
 //   a frame is drawImage calls only, no fillText, no text shaping;

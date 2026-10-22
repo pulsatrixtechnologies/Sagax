@@ -14,8 +14,8 @@ const DAVE = "pr_dddddddd-0000-4000-8000-000000000004";
 const ada: Bot = { id: "ada", name: "Ada", ownerUserId: ALICE };
 const ari: Bot = { id: "ari", name: "Ari", ownerUserId: ALICE };
 const bee: Bot = { id: "bee", name: "Bee", ownerUserId: BOB };
-const cryptic: Bot = { id: "cryptic", name: "Cryptic", ownerUserId: DAVE };
-const fleet = [ada, ari, bee, cryptic];
+const quasar: Bot = { id: "quasar", name: "Quasar", ownerUserId: DAVE };
+const fleet = [ada, ari, bee, quasar];
 
 // Bob holds a grant on Ari; nobody else is shared.
 const shares: Record<string, string[]> = { ari: [BOB] };
@@ -32,8 +32,8 @@ describe("orgPeerInScope", () => {
   it("adds the bots shared with the owner, never the rest of the organization", () => {
     expect(orgPeerInScope(bee, ari, deps)).toBe(true);
     expect(orgPeerInScope(bee, ada, deps)).toBe(false);
-    expect(orgPeerInScope(ada, cryptic, deps)).toBe(false);
-    expect(orgPeerInScope(cryptic, ada, deps)).toBe(false);
+    expect(orgPeerInScope(ada, quasar, deps)).toBe(false);
+    expect(orgPeerInScope(quasar, ada, deps)).toBe(false);
   });
 
   it("is not symmetric: sharing Ari with Bob does not open Bob's bots to Alice's", () => {
@@ -42,7 +42,7 @@ describe("orgPeerInScope", () => {
 
   it("fails closed for an empty owner (index.ts gives an unrecorded one to the local operator)", () => {
     const orphan: Bot = { id: "orphan", name: "Orphan", ownerUserId: "" };
-    expect(orgPeerInScope(orphan, { ...cryptic, ownerUserId: "" }, deps)).toBe(false);
+    expect(orgPeerInScope(orphan, { ...quasar, ownerUserId: "" }, deps)).toBe(false);
   });
 
   it("compares owners case-insensitively", () => {
@@ -57,20 +57,20 @@ describe("reachablePeers with the organization scope", () => {
   const install = () => setPeerScope((from, target) => orgPeerInScope(byId.get(from.id)!, byId.get(target.id)!, deps));
 
   it("without a scope (solo server), every bot of the section is a teammate", () => {
-    expect(reachablePeers(fleet, ada).map((bot) => bot.id)).toEqual(["ari", "bee", "cryptic"]);
+    expect(reachablePeers(fleet, ada).map((bot) => bot.id)).toEqual(["ari", "bee", "quasar"]);
   });
 
   it("names only the owner's bots and the ones shared with them", () => {
     install();
     expect(reachablePeers(fleet, ada).map((bot) => bot.id)).toEqual(["ari"]);
     expect(reachablePeers(fleet, bee).map((bot) => bot.id)).toEqual(["ari"]);
-    expect(reachablePeers(fleet, cryptic).map((bot) => bot.id)).toEqual([]);
-    expect(canReachPeer(ada, cryptic)).toBe(false);
+    expect(reachablePeers(fleet, quasar).map((bot) => bot.id)).toEqual([]);
+    expect(canReachPeer(ada, quasar)).toBe(false);
   });
 
   it("does not resolve another person's bot by name", () => {
     install();
-    expect(resolveTeammate(fleet, ada, "Cryptic")).toHaveProperty("error");
+    expect(resolveTeammate(fleet, ada, "Quasar")).toHaveProperty("error");
     expect(resolveTeammate(fleet, ada, "Ari")).toMatchObject({ id: "ari" });
   });
 });

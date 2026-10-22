@@ -1,4 +1,4 @@
-// Where an anchored popover goes on screen (JC, 2026-10-18): the quick
+// Where an anchored popover goes on screen (2026-10-18): the quick
 // reaction pill, the "…" menu and the full reaction picker beside a chat
 // message. They are drawn in a portal on document.body with fixed
 // coordinates, so no scrolling transcript or other container with an

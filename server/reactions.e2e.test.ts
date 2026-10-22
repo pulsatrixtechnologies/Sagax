@@ -164,7 +164,7 @@ posixOnly("Perspicax organization: emoji reactions", () => {
     });
     const idOf = (login: string) => people.find((person) => person.login === login)!.principalId.toLowerCase();
     ids = { alice: idOf("alice"), bob: idOf("bob"), carol: idOf("carol"), dave: idOf("dave") };
-    const created = await api("POST", "/api/bots", alice, { name: "Cryptic" });
+    const created = await api("POST", "/api/bots", alice, { name: "Quasar" });
     expect(created.status, created.text).toBe(201);
     botId = created.body.bot.id;
     expect((await api("PATCH", `/api/bots/${botId}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
@@ -299,7 +299,7 @@ posixOnly("Perspicax organization: emoji reactions", () => {
 
     // recorded with the bot as the actor, its name for the tooltip
     const stored = (await transcript(bot.threadId, alice)).find((m) => m.id === asked.id)!;
-    expect(stored.reactions).toEqual([{ emoji: "👍", actors: [{ id: `bot:${botId}`, kind: "bot", name: "Cryptic" }], at: expect.any(Number) }]);
+    expect(stored.reactions).toEqual([{ emoji: "👍", actors: [{ id: `bot:${botId}`, kind: "bot", name: "Quasar" }], at: expect.any(Number) }]);
 
     // remove_reaction, then a new one is allowed
     const removed = await internal({ remove: true, messageId: asked.id });

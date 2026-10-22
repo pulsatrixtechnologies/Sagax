@@ -112,7 +112,7 @@ export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolea
     }
   };
 
-  // 0.5.6: rows of the Image generation group (Grok Bot's settings rows).
+  // 0.5.6: rows of the Image generation group (the reference design's settings rows).
   // The provider in a pill menu, its key in the grey line under it, what it
   // is billed to behind the info button.
   return (

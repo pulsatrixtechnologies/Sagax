@@ -32,14 +32,14 @@ const { BotContextMenu } = await import("./Sidebar");
 const { PrimaryBotPickerCard } = await import("./PrimaryBotPicker");
 
 const base = { threadId: "thread", title: "", description: "", notifications: true, unread: false, messages: [], modelSelection: { instanceId: "test", model: "test" } };
-const cryptic: Bot = { ...base, id: "cryptic", name: "Cryptic", color: "green", chiefOfStaff: true };
+const quasar: Bot = { ...base, id: "quasar", name: "Quasar", color: "green", chiefOfStaff: true };
 const atlas: Bot = { ...base, id: "atlas", name: "Atlas", color: "blue" };
 const zed: Bot = { ...base, id: "zed", name: "Zed", color: "pink" };
 const shared: Bot = { ...base, id: "shared", name: "Shared", color: "blue", ownerUserId: "someone-else" };
 
 beforeEach(() => {
   fixture.portal = null;
-  fixture.bots = [cryptic, atlas, zed, shared];
+  fixture.bots = [quasar, atlas, zed, shared];
   vi.stubGlobal("document", { body: {} });
   vi.stubGlobal("window", { innerWidth: 1_000, innerHeight: 800, addEventListener: () => {}, removeEventListener: () => {} });
 });
@@ -70,24 +70,24 @@ function menuFor(bot: Bot, handlers = { onMakePrimary: vi.fn(), onReplacePrimary
 
 describe("Primary Bot badge", () => {
   it("draws the orange star at the avatar's corner only when asked", () => {
-    const marked = renderToStaticMarkup(createElement(BotAvatar, { bot: cryptic, size: 32, animated: false, primary: true }));
+    const marked = renderToStaticMarkup(createElement(BotAvatar, { bot: quasar, size: 32, animated: false, primary: true }));
     expect(marked).toContain('data-testid="primary-bot-badge"');
     // #188 had moved the badge to the skin accent (grey or navy in some
     // skins); it is orange again, from its own token, in every skin
     expect(marked).toContain("bg-primary-badge");
     expect(marked).not.toContain("bg-accent");
     expect(marked).toContain('aria-label="Primary Bot"');
-    expect(renderToStaticMarkup(createElement(BotAvatar, { bot: cryptic, size: 32, animated: false }))).not.toContain("primary-bot-badge");
+    expect(renderToStaticMarkup(createElement(BotAvatar, { bot: quasar, size: 32, animated: false }))).not.toContain("primary-bot-badge");
   });
 });
 
 describe("sidebar menu of a bot", () => {
   it("offers Replace with different Bot on the viewer's Primary Bot", () => {
-    const { html, handlers, buttons } = menuFor(cryptic);
+    const { html, handlers, buttons } = menuFor(quasar);
     expect(html).toContain("Replace with different Bot");
     expect(html).not.toContain("Make primary bot");
     (buttons.find((button) => text(button).includes("Replace with different Bot"))!.props.onClick as () => void)();
-    expect(handlers.onReplacePrimary).toHaveBeenCalledWith(cryptic);
+    expect(handlers.onReplacePrimary).toHaveBeenCalledWith(quasar);
   });
 
   it("offers Make primary bot on the viewer's other bots", () => {
@@ -107,7 +107,7 @@ describe("sidebar menu of a bot", () => {
 
 describe("Choose a primary Bot", () => {
   const card = (selected: string | null, query = "", onConfirm = vi.fn(), onSelect = vi.fn()) => {
-    const element = PrimaryBotPickerCard({ bots: fixture.bots as Bot[], viewerId: "pr_me", currentId: cryptic.id, query, onQuery: vi.fn(), selected, onSelect, onCancel: vi.fn(), onConfirm });
+    const element = PrimaryBotPickerCard({ bots: fixture.bots as Bot[], viewerId: "pr_me", currentId: quasar.id, query, onQuery: vi.fn(), selected, onSelect, onCancel: vi.fn(), onConfirm });
     return { html: renderToStaticMarkup(element), all: elements(element), onConfirm, onSelect };
   };
 
@@ -137,6 +137,6 @@ describe("Choose a primary Bot", () => {
     (confirm.props.onClick as () => void)();
     expect(chosen.onConfirm).toHaveBeenCalledWith("zed");
     // The current Primary Bot can never be confirmed again.
-    expect(card("cryptic").all.find((element) => element.type === "button" && text(element) === "Confirm")!.props.disabled).toBe(true);
+    expect(card("quasar").all.find((element) => element.type === "button" && text(element) === "Confirm")!.props.disabled).toBe(true);
   });
 });

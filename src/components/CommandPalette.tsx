@@ -1,4 +1,4 @@
-// ⌘K palette, grouped like Cursor's command palette and Grok Bot's quick
+// ⌘K palette, grouped like Cursor's command palette and the reference design's quick
 // search: Recent, Conversations, Bots, Messages, Navigation, Settings, Goal,
 // Help, each under its heading, with the shortcut at the right edge. The
 // rows and the search live in src/lib/palette-commands.ts; this file owns the

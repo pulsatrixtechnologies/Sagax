@@ -1,4 +1,4 @@
-// Tool access of this bot (JC 2026-10-15, formerly Settings > General >
+// Tool access of this bot (2026-10-15, formerly Settings > General >
 // Advanced with a bot picker): its grants beyond the default tool access,
 // with Grant and Revoke, for the bot that is open. Owner or admin; an
 // admin-tier grant stays an admin's and always ends within 30 days

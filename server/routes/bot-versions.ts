@@ -1,5 +1,5 @@
 // A bot's versions: the profile history (profile-versions.ts) read as a list
-// of versions, and a restore of one whole version. JC 2026-10-15: Changes is
+// of versions, and a restore of one whole version. 2026-10-15: Changes is
 // a version history (date, who, what changed, a comparison with the current
 // version, and "Restore this version").
 //

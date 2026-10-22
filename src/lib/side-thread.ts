@@ -1,4 +1,4 @@
-// A side thread (Grok Bot's "open threads beside the main chat"): one bot
+// A side thread (the reference design's "open threads beside the main chat"): one bot
 // thread shown in a resizable column to the right of the main chat, so the
 // person reads or answers it without leaving the conversation on screen.
 // One at a time; opening another replaces it. The open thread is this

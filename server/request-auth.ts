@@ -580,7 +580,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots$/ },
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/direct-grants$/ },
-  // the owner removes a person's grant (server/direct-grants.ts checks ownership)
+  // The owner removes a person's grant (server/direct-grants.ts checks ownership)
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/direct-grants\/pr_[0-9a-f-]{36}$/ },
   // approvals and cards
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
@@ -847,7 +847,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["GET", "POST"], path: /^\/api\/instances\/[\w.-]+\/api-key$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/[\w.-]+\/(?:refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out|claude-update)$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/(?:claude|chatgpt)-accounts$/, permission: "engines.manage" },
-  // 2026-10-19 (JC): the four admin keys an admin may now give in Perspicax.
+  // 2026-10-19: the four admin keys an admin may now give in Perspicax.
   // What changes admin rights stays admin scope (no row here): a backup
   // restore, the tool grants, the sign-in lists, attaching an interim
   // person. Handlers still refuse a delegate who acts on an admin

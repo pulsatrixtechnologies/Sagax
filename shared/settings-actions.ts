@@ -1,5 +1,5 @@
 // The settings a bot can read and change for the person speaking to it
-// (sagax_settings, JC 2026-10-19: "Tout doit être modifiable via les bots").
+// (sagax_settings, 2026-10-19: "Tout doit être modifiable via les bots").
 //
 // One entry per setting of the app: where it is on screen, the route the
 // screen calls and how its value is read back. A change is the same route

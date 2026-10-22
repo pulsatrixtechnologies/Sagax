@@ -1,4 +1,4 @@
-// The models a person starred in the composer's model menu (JC, 2026-10-14:
+// The models a person starred in the composer's model menu (2026-10-14, :
 // "too many models shown"): they sit right under Auto, so the usual few are
 // one click away while every provider folds into a submenu.
 //

@@ -41,7 +41,7 @@ export function PersonLabelTag({ principalId, ...rest }: { principalId: string |
 }
 
 /** A bot's role beside its name in a sidebar row or under its pinned tile,
- * measured on Grok Bot's title tag: 11/16 text, 1px by 4px padding, a 0.5px
+ * measured on the reference design's title tag: 11/16 text, 1px by 4px padding, a 0.5px
  * outline, 4px corners, a faint fill of the rail's ink. In a row it takes the
  * room the name leaves (at least 2em, never wider than its text); the name
  * gives way first. */

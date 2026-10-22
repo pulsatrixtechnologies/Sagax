@@ -1,5 +1,5 @@
-// When the conversation shows the "Connect apps" pill (2026-10-15, JC, after
-// Grok Bot): under the last message, only when the bot needed an app that is
+// When the conversation shows the "Connect apps" pill (2026-10-15, after
+// the reference design): under the last message, only when the bot needed an app that is
 // not connected to do what was asked. Never everywhere: the pill is derived
 // from the latest turn (everything after the person's last line) and from
 // nothing else. The signals, in order:

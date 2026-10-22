@@ -2,7 +2,7 @@
 
 On an organization server (Perspicax sign-in), this is everything that can
 send a member, or a member's bot, to an organization admin. The rule it is
-measured against (JC, 2026-10-19):
+measured against (2026-10-19):
 
 - **Own destinations and own data: the person's normal level, never an
   admin.** Their cloud computer (server environment, `sagax-environment`),
@@ -61,7 +61,7 @@ ask first (Grok and the other ACP engines, Codex).
 
 ## 3. MCP permission catalogue (`server/mcp-permissions.ts`)
 
-Mode on GOX: `shadow` (unset): a denial is audited (`mcp.shadow`), nothing is
+Mode in production: `shadow` (unset): a denial is audited (`mcp.shadow`), nothing is
 refused. The tiers matter once a server runs `SAGAX_MCP_PERMISSIONS=enforce`.
 
 A turn no person speaks in (a routine, a webhook: role `service`) never gets
@@ -98,7 +98,7 @@ under Full access, or would write lasting instructions from untrusted text.
 | `people.manage` | org (other people's accounts) | admin only | **given in Perspicax**: sessions, pairing codes, a person's connections, force stop or delete of a bot, published pages. Never on an organization admin (or the operator), and attaching an interim person stays admin. |
 | `server.link` | rights (who may sign in at all) | admin only | admin only, by rule |
 
-Note for JC: `host.shell` runs programs as the server (an engine's program
+Note for the maintainer: `host.shell` runs programs as the server (an engine's program
 path, the server's Local VM, command rules on any bot), so its holder can in
 practice make themselves admin on that machine; its label says to give it
 only to people you would trust as admins of the server. `server.settings`

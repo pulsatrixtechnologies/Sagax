@@ -93,7 +93,7 @@ const LAYOUT = `<div class="card">
       <button class="tabs-trigger" role="tab" aria-selected="true">Équipe</button><button class="tabs-trigger" role="tab" aria-selected="false">Clients</button><button class="tabs-trigger" role="tab" aria-selected="false">Ententes</button>
     </div>
     <div class="stack" style="gap:10px">
-      <div class="row"><span class="avatar">JC</span><div><div style="font-weight:500">Jean-Christophe</div><div class="muted text-xs">Technique, Québec</div></div><span class="spacer"></span><span class="badge badge-success">Disponible</span></div>
+      <div class="row"><span class="avatar">AM</span><div><div style="font-weight:500">Alex</div><div class="muted text-xs">Technique, Québec</div></div><span class="spacer"></span><span class="badge badge-success">Disponible</span></div>
       <div class="separator" style="margin:0"></div>
       <div class="row"><span class="avatar">MV</span><div><div style="font-weight:500">Maxime</div><div class="muted text-xs">Ventes</div></div><span class="spacer"></span><span class="badge badge-secondary">En réunion</span></div>
     </div>

@@ -1,4 +1,4 @@
-// 2026-10-19 (JC signed out several times a day on the GOX server): a "Sign
+// 2026-10-19 (JC signed out several times a day on a production organization server): a "Sign
 // in with Pulsatrix" session must survive a server restart, clean or not (an
 // out-of-memory kill, a deploy stop that outran its grace period), and an
 // app update; it ends only when the provider says so.

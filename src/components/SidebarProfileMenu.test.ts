@@ -166,7 +166,7 @@ describe("outward links", () => {
   });
 });
 
-describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
+describe("profileMenuItems (the reference design's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
     onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
@@ -251,7 +251,7 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
 
   it("ends with a hairline, Switch organization and Sign out where they apply", () => {
     const menu = items({
-      switchTargets: [{ id: "local", name: "Cet ordinateur (solo)", local: true, active: true }, { id: "gox", name: "GOX", local: false, active: false }],
+      switchTargets: [{ id: "local", name: "Cet ordinateur (solo)", local: true, active: true }, { id: "acme", name: "Acme", local: false, active: false }],
       canAddOrganization: true,
       signOut: true,
     });
@@ -259,7 +259,7 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     expect(menu.filter((entry) => entry.separatorBefore).map((entry) => entry.key)).toEqual(["switch-organization"]);
     const switching = menu.find((entry) => entry.key === "switch-organization")!;
     expect(switching.submenu!.map((entry) => [entry.key, entry.checked ?? false])).toEqual([
-      ["switch:local", true], ["switch:gox", false], ["add-organization", false],
+      ["switch:local", true], ["switch:acme", false], ["add-organization", false],
     ]);
     expect(items().some((entry) => entry.separatorBefore)).toBe(false);
   });

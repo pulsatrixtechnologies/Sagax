@@ -5,7 +5,7 @@ import { cn } from "@/lib/cn";
 import { confidentialTitle } from "@/lib/confidential-thread";
 import { t } from "@/lib/i18n";
 
-/** The classification band of a confidential thread (JC 2026-10-16): a
+/** The classification band of a confidential thread (2026-10-16): a
  * solid, full-width band like a printed marking, at the top of the
  * conversation and again just above the composer. It is permanent for as long
  * as the thread is confidential, which is for good: no close button, no

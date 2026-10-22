@@ -1,5 +1,5 @@
 // 2026-10-20: a desktop whose session the server refuses no longer asks 12
-// to 24 times a minute (Windows 0.5.11 and 0.5.25 in the GOX logs).
+// to 24 times a minute (Windows 0.5.11 and 0.5.25 in production logs).
 import assert from "node:assert/strict";
 import test from "node:test";
 

@@ -1,5 +1,5 @@
 // Sagax's own tools that stay inside what the person and their bot already
-// own (JC, 2026-10-16): they never ask for approval, whatever the engine or
+// own (2026-10-16): they never ask for approval, whatever the engine or
 // the bot's level, as the agents tools never did on Claude, Codex and the
 // chat engines. The rule is a reviewed list of exact names, never a prefix
 // or a server's own claim:

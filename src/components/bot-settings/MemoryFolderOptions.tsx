@@ -1,4 +1,4 @@
-// The memory's own settings inside the Bot folder (JC 2026-10-15: one
+// The memory's own settings inside the Bot folder (2026-10-15: one
 // interface for the bot's files and its memory). What used to be the Memory
 // section's "More options" lives in the folder's "..." menu: automatic
 // tidying (and Tidy now), and the memory's change log with one-click undo.

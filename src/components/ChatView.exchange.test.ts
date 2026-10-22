@@ -18,7 +18,7 @@ vi.hoisted(() => {
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   const dm = {
-    id: "dm", threadId: "dm-t", name: "Cryptic", dm: true, memberIds: ["bot", "cry"],
+    id: "dm", threadId: "dm-t", name: "Quasar", dm: true, memberIds: ["bot", "cry"],
     defaultResponder: { kind: "member", botId: "cry" }, bulletin: "", unread: false,
     createdAt: 1, messages: [],
   } as Group;
@@ -29,7 +29,7 @@ vi.mock("@/state/store", async (importOriginal) => {
       groups: [dm],
       bots: [
         { id: "bot", threadId: "t1", name: "Pepper", color: "green" },
-        { id: "cry", threadId: "cry-t", name: "Cryptic", color: "blue" },
+        { id: "cry", threadId: "cry-t", name: "Quasar", color: "blue" },
       ],
     },
     dispatch: fixture.dispatch,
@@ -47,7 +47,7 @@ const { ChatView } = await import("./ChatView");
 afterAll(() => vi.unstubAllGlobals());
 
 const at = new Date(2026, 9, 5, 5, 17).getTime();
-const NOTE = "[Message from @Cryptic, another bot in this Sagax workspace. Reply to them.]\n\nWhich database?";
+const NOTE = "[Message from @Quasar, another bot in this Sagax workspace. Reply to them.]\n\nWhich database?";
 const message = (id: string, text: string, extra: Record<string, unknown> = {}): Message =>
   ({ id, role: "user", kind: "text", text, at, ...extra }) as Message;
 
@@ -62,18 +62,18 @@ describe("chat bot-to-bot collapse and dates", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, {
       bot: bot([
         message("u", "hello"),
-        message("p", NOTE, { peerAsk: { botId: "cry", name: "Cryptic" } }),
+        message("p", NOTE, { peerAsk: { botId: "cry", name: "Quasar" } }),
         message("r", "on it", { role: "bot", requestMessageId: "p" }),
-        message("s", "Cryptic finished the check", { role: "bot" }),
+        message("s", "Quasar finished the check", { role: "bot" }),
       ]),
     }));
     expect(markup).toContain("Go to conversation");
-    expect(markup).toContain("Cryptic");
+    expect(markup).toContain("Quasar");
     expect(markup).toContain('data-testid="bot-exchange-chip"');
     expect(markup).not.toContain("Which database?");
     expect(markup).not.toContain("on it");
     expect(markup).toContain("hello");
-    expect(markup).toContain("Cryptic finished the check");
+    expect(markup).toContain("Quasar finished the check");
     expect(markup).not.toContain("bot-exchange-sheet");
   });
 
@@ -114,18 +114,18 @@ describe("chat bot-to-bot collapse and dates", () => {
     fixture.dispatch.mockClear();
     const markup = renderToStaticMarkup(createElement(ChatView, {
       bot: bot([
-        message("u", "ask Cryptic"),
+        message("u", "ask Quasar"),
         {
           id: "c",
           role: "bot",
           kind: "activity",
           at: at + 1000,
-          tool: { name: "Messaged @Cryptic", ok: true },
-          comm: { groupId: "dm", withBotId: "cry", withName: "Cryptic", withColor: "blue" },
+          tool: { name: "Messaged @Quasar", ok: true },
+          comm: { groupId: "dm", withBotId: "cry", withName: "Quasar", withColor: "blue" },
         } as Message,
       ]),
     }));
-    expect(markup).toContain("Messaged @Cryptic");
+    expect(markup).toContain("Messaged @Quasar");
     expect(markup).toContain('data-testid="bot-comm-chip"');
     const chipAt = markup.indexOf('data-testid="bot-comm-chip"');
     const before = markup.lastIndexOf("<", chipAt);

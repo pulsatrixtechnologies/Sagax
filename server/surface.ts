@@ -17,7 +17,7 @@ export type { Surface, PlaceSource };
 /** The bot's "Works on" setting; undefined = Auto. */
 export type Destination = Surface | "off" | undefined;
 
-/** Workspace is always Auto (JC 2026-10-18): the bot picks where each task
+/** Workspace is always Auto (2026-10-18): the bot picks where each task
  * runs among every place that is available to it, and nobody chooses a
  * place for a bot or a conversation any more. Off is not a place: it is the
  * restriction that gives the bot no screen at all (and team-backup's
@@ -82,7 +82,7 @@ export function computerSkippedNote(cause: string): string {
  * conversation pin (the person's, from the composer: honouredPin) wins over
  * the bot's default, so a thread never changes place under someone; only Off
  * overrides it. A select_computer move holds one request the same way and is
- * never recorded: Auto remembers no place (JC 2026-10-16). Auto without a pin leaves
+ * never recorded: Auto remembers no place (2026-10-16). Auto without a pin leaves
  * the computer choice to the dispatch, which then mounts the browser only
  * when no computer was reached. A pin the turn cannot honour is retained and
  * reported instead of being swapped silently. */
@@ -127,7 +127,7 @@ export function resolveSurface(input: {
 /** The conversation pin a turn honours: the person's own pin, or a legacy
  * pin of unknown origin (it may be theirs). Never an Auto-recorded one (an
  * older build's `surfaceSource: "auto"`): Auto picks where to work on each
- * turn and remembers no place, on every server (JC 2026-10-16). A turn that
+ * turn and remembers no place, on every server (2026-10-16). A turn that
  * used the built-in browser once had the composer show Browser and the next
  * turns lose the person's computer. */
 export function honouredPin(task: { surface?: Surface; surfaceSource?: "user" | "auto" } | null | undefined): Surface | null {

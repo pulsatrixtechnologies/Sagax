@@ -18,7 +18,7 @@ const MERGED: Partial<Record<AppSettingsSection, { section: AppSettingsSection; 
   memory: { section: "organization", cardId: "organization.memory" },
 };
 
-/** Sections hidden from the app since 2026-10-14 (JC: managing several
+/** Sections hidden from the app since 2026-10-14 (managing several
  * people is Sagax Business's job; the app shows what concerns the person
  * signed in). Their server routes stay. An old link opens the nearest page:
  * General. 2026-10-15: People and Installations joined them, so Email (a
@@ -31,7 +31,7 @@ const HIDDEN: Partial<Record<AppSettingsSection, AppSettingsSection>> = {
   workspaces: "general",
 };
 
-/** Cards of General > Advanced that moved to Organization (2026-10-15, JC):
+/** Cards of General > Advanced that moved to Organization (2026-10-15):
  * they set how the organization's bots work, not this computer. Old card id
  * to new card id. Thread cleanup, pre-releases and diagnostics stay in
  * General > Advanced. On a desktop with no server (Organization hidden) the

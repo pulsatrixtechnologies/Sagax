@@ -15,7 +15,7 @@ const JPEG = Buffer.concat([Buffer.from("ffd8ffe0", "hex"), Buffer.from("owner j
 const wire = (overrides: Record<string, unknown> = {}) => ({
   type: OWNER_IDENTITY_MESSAGE,
   identity: {
-    origin: "https://sagax.example.test", principalId: "pr_0b1c", name: "Jean-Christophe Proulx", email: "jc@example.test",
+    origin: "https://sagax.example.test", principalId: "pr_0b1c", name: "Alex Martin", email: "jc@example.test",
     avatar: { version: "0123456789abcdef", data: PNG.toString("base64") },
     ...overrides,
   },
@@ -28,7 +28,7 @@ afterEach(async () => { await removeTempDir(dir); });
 describe("the desktop's private message", () => {
   it("reads an identity with its avatar, and a sign-out", () => {
     const parsed = parseOwnerIdentityMessage(wire());
-    expect(parsed?.identity).toMatchObject({ origin: "https://sagax.example.test", principalId: "pr_0b1c", name: "Jean-Christophe Proulx", email: "jc@example.test" });
+    expect(parsed?.identity).toMatchObject({ origin: "https://sagax.example.test", principalId: "pr_0b1c", name: "Alex Martin", email: "jc@example.test" });
     expect(parsed?.identity?.avatar).toEqual({ version: "0123456789abcdef", contentType: "image/png", bytes: PNG });
     expect(parseOwnerIdentityMessage(wire({ avatar: { version: "v2", data: JPEG.toString("base64") } }))?.identity?.avatar?.contentType).toBe("image/jpeg");
     expect(parseOwnerIdentityMessage(wire({ avatar: undefined }))?.identity?.avatar).toBeUndefined();
@@ -67,7 +67,7 @@ describe("what the personal server keeps", () => {
     const again = new OwnerIdentityStore(file);
     expect(again.get()?.avatar?.bytes.equals(PNG)).toBe(true);
     expect(again.sessionFields("pr_local")).toEqual({
-      name: "Jean-Christophe Proulx", email: "jc@example.test", avatarUrl: "/api/people/pr_local/avatar?v=0123456789abcdef",
+      name: "Alex Martin", email: "jc@example.test", avatarUrl: "/api/people/pr_local/avatar?v=0123456789abcdef",
     });
     again.set(null);
     expect(new OwnerIdentityStore(file).get()).toBeNull();
@@ -78,7 +78,7 @@ describe("what the personal server keeps", () => {
     const file = join(dir, "owner-identity.json");
     const store = new OwnerIdentityStore(file);
     store.set(parseOwnerIdentityMessage(wire({ avatar: undefined }))!.identity);
-    expect(store.sessionFields("pr_local")).toEqual({ name: "Jean-Christophe Proulx", email: "jc@example.test" });
+    expect(store.sessionFields("pr_local")).toEqual({ name: "Alex Martin", email: "jc@example.test" });
     writeFileSync(file, "{not json");
     expect(new OwnerIdentityStore(file).get()).toBeNull();
   });

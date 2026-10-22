@@ -1,6 +1,6 @@
 # MCP tool names on Grok: never drop a connector tool
 
-**Incident (2026-10-11).** Grok bots on the production server did not have
+**Incident (2026-10-11).** Bots on Grok on the production server did not have
 `cw_psa__query`, `cw_psa__write` or `cw_psa__action` from any Perspicax
 profile (`perspicax_profil_jean_christophe_limited`, `perspicax_dispatch_agent`).
 Grok names an MCP tool `server__tool` and *skips* a tool whose qualified key it
@@ -50,7 +50,7 @@ The CLI only wrote `Skipping MCP tool` to its own log; the bot saw nothing.
    docker exec -i -e SMOKE_GATE=/app/dist-server/mcp-gate.js pulsatrix-pulsabot-1 node - < scripts/smoke-mcp-tool-names.mjs
    ```
 
-2. Live, read-only: in a NEW thread, ask a Grok bot that has a Perspicax
+2. Live, read-only: in a NEW thread, ask a bot on Grok that has a Perspicax
    profile to list that connector's tools and call `cw_psa__query` (via its
    registered name) for one ticket or system info. Compare the tool list with
    the profile's own catalog (Perspicax `api_search`, or the same profile from

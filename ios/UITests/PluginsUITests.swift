@@ -129,7 +129,7 @@ final class PluginsUITests: XCTestCase {
         XCTAssertFalse(app.element("connect-apps-action.app:gmail").exists, "a connected app shows its status, no button")
     }
 
-    /// One filter button (Grok Bot iOS 1.14's marketplace): the menu picks a
+    /// One filter button (the reference iOS app's marketplace): the menu picks a
     /// type, the button names it, All goes back.
     @MainActor
     func testTheFilterMenuPicksATypeAndClears() {

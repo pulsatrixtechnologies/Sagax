@@ -1,7 +1,7 @@
-// The update button of Grok Bot's foot (avatar, Connect apps, this). Since
+// The update button of the reference design's foot (avatar, Connect apps, this). Since
 // the foot became the avatar alone beside the Connect apps pill (#575), the
 // account row's round cloud button never showed (it is drawn only beside a
-// full name), so a waiting update left the foot silent (JC, 2026-10-18).
+// full name), so a waiting update left the foot silent (2026-10-18).
 //
 // It is a 36px round button on the skin's accent, the avatar's size, at the
 // right of the pill, shown while an update downloads, is staged, is ready or

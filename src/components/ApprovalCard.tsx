@@ -108,7 +108,7 @@ export function approvalCardStaysInChat(
   return card.dismissed !== true && card.answered !== "unavailable";
 }
 
-/** The status pill of a settled tool approval, as Grok Bot shows it. */
+/** The status pill of a settled tool approval, as the reference design shows it. */
 export function approvalPill(card: Pick<OptionCardData, "answered" | "expired" | "undone" | "alwaysAllowed" | "ruleSaved">): { label: string; tone: "success" | "danger" | "neutral" } | undefined {
   if (card.expired === true) return { label: t("approval.pill.expired"), tone: "neutral" };
   if (!card.answered) return undefined;
@@ -228,7 +228,7 @@ export function toolApprovalView(card: OptionCardData, botName?: string): ToolAp
   // the engine's own `<server>__<tool>` when `tool` is only a kind ("other")
   const tool = card.mcpTool ?? card.tool;
   const described = describeApproval(tool, input, card.toolHints);
-  // "Allow Cryptic to view the schedule in ConnectWise PSA?" and one plain
+  // "Allow Quasar to view the schedule in ConnectWise PSA?" and one plain
   // line: the same generator the server uses for the push
   // (shared/approval-describe.ts), in this app's language.
   const words = approvalPlain({ botName, tool, toolInput: input, detail: card.subtitle, hints: card.toolHints });
@@ -238,7 +238,7 @@ export function toolApprovalView(card: OptionCardData, botName?: string): ToolAp
   // phones show it, not as the slug the bot happened to call.
   const outbound = outboundSummary(card);
   return {
-    // 2026-10-20 (JC, after Grok Bot): one plain line, "Katarina wants to
+    // 2026-10-20 (after the reference design): one plain line, "Ottoline wants to
     // run a command on your cloud computer", never a question to parse
     title: outbound ? outbound.headline : botName?.trim()
       ? t("approval.card.namedWantsTo", { name: botName.trim(), action: words.action })
@@ -454,7 +454,7 @@ export function ApprovalCard({
       : t("approval.card.wantsTo", { action: toolLabel(displayTool) }));
   const open = !settled && !expired;
 
-  // One card per request (JC, 2026-10-15): the box above the composer shows
+  // One card per request (2026-10-15): the box above the composer shows
   // a tool request in full with its buttons; the thread only says it waits,
   // as a quiet step line. A proposal (routine, skill, profile, team setup)
   // keeps its card: what it changes, and for whom, is reviewed there.

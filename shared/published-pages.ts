@@ -1,4 +1,4 @@
-// Published pages (2026-10-16, parity with Grok Bot's canvases): a bot
+// Published pages (2026-10-16, parity with the reference design's canvases): a bot
 // proposes a page (HTML, Markdown or a small one-file static app) from a
 // conversation; the person reviews it on its card and publishes it, choosing
 // who can see it. Shared by the server (server/published-pages.ts) and the

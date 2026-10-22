@@ -34,7 +34,7 @@
 //     Deny and ask rules read every word of the line and fail closed on
 //     anything they cannot place.
 //   - The decision at request.opened is this deterministic matcher.
-//     2026-10-21 (Grok Bot parity A1, JC: "OUI, comme Grok"): a card the
+//     2026-10-21 (the reference design parity A1, Decision: "OUI, comme Grok"): a card the
 //     matcher left to the person is then judged by a light, isolated model
 //     against the same rules (customRulesJudgePrompt, modelCustomDecision,
 //     server/custom-rules-model.ts). It approves or refuses in the person's
@@ -1025,7 +1025,7 @@ export function modelReviewWanted(local: CustomRuleDecision, rules: readonly Cus
 }
 
 /** Whether this open card goes to the model reviewer (lot A1, extended by
- * A1b). A routine, a webhook and another bot are judged too (JC: comme
+ * A1b). A routine, a webhook and another bot are judged too (comme
  * Grok). The action stays untrusted data, and modelCustomDecision still
  * refuses an allow that the rule does not cover. A guest, an admin card, a
  * hold, a sandbox widening, a question, a security key, an owner ask rule
@@ -1110,7 +1110,7 @@ export function modelCustomDecision(local: CustomRuleDecision, rules: readonly C
   if (decision === "allow") {
     if (rule.org) return { kind: "none" };
     if (facts.command !== undefined) {
-      // 2026-10-21 (lot A1b, "comme Grok Bot": its review checks every
+      // 2026-10-21 (lot A1b, "comme la référence": its review checks every
       // command too): a shell line the model may allow is one plain line,
       // read here again whatever machine runs it (no chaining, redirection,
       // substitution, quoting, glob or control character, so every program

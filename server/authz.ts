@@ -119,7 +119,7 @@ export function parseTarget(target: string): { kind: "user" | "team"; id: string
 export function targetNamesViewer(viewer: Viewer, target: string): boolean {
   if (target.startsWith("team:")) {
     // A team's members; its managers administer its grants but open
-    // nothing through them (JC: a manager never reads a Direct unasked).
+    // nothing through them (a manager never reads a Direct unasked).
     const id = target.slice(5);
     return viewer.teams.some((team) => team.id === id && !team.manager);
   }

@@ -9,19 +9,19 @@ const ZACK = "pr_zack";
 const member = { viewer: { operator: false, principalId: JC, email: "jc@example.com", name: "JC", role: "member", canCreateBots: true, operatorName: "Operator Jo" } } as ConfigStatus;
 const operator = { viewer: { operator: true, principalId: "pr_local", email: "op@example.com", name: "Op", role: "owner", canCreateBots: true } } as ConfigStatus;
 const people = new Map<string, OrgDirectoryPerson>([
-  [ZACK, { principalId: ZACK, name: "Zachary Sellam", login: "zsellam", email: "zack@example.com", role: "member", disabled: false, avatarUrl: "/api/people/pr_zack/avatar?v=3" }],
+  [ZACK, { principalId: ZACK, name: "Sam Taylor", login: "staylor", email: "zack@example.com", role: "member", disabled: false, avatarUrl: "/api/people/pr_zack/avatar?v=3" }],
   ["pr_login", { principalId: "pr_login", name: "mlogin", login: "mlogin", email: "marie.l@example.com", role: "member", disabled: false }],
 ]);
 
 describe("room authors", () => {
   it("reads a person as their display name, else the address's local part, else the login", () => {
-    expect(personDisplayName({ name: "Zachary Sellam", login: "zsellam" })).toBe("Zachary Sellam");
+    expect(personDisplayName({ name: "Sam Taylor", login: "staylor" })).toBe("Sam Taylor");
     expect(personDisplayName({ name: "mlogin", login: "mlogin", email: "marie.l@example.com" })).toBe("marie.l");
     expect(personDisplayName({ name: "", login: "mlogin" })).toBe("mlogin");
   });
 
   it("makes initials from names and addresses", () => {
-    expect(personInitials("Zachary Sellam")).toBe("ZS");
+    expect(personInitials("Sam Taylor")).toBe("ST");
     expect(personInitials("marie.l")).toBe("ML");
     expect(personInitials("")).toBe("?");
   });
@@ -36,7 +36,7 @@ describe("room authors", () => {
 
   it("names other people from the directory, with their avatar", () => {
     expect(roomAuthor({ role: "user", sender: { name: "Zack (old)", id: ZACK } }, member, people)).toEqual({
-      kind: "person", key: `person:${ZACK}`, name: "Zachary Sellam", initials: "ZS", avatarUrl: "/api/people/pr_zack/avatar?v=3",
+      kind: "person", key: `person:${ZACK}`, name: "Sam Taylor", initials: "ST", avatarUrl: "/api/people/pr_zack/avatar?v=3",
       // a person of the directory: their name opens the person panel
       personId: people.get(ZACK.toLowerCase())!.principalId,
     });

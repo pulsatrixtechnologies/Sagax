@@ -4,7 +4,7 @@
 // key) asks the key itself: the server refuses it otherwise, and the store's
 // `api` runs that step-up and sends the change again.
 //
-// 2026-10-18 (JC): the first key needs a fresh sign-in; the page says so
+// 2026-10-18 : the first key needs a fresh sign-in; the page says so
 // before the person tries and offers it (Sign in again: the forced
 // Pulsatrix sign-in of src/lib/sign-in-again.ts, then back here,
 // src/lib/settings-return.ts; nothing on a server without it). In the desktop app the key is asked in the

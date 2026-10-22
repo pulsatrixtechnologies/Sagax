@@ -23,16 +23,16 @@ describe("server approval words", () => {
 
 describe("approvalPlain", () => {
   it("names the bot and the action, never the raw tool id", () => {
-    const plain = approvalPlain({ botName: "Cryptic", tool: "sagax-environment__run_command", toolInput: '{"command":"echo hi"}', detail: 'sagax-environment__run_command {"command":"echo hi"}' });
-    expect(plain.title).toMatch(/^Allow Cryptic to .+\?$/);
+    const plain = approvalPlain({ botName: "Quasar", tool: "sagax-environment__run_command", toolInput: '{"command":"echo hi"}', detail: 'sagax-environment__run_command {"command":"echo hi"}' });
+    expect(plain.title).toMatch(/^Allow Quasar to .+\?$/);
     expect(`${plain.title} ${plain.line}`).not.toMatch(/__|\{"/);
   });
   it("says 'run a command' for a run_command tool, not 'run the command action'", () => {
-    const plain = approvalPlain({ botName: "Cryptic", tool: "sagax-environment__run_command", toolInput: '{"command":"echo hi"}', detail: 'sagax-environment__run_command {"command":"echo hi"}' });
-    expect(plain.title).toBe("Allow Cryptic to run a command on your cloud computer?");
-    expect(approvalPlain({ botName: "Cryptic", tool: "sagax-desktop__run_command", toolInput: '{"command":"ls"}' }).action).toBe("run a command on your computer");
-    expect(approvalPlain({ botName: "Cryptic", tool: "acme__run_command", toolInput: '{"command":"ls"}' }).action).not.toMatch(/your/);
-    const isolate = approvalPlain({ botName: "Cryptic", tool: "s1__isolate_action", detail: "s1__isolate_action {}" });
+    const plain = approvalPlain({ botName: "Quasar", tool: "sagax-environment__run_command", toolInput: '{"command":"echo hi"}', detail: 'sagax-environment__run_command {"command":"echo hi"}' });
+    expect(plain.title).toBe("Allow Quasar to run a command on your cloud computer?");
+    expect(approvalPlain({ botName: "Quasar", tool: "sagax-desktop__run_command", toolInput: '{"command":"ls"}' }).action).toBe("run a command on your computer");
+    expect(approvalPlain({ botName: "Quasar", tool: "acme__run_command", toolInput: '{"command":"ls"}' }).action).not.toMatch(/your/);
+    const isolate = approvalPlain({ botName: "Quasar", tool: "s1__isolate_action", detail: "s1__isolate_action {}" });
     expect(isolate.title).not.toMatch(/run a command/);
   });
   it("reads an MCP tool behind Grok's mcp__ prefix", () => {

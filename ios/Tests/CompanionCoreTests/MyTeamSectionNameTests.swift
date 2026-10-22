@@ -1,7 +1,7 @@
 import XCTest
 @testable import CompanionCore
 
-/// The default team's name reads in the app's language on the home (Grok Bot
+/// The default team's name reads in the app's language on the home (the reference design
 /// iOS 1.14 writes "My Team"); every other section name stays as typed.
 final class MyTeamSectionNameTests: XCTestCase {
     func testMyTeamIsRecognisedWhateverItsCaseAndSpaces() {

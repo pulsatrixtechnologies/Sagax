@@ -1,5 +1,5 @@
 /** Isolated gallery for Playwright screenshots of the composer's controls
- * after Grok Bot's prompt bar. Not shipped in the app.
+ * after the reference design's prompt bar. Not shipped in the app.
  * ?skin=<id>&lang=<code>&color=<bot color>&name=<bot name>
  * &state=rest|typed|dictation|menu&mode=after|before&lines=1|3&dot=1
  * `before` draws the row as origin/main had it (paperclip, approval hand,

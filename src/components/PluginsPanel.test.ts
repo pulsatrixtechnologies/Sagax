@@ -94,7 +94,7 @@ describe("connected apps a bot cannot see", () => {
   it("leaves out a bot whose engine could never mount the tools", () => {
     // Its switch is disabled, so pointing the person at it moves the dead
     // end instead of ending it.
-    const bots = [bot("grok-bot", { composio: false, modelSelection: { instanceId: "grok" } as Bot["modelSelection"] })];
+    const bots = [bot("on-grok", { composio: false, modelSelection: { instanceId: "grok" } as Bot["modelSelection"] })];
     expect(botsMissingConnectedApps(bots, instances)).toEqual([]);
     // an engine the workspace no longer has is the same case
     expect(botsMissingConnectedApps([bot("orphan", { composio: false, modelSelection: { instanceId: "gone" } as Bot["modelSelection"] })], instances)).toEqual([]);

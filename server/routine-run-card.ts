@@ -8,7 +8,7 @@ export function routineRunCard(run: RoutineRun, cardThreadId?: string): RoutineR
   // A run that joined the conversation it reports to (routines in
   // conversation) already wrote its whole report there, just under the
   // card: the card keeps only its state, or the report shows twice
-  // (2026-10-19, GOX). A wait or a failure keeps its line.
+  // (2026-10-19, production). A wait or a failure keeps its line.
   const joined = Boolean(cardThreadId && run.threadId === cardThreadId);
   const visibleSummary = run.status === "waiting" ? run.attention : joined ? undefined : run.output;
   const summary = visibleSummary ? redactSecretsInText(visibleSummary).slice(0, 2_000) : undefined;

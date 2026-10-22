@@ -1,4 +1,4 @@
-// Trailing swipe on a sidebar row reveals Pin / Unpin, like Grok Bot.
+// Trailing swipe on a sidebar row reveals Pin / Unpin, like the reference design.
 // The rows live in a ScrollView, so SwiftUI `.swipeActions` (List only) cannot
 // apply; this offset + simultaneous drag is the same gesture on iPhone, iPad
 // and the iOS app on Mac.

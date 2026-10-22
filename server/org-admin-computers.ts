@@ -141,7 +141,7 @@ export const desktopComputerId = (principalId: string, desktopId: string) =>
 /** Where a bot's Works on may send its tools: Cloud to the person's server
  * environment, This computer and Local VM to their desktop, and Auto to
  * either, since the bot picks per task (Workspace is always Auto,
- * JC 2026-10-18). Off reaches neither. */
+ * 2026-10-18). Off reaches neither. */
 function worksOn(computer: string | null, kind: ComputerKind): boolean {
   if (computer === null) return true;
   if (computer === "cloud") return kind === "server-environment";

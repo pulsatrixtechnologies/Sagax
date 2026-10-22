@@ -1,5 +1,5 @@
 // "More options": the technical part of a bot editor page, folded by default
-// (JC 2026-10-14). Nothing in it is gone: one click opens it, and a search
+// (2026-10-14). Nothing in it is gone: one click opens it, and a search
 // or a link that needs it can pass `open`. Drawn as a Settings fold row
 // (2026-10-16): a card row with its chevron pill at the right.
 import { type ReactNode } from "react";

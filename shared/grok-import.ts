@@ -1,6 +1,6 @@
-// Bringing a shared Grok Bot into Sagax (port of OpenMausBot #3073). A public
+// Bringing a bot shared on x.ai into Sagax (port of OpenMausBot #3073). A public
 // x.ai/bot/<id> page shows only the name, creator and description, so the full
-// setup comes from the person's own Grok Bot: they paste GROK_EXPORT_PROMPT
+// setup comes from the person's own x.ai bot: they paste GROK_EXPORT_PROMPT
 // into it and paste the JSON it writes back here (or drop the .json file). Both
 // turn into an ordinary openmaus.package v2, so the usual preview and import
 // rules apply (skills off, routines paused, no model, no keys). Pure text: the
@@ -87,7 +87,7 @@ export const grokShareUrl = (shareId: string) => `https://x.ai/bot/${shareId}`;
 
 const MARKETPLACE_SLUG = /^[a-z0-9][a-z0-9-]{0,79}$/;
 
-/** The slug of a Grok Bot marketplace page, https://x.ai/bot/marketplace/bots/<slug>; its share link is on that page. */
+/** The slug of an x.ai bot marketplace page, https://x.ai/bot/marketplace/bots/<slug>; its share link is on that page. */
 export function grokMarketplaceSlugFrom(text: string): string | null {
   const raw = String(text ?? "").trim();
   let url: URL;
@@ -103,7 +103,7 @@ export function grokMarketplaceSlugFrom(text: string): string | null {
 
 export const grokMarketplaceUrl = (slug: string) => `https://x.ai/bot/marketplace/bots/${slug}`;
 
-/** A Grok Bot share link, its grokbot:// button link, or a marketplace page. */
+/** An x.ai bot share link, its grokbot:// button link, or a marketplace page. */
 export const isGrokLink = (text: string) => Boolean(grokShareIdFrom(text) ?? grokMarketplaceSlugFrom(text));
 
 export const GROK_EXPORT_PROMPT = `Please export your setup so I can run you in Sagax.
@@ -113,7 +113,7 @@ Reply with ONE JSON code block and nothing else, in exactly this shape:
 \`\`\`json
 {
   "format": "${GROK_EXPORT_FORMAT}",
-  "source": "Grok Bot",
+  "source": "x.ai",
   "name": "<your name>",
   "description": "<one or two sentences on what you do>",
   "instructions": "<your full standing instructions, word for word>",
@@ -164,10 +164,10 @@ function replyObject(text: string): unknown {
       // try the next candidate
     }
   }
-  throw new GrokImportError("That is not the JSON reply from Grok Bot. Copy the whole code block it wrote and paste it here.");
+  throw new GrokImportError("That is not the JSON reply from the x.ai bot. Copy the whole code block it wrote and paste it here.");
 }
 
-/** A reply or file that says it is a Grok Bot export (it may still be malformed). */
+/** A reply or file that says it is an x.ai bot export (it may still be malformed). */
 export function isGrokExport(value: unknown): boolean {
   if (typeof value === "string") return value.includes(GROK_EXPORT_FORMAT) || value.includes(GROK_BUNDLE_FORMAT);
   return isRecord(value) && (value.format === GROK_EXPORT_FORMAT || value.format === GROK_BUNDLE_FORMAT);
@@ -176,15 +176,15 @@ export function isGrokExport(value: unknown): boolean {
 /** Forgiving reader for openmaus.grok/1 and grokbot-bundle/v1: text (fenced or not) or an object. */
 export function parseGrokExport(input: unknown): GrokExport {
   const root = typeof input === "string" ? replyObject(input.replace(/^\uFEFF/, "")) : input;
-  if (!isRecord(root)) throw new GrokImportError("That is not a Grok Bot export.");
+  if (!isRecord(root)) throw new GrokImportError("That is not an x.ai bot export.");
   const format = root.format;
   const bundle = format === GROK_BUNDLE_FORMAT;
-  if (format !== undefined && format !== GROK_EXPORT_FORMAT && !bundle) throw new GrokImportError("That is not a Grok Bot export.");
+  if (format !== undefined && format !== GROK_EXPORT_FORMAT && !bundle) throw new GrokImportError("That is not an x.ai bot export.");
   const persona = isRecord(root.persona) ? root.persona : {};
   const source = isRecord(root.source) ? root.source : {};
   const instructions = first(root.instructions, root.soul, root.systemPrompt, persona.instructions, persona.description);
   const name = oneLine(first(root.name, persona.name, root.botName));
-  if (!name && !instructions) throw new GrokImportError("That Grok Bot export has no name or instructions.");
+  if (!name && !instructions) throw new GrokImportError("That x.ai bot export has no name or instructions.");
   // A bundle keeps its instructions in persona.description: describe the bot by their first paragraph.
   const description = first(root.description, persona.description === instructions ? "" : persona.description) ||
     (bundle ? clip(instructions.split(/\n\s*\n/)[0]!.trim(), 300) : "");
@@ -214,7 +214,7 @@ export function parseGrokExport(input: unknown): GrokExport {
   const memories = list(root.memories).map((memory) => (isRecord(memory) ? first(memory.text, memory.content) : str(memory))).filter(Boolean);
   return {
     format: bundle ? GROK_BUNDLE_FORMAT : GROK_EXPORT_FORMAT,
-    name: name || "Grok Bot",
+    name: name || "x.ai bot",
     ...(title ? { title } : {}),
     description,
     instructions,
@@ -280,7 +280,7 @@ function fitBytes(text: string, max: number): string {
   return text.slice(0, end);
 }
 
-/** Composio toolkit slugs for the apps Grok Bot plugins usually name. */
+/** Composio toolkit slugs for the apps x.ai bot plugins usually name. */
 const COMPOSIO_SLUGS: Record<string, string> = {
   gmail: "gmail", "google mail": "gmail", slack: "slack", github: "github", notion: "notion", linear: "linear",
   x: "twitter", twitter: "twitter", "x (twitter)": "twitter", discord: "discord", reddit: "reddit",
@@ -292,7 +292,7 @@ const COMPOSIO_SLUGS: Record<string, string> = {
   youtube: "youtube", linkedin: "linkedin", shopify: "shopify", calendly: "calendly", zoom: "zoom",
 };
 
-/** The Composio toolkit for an app a Grok Bot names, when Sagax knows one. */
+/** The Composio toolkit for an app an x.ai bot names, when Sagax knows one. */
 export const composioSlugFor = (label: string): string | undefined => COMPOSIO_SLUGS[label.trim().toLowerCase().replace(/\s+/g, " ")];
 
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -358,7 +358,7 @@ function skillEntry(skill: GrokExport["skills"][number], name: string): { name: 
   return "error" in parsed || parsed.description !== description ? null : { name, description, instructions };
 }
 
-/** A Grok Bot export as one bot in an openmaus.package v2 file, plus what could not travel. */
+/** An x.ai bot export as one bot in an openmaus.package v2 file, plus what could not travel. */
 export function grokExportToPackage(
   x: GrokExport,
   options: { sourceUrl?: string; timeZone?: string } = {},
@@ -371,8 +371,8 @@ export function grokExportToPackage(
   const shareId = grokShareIdFrom(options.sourceUrl ?? "") ?? grokShareIdFrom(x.sourceUrl ?? "");
   const sourceUrl = shareId ? grokShareUrl(shareId) : undefined;
   const timeZone = options.timeZone?.trim() || "UTC";
-  const name = clip(oneLine(x.name) || "Grok Bot", 100);
-  const agentKey = slug(name, 60) || "grok-bot";
+  const name = clip(oneLine(x.name) || "x.ai bot", 100);
+  const agentKey = slug(name, 60) || "xai-bot";
   const description = x.description.trim();
 
   let soul = x.instructions.trim();
@@ -425,28 +425,28 @@ export function grokExportToPackage(
     if (!appSlug || appSlugs.has(appSlug)) return [];
     if (appSlugs.size >= MAX_APPS) return skip({ kind: "app", name: `App “${label}”`, reason: `a package lists at most ${MAX_APPS} apps` });
     appSlugs.add(appSlug);
-    return [{ slug: appSlug, label, reason: clip(oneLine(plugin.note) || `${name} used ${label} in Grok Bot.`, 240) }];
+    return [{ slug: appSlug, label, reason: clip(oneLine(plugin.note) || `${name} used ${label} on x.ai.`, 240) }];
   });
 
   let seed: { memory: Record<string, string> } | undefined;
   if (x.memories.length) {
-    const notes = `# Notes from Grok Bot\n\n${x.memories.map((memory) => `- ${memory.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
+    const notes = `# Notes from x.ai\n\n${x.memories.map((memory) => `- ${memory.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
     if (utf8Bytes(notes) <= SEED_FILE_MAX_BYTES) seed = { memory: { "MEMORY.md": notes } };
     else skip({ kind: "memories", name: "Memories", reason: "they were larger than 256 KB" });
   }
 
-  const summary = clip(description || `${name}, brought over from Grok Bot.`, 2_000);
+  const summary = clip(description || `${name}, brought over from x.ai.`, 2_000);
   const draft: PackageDocument = {
     format: PACKAGE_FORMAT,
     version: PACKAGE_VERSION,
     package: {
-      id: `${slug(name, 60) || "grok-bot"}-${shortHash(shareId ?? `${name}\n${soul}`)}`,
+      id: `${slug(name, 60) || "xai-bot"}-${shortHash(shareId ?? `${name}\n${soul}`)}`,
       release: "1.0.0",
       name,
       tagline: clip(oneLine(summary), 160),
       summary,
       category: "Imported",
-      author: { name: clip(x.creator || "Grok Bot creator", 100), ...(sourceUrl ? { url: sourceUrl } : {}) },
+      author: { name: clip(x.creator || "x.ai bot creator", 100), ...(sourceUrl ? { url: sourceUrl } : {}) },
       license: "See source",
       outcomes: [clip(`${name} runs in Sagax with your own engine and apps.`, 240)],
       setupMinutes: 5,
@@ -471,7 +471,7 @@ export function grokExportToPackage(
   try {
     return { document: parsePackageDocument(document, { trust: "file" }), leftOut };
   } catch (error) {
-    throw new GrokImportError(`This Grok Bot export could not be turned into a bot: ${error instanceof Error ? error.message : String(error)}`);
+    throw new GrokImportError(`This x.ai bot export could not be turned into a bot: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -480,7 +480,7 @@ export function grokStarterPackage(card: GrokTemplateCard): PackageDocument {
   const credit = `Based on x.ai/bot/${card.shareId}${card.creator ? ` by ${card.creator}` : ""}.`;
   const what = card.description.trim() || "The share page did not say what it does, so ask the person what they need.";
   const instructions = [
-    `You are ${card.name}, a bot started from the Grok Bot "${card.name}"${card.creator ? ` by ${card.creator}` : ""} (x.ai/bot/${card.shareId}).`,
+    `You are ${card.name}, a bot started from the x.ai bot "${card.name}"${card.creator ? ` by ${card.creator}` : ""} (x.ai/bot/${card.shareId}).`,
     // The description is a stranger's public text: quoted as what the page
     // says, never as instructions (security review 2026-10-20).
     card.description.trim()

@@ -313,7 +313,7 @@ describe("the cluster wake", () => {
     expect(r.calls).toEqual(["kubernetes:exec", "kubernetes:exec", "kubernetes:exec"]);
   });
 
-  // 2026-10-19 (GOX): the provisioner answered after a cold start, then the
+  // 2026-10-19 (production): the provisioner answered after a cold start, then the
   // first exec waited on a node pool scaling 0 -> 1 and the routine gave up.
   it("sends a call again while the provisioner says the environment is still starting, then runs it once", async () => {
     const r = rig();

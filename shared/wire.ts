@@ -164,7 +164,7 @@ export interface WireTask {
   routineRunId?: string;
   /** A hidden conversation: an AI client (the Perspicax MCP `sagax_send`,
    * the member API) works with the bot here on the person's behalf, the way
-   * Grok Bot keeps its subagents' conversations out of the chat (#291). Never
+   * the reference design keeps its subagents' conversations out of the chat (#291). Never
    * in the sidebar, previews, typing dots, unread or notifications; reached
    * from the bot's Activity panel or a thread link. Only `true` is stored. */
   hidden?: true;
@@ -891,7 +891,7 @@ export interface OptionCardData {
   /** Catalog key for held when it is one of the fixed notes. */
   heldCode?: string;
   /** A permission card in plain words, made by shared/approval-describe.ts
-   * (the same generator writes the push): "Allow Cryptic to run a
+   * (the same generator writes the push): "Allow Nova to run a
    * command?" and one line under it. Clients without a catalog show these. */
   plain?: { title: string; line: string; risk?: "read" | "write" | "destructive" | "execute" };
   /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
@@ -907,7 +907,7 @@ export interface OptionCardData {
    * read from the arguments, the destructive kind and plain words. */
   ownerRule?: {
     tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string;
-    /** 2026-10-19 (JC: "Toujours permettre" on every card): the card's
+    /** 2026-10-19 ("Toujours permettre" on every card): the card's
      * situation the rule also answers (server/owner-approval.ts `from`):
      * an admin's card, a held card, a turn that is not the person's own. */
     from?: "admin" | "hold" | "origin";
@@ -1173,7 +1173,7 @@ export interface WireGroup {
   createdBy?: string;
   /** Organization server: who owns the room's settings (its creator, else
    * the first person listed; null when its organization admins do). Only
-   * the owner changes them (server/group-ownership.ts). Absent on a solo
+   * The owner changes them (server/group-ownership.ts). Absent on a solo
    * server. */
   ownerId?: string | null;
   /** true for auto-created bot-bot channels. */

@@ -36,12 +36,12 @@ describe("viewer identity", () => {
 
 describe("how a person reads on an organization server", () => {
   it("is their Perspicax display name, else their address, else their login", () => {
-    expect(personDisplayName({ name: "Jean-Christophe Proulx", login: "jcproulx", email: "jcproulx@example.test" })).toBe("Jean-Christophe Proulx");
+    expect(personDisplayName({ name: "Alex Martin", login: "amartin", email: "amartin@example.test" })).toBe("Alex Martin");
     // the directory sends the login as the name when there is no display name
-    expect(personDisplayName({ name: "jcproulx", login: "jcproulx", email: "jc@example.test" })).toBe("jc");
-    expect(personDisplayName({ login: "jcproulx", email: "jc@example.test" })).toBe("jc");
-    expect(personDisplayName({ login: "jcproulx" })).toBe("jcproulx");
-    expect(personDisplayName({ name: "jcproulx", login: "jcproulx" })).toBe("jcproulx");
+    expect(personDisplayName({ name: "amartin", login: "amartin", email: "jc@example.test" })).toBe("jc");
+    expect(personDisplayName({ login: "amartin", email: "jc@example.test" })).toBe("jc");
+    expect(personDisplayName({ login: "amartin" })).toBe("amartin");
+    expect(personDisplayName({ name: "amartin", login: "amartin" })).toBe("amartin");
     expect(personDisplayName(null)).toBe("");
   });
 

@@ -159,7 +159,7 @@ posixOnly("Perspicax organization: read receipts", () => {
     });
     const idOf = (login: string) => people.find((person) => person.login === login)!.principalId.toLowerCase();
     ids = { alice: idOf("alice"), bob: idOf("bob"), carol: idOf("carol"), dave: idOf("dave") };
-    const created = await api("POST", "/api/bots", alice, { name: "Cryptic" });
+    const created = await api("POST", "/api/bots", alice, { name: "Quasar" });
     expect(created.status, created.text).toBe(201);
     botId = created.body.bot.id;
     expect((await api("PATCH", `/api/bots/${botId}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);

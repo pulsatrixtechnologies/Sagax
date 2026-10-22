@@ -266,7 +266,7 @@ export function UpdateNotesDialog({
   const primaryLabel = handoff ? t("settings.updates.install") : t("releaseNotes.restartToInstall");
 
   const notesId = "update-notes-list";
-  // 2026-10-16 (JC): drawn like Settings: the title, one grey line, the
+  // 2026-10-16 : drawn like Settings: the title, one grey line, the
   // notes folded in a row of one card behind a pill, the pills at the right.
   return (
     <DialogLayer className="z-[60]" onBackdropMouseDown={() => { if (!locked) onDismiss(); }}>

@@ -113,12 +113,12 @@ function findAjouter(tree: ReactNode): { props: { onClick?: (event: MouseEvent<H
 
 describe("a room's people on an organization server", () => {
   const PEOPLE = new Map([
-    ["pr_jc", { principalId: "pr_jc", name: "Jean-Christophe Proulx", login: "jcproulx", email: "jcproulx@example.test", role: "admin" as const, disabled: false, avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" }],
+    ["pr_jc", { principalId: "pr_jc", name: "Alex Martin", login: "amartin", email: "amartin@example.test", role: "admin" as const, disabled: false, avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" }],
     ["pr_sam", { principalId: "pr_sam", name: "sam.t", login: "samt", email: "sam.t@example.test", role: "member" as const, disabled: false, avatarUrl: "https://tracker.example.test/pixel.png" }],
   ]);
 
   it("reads each person as their display name with their Perspicax avatar", () => {
-    expect(channelHumanRow("PR_JC", PEOPLE)).toEqual({ id: "PR_JC", label: "Jean-Christophe Proulx", detail: "jcproulx@example.test", avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" });
+    expect(channelHumanRow("PR_JC", PEOPLE)).toEqual({ id: "PR_JC", label: "Alex Martin", detail: "amartin@example.test", avatarUrl: "/api/people/pr_jc/avatar?v=0a1b2c" });
     // an image from anywhere else is never used
     expect(channelHumanRow("pr_sam", PEOPLE).avatarUrl).toBeUndefined();
     // a solo server (no directory) keeps the stored id
@@ -134,8 +134,8 @@ describe("a room's people on an organization server", () => {
       part: "humans",
     }));
     expect(html).toContain('src="/api/people/pr_jc/avatar?v=0a1b2c"');
-    expect(html).toContain("Jean-Christophe Proulx");
-    expect(html).not.toContain("jcproulx<");
+    expect(html).toContain("Alex Martin");
+    expect(html).not.toContain("amartin<");
     expect(html).not.toContain("tracker.example.test");
     expect(html).toContain(">ST<");
   });

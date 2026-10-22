@@ -18,7 +18,7 @@ const ID = "d8OshqLZvtcKDcNluPuyo";
 
 const reply = {
   format: "openmaus.grok/1",
-  source: "Grok Bot",
+  source: "x.ai",
   name: "DOGE (Department of Grok Efficiency)",
   description: "Audits your other bots and routines and flags what to cut.",
   instructions: "You audit bots. Never change anything without a yes.\n\nReport in three bullets.",
@@ -122,7 +122,7 @@ describe("parseGrokExport", () => {
       expect(() => parseGrokExport(input), String(input)).toThrow(GrokImportError);
     }
     expect(() => parseGrokExport("hello")).toThrow(/Copy the whole code block/);
-    expect(() => parseGrokExport({ format: "openmaus.package", name: "x" })).toThrow("not a Grok Bot export");
+    expect(() => parseGrokExport({ format: "openmaus.package", name: "x" })).toThrow("not an x.ai bot export");
     expect(() => parseGrokExport({ format: "openmaus.grok/1" })).toThrow("no name or instructions");
     expect(() => parseGrokExport("x".repeat(4 * 1024 * 1024 + 1))).toThrow("larger than 4 MB");
     expect(isGrokExport({ format: "openmaus.team" })).toBe(false);
@@ -143,7 +143,7 @@ describe("grokExportToPackage", () => {
       category: "Imported",
       license: "See source",
       setupMinutes: 5,
-      author: { name: "Grok Bot creator", url: `https://x.ai/bot/${ID}` },
+      author: { name: "x.ai bot creator", url: `https://x.ai/bot/${ID}` },
       team: { name: reply.name },
       summary: reply.description,
       tagline: reply.description,
@@ -204,8 +204,8 @@ describe("grokExportToPackage", () => {
   it("lists apps as connector requirements, Composio slugs when known", () => {
     expect(mapped().document.package.requirements).toEqual({
       apps: [
-        { slug: "gmail", label: "Gmail", reason: "DOGE (Department of Grok Efficiency) used Gmail in Grok Bot." },
-        { slug: "googlecalendar", label: "Google Calendar", reason: "DOGE (Department of Grok Efficiency) used Google Calendar in Grok Bot." },
+        { slug: "gmail", label: "Gmail", reason: "DOGE (Department of Grok Efficiency) used Gmail on x.ai." },
+        { slug: "googlecalendar", label: "Google Calendar", reason: "DOGE (Department of Grok Efficiency) used Google Calendar on x.ai." },
         { slug: "acme-crm", label: "Acme CRM", reason: "Reads deals." },
       ],
       capabilities: [],
@@ -214,7 +214,7 @@ describe("grokExportToPackage", () => {
 
   it("seeds memories only when the export has them", () => {
     expect(mapped().document.package.agents[0]!.seed).toEqual({
-      memory: { "MEMORY.md": "# Notes from Grok Bot\n\n- Prefers short answers.\n- Works in IST.\n" },
+      memory: { "MEMORY.md": "# Notes from x.ai\n\n- Prefers short answers.\n- Works in IST.\n" },
     });
     const none = grokExportToPackage(parseGrokExport({ ...reply, memories: [] }));
     expect(none.document.package.agents[0]!.seed).toBeUndefined();
@@ -287,7 +287,7 @@ describe("nearestBotColor", () => {
   });
 });
 
-describe("Grok Bot marketplace links", () => {
+describe("x.ai bot marketplace links", () => {
   it("reads the slug of an x.ai marketplace page, and nothing else", () => {
     expect(grokMarketplaceSlugFrom("https://x.ai/bot/marketplace/bots/overheard")).toBe("overheard");
     expect(grokMarketplaceSlugFrom("x.ai/bot/marketplace/bots/tradbot-2/")).toBe("tradbot-2");

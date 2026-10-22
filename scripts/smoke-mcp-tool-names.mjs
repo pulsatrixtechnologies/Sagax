@@ -7,7 +7,7 @@
 //
 // Dev tree: `node scripts/smoke-mcp-tool-names.mjs` (uses server/mcp-gate.ts).
 // Exit 0 = parity; anything else prints the mismatch and exits 1.
-// The live half (a Grok bot calling cw_psa__query read-only and listing each
+// The live half (a bot on Grok calling cw_psa__query read-only and listing each
 // connector's tools) is in docs/mcp-tool-names.md.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

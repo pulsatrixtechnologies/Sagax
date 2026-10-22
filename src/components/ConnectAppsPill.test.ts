@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The Connect apps pill (2026-10-15, JC, after Grok Bot): under the last
+// The Connect apps pill (2026-10-15, JC, after the reference design): under the last
 // message, on the person's side, a wide pill then up to three app icons; it
 // opens Connect apps on those apps. When it shows: connect-apps-signal.test.ts.
 import { createElement } from "react";
@@ -169,7 +169,7 @@ describe("the sidebar's Connect apps pill", () => {
   });
 });
 
-describe("the pill's tiles, after Grok Bot", () => {
+describe("the pill's tiles, after the reference design", () => {
   it("stacks three 18px tiles right after the label, 6px over one another (42px)", () => {
     const button = render(apps).querySelector("button")!;
     const tiles = button.querySelector<HTMLElement>("[data-pill-tiles]")!;

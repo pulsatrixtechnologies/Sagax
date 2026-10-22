@@ -1,5 +1,5 @@
 // Harness parity for a live call with fullDuplex on and off (issue #292,
-// Cryptic requirement 7). Duplex only changes admit (replace vs steer).
+// Quasar requirement 7). Duplex only changes admit (replace vs steer).
 // The turn itself is still startTurn: spoken yes/no still settles an
 // approval, MEMORY.md still reaches the engine, MCP tools still run, and
 // usage is still booked to the same speaker.

@@ -23,9 +23,9 @@
 // into a pill on hover or focus (and for a few seconds when the update
 // lands) while the name folds away to the avatar, and it opens the
 // "Update ready" dialog (UpdateBanner, openUpdatePrompt). That button needs
-// the name beside it, so Grok Bot's foot (avatar only, then Connect apps)
+// the name beside it, so the reference design's foot (avatar only, then Connect apps)
 // carries its own instead, SidebarUpdatePill. The Automations
-// item in the menu carries no dot (JC, 2026-10-18): a failed run not seen
+// item in the menu carries no dot (2026-10-18): a failed run not seen
 // yet shows on the Automations page (the problem runs pill in its header,
 // a dot on the run in Logs) and in the routines count's label.
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -292,10 +292,10 @@ export interface ProfileMenuHandlers {
   onMobile: () => void;
 }
 
-/** Grok Bot's account menu (JC, 2026-10-16; src/lib/account-menu.ts):
+/** The reference design's account menu (2026-10-16, ; src/lib/account-menu.ts):
  * Usage ›, Get Sagax on mobile, Help ›, Settings, Automations, Achievements,
  * a hairline, Switch organization ›, Sign out. Automations came back here
- * from the settings nav (JC, 2026-10-16). Team map left the menu (JC,
+ * from the settings nav (2026-10-16). Team map left the menu (the maintainer,
  * 2026-10-18: one option, one place): it opens from the Automations header
  * and the command palette. */
 export function profileMenuItems(input: {
@@ -566,7 +566,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const [wide, setWide] = useUpdateButtonWide(updateButton ? (update?.label ?? "") : null);
   // the round button speaks for a downloaded update, so the row's badge
   // stays for the other phases
-  // Beside Connect apps (avatarOnly, Grok Bot's foot) the foot's own update
+  // Beside Connect apps (avatarOnly, the reference design's foot) the foot's own update
   // button (SidebarUpdatePill) shows a download, a ready update and its
   // install, so the avatar's dot is left for a failed one.
   const footPill = avatarOnly && update !== null && footPillCovers(update.phase);
@@ -575,8 +575,8 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const placeAttention = places.some((item) => item.attention);
 
   const avatar = (size: number) => (
-    // the footer avatar, always in its real colours; no presence dot (Grok
-    // Bot's foot, JC 2026-10-16)
+    // the footer avatar, always in its real colours; no presence dot (the reference
+    // design's foot, 2026-10-16)
     <span className="relative flex shrink-0 rounded-full">
       {profile?.avatarUrl ? (
         <img src={profile.avatarUrl} alt="" style={{ width: size, height: size }} className="rounded-full object-cover" />
@@ -796,8 +796,8 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
 
 /** The active routines count (calendar icon and number) that opens
  * Automations, while "Show active routines" is on and one runs. Beside the
- * name in the wide row, and to the right of Connect apps in Grok Bot's foot
- * (JC, 2026-10-16: it had vanished with the avatar-only foot). A failed run
+ * name in the wide row, and to the right of Connect apps in the reference design's foot
+ * (2026-10-16: it had vanished with the avatar-only foot). A failed run
  * not seen yet turns its label into a warning. */
 export function SidebarRoutinesBadge() {
   const { state, dispatch } = useStore();

@@ -1,6 +1,6 @@
 // Bot panel > Library: the bot's files and its artifacts. Skills live on the
 // Personas page, not here. The bot's Claude Code plugins live in Connect
-// apps, in that bot's scope (no link here: JC 2026-10-14). Favorite
+// apps, in that bot's scope (no link here: 2026-10-14). Favorite
 // artifacts sit in their own section on top, whichever view is up
 // (docs/superpowers/specs/2026-10-16-artifacts-design.md).
 import { useState } from "react";

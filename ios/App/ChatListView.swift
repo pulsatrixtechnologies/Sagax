@@ -1553,8 +1553,8 @@ extension ChatListView {
         return chats
     }
 
-    /// The chat drawn large and centred on its own row at the top, as Grok
-    /// Bot iOS 1.14 shows its one primary bot: the Primary Bot when it is
+    /// The chat drawn large and centred on its own row at the top, as the reference
+    /// iOS app shows its one primary bot: the Primary Bot when it is
     /// pinned, else a lone pinned chat. Nil when several chats are pinned and
     /// none is the Primary Bot.
     private var pinnedLead: Chat? {
@@ -1566,7 +1566,7 @@ extension ChatListView {
     }
 
     /// The lead (see `pinnedLead`) alone on a centred row, then the other
-    /// pins (Sagax pins several bots and groups; Grok Bot cannot) in rows of
+    /// pins (Sagax pins several bots and groups; the reference design cannot) in rows of
     /// three 134 pt columns at the measured 85 pt (reference 01), each row
     /// centred. The rows span the whole width at every size and orientation.
     private var pinnedGrid: some View {

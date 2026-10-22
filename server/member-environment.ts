@@ -1,4 +1,4 @@
-// A bot's commands in its owner's own isolated environment (JC, 2026-10-16).
+// A bot's commands in its owner's own isolated environment (2026-10-16).
 //
 // On an organization server a person's bots work in that person's own
 // environment: their server environment (one isolated Linux sandbox per
@@ -189,7 +189,7 @@ export function ownEnvironmentCall(input: {
   return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
 }
 
-// 2026-10-19 (JC): a person's own destinations are theirs. A tool of their
+// 2026-10-19: a person's own destinations are theirs. A tool of their
 // server environment or of their own computer (the desktop bridge, every
 // tool: This computer and its Local VM), mounted by Sagax for this turn as
 // the environment of the bot's owner, is that owner's own work: its card is
@@ -219,7 +219,7 @@ export function ownDestinationCall(input: {
   return Boolean(environment) && environment === input.ownerPrincipalId.trim().toLowerCase();
 }
 
-// 2026-10-19 (JC, prod 0.5.27, then #810 follow-up): computer_select
+// 2026-10-19 (prod 0.5.27, then #810 follow-up): computer_select
 // ("sagax-computer", server/auto-computer.ts) only chooses among the places
 // Sagax already mounted for this turn as one person's own: their cloud
 // computer, their own computer, its Local VM, the built-in browser. There is

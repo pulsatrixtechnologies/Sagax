@@ -1,6 +1,6 @@
-// A thread's engine session that is not worth resuming (JC 2026-10-20).
+// A thread's engine session that is not worth resuming (2026-10-20).
 //
-// Production, 2026-10-20 16:13 UTC: "Hello Cryptic" resumed a 6.4 MB Claude
+// Production, 2026-10-20 16:13 UTC: "Hello Nova" resumed a 6.4 MB Claude
 // session whose last turn, 15 hours earlier, had stopped on a pending
 // `gh auth login -w`. The model picked that work back up (a cloud computer
 // woken, three commands) and the API took 7.2 s before its first thought on
@@ -38,7 +38,7 @@ function setting(value: number | undefined, fallback: number): number {
  * - idle: the thread's last message is older than `hours` (default 6, 0 off).
  * - size: quiet for more than `coldMinutes` (default 60) and the engine
  *   reports a saved session larger than `maxBytes` (default 2 MB, about the
- *   largest 10% of Claude sessions on JC's Mac; 0 off). Engines that report
+ *   largest 10% of Claude sessions on the maintainer's Mac; 0 off). Engines that report
  *   no size are judged on time only. */
 export function staleSessionReason(input: {
   now: number;

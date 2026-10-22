@@ -1,0 +1,33 @@
+[
+  {
+    "term": "grok-bot",
+    "context": "grokbot://",
+    "reason": "x.ai's own button link scheme (grokbot://app/v1/bot-template?id=...), which the bot import reads (shared/grok-import.ts)."
+  },
+  {
+    "term": "grok-bot",
+    "context": "grokbot:[\"'`]",
+    "reason": "The same x.ai link scheme, checked as a URL protocol by the bot import."
+  },
+  {
+    "term": "grok-bot",
+    "context": "grokbot-bundle/v\\d",
+    "reason": "Export format id written by the third-party pi-grokbot-import tool; the bot import must recognise it."
+  },
+  {
+    "term": "grok-bot",
+    "context": "pi-grokbot-import",
+    "reason": "Name and URL of that third-party tool, credited where its format is read."
+  },
+  {
+    "term": "grok-bot",
+    "context": "[Oo]pen[Gg]rok[Bb]ot|opengrokbot",
+    "reason": "Data folders of an earlier upstream build (~/.opengrokbot, Application Support/OpenGrokBot), read once to migrate or clean up an old install."
+  },
+  {
+    "term": "initials",
+    "files": "^dist/assets/[^/]+\\.js$",
+    "context": "(?:[\\w$]\\(|[,!=;{}:?&|]|return |function |=>)JC(?:[(=;,)\\]}]|\\.[A-Za-z$])",
+    "reason": "A variable name the minifier picked in the built web bundle (for example `function JC(e,t)` or `JC.$type`), not prose: comments are stripped there."
+  }
+]

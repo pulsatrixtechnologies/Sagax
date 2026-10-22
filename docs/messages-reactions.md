@@ -18,7 +18,7 @@ Under a message, `SeenByRow` (`src/components/SeenBy.tsx`) shows:
 - the avatars of the people and bots who have read up to it, oldest first,
   stacked, five at most, then "+N";
 - on hover or keyboard focus of an avatar, a tooltip with the name and the
-  read time ("Zachary Sellam · 2:46 PM"); the same words are its aria-label.
+  read time ("Sam Taylor · 2:46 PM"); the same words are its aria-label.
 
 Each reader appears once, under the last message they have seen that they
 did not write. A room shows everyone; a 1:1 with a bot shows the bot until it
@@ -79,7 +79,7 @@ turn's own thread, so a confidential thread's reaction stays in it. On a live
 voice call the tools are not shown, the guidance is left out and an add is
 refused (`reaction_call`): the bot answers by voice.
 
-When to react (`REACTION_PROMPT`, its own part of the system prompt, JC
+When to react (`REACTION_PROMPT`, its own part of the system prompt, the maintainer
 2026-10-18): sparingly, most messages get none; never instead of an answer
 the person needs (a question gets words); never a reaction and a sentence
 that says the same thing. A plain "thanks" or "ok" gets ❤️ or 👍 and no

@@ -1,5 +1,5 @@
 // Settings > General > Account: the account row of the Account group
-// (2026-10-15 one card; 0.5.6 Grok Bot's layout, JC).
+// (2026-10-15 one card; 0.5.6 the reference design's layout).
 //
 //   [avatar]  Name                                         [Sign out]
 //             label (pencil on hover)

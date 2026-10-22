@@ -35,9 +35,9 @@ describe("the avatar menu's Usage", () => {
 describe("the avatar menu's Switch organization", () => {
   it("lists this computer first, then the saved organization servers, the active one checked", () => {
     const targets = switchTargets({
-      activeId: "gox",
+      activeId: "acme",
       environments: [
-        { id: "gox", kind: "remote", name: "GOX", org: true },
+        { id: "acme", kind: "remote", name: "Acme", org: true },
         { id: "local", kind: "local", name: "" },
         { id: "lab", kind: "remote", name: "Lab", org: false },
         { id: "gone", kind: "remote", name: "Gone", org: true, missing: true },
@@ -45,7 +45,7 @@ describe("the avatar menu's Switch organization", () => {
     }, "This computer (solo)");
     expect(targets).toEqual([
       { id: "local", name: "This computer (solo)", local: true, active: false },
-      { id: "gox", name: "GOX", local: false, active: true },
+      { id: "acme", name: "Acme", local: false, active: true },
     ]);
   });
 

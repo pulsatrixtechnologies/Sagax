@@ -1,8 +1,8 @@
 // Settings > Appearance > Sidebar: how many entries this person hid from
 // their sidebar, and whether a new message brings a hidden entry back. The
 // list itself, with Show for each, is the "Hidden" row at the foot of the
-// sidebar (JC, 2026-10-14: one place for it, where the entries went).
-// 0.5.6: compact rows, as Grok Bot's pages; the count is the row's value.
+// sidebar (2026-10-14: one place for it, where the entries went).
+// 0.5.6: compact rows, as the reference design's pages; the count is the row's value.
 import { useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { useOrgPeople } from "@/lib/perspicax-org";

@@ -1,10 +1,10 @@
-// Settings > General > Advanced (0.5.6, JC: Grok Bot's layout). Grey
+// Settings > General > Advanced (0.5.6, Decision: the reference design's layout). Grey
 // headings over cards of rows: the organization's bots (on a desktop with no
 // server only: Organization is hidden there), people's tool access (when
 // some exist), event log cleanup, and Diagnostics. Every value keeps its
 // route and applies whether or not anyone looks.
 //
-// 2026-10-16 (Grok Bot parity): Diagnostics also has "Download logs" (the
+// 2026-10-16 (the reference design parity): Diagnostics also has "Download logs" (the
 // desktop app: one redacted text file, electron/log-bundle.mjs) and "Send
 // feedback" (a mail draft to the public mailbox with the version and the
 // system; nothing attached, logs only through Download logs).

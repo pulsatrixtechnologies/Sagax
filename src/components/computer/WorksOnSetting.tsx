@@ -1,5 +1,5 @@
 // The bot's Works on, once, as the editor's Workspace page on a solo server
-// and on an organization server. Workspace is always Auto (JC 2026-10-18):
+// and on an organization server. Workspace is always Auto (2026-10-18):
 // the bot picks where each task runs among every place it may use (the
 // cloud, a Local VM, this computer, the browser), so no place is offered
 // here. Off stays: it is the restriction that gives the bot no computer and
@@ -40,7 +40,7 @@ export function WorksOnControl({ value, onChange, organization = true }: {
   organization?: boolean;
 }) {
   return (
-    // The editor's Workspace page titles it already (JC 2026-10-15): the
+    // The editor's Workspace page titles it already (2026-10-15): the
     // heading stays for the radio group's name, read by assistive tech only,
     // and the explanation shows under the page title.
     <section aria-labelledby="works-on-setting" aria-describedby="works-on-setting-hint" data-works-on-setting={value ?? "auto"} data-works-on-org={organization ? "1" : "0"}>

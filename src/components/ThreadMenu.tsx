@@ -1,7 +1,7 @@
-// The one menu of a thread (JC, 2026-10-14): the sidebar's thread rows and
+// The one menu of a thread (2026-10-14): the sidebar's thread rows and
 // the header's "All threads" picker open this same component, so a thread
-// offers the same actions wherever it is listed. One menu, no More (JC,
-// 2026-10-15), in short sections like Grok Bot's (JC, 2026-10-16):
+// offers the same actions wherever it is listed. One menu, no More (the maintainer,
+// 2026-10-15), in short sections like the reference design's (2026-10-16):
 // Open beside | Rename, Regenerate title, Pin, Move to folder › | Archive, Snooze › |
 // Copy link, Create a Team Bot, Remove link | Refresh permissions | Delete in red. Only Snooze
 // and Move to folder open a page, one level down.
@@ -144,7 +144,7 @@ export function ThreadMenuItems({ task, actions, folders = [], page, onPage, onC
     </>;
   }
 
-  // Grok Bot's sections, Cursor's rule (JC, 2026-10-16): organize, put
+  // The reference design's sections, Cursor's rule (2026-10-16): organize, put
   // away, share, settings, then Delete alone in red. A divider goes only
   // between two sections that have something in them.
   const sections: ReactNode[][] = [

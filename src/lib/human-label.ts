@@ -1,4 +1,4 @@
-// Human labels for records the app knows only by id (JC 2026-10-19: no
+// Human labels for records the app knows only by id (2026-10-19: no
 // GUID on screen). Each falls back to a plain word when the name is gone,
 // never to the id; the id may still go in a tooltip or a Copy action.
 import { containsUuid, isOpaqueId, readableOr } from "../../shared/human-id";

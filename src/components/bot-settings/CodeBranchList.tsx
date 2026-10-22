@@ -1,4 +1,4 @@
-// Details > Coding's branches, in the same grouped card as Routines (JC
+// Details > Coding's branches, in the same grouped card as Routines (the maintainer
 // 2026-10-19: "Mets le même encadré pour les éléments de coding"), each
 // with what it is now and a "..." menu to act on it (src/lib/code-branches.ts,
 // server/routes/bot-code-branches.ts): Commit (proposed message, editable,

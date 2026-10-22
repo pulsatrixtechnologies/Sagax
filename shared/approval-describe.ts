@@ -1,5 +1,5 @@
 // Turns a permission ask (tool id + arguments) into words a person reads:
-// "consulter l'horaire dans ConnectWise PSA · jcproulx, 2 oct. au 3 oct."
+// "consulter l'horaire dans ConnectWise PSA · amartin, 2 oct. au 3 oct."
 // with a risk level. The raw tool id and JSON stay available for the
 // card's collapsed technical details; nothing here decides anything.
 //
@@ -140,7 +140,7 @@ export interface ToolHints {
 }
 
 export interface ParsedToolId {
-  /** the MCP server id, e.g. perspicax_pulsatrix_flow_jc */
+  /** the MCP server id, e.g. perspicax_example_flow */
   server?: string;
   /** the tool without its mcp__<server>__ prefix */
   name: string;
@@ -164,7 +164,7 @@ export interface ApprovalDescription {
 
 /** `mcp__<server>__<tool>` (Claude, Codex) or the engine's own
  * `<server>__<tool>` (Grok: perspicax_dispatch_agent__flow_action): the
- * server id may itself hold single underscores (perspicax_pulsatrix_flow_jc)
+ * server id may itself hold single underscores (perspicax_example_flow)
  * and the tool may hold double ones (cw_psa__query), so split on the first
  * `__` after the optional prefix. A name with spaces, or a built-in such as
  * Bash, is no MCP tool. */
@@ -574,7 +574,7 @@ export function describeApproval(
     ? resourceRaw?.replace(/[/_-]+/g, " ").trim().toLowerCase() || undefined
     : resourcePhrase(resourceRaw, op, words);
   // run_command / exec_shell: "run a command", not "run the command action"
-  // 2026-10-20 (JC): where it runs, in the person's words: their cloud
+  // 2026-10-20: where it runs, in the person's words: their cloud
   // computer (sagax-environment), their own computer (sagax-desktop)
   const action = op === "run" && resource && RUN_COMMAND_NOUN.test(resource)
     ? words.t(parsed.server === "sagax-environment" ? "approval.tool.runCommandCloud" : parsed.server === "sagax-desktop" ? "approval.tool.runCommandComputer" : "approval.tool.runCommand")
@@ -661,7 +661,7 @@ const oneLine = (text: string, max: number) => {
 };
 
 export interface ApprovalPlain {
-  /** "Allow Cryptic to run a command?" */
+  /** "Allow Nova to run a command?" */
   title: string;
   /** "view the schedule in ConnectWise PSA": the action alone */
   action: string;

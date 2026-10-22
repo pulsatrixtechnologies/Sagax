@@ -7,7 +7,7 @@
 // The server decides what this person may read (server/routes/bot-activity.ts):
 // a routine run seen without its thread comes with no steps and no thread.
 //
-// The window is Settings' own size (ActivityWindow, JC 2026-10-16), in two
+// The window is Settings' own size (ActivityWindow, 2026-10-16), in two
 // columns when it is wide enough (WIDE_PX): at the left the summary (status,
 // the facts card, a message into the run, the sub-agents, the files, Stop and
 // Open thread), at the right the Steps and, while it has a thread, its live

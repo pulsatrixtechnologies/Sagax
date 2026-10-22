@@ -110,7 +110,7 @@ describe("Settings > Models and voice", () => {
     snapshot: { state: "unavailable" }, models: { default: "", options: [] },
   };
 
-  // 0.5.6: Grok Bot's layout, grey headings outside rounded cards: Engines
+  // 0.5.6: the reference design's layout, grey headings outside rounded cards: Engines
   // (Auto first), Keys, Voice, Image generation.
   it("orders Engines (Auto first), Keys, Voice, Image generation on one page", async () => {
     fixture.instances = [kimiToSetUp];

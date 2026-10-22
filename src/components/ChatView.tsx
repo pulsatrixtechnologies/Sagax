@@ -275,7 +275,7 @@ function useSeenFaceBot(bot: Bot): Bot {
 }
 
 /** Reply to one message: the curved back arrow beside the bubble, in a
- * room and in a 1:1 chat alike (JC, 2026-10-14). */
+ * room and in a 1:1 chat alike (2026-10-14). */
 export function ReplyAction({ onReply, className = messageActionClass }: { onReply: () => void; className?: string }) {
   return (
     <button type="button" onClick={onReply} aria-label={t("chat.replyToMessage")} title={t("chat.reply")} className={className}>
@@ -840,7 +840,7 @@ const Bubble = memo(function Bubble({
         )}
       </div>
       <ReactionChips reactions={message.reactions} selfIds={reactionSelf} bots={bots} end={user} onToggle={(emoji) => toggleReactionOn(message.id, emoji)} />
-      {/* always laid out, only faded in: the answer above never moves (JC, 2026-10-15) */}
+      {/* always laid out, only faded in: the answer above never moves (2026-10-15) */}
       {!user && !peer && message.turnRun && <TurnRunLine run={message.turnRun} visible={dwell.shown} />}
       {forks.length > 1 && (
         <div className="mt-1 flex items-center gap-0.5 pr-1 text-[12px] text-ink-secondary">
@@ -965,7 +965,7 @@ function EmptyChat({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 py-24 text-center">
-      {/* No mascot here: the header already shows the bot (JC 2026-10-16).
+      {/* No mascot here: the header already shows the bot (2026-10-16).
           Simple mode renames in the bot's settings only. */}
       {!advanced ? <div className="text-[17px] font-semibold text-ink">{bot.name}</div> : <RenameTitle
         value={bot.name}
@@ -1520,7 +1520,7 @@ function FreshTopicDivider({ onResume }: { onResume: () => void }) {
 }
 
 /** One discreet line above a topic: the earlier topics, folded until asked
- * for (JC 2026-10-18: less on screen; ⌘F still searches them). */
+ * for (2026-10-18: less on screen; ⌘F still searches them). */
 function PreviousTopicsLine({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
     <div className="flex justify-center" data-previous-topics={open ? "open" : "closed"}>
@@ -2050,7 +2050,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const streamEngine = state.instances.find((i) => i.instanceId === bot.modelSelection.instanceId);
   const streamReadBack = streamHasEarlier && !olderPending && hiddenCount === 0 && !bot.hasMore;
   // Earlier topics are folded behind one "Earlier topics" line at the top of
-  // the live topic, once it is read back to its start (JC 2026-10-18); the
+  // the live topic, once it is read back to its start (2026-10-18); the
   // line, a link, a search hit or the activity pill draws them.
   const streamDrawn = !fresh && streamHasEarlier && (previousOpen || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
   const showPreviousLine = fresh || (streamHasEarlier && (streamDrawn || streamReadBack));

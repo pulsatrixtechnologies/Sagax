@@ -89,7 +89,7 @@ export const EXPRESSIONS: Ring[][] = RAW.map((ex, i) =>
 export const EXPRESSION_COUNT = EXPRESSIONS.length
 
 /**
- * Grok Bot eyes: two identical vertical capsules, level with each other.
+ * the reference design eyes: two identical vertical capsules, level with each other.
  * Measured from the Grok inbox avatars (about 6 by 10 px on a 54 px body,
  * gap a little wider than one eye). Placed on the face centre so they sit
  * where the resting pair already fits inside every body.

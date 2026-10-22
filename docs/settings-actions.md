@@ -1,6 +1,6 @@
 # Tout est modifiable par les bots (sagax_settings)
 
-Exigence de JC (2026-10-19) : « Tout doit être modifiable via les bots.
+Exigence du responsable (2026-10-19) : « Tout doit être modifiable via les bots.
 Absolument tout. » Chaque réglage de Sagax est une action : un bot le lit et
 le change pour la personne qui lui parle, avec les droits de cette personne,
 par la même route que l'écran. Fichier généré par `pnpm gen:settings-doc`

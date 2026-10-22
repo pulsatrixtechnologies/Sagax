@@ -1,5 +1,5 @@
 /** Isolated gallery for Playwright screenshots of the whole desktop sidebar
- * (bot rows, Primary Bot, sections, foot) beside Grok Bot's. Not shipped in
+ * (bot rows, Primary Bot, sections, foot) beside the reference design's. Not shipped in
  * the app. It answers /api itself with a made-up team, so nothing reaches a
  * server. ?skin=<id>&lang=<code>&threads=header|sidebar&width=<px, 368> */
 import { StrictMode, useEffect } from "react";

@@ -115,9 +115,9 @@ describe("the installation's marketplaces", () => {
       clones.push(url);
       cpSync(source, into, { recursive: true });
     });
-    const view = await markets.add({ source: "jencryzthers/marketplace", ref: "main" }, undefined);
-    expect(clones).toEqual(["https://github.com/jencryzthers/marketplace.git"]);
-    expect(view).toMatchObject({ name: "devjc", source: "jencryzthers/marketplace", ref: "main" });
+    const view = await markets.add({ source: "example-org/marketplace", ref: "main" }, undefined);
+    expect(clones).toEqual(["https://github.com/example-org/marketplace.git"]);
+    expect(view).toMatchObject({ name: "devjc", source: "example-org/marketplace", ref: "main" });
     expect(view.plugins.map((plugin) => plugin.name)).toEqual(["notes", "remote-one", "by-url"]);
     const prepared = await markets.prepare("devjc", "notes", undefined);
     expect(prepared.dir).toBe(join(dir, "data", "marketplaces", "plugins", "devjc", "notes"));

@@ -185,20 +185,20 @@ describe("sagax_settings", () => {
 describe("askedChange (a Primary Bot's change on the person's words, security review 2026-10-20)", () => {
   it("turns cards off only, with the level, the bot and the rule's own words named", async () => {
     const { askedChange } = await import("./settings-actions.ts");
-    expect(askedChange("Mets Katarina en auto", "bot.approvalMode", "auto", "Katarina", false)).toBe(true);
+    expect(askedChange("Mets Ottoline en auto", "bot.approvalMode", "auto", "Ottoline", false)).toBe(true);
     // security review 2026-10-20: the level and the bot are in the quote itself
-    expect(askedChange("Ne mets pas Katarina en Full, mets Zed en Full", "bot.approvalMode", "full", "Katarina", false, undefined, "mets Zed en Full")).toMatch(/Katarina/);
+    expect(askedChange("Ne mets pas Ottoline en Full, mets Zed en Full", "bot.approvalMode", "full", "Ottoline", false, undefined, "mets Zed en Full")).toMatch(/Ottoline/);
     expect(askedChange("Mets Zed en Full", "bot.approvalMode", "full", undefined, true, undefined, "Mets Zed en Full", "Scout")).toMatch(/itself/);
     expect(askedChange("Mets-toi en Full", "bot.approvalMode", "full", undefined, true, undefined, "Mets-toi en Full", "Scout")).toBe(true);
-    expect(askedChange("Mets Katarina en auto", "bot.approvalMode", "full", "Katarina", false)).toMatch(/level full/);
-    expect(askedChange("Fais-moi un rapport complet", "bot.approvalMode", "full", "Katarina", false)).not.toBe(true);
-    expect(askedChange("Mets-la en auto", "bot.approvalMode", "auto", "Katarina", false)).toMatch(/Katarina/);
+    expect(askedChange("Mets Ottoline en auto", "bot.approvalMode", "full", "Ottoline", false)).toMatch(/level full/);
+    expect(askedChange("Fais-moi un rapport complet", "bot.approvalMode", "full", "Ottoline", false)).not.toBe(true);
+    expect(askedChange("Mets-la en auto", "bot.approvalMode", "auto", "Ottoline", false)).toMatch(/Ottoline/);
     // anything that is not an approval level or a rule keeps its card
-    expect(askedChange("Mets Katarina en auto", "bot.title", "x", "Katarina", false)).not.toBe(true);
-    expect(askedChange("Mets Katarina en auto", "bot.alwaysAllow", ["Bash"], "Katarina", false)).not.toBe(true);
+    expect(askedChange("Mets Ottoline en auto", "bot.title", "x", "Ottoline", false)).not.toBe(true);
+    expect(askedChange("Mets Ottoline en auto", "bot.alwaysAllow", ["Bash"], "Ottoline", false)).not.toBe(true);
     // a new rule's words and an exact command are the person's own
     expect(askedChange("Ajoute une note au billet", "rules.custom", { when: "toute commande", behavior: "allow" }, undefined, true)).not.toBe(true);
-    expect(askedChange("Toujours permettre la commande npm test pour Katarina", "rules.custom", { when: "la commande npm test", behavior: "allow", botId: "kat" }, undefined, true)).toBe(true);
+    expect(askedChange("Toujours permettre la commande npm test pour Ottoline", "rules.custom", { when: "la commande npm test", behavior: "allow", botId: "kat" }, undefined, true)).toBe(true);
     // the behavior and "every bot" are said too; a one-word when is no rule
     expect(askedChange("mets une règle qui bloque les paiements", "rules.custom", { when: "les paiements", behavior: "allow" }, undefined, true)).not.toBe(true);
     expect(askedChange("mets une règle qui bloque les paiements par carte", "rules.custom", { when: "les paiements par carte", behavior: "allow", botId: "kat" }, undefined, true)).not.toBe(true);
@@ -206,7 +206,7 @@ describe("askedChange (a Primary Bot's change on the person's words, security re
     expect(askedChange("Toujours permettre la commande npm test", "rules.custom", { when: "la commande npm test", behavior: "allow" }, undefined, true)).not.toBe(true);
     expect(askedChange("Toujours permettre la commande npm test pour tous les bots", "rules.custom", { when: "la commande npm test", behavior: "allow" }, undefined, true)).toBe(true);
     expect(askedChange("ajoute tout au rapport", "rules.custom", { when: "tout", behavior: "allow", botId: "kat" }, undefined, true)).not.toBe(true);
-    expect(askedChange("Ajoute une note au billet", "rules.commandAllow", { command: "rm -rf /", cwd: "/", providerInstanceId: "claude" }, "Katarina", true)).not.toBe(true);
+    expect(askedChange("Ajoute une note au billet", "rules.commandAllow", { command: "rm -rf /", cwd: "/", providerInstanceId: "claude" }, "Ottoline", true)).not.toBe(true);
     // a rule removed is one the message names
     expect(askedChange("Retire la règle", "rules.ownerDelete", true, undefined, true, "Run a command (printf primary-later)")).not.toBe(true);
     expect(askedChange("Retire la règle printf", "rules.ownerDelete", true, undefined, true, "Run a command (printf primary-later)")).not.toBe(true);
@@ -221,7 +221,7 @@ describe("askedBotChange (the Primary Bot changes the person's bots on their wor
     const model = (names: string[], valueNames: string[]) => askedBotChange({ key: "bot.model", family: "bot", value: {}, quote: order, names, speakingBot: false, valueNames });
     for (const name of ["SWAT", "DOGE", "Bot Designer", "Disk Saver"]) expect(model([name], ["claudeApi", "claude-opus"])).toBe(true);
     // a bot or an engine the words do not name
-    expect(model(["Katarina"], ["claudeApi"])).toMatch(/Katarina/);
+    expect(model(["Ottoline"], ["claudeApi"])).toMatch(/Ottoline/);
     expect(model(["SWAT"], ["codex"])).toMatch(/engine or model/);
     expect(askedBotChange({ key: "bot.hidden", family: "bot", value: true, quote: "Archive Disk Saver", names: ["Disk Saver"], speakingBot: false })).toBe(true);
     expect(askedBotChange({ key: "bot.hidden", family: "bot", value: true, quote: "Passe Disk Saver sur codex", names: ["Disk Saver"], speakingBot: false })).toMatch(/archive/);
@@ -239,9 +239,9 @@ describe("askedBotChange (the Primary Bot changes the person's bots on their wor
     expect(askedBotChange({ key: "bot.cwd", family: "bot", value: "/", quote: "change le dossier de Ember", names: ["Ember"], speakingBot: false })).toMatch(/only/);
     expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "supprime Ember", message: "supprime Ember ? non, pas encore", names: ["Ember"], speakingBot: false })).toMatch(/question/);
     expect(askedBotChange({ key: "bot.delete", family: "bot", value: true, quote: "ne supprime pas Ember", names: ["Ember"], speakingBot: false })).toMatch(/refuse/);
-    expect(askedBotChange({ key: "routine.create", family: "routine", value: {}, quote: "use the web", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toMatch(/itself/);
-    expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "can you change your tone", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toMatch(/itself/);
+    expect(askedBotChange({ key: "routine.create", family: "routine", value: {}, quote: "use the web", names: ["Quasar"], speakingBot: true, speakingName: "Quasar" })).toMatch(/itself/);
+    expect(askedBotChange({ key: "bot.persona", family: "bot", value: "x", quote: "can you change your tone", names: ["Quasar"], speakingBot: true, speakingName: "Quasar" })).toMatch(/itself/);
     // the speaking bot itself: "toi" or its name
-    expect(askedBotChange({ key: "bot.effort", family: "bot", value: "high", quote: "mets-toi en effort high", names: ["Cryptic"], speakingBot: true, speakingName: "Cryptic" })).toBe(true);
+    expect(askedBotChange({ key: "bot.effort", family: "bot", value: "high", quote: "mets-toi en effort high", names: ["Quasar"], speakingBot: true, speakingName: "Quasar" })).toBe(true);
   });
 });

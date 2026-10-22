@@ -2,7 +2,7 @@
 // Achievements (category-modal.ts: a left column of categories, one
 // scrolling pane, the close button top right). The left column lists the
 // groups (lib/persona-sections.ts) as Settings' grey headings, each section
-// an entry of its own (JC 2026-10-15, rail like Settings 2026-10-16), each the
+// an entry of its own (2026-10-15, rail like Settings 2026-10-16), each the
 // same body the bot panel used to show (useBotSectionContent), so both save
 // through the same paths. A
 // section this viewer may not change stays on its page and says why
@@ -234,7 +234,7 @@ function PersonaEditor({ bot, section, onClose }: { bot: Bot; section: BotSettin
             <div className="truncate">{t("persona.title")}</div>
             <div className="truncate text-[12px] font-normal text-ink-secondary">{bot.name}</div>
           </div>
-          {/* 2026-10-16 (JC): the rail of Settings (#605): each group a
+          {/* 2026-10-16: the rail of Settings (#605): each group a
               grey heading, every page an entry with its icon under it. */}
           {groups.map(({ id, sections }) => {
             const headingId = `persona-nav-${id}`;

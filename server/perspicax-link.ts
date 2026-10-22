@@ -132,7 +132,7 @@ const personSchema = z.object({
    * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
    * admin does (`off`). Absent from an older Perspicax: manage. */
   sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
-  /** Perspicax migration 0063 (2026-10-16, JC): the engine instance ids this
+  /** Perspicax migration 0063 (2026-10-16): the engine instance ids this
    * person may run on the accounts the organization provides (the org key
    * of Settings > Connections). [] = none, the default for every member.
    * Absent from an older Perspicax: none too (serverEngines). `*` gives
@@ -311,7 +311,7 @@ export type ExchangeResult =
    * link token was refused even after re-reading the file. */
   | { ok: false; error: "not_held" | "subject" | "link" | "rate_limited" | "unreachable" };
 
-/** 2026-10-08 (JC): a routine always acts in its owner's name. The linked
+/** 2026-10-08 : a routine always acts in its owner's name. The linked
  * server turns the person's live sign-in access token into their routine
  * delegation (RFC 8693 asking a refresh token with the marker), with no
  * consent step. */
@@ -502,7 +502,7 @@ export class PerspicaxDirectory {
     return person?.sagax_integrations === "off" ? "off" : "manage";
   }
 
-  /** 2026-10-16 (JC): the engine instance ids this subject may run on the
+  /** 2026-10-16: the engine instance ids this subject may run on the
    * organization's provided accounts, from the last directory. null when
    * the directory did not send the field (an older Perspicax, a subject it
    * does not list, before the first directory): the caller treats that as

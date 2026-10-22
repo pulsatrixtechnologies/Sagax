@@ -25,7 +25,7 @@ class FakeSource {
   close() { this.closed = true; }
 }
 
-const bot = { id: "cryptic", name: "Assistant", browserProfile: "own" } as unknown as Bot;
+const bot = { id: "quasar", name: "Assistant", browserProfile: "own" } as unknown as Bot;
 const FRAME = { seq: 1, data: "/9j/AAAA", format: "jpeg", metadata: { deviceWidth: 1280, deviceHeight: 720 } };
 let host: HTMLDivElement;
 let root: Root;
@@ -61,7 +61,7 @@ describe("browser tab: a live preview like the VM's screen", () => {
   it("draws the browser in the screen's frame and connects a watch-only preview at once", async () => {
     await act(async () => root.render(createElement(BrowserPanel, { bot })));
     expect(screen()?.getAttribute("data-computer-source")).toBe("browser");
-    expect(preview().map((source) => source.url)).toEqual(["/api/bots/cryptic/browser/live?preview=1"]);
+    expect(preview().map((source) => source.url)).toEqual(["/api/bots/quasar/browser/live?preview=1"]);
     expect(screen()?.getAttribute("data-computer-screen")).toBe("starting");
     expect(document.body.textContent).toContain("Connecting to the browser…");
     expect(document.body.textContent).not.toMatch(/Nothing is streamed|full screen/);
@@ -77,7 +77,7 @@ describe("browser tab: a live preview like the VM's screen", () => {
     expect(image.src).toBe("data:image/jpeg;base64,/9j/AAAA");
     expect(image.alt).toBe("Assistant’s browser");
     await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))); });
-    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ method: "POST", body: JSON.stringify({ type: "ack", seq: 1, viewerId: "viewer-1" }) }));
+    expect(api).toHaveBeenCalledWith("/api/bots/quasar/browser/action", expect.objectContaining({ method: "POST", body: JSON.stringify({ type: "ack", seq: 1, viewerId: "viewer-1" }) }));
     expect(document.querySelector("[data-browser-preview][data-take-control]")?.textContent).toContain("Take control");
     // Shown on hover, always on touch, not drawn over the page otherwise.
     expect(document.querySelector("[data-take-control-pill]")?.className).toMatch(/opacity-0 .*group-hover\/preview:opacity-100 .*touch:opacity-100/);
@@ -123,7 +123,7 @@ describe("browser tab: take control opens the VM's window, not full screen", () 
     expect(requestFullscreen).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(dialog);
     expect(preview()[0]!.closed).toBe(true);
-    expect(live().map((source) => source.url)).toEqual(["/api/bots/cryptic/browser/live"]);
+    expect(live().map((source) => source.url)).toEqual(["/api/bots/quasar/browser/live"]);
     expect(document.querySelector("[data-browser-takeover-open]")?.textContent).toBe("You have control in the large window.");
     // No Play / Pause / Stop in the window's header either.
     expect(dialog.querySelector("[role=group]")).toBeNull();
@@ -139,7 +139,7 @@ describe("browser tab: take control opens the VM's window, not full screen", () 
     await emit(source, "control", { held: false, controlling: false, owned: false });
     expect(document.querySelector("[data-browser-holder]")?.textContent).toContain("Assistant is using the browser");
     await act(async () => (document.querySelector("[data-browser-take]") as HTMLButtonElement).click());
-    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "take", viewerId: "viewer-live" }) }));
+    expect(api).toHaveBeenCalledWith("/api/bots/quasar/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "take", viewerId: "viewer-live" }) }));
     await emit(source, "control", { held: true, controlling: true, owned: true });
     expect(document.querySelector("[data-browser-holder]")?.getAttribute("data-browser-holder")).toBe("you");
     expect(document.querySelector("[data-browser-give-back]")?.textContent).toContain("Give back control");
@@ -153,12 +153,12 @@ describe("browser tab: take control opens the VM's window, not full screen", () 
     await emit(source, "ready", { viewerId: "viewer-live" });
     await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "", url: "about:blank", active: true }] });
     await act(async () => { for (let turn = 0; turn < 20; turn++) await Promise.resolve(); });
-    const sent = api.mock.calls.filter(([path]) => path === "/api/bots/cryptic/browser/action").map(([, init]) => JSON.parse(init.body).type);
+    const sent = api.mock.calls.filter(([path]) => path === "/api/bots/quasar/browser/action").map(([, init]) => JSON.parse(init.body).type);
     expect(sent).toEqual(expect.arrayContaining(["take", "navigate"]));
-    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "navigate", url: "https://www.google.com/", viewerId: "viewer-live" }) }));
+    expect(api).toHaveBeenCalledWith("/api/bots/quasar/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "navigate", url: "https://www.google.com/", viewerId: "viewer-live" }) }));
     api.mockClear();
     await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "", url: "about:blank", active: true }] });
-    expect(api.mock.calls.filter(([path, init]) => path === "/api/bots/cryptic/browser/action" && JSON.parse(init.body).type !== "ack")).toEqual([]);
+    expect(api.mock.calls.filter(([path, init]) => path === "/api/bots/quasar/browser/action" && JSON.parse(init.body).type !== "ack")).toEqual([]);
   });
 
   it("leaves a page the bot has open where it is", async () => {
@@ -169,7 +169,7 @@ describe("browser tab: take control opens the VM's window, not full screen", () 
     await emit(source, "ready", { viewerId: "viewer-live" });
     await emit(source, "tabs", { tabs: [{ tabId: "t1", title: "Example", url: "https://example.com/", active: true }] });
     await act(async () => { for (let turn = 0; turn < 20; turn++) await Promise.resolve(); });
-    expect(api.mock.calls.filter(([path, init]) => path === "/api/bots/cryptic/browser/action" && JSON.parse(init.body).type !== "ack")).toEqual([]);
+    expect(api.mock.calls.filter(([path, init]) => path === "/api/bots/quasar/browser/action" && JSON.parse(init.body).type !== "ack")).toEqual([]);
   });
 
   it("shows the last preview picture in the window while the live view connects", async () => {
@@ -193,7 +193,7 @@ describe("browser tab: take control opens the VM's window, not full screen", () 
     expect(document.querySelector("[data-browser-blank]")?.textContent).toContain("The browser is not open");
     expect(document.querySelector("[data-browser-blank] [data-take-control]")?.textContent).toContain("Take control");
     await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))); });
-    expect(api).toHaveBeenCalledWith("/api/bots/cryptic/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "ack", seq: 1, viewerId: "viewer-1" }) }));
+    expect(api).toHaveBeenCalledWith("/api/bots/quasar/browser/action", expect.objectContaining({ body: JSON.stringify({ type: "ack", seq: 1, viewerId: "viewer-1" }) }));
     await emit(source, "url", { url: "https://www.google.com/" });
     expect(document.querySelector("[data-browser-preview] img")).not.toBeNull();
   });

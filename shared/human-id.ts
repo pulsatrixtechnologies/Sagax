@@ -1,4 +1,4 @@
-// JC 2026-10-19: "N'affiche JAMAIS des GUID, on ne comprend rien." Nothing
+// 2026-10-19: "N'affiche JAMAIS des GUID, on ne comprend rien." Nothing
 // the app draws as text shows a UUID/GUID or another opaque identifier: a
 // person reads a human label (a name, a place, a folder, a kind of thing),
 // and the identifier lives only in a tooltip or a Copy action for support.

@@ -1,4 +1,4 @@
-// The bot's one "..." menu in the bot panel (JC 2026-10-14). It replaced
+// The bot's one "..." menu in the bot panel (2026-10-14). It replaced
 // the mascot's right-click menu, the five quick actions of the editor's
 // Overview, the header's Export and Inspector buttons and the Primary bot
 // button of Permissions: Edit bot, Rename, Put on the desktop, Make primary

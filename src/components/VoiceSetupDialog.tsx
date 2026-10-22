@@ -118,7 +118,7 @@ export function VoiceSetupDialog({
     dispatch({ type: "toggleSettings", open: true, section: "voice" });
   };
 
-  // 2026-10-16 (JC): drawn like Settings: the bot's avatar beside the
+  // 2026-10-16 : drawn like Settings: the bot's avatar beside the
   // title, the round close button, the same VoiceSettings card, the call
   // in a pill once the voice is ready, "All voice settings" as a row.
   return createPortal(

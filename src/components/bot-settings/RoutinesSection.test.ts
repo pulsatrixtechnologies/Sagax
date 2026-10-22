@@ -138,8 +138,8 @@ describe("RoutinesSection", () => {
   it("does not print the viewer's name twice when they own the routine and it runs as them", () => {
     const mine = {
       ...activeRoutine,
-      owner: { id: "pr_me", name: "Jean-Christophe Proulx" },
-      runAs: { principalId: "pr_me", name: "Jean-Christophe Proulx" },
+      owner: { id: "pr_me", name: "Alex Martin" },
+      runAs: { principalId: "pr_me", name: "Alex Martin" },
     };
     const markup = render([mine], []);
     expect(markup).toContain("Morning brief");

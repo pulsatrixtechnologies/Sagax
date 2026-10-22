@@ -21,7 +21,7 @@ afterEach(() => {
 const NOW = new Date(2026, 9, 2, 12);
 const SCREENSHOT_TOOL = "mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query";
 const scheduleArgs = JSON.stringify({
-  conditions: "member/identifier='jcproulx' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
+  conditions: "member/identifier='amartin' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
   fields: "id,dateStart,dateEnd,member/identifier",
   orderBy: "dateStart asc",
 });
@@ -52,7 +52,7 @@ describe("describeApproval titles", () => {
     expect(described.product).toBe("ConnectWise PSA");
     expect(described.risk).toBe("read");
     // 04:00Z is local midnight: the exclusive end means through Oct 3
-    expect(described.summary).toBe("jcproulx, 2 oct. au 3 oct.");
+    expect(described.summary).toBe("amartin, 2 oct. au 3 oct.");
     expect(described.server).toBe("perspicax_pulsatrix_flow_jc");
     expect(described.argsJson).toContain('\n  "conditions": ');
   });
@@ -60,16 +60,16 @@ describe("describeApproval titles", () => {
   it("reads the same request in English", () => {
     const described = describeApproval(SCREENSHOT_TOOL, scheduleArgs, undefined, NOW);
     expect(described.action).toBe("view the schedule");
-    expect(described.summary).toBe("jcproulx, Oct 2 to Oct 3");
+    expect(described.summary).toBe("amartin, Oct 2 to Oct 3");
   });
 
   it("takes a generic write's operation and resource from its arguments", () => {
     setLocale("fr");
-    const args = JSON.stringify({ resource: "time/entries", operation: "create", body: { chargeToId: 287826, member: { identifier: "jcproulx" }, timeStart: "2026-10-02T13:00:00Z" } });
+    const args = JSON.stringify({ resource: "time/entries", operation: "create", body: { chargeToId: 287826, member: { identifier: "amartin" }, timeStart: "2026-10-02T13:00:00Z" } });
     const described = describeApproval("mcp__perspicax_pulsatrix_flow_jc__cw_psa__write", args, undefined, NOW);
     expect(described.action).toBe("créer une saisie de temps");
     expect(described.risk).toBe("write");
-    expect(described.summary).toBe("jcproulx, #287826, 2 oct.");
+    expect(described.summary).toBe("amartin, #287826, 2 oct.");
   });
 
   it("maps verbs to read, change, delete and run", () => {
@@ -99,7 +99,7 @@ describe("describeApproval titles", () => {
     setLocale("fr");
     const cut = scheduleArgs.slice(0, 199) + "…";
     const described = describeApproval(SCREENSHOT_TOOL, cut, undefined, NOW);
-    expect(described.summary).toBe("jcproulx, 2 oct. au 3 oct.");
+    expect(described.summary).toBe("amartin, 2 oct. au 3 oct.");
     expect(described.argsJson).toBe(cut);
   });
 });

@@ -331,7 +331,7 @@ describe("control-omb ui drives the real renderer", () => {
     // (a) the fake engine's reply text, as a transcript row
     expect(transcript).toContain(`StaticText "${REPLY}"`);
     // (b) the scripted calls (Bash among them) folded into one tool chip, the
-    // Grok Bot way: "Worked" with its count and failure, then "Used 3 tools"
+    // the reference design way: "Worked" with its count and failure, then "Used 3 tools"
     expect(transcript).toContain('button "Worked, 3 tools, 1 failed, press to see the detail"');
     expect(transcript).toMatch(/button "Used 3 tools/);
     expect(tree).not.toContain("Not logged in");

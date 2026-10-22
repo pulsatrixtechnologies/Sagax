@@ -307,7 +307,7 @@ function ConversationTaskPicker({
       : t("task.switch");
   const grouped = folders ? groupThreadTasks(tasks, folders, query) : null;
   // Only this conversation's own threads: no other bot's or room's thread
-  // ever rides in here (JC, 2026-10-08). The sidebar's inbox panel
+  // ever rides in here (2026-10-08). The sidebar's inbox panel
   // is the cross-bot view.
   const visible = grouped ? grouped.flatMap((group) => group.tasks) : filterTasks(tasks, query);
   const looking = query.trim();
@@ -591,7 +591,7 @@ export function botPickerThreads(bot: Pick<Bot, "tasks">): Task[] {
 export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen?: boolean }) {
   const { state, dispatch } = useStore();
   // A bot's threads live here whatever Threads location says: the sidebar
-  // no longer unfolds a bot's thread list (Grok Bot's rows, JC 2026-10-15),
+  // no longer unfolds a bot's thread list (the reference design's rows, 2026-10-15),
   // it only lists its unread threads. Rooms and people keep the setting.
   const showThreads = useShowThreads();
   const [permissionRefresh, setPermissionRefresh] = useState<{ threadId: string; kind: "full" | "local-auto" } | null>(null);

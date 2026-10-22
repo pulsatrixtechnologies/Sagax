@@ -205,7 +205,7 @@ describe("card counts", () => {
 });
 
 describe("skin picker", () => {
-  it("draws Grok Bot's tiles: picture, name and check, the tagline as a tooltip", async () => {
+  it("draws the reference design's tiles: picture, name and check, the tagline as a tooltip", async () => {
     const { SkinPicker } = await import("./SkinPicker");
     const html = renderToStaticMarkup(createElement(SkinPicker));
     expect(html).toContain("grid-cols-[repeat(auto-fill,minmax(132px,1fr))]");

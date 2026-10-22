@@ -2,7 +2,7 @@
 //
 // When an AI client attached to Perspicax (the `sagax_send` MCP tool, the
 // member API in ./org-member-routes.ts) works with a bot for a person, it
-// works in a hidden thread, the way Grok Bot keeps its subagents'
+// works in a hidden thread, the way the reference design keeps its subagents'
 // conversations out of the chat: the person's sidebar, previews, typing
 // dots, unread counts and notifications never show it, and it is still
 // reached from the bot's Activity panel or its thread link.
@@ -44,7 +44,7 @@ export function planHiddenAgentThreads(
   return out;
 }
 
-/** One sweep (marker `agent-threads-hidden.v2`, JC 2026-10-12): what #291's
+/** One sweep (marker `agent-threads-hidden.v2`, 2026-10-12): what #291's
  * first sweep missed. Threads another bot opened on this one (openedBy names
  * a different bot) that are still stored shown, except the bot's own current
  * thread; and the threads the operator lists in `agent-threads-hide.list`

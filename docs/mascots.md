@@ -21,7 +21,7 @@ Covered by `src/components/floating-bots/sleep.test.ts`.
 
 ## Shiba
 
-The Shiba Inu of direction C ("aplat net", approved by JC on 2026-10-09): two
+The Shiba Inu of direction C ("aplat net", approved by the maintainer on 2026-10-09): two
 flat tones (the coat and the cream mask) and a shade crescent, one uniform
 outline on the silhouette and the features alike. The body sits; the face is
 three layers every expression swaps (eyes, brow spots, mouth) over a nose
@@ -65,7 +65,7 @@ depth spin of the flat drawing, then it sits.
 
 ## Grump
 
-The grumpy cat of direction C ("aplat net", approved by JC on 2026-10-09):
+The grumpy cat of direction C ("aplat net", approved by the maintainer on 2026-10-09):
 cream fur, dark point markings (the mask with its light blaze, the ears, the
 tail), a white muzzle and chest, blue almond eyes slanted eight degrees with
 a slit pupil, a small pink nose and a mouth whose corners drop very low. Two
@@ -275,7 +275,7 @@ way while tuning.
 
 ## Frog
 
-The smug sad frog, approved by JC on 2026-10-09 in direction C ("aplat net":
+The smug sad frog, approved by the maintainer on 2026-10-09 in direction C ("aplat net":
 two flat tones plus a shade crescent, one uniform outline, never under 1.6 px
 on screen). An original drawing: the head's outline carries the two eye
 domes, heavy lids and wide flat lips carry every face, the shoulders hunch up

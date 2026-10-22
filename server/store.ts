@@ -967,7 +967,7 @@ export class Store {
       g.busyBotId = null;
       delete g.turnStartedAt;
       // A deleted bot used to stay a member for good: counted on the room's
-      // Save button and refused by the roster check on every save (MOCA-264).
+      // Save button and refused by the roster check on every save.
       // Bot-to-bot channels keep their pair; they are not edited as rooms.
       if (botsLoaded && !g.dm && g.memberIds.some((id) => !botIds.has(id))) {
         g.memberIds = g.memberIds.filter((id) => botIds.has(id));
@@ -2823,7 +2823,7 @@ export class Store {
    * too; the conversations stay, and the new engine reads them from the
    * transcript. Each conversation keeps working where it did: on Auto the
    * removed engine always ran on the bot's own cloud computer; no place is
-   * written for that any more (Workspace is always Auto, JC 2026-10-18), and
+   * written for that any more (Workspace is always Auto, 2026-10-18), and
    * Auto reaches that computer by itself where `keepCloud` says it is still
    * there. Where the new engine can't use a computer, an Auto-recorded cloud pin on
    * a moved conversation gives way, as on a Works on change
@@ -2898,7 +2898,7 @@ export class Store {
         const moved = task.modelSelection ? retired(task.modelSelection) : botMoved;
         if (moved) {
           // No place is written for it: Workspace is always Auto
-          // (JC 2026-10-18), and Auto reaches the cloud computer by itself.
+          // (2026-10-18), and Auto reaches the cloud computer by itself.
           // The machine's memory of where Auto landed: with no computer on
           // the new engine, the next turn would be refused there once.
           if (!options.canWorkOnCloud && task.surface === "cloud" && task.surfaceSource === "auto") {
@@ -3295,7 +3295,7 @@ export class Store {
     return this.patchTask(botId, threadId, { link: url, linkAuto: true });
   }
 
-  /** Workspace is always Auto (JC 2026-10-18): a Works on that fixed a
+  /** Workspace is always Auto (2026-10-18): a Works on that fixed a
    * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
    * every conversation pin goes, whoever set it. Off stays: it withholds
    * every screen, and lifting it would widen what the bot may reach.

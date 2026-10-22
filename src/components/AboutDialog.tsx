@@ -2,7 +2,7 @@
 // purpose: the settings live in the settings panel, and this exists so a bug
 // report can quote a version number.
 //
-// 2026-10-16 (JC): drawn like Settings, as the iOS About of #563: the
+// 2026-10-16 : drawn like Settings, as the iOS About of #563: the
 // Pulsatrix mark, "Sagax", the version, then the links as rows of one card
 // (release notes first), the copyright in grey at the bottom.
 import { useRef } from "react";

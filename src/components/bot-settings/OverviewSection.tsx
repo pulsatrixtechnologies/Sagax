@@ -31,7 +31,7 @@ export function OverviewSection({
     return <div className="text-[13px] text-ink-secondary">{t("botPanel.loading")}</div>;
   }
 
-  // 2026-10-16 (JC): drawn like Settings: each list under its grey
+  // 2026-10-16 : drawn like Settings: each list under its grey
   // heading in one card, one line per row.
   const lines = (items: readonly string[], empty?: string) => items.length === 0
     ? empty ? <p className="px-3.5 py-2.5 text-[13px] leading-[18px] text-ink-secondary">{empty}</p> : null

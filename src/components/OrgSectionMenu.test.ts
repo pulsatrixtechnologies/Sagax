@@ -1,4 +1,4 @@
-// The sidebar section menu, in Grok Bot's sections (JC, 2026-10-16):
+// The sidebar section menu, in the reference design's sections (JC, 2026-10-16):
 // Rename, Move up, Move down | Collapse or Expand all | Delete in red.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

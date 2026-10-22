@@ -11,7 +11,7 @@ mascots and behaviour.
 
 **Two exceptions:**
 
-- **Our brand.** "Grok Bot" becomes "Sagax", "Cursor account" becomes "Sagax
+- **Our brand.** "the reference design" becomes "Sagax", "Cursor account" becomes "Sagax
   account", and no third-party logo ships unless its plugin really exists in
   our catalog. Copying another product's name or marks would get the app
   rejected and is not ours to use.

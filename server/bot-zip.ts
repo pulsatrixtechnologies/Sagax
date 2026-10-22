@@ -249,7 +249,7 @@ function walkFiles(root: string, options: { skip?: (rel: string) => boolean } = 
       if (stat.isDirectory()) {
         if (!SKIPPED_DIRS.has(name)) stack.push(path);
       } else if (stat.isFile() && stat.size <= MAX_FILE_BYTES) {
-        // no sign-in or key leaves in a bot export (JC 2026-10-18 « Exclure tout »)
+        // no sign-in or key leaves in a bot export (2026-10-18, « Exclure tout »)
         if (exportedSecretFile(rel, () => startsLikeZip(path))) continue;
         if (registrySettingsPath(rel) && registryHoldsSecret(rel, path)) continue;
         out.push({ rel, path, size: stat.size });
@@ -951,7 +951,7 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
     };
     if (!options.asMember) {
       Object.assign(patch, {
-        // Workspace is always Auto (JC 2026-10-18): only Off travels.
+        // Workspace is always Auto (2026-10-18): only Off travels.
         ...(autoOnlyDestination(hostSettings.computer) ? { computer: "off" as const } : {}),
         ...(hostSettings.cloudBackend ? { cloudBackend: hostSettings.cloudBackend } : {}),
         ...(hostSettings.autoStartVps !== undefined ? { autoStartVps: hostSettings.autoStartVps } : {}),

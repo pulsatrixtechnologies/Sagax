@@ -24,7 +24,7 @@ import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { SPAWNED_PROXIES } from "../../proxy-paths.ts";
 import { FLOW_TOOL_NAMES, FLOW_TOOLS_MCP_NAME } from "../../flow-tools.ts";
 
-/** Perspicax connector tools reviewed as read-only (JC, 2026-10-11). Never
+/** Perspicax connector tools reviewed as read-only (2026-10-11). Never
  * add cw_psa__write/action, memory_write/forget/promote, memory_save/remove/
  * suggestions, sagax_send/approve/
  * nudge, flow_action, or anything whose effect depends on input. */
