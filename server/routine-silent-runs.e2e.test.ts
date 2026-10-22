@@ -13,7 +13,7 @@ import { expect, it } from "vitest";
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
-const PROMPT = "Run the skill gox-shaina-factures-carnot exactly as written. Post the list of invoices without a PO, silent if 0.";
+const PROMPT = "Run the skill finance-invoice-sweep exactly as written. Post the list of invoices without a PO, silent if 0.";
 const QUIET = "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.\n\nNOTHING_TO_REPORT";
 const REPORT = "3 invoices without a PO: #1201, #1207, #1210. I drafted the reminders.";
 
@@ -37,13 +37,13 @@ it("a silent run leaves the chat and sidebar untouched; a reporting run posts on
   const runState = async (id: string) => (await api("GET", "/api/routines")).runs.find((run: any) => run.id === id);
   const messages = async (id: string) => (await api("GET", `/api/threads/${id}/messages?limit=100`)).messages as any[];
   try {
-    const { bot } = await control(["new-bot", "--name", "Shaina"]) as any;
+    const { bot } = await control(["new-bot", "--name", "Scout"]) as any;
     const currentBot = async () => (await api("GET", "/api/bots")).bots.find((candidate: any) => candidate.id === bot.id);
     const main = (await currentBot()).threadId as string;
     const before = await messages(main);
     const mainBefore = (await currentBot()).tasks.find((task: any) => task.threadId === main);
     const { routine } = await api("POST", "/api/routines", {
-      name: "[ConnectWise Finance] Carnot without PO", prompt: PROMPT, botId: bot.id, enabled: false,
+      name: "[Finance] Acme invoices without PO", prompt: PROMPT, botId: bot.id, enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 3_600_000 },
     }, 201);
 
@@ -57,7 +57,7 @@ it("a silent run leaves the chat and sidebar untouched; a reporting run posts on
     expect(quietRun.output).toBe(QUIET.replace("\n\nNOTHING_TO_REPORT", ""));
     // ...and Open run keeps the whole transcript: the instructions, the answer.
     const quietTranscript = await messages(quietRun.threadId);
-    expect(quietTranscript.some((message) => message.role === "user" && String(message.text).includes("gox-shaina-factures-carnot"))).toBe(true);
+    expect(quietTranscript.some((message) => message.role === "user" && String(message.text).includes("finance-invoice-sweep"))).toBe(true);
     expect(quietTranscript.some((message) => message.role === "bot" && String(message.text).includes("October 22 is outside days 1-5"))).toBe(true);
     // The bot was told the contract in its system prompt.
     const dump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8"));
@@ -93,9 +93,9 @@ it("a silent run leaves the chat and sidebar untouched; a reporting run posts on
     expect(reportedRun.quiet).toBeUndefined();
     const posted = (await messages(main)).filter((message) => !before.some((old) => old.id === message.id));
     expect(posted).toHaveLength(1);
-    expect(posted[0]).toMatchObject({ role: "bot", kind: "routine.run", text: `${REPORT}\n\nRoutine “[ConnectWise Finance] Carnot without PO”` });
+    expect(posted[0]).toMatchObject({ role: "bot", kind: "routine.run", text: `${REPORT}\n\nRoutine “[Finance] Acme invoices without PO”` });
     expect(posted[0].routineRun).toMatchObject({ status: "completed", summary: REPORT, executionThreadId: reportedRun.threadId });
-    expect(JSON.stringify(await messages(main))).not.toContain("gox-shaina-factures-carnot");
+    expect(JSON.stringify(await messages(main))).not.toContain("finance-invoice-sweep");
     expect((await currentBot()).tasks.find((task: any) => task.threadId === main).unread).toBe(true);
 
     // 4. A quiet run stays silent even with postResults on, and never

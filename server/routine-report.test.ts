@@ -43,7 +43,7 @@ describe("routineReportOutcome", () => {
       report: "3 invoices without a PO: #1201, #1207, #1210. I drafted the reminders.",
     });
     // a question needs the person, even a bare one
-    expect(routineReportOutcome("Nothing to report on Carnot, but should I also check Alubar?").quiet).toBe(false);
+    expect(routineReportOutcome("Nothing to report on Acme, but should I also check Globex?").quiet).toBe(false);
     // a long report that happens to end with the words is still a report
     const long = `${"Ticket #4410 moved to Waiting on client; ".repeat(12)}nothing to report otherwise.`;
     expect(routineReportOutcome(long).quiet).toBe(false);

@@ -11,17 +11,17 @@ import { routineRunMatchesStatus, type RoutineRun } from "@/lib/routines";
 import { initialState, reducer, type Bot } from "@/state/store";
 
 const quiet: RoutineRun = {
-  id: "run-quiet", routineId: "carnot", routineName: "[ConnectWise Finance] Carnot without PO", target: "bot",
-  botId: "shaina", runOn: "maus", scheduledFor: 1, status: "completed", quiet: true, manual: false, createdAt: 1,
+  id: "run-quiet", routineId: "acme-invoices", routineName: "[Finance] Acme invoices without PO", target: "bot",
+  botId: "scout", runOn: "maus", scheduledFor: 1, status: "completed", quiet: true, manual: false, createdAt: 1,
   threadId: "execution", output: "October 22 is outside days 1-5.",
 };
 
 const bot = {
-  id: "shaina", name: "Shaina", threadId: "main",
+  id: "scout", name: "Scout", threadId: "main",
   tasks: [
-    { threadId: "main", title: "Shaina", createdAt: 1, updatedAt: 5, unread: false },
+    { threadId: "main", title: "Scout", createdAt: 1, updatedAt: 5, unread: false },
     // the run's own task, as the server leaves it after a quiet run
-    { threadId: "execution", title: "Carnot without PO · Oct 22, 8:40 AM", createdAt: 6, updatedAt: 9, routineRunId: "run-quiet", unread: false },
+    { threadId: "execution", title: "Acme invoices without PO · Oct 22, 8:40 AM", createdAt: 6, updatedAt: 9, routineRunId: "run-quiet", unread: false },
   ],
 } as unknown as Bot;
 
@@ -64,7 +64,7 @@ describe("a routine results thread with threads hidden", () => {
     id: "katarina", name: "Katarina", threadId: "chat",
     tasks: [
       { threadId: "chat", title: "Katarina", createdAt: 1, updatedAt: 5 },
-      { threadId: "results", title: "[ConnectWise Finance] Carnot without PO · Results", createdAt: 7, updatedAt: 9, unread: true, routineResults: true },
+      { threadId: "results", title: "[Finance] Acme invoices without PO · Results", createdAt: 7, updatedAt: 9, unread: true, routineResults: true },
     ],
   } as unknown as Bot;
 

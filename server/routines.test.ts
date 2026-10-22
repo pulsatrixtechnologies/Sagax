@@ -4022,7 +4022,7 @@ describe("background runs: nothing to report (JC 2026-10-22)", () => {
   const at = new Date(2026, 7, 17, 8, 1).getTime();
   const runOnce = async (output: string, prompt = "Check the invoices") => {
     const h = harness();
-    const routine = h.manager.create({ name: "Carnot without PO", prompt, botId: "maus-1", schedule: { type: "once", at } });
+    const routine = h.manager.create({ name: "Acme invoices without PO", prompt, botId: "maus-1", schedule: { type: "once", at } });
     h.setNow(routine.nextRunAt!);
     await h.manager.tick();
     const base = { eventId: "e", provider: "fake", threadId: "thread-1", createdAt: new Date(at).toISOString() };
@@ -4039,13 +4039,13 @@ describe("background runs: nothing to report (JC 2026-10-22)", () => {
     expect(h.changed.at(-1)).toMatchObject({ status: "completed", quiet: true });
   });
 
-  it("the Carnot run with the marker completes quiet; a bare multi-sentence no-op posts", async () => {
-    const carnot = "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.";
-    const withMarker = await runOnce(`${carnot}\n\nNOTHING_TO_REPORT`);
-    expect(withMarker.run).toMatchObject({ status: "completed", quiet: true, output: carnot });
+  it("the Acme run with the marker completes quiet; a bare multi-sentence no-op posts", async () => {
+    const acme = "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.";
+    const withMarker = await runOnce(`${acme}\n\nNOTHING_TO_REPORT`);
+    expect(withMarker.run).toMatchObject({ status: "completed", quiet: true, output: acme });
     // Without the marker, a whole message that is not a pure no-op is NOT
     // auto-silenced (JC review 2026-10-22): the marker is the real mechanism.
-    const bare = await runOnce(carnot);
+    const bare = await runOnce(acme);
     expect(bare.run.status).toBe("completed");
     expect(bare.run.quiet).toBeUndefined();
   });
