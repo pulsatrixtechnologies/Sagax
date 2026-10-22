@@ -50,7 +50,7 @@ public enum AttachmentPolicyError: Error, LocalizedError, Equatable, Sendable {
         case let .unsupportedType(name):
             return "\(name) isn't a supported file. Try PDF, text, Word, Excel, or PowerPoint."
         case let .itemTooLarge(name, limitMB):
-            return "\(name) is larger than \(limitMB) MB."
+            return String(localized: "\(name) is larger than \(limitMB) MB.")
         }
     }
 }

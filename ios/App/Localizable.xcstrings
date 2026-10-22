@@ -72116,6 +72116,20 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Cycle terminé" } },
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Ciclo concluído" } }
       }
+    },
+    "%@ is larger than %lld MB.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ is larger than %lld MB." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ dépasse %lld Mo." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%@ é maior que %lld MB." } }
+      }
+    },
+    "Choose a PNG, JPEG, GIF, or WebP image up to %lld MB.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a PNG, JPEG, GIF, or WebP image up to %lld MB." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez une image PNG, JPEG, GIF ou WebP d'au plus %lld Mo." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolha uma imagem PNG, JPEG, GIF ou WebP de até %lld MB." } }
+      }
     }
   },
   "version": "1.0"
