@@ -962,6 +962,10 @@ import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions
 import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
+import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
+import { BOT_MAIL_ASSERTION_ACTORS, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
+import { isRelaySource } from "../shared/trigger-sources.ts";
+import { BotMailAddresses } from "./bot-mail-addresses.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
 import { createBotZipRoutes } from "./routes/bot-zip.ts";
@@ -1126,7 +1130,7 @@ import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTER
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
-import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
+import { createOrgMemberRoutes, ORG_MEMBER_ASSERTION_ACTORS, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
 import { createOrgLinkRoutes, DirectoryRefreshScheduler } from "./org-link-routes.ts";
 import { internalAgentApiTool } from "./routes/agent-api-internal.ts";
 import { isInternalVoiceCallEnd } from "./routes/voice-call-internal.ts";
@@ -27568,6 +27572,54 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
+// 2026-10-21 (B21 / iOS CO5): the bots' own email addresses, from the
+// Perspicax relay (server/bot-mail-addresses.ts, contract B), and the
+// delivery route (server/bot-inbound-mail.ts, contract A, wired before the
+// session gate with the member API).
+const botMailAddresses = new BotMailAddresses({
+  link: () => (IDENTITY.kind === "perspicax" ? perspicaxDirectory : null),
+  bots: () => store.bots.map((bot) => ({ id: bot.id, name: bot.name, ownerSub: botMailOwner(bot.id)?.sub ?? null })),
+});
+function botMailOwner(botId: string): { principalId: string; sub: string | null; active: boolean } | null {
+  const bot = store.bot(botId);
+  if (!bot || IDENTITY.kind !== "perspicax") return null;
+  const principalId = effectiveBotOwner(bot);
+  const person = principalId ? principals.byId(principalId) : null;
+  if (!person) return null;
+  const sub = person.subject && person.subject.iss === IDENTITY.issuer ? person.subject.sub : null;
+  const listed = perspicaxDirectory?.directory();
+  const entry = sub ? listed?.people.find((candidate) => candidate.sub === sub) : undefined;
+  const listedActive = listed ? Boolean(entry && entry.status === "active" && entry.kind !== "service" && entry.type !== "service") : true;
+  return { principalId: person.id, sub, active: listedActive && person.disabledAt === undefined && !person.consoleDisabled };
+}
+ROUTES.push(createBotInboundMailReadRoutes({
+  bot: (id) => store.bot(id),
+  organization: () => IDENTITY.kind === "perspicax" && Boolean(perspicaxDirectory),
+  address: (botId) => botMailAddresses.forBot(botId),
+}));
+const inboundMail = createBotInboundMailRoute({
+  identity: () => IDENTITY.kind,
+  publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
+  linkServerId: () => perspicaxDirectory?.serverId() ?? null,
+  verify: (token, audience, serverId) => {
+    if (!oidcRp) throw new Error("This server has no identity provider configured.");
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId, BOT_MAIL_ASSERTION_ACTORS);
+  },
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot ? { id: bot.id, name: bot.name } : null;
+  },
+  owner: (id) => botMailOwner(id),
+  triggers: (botId) => webhooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "botmail").map((hook) => hook.id),
+  ingest: (id, event, key) => webhooks.ingest(id, event, key),
+  record: (row) => appendAdminAction(DATA_DIR, {
+    category: "webhook",
+    action: "bot-mail.delivered",
+    target: { kind: "bot", id: row.botId, name: row.botName },
+    after: { triggers: row.triggers, delivered: row.delivered, duplicate: row.duplicate, ignored: row.ignored, senderDomain: row.senderDomain },
+    actor: { kind: "person", principalId: row.ownerPrincipalId, via: "perspicax-mail" },
+  }),
+});
 // A shared Grok Bot's public card (port of OpenMausBot #3073).
 ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
@@ -35913,7 +35965,7 @@ const orgMember = createOrgMemberRoutes({
   linkServerId: () => perspicaxDirectory?.serverId() ?? null,
   verify: (token, audience, serverId) => {
     if (!oidcRp) throw new Error("This server has no identity provider configured.");
-    return oidcRp.verifyConsoleAssertion(token, audience, serverId, ["console", "perspicax-mcp"]);
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId, ORG_MEMBER_ASSERTION_ACTORS);
   },
   personFor: (iss, sub) => {
     const person = principals.bySubject(iss, sub);
@@ -36207,6 +36259,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (await orgAdmin(req, res, url)) return;
     // 2026-10-09: the member API, same credential rule: an assertion only.
     if (await orgMember(req, res, url)) return;
+    // 2026-10-21: bot inbound mail from the Perspicax relay, same rule.
+    if (await inboundMail(req, res, url)) return;
     // 2026-10-11: Perspicax's link routes, the link token only.
     if (await orgLink(req, res, url)) return;
     // 2026-10-16: a security key ceremony, its own id only (server/routes/security-keys.ts).
@@ -40694,6 +40748,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A typed trigger is reached by its provider's signature on its source
       // path: no bearer command to hand out, only the setup (shown once).
       if (created.webhook.source) {
+        // Bot email (2026-10-21) has no endpoint and no secret: no setup to hand out.
+        if (isRelaySource(created.webhook.source.type)) return json(res, 201, { webhook: created.webhook, ingress });
         return json(res, 201, { webhook: created.webhook, ingress, sourceSetup: triggerSourceSetup(ingress.baseUrl, created.webhook.endpointId, created.signingSecret) });
       }
       return json(res, 201, {

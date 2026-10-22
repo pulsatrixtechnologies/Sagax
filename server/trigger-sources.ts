@@ -174,6 +174,9 @@ export function verifySource(
   secret: string,
   config?: Pick<TriggerSourceConfig, "tenantId">,
 ): VerifyResult {
+  // Bot email has no endpoint: it arrives only through the Perspicax relay's
+  // own route (server/bot-inbound-mail.ts), whatever is presented here.
+  if (TRIGGER_SOURCES[type].secretMode === "relay") return { ok: false, reason: "Bot email arrives only through the Perspicax relay" };
   if (!secret) return { ok: false, reason: "No signing secret is set for this trigger" };
   const { headers, rawBody, now } = request;
   const windowSeconds = TRIGGER_SOURCES[type].replayWindowSeconds ?? 300;
@@ -246,6 +249,8 @@ export function verifySource(
       if (!withinWindow(sentAt / 1000, now, windowSeconds)) return { ok: false, reason: "Timestamp outside the replay window", replay: true };
       return { ok: true };
     }
+    case "botmail":
+      return { ok: false, reason: "Bot email arrives only through the Perspicax relay" };
   }
 }
 
@@ -575,6 +580,7 @@ export function normalizeSource(type: TriggerSourceType, request: SourceRequest)
     case "sentry": return sentryEvents(request, payload);
     case "pagerduty": return pagerdutyEvents(request, payload);
     case "linear": return linearEvents(request, payload);
+    case "botmail": return { ignored: "Bot email arrives only through the Perspicax relay" };
   }
 }
 
@@ -600,6 +606,7 @@ export function matchSourceFilters(config: TriggerSourceConfig, normalized: Norm
     return { match: false, reason: "Comment posted by a GitHub app or bot: this trigger leaves those out" };
   }
   const deferrable = new Set(TRIGGER_SOURCES[config.type].deferredFilters ?? []);
+  const contains = new Set(TRIGGER_SOURCES[config.type].containsFilters ?? []);
   const deferred: Array<{ key: TriggerFilterKey; values: string[] }> = [];
   for (const [rawKey, rawValues] of Object.entries(config.filters)) {
     const key = rawKey as TriggerFilterKey;
@@ -623,7 +630,10 @@ export function matchSourceFilters(config: TriggerSourceConfig, normalized: Norm
       return { match: false, reason: `Filter “${key}” has nothing to match in this event` };
     }
     const candidates = Array.isArray(field) ? field : [field];
-    if (!values.some((pattern) => candidates.some((candidate) => globMatches(pattern, candidate)))) {
+    const matches = contains.has(key)
+      ? (pattern: string, candidate: string) => candidate.toLowerCase().includes(pattern.toLowerCase())
+      : globMatches;
+    if (!values.some((pattern) => candidates.some((candidate) => matches(pattern, candidate)))) {
       return { match: false, reason: `Filter “${key}” did not match` };
     }
   }
@@ -662,7 +672,7 @@ export function sampleSourceEvent(config: TriggerSourceConfig): NormalizedTrigge
   const fields: NormalizedTriggerEvent["fields"] = {};
   for (const key of definition.filters) {
     if (key === "keyword") continue;
-    const value = pick(key) ?? SAMPLE_FIELDS[key];
+    const value = pick(key) ?? (config.type === "botmail" && key === "sender" ? "someone@example.com" : SAMPLE_FIELDS[key]);
     if (value) fields[key as Exclude<TriggerFilterKey, "keyword">] = value;
   }
   const keyword = pick("keyword");

@@ -36,6 +36,8 @@ const { WidgetBody } = await import("@/components/widget/WidgetBody");
 const { netCheckWidget } = await import("../../shared/net-tools/widget");
 const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
 const { RoutineChangeLine } = await import("@/components/RoutineToggleLine");
+const { BotEmailAddressCard } = await import("@/components/bot-settings/BotEmailAddress");
+const { BotMailAddressLine } = await import("@/components/TypedTriggers");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -193,6 +195,16 @@ describe("no UUID on screen", () => {
       expect(text).toContain("Explain");
       expectNoUuid(String(root.title));
       expectNoUuid(String(root.caption));
+    }
+  });
+
+  it("the bot email address row and the trigger's address line show the address, never the bot's id (B21)", () => {
+    const mail = { available: true, address: "cryptic@bots.example.org", enabled: false };
+    for (const element of [createElement(BotEmailAddressCard, { mail }), createElement(BotMailAddressLine, { mail })]) {
+      const text = visibleText(element);
+      expectNoUuid(text);
+      expect(text).toContain("cryptic@bots.example.org");
+      expect(text).not.toContain(BOT_ID);
     }
   });
 

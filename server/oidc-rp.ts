@@ -510,14 +510,18 @@ export interface ConsoleAssertion {
    * the readable reasons of the admin API follow it. */
   locale?: string;
   /** Who presents it for the person (`act.sub`): `console` (the Perspicax
-   * console) or `perspicax-mcp` (an AI client attached to Perspicax, the
-   * member API of 2026-10-09). */
+   * console), `perspicax-mcp` (an AI client attached to Perspicax, the
+   * member API of 2026-10-09) or `perspicax-mail` (the mail relay delivering
+   * a mail to one of the person's bots, 2026-10-21). */
   actor: ConsoleAssertionActor;
 }
 
 /** The actors a console assertion may name. The admin API accepts only the
- * console; the member API (server/org-member-routes.ts) accepts both. */
-export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp"] as const;
+ * console; the member API (server/org-member-routes.ts) accepts the console
+ * and `perspicax-mcp`; `perspicax-mail` (the Perspicax mail relay,
+ * 2026-10-21) is accepted by `POST /api/org/inbound-mail` alone
+ * (server/bot-inbound-mail.ts). */
+export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp", "perspicax-mail"] as const;
 export type ConsoleAssertionActor = typeof CONSOLE_ASSERTION_ACTORS[number];
 
 export interface VerifyConsoleAssertionInput extends JwsCheck {

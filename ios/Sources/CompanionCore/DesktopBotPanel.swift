@@ -404,6 +404,8 @@ public enum WebhookPublicURL {
         case "sentry": "Sentry"
         case "pagerduty": "PagerDuty"
         case "linear": "Linear"
+        // not a brand: the app translates it (Localizable "Bot email")
+        case "botmail": "Bot email"
         default: type
         }
     }

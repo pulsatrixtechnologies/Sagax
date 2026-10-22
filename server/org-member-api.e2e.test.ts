@@ -552,4 +552,52 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect(rows.find((row) => row.action === "agents.delete_agent" && row.after?.outcome === "ok")).toMatchObject({ target: { kind: "bot", id }, actor: { kind: "person", name: "Alice" } });
     expect(rows.some((row) => row.action === "agents.temporary.pinned")).toBe(true);
   }, 90_000);
+
+  it("M10: bot email (2026-10-21): only the inbound mail route takes perspicax-mail; owner checked; a botmail trigger wakes a run once", async () => {
+    const mailAssertion = (user: FakeOidcUser, actor = "perspicax-mail") => ({
+      bearer: idp.consoleAssertion({ sub: user.sub, aud: BASE, role: "employee", teams: [], claims: (c) => ({ ...c, act: { sub: actor } }) }),
+    });
+    const mail = (botId: string, messageId = "<m10@mail.example.com>") => ({
+      version: 1, botId, messageId, receivedAt: new Date().toISOString(),
+      from: { address: "ana@example.com", name: "Ana" }, to: "atlas@bots.example.org",
+      subject: "Facture M10", text: "Corps secret M10", truncated: false,
+      auth: { spf: "pass", dkim: "pass", verified: true }, attachments: [],
+    });
+    // the member and admin APIs refuse the mail relay's actor
+    expect((await member("GET", "bots", ALICE, undefined, "perspicax-mail")).body.code).toBe("assertion_invalid");
+    expect((await api("GET", "/api/org/admin/capabilities", mailAssertion(ALICE))).status).toBe(401);
+    // the inbound route refuses every other actor
+    const mcp = await api("POST", "/api/org/inbound-mail", mailAssertion(ALICE, "perspicax-mcp"), mail(bots.atlas!.id));
+    expect(mcp.status).toBe(401);
+    expect(mcp.headers.get("x-sagax-mail-api")).toBe("1");
+    // Bob's bot is not Alice's
+    expect((await api("POST", "/api/org/inbound-mail", mailAssertion(ALICE), mail(bots.orion!.id))).body).toEqual({ error: "not_owner" });
+    expect((await api("POST", "/api/org/inbound-mail", mailAssertion(ALICE), mail("bot_nobody"))).body).toEqual({ error: "no_bot" });
+    const none = await api("POST", "/api/org/inbound-mail", mailAssertion(ALICE), mail(bots.atlas!.id));
+    expect(none.status, none.text).toBe(202);
+    expect(none.body).toEqual({ triggers: 0, delivered: 0, duplicate: 0, ignored: 0, reason: "no_trigger" });
+    // a botmail trigger: no secret, no setup
+    const created = await api("POST", "/api/webhooks", alice, { name: "Mail", prompt: "Lis le courriel.", botId: bots.atlas!.id, enabled: true, source: { type: "botmail", events: [], filters: { subject: ["facture"] } } });
+    expect(created.status, created.text).toBe(201);
+    expect(created.body.sourceSetup).toBeUndefined();
+    expect(created.body.webhook.signingSecretSet).toBeUndefined();
+    const delivered = await api("POST", "/api/org/inbound-mail", mailAssertion(ALICE), mail(bots.atlas!.id, "<m10-b@mail.example.com>"));
+    expect(delivered.body).toEqual({ triggers: 1, delivered: 1, duplicate: 0, ignored: 0 });
+    const again = await api("POST", "/api/org/inbound-mail", mailAssertion(ALICE), mail(bots.atlas!.id, "<m10-b@mail.example.com>"));
+    expect(again.body).toEqual({ triggers: 1, delivered: 0, duplicate: 1, ignored: 0 });
+    // the profile row: this fake Perspicax has no address route (an older one): nothing to show
+    const address = await api("GET", `/api/bots/${bots.atlas!.id}/inbound-mail`, alice);
+    expect(address.status, address.text).toBe(200);
+    expect(address.body).toEqual({ available: false, address: null, enabled: false });
+    // one metadata-only audit row per delivery
+    // written in the background, like every audit row
+    const rows = await waitFor(async () => {
+      const audit = await api("GET", "/api/org/admin/audit?category=webhook", { bearer: idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin" }) });
+      const found = ((audit.body.rows ?? []) as Array<any>).filter((row) => row.action === "bot-mail.delivered");
+      return found.length >= 3 ? found : null;
+    }, 10_000);
+    expect(rows[0]).toMatchObject({ target: { kind: "bot", id: bots.atlas!.id }, actor: { kind: "person", via: "perspicax-mail" } });
+    expect(JSON.stringify(rows)).not.toMatch(/Facture M10|Corps secret|ana@/);
+    expect(log).not.toMatch(/Corps secret M10/);
+  }, 60_000);
 });

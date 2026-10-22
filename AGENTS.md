@@ -765,6 +765,78 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
   connector account. The imported copy is off and its import warnings say
   what it still needs (a provided secret, a password or link).
 
+## Bot email address: Perspicax relay (2026-10-21)
+
+JC decision 2026-10-21 (B21, iOS CO5): option 1 of the #943 design note.
+Each bot of an organization server has its own address,
+`<name>@<inbound domain>`, given and received by Perspicax (the domain, the
+inbound provider, MX and the safety rules live there). Mail only wakes a
+routine. Wire contract v1 (Perspicax <-> Sagax). Rules, none optional,
+covered by `server/bot-inbound-mail.test.ts`,
+`server/bot-mail-addresses.test.ts`, `server/routes/bot-inbound-mail.test.ts`,
+`server/oidc-rp.test.ts`, `server/org-member-api.e2e.test.ts` (M10),
+`src/components/bot-settings/BotEmailAddress.test.ts`,
+`src/components/TypedTriggers.test.ts` and iOS `BotInboundMailTests`:
+
+- Delivery: `POST /api/org/inbound-mail` (`server/bot-inbound-mail.ts`),
+  answered before the session gate and loopback trust, next to the member
+  API. The only credential is a console assertion (typ
+  `pulsabot-console+jwt`, at most 120 s, single-use `jti`, `aud` this
+  server's public origin, `server_id` when linked) whose `act.sub` is
+  `perspicax-mail`. That actor is accepted HERE ONLY: the admin API
+  (console only) and the member API (`ORG_MEMBER_ASSERTION_ACTORS`) refuse
+  it. Order: 401 `unauthorized` (assertion, replay, solo server), 400
+  `invalid` (body not the contract's, over 256 KiB), 404 `no_bot`, 403
+  `not_owner` (assertion `sub` is not the owner's Perspicax user id, or the
+  bot has no Perspicax owner), 403 `owner_inactive`. Every answer carries
+  `X-Sagax-Mail-Api: 1`.
+- Then every ENABLED typed trigger of source `botmail` on that bot goes
+  through `WebhookManager.ingest(id, event, messageId)`: filters, dedupe on
+  the Message-ID, the per-trigger rate, the unfinished-runs cap and the
+  fence are the typed triggers' own. 202 `{triggers, delivered, duplicate,
+  ignored, reason?: "no_trigger"}`; 429 `rate_limited` only when every
+  trigger refused on its rate. A paused bot's triggers (`disableForBot`)
+  receive nothing.
+- Source `botmail` (`shared/trigger-sources.ts`, label "Bot email", fr
+  "Courriel du bot"; the Outlook `email` source is a different thing):
+  `secretMode: "relay"`, no secret and no endpoint. Create and PATCH refuse
+  a signing secret, rotate refuses, `/sources/<endpointId>` always answers
+  401 for it, the create answer has no `sourceSetup`. Filters: `sender`
+  exact or `*` glob, `subject` CONTAINS (case-insensitive,
+  `containsFilters`), `keyword` over subject and text.
+- The mail is untrusted data: the run prompt is the owner's instructions,
+  then `[BOT EMAIL RULES]` (the sender is not the owner, the email is not a
+  request from the owner, answer only through a mail connector's send tool
+  and its approval card, #943; SPF and DKIM as Perspicax reported them;
+  attachments listed, never attached), then the mail inside
+  `[UNTRUSTED BOTMAIL EVENT DATA <boundary>]`, markers defanged. Never
+  instructions, never a widened permission. Sagax never sends mail for a
+  bot from this path; Perspicax never does either (no open relay).
+- No message text in a log, an audit row or the trigger's event log
+  (`webhooks.json`): the event log row says "Email from <domain>", and one
+  admin activity row per accepted delivery, category `webhook`, action
+  `bot-mail.delivered`, actor the owner `via: "perspicax-mail"`, metadata
+  only (bot, trigger counts, sender domain). Confidential threads are not
+  touched: a mail starts a routine run in its own thread.
+- Addresses: `server/bot-mail-addresses.ts` asks Perspicax
+  (`POST /api/v1/pulsabot/inbound-mail/addresses`, link token) for every bot
+  with a Perspicax owner in ONE call (at most 500), keeps the answer 5
+  minutes, asks again at once for a bot the cached answer did not cover.
+  A 404 (older Perspicax), any refusal, a timeout, a wrong shape or inbound
+  mail off: `available: false`. Never logs the token or a body.
+- App: `GET /api/bots/:id/inbound-mail` (client-scoped, the bot visibility
+  check applies) answers `{available, address, enabled}`. Desktop: an
+  "Adresse courriel" group at the top of the bot's Overview with a Copy
+  button, the rule line and "Désactivée par l'administrateur" when
+  `enabled` is false; nothing at all when not available
+  (`BotEmailAddress.tsx`). Trigger editor: "Courriel du bot" shows the
+  bot's address where other sources show a URL, and no secret. iOS (CO5):
+  the same card in the bot panel (`BotPanelPhone.swift` `emailCard`). The
+  address is not an id; it may be shown and copied.
+- Perspicax side (domain, provider, MX, loops, size caps, allowlist,
+  rename) is the Perspicax PR; the steps JC does outside code are listed
+  there.
+
 ## Confidential threads: kept to their owner (2026-10-16)
 
 JC: a « Fil confidentiel » is a 1:1 bot thread nothing of which is

@@ -3,7 +3,9 @@
 // HTTP. Every refusal the spec lists (T10) is proven by bending one thing.
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
-import { ACCOUNT_PURGED_EVENT, accessExpiresIn, avatarVersionFromPicture, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
+import { BOT_MAIL_ASSERTION_ACTORS } from "./bot-inbound-mail.ts";
+import { ORG_MEMBER_ASSERTION_ACTORS } from "./org-member-routes.ts";
+import { ACCOUNT_PURGED_EVENT, CONSOLE_ASSERTION_ACTORS, accessExpiresIn, avatarVersionFromPicture, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
 
 const REDIRECT = "http://127.0.0.1:9/auth/oidc/callback";
@@ -459,6 +461,22 @@ describe("OIDC relying party: console assertions (slice 7)", () => {
     // the member API: both
     await expect(party.verifyConsoleAssertion(mcp(), ORIGIN, null, ["console", "perspicax-mcp"])).resolves.toMatchObject({ sub, actor: "perspicax-mcp" });
     await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "someone" } }) }), ORIGIN, null, ["console", "perspicax-mcp"])).rejects.toMatchObject({ code: "console_assertion_act" });
+  });
+
+  it("perspicax-mail (bot inbound mail, 2026-10-21) passes only on the inbound mail route, never the admin or member API", async () => {
+    const party = rp();
+    const mail = () => assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mail" } }) });
+    expect(CONSOLE_ASSERTION_ACTORS).toContain("perspicax-mail");
+    // the admin API (no actors given): refused
+    await expect(party.verifyConsoleAssertion(mail(), ORIGIN)).rejects.toMatchObject({ code: "console_assertion_act" });
+    // the member API's actors: refused
+    expect(ORG_MEMBER_ASSERTION_ACTORS).not.toContain("perspicax-mail");
+    await expect(party.verifyConsoleAssertion(mail(), ORIGIN, null, ORG_MEMBER_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
+    // the inbound mail route: this actor alone
+    expect(BOT_MAIL_ASSERTION_ACTORS).toEqual(["perspicax-mail"]);
+    await expect(party.verifyConsoleAssertion(mail(), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).resolves.toMatchObject({ sub, actor: "perspicax-mail" });
+    await expect(party.verifyConsoleAssertion(assertion(), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
+    await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mcp" } }) }), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
   });
 
   it.each([
