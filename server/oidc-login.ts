@@ -85,8 +85,8 @@ export interface IdentityDescriptor {
   issuer: string;
   /** Same-origin path that starts the sign-in. */
   loginPath: string;
-  /** The start path takes `?client=desktop|phone` and ends on an
-   * a sagax:// link (slice 2), so native apps may use the system browser. */
+  /** The start path takes `?client=desktop|phone` and ends on a
+   * sagax:// link (slice 2), so native apps may use the system browser. */
   nativeReturn: true;
   /** The desktop start also takes `&return=<loopback URL>` and ends there
    * (validLoopbackReturn), so the app that started the sign-in gets it back
@@ -96,7 +96,8 @@ export interface IdentityDescriptor {
    * desktop start naming `return=<sagaxReturnLink>`. */
   nativeReturnSchemes: readonly ["sagax"];
   /** Schemes a phone start may name with `&return=`: `sagax` ends on
-   * sagax://pair (success and refusal alike); none keeps sagax://pair. */
+   * sagax://pair (success and refusal alike), and a start without it ends
+   * there too. */
   phoneReturnSchemes: readonly ["sagax"];
 }
 
@@ -320,7 +321,7 @@ export function sagaxReturnLink(publicOrigin: string): string {
 
 /** The link the desktop app receives from the system browser: its loopback
  * listener or sagax:// return when the sign-in named one, else
- * sagax://auth all the same. The credential always rides in the fragment. */
+ * sagax://auth. The credential always rides in the fragment. */
 export function desktopReturnLink(publicOrigin: string, outcome: { code: string } | { error: string }, returnTo?: string): string {
   const fragment = "code" in outcome ? `#code=${outcome.code}` : `#error=${encodeURIComponent(outcome.error)}`;
   if (returnTo) return `${returnTo}${fragment}`;

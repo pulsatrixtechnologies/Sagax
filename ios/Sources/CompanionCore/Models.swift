@@ -2346,8 +2346,8 @@ public struct ServerIdentity: Codable, Hashable, Sendable {
     public var loginPath: String?
     /// The server ends a native sign-in on a `sagax://` link.
     public var nativeReturn: Bool?
-    /// Schemes a phone start may name with `&return=` (`sagax`). Every
-    /// server ends the phone's sign-in on `sagax://pair`.
+    /// Schemes a phone start may name with `&return=` (`sagax`). A server
+    /// from this release on ends the phone's sign-in on `sagax://pair`.
     public var phoneReturnSchemes: [String]? = nil
 
     public init(kind: String, protocol: String? = nil, issuer: String? = nil, loginPath: String? = nil, nativeReturn: Bool? = nil, phoneReturnSchemes: [String]? = nil) {
@@ -2369,8 +2369,8 @@ public enum PulsatrixSignIn {
     /// sign-in ends on.
     public static let callbackScheme = CompanionURLScheme.name
 
-    /// The scheme to ask the server for: always `sagax`. A server that does
-    /// not list the phone return ends on `sagax://pair` all the same.
+    /// The scheme to ask the server for: always `sagax`. An older server
+    /// that ends on the previous scheme cannot complete this sign-in.
     public static func returnScheme(for identity: ServerIdentity?) -> String {
         callbackScheme
     }

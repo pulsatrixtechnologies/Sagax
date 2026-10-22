@@ -114,7 +114,7 @@ const PROTECT = [
   // compatibility kept on purpose (AGENTS.md, "Legacy names kept for
   // compatibility"): both data folder names, the lease files old and new
   // copies share, the runtime name that names the keychain secret, the
-  // health word. The URL scheme is sagax:// alone and is renamed.
+  // health word. The URL scheme is not protected: it becomes sagax://.
   re(`sagax\\|${OLD}`),
   re(`${OLD}-server\\.lease`),
   re(`\\.${OLD}-server-child`),
