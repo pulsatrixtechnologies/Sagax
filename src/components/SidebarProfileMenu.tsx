@@ -627,7 +627,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
           data-sidebar-account-pill=""
           data-menu-opened={open || undefined}
           className={cn(
-            "flex h-9 w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1.5 text-left transition-colors [button:focus-visible>&]:ring-2 [button:focus-visible>&]:ring-focus",
+            "flex h-9 w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1.5 text-left transition-colors [button:focus-visible:not([data-pointer-focus])>&]:ring-2 [button:focus-visible:not([data-pointer-focus])>&]:ring-focus",
             open ? "bg-sidebar-elevated-hover ring-2 ring-accent/60" : "hover:bg-sidebar-elevated-hover",
           )}
         >

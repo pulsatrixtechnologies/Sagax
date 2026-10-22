@@ -1926,6 +1926,18 @@ body {
   outline: none;
 }
 
+/* The footer buttons (the account menu, Connect apps) follow the same rule:
+   a click leaves them focused, and the next key would draw the ring. Tab
+   clears the mark and draws it. The account button's own pill carries the
+   ring, so the square outline around it is always off. */
+[data-pointer-focus]:focus-visible,
+button[aria-haspopup="menu"]:has(> [data-sidebar-account-pill]):focus-visible {
+  outline: none;
+}
+[data-sidebar-connect-apps][data-pointer-focus]:focus-visible {
+  box-shadow: none;
+}
+
 /* A question card takes focus only so A, B, C answer it once clicked
    (src/components/QuestionSheet.tsx); its rows keep their own ring. */
 [data-question-sheet]:focus-visible {
