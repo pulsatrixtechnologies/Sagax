@@ -42,6 +42,7 @@ import {
   markMemoryReviewed,
 } from "@/lib/memory";
 import { canEditBotField } from "@/lib/bot-capabilities";
+import { teamMemorySharingOf } from "../../../shared/team-memory-sharing";
 import { ApiError, useStore, type Bot } from "@/state/store";
 import { HelpTip, PILL, PillSelect, SettingRow, SwitchRow } from "../SettingsPrimitives";
 import { AdvancedFold } from "./AdvancedFold";
@@ -473,7 +474,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
     <div className="flex flex-col gap-5">
       <MemoryToggleCard enabled={bot.memoryEnabled !== false} busy={Boolean(bot.busy)} onToggle={onToggle} />
       <TeamMemorySharingCard
-        value={bot.teamMemorySharing === "private" ? "private" : "shared"}
+        value={teamMemorySharingOf(bot)}
         disabled={!canEditBotField(state.config, bot, "teamMemorySharing")}
         onChange={(next) => dispatch({ type: "updateBot", botId: bot.id, patch: { teamMemorySharing: next } })}
       />

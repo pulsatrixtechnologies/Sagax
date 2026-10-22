@@ -13,14 +13,28 @@
 //   the card's section gets the card;
 // - "private": only the members who already see this bot and the card's
 //   conversation or channel.
+//
+// Only "private" is ever stored; absent is the default ("shared"). A value
+// that is present but unknown (a hand edit, a future option read by an older
+// server) fails closed and reads as "private": a privacy control never widens
+// by accident.
 
 export type TeamMemorySharing = "shared" | "private";
 
 export const TEAM_MEMORY_SHARING_VALUES: readonly TeamMemorySharing[] = ["shared", "private"];
 
-/** A bot's setting; absent or unknown reads as "shared". */
+/** A bot's setting: absent (or exactly "shared") reads as "shared"; any
+ * other present value, "private" included, reads as "private". */
 export function teamMemorySharingOf(bot: { teamMemorySharing?: unknown } | null | undefined): TeamMemorySharing {
-  return bot?.teamMemorySharing === "private" ? "private" : "shared";
+  const value = bot?.teamMemorySharing;
+  return value === undefined || value === "shared" ? "shared" : "private";
+}
+
+/** The stored form of a bot's setting: "private" or nothing (the default).
+ * Export, import and duplication write this, so a corrupted value can never
+ * break them and never widens who gets the cards. */
+export function storedTeamMemorySharing(bot: { teamMemorySharing?: unknown } | null | undefined): "private" | undefined {
+  return teamMemorySharingOf(bot) === "private" ? "private" : undefined;
 }
 
 export function isTeamMemorySharing(value: unknown): value is TeamMemorySharing {

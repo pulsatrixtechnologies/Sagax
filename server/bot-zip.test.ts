@@ -323,6 +323,75 @@ describe("bot zip: no sign-in or key file (JC 2026-10-18 « Exclure tout »)", (
   });
 });
 
+describe("bot zip: team memory sharing", () => {
+  const OWNER = "pr_00000000-0000-4000-8000-000000000001";
+  /** Export, then import as an admin or a member; the copy. */
+  const roundTrip = async (fx: ReturnType<typeof fixture>, botId: string, asMember: boolean, edit?: (document: any) => void) => {
+    const plan = planBotZip(fx.host, botId, { conversations: false, sharing: false });
+    const record = plan.files.find((entry) => entry.name === "bot.json")!;
+    const document = JSON.parse(String(record.data));
+    if (edit) {
+      edit(document);
+      record.data = `${JSON.stringify(document, null, 2)}\n`;
+      record.size = Buffer.byteLength(String(record.data));
+    }
+    const chunks: Buffer[] = [];
+    await writeBotZip(plan, (chunk) => { chunks.push(chunk); });
+    const file = join(temp(), "copy.sagaxbot.zip");
+    writeFileSync(file, Buffer.concat(chunks));
+    const inspected = inspectBotZip(file);
+    try {
+      const result = await importBotZip(fx.host, inspected, { ownerPrincipalId: OWNER, asMember, conversations: false, sharing: false });
+      return { exported: document.settings as Record<string, unknown>, copy: fx.store.bot(result.botId)! };
+    } finally {
+      if (inspected.kind === "zip") inspected.reader.close();
+    }
+  };
+
+  it("an invalid stored value exports as private, and import and duplication succeed", async () => {
+    const fx = fixture({ organization: true });
+    const source = fx.store.createBot({ name: "Corrupt" }, { seedMessages: false });
+    // a hand edit or a future option: never written by the API
+    fx.store.patchBot(source.id, { teamMemorySharing: "everyone" } as unknown as Partial<BotRecord>);
+    for (const asMember of [false, true]) {
+      const { exported, copy } = await roundTrip(fx, source.id, asMember);
+      expect(exported.teamMemorySharing, `exported, asMember ${asMember}`).toBe("private");
+      expect(copy.teamMemorySharing, `imported, asMember ${asMember}`).toBe("private");
+      // a duplicate of the copy: export and import again
+      const again = await roundTrip(fx, copy.id, asMember);
+      expect(again.copy.teamMemorySharing, `duplicated, asMember ${asMember}`).toBe("private");
+    }
+  });
+
+  it("shared and absent leave no field; private stays private", async () => {
+    const fx = fixture();
+    const absent = fx.store.createBot({ name: "Absent" }, { seedMessages: false });
+    const shared = fx.store.createBot({ name: "Shared" }, { seedMessages: false });
+    fx.store.patchBot(shared.id, { teamMemorySharing: "shared" });
+    const kept = fx.store.createBot({ name: "Kept" }, { seedMessages: false });
+    fx.store.patchBot(kept.id, { teamMemorySharing: "private" });
+    for (const bot of [absent, shared]) {
+      const { exported, copy } = await roundTrip(fx, bot.id, false);
+      expect("teamMemorySharing" in exported, bot.name).toBe(false);
+      expect(copy.teamMemorySharing, bot.name).toBeUndefined();
+    }
+    const { exported, copy } = await roundTrip(fx, kept.id, true);
+    expect(exported.teamMemorySharing).toBe("private");
+    expect(copy.teamMemorySharing).toBe("private");
+  });
+
+  it("an archive that carries an unknown value still imports, as private", async () => {
+    const fx = fixture();
+    const source = fx.store.createBot({ name: "Older archive" }, { seedMessages: false });
+    for (const value of ["everyone", "", 7]) {
+      const { copy } = await roundTrip(fx, source.id, false, (document) => { document.settings = { ...document.settings, teamMemorySharing: value }; });
+      expect(copy.teamMemorySharing, JSON.stringify(value)).toBe("private");
+    }
+    const { copy } = await roundTrip(fx, source.id, false, (document) => { document.settings = { ...document.settings, teamMemorySharing: "shared" }; });
+    expect(copy.teamMemorySharing).toBeUndefined();
+  });
+});
+
 describe("bot zip import rules", () => {
   it("a member's copy drops computer, browser and host tools, and Full access arrives as Ask", async () => {
     const fx = fixture({ organization: true });

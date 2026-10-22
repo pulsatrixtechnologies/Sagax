@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf, type TeamMemoryCardDelivery } from "./team-memory-sharing.ts";
+import { isTeamMemorySharing, storedTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf, type TeamMemoryCardDelivery } from "./team-memory-sharing.ts";
 
 const teamCard = { teamMemoryRequest: { section: "Dispatch" } };
 const base = (over: Partial<TeamMemoryCardDelivery> = {}): TeamMemoryCardDelivery => ({
@@ -15,14 +15,31 @@ const base = (over: Partial<TeamMemoryCardDelivery> = {}): TeamMemoryCardDeliver
 });
 
 describe("teamMemorySharingOf", () => {
-  it("reads absent, unknown and shared as shared; only private is private", () => {
+  it("reads absent and shared as shared, private as private", () => {
     expect(teamMemorySharingOf(undefined)).toBe("shared");
+    expect(teamMemorySharingOf(null)).toBe("shared");
     expect(teamMemorySharingOf({})).toBe("shared");
-    expect(teamMemorySharingOf({ teamMemorySharing: "everyone" })).toBe("shared");
+    expect(teamMemorySharingOf({ teamMemorySharing: undefined })).toBe("shared");
     expect(teamMemorySharingOf({ teamMemorySharing: "shared" })).toBe("shared");
     expect(teamMemorySharingOf({ teamMemorySharing: "private" })).toBe("private");
     expect(isTeamMemorySharing("private")).toBe(true);
     expect(isTeamMemorySharing("nobody")).toBe(false);
+  });
+
+  it("fails closed: a present but unknown value reads as private", () => {
+    for (const value of ["everyone", "Private", "Shared", "", null, 0, 1, true, ["private"], { mode: "shared" }]) {
+      expect(teamMemorySharingOf({ teamMemorySharing: value }), JSON.stringify(value)).toBe("private");
+    }
+  });
+});
+
+describe("storedTeamMemorySharing", () => {
+  it("stores only private; the default and shared store nothing; unknown stores private", () => {
+    expect(storedTeamMemorySharing(undefined)).toBeUndefined();
+    expect(storedTeamMemorySharing({})).toBeUndefined();
+    expect(storedTeamMemorySharing({ teamMemorySharing: "shared" })).toBeUndefined();
+    expect(storedTeamMemorySharing({ teamMemorySharing: "private" })).toBe("private");
+    expect(storedTeamMemorySharing({ teamMemorySharing: "everyone" })).toBe("private");
   });
 });
 

@@ -32,6 +32,9 @@
 //      its thread or channel (owner and those members still get it)
 //  12. the bot's own memory never travels as a team-memory card, whatever
 //      the setting
+//  13. the team-memory page settling an entry (accept, edit, delete) closes
+//      its card everywhere, live; a late click on a settled card reads the
+//      real outcome (409), never a fresh "allowed"
 //
 // No new card, prompt or gate appears anywhere: the provider's own approval
 // is the card, and these only decide whose answer it accepts.
@@ -601,6 +604,67 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
       expect(JSON.stringify((await api("GET", "/api/team-memory?section=Dispatch%20Own", undefined, BOSS)).body)).not.toContain(note);
     }
   }, 90_000);
+
+  it("closes a team-memory card everywhere when the page settles its entry, and answers a late click with the real outcome", async () => {
+    const section = "Page Settle";
+    const q = `section=${encodeURIComponent(section)}`;
+    const bot = await makeTeamBot("Page settle", section, [ADA]);
+    await makeTeamBot("Page settle B", section, [BOB]);
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Ada's page thread" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    const inbox = async (as: string, requestId: string) => ((await api("GET", "/api/approvals", undefined, as)).body.pending ?? [])
+      .filter((item: any) => item.requestId === requestId);
+    const listed = (as: string, requestId: string) => waitFor(async () => { const rows = await inbox(as, requestId); return rows.length ? rows : null; }, 10_000);
+    const cardOf = async (requestId: string, as = BOSS) => ((await api("GET", `/api/threads/${threadId}/messages`, undefined, as)).body.messages ?? [])
+      .find((m: any) => m.card?.requestId === requestId)?.card;
+    const streams = { ada: openStream(ADA), bob: openStream(BOB), boss: openStream(BOSS) };
+    const patched = (stream: ReturnType<typeof openStream>, requestId: string, answered: string) => waitFor(async () =>
+      stream.frames.find((frame) => frame.kind === "message.patch" && frame.message?.card?.requestId === requestId && frame.message.card.answered === answered) ?? null, 5_000);
+    try {
+      await Promise.all(Object.values(streams).map((stream) => stream.ready()));
+      const cases = [
+        { name: "Page accepted", settle: (id: string) => api("PATCH", `/api/team-memory/${id}?${q}`, { accept: true }, BOSS), answered: "allow", outcome: "allowed-once", entry: "accepted", late: "deny" },
+        { name: "Page edited", settle: (id: string) => api("PATCH", `/api/team-memory/${id}?${q}`, { detail: "edited on the page" }, BOSS), answered: "allow", outcome: "allowed-once", entry: "accepted", late: "deny" },
+        { name: "Page deleted", settle: (id: string) => api("DELETE", `/api/team-memory/${id}?${q}`, undefined, BOSS), answered: "deny", outcome: "rejected", entry: undefined, late: "allow" },
+      ] as const;
+      for (const item of cases) {
+        const requestId = await proposeTeamMemory(bot, threadId, item.name);
+        // before: the owner, Ada (who uses this bot) and Bob (section member, shared) each list it
+        for (const as of [BOSS, ADA, BOB]) expect(await listed(as, requestId), `${item.name} ${as}`).toHaveLength(1);
+        const settled = await item.settle(requestId);
+        expect(settled.status, `${item.name}: ${JSON.stringify(settled.body)}`).toBe(200);
+        // the card is closed in the conversation, with who settled it
+        const card = await cardOf(requestId);
+        expect(card, item.name).toMatchObject({ answered: item.answered, answeredBy: { kind: "session", name: BOSS } });
+        expect(await cardOf(requestId, ADA), item.name).toMatchObject({ answered: item.answered });
+        // live: the people who see the conversation get the patch
+        expect(await patched(streams.boss, requestId, item.answered), `${item.name} boss frame`).not.toBeNull();
+        expect(await patched(streams.ada, requestId, item.answered), `${item.name} ada frame`).not.toBeNull();
+        // no inbox lists it any more
+        for (const as of [BOSS, ADA, BOB]) expect(await inbox(as, requestId), `${item.name} ${as} inbox`).toHaveLength(0);
+        // a late click reads the real outcome, and changes nothing
+        for (const path of [`/api/threads/${threadId}/respond`, `/api/bots/${bot.id}/respond`]) {
+          const late = await api("POST", path, { requestId, behavior: item.late, threadId }, ADA);
+          expect(late.status, `${item.name} ${path}: ${JSON.stringify(late.body)}`).toBe(409);
+          expect(late.body).toMatchObject({ code: "team_memory_settled", outcome: item.outcome, alreadySettled: true, settledBy: BOSS });
+          expect(late.body.error).toContain(item.outcome === "allowed-once" ? "already accepted" : "already declined or deleted");
+        }
+        expect((await teamEntry(section, item.name))?.status, item.name).toBe(item.entry);
+        expect(await cardOf(requestId), item.name).toMatchObject({ answered: item.answered, answeredBy: { name: BOSS } });
+      }
+
+      // settled on its card: a second click, by anyone, reads who did it
+      const onCard = await proposeTeamMemory(bot, threadId, "Card accepted");
+      expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: onCard, behavior: "allow" }, ADA)).status).toBe(200);
+      const second = await api("POST", `/api/threads/${threadId}/respond`, { requestId: onCard, behavior: "deny" }, BOSS);
+      expect(second.status, JSON.stringify(second.body)).toBe(409);
+      expect(second.body).toMatchObject({ code: "team_memory_settled", outcome: "allowed-once", settledBy: ADA });
+      expect((await teamEntry(section, "Card accepted"))?.status).toBe("accepted");
+    } finally {
+      for (const stream of Object.values(streams)) stream.close();
+    }
+  }, 120_000);
 
   it("lets a session-less local service answer no approval under service trust", async () => {
     const bot = await makeBot("Serviced");
