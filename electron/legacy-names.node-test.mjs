@@ -208,15 +208,15 @@ test("fetchEnvironmentDescriptor tries the new path, then the old one on a 404 o
 });
 
 test("sagax:// is this app's only scheme", () => {
-  const retired = "otherapp";
+  const otherScheme = "otherapp";
   assert.equal(isAppProtocol("sagax:"), true);
   assert.equal(isAppProtocol("SAGAX:"), true);
-  assert.equal(isAppProtocol(`${retired}:`), false);
+  assert.equal(isAppProtocol(`${otherScheme}:`), false);
   assert.equal(isAppProtocol("https:"), false);
   assert.equal(isAppLink("sagax://cloud", "cloud"), true);
   assert.equal(isAppLink("sagax://cloud/", "cloud"), true);
   assert.equal(isAppLink("Sagax://Cloud", "cloud"), true);
-  assert.equal(isAppLink(`${retired}://cloud`, "cloud"), false);
+  assert.equal(isAppLink(`${otherScheme}://cloud`, "cloud"), false);
   assert.equal(isAppLink("sagax://cloudy", "cloud"), false);
   assert.equal(appLink("organization"), "sagax://organization");
 });

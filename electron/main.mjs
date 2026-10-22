@@ -339,14 +339,9 @@ function deliverPackageInstall(win = mainWindow) {
   if (pendingPackageInstallUrl && sendToLocalPage(win, "package:install", pendingPackageInstallUrl)) pendingPackageInstallUrl = null;
 }
 
-/** A chat link (electron/chat-link.mjs), handed to the page in the
- * lowercase sagax:// form its parser reads (src/lib/thread-refs.ts). */
-function chatLinkOf(value) {
-  return chatLinkFrom(typeof value === "string" ? value.trim().replace(/^sagax:\/\//i, "sagax://") : value);
-}
 function chatLinkInArgv(argv) {
   for (const value of Array.isArray(argv) ? argv : []) {
-    const link = chatLinkOf(value);
+    const link = chatLinkFrom(value);
     if (link) return link;
   }
   return null;
@@ -402,7 +397,7 @@ function queuePackageInstall(rawLink) {
 }
 
 function queueChatLink(rawLink) {
-  const link = chatLinkOf(rawLink);
+  const link = chatLinkFrom(rawLink);
   if (!link) return false;
   pendingChatLink = link;
   revealForLink();

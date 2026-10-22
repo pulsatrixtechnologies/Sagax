@@ -8,8 +8,8 @@ describe("BotMRR package deep links", () => {
     const target = "https://raw.githubusercontent.com/acme/bots/main/reddit-lead-miner.md";
     assert.equal(packageUrlFromDeepLink(`sagax://install?url=${encodeURIComponent(target)}`), target);
     assert.equal(packageUrlFromDeepLink(`SAGAX://install?url=${encodeURIComponent(target)}`), target);
-    const retired = "otherapp";
-    assert.equal(packageUrlFromDeepLink(`${retired}://install?url=${encodeURIComponent(target)}`), null, "the former prefix no longer installs anything");
+    const otherScheme = "otherapp";
+    assert.equal(packageUrlFromDeepLink(`${otherScheme}://install?url=${encodeURIComponent(target)}`), null, "another scheme installs nothing");
     assert.equal(packageUrlFromCommandLine(["Sagax", "--flag", `sagax://install?url=${encodeURIComponent(target)}`]), target);
   });
 

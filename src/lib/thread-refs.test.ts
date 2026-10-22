@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseBotRefUrl,
   parseThreadRefUrl,
   remarkThreadRefs,
   resolveThreadRefAddress,
@@ -128,12 +129,15 @@ describe("canonical thread links", () => {
     // the paste path accepts exactly what copy emits
     expect(parseThreadRefUrl(link)).toEqual({ threadId: uuid, botId: "scout" });
     expect(parseThreadRefUrl(`sagax://thread/${uuid}`)).toEqual({ threadId: uuid });
+    // the desktop hands an OS-opened link over as typed, scheme case included
+    expect(parseThreadRefUrl(`SAGAX://Thread/${uuid}?bot=scout`)).toEqual({ threadId: uuid, botId: "scout" });
+    expect(parseBotRefUrl("Sagax://BOT/scout")).toEqual({ botId: "scout" });
     for (const miss of [
       `sagax://thread/${uuid}/extra?bot=scout`,
       `sagax://thread/${uuid}?bot=scout&x=1`,
       `sagax://thread/${uuid}?bot=`,
       `omb://thread/${uuid}?bot=scout`,
-      // the app's former link prefix no longer resolves
+      // another app's scheme does not resolve
       `otherapp://thread/${uuid}?bot=scout`,
       "https://thread/" + uuid,
     ]) {

@@ -39,7 +39,7 @@ class ServerPairingTest {
             "ftp://mini.example/pair#code=ABCDEFGHJKLM",
         )) assertNull(PairingInvite.parse(bad), bad)
         assertNotNull(PairingInvite.parse("sagax://pair?address=192.168.1.9:8810&code=123456"))
-        val retired = "otherapp"
-        assertNull(PairingInvite.parse("$retired://pair?address=192.168.1.9:8810&code=123456"))
+        val otherScheme = "otherapp"
+        assertNull(PairingInvite.parse("$otherScheme://pair?address=192.168.1.9:8810&code=123456"))
     }
 }
