@@ -76,7 +76,7 @@ export function remoteScreenState(view: RemoteSessionView, input: { shot: string
 
 /** Poll the read-only screenshot. The server reads the computer again (its
  * OS, its facts) on the same call when the card still lacks them. */
-export function useScreenPoll(botId: string, sessionId: string | undefined, enabled: boolean) {
+export function useScreenPoll(botId: string, sessionId: string | undefined, enabled: boolean, intervalMs: number = SCREEN_POLL_MS) {
   const [shot, setShot] = useState<string | null>(null);
   const [missed, setMissed] = useState(false);
   useEffect(() => {
@@ -100,9 +100,9 @@ export function useScreenPoll(botId: string, sessionId: string | undefined, enab
       }
     };
     void tick();
-    const timer = setInterval(() => void tick(), SCREEN_POLL_MS);
+    const timer = setInterval(() => void tick(), intervalMs);
     return () => { stop = true; clearInterval(timer); if (current) URL.revokeObjectURL(current); };
-  }, [botId, sessionId, enabled]);
+  }, [botId, sessionId, enabled, intervalMs]);
   return { shot, missed };
 }
 

@@ -102,6 +102,7 @@ describe("remote session surfaces", () => {
     expect(empty).toContain("data-remote-sessions-empty");
     expect(empty.replaceAll("&#x27;", "'")).toContain(t("remoteSession.empty"));
     const emptyPanel = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      botId: "melonie",
       rows: [],
       confirmId: null,
       error: null,
@@ -112,6 +113,7 @@ describe("remote session surfaces", () => {
     expect(emptyPanel).not.toContain(t("remoteSession.takeControl"));
     setLocale("en");
     expect(renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      botId: "melonie",
       rows: [],
       confirmId: null,
       error: null,
@@ -126,6 +128,7 @@ describe("remote session surfaces", () => {
       user: `exemple\\technicien ${NODEKEY}`,
     };
     const sidebar = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      botId: "melonie",
       rows: [shown],
       confirmId: null,
       error: null,
@@ -133,7 +136,9 @@ describe("remote session surfaces", () => {
       onClose: () => undefined,
     }));
     expect(sidebar).toContain("Sessions à distance");
-    expect(sidebar).toContain("UD6HFH");
+    // the code is in the tooltip only, never a second line
+    expect(sidebar).toContain(t("remoteSession.codeTitle", { code: "UD6HFH" }));
+    expect(sidebar).not.toContain(">UD6HFH<");
     expect(sidebar).toContain(formatEndLabel(shown.endAt));
     expect(sidebar).toContain("POSTE-02");
     expect(sidebar).not.toContain(GUID);
@@ -141,10 +146,11 @@ describe("remote session surfaces", () => {
     expect(sidebar).not.toContain(ADDRESS);
     expect(sidebar).not.toContain(shown.id);
     expect(sidebar).toContain(t("remoteSession.takeControl"));
-    expect(sidebar).toContain(t("remoteSession.close"));
+    expect(sidebar).toContain(`aria-label="${t("remoteSession.close")}"`);
     expect(sidebar).not.toContain(t("remoteSession.confirmClose"));
 
     const asking = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      botId: "melonie",
       rows: [shown],
       confirmId: shown.id,
       error: null,

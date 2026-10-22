@@ -92,7 +92,7 @@ function Column({ title, children }: { title: string; children: React.ReactNode 
 function Gallery() {
   return (
     <div className="flex items-start gap-6 bg-app p-4 text-ink">
-      <aside data-gallery-panel="" className="w-[380px] shrink-0 rounded-xl border border-hairline/40 bg-panel">
+      <aside data-gallery-panel="" style={{ width: Number(params.get("panel")) || 380 }} className="shrink-0 rounded-xl border border-hairline/40 bg-panel">
         <div className="flex flex-col gap-6 px-4 pb-6 pt-4">
           <RemoteSessionsSection bot={{ id: "melonie" } as Bot} />
           <section data-bot-settings-section="routines" className="flex flex-col gap-3">
@@ -141,7 +141,7 @@ function Gallery() {
 }
 
 // the capture serves this list; ?rows=0 serves an empty one
-(window as unknown as { __remoteRows: RemoteSessionView[] }).__remoteRows = params.get("rows") === "0" ? [] : [view, headless];
+(window as unknown as { __remoteRows: RemoteSessionView[] }).__remoteRows = params.get("rows") === "0" ? [] : [view, unknown, headless, { ...view, id: "bbbbbbbbbbbb", code: "TP2T2G", hostname: undefined, user: undefined }];
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

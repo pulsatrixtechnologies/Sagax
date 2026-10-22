@@ -45,9 +45,9 @@ describe("tailcat stage 1", () => {
 
   it("the panel row shows computer, user, code and end time, with Prendre le contrôle and a two-step close", () => {
     setLocale("fr");
-    const props = { rows: [view], error: null, onTakeControl: () => undefined, onClose: () => undefined };
+    const props = { botId: "melonie", rows: [view], error: null, onTakeControl: () => undefined, onClose: () => undefined };
     const first = renderToStaticMarkup(createElement(RemoteSessionsPanel, { ...props, confirmId: null }));
-    for (const part of ["POSTE-01", "exemple\\usager", "BQDHS7", formatEndLabel(view.endAt), "Prendre le contrôle", "Fermer la session"]) {
+    for (const part of ["POSTE-01", "exemple\\usager", "Windows Server 2022", formatEndLabel(view.endAt), "Prendre le contrôle", "Fermer la session", "Shell", "Envoyer", "Télécharger"]) {
       expect(first).toContain(part);
     }
     expect(first).toContain('data-remote-close="ask"');
@@ -55,6 +55,7 @@ describe("tailcat stage 1", () => {
     const second = renderToStaticMarkup(createElement(RemoteSessionsPanel, { ...props, confirmId: view.id }));
     expect(second).toContain('data-remote-close="confirm"');
     expect(second).toContain("Confirmer la fermeture");
+    expect(second).toContain(">Confirmer<");
     expect(`${first}${second}`).not.toContain(view.id);
     expect(`${first}${second}`).not.toContain(ADDRESS);
   });
