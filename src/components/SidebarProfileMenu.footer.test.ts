@@ -138,7 +138,7 @@ describe("sidebar footer row", () => {
     expect(lineAt).toBeGreaterThan(nameAt);
     expect(badgeAt).toBeGreaterThan(lineAt);
     // right of the whole account block, same flex row, centred, never under the name
-    expect(html).toContain('<div class="flex items-center gap-1"><div class="min-w-0 flex-1">');
+    expect(html).toContain('<div class="flex items-center gap-1"><div class="relative min-w-0 flex-1">');
     expect(html).toContain('class="flex shrink-0 items-center" data-routines-line=""');
     expect(html).not.toContain("-mt-[21px]");
     expect(html).not.toContain("pl-[46px]");

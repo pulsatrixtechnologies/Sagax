@@ -194,7 +194,9 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
   it("lists neither Approvals nor Code: both open from their address (#approvals, #code)", () => {
     const labels = items().flatMap((entry) => [entry.key, entry.label]);
     for (const gone of ["approvals", "code", "Approvals", "Code"]) expect(labels).not.toContain(gone);
-    expect(SOURCE).not.toMatch(/showApprovals|showCode|data-menu-count="approvals"/);
+    expect(SOURCE).not.toMatch(/showCode|data-menu-count="approvals"/);
+    // the avatar's approvals dot is the one way in from the foot
+    expect(SOURCE.match(/showApprovals/g)).toHaveLength(1);
   });
 
   it("has no Team map: it opens from the Automations header and the palette (JC, 2026-10-18)", () => {

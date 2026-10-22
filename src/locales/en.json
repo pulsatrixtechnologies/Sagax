@@ -8461,6 +8461,7 @@
   "achievements.settings.title": "Settings",
   "approval.held.customRule": "Your rule asks you first for this.",
   "approvals.title": "Approvals",
+  "sidebar.profile.openApprovals": "Open approvals, {count} pending",
   "approvals.yes": "Yes",
   "approvals.no": "No",
   "approvals.tab.pending": "Waiting ({count})",

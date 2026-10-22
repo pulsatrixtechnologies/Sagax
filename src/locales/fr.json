@@ -8448,6 +8448,7 @@
   "achievements.settings.title": "Réglages",
   "approval.held.customRule": "Votre règle demande votre accord d'abord pour ceci.",
   "approvals.title": "Approbations",
+  "sidebar.profile.openApprovals": "Ouvrir les approbations, {count} en attente",
   "approvals.yes": "Oui",
   "approvals.no": "Non",
   "approvals.tab.pending": "En attente ({count})",

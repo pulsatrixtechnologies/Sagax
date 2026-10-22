@@ -493,6 +493,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const [menuOpened, setMenuOpened] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
+  const dotKeyed = useRef(false);
   const achievements = useAchievements();
   // conversations waiting on the person's answer (a plain count, no hook)
   const approvalsWaiting = state.bots
@@ -583,17 +584,46 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
       ) : (
         <InitialsAvatar initials={initials} size={size} />
       )}
-      {approvalsWaiting > 0 && (
-        <span
-          data-avatar-approvals={approvalsWaiting}
-          role="img"
-          title={`${t("approvals.title")}, ${approvalsWaiting}`}
-          aria-label={`${t("approvals.title")}, ${approvalsWaiting}`}
-          className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-sidebar bg-warning"
-        />
-      )}
     </span>
   );
+
+  // The approvals dot on the avatar's bottom-right corner opens the
+  // Approvals screen (the #approvals screen). It is a button of its own, a
+  // sibling laid over the account button (never nested in it), so a click
+  // never opens the account menu. Placed from the avatar's box in each
+  // variant: its left edge, its size, centred vertically in the trigger.
+  const dotAt = avatarOnly && withName ? { left: 5, size: 28 } : avatarOnly ? { left: 0, size: 36 } : { left: 0, size: 40 };
+  const openApprovals = () => dispatch({ type: "showApprovals" });
+  const approvalsDotLabel = t("sidebar.profile.openApprovals", { count: approvalsWaiting });
+  const approvalsDot = approvalsWaiting > 0 ? (
+    <button
+      type="button"
+      data-avatar-approvals={approvalsWaiting}
+      title={approvalsDotLabel}
+      aria-label={approvalsDotLabel}
+      onClick={(event) => {
+        event.stopPropagation();
+        // the click a browser makes of Enter or Space was already answered
+        if (dotKeyed.current) {
+          dotKeyed.current = false;
+          return;
+        }
+        openApprovals();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        dotKeyed.current = true;
+        openApprovals();
+      }}
+      onKeyUp={() => { setTimeout(() => { dotKeyed.current = false; }, 0); }}
+      style={{ left: dotAt.left + dotAt.size - 10, top: `calc(50% + ${dotAt.size / 2 - 10}px)` }}
+      // 12px on screen, a 24px target through the invisible ::before
+      className="absolute size-3 rounded-full border-2 border-sidebar bg-warning before:absolute before:-inset-1.5 before:rounded-full before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar"
+    />
+  ) : null;
 
   // The routines count opens Automations, so it stays outside the menu
   // button. The highlight is the wrapper around both, one rounded block.
@@ -734,7 +764,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   return (
     <div className={cn("relative", avatarOnly && withName && "min-w-[3.5rem] flex-1")}>
       {avatarOnly && approvalsBadge}
-      {avatarOnly ? accountRow : (
+      {avatarOnly ? <div className="relative">{accountRow}{approvalsDot}</div> : (
         <div className="flex items-center gap-2">
           <div
             data-sidebar-account-row=""
@@ -748,7 +778,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
             )}
           >
             <div className="flex items-center gap-1">
-              <div className="min-w-0 flex-1">{accountRow}</div>
+              <div className="relative min-w-0 flex-1">{accountRow}{approvalsDot}</div>
               {approvalsBadge}
               {routinesBadge}
             </div>
