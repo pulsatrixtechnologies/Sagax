@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
+import { wrapUntrusted } from "../../shared/safety-review.ts";
 
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
@@ -1176,8 +1177,9 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     const stdout = String(r.stdout ?? "");
     const stderr = String(r.stderr ?? "");
     const lines = [`${String(r.host ?? "remote computer")} (${String(r.os ?? "")}): ${r.timedOut ? "stopped at its time limit" : `exit code ${exitCode}`}`];
-    if (stdout) lines.push("--- stdout ---", stdout.replace(/\s+$/, ""));
-    if (stderr) lines.push("--- stderr ---", stderr.replace(/\s+$/, ""));
+    // the client's computer wrote this: data, never instructions (review of #965)
+    if (stdout) lines.push(wrapUntrusted("remote stdout", stdout.replace(/\s+$/, "")));
+    if (stderr) lines.push(wrapUntrusted("remote stderr", stderr.replace(/\s+$/, "")));
     if (!stdout && !stderr && !r.timedOut) lines.push("(no output)");
     return { text: lines.join("\n"), ...(exitCode !== 0 || r.timedOut ? { isError: true } : {}) };
   }

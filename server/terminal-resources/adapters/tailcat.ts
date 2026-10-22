@@ -4,7 +4,7 @@
 import { spawnScriptPty } from "../../../electron/script-pty.mjs";
 import type { TerminalResource } from "../../../shared/terminal-resources.ts";
 import type { TerminalAttachment, TerminalListContext, TerminalOpenContext, TerminalResourceAdapter } from "../types.ts";
-import { tailcatPtyArgv } from "../../remote-session-probe.ts";
+import { tailcatEnv, tailcatPtyArgv } from "../../remote-session-probe.ts";
 import { resolveSystemSsh, resolveTailcatBinary } from "../../tailcat-bin.ts";
 
 export const NO_SSH_CLIENT = "This Sagax server has no ssh client, so the remote shell cannot open. Install openssh-client on the server.";
@@ -60,6 +60,7 @@ export function createTailcatAdapter(deps: {
         return spawnScriptPty(tailcatPtyArgv(bin, tunnel.keyPath, tunnel.address), {
           cols: ctx.cols,
           rows: ctx.rows,
+          env: tailcatEnv(),
         });
       } catch {
         throw new Error("This remote computer did not open a shell.");

@@ -17,7 +17,7 @@ import {
 } from "../shared/remote-control.ts";
 import type { RemoteSessionOs } from "../shared/remote-session.ts";
 import { controlHelperCommand, controlSupported } from "./remote-control-helper.ts";
-import { tailcatSshArgv } from "./remote-session-probe.ts";
+import { tailcatEnv, tailcatSshArgv } from "./remote-session-probe.ts";
 
 export type ControlStopReason = "released" | "closed" | "deadline" | "helper_exit" | "protocol" | "replaced";
 
@@ -81,7 +81,7 @@ const QUALITY = 60;
 const INPUT_EVENTS_PER_SECOND = 200;
 
 function defaultSpawn(argv: string[]): ControlProcess {
-  const child = spawn(argv[0]!, argv.slice(1), { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+  const child = spawn(argv[0]!, argv.slice(1), { stdio: ["pipe", "pipe", "ignore"], windowsHide: true, env: tailcatEnv() });
   child.stdin.on("error", () => { /* broken pipe after the helper exits; close follows */ });
   return {
     writeLine(line) { try { child.stdin.write(`${line}\n`); } catch { /* the process is gone; close follows */ } },

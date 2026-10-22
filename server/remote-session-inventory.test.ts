@@ -261,6 +261,16 @@ describe("commands for the bot", () => {
     expect(commands.filter((command) => command === "uptime")).toHaveLength(2);
   });
 
+  it("runs nothing on a computer whose OS is still not known, and says so", async () => {
+    const { service, commands } = harness(() => ({ code: 1, stdout: "", stderr: "" }));
+    await service.publish(open);
+    const before = commands.length;
+    const ran = await service.exec({ principalId: PERSON, botId: BOT, threadId: THREAD, command: "dir" });
+    expect(ran).toEqual({ error: expect.stringContaining("not known") });
+    expect(commands.slice(before)).not.toContain("dir");
+    expect(service.osFor({ principalId: PERSON, botId: BOT, threadId: THREAD })).toEqual({ os: "windows", known: false });
+  });
+
   it("takes a whole snapshot in one call with the session's own OS commands", async () => {
     const { service, commands } = harness((command) => {
       if (command === OS_PROBE_UNIX) return ok("Darwin");
@@ -284,5 +294,13 @@ describe("Windows commands survive the PowerShell session shell", () => {
     }
     expect(decodeWindowsScript(inventoryCommand("windows"))).toContain("Win32_ComputerSystem");
     expect(stopCommand(ID, "macos")).toBe(`[ -d /tmp/px-assist-${ID} ] && : > /tmp/px-assist-${ID}/stop`);
+  });
+});
+
+describe("the tailcat child environment", () => {
+  it("keeps the server's ssh agent away from the client's computer", async () => {
+    const { tailcatEnv } = await import("./remote-session-probe.ts");
+    const env = tailcatEnv({ PATH: "/usr/bin", HOME: "/home/app", SSH_AUTH_SOCK: "/tmp/agent.sock", SSH_AGENT_PID: "42" });
+    expect(env).toEqual({ PATH: "/usr/bin", HOME: "/home/app" });
   });
 });

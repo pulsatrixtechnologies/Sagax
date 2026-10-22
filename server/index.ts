@@ -4,7 +4,7 @@
 // First of all, SAGAX_* settings onto the names the code reads (step 1 of
 // the rename, electron/legacy-names.mjs).
 import { isReadOnlyCommand, runCommandOf } from "../shared/read-only-command.ts";
-import { remoteSessionToolCall } from "./remote-session-exec.ts";
+import { grantRemoteExecApproval, noteRemoteExecRequest, remoteSessionToolCall } from "./remote-session-exec.ts";
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 import { healthzBody } from "./healthz.ts";
@@ -11951,6 +11951,8 @@ async function answerRequest(
       outcome = "unavailable";
     }
   }
+  // a remote_session_exec that does more than read: the route runs it once
+  if (outcome === "allowed-once" && behavior === "allow") grantRemoteExecApproval(threadId, requestId);
   if (remembered && outcome === "allowed-once" && behavior === "allow" && store.bot(remembered.botId)) {
     // Persist only after the provider accepted this exact live request. A dead
     // card, denied request, failed delivery or process restart saves no grant.
@@ -14498,10 +14500,18 @@ bus.subscribe((event: RuntimeEvent) => {
       // Tailcat (2026-10-22, server/remote-session-exec.ts): a command on a
       // client's computer that does more than read is the person's call every
       // time: a card no level, rule or Always allow answers.
+      const remoteInput = typeof event.input === "string" ? event.input : undefined;
       const remoteCall = permission && asker && event.requestId
-        ? remoteSessionToolCall(event.mcpTool ?? event.tool, typeof event.input === "string" ? event.input : undefined)
+        ? remoteSessionToolCall(event.mcpTool ?? event.tool, remoteInput, (session) => {
+          const principalId = remoteSessionSpeaker(event.threadId);
+          return principalId ? remoteSessions.osFor({ principalId, botId: asker.id, threadId: event.threadId, ...(session ? { id: session } : {}) }) : null;
+        })
         : null;
-      if (remoteCall?.remote && !remoteCall.readOnly) event.requiresExplicitApproval = true;
+      if (remoteCall?.remote && !remoteCall.readOnly) {
+        event.requiresExplicitApproval = true;
+        // the route runs it only after this card's yes (grantRemoteExecApproval)
+        noteRemoteExecRequest(event.threadId, event.requestId!, remoteInput);
+      }
       // 2026-10-19 (owner setup, server/owner-autonomy.ts): a Perspicax read
       // or coordination lease on Sagax's own mount, never a name another
       // server of the turn could have spelled, never a guest's turn.

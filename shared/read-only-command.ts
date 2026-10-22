@@ -30,7 +30,19 @@ const FORBIDDEN_OPTIONS: Record<string, RegExp> = {
   git: /^--output(=|$)|^--ext-diff$|^--textconv$|^-c$|^--config-env/,
 };
 
-const SENSITIVE_PATH = /(^|[/~])\.(ssh|aws|gnupg|kube|docker|netrc|git-credentials|npmrc|pypirc|azure|password-store)(\/|$)|\.config\/(gh|gcloud)(\/|$)|(^|\/)id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)$|credentials|(^|\/)proc\/|\/etc\/(shadow|sudoers)|(^|\/)\.env(\.|$)|keychain/i;
+// Separators are / or \ (a Windows path, security review of #965), and the
+// raw line is checked too: an unquoted C:\Users\bob\.ssh\id_rsa loses its
+// backslashes to the word splitter.
+const SENSITIVE_PATH = /(^|[/\\~\s'"])\.(ssh|aws|gnupg|kube|docker|netrc|git-credentials|npmrc|pypirc|azure|password-store)([/\\\s'"]|$)|\.config[/\\](gh|gcloud)([/\\\s'"]|$)|(^|[/\\\s'"])id_(rsa|dsa|ecdsa|ed25519)|\.(pem|key|p12|pfx|kdbx)(['"]|\s|$)|credentials|(^|[/\\\s'"])proc[/\\]|[/\\]etc[/\\](shadow|sudoers)|(^|[/\\\s'"])\.env(\.|['"]|\s|$)|keychain/i;
+/** Quote and space lookalikes a shell does not treat as quotes or spaces but
+ * a reader of the line (or PowerShell) may: typographic quotes, primes, no-break
+ * and zero-width spaces, line and paragraph separators, fullwidth quotes. */
+const LOOKALIKE = /[\u00a0\u02bc\u1680\u180e\u2000-\u200f\u2018-\u201f\u2028\u2029\u202f\u2032\u2033\u205f\u3000\ufeff\uff02\uff07]/;
+// oxlint-disable-next-line no-control-regex -- control characters other than tab and newline are refused
+const CONTROL_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+/** A PowerShell drive other than a disk letter (env:, HKLM:, cert:,
+ * variable:), or a provider path (FileSystem::\\host). Not a URL. */
+const PROVIDER_PATH = /::|(^|[\s'"])[A-Za-z][A-Za-z0-9.]+:(?!\/\/)/;
 const SECRET_VARIABLE = /TOKEN|SECRET|KEY|PASS|AUTH|CRED|COOKIE|SESSION|PRIVATE/i;
 
 const RECURSIVE = new Set(["grep", "egrep", "fgrep", "rg", "find", "du", "tree", "ls", "cat"]);
@@ -114,8 +126,12 @@ export function isReadOnlyCommand(command: string | undefined): boolean {
   if (typeof command !== "string") return false;
   const line = command.trim();
   if (!line || line.length > 4000) return false;
+  // a carriage return, a control character or a quote/space lookalike may
+  // split or quote the line differently on the other side: fail to a card
+  if (line.includes("\r") || CONTROL_CHAR.test(line) || LOOKALIKE.test(line)) return false;
   // PowerShell (the desktop on Windows) keeps backslashes: \\host\share
-  if (/(^|[\s'"])\\\\/.test(line)) return false;
+  if (/\\\\/.test(line)) return false;
+  if (SENSITIVE_PATH.test(line) || PROVIDER_PATH.test(line)) return false;
   const list = parts(line);
   return Boolean(list?.length) && list!.every((part) => readerOnly(part.words));
 }

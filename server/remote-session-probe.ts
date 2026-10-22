@@ -441,8 +441,24 @@ export function tailcatCopyArgv(bin: string, keyPath: string, from: string, to: 
   return [bin, "cp", "--key", keyPath, from, to];
 }
 
+/** The environment of every tailcat call. `tailcat ssh` and `tailcat cp`
+ * exec the system ssh client with its own options (ProxyCommand through
+ * tailcat, StrictHostKeyChecking no and UserKnownHostsFile /dev/null: the
+ * peer is already authenticated by its node key in the WireGuard tunnel,
+ * LogLevel ERROR), and the remote command travels as one argument with no
+ * local shell (execFile), parsed once by the remote shell. Extra ssh options
+ * cannot be passed (anything after the address is the remote command), so
+ * the server's ssh agent is kept out here: no SSH_AUTH_SOCK, no agent to
+ * offer or forward. The server image holds no ssh identity of its own. */
+export function tailcatEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = { ...env };
+  delete out.SSH_AUTH_SOCK;
+  delete out.SSH_AGENT_PID;
+  return out;
+}
+
 export const runCommand: RunCommand = (argv, timeoutMs) => new Promise((resolve) => {
-  execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true, encoding: "utf8" }, (error, stdout, stderr) => {
+  execFile(argv[0]!, argv.slice(1), { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, windowsHide: true, encoding: "utf8", env: tailcatEnv() }, (error, stdout, stderr) => {
     const failed = error as { code?: number; killed?: boolean; signal?: string | null } | null;
     const code = typeof failed?.code === "number" ? failed.code : error ? 1 : 0;
     const timedOut = Boolean(failed && (failed.killed || failed.signal === "SIGTERM") && typeof failed.code !== "number");

@@ -737,6 +737,8 @@ export function createRemoteSessionService(deps: {
       if (!tunnelOf(session)) return { error: "This server does not have the tunnel of that session (it was opened outside Sagax). Open it with remote_support_open." };
       if (!systemSsh()) return { error: "This Sagax server has no ssh client (openssh-client), so it cannot reach the remote computer. Tell the person; an administrator installs it on the server." };
       if (session.osGuessed) await inspect(session);
+      // never a command written for a guessed OS (review of #965)
+      if (session.osGuessed) return { error: "The OS of that computer is not known yet, so no command runs there. Ask the person which OS it is (the card has Windows, macOS and Linux buttons), or try again in a moment." };
       const command = input.command.trim();
       if (!command || command.length > 8000) return { error: "command: one command line, under 8,000 characters." };
       const timeout = Math.min(EXEC_TIMEOUT_MAX_MS, Math.max(1000, input.timeoutMs ?? EXEC_TIMEOUT_DEFAULT_MS));
@@ -759,6 +761,12 @@ export function createRemoteSessionService(deps: {
       if (session.osGuessed && tunnelOf(session)) await inspect(session);
       if (session.osGuessed) return { error: "The OS of that computer is not known yet, so Sagax does not guess its commands. Ask the person which OS it is, or try again in a moment." };
       return this.exec({ ...input, id: session.id, command: snapshotCommand(session.os), timeoutMs: 45_000 });
+    },
+    /** The OS of the session a bot tool means, for the approval rule
+     * (server/remote-session-exec.ts); `known` false while it is guessed. */
+    osFor(input: { principalId: string; botId: string; threadId: string; id?: string }): { os: RemoteSessionOs; known: boolean } | null {
+      const session = this.target(input);
+      return session ? { os: session.os, known: !session.osGuessed } : null;
     },
     /** The session a bot tool means: by id (12 hex) or code, else the one in
      * focus in this conversation, else this bot's only connected one. */
