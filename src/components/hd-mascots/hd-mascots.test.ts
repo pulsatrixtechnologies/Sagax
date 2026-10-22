@@ -1,6 +1,6 @@
 // HD mascots: the manifest, the state mapping, the asset choice (loop or
 // still), the fallback to the vector drawing, and the "HD mascots" switch.
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -50,6 +50,17 @@ describe("HD mascot manifest", () => {
       total += statSync(path).size;
     }
     expect(total).toBeLessThan(8 * 1024 * 1024);
+  });
+
+  it("repeats every loop forever but the sad one, which plays once and rests lying down", () => {
+    // the ANIM chunk of an animated WebP: background color (4 bytes), then the loop count (0 = forever)
+    const loopCount = (file: string) => {
+      const bytes = readFileSync(join(ASSETS, file));
+      const at = bytes.indexOf("ANIM", 12, "latin1");
+      expect(at, `${file} is animated`).toBeGreaterThan(0);
+      return bytes.readUInt16LE(at + 12);
+    };
+    for (const loop of HD_LOOPS) expect(loopCount(`loop-${loop}.webp`), loop).toBe(loop === "sad" ? 1 : 0);
   });
 });
 

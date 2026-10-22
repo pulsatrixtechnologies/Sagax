@@ -20,7 +20,8 @@ const port = Number(arg("--port") ?? 5291);
 const SHOTS = [
   { name: "hd-idle", query: "state=idle", hd: true },
   { name: "hd-happy", query: "state=happy", hd: true },
-  { name: "hd-sad", query: "state=sad", hd: true },
+  // the sad clip plays once (about 5 s) and rests lying down
+  { name: "hd-sad", query: "state=sad", hd: true, settle: 5800 },
   { name: "hd-still-thinking", query: "state=thinking", hd: true },
   { name: "hd-reduced-motion-happy", query: "state=happy", hd: true, reduced: true },
   { name: "hd-sheet", query: "", hd: true },
@@ -64,7 +65,7 @@ try {
         return boxes.length > 0 && boxes.every((box) => box.getAttribute("data-hd") === "ready");
       }, null, { timeout: 20_000 });
       // a few frames into the loop
-      await page.waitForTimeout(700);
+      await page.waitForTimeout(shot.settle ?? 700);
     } else {
       if (await page.locator(".hd-mascot").count()) throw new Error(`${shot.name}: HD art drawn with HD mascots off`);
       await page.waitForTimeout(400);

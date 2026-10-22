@@ -30,15 +30,23 @@ from pathlib import Path
 
 from PIL import Image
 
-# loop id -> (clip file stem, frames per second kept)
+# loop id -> (clip file stem, frames per second kept, how it repeats)
+# "whole": the clip returns to its first pose, so it loops as it is.
+# "cycle": the clip starts seated then walks; only its best repeating stride
+#          is kept (the pair of frames that look most alike, CYCLE_MIN apart).
+# "once":  the clip ends somewhere else (the sad dog lies down): it plays once
+#          and rests on its last frame.
 LOOPS = {
-    "idle": ("idle", 12),
-    "walk": ("walk", 24),
-    "jump": ("jump", 24),
-    "turn": ("turnaround", 24),
-    "happy": ("happy", 24),
-    "sad": ("sad", 12),
+    "idle": ("idle", 12, "whole"),
+    "walk": ("walk", 24, "cycle"),
+    "jump": ("jump", 24, "whole"),
+    "turn": ("turnaround", 24, "whole"),
+    "happy": ("happy", 24, "whole"),
+    "sad": ("sad", 12, "once"),
 }
+
+# a stride is searched in the clip's second half, at least this many frames long
+CYCLE_MIN = 12
 
 # still id -> source stem (under states/, "<character>-<stem>-transparent.png")
 STILLS = {
@@ -102,24 +110,49 @@ def build_stills(pack: Path, character: str, out: Path, size: int, quality: int)
         place(image, size, transform).save(out / f"still-{sid}.webp", "WEBP", quality=quality, method=6, alpha_quality=90)
 
 
-def build_loops(pack: Path, character: str, out: Path, size: int, quality: int) -> None:
+def best_cycle(frames: list[Image.Image]) -> tuple[int, int]:
+    """The [start, end) of the most seamless stride in the clip's second half."""
+    small = [frame.resize((48, 48)).tobytes() for frame in frames]
+
+    def distance(a: int, b: int) -> int:
+        return sum(abs(x - y) for x, y in zip(small[a], small[b]))
+
+    half = len(frames) // 2
+    best = None
+    for start in range(half, len(frames) - CYCLE_MIN):
+        for end in range(start + CYCLE_MIN, len(frames)):
+            score = distance(start, end)
+            if best is None or score < best[0]:
+                best = (score, start, end)
+    if best is None:
+        return 0, len(frames)
+    return best[1], best[2]
+
+
+def build_loops(pack: Path, character: str, out: Path, size: int, quality: int, only: set[str] | None = None) -> None:
     from rembg import new_session, remove
 
     session = new_session("u2net")
-    for lid, (stem, fps) in LOOPS.items():
+    for lid, (stem, fps, repeat) in LOOPS.items():
+        if only and lid not in only:
+            continue
         clip = pack / "clips" / f"{character}-{stem}.mp4"
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run(["ffmpeg", "-v", "error", "-i", str(clip), "-vf", f"fps={fps}", str(Path(tmp) / "f%04d.png")], check=True)
             frames = [remove(Image.open(path).convert("RGB"), session=session).convert("RGBA") for path in sorted(Path(tmp).glob("f*.png"))]
         transform = placement(frames[0], size)
         placed = [place(frame, size, transform) for frame in frames]
+        if repeat == "cycle":
+            start, end = best_cycle(placed)
+            placed = placed[start:end]
         placed[0].save(
             out / f"loop-{lid}.webp",
             "WEBP",
             save_all=True,
             append_images=placed[1:],
             duration=round(1000 / fps),
-            loop=0,
+            # 0 repeats forever; 1 plays once and rests on the last frame
+            loop=1 if repeat == "once" else 0,
             quality=quality,
             method=6,
             alpha_quality=85,
@@ -136,6 +169,7 @@ def main() -> None:
     parser.add_argument("--size", type=int, default=256)
     parser.add_argument("--quality", type=int, default=72)
     parser.add_argument("--only", choices=["stills", "loops"], default=None)
+    parser.add_argument("--loops", default=None, help="comma-separated loop ids to rebuild (default: all)")
     args = parser.parse_args()
     if shutil.which("ffmpeg") is None and args.only != "stills":
         raise SystemExit("ffmpeg is needed for the loops")
@@ -143,7 +177,8 @@ def main() -> None:
     if args.only != "loops":
         build_stills(args.pack, args.character, args.out, args.size, args.quality)
     if args.only != "stills":
-        build_loops(args.pack, args.character, args.out, args.size, args.quality)
+        only = set(args.loops.split(",")) if args.loops else None
+        build_loops(args.pack, args.character, args.out, args.size, args.quality, only)
     total = sum(path.stat().st_size for path in args.out.glob("*.webp"))
     print(f"{args.out}: {total / 1024 / 1024:.2f} MB", file=sys.stderr)
 

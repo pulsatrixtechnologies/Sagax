@@ -1,8 +1,9 @@
 // Shiba's HD art (src/assets/mascots/shiba): six looping clips as animated
 // WebP with alpha and seventeen stills as WebP with alpha, all 256 px square
 // with the dog framed the same way (seated feet on one baseline), so a change
-// of state never makes it jump. The imports are URLs only: a file loads when
-// HdMascot first draws it.
+// of state never makes it jump. The walk is one repeating stride; the sad clip
+// plays once and rests lying down (scripts/mascots/build-hd-mascot.py). The
+// imports are URLs only: a file loads when HdMascot first draws it.
 import loopIdle from "@/assets/mascots/shiba/loop-idle.webp";
 import loopWalk from "@/assets/mascots/shiba/loop-walk.webp";
 import loopJump from "@/assets/mascots/shiba/loop-jump.webp";
