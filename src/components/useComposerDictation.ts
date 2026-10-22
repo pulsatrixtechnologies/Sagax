@@ -8,7 +8,7 @@ import { dictationLevels, frameLevel, joinDictated, type DictationEngine } from 
 import { encodeWav, toPcm16 } from "@/lib/voice-mode/audio";
 import { attachVoiceCapture, type CaptureContext, type CaptureSource, type VoiceCapture } from "@/lib/voice-mode/capture-worklet";
 import { transcribeVoiceMode } from "@/lib/voice-mode/api";
-import { openPreferredMicrophone } from "@/lib/audio-input";
+import { MicrophonePromptUnanswered, openPreferredMicrophone } from "@/lib/audio-input";
 
 export type DictationPhase = "idle" | "recording" | "processing";
 
@@ -174,8 +174,8 @@ export function useComposerDictation({
     try {
       mic.current = await openMicrophone((level) => levelRef.current.push(level), true);
       setPhase("recording");
-    } catch {
-      setError(t("composer.dictation.permission"));
+    } catch (failure) {
+      setError(failure instanceof MicrophonePromptUnanswered ? failure.message : t("composer.dictation.permission"));
       running.current = null;
     }
   }, [engine, phase, text]);

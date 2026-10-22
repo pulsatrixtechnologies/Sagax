@@ -6,6 +6,8 @@
 // system default rather than failing the recording.
 import { useCallback, useEffect, useState } from "react";
 
+import { t } from "@/lib/i18n";
+
 export const AUDIO_INPUT_KEY = "sagax.audioInput.v1";
 
 export interface AudioInput {
@@ -69,19 +71,49 @@ function defaultGetUserMedia(): GetUserMedia {
   return (constraints) => navigator.mediaDevices.getUserMedia(constraints);
 }
 
+/** How long the system's permission prompt may stay unanswered before the
+ * microphone is called unavailable (it can also sit behind another window). */
+export const MICROPHONE_PROMPT_MS = 30_000;
+
+/** The permission request got no answer: neither allowed nor refused. */
+export class MicrophonePromptUnanswered extends Error {
+  constructor() {
+    super(t("microphone.promptUnanswered"));
+    this.name = "MicrophonePromptUnanswered";
+  }
+}
+
+/** The microphone, or MicrophonePromptUnanswered when the request stays
+ * pending. A stream that arrives after the wait is released, not kept open. */
+function withPromptTimeout(open: Promise<MediaStream>, ms: number): Promise<MediaStream> {
+  return new Promise<MediaStream>((resolve, reject) => {
+    let late = false;
+    const timer = setTimeout(() => { late = true; reject(new MicrophonePromptUnanswered()); }, ms);
+    open.then(
+      (stream) => {
+        clearTimeout(timer);
+        if (late) { for (const track of stream.getTracks?.() ?? []) track.stop(); return; }
+        resolve(stream);
+      },
+      (error) => { clearTimeout(timer); if (!late) reject(error); },
+    );
+  });
+}
+
 /** getUserMedia that retries once without the device when the saved one is
  * gone (unplugged, renamed by the system). Permission errors are not retried. */
 export async function getUserMediaWithFallback(
   constraints: MediaStreamConstraints,
   getUserMedia: GetUserMedia = defaultGetUserMedia(),
+  promptMs = MICROPHONE_PROMPT_MS,
 ): Promise<MediaStream> {
   try {
-    return await getUserMedia(constraints);
+    return await withPromptTimeout(getUserMedia(constraints), promptMs);
   } catch (error) {
     const audio = constraints.audio;
     if (!deviceMissing(error) || !audio || typeof audio !== "object" || !audio.deviceId) throw error;
     const { deviceId: _dropped, ...rest } = audio;
-    return getUserMedia({ ...constraints, audio: rest });
+    return withPromptTimeout(getUserMedia({ ...constraints, audio: rest }), promptMs);
   }
 }
 

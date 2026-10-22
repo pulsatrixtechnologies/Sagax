@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("@/state/store", () => ({ api: fixture.api }));
 
-import { connectorToolRows, loadConnectorTools, saveDisabledTools, toggledDisabledTools } from "./connector-tool-switches";
+import { clearConnectorPreferences, slugsWithDisabledTools, connectorToolRows, loadConnectorTools, saveDisabledTools, toggledDisabledTools } from "./connector-tool-switches";
 
 describe("a connected app's tool switches", () => {
   beforeEach(() => fixture.api.mockReset());
@@ -35,5 +35,19 @@ describe("a connected app's tool switches", () => {
       method: "PUT",
       body: JSON.stringify({ disabledTools: ["GMAIL_SEND_EMAIL"] }),
     });
+  });
+});
+
+describe("clearing connector preferences", () => {
+  it("lists only the apps with a tool off", () => {
+    expect(slugsWithDisabledTools({ github: ["a"], slack: [], linear: ["x", "y"] })).toEqual(["github", "linear"]);
+  });
+
+  it("puts every off tool back on, app by app, and says how many apps it touched", async () => {
+    const save = vi.fn(async () => ({}));
+    const load = async () => ({ services: {}, disabledTools: { github: ["a"], slack: [], linear: ["x"] } });
+    expect(await clearConnectorPreferences(load, save)).toBe(2);
+    expect(save.mock.calls).toEqual([["github", []], ["linear", []]]);
+    expect(await clearConnectorPreferences(async () => ({ services: {}, disabledTools: {} }), save)).toBe(0);
   });
 });

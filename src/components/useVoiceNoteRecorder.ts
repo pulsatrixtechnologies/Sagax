@@ -5,7 +5,7 @@
 // never the macOS dictation helper.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { openPreferredMicrophone } from "@/lib/audio-input";
+import { MicrophonePromptUnanswered, openPreferredMicrophone } from "@/lib/audio-input";
 import { fileAttachmentFromFile, type FileAttachment } from "@/lib/composer-attachments";
 import { frameLevel } from "@/lib/composer-dictation";
 import { t } from "@/lib/i18n";
@@ -160,8 +160,8 @@ export function useVoiceNoteRecorder({
         levels.current.push(level);
         if (levels.current.length > 512) levels.current.splice(0, levels.current.length - 256);
       });
-    } catch {
-      setError(t("composer.voiceNote.permission"));
+    } catch (failure) {
+      setError(failure instanceof MicrophonePromptUnanswered ? failure.message : t("composer.voiceNote.permission"));
       return;
     }
     if (gone.current) {

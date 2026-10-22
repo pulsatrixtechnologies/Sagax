@@ -43,3 +43,20 @@ export async function saveDisabledTools(slug: string, disabledTools: string[]): 
   });
   return response.disabledTools ?? {};
 }
+
+/** The apps that have at least one tool turned off. */
+export function slugsWithDisabledTools(disabledTools: Record<string, string[]>): string[] {
+  return Object.entries(disabledTools).filter(([, tools]) => tools.length > 0).map(([slug]) => slug).sort();
+}
+
+/** "Effacer les préférences de connecteurs": every tool a person turned off
+ * comes back on, app by app. Accounts stay connected. Returns how many apps
+ * were reset. */
+export async function clearConnectorPreferences(
+  load: () => Promise<ConnectorToolsInventory> = loadConnectorTools,
+  save: (slug: string, disabledTools: string[]) => Promise<unknown> = saveDisabledTools,
+): Promise<number> {
+  const slugs = slugsWithDisabledTools((await load()).disabledTools);
+  for (const slug of slugs) await save(slug, []);
+  return slugs.length;
+}

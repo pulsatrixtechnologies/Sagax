@@ -753,6 +753,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // handler keeps the caller's own turns only, never another person's; the
   // whole ledger (/api/usage) stays admin or usage.view.
   { methods: ["GET"], path: /^\/api\/me\/usage$/ },
+  // The person's own monthly spend limit: anyone signed in reads it; changing
+  // it stays admin scope (server/routes/usage.ts).
+  { methods: ["GET"], path: /^\/api\/me\/spend-cap$/ },
   // A person's own plan windows (5-hour, weekly) read from their own
   // subscription logins only (server/plan-usage.ts orgPlanAccounts). On a
   // solo server this path stays admin.

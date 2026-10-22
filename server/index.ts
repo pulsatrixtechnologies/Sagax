@@ -333,6 +333,8 @@ import { isMemberBotField } from "../shared/viewer-capabilities.ts";
 import { effectivePermissions, permissionList, type EffectivePermissions } from "./org-permissions.ts";
 import { allowedProviderTestUrl, checkProviderKey, PROVIDER_KEY_KINDS, providerBaseUrl, type ProviderKeyKind } from "./provider-key-check.ts";
 import { forgetKey, noteKeyAccepted, noteKeyRejected, onKeyRejectionChange } from "./key-rejections.ts";
+import { personalCapNotice } from "./personal-spend-cap.ts";
+import { startLowDiskWatch } from "./low-disk-alert.ts";
 import { assertWithinBudget, noteSpend, spendAlertText, spendState, takeSpendAlert } from "./spend.ts";
 import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts";
 import { entitled } from "./enterprise.ts";
@@ -3222,6 +3224,8 @@ function bookTurnUsage(row: Omit<UsageRow, "at" | "costSource">, tokensReported 
   if (alert && state) {
     broadcast({ kind: "notify", notification: buildSpendNotification({ id: row.botId, name: row.botName }, notificationThreadId, spendAlertText(alert, state)) }, { adminOnly: true });
   }
+  const personal = personalCapNotice(DATA_DIR);
+  if (personal) broadcast({ kind: "notify", notification: buildSpendNotification({ id: row.botId, name: row.botName }, notificationThreadId, personal) }, { adminOnly: true });
 }
 
 /** Slice 7: on an organization server a usage row names the bot owner and
@@ -28352,6 +28356,8 @@ cloudAgentManager = new CloudAgentManager({
 
 const CLOUD_AGENT_SYNC_MS = 15_000;
 setInterval(() => { void cloudAgentManager.syncActive(); }, CLOUD_AGENT_SYNC_MS).unref?.();
+// The disk holding the data folder is nearly full (server/low-disk-alert.ts).
+startLowDiskWatch({ dir: DATA_DIR, notify: (text) => broadcast({ kind: "notify", notification: { kind: "spend", botId: "", botName: "", threadId: "", title: text.title, body: text.body } }, { adminOnly: true }) });
 
 ROUTES.push(createCloudAgentRoutes({
   manager: cloudAgentManager,
