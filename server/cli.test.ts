@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applyStartupPreferences, formatSessions, parseArgs, runAccess, runLogin, runOnboardingCommand, serverEntry, type CliOptions, verifyPhoneEndpoint } from "./cli.ts";
+import { applyStartupPreferences, formatSessions, parseArgs, runAccess, runLogin, runOnboardingCommand, serverEntry, type CliOptions, USAGE, verifyPhoneEndpoint } from "./cli.ts";
 import { browserSignInLines, pairingBlock, qrToString } from "./cli-pairing.ts";
 import { readAdminActivityRange } from "./admin-activity.ts";
 import { SetupCancelled } from "./cli-prompts.ts";
@@ -190,6 +190,15 @@ describe("openmausbot command line", () => {
   }, 90_000);
 });
 
+describe("the help text", () => {
+  it("names the published package and its bin, never the upstream package", () => {
+    expect(USAGE).toContain("npm install -g @pulsatrixtechnologies/sagax");
+    expect(USAGE).toContain("npx @pulsatrixtechnologies/sagax");
+    expect(USAGE).toContain("sagax serve");
+    expect(USAGE).not.toMatch(/openmausbot/i);
+  });
+});
+
 describe("terminal onboarding commands", () => {
   const inputTty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
   const outputTty = Object.getOwnPropertyDescriptor(process.stdout, "isTTY");
@@ -232,7 +241,7 @@ describe("terminal onboarding commands", () => {
     expect(setup.runSetup).toHaveBeenCalledWith({ dataDir: options.dataDir, port: options.port });
     expect(setup.isSetupComplete).not.toHaveBeenCalled();
     expect(serve).not.toHaveBeenCalled();
-    expect(output.log).toHaveBeenCalledWith(expect.stringContaining("Start with: openmausbot"));
+    expect(output.log).toHaveBeenCalledWith(expect.stringContaining("Start with: sagax (or npx @pulsatrixtechnologies/sagax"));
     expect(phoneSetup).toHaveBeenCalledOnce();
     expect(setup.saveCliStartup).toHaveBeenCalledWith(options.dataDir, { access: "local" });
   });
