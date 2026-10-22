@@ -64,6 +64,7 @@ import { ChatNotice } from "@/components/ChatErrorBanner";
 import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 import { navigate } from "@/lib/view-transitions";
 import { MAUS_COLORS } from "@/lib/mascot";
+import { useBotAccent } from "@/lib/bot-accent";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -615,6 +616,14 @@ function Shell() {
   );
 }
 
+/** The open bot's colour as the accent, when Settings > Appearance says so. */
+function BotAccentSync() {
+  const { state } = useStore();
+  const bot = state.bots.find((candidate) => candidate.id === state.selectedId);
+  useBotAccent(bot ? MAUS_COLORS[bot.color] : null);
+  return null;
+}
+
 function Application() {
   useEffect(() => {
     initAnalytics();
@@ -630,6 +639,7 @@ function Application() {
         <GuidedTour />
         <LiveCallHost />
         <DataWindowViewSync />
+        <BotAccentSync />
       </StoreProvider>
     </DesktopCapabilitiesProvider>
   );

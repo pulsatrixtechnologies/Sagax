@@ -101,6 +101,8 @@
   "settings.profile.subtitle": "Wird in der Seitenleiste gezeigt. Wird beim Tippen gespeichert.",
   "settings.profile.name": "Dein Name",
   "settings.skin.title": "Design",
+  "settings.botAccent.title": "Bot-Farbe als Akzent",
+  "settings.botAccent.subtitle": "Der Akzent übernimmt die Farbe des geöffneten Bots.",
   "settings.roomTurns.title": "Gruppen-Züge",
   "settings.roomTurns.minutes": "Minuten",
   "settings.roomTurns.error": "Das Gruppen-Zeitlimit konnte nicht gespeichert werden.",

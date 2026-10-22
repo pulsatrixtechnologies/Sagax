@@ -21,6 +21,8 @@
   "settings.profile.subtitle": "サイドバーに表示されます。入力するそばから保存されます。",
   "settings.profile.name": "あなたの名前",
   "settings.skin.title": "テーマ",
+  "settings.botAccent.title": "ボットの色をアクセントにする",
+  "settings.botAccent.subtitle": "アクセントが開いているボットの色になります。",
   "settings.roomTurns.title": "グループのターン",
   "settings.roomTurns.minutes": "分",
   "settings.roomTurns.error": "グループのターン上限を保存できませんでした。",

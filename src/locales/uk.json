@@ -112,6 +112,8 @@
   "settings.profile.subtitle": "Показується в бічній панелі. Зберігається на ходу.",
   "settings.profile.name": "Ваше ім'я",
   "settings.skin.title": "Тема",
+  "settings.botAccent.title": "Колір бота як акцент",
+  "settings.botAccent.subtitle": "Акцент набуває кольору відкритого бота.",
   "settings.threadDisplay.title": "Гілки",
   "settings.threadDisplay.show": "Показувати гілки",
   "settings.roomTurns.title": "Тривалість запиту в групах",

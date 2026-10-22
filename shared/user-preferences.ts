@@ -21,6 +21,8 @@ export const USER_PREFERENCE_KEYS = [
   "omb-skin-depth",
   "omb-skin-texture",
   "omb-skin-variants",
+  // the open bot's colour as the accent (src/lib/bot-accent.ts)
+  "sagax.botAccent.v1",
   "omb-font",
   "omb-show-threads",
   "omb.retro98.on",

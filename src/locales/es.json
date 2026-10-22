@@ -21,6 +21,8 @@
   "settings.profile.subtitle": "Se muestra en la barra lateral. Se guarda mientras escribes.",
   "settings.profile.name": "Tu nombre",
   "settings.skin.title": "Tema",
+  "settings.botAccent.title": "Usar el color del bot como acento",
+  "settings.botAccent.subtitle": "El acento sigue el color del bot abierto.",
   "settings.roomTurns.title": "Turnos en grupos",
   "settings.roomTurns.minutes": "minutos",
   "settings.roomTurns.error": "No se pudo guardar el límite de turno del grupo.",

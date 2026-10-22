@@ -21,6 +21,8 @@
   "settings.profile.subtitle": "显示在侧边栏，边输入边保存。",
   "settings.profile.name": "你的名字",
   "settings.skin.title": "主题",
+  "settings.botAccent.title": "使用机器人颜色作为强调色",
+  "settings.botAccent.subtitle": "强调色跟随当前打开的机器人的颜色。",
   "settings.roomTurns.title": "群组轮次",
   "settings.roomTurns.minutes": "分钟",
   "settings.roomTurns.error": "无法保存群组轮次上限。",
