@@ -13552,7 +13552,16 @@
       "screenCapture.noBot": "ec2b8c2efb3a3be7233b5cfa54a3c45483ac71acf6d3990e72408f1368d6e404",
       "screenCapture.noImages": "2442b976c5b690a06daf33e873fea5106cdf2ef6272f5e77ce7bc57b053204dc",
       "screenCapture.tooLarge": "654c0e035675f238e53e8a63cbbe7d0c7fc8307a2961d5e9402bd6d82ab0e45a",
-      "screenCapture.uploadFailed": "cb8811d2992425176e60317b96927f6aa4dbf0bae2282184d1ffa4379600202f"
+      "screenCapture.uploadFailed": "cb8811d2992425176e60317b96927f6aa4dbf0bae2282184d1ffa4379600202f",
+      "teach.introScreen": "9ed420f04b1617aac2c5f5fa4d5a4fcef158716fd59ff089ffbc17d88fe4f936",
+      "teach.field.screen": "71514f70918895808646c888fc8898b236461be09aa99f091a46bc3147a83953",
+      "teach.field.screenSpot": "2de481aeb44074d860e7fc51f294da381bf3425d7d123a9443af9bdcae4958b8",
+      "teach.screenTyped": "f7e6111213099e15535c29eba49c6cb9c47085dd7809411eed3f154bdd46a270",
+      "computerTeach.start": "86b1cd2e49cc703d7eccc9486a8c352a19c891063e5ddf2684232382ae2cb15d",
+      "computerTeach.recording": "b4298c29261b83edcd71644589de3d484774036d54c96c6adb4a0b4d24a07571",
+      "computerTeach.nothing": "905e286a4bb47e92e563d37ca62f57909957e8f4ff3d137612a09aac3120ec80",
+      "computerTeach.startFailed": "a69d86d4417e111605ad1e9a1aecd4144bb5c5b9731e51d1eafcd778d26d11c0",
+      "computerTeach.thisBot": "ce97184a7dcaea83f562c1634923c9484526f53c1c63755f64eebeab677d19a0"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
