@@ -493,6 +493,33 @@ describe("trusted approval-mode persistence", () => {
     });
   });
 
+  it("keeps the shown thread on a model switch, which the server needs to pick the conversation", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
+    const modelSelection = { instanceId: "codex", model: "gpt-5.6-sol" };
+    await persistBotUpdate("bot-1", { modelSelection, threadId: "talk" }, new AbortController().signal, request);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ modelSelection, threadId: "talk" });
+  });
+
+  it("keeps the thread with a model switch coalesced into an organization Full grant", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("full") }));
+    const modelSelection = { instanceId: "codex", model: "gpt-5.6-sol" };
+    await persistBotUpdate(
+      "bot-1",
+      { approvalMode: "full", organizationFullAccess: true, modelSelection, threadId: "talk" },
+      new AbortController().signal,
+      request,
+    );
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ modelSelection, threadId: "talk" });
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({ approvalMode: "full", threadId: "talk" });
+  });
+
+  it("drops a Full grant's thread when the queue switched back to an ordinary level", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
+    await persistBotUpdate("bot-1", { approvalMode: "ask", organizationFullAccess: true, threadId: "talk" },
+      new AbortController().signal, request);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ approvalMode: "ask" });
+  });
+
   it("never sends a Full confirmation over HTTP after a rapid switch back to Ask", async () => {
     const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
     await persistBotUpdate(

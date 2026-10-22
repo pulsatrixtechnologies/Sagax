@@ -3727,9 +3727,13 @@ export async function persistBotUpdate(
     confirmFullAccess,
     applyToAllThreads,
     organizationFullAccess,
-    threadId: openThreadId,
-    ...ordinaryPatch
+    ...withThread
   } = patch;
+  // threadId rides the body with modelSelection only (the server pins the
+  // shown conversation for a model switch). The organization Full grant also
+  // names it, on its own request. Anywhere else it would be refused.
+  const { threadId: openThreadId, ...withoutThread } = withThread;
+  const ordinaryPatch: typeof withThread = withThread.modelSelection !== undefined ? withThread : withoutThread;
   if (approvalMode === "full" && organizationFullAccess === true) {
     // Organization server: ordinary fields first, then the Full grant alone
     // (the server refuses anything riding along with it). The open

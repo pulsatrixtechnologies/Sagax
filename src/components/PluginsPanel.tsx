@@ -21,7 +21,7 @@
 // plugins, servers, apps, skills and marketplaces. Other screens link here
 // or choose among them for one bot; keys stay in Settings > API keys.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Loader2, TriangleAlert, X } from "lucide-react";
+import { ExternalLink, Loader2, TriangleAlert, X } from "lucide-react";
 
 import { api, ApiError, useStore } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -36,8 +36,10 @@ import { viewerCan } from "@/lib/viewer";
 import { permissionMissingText } from "@/lib/permissions";
 import { connectorToolRows, loadConnectorTools, saveDisabledTools, toggledDisabledTools, type ConnectorToolsInventory } from "@/lib/connector-tool-switches";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
-import { WHOP_KEY, buildPluginItems, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
-import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
+import { WHOP_KEY, buildPluginItems, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
+import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "../../shared/grok-cloud-connectors";
+import { grokProviderConfigured } from "@/lib/providers-model";
+import { openExternalLink } from "@/lib/app-links";
 import {
   addMarketplace as addBotMarketplace,
   installPlugin as installBotPlugin,
@@ -156,8 +158,42 @@ export function pluginSourceLabel(source: string): string {
   if (source === "manual") return t("connectApps.source.manual");
   if (source === "catalog") return t("connectApps.source.catalog");
   if (source === "composio") return t("connectApps.source.composio");
+  if (source === "grok") return t("connectApps.source.grok");
   if (source === "local") return t("connectApps.skill.createdLocally");
   return source;
+}
+
+/** "Manage on Grok": the only thing a Grok connector row offers. Sagax
+ * neither connects it nor reads its account state. */
+export function GrokConnectorAction() {
+  return (
+    <button type="button" data-grok-manage onClick={() => void openExternalLink(GROK_CONNECTORS_URL)} className={cn(cardActionClass("quiet"), "inline-flex items-center gap-1")}>
+      <ExternalLink size={12} /> {t("connectApps.providers.manage", { provider: "Grok" })}
+    </button>
+  );
+}
+
+/** The row action of an xAI connector, or undefined for any other row. It
+ * comes before every Composio branch so a slug of the same name never lends
+ * its Connect button or its status. */
+export function grokRowAction(item: PluginItem): ReactNode | undefined {
+  return isGrokConnector(item) ? <GrokConnectorAction /> : undefined;
+}
+
+/** The detail page of an xAI connector: managed on Grok, not connected here. */
+export function grokConnectorDetail(item: PluginItem): Omit<PluginDetailProps, "onBack" | "onClose"> {
+  return {
+    item,
+    subtitle: "grok.com/connectors",
+    busy: false,
+    accounts: [],
+    accountAction: <GrokConnectorAction />,
+    accountExtra: <p className="mt-2 text-[12px] text-ink-secondary">{t("connectApps.grok.detail")}</p>,
+    details: [
+      { label: t("connectApps.detail.source"), value: pluginSourceLabel("grok") },
+      { label: t("connectApps.detail.accountsCount"), value: t("connectApps.grok.description") },
+    ],
+  };
 }
 
 export function PluginsPanel() {
@@ -350,6 +386,7 @@ export function PluginsPanel() {
     () => (scope === "bot" ? (botView ? botScopeMarketplaces(botView) : null) : marketplaces),
     [scope, botView, marketplaces],
   );
+  const grokConfigured = grokProviderConfigured(state.instances);
   const items = useMemo(() => buildPluginItems({
     cards: apps.cards,
     status: apps.status,
@@ -358,10 +395,10 @@ export function PluginsPanel() {
     skills,
     marketplaces: shownMarketplaces,
     whop: { description: t("whop.description"), server: mcp.whopServer?.name, connected: mcp.whopConnected },
-    grokConnectors: GROK_CLOUD_CONNECTORS,
+    grok: grokConfigured ? { connectors: GROK_CLOUD_CONNECTORS, description: t("connectApps.grok.description") } : null,
     // Until the catalog answers, assume apps can be connected (no flicker).
     composioUsable: apps.cards === null || apps.configured,
-  }), [apps.cards, apps.status, apps.configured, mcp.servers, featured, skills, shownMarketplaces, mcp.whopServer?.name, mcp.whopConnected]);
+  }), [apps.cards, apps.status, apps.configured, mcp.servers, featured, skills, shownMarketplaces, mcp.whopServer?.name, mcp.whopConnected, grokConfigured]);
   // For a bot, only marketplace plugins: apps, servers and skills are the
   // workspace's (a bot chooses among them in its own Access).
   const scopedItems = useMemo(() => (scope === "bot" ? items.filter((item) => item.kind === "plugin") : items), [scope, items]);
@@ -594,6 +631,8 @@ export function PluginsPanel() {
   };
 
   const renderAction = (item: PluginItem) => {
+    const grokAction = grokRowAction(item);
+    if (grokAction !== undefined) return grokAction;
     if (item.key === WHOP_KEY) return <WhopAction mcp={mcp} />;
     if (item.kind === "plugin") {
       if (scope === "bot") {
@@ -633,7 +672,7 @@ export function PluginsPanel() {
 
   const renderBelow = (item: PluginItem) => {
     if (item.key === WHOP_KEY) return <WhopBelow mcp={mcp} />;
-    if (item.kind !== "app") return null;
+    if (item.kind !== "app" || isGrokConnector(item)) return null;
     return <AppBelow apps={apps} item={item} draft={aliasDraft} onDraft={setAliasDraft} />;
   };
 
@@ -1074,6 +1113,7 @@ interface DetailContext {
 type DetailBase = Omit<PluginDetailProps, "onBack" | "onClose">;
 
 function detailProps(item: PluginItem, context: DetailContext): DetailBase {
+  if (isGrokConnector(item)) return grokConnectorDetail(item);
   if (item.kind === "app") return appDetail(item, context);
   if (item.kind === "plugin") {
     const marketplace = item.id.split("@")[1];

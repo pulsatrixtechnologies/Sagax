@@ -68,3 +68,10 @@ export function accountDetail(instance: InstanceLike): "email" | "apiKey" | "not
   if (instance.snapshot.authenticated === false) return "notSignedIn";
   return "signedIn";
 }
+
+/** A Grok engine is set up on this installation: only then are the xAI
+ * account's connector names worth listing (they are managed on grok.com). */
+export function grokProviderConfigured(instances: readonly InstanceLike[]): boolean {
+  const kinds = KNOWN.find((entry) => entry.id === "xai")!.kinds;
+  return instances.some((instance) => kinds.includes(instance.driverKind) && instance.snapshot.state === "available");
+}

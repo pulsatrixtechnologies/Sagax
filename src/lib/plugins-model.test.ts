@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
-import { appKey, buildPluginItems, categoryFromTags, connectedSummary, installedPlugins, mainSections, matchesFilter, matchesType } from "./plugins-model";
+import { appKey, buildPluginItems, isGrokConnector, categoryFromTags, connectedSummary, installedPlugins, mainSections, matchesFilter, matchesType } from "./plugins-model";
 
 const sources = {
   cards: [
@@ -185,12 +185,32 @@ describe("one row per app across sources", () => {
   });
 
   it("lists the xAI account connectors, including Exchange, X and Microsoft Teams", () => {
-    const items = buildPluginItems({ grokConnectors: GROK_CLOUD_CONNECTORS });
+    const items = buildPluginItems({ grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" } });
     const names = items.filter((item) => item.source === "grok").map((item) => item.name);
     expect(names).toEqual(expect.arrayContaining(["Outlook (Exchange)", "X", "Microsoft Teams"]));
     const found = mainSections(items, "exchange", "all");
     expect(found[0]!.items.map((item) => item.key)).toEqual(["grok:outlook"]);
-    expect(items.find((item) => item.id === "microsoft-teams")).toMatchObject({ kind: "app", installed: false, category: "communication", action: null });
+    expect(items.find((item) => item.key === "grok:microsoft-teams")).toMatchObject({ kind: "app", installed: false, status: "available", category: "communication", action: null });
+  });
+
+  it("keeps the xAI catalog apart from a connected Composio app of the same name", () => {
+    const items = buildPluginItems({
+      cards: [{ slug: "gmail", label: "Gmail", blurb: "Mail", logo: null, domain: "gmail.com" }],
+      status: { gmail: { connected: true, accounts: [{ id: "a1", status: "ACTIVE" }] } },
+      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
+    });
+    const gmail = items.filter((item) => item.name === "Gmail");
+    expect(gmail.map((item) => item.key).sort()).toEqual(["app:gmail", "grok:gmail"]);
+    const grok = gmail.find((item) => item.source === "grok")!;
+    expect(grok).toMatchObject({ id: "grok:gmail", installed: false, status: "available", action: null });
+    expect(grok.merged).toBeUndefined();
+    expect(gmail.find((item) => item.key === "app:gmail")!.merged).toBeUndefined();
+    expect(isGrokConnector(grok)).toBe(true);
+    expect(isGrokConnector(gmail.find((item) => item.key === "app:gmail")!)).toBe(false);
+  });
+
+  it("has no xAI rows when no Grok provider is set up", () => {
+    expect(buildPluginItems({ grok: null }).some((item) => item.source === "grok")).toBe(false);
   });
 });
 

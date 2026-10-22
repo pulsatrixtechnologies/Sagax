@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildPluginItems } from "@/lib/plugins-model";
+import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
+import { grokConnectorDetail, grokRowAction } from "./PluginsPanel";
 import { ConnectAppsView } from "./plugins/ConnectAppsView";
 import { ManageView } from "./plugins/ManageView";
 import { ProvidersSection } from "./plugins/ProvidersSection";
@@ -177,5 +179,47 @@ describe("Plugins panel views", () => {
     expect(providers).toContain("Manage on Grok");
     expect(providers).toContain("Gemini: Google&#x27;s extensions do not reach bots in Sagax.");
     expect(providers).toContain("Manage on ChatGPT / Codex");
+  });
+
+  it("xAI connectors are a catalog managed on Grok: no Composio action or status, a Grok link, a separate row", () => {
+    const withGrok = buildPluginItems({
+      cards: [{ slug: "gmail", label: "Gmail", blurb: "Mail", logo: null, domain: "gmail.com" }],
+      status: { gmail: { connected: true, accounts: [{ id: "a1", status: "ACTIVE" }] } },
+      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
+    });
+    const html = renderToStaticMarkup(createElement(ConnectAppsView, {
+      items: withGrok, loading: false, search: "gmail", onSearch: noop, filter: "all", onFilter: noop,
+      onOpenManage: noop, onOpenItem: noop, type: "any", onType: noop,
+      renderAction: (item) => grokRowAction(item) ?? (item.action ? createElement("button", { type: "button" }, "Connect") : null),
+    }));
+    const row = (key: string) => {
+      const start = html.indexOf(`data-plugin-row="${key}"`);
+      expect(start).toBeGreaterThan(-1);
+      const next = html.indexOf("data-plugin-row=", start + 1);
+      return html.slice(start, next === -1 ? undefined : next);
+    };
+    const grokGmail = row("grok:gmail");
+    expect(grokGmail).toContain("data-grok-manage");
+    expect(grokGmail).toContain("Manage on Grok");
+    expect(grokGmail).not.toContain("data-plugin-status");
+    expect(grokGmail).not.toContain(">Connect<");
+    expect(row("app:gmail")).toContain('data-plugin-status="connected"');
+
+    const detail = renderToStaticMarkup(createElement(PluginDetailView, {
+      ...grokConnectorDetail(withGrok.find((item) => item.key === "grok:gmail")!), onBack: noop,
+    }));
+    expect(detail).toContain("Managed on Grok");
+    expect(detail).toContain("Grok (xAI)");
+    expect(detail).toContain("data-grok-manage");
+    expect(detail).not.toContain("No account needed");
+    expect(detail).not.toContain("Composio");
+    expect(detail).not.toContain('data-plugin-status="connected"');
+  });
+
+  it("lists the xAI connector names only under a Grok engine that is set up", () => {
+    const providers = renderToStaticMarkup(createElement(ProvidersSection, { instances: [
+      { instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", snapshot: { state: "unavailable" } },
+    ] as never }));
+    expect(providers).not.toContain("data-grok-cloud-connectors");
   });
 });

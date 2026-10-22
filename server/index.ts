@@ -2492,14 +2492,12 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   const teamMemoryCard = store.messagesFor(threadId).find((message) =>
     message.card?.requestId === requestId && message.card.teamMemoryRequest);
   if (teamMemoryCard?.card?.teamMemoryRequest) {
+    // A Cloud home stays its owner's alone, whatever the card.
+    if (CLOUD_HOME) return cloudCardRefusal(auth);
     return teamMemoryReviewRefusal({
       admin: auth.scopes.includes("admin"),
-      shared: sharedMembership(),
-      memberOfSection: personMayReviewTeamMemory(
-        auth,
-        teamMemoryCard.card.teamMemoryRequest.section,
-        teamMemoryCard.from?.botId ?? store.botByThread(threadId)?.id,
-      ),
+      shared: teamMemoryShared(),
+      memberOfSection: personMayUseTeamSection(auth, teamMemoryCard.card.teamMemoryRequest.section),
     });
   }
   // A Cloud home is one person's: a device paired with chat-only access (a
@@ -2512,38 +2510,37 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
 }
 
-/** A signed-in person can use at least one bot that sits in this section. */
+/** A signed-in person can use at least one bot that sits in this section
+ * now. The proposing bot counts only while it is still in that section: a
+ * bot moved since its proposal no longer vouches for the old team. */
 function personMayUseTeamSection(auth: RequestAuth, section: string): boolean {
   if (auth.kind !== "session") return false;
-  const viewer = authzViewerFor(auth);
+  return viewerUsesTeamSection(authzViewerFor(auth), section);
+}
+
+/** Several people share team memory: an organization server (Perspicax,
+ * which keeps no sign-in list of its own, so sharedMembership is false
+ * there) or a workspace with members. */
+function teamMemoryShared(): boolean {
+  return IDENTITY.kind === "perspicax" || sharedMembership();
+}
+
+function viewerUsesTeamSection(viewer: AuthzViewer | undefined, section: string): boolean {
   if (!viewer || viewer.disabled) return false;
   const key = sectionContextKey(section);
   return store.bots.some((bot) =>
     sectionContextKey(bot.section) === key && canOnBot(viewer, "bot.use", botFacts(bot)));
 }
 
-/** The section's people, or the people who can use the bot that proposed
- * this entry. A workspace admin is decided separately. */
-function personMayReviewTeamMemory(auth: RequestAuth, section: string, proposerBotId: string | undefined): boolean {
-  if (personMayUseTeamSection(auth, section)) return true;
-  if (auth.kind !== "session" || !proposerBotId) return false;
-  const viewer = authzViewerFor(auth);
-  const proposer = store.bot(proposerBotId);
-  if (!viewer || viewer.disabled || !proposer) return false;
-  return canOnBot(viewer, "bot.use", botFacts(proposer));
-}
-
-/** The team-memory dialog. A bot's own shell proposes through the internal
- * route and waits for a card; it does not write the shared file itself. */
-function teamMemoryRouteRefusal(auth: RequestAuth, section: string): string | null {
-  if (auth.kind === "loopback" && auth.trust === "service") {
-    return "A local service cannot change shared team memory. Propose it and let a person confirm the card.";
-  }
-  return teamMemoryReviewRefusal({
-    admin: auth.kind === "loopback" || auth.scopes.includes("admin"),
-    shared: sharedMembership(),
-    memberOfSection: personMayUseTeamSection(auth, section),
-  });
+/** The team-memory dialog is an admin page (the route needs admin scope,
+ * server/request-auth.ts). A local service (a bot's own shell) proposes
+ * through the internal route and waits for a card; it never writes the
+ * shared file itself. A member reviews only through the card. */
+function teamMemoryWriteRefusal(auth: RequestAuth, method: string): string | null {
+  if (method === "GET") return null;
+  return auth.kind === "loopback" && auth.trust === "service"
+    ? "A local service cannot change shared team memory. Propose it and let a person confirm the card."
+    : null;
 }
 
 /** Settings > Bot > Auto-review (server/bot-settings.ts): when the caller
@@ -10734,6 +10731,10 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   const question = Boolean(message.card && typeof message.card === "object" && (message.card.questionRequest || isPersistentQuestionCard(message.card)));
   if (question) return null;
   if (message.card && typeof message.card === "object" && message.card.terminalRequest) return null;
+  // A team-memory card is the team's to confirm, not only the bot owner's:
+  // cardAnswerRefusal (always asked next) decides it by section membership.
+  // Every other approval stays with the owner.
+  if (message.card && typeof message.card === "object" && message.card.teamMemoryRequest) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
   const audience = bot ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, message.card), host: approvalHostOf(bot) }) : null;
@@ -11233,6 +11234,12 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
     return accessCardForViewer(row, { principalId: viewer.userId, admin: person?.local === true || person?.orgRole === "admin" }) as T;
   }
   if (!isApprovalCardMessage(row)) return message;
+  // A team-memory card is the team's (cardAnswerRefusal): a person who can
+  // use a bot of that section gets the card itself, not "waiting on owner".
+  const teamMemory = (row.card as { teamMemoryRequest?: { section?: unknown } } | undefined)?.teamMemoryRequest;
+  if (teamMemory && typeof teamMemory.section === "string" && viewer.userId &&
+    teamMemoryShared() &&
+    viewerUsesTeamSection(authzViewerFromId(viewer.userId), teamMemory.section)) return message;
   const bot = botForApproval(threadId, row);
   const audience = bot
     ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, row.card as { destinationAnswerer?: unknown } | undefined), host: approvalHostOf(bot) })
@@ -42703,22 +42710,31 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (target.busy && !primaryAskedReplay()) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
-        const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: target.id, op: "bot", thread: "*", froms: [approvalModeFor(target)], to: "full", stepUp: patchStepUp });
+        // The settings control shows the open conversation. The grant has to
+        // land on that thread too, or the menu snaps back to the thread's
+        // previous level while only the bot default changed. Only a thread
+        // this caller is shown: never another member's conversation.
+        const followTask = parsedFull.threadId ? store.taskByThread(target.id, parsedFull.threadId) : undefined;
+        const followViewer = scopedThreadViewer() ?? sessionPrincipal(auth) ?? undefined;
+        const follow = threadFollowsFullGrant({
+          threadId: parsedFull.threadId,
+          knownThread: Boolean(followTask) && threadsShownTo(target, [followTask!], followViewer).length === 1,
+          threadBusy: Boolean(parsedFull.threadId && threadBusy(target.id, parsedFull.threadId)),
+        });
+        const threadBefore = follow ? approvalModeFor(store.projectBotForTask(target.id, follow) ?? target) : undefined;
+        // The key is asked against every level this grant loosens: the bot's
+        // default and, when it follows, the thread's own.
+        const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: target.id, op: "bot", thread: "*", froms: [approvalModeFor(target), ...(threadBefore ? [threadBefore] : [])], to: "full", stepUp: patchStepUp });
         if (fullStepUp) return json(res, fullStepUp.status, fullStepUp.body);
         const before = approvalModeFor(target);
         const updated = store.patchBot(target.id, {
           approvalMode: "full", autoApprove: false, alwaysAllow: [],
           fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
         })!;
-        // The settings control shows the open conversation. The grant has to
-        // land on that thread too, or the menu snaps back to the thread's
-        // previous level while only the bot default changed.
-        const follow = threadFollowsFullGrant({
-          threadId: parsedFull.threadId,
-          knownThread: Boolean(parsedFull.threadId && store.taskByThread(updated.id, parsedFull.threadId)),
-          threadBusy: Boolean(parsedFull.threadId && threadBusy(updated.id, parsedFull.threadId)),
-        });
-        if (follow) store.patchTask(updated.id, follow, { approvalMode: "full", autoApprove: false, alwaysAllow: [] });
+        if (follow) {
+          store.patchTask(updated.id, follow, { approvalMode: "full", autoApprove: false, alwaysAllow: [] });
+          auditApprovalModeChange(auth, target.id, threadBefore!, "full", follow);
+        }
         auditApprovalModeChange(auth, target.id, before, "full");
         const visible = wireBot(store.bot(updated.id)!);
         broadcast({ kind: "bot", bot: visible });
@@ -43657,7 +43673,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!url.searchParams.has("section")) return json(res, 400, { error: "section is required" });
       const section = sectionContextKey(url.searchParams.get("section") ?? "");
       if (section.length > 60) return json(res, 400, { error: "section must be at most 60 characters" });
-      const teamMemoryRefusal = teamMemoryRouteRefusal(auth, section);
+      const teamMemoryRefusal = teamMemoryWriteRefusal(auth, method);
       if (teamMemoryRefusal) return json(res, 403, { error: teamMemoryRefusal });
       if (method === "GET") {
         return json(res, 200, { section, label: sectionContextLabel(section), entries: teamMemory.list(section) });
@@ -43683,7 +43699,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && (method === "PATCH" || method === "DELETE")) {
       if (!url.searchParams.has("section")) return json(res, 400, { error: "section is required" });
       const section = sectionContextKey(url.searchParams.get("section") ?? "");
-      const teamMemoryRefusal = teamMemoryRouteRefusal(auth, section);
+      const teamMemoryRefusal = teamMemoryWriteRefusal(auth, method);
       if (teamMemoryRefusal) return json(res, 403, { error: teamMemoryRefusal });
       if (method === "DELETE") {
         if (!teamMemory.remove(section, m[1])) return json(res, 404, { error: "no such entry" });
