@@ -539,6 +539,9 @@ private struct PhoneBotPanelContent: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    if let expression = routine.schedule.expression, routine.schedule.type == .cron {
+                        Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
+                    }
                     if gate.allows(.routineDelete) {
                         Button(String(localized: "Delete routine"), systemImage: "trash", role: .destructive) { deletingRoutine = routine }
                     }

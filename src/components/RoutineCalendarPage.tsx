@@ -23,6 +23,7 @@ import {
   CircleAlert,
   Clock3,
   Cloud,
+  Copy,
   ExternalLink,
   FileText,
   Laptop,
@@ -1620,7 +1621,10 @@ export function EventDetails({
             <div className="text-[12.5px] text-ink-secondary">
               {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` - ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
             </div>
-            {(routine || call) && <div data-schedule-label title={scheduleRawCron((routine ?? call)!.schedule) ?? undefined} className="mt-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>}
+            {(routine || call) && <div className="mt-1 flex items-start gap-1.5">
+              <div data-schedule-label title={scheduleRawCron((routine ?? call)!.schedule) ?? undefined} className="min-w-0 flex-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>
+              {routine?.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { void navigator.clipboard?.writeText(routine.schedule.type === "cron" ? routine.schedule.expression : "").catch(() => {}); }} className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} /></button>}
+            </div>}
             {routine?.schedule.type === "cron" && <div className="mt-3"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
           </div>
           <div className="flex items-start gap-3">

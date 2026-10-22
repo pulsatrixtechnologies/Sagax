@@ -5824,6 +5824,7 @@
   "engineSetup.checkFailed": "Impossible d'actualiser l'état des fournisseurs. L'état précédent reste affiché. {reason}",
   "engineSetup.checked": "État des fournisseurs actualisé.",
   "routines.empty": "Aucune routine pour l'instant.",
+  "routines.copyCron": "Copier l'expression",
   "dataWindow.open": "Ouvrir la fenêtre Data",
   "dataWindow.title": "Data : {name}",
   "dataWindow.off": "La fenêtre Data est désactivée. Activez-la dans Réglages > Expérimental.",
