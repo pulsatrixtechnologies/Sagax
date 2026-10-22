@@ -1404,7 +1404,8 @@ const phoneTools = createPhoneToolBroker({
   audit: (row) => appendAdminAction(DATA_DIR, {
     category: "approval",
     action: `phoneTool.${row.outcome}`,
-    target: { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name },
+    // a card scan comes from the person's own computer, not a bot
+    target: row.botId ? { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name } : { kind: "vault", name: "card scan" },
     changed: [`${row.tool}:${row.access}`],
     actor: { kind: "person", principalId: row.person, via: "sagax" },
   }),
