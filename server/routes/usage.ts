@@ -10,6 +10,7 @@
 // open to every signed-in person (request-auth.ts CLIENT_ALLOW). Settings >
 // Usage reads it, so a member sees their own plan and cost; the
 // organization's totals stay in its admin console.
+import { clearPersonalCap, MIN_PERSONAL_CAP_USD, personalCapState, writePersonalCap } from "../personal-spend-cap.ts";
 import type { PriceList } from "../prices.ts";
 import type { SpendState } from "../spend.ts";
 import {
@@ -54,7 +55,32 @@ export function ownUsageViewer(auth: RequestAuth, organization: boolean): UsageV
 }
 
 export function createUsageRoutes(deps: UsageRouteDeps): RouteHandler {
-  return async ({ res, url, path, method, json, auth }) => {
+  return async ({ res, req, url, path, method, json, readBody, auth }) => {
+    // The person's own monthly spend limit (server/personal-spend-cap.ts).
+    // Read: every signed-in person. Write: admin scope (the owner), solo only.
+    if (path === "/api/me/spend-cap" && (method === "GET" || method === "PUT")) {
+      const organization = deps.organization();
+      if (method === "GET") {
+        res.setHeader("cache-control", "no-store");
+        return json(res, 200, { supported: !organization, minUsd: MIN_PERSONAL_CAP_USD, cap: organization ? null : personalCapState(deps.dataDir) });
+      }
+      if (organization) return json(res, 409, { error: "a personal limit is set in your organization's console on this server" });
+      let body: { monthlyUsd?: unknown };
+      try {
+        body = ((await readBody(req)) ?? {}) as { monthlyUsd?: unknown };
+      } catch {
+        return json(res, 400, { error: "invalid JSON" });
+      }
+      if (body.monthlyUsd === null) {
+        clearPersonalCap(deps.dataDir);
+      } else if (typeof body.monthlyUsd !== "number" || !Number.isFinite(body.monthlyUsd) || body.monthlyUsd < MIN_PERSONAL_CAP_USD) {
+        return json(res, 400, { error: `monthlyUsd must be a number of at least ${MIN_PERSONAL_CAP_USD}, or null to remove the limit` });
+      } else {
+        writePersonalCap(deps.dataDir, body.monthlyUsd);
+      }
+      res.setHeader("cache-control", "no-store");
+      return json(res, 200, { supported: true, minUsd: MIN_PERSONAL_CAP_USD, cap: personalCapState(deps.dataDir) });
+    }
     if (method === "GET" && path === "/api/me/usage") {
       const viewer = ownUsageViewer(auth, deps.organization());
       if (!viewer) return json(res, 403, { error: "sign in as a person first" });

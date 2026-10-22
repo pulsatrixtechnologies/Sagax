@@ -72322,6 +72322,13 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Choisissez une image PNG, JPEG, GIF ou WebP d'au plus %lld Mo." } },
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolha uma imagem PNG, JPEG, GIF ou WebP de até %lld MB." } }
       }
+    },
+    "Copy version": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy version" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier la version" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar a versão" } }
+      }
     }
   },
   "version": "1.0"

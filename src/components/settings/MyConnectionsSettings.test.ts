@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { parseArgsLine, parseEnvLines, suggestServerName, type MyConnections } from "@/lib/my-connections";
 import { SECTIONS, organizationHidesSection } from "../SettingsModal";
-import { MyConnectionsSettings } from "./MyConnectionsSettings";
+import { ConnectorPreferencesCard, MyConnectionsSettings } from "./MyConnectionsSettings";
 
 afterEach(() => setLocale("en"));
 
@@ -92,3 +92,24 @@ describe("Mes connexions", () => {
   });
 });
 
+
+
+describe("Effacer les préférences de connecteurs", () => {
+  it("sits at the end of Your connections, with the promise that accounts stay connected", () => {
+    const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: base }));
+    expect(html).toContain("Clear connector preferences");
+    expect(html).toContain("Accounts stay connected");
+  });
+
+  it("is not offered while an admin manages the connections", () => {
+    const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, managedByAdmin: true } }));
+    expect(html).not.toContain("Clear connector preferences");
+  });
+
+  it("speaks Quebec French", () => {
+    setLocale("fr");
+    const html = renderToStaticMarkup(createElement(ConnectorPreferencesCard, { clear: async () => 0 }));
+    expect(html).toContain("Effacer les préférences de connecteurs");
+    expect(html).toContain("Les comptes restent connectés");
+  });
+});
