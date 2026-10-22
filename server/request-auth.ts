@@ -692,8 +692,18 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/routine-runs\/[\w-]+\/(?:cancel|seen)$/ },
   { methods: ["POST"], path: /^\/api\/routine-runs\/seen-all$/ },
   { methods: ["DELETE"], path: /^\/api\/routine-runs$/ },
-  // webhook list is secret-free; creating or rotating one is not
+  // Webhooks are a bot feature its owner uses: a webhook runs a task on the
+  // bot's own computer (This computer or its cloud computer), never on the
+  // shared organization server, so creating or managing one is client scope
+  // like a routine. Server-side, webhookDelegateRefusal keeps a member off an
+  // admin's bot and off a Microsoft trigger, and the create handler refuses a
+  // non-admin a run target on the shared server (server/exec-target.ts
+  // webhookExecTargetAdminOnly). 2026-10-22 (JC): a normal user must be able
+  // to use this basic bot feature without the server-settings right.
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
+  { methods: ["POST"], path: /^\/api\/webhooks$/ },
+  { methods: ["POST"], path: /^\/api\/webhooks\/[\w-]+\/(?:rotate|test|reveal)$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/webhooks\/[\w-]+$/ },
   // configured-or-not booleans; the handler strips the few identifying fields for clients
   { methods: ["GET"], path: /^\/api\/config$/ },
   // Accepting an invite is how a person who is not yet a member joins a
@@ -877,9 +887,9 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   // primary key.
   { methods: ["PUT", "PATCH"], path: /^\/api\/config$/, permission: ["server.settings", "server.experimental"] },
   { methods: ["POST"], path: /^\/api\/keys\/test$/, permission: "server.settings" },
-  { methods: ["POST"], path: /^\/api\/webhooks$/, permission: "server.settings" },
-  { methods: ["POST"], path: /^\/api\/webhooks\/[\w-]+\/(?:rotate|test|reveal)$/, permission: "server.settings" },
-  { methods: ["PATCH", "DELETE"], path: /^\/api\/webhooks\/[\w-]+$/, permission: "server.settings" },
+  // Webhooks are client scope (CLIENT_ALLOW): a webhook runs on the bot's own
+  // computer, so its owner creates and manages it without server.settings.
+  // webhookDelegateRefusal and webhookExecTargetAdminOnly keep the limits.
   { methods: ["PATCH"], path: /^\/api\/org\/settings$/, permission: "server.settings" },
   { methods: ["PUT", "DELETE"], path: /^\/api\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, permission: "server.settings" },
   { methods: ["PUT"], path: /^\/api\/tts\/provider$/, permission: "server.settings" },

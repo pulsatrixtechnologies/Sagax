@@ -400,7 +400,7 @@
   "approval.voice.profile": "{requester} wants to update its profile: {title}. Review the change on screen. Should I confirm it?",
   "approval.voice.routine": "{requester} asks: {title} Review the schedule and instructions on screen. Should I confirm it?",
   "approval.voice.skill": "{requester} asks: {title} Review the skill on screen. Should I {action} it?",
-  "approval.waitingForAdmin": "This command runs on the server: waiting for an admin to approve it.",
+  "approval.waitingForAdmin": "This command runs on the organization's server: waiting for an admin to approve it. On the bot's own computer (its server environment, Local VM or cloud computer) it needs no admin.",
   "approvalMode.antigravity.desc": "Automatically approve tool requests for this bot, including commands, edits, and computer actions. No automatic review.",
   "approvalMode.antigravity.label": "Auto (full access)",
   "approvalMode.antigravityLocalOnly": "Auto (full access) is available in the local packaged desktop app.",

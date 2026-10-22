@@ -86,7 +86,11 @@ export type DecisionSource =
   | "timeout"
   /** refused in a confidential thread: only its owner may answer, and could not
    * (server/confidential-threads.ts) */
-  | "confidential";
+  | "confidential"
+  /** a member bot's command would run on the shared organization server, which
+   * only an admin may use: it runs on the bot's own computer instead, or is
+   * refused when it has none (server/exec-target.ts, 2026-10-22) */
+  | "exec-target";
 
 /** Who answered a card, for `source: "user"` rows: a signed-in session (its
  * id, device label, and account email or id when it has one; a portal
