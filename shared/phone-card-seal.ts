@@ -7,9 +7,14 @@
 // AES-256-GCM; ios/Sources/CompanionCore/PhoneSecret.swift), with one
 // difference: the recipient is a one-time key the form makes for this scan
 // (its private half never leaves the form), not the desktop's pinned key,
-// which the harness opens itself. Against a swapped key, the form and the
-// phone both show a six digit code drawn from that key: the person checks
-// they match before scanning. Wire contract with
+// which the harness opens itself. What this buys: the relay (server, logs,
+// live frames, pushes, crash reports) never holds the number. It is not a
+// defence against a malicious server, which serves the form's code and sees
+// a typed card anyway. The six digit code both screens show is a pairing
+// check (the right form and the right phone), not an authentication: 20
+// bits a server could grind. A commit-reveal could come later. HPKE base
+// mode authenticates no sender: any native session of the same person may
+// answer (the routes allow only those). Wire contract with
 // ios/Sources/CompanionCore/PhoneCardSeal.swift: change both or neither.
 import { Aes256Gcm, CipherSuite, DhkemP256HkdfSha256, HkdfSha256 } from "@hpke/core";
 

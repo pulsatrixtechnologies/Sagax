@@ -1,18 +1,34 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Code %@ %@: check your computer shows the same before you scan.": {
+    "Pairing code %@ %@: your computer's form shows the same when it is the one asking.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Code %@ %@: check your computer shows the same before you scan."
+            "value": "Pairing code %@ %@: your computer's form shows the same when it is the one asking."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Code %@ %@ : vérifiez que votre ordinateur affiche le même avant de scanner."
+            "value": "Code de jumelage %@ %@ : le formulaire de votre ordinateur affiche le même quand c'est bien lui qui demande."
+          }
+        }
+      }
+    },
+    "The card could not be sealed for the computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The card could not be sealed for the computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La carte n'a pas pu être scellée pour l'ordinateur."
           }
         }
       }

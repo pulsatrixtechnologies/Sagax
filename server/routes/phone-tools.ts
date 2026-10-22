@@ -138,11 +138,12 @@ export function createPhoneToolInternalRoutes(deps: PhoneToolInternalDeps): Inte
 // vault's New card form, asks their iPhone to read a card (Vision, on the
 // phone). Never a bot: the request has no bot and no conversation.
 //   GET    /api/me/phone-tools/card-scan            { available }
-//   POST   /api/me/phone-tools/card-scan            start: { requestId }
-//   POST   /api/me/phone-tools/card-scan/:id/wait   { status, card? } (number, expiry, name; never the security code)
+//   POST   /api/me/phone-tools/card-scan            { publicKey } start: { requestId }
+//   POST   /api/me/phone-tools/card-scan/:id/wait   { status, sealed? }
 //   DELETE /api/me/phone-tools/card-scan/:id        the form gave up
-// The card number crosses this route once, to the form that asked; the
-// server keeps it only in memory until that read and never logs it.
+// The phone seals the number, the expiry and the name for the form's
+// one-time key (shared/phone-card-seal.ts); this route relays that envelope
+// once and never holds the number in clear (never the security code).
 const CARD_SCAN_ID = /^\/api\/me\/phone-tools\/card-scan\/([\w-]{1,64})(\/wait)?$/;
 
 export interface PhoneCardScanRouteDeps {

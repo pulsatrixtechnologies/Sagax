@@ -279,7 +279,7 @@ private struct PhoneCardScanCard: View {
             let sealed = try PhoneCardSeal.seal(number: number, expMonth: read.expMonth, expYear: read.expYear, holder: read.holder, publicKey: publicKey, requestId: request.id)
             await PhoneToolCenter.shared.choose(.once, card: sealed)
         } catch {
-            await PhoneToolCenter.shared.refuse("The card could not be sealed for the computer.")
+            await PhoneToolCenter.shared.refuse(String(localized: "The card could not be sealed for the computer."))
         }
     }
 
@@ -295,8 +295,8 @@ private struct PhoneCardScanCard: View {
             Text(PhoneToolWords.what(request))
                 .fixedSize(horizontal: false, vertical: true)
             if let code = matchCode, protectedTransport {
-                // the same six digits the computer's form shows: same one-time key
-                Text("Code \(String(code.prefix(3))) \(String(code.suffix(3))): check your computer shows the same before you scan.")
+                // a pairing check (the right form, the right phone), not an authentication
+                Text("Pairing code \(String(code.prefix(3))) \(String(code.suffix(3))): your computer's form shows the same when it is the one asking.")
                     .font(.callout.weight(.semibold))
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -13798,11 +13798,12 @@
       "vault.phoneScan.button": "df629e13412299428fffdc8eac63d1edbd7b47bc64cf96dcad341330e96671fc",
       "vault.phoneScan.cancel": "9d4e52da94a75e6642cf53eac9c424ca30e6adcddc7ca5ebe51bafdb612719b5",
       "vault.phoneScan.waiting": "5f74943526ed42be25d94a225afe7bde43d77d5ba73252e2b2a555813c4c6b40",
-      "vault.phoneScan.done": "71b5ab7f68d19591ea02e5bb138ca148f0bd6c5c51fbbd38e55e02a4f16b5f87",
+      "vault.phoneScan.done": "1eec944b9a788333b81f3756ca7b7838ec8b657cc074aa36cb0e28059fa4e60d",
       "vault.phoneScan.denied": "87108060e28ea86a5592be28761baf3be37003b3b01c76b32e391667ae28cc9c",
       "vault.phoneScan.expired": "ad417952a8322edf5c43870788e5bc7de1b2877f91757a7db78915734cbf7b80",
       "vault.phoneScan.failed": "8d2fa8649bdce255b5ecd8c87799b69dcee6751aa72aafcb523c60349e94593e",
-      "vault.phoneScan.code": "7fe90c269fae5e16c3fbfe54f09aaa0a1828c643f2daabd2f13d4c0b68a4d85f"
+      "vault.phoneScan.code": "a1fce6fa2291cf31d5bff9f6734cad0dacf9554418d80fa002af58d73d8f768f",
+      "vault.phoneScan.doneNoExpiry": "ee2aba663ae016cc8755144f22e51062b9c2d40966f857b1b7f2bd9d826b3b7e"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

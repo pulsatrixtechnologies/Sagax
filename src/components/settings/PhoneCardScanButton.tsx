@@ -16,6 +16,8 @@ export function PhoneCardScanButton({ onRead, available: forced }: { onRead: (ca
   const [state, setState] = useState<State>("idle");
   // the six digits the iPhone shows too: same code, same one-time key
   const [code, setCode] = useState<string | null>(null);
+  // the number field is masked: say what was read beside it (last four, expiry)
+  const [summary, setSummary] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -39,6 +41,7 @@ export function PhoneCardScanButton({ onRead, available: forced }: { onRead: (ca
       if (outcome.status === "cancelled") return setState("idle");
       if (outcome.status === "done") {
         onRead(outcome.card);
+        setSummary(scannedCardSummary(outcome.card));
         return setState("done");
       }
       setState(outcome.status === "denied" ? "denied" : outcome.status === "expired" ? "expired" : "failed");
@@ -59,7 +62,7 @@ export function PhoneCardScanButton({ onRead, available: forced }: { onRead: (ca
         {state === "waiting" && code && <span className="text-[12px] text-ink-secondary" data-phone-card-scan-code>{t("vault.phoneScan.code", { code: `${code.slice(0, 3)} ${code.slice(3)}` })}</span>}
       </div>
       {state !== "idle" && state !== "waiting" && (
-        <p className="text-[12px] text-ink-secondary" role="status">{t(`vault.phoneScan.${state}` as const)}</p>
+        <p className="text-[12px] text-ink-secondary" role="status">{state === "done" && summary ? summary : t(`vault.phoneScan.${state === "done" ? "failed" : state}` as const)}</p>
       )}
     </div>
   );
@@ -73,4 +76,12 @@ export function scannedCardFields(card: ScannedCard): { pan: string; expMonth?: 
     ...(card.expYear ? { expYear: String(card.expYear) } : {}),
     ...(card.holder ? { holder: card.holder } : {}),
   };
+}
+
+/** What the form says it filled: the last four digits and the expiry,
+ * never the whole number (the field itself is masked). */
+export function scannedCardSummary(card: ScannedCard): string {
+  const last4 = card.number.slice(-4);
+  if (!card.expMonth || !card.expYear) return t("vault.phoneScan.doneNoExpiry", { last4 });
+  return t("vault.phoneScan.done", { last4, expiry: `${String(card.expMonth).padStart(2, "0")}/${card.expYear}` });
 }

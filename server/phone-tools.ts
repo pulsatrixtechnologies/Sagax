@@ -452,3 +452,24 @@ export function phoneToolTurn(input: {
   if (!person || person !== owner) return { error: "Only the bot's owner can use their own phone through it." };
   return { person };
 }
+
+/** Who may start a card scan (crypto review of #961): the person at their
+ * own computer, told apart by the kind of session, never by a header a
+ * phone could send. The desktop app is a loopback caller with the app's
+ * owner token; a browser is a cookie session. A native app's bearer session
+ * (a phone), a bot's or an ephemeral session, and a loopback caller without
+ * the desktop's token (a bot's shell, a server outside the desktop app) are
+ * refused. */
+export function cardScanRequester(input: {
+  person: string;
+  auth: "loopback" | "cookie" | "bearer" | "bot";
+  desktopManaged: boolean;
+  desktopOwnerHeader: boolean;
+  companionMarked?: boolean;
+}): string | null {
+  const person = input.person.trim().toLowerCase();
+  if (!person) return null;
+  if (input.auth === "cookie") return person;
+  if (input.auth === "loopback") return input.desktopManaged && input.desktopOwnerHeader ? person : null;
+  return null;
+}

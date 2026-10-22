@@ -25,8 +25,9 @@ public enum PhoneCardSeal {
         return try PhoneSecretCrypto.publicKeyId(publicKey)
     }
 
-    /// Six digits the form and the phone both show for this key: the person
-    /// checks they match before scanning (a swapped key shows another code).
+    /// Six digits the form and the phone both show for this key: a pairing
+    /// check that the right form and the right phone are talking, not an
+    /// authentication (20 bits a malicious server could grind).
     public static func matchCode(_ publicKey: String) throws -> String {
         guard PhoneSecretCrypto.normalizedPublicKey(publicKey) != nil, let raw = decode(publicKey) else { throw PhoneCardSealError.invalidKey }
         let digest = Array(SHA256.hash(data: raw))

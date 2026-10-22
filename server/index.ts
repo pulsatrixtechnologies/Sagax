@@ -1075,7 +1075,7 @@ import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
 // Phone tools (audit row 81): the person's own iPhone, approved on the phone.
 import { createPhoneCardScanRoutes, createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./routes/phone-tools.ts";
-import { createPhoneToolBroker, phoneToolTurn } from "./phone-tools.ts";
+import { cardScanRequester, createPhoneToolBroker, phoneToolTurn } from "./phone-tools.ts";
 import { phoneConnectionTransport } from "../shared/phone-transport.ts";
 import { ipcPeer } from "./request-auth.ts";
 import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT, PHONE_TOOLS_FRAME, phoneToolsFrameAllowed } from "../shared/phone-tools.ts";
@@ -32710,14 +32710,20 @@ ROUTES.push(createPhoneToolRoutes({
   botName: (botId) => store.bot(botId)?.name,
 }));
 // "Scanner avec l'iPhone" (row 84): the person at their own computer asks
-// their phone to read a card; never a phone, a bot's shell or session. A
-// loopback POST already needed the desktop app's owner header (request-auth).
+// their phone to read a card; told apart by the session (cardScanRequester),
+// never by a header a phone could send.
 ROUTES.push(createPhoneCardScanRoutes({
   broker: () => phoneTools,
   desktop: (req, auth) => {
-    if (req.headers["x-openmausbot-companion"] === "1") return null;
-    if (auth.kind === "session" && (auth.session.ephemeral || isBotActSession(auth.session))) return null;
-    return actorPrincipalId(auth) || null;
+    const owner = req.headers["x-openmausbot-desktop-owner"];
+    return cardScanRequester({
+      person: actorPrincipalId(auth),
+      auth: auth.kind === "loopback"
+        ? "loopback"
+        : auth.session.ephemeral || isBotActSession(auth.session) ? "bot" : auth.via === "bearer" ? "bearer" : "cookie",
+      desktopManaged: DESKTOP_MANAGED && Boolean(desktopMutationToken),
+      desktopOwnerHeader: secureTokenMatch(typeof owner === "string" ? owner : undefined, desktopMutationToken ?? ""),
+    });
   },
 }));
 // This person's phones for APNs pushes (server/routes/push-devices.ts).

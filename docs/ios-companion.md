@@ -525,10 +525,18 @@ Health is not offered.
   (`PhoneCardSeal.swift`, `shared/phone-card-seal.ts`: HPKE base mode,
   P-256, HKDF-SHA256, AES-256-GCM, bound to the request and the key). The
   server relays the envelope and never holds the number in clear, not even
-  in memory; the form opens it and fills the fields. Both screens show a
-  six digit code drawn from the key: the person checks they match (a key
-  swapped on the way shows another code). The security code is never read.
-  Only over HTTPS or Tailscale, iOS 17 or later.
+  in memory (nor its logs, live frames, pushes or crash reports); the form
+  opens it and fills the fields. This is not a defence against a malicious
+  server: it serves the form's code and sees a card typed in the vault
+  anyway. Both screens show a six digit code drawn from the key, a pairing
+  check that the right form and the right phone are talking, not an
+  authentication (20 bits a server could grind; a commit-reveal could come
+  later). HPKE base mode authenticates no sender: only a native session of
+  the same person may answer (the companion's phone or the app's bearer
+  session), and only the person's computer starts a scan (the desktop app's
+  owner token or a browser session, never a native bearer session). The
+  security code is never read. Only over HTTPS or Tailscale, iOS 17 or
+  later.
 
 ## iOS feature parity routes (2026-10-03)
 
