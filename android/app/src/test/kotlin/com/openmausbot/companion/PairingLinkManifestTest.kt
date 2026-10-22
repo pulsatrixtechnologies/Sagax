@@ -188,10 +188,10 @@ class ShareReceiveManifestTest {
 class PairingLinkTest {
     @Test
     fun `only the pairing scheme and host are an invite`() {
-        val retired = "otherapp"
+        val otherScheme = "otherapp"
         assertTrue(PairingLink.isInvite("sagax", "pair"))
         assertTrue(PairingLink.isInvite("SAGAX", "PAIR"))
-        assertFalse(PairingLink.isInvite(retired, "pair"))
+        assertFalse(PairingLink.isInvite(otherScheme, "pair"))
         assertFalse(PairingLink.isInvite("https", "pair"))
         assertFalse(PairingLink.isInvite("sagax", "join"))
         assertFalse(PairingLink.isInvite(null, null))

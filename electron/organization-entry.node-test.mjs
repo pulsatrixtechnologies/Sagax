@@ -7,8 +7,8 @@ import environments from "./environments.cjs";
 import localOrigin from "./local-origin.cjs";
 import { createOrganizationEntry, isOrganizationDeepLink, takeOrganizationDeepLink, organizationRestartIntent, withOrganizationRestartIntent, withoutOrganizationRestartIntent } from "./organization-entry.mjs";
 
-/** The app's former link prefix, which no longer reaches it. */
-const RETIRED = "otherapp";
+/** Another app's scheme: only sagax:// reaches this app. */
+const OTHER_SCHEME = "otherapp";
 const remote = { id: "old", name: "Old cloud", origin: "https://old.example" };
 const companion = { endpoint: "https://c-old.openmausbot.com", serverName: "Old computer", deviceId: "device-a" };
 function fixture({ activeId = "old", remoteAccess = null, restartIntent = false, accepted = true } = {}) {
@@ -28,7 +28,7 @@ function fixture({ activeId = "old", remoteAccess = null, restartIntent = false,
 
 test("the organisation protocol is a fixed action without URL routing or credentials", () => {
   assert.equal(isOrganizationDeepLink("sagax://organization"), true);
-  assert.equal(isOrganizationDeepLink(`${RETIRED}://organization`), false, "the retired spelling no longer opens anything");
+  assert.equal(isOrganizationDeepLink(`${OTHER_SCHEME}://organization`), false, "another scheme opens nothing");
   assert.equal(isOrganizationDeepLink("sagax://organization?url=https://old.example"), false);
   for (const value of [null, {}, "", "sagax://organization/", "sagax://organization?", "sagax://organization#", "sagax://organization?url=https://old.example", "sagax://organization#token=secret", "sagax://organization/other", "sagax://user@organization", "sagax://organization:443", "sagax://organization.evil", "https://organization", " sagax://organization", "sagax://%6frganization"]) {
     assert.equal(isOrganizationDeepLink(value), false);

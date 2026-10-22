@@ -219,8 +219,8 @@ test("a return link is honoured only for a saved server, with the credential in 
   assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}`, `${ORG}/path`), state), null);
   assert.equal(parseAuthReturnLink(`sagax://auth?origin=${encodeURIComponent(ORG)}&origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
   assert.equal(parseAuthReturnLink(`sagax://pair?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
-  const retired = "otherapp";
-  assert.equal(parseAuthReturnLink(`${retired}://auth?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  const otherScheme = "otherapp";
+  assert.equal(parseAuthReturnLink(`${otherScheme}://auth?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
   assert.equal(parseAuthReturnLink(`https://bot.example.test/?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
   assert.equal(parseAuthReturnLink(42, state), null);
 });

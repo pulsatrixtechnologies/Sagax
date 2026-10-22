@@ -28,9 +28,9 @@ final class OrgConnectFlowTests: XCTestCase {
         XCTAssertEqual(PulsatrixSignIn.startURL(base: origin)?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone&return=sagax")
     }
 
-    func testTheRetiredPrefixIsNotASignIn() {
-        let retired = "otherapp"
-        let link = URL(string: "\(retired)://pair?address=https%3A%2F%2Fbot.acme.test&token=\(credential)&name=Acme")!
+    func testAnotherSchemeIsNotASignIn() {
+        let otherScheme = "otherapp"
+        let link = URL(string: "\(otherScheme)://pair?address=https%3A%2F%2Fbot.acme.test&token=\(credential)&name=Acme")!
         XCTAssertEqual(PulsatrixSignIn.outcome(from: link, expectedOrigin: origin), .unexpected)
     }
 
