@@ -340,7 +340,7 @@ function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Pro
 
 function PurchaseList({ purchases, onChanged, onError }: { purchases: PurchaseListing[]; onChanged: () => Promise<void>; onError: (error: string | null) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const answer = async (id: string, decision: "deny" | "once" | "always") => {
+  const answer = async (id: string, decision: "deny" | "once") => {
     setBusy(id);
     onError(null);
     try {
@@ -362,7 +362,6 @@ function PurchaseList({ purchases, onChanged, onError }: { purchases: PurchaseLi
             <div className="text-[12px] text-ink-secondary">{purchase.line}</div>
             <div className="flex flex-wrap justify-end gap-2">
               <button type="button" className={`${PILL} text-danger`} disabled={busy !== null} onClick={() => void answer(purchase.id, "deny")}>{t("vault.purchase.deny")}</button>
-              <button type="button" className={PILL} disabled={busy !== null} onClick={() => void answer(purchase.id, "always")}>{t("vault.purchase.always")}</button>
               <button type="button" className={PRIMARY_PILL} disabled={busy !== null} onClick={() => void answer(purchase.id, "once")}>{t("vault.purchase.once")}</button>
             </div>
           </div>

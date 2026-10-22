@@ -73,7 +73,8 @@ export const revealCredentialNotes = (id: string) => api<{ notes: string }>(`${I
 /** One secret, for the signed-in person. The server never puts it on a list. */
 export const revealCredential = (id: string, field: "password" | "apiKey" | "notes" | "pan" | "cvv") =>
   api<{ value: string }>(`${ITEM(id)}/reveal`, { method: "POST", body: JSON.stringify({ field }) });
-export const answerPurchase = (id: string, decision: "deny" | "once" | "always") =>
+/** Each purchase is its own approval (JC 2026-10-22): no Always allow. */
+export const answerPurchase = (id: string, decision: "deny" | "once") =>
   api<{ purchase: PurchaseListing }>(`/api/me/credentials/purchases/${encodeURIComponent(id)}/answer`, { method: "POST", body: JSON.stringify({ decision }) });
 export const allowBotAlways = (id: string, botId: string) =>
   api<{ item: VaultItemListing }>(`${ITEM(id)}/grants`, { method: "POST", body: JSON.stringify({ botId, mode: "always" }) });

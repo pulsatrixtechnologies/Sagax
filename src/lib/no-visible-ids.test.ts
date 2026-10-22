@@ -32,6 +32,7 @@ const { recipientLabel } = await import("@/components/bot-settings/AllowedRecipi
 const { ResourceUsageBody } = await import("@/components/resource-usage/ResourceUsageCard");
 const { ConnectorSetupBody } = await import("@/components/connector-setup/ConnectorSetupCard");
 const { resolveConnectorSetupTarget } = await import("../../shared/connector-setup");
+const { OutboundCard } = await import("@/components/OutboundCard");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -149,6 +150,22 @@ describe("no UUID on screen", () => {
     expect(text).not.toContain("0123456789abcdef");
     // a bot that passes an id as the connector's name gets no card at all
     expect(resolveConnectorSetupTarget(BOT_ID)).toBeNull();
+  });
+
+  it("a phone call and a purchase card name the bot and the shop, never the record id (parité R13)", () => {
+    setLocale("fr");
+    const base = { id: THREAD_ID, role: "bot" as const, kind: "text" as const, text: "", at: 0 };
+    const call = { ...base, outbound: { kind: "call" as const, id: "call_0123456789abcdef", status: "pending" as const, botName: "Rocket", destination: "+1 514 555 0142", from: "+1 438 555 0100", purpose: "Confirmer", script: "Bonjour", callback: "+1 438 555 0199" } } as unknown as Message;
+    const pay = { ...base, outbound: { kind: "purchase" as const, id: "pay_0123456789abcdef", status: "done" as const, botName: "Rocket", merchant: "Boutique", amount: "45.20", currency: "CAD", items: [{ name: "Câble", quantity: 3 }], orderRef: "A-1" } } as unknown as Message;
+    for (const message of [call, pay]) {
+      const text = visibleText(createElement(OutboundCard, { message }));
+      expectNoUuid(text);
+      expect(text).not.toMatch(/(call|pay)_[0-9a-f]{16}/);
+    }
+    expect(visibleText(createElement(OutboundCard, { message: call }))).toContain("Appel vers +1 514 555 0142");
+    expect(visibleText(createElement(OutboundCard, { message: call }))).toContain("Ne pas appeler");
+    expect(visibleText(createElement(OutboundCard, { message: pay }))).toMatch(/3 articles achetés · 45,20\s\$/);
+    setLocale("en");
   });
 
   it("allowed recipients name a bot, never its id (parité 1C)", () => {

@@ -726,6 +726,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/(?:notes|grants|reveal)$/ },
   { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases$/ },
   { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases\/pay_[a-f0-9]{16}\/answer$/ },
+  // a phone call card (server/routes/outbound-calls.ts): the person's own answer
+  { methods: ["POST"], path: /^\/api\/me\/phone-calls$/ },
+  { methods: ["POST"], path: /^\/api\/me\/phone-calls\/call_[a-f0-9]{16}\/answer$/ },
   { methods: ["DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/grants\/[\w-]{1,128}$/ },
   // A bot's login request card: the handler checks the card is the caller's.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss|onepassword)$/ },

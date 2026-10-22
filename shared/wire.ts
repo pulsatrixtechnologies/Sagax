@@ -831,6 +831,11 @@ export interface WireMessage {
   /** A bot's page proposal (shared/published-pages.ts): the card the person
    * reviews and publishes it from. `text` is the fallback line. */
   pagePublish?: { pageId: string; version: number; title: string };
+  /** An outward action that costs money or reaches a real person, on its
+   * approval card (parité Grok Bot V4, 59, 83): a phone call
+   * (server/outbound-calls.ts) or a purchase (server/credential-vault.ts).
+   * `text` is the fallback line. */
+  outbound?: OutboundCard;
   /** A published Data result, linked to its bot's main viewer. */
   dataResult?: { botId: string; cardId: string; title: string; kind: "table" | "chart" | "text"; sql?: string };
   /** user messages: the Data result the person was viewing when they sent
@@ -1348,3 +1353,55 @@ export type ServerFrame =
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);
+
+/** One line of what a purchase buys: an article, or a flight. */
+export interface PurchaseLine {
+  name: string;
+  quantity?: number;
+  /** "12.50", the line's own price when the page shows one. */
+  price?: string;
+}
+
+export interface PurchaseFlight {
+  from: string;
+  to: string;
+  /** YYYY-MM-DD */
+  date: string;
+  flight?: string;
+  passenger?: string;
+}
+
+/** The card of an outward action (WireMessage.outbound). Never a card
+ * number, never a security code, never an id in its words. */
+export interface OutboundCard {
+  kind: "call" | "purchase";
+  /** The record the answer goes to: call_... or pay_... (never shown). */
+  id: string;
+  status: "pending" | "approved" | "denied" | "done" | "failed";
+  botName: string;
+  /** A call: the full number (the person's own card), the line it comes
+   * from, why, the exact words, the language. */
+  destination?: string;
+  from?: string;
+  /** The callback number the call says (the organization's). */
+  callback?: string;
+  purpose?: string;
+  script?: string;
+  language?: "fr" | "en";
+  /** A purchase: the shop, the amount, the card's brand and last four
+   * digits, what it buys, and once done, the receipt. */
+  merchant?: string;
+  amount?: string;
+  currency?: string;
+  cardLabel?: string;
+  items?: PurchaseLine[];
+  flights?: PurchaseFlight[];
+  orderRef?: string;
+  /** The receipt is what the bot declared, not read by Sagax from the page. */
+  declared?: boolean;
+  /** The total the shop confirmed, when it is not the approved amount. */
+  mismatchTotal?: string;
+  /** Who answered for the person (their Primary Bot). */
+  via?: string;
+  error?: string;
+}

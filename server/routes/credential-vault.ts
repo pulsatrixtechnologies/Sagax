@@ -33,7 +33,7 @@ import { randomUUID } from "node:crypto";
 import { bindingUrl, isVaultGrantMode, normalizeVaultDomain, siteAddable, VAULT_ITEM_KINDS, vaultDomainMatches, VAULT_LOGIN_TARGET, vaultHandle, type VaultGrantMode, type VaultItemKind, type VaultItemListing } from "../../shared/credential-vault.ts";
 import { isVaultDuplicateMode, isVaultExportFormat, isVaultImportFormat, type VaultExportFormat, type VaultTransferItem } from "../../shared/credential-vault-transfer.ts";
 import type { SecretRequestCardData } from "../../shared/wire.ts";
-import { CredentialVaultError, type CredentialVault, type VaultItemInput } from "../credential-vault.ts";
+import { CredentialVaultError, type CredentialVault, type PurchaseListing, type VaultItemInput } from "../credential-vault.ts";
 import type { OnePassword } from "../onepassword.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -86,6 +86,8 @@ export interface CredentialVaultRouteDeps {
   /** Set when this answer is the person's Primary Bot. The card then says
    * "via <name>". A caller cannot invent it. */
   viaPrimary?(): string | null;
+  /** A purchase was answered: its card in the conversation and the bot's wake-up. */
+  purchaseAnswered?(listing: PurchaseListing, note: string): void;
 }
 
 /** The most items one import request may carry (the vault keeps 500). */
@@ -381,6 +383,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         const via = deps.viaPrimary?.() ?? undefined;
         const answered = deps.vault.answerPurchase(principalId, purchase[1]!, input.decision, via ?? undefined);
         deps.audit?.("credentials.grant", auth, { purchaseId: purchase[1], decision: input.decision, ...(via ? { via: "primary-bot" } : {}) });
+        deps.purchaseAnswered?.(answered.listing, answered.note);
         return json(res, 200, { purchase: answered.listing, note: answered.note });
       }
       if (path === "/api/me/credentials/export") {

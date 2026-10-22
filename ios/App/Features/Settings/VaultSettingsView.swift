@@ -33,7 +33,6 @@ struct VaultSettingsView: View {
                             Text(purchase.line).font(.footnote).foregroundStyle(.secondary)
                             HStack {
                                 Button("Deny") { Task { await answer(purchase, "deny") } }
-                                Button("Always allow") { Task { await answer(purchase, "always") } }
                                 Button("Allow once") { Task { await answer(purchase, "once") } }
                             }
                             .buttonStyle(.bordered)

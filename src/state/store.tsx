@@ -249,7 +249,7 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle" | "pagePublish" | "requested"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle" | "pagePublish" | "requested" | "outbound"> {
   id: string;
   role: "bot" | "user";
   kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
