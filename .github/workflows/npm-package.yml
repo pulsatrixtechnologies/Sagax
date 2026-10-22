@@ -41,7 +41,7 @@ jobs:
           trap 'echo "--- serve.log"; cat serve.log 2>/dev/null; echo "--- tunnel.log"; cat tunnel.log 2>/dev/null' ERR
           test ! -d node_modules
           node -e 'const p = require("./package.json"); if (p.name !== "@pulsatrixtechnologies/sagax" || p.bin?.sagax !== "cli.js" || Object.keys(p.bin).length !== 1) process.exit(1)'
-          node cli.js --help | grep -q "openmausbot serve"
+          node cli.js --help | grep -q "sagax serve"
           HOME=/tmp/omb-pack/home node cli.js serve --no-pair --port 18799 --data-dir /tmp/omb-pack/data --label ci --public-url https://ci.example > serve.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:18799/api/health >/dev/null && break; sleep 1; done
           # The server answers /api/health before the CLI prints its "running" line, so wait for the line too.
@@ -52,7 +52,7 @@ jobs:
           SAGAX_PORT=18799 node cli.js sessions | grep -q "no paired devices yet"
           # the bundles also run directly by path (the image and docs do that), not only through cli.js:
           # a bundled module with a "run when executed directly" block would fire here
-          node dist-server/openmausbot.js --help | grep -q "openmausbot serve"
+          node dist-server/openmausbot.js --help | grep -q "sagax serve"
           SAGAX_PORT=1 node dist-server/pair-cli.js > pair.out 2>&1 || true
           cat pair.out
           grep -q "no Sagax server" pair.out
