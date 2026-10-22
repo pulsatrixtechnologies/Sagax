@@ -83,7 +83,7 @@ function GrokFoot() {
       <div className="h-24" />
       <div className="px-4 pb-4">
         <div data-sidebar-account-row className="flex items-center gap-2">
-          <SidebarProfileMenu avatarOnly />
+          <SidebarProfileMenu avatarOnly withName />
           <SidebarConnectApps onOpen={() => {}} />
           {params.get("pill") !== "0" && <SidebarUpdatePill />}
         </div>

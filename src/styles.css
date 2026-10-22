@@ -3257,6 +3257,32 @@ button:disabled.bg-danger {
 :root[data-reduced-motion="true"] .connect-apps-pill [data-pill-tiles] {
   transition-property: background-color;
 }
+/* The wide foot's compact Connect apps pill (SidebarAppsPill): the tiles
+   alone at rest; hovered or focused from the keyboard, the label slides in
+   on their left and the pill widens (the account pill beside it shrinks).
+   Reduced motion: the label shows at once. */
+.sidebar-apps-pill [data-pill-tiles] {
+  margin-inline-start: 0;
+}
+.sidebar-apps-pill [data-apps-pill-label] {
+  max-width: 0;
+  opacity: 0;
+  margin-inline-end: 0;
+  transition: max-width var(--transition-duration-moderate) var(--ease-out-quint), opacity var(--transition-duration-moderate) var(--ease-out-quint), margin-inline-end var(--transition-duration-moderate) var(--ease-out-quint);
+}
+.sidebar-apps-pill:is(:hover, :focus-visible) [data-apps-pill-label] {
+  max-width: 14rem;
+  opacity: 1;
+  margin-inline-end: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-apps-pill [data-apps-pill-label] {
+    transition: none;
+  }
+}
+:root[data-reduced-motion="true"] .sidebar-apps-pill [data-apps-pill-label] {
+  transition: none;
+}
 /* The foot's update button (SidebarUpdatePill): round, the avatar's size;
    hovered, focused or just landed, it widens to show its word and the
    Connect apps pill beside it gives way. Reduced motion: no animation, the

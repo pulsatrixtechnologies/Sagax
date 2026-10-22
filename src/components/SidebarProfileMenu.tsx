@@ -509,10 +509,13 @@ function useAccountMenuData(enabled: boolean): AccountMenuData {
   };
 }
 
-export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine = true }: {
+export function SidebarProfileMenu({ avatarOnly = false, withName = false, places = [], memberLine = true }: {
   /** just the avatar, for the collapsed (icons) rail; the name moves to the
    * tooltip and the menu keeps its width */
   avatarOnly?: boolean;
+  /** with avatarOnly: the wide foot's rounded pill, the avatar then the
+   * name (the foot's own update and routines buttons stay beside it) */
+  withName?: boolean;
   /** Items listed before the profile items (Archived bots). */
   places?: SidebarMenuItem[];
   /** the title and points line under the name; false while the sidebar
@@ -641,7 +644,39 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
       items={items}
       ariaLabel={name}
       menuClassName={avatarOnly ? "left-0 w-max min-w-[228px] max-w-[300px]" : undefined}
-      renderTrigger={({ open }) => avatarOnly ? (
+      renderTrigger={({ open }) => avatarOnly && withName ? (
+        // The wide foot's account pill (reference design): the avatar and
+        // the name in one rounded pill, the update dot on the avatar.
+        <span
+          ref={triggerRef}
+          title={name}
+          data-sidebar-account-pill=""
+          data-menu-opened={open || undefined}
+          className={cn(
+            "flex h-9 w-full min-w-0 items-center gap-2 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-3 text-left transition-colors [button:focus-visible>&]:ring-2 [button:focus-visible>&]:ring-focus",
+            open ? "bg-sidebar-elevated-hover ring-2 ring-accent/60" : "hover:bg-sidebar-elevated-hover",
+          )}
+        >
+          <span className="relative flex shrink-0">
+            {avatar(28)}
+            {noteworthy && (
+              <span
+                title={noteworthy.label}
+                aria-label={noteworthy.label}
+                className={cn(
+                  "absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-sidebar",
+                  noteworthy.phase === "error" ? "bg-danger" : "bg-accent",
+                )}
+              />
+            )}
+          </span>
+          <WhenOpen open={open} onOpen={() => setMenuOpened(true)} />
+          <span data-account-pill-name="" className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-sidebar-ink">{name}</span>
+          {placeAttention && !open && (
+            <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
+          )}
+        </span>
+      ) : avatarOnly ? (
         <span
           ref={triggerRef}
           title={name}
@@ -739,7 +774,7 @@ export function SidebarProfileMenu({ avatarOnly = false, places = [], memberLine
   ) : null;
 
   return (
-    <div className="relative">
+    <div className={cn("relative", avatarOnly && withName && "min-w-0 flex-1")}>
       {avatarOnly && approvalsBadge}
       {avatarOnly ? accountRow : (
         <div className="flex items-center gap-2">

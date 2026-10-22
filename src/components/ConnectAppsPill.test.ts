@@ -79,24 +79,39 @@ describe("the sidebar's Connect apps pill", () => {
     return container;
   }
 
-  it("is the conversation's pill, full width, and opens Connect apps", () => {
+  it("is a compact tiles pill that names itself in full and opens Connect apps", () => {
     inventory.services = {};
     const onOpen = vi.fn();
     const container = renderSidebar(onOpen);
     const button = container.querySelector<HTMLButtonElement>("[data-sidebar-connect-apps]")!;
-    expect(button.textContent).toBe("Connect apps");
+    expect(button.tagName).toBe("BUTTON");
+    expect(button.getAttribute("type")).toBe("button");
+    expect(button.getAttribute("aria-label")).toBe("Connect apps");
     expect(button.className).toContain("rounded-full");
-    expect(button.className).toContain("w-full");
+    expect(button.className).toContain("sidebar-apps-pill");
+    expect(button.className).toContain("focus-visible:ring-2");
+    // the label is there to slide in on hover and focus, hidden from the
+    // accessibility tree (the button's own name says it)
+    const label = button.querySelector("[data-apps-pill-label]")!;
+    expect(label.textContent).toBe("Connect apps");
+    expect(label.getAttribute("aria-hidden")).toBe("true");
+    expect(button.querySelectorAll("[data-pill-tile]").length).toBe(3);
     expect(button.getAttribute("data-tour")).toBe("nav-apps");
-    expect(button.querySelectorAll("img").length).toBeLessThanOrEqual(3);
     flushSync(() => button.click());
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it("widens on hover and keyboard focus only, at once under reduced motion", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    expect(css).toContain(".sidebar-apps-pill:is(:hover, :focus-visible) [data-apps-pill-label]");
+    expect(css).toMatch(/\.sidebar-apps-pill \[data-apps-pill-label\] \{\s*max-width: 0;/);
+    expect(css).toMatch(/:root\[data-reduced-motion="true"\] \.sidebar-apps-pill \[data-apps-pill-label\] \{\s*transition: none;/);
   });
 
   it("says Connecter des applications in French", () => {
     setLocale("fr");
     const button = renderSidebar().querySelector("[data-sidebar-connect-apps]")!;
-    expect(button.textContent).toBe("Connecter des applications");
+    expect(button.querySelector("[data-apps-pill-label]")!.textContent).toBe("Connecter des applications");
     expect(button.getAttribute("aria-label")).toBe("Connecter des applications");
   });
 

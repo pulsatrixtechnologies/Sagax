@@ -126,10 +126,10 @@ describe("sidebar header", () => {
     },
   );
 
-  // Grok Bot's foot (JC, 2026-10-15): the avatar (the account menu) and the
-  // wide Connect apps pill, whatever Sidebar shortcuts said. No Browse Bots
-  // row and no name row: Browse Bots is in the avatar's menu.
-  it.each([true, false])("draws only the avatar and the Connect apps pill at the foot (shortcuts %s)", (shortcuts) => {
+  // The foot (reference design): the account pill (avatar and name, the
+  // account menu) and the compact Connect apps pill, whatever Sidebar
+  // shortcuts said. No Browse Bots row: Browse Bots is in the account menu.
+  it.each([true, false])("draws only the account pill and the Connect apps pill at the foot (shortcuts %s)", (shortcuts) => {
     fixture.density = "comfortable";
     fixture.shortcuts = shortcuts;
     resetAchievementsForTests({ status: "ready", snapshot: achievementSnapshot() });
@@ -143,9 +143,13 @@ describe("sidebar header", () => {
     const pill = (foot.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0] ?? "";
     expect(pill).toContain('data-tour="nav-apps"');
     expect(pill).toContain("rounded-full");
-    expect(pill).toContain("flex-1");
+    expect(pill).toContain("shrink-0");
     expect(pill).toContain("h-9");
-    expect(foot).toContain(">Connect apps</span>");
+    expect(pill).toContain('aria-label="Connect apps"');
+    expect(foot).toContain("data-apps-pill-label");
+    // the account pill carries the avatar and the name
+    expect(foot).toContain("data-sidebar-account-pill");
+    expect(foot).toContain("data-account-pill-name");
     // the avatar comes first, then the pill
     expect(foot.indexOf("aria-haspopup")).toBeLessThan(foot.indexOf("data-sidebar-connect-apps"));
     expect(html).toMatch(/data-sidebar-foot[^>]*class="px-4 pb-4"/);

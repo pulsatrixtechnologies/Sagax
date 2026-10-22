@@ -244,19 +244,46 @@ export function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen:
       </button>
     );
   }
-  // Grok Bot's foot pill: it takes the row's width beside the avatar, 36px
-  // tall, the label and the tiles centred together, 14px medium text, on
-  // the rail's raised card with a hairline. Narrow, it gives up the tiles
-  // before the label.
+  return <SidebarAppsPill apps={sidebarPillApps(connected, cards)} onOpen={onOpen} label={label} />;
+}
+
+/** The wide foot's compact pill (reference design): only the app tiles at
+ * rest, 36px tall on the rail's raised card. Hovered or focused from the
+ * keyboard it widens leftward to show its label (styles.css,
+ * .sidebar-apps-pill; reduced motion shows it at once). The accessible name
+ * is always the full label. */
+export function SidebarAppsPill({ apps, onOpen, label }: { apps: readonly PillApp[]; onOpen: () => void; label: string }) {
+  const shown = apps.slice(0, PILL_ICONS);
   return (
-    <ConnectAppsButton
-      apps={sidebarPillApps(connected, cards)}
-      onOpen={onOpen}
-      ariaLabel={label}
-      fit
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={label}
+      title={label}
       data-tour="nav-apps"
       data-sidebar-connect-apps=""
-      className="min-w-0 flex-1 border-sidebar-hairline-weak bg-sidebar-card text-[14px] text-sidebar-ink hover:bg-sidebar-elevated-hover"
-    />
+      className="connect-apps-pill sidebar-apps-pill inline-flex h-9 shrink-0 items-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card px-2.5 text-[14px] font-medium leading-5 text-sidebar-ink outline-none hover:bg-sidebar-elevated-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar"
+    >
+      <span data-apps-pill-label="" aria-hidden="true" className="block overflow-hidden whitespace-nowrap">{label}</span>
+      <span
+        data-pill-tiles=""
+        aria-hidden="true"
+        className="relative inline-flex h-[18px] shrink-0 items-start"
+        style={{ width: tilesWidth(shown.length) }}
+      >
+        {shown.map((app, index) => (
+          <span
+            key={app.slug}
+            data-pill-tile={index === 0 ? "start" : index === shown.length - 1 ? "end" : "middle"}
+            className={cn("box-border inline-flex size-[18px] shrink-0 rounded-[6px] p-px", index > 0 && "-ml-1.5")}
+            style={{ animationDelay: `${index * 50}ms` }}
+          >
+            <span className="flex size-4 items-center justify-center overflow-hidden rounded-[4px] border-[0.5px] border-black/10 bg-white">
+              <ServiceIcon card={{ logo: app.logo, domain: app.domain, label: app.label }} className="size-3 rounded-none text-[9px] text-neutral-600 bg-white" />
+            </span>
+          </span>
+        ))}
+      </span>
+    </button>
   );
 }

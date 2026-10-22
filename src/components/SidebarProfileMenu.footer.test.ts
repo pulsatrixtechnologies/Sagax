@@ -220,6 +220,29 @@ describe("sidebar footer row", () => {
   });
 });
 
+describe("the wide foot's account pill (reference design)", () => {
+  it("draws the avatar and the name in one rounded pill that opens the account menu", () => {
+    const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true, withName: true }));
+    const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
+    expect(pill).toContain("rounded-full");
+    expect(pill).toContain("h-9");
+    expect(pill).toContain("[button:focus-visible&gt;&amp;]:ring-2");
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toMatch(/data-account-pill-name=""[^>]*>[^<]+<\/span>/);
+    expect(html).toContain("width:28px");
+    // no title or points line in the pill, and not the wide row's layout
+    expect(html).not.toContain("data-member-line");
+    expect(html).not.toContain("data-sidebar-account-row");
+  });
+
+  it("is wired in the sidebar's wide foot, the rail keeps the bare avatar", () => {
+    const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+    expect(source).toContain("<SidebarProfileMenu avatarOnly withName places={accountPlaces} />");
+    const rail = source.slice(source.indexOf("data-sidebar-account-rail"));
+    expect(rail.slice(0, 200)).toContain("<SidebarProfileMenu avatarOnly places={accountPlaces} />");
+  });
+});
+
 describe("the footer avatar (Grok Bot's foot, 2026-10-16)", () => {
   it("draws no presence dot on the avatar", () => {
     fixture.state = { ...fixture.state, config: { ...fixture.state.config, viewer: { principalId: "pr_me" } } as AppState["config"] };
