@@ -493,7 +493,6 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const [menuOpened, setMenuOpened] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const triggerRef = useRef<HTMLSpanElement>(null);
-  const dotKeyed = useRef(false);
   const achievements = useAchievements();
   // conversations waiting on the person's answer (a plain count, no hook)
   const approvalsWaiting = state.bots
@@ -601,24 +600,11 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
       data-avatar-approvals={approvalsWaiting}
       title={approvalsDotLabel}
       aria-label={approvalsDotLabel}
+      // a native button: Enter and Space arrive as this same click
       onClick={(event) => {
         event.stopPropagation();
-        // the click a browser makes of Enter or Space was already answered
-        if (dotKeyed.current) {
-          dotKeyed.current = false;
-          return;
-        }
         openApprovals();
       }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.repeat) return;
-        dotKeyed.current = true;
-        openApprovals();
-      }}
-      onKeyUp={() => { setTimeout(() => { dotKeyed.current = false; }, 0); }}
       style={{ left: dotAt.left + dotAt.size - 10, top: `calc(50% + ${dotAt.size / 2 - 10}px)` }}
       // 12px on screen, a 24px target through the invisible ::before
       className="absolute size-3 rounded-full border-2 border-sidebar bg-warning before:absolute before:-inset-1.5 before:rounded-full before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar"

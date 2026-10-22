@@ -84,31 +84,22 @@ describe("the avatar's approvals dot", () => {
   }
 
   for (const key of ["Enter", " "]) {
-    it(`opens Approvals from the keyboard (${key === " " ? "Space" : key}), not the account menu`, () => {
+    it(`opens Approvals once from the keyboard (${key === " " ? "Space" : key}), not the account menu`, () => {
       render();
       const button = dot()!;
+      // a native <button type="button">: the browser turns Enter and Space into its click
+      expect(button.tagName).toBe("BUTTON");
+      expect(button.getAttribute("type")).toBe("button");
       act(() => {
         button.focus();
         button.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }));
+        button.click();
         button.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true, cancelable: true }));
       });
       expect(document.activeElement).toBe(button);
       expect(opensApprovals()).toBe(1);
       expect(menuButton().getAttribute("aria-expanded")).toBe("false");
+      expect(container.querySelector('[role="menu"]')).toBeNull();
     });
   }
-
-  it("answers a key once even when the browser also turns it into a click", async () => {
-    render();
-    const button = dot()!;
-    act(() => {
-      button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-      button.click(); // what a browser does with Enter on a button
-      button.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", bubbles: true, cancelable: true }));
-    });
-    expect(opensApprovals()).toBe(1);
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
-    act(() => button.click());
-    expect(opensApprovals()).toBe(2);
-  });
 });
