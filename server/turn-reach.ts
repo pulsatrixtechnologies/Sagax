@@ -12,10 +12,27 @@
 // (Grok's search_tool and use_tool) offers directly (drivers/acp/grok.ts).
 // Names only: never an argument, a result or a secret.
 
-/** Who the turn is for. */
+/** Who the turn is for. Contract for every provider: contribute only what
+ * the person speaking on this turn may use themselves, paid by themselves
+ * (payer == speaker), and nothing in a room unless the feature is meant for
+ * every member there. An owner-only feature (a remote session the owner
+ * opened, the owner's own account) checks `speakerPrincipalId ===
+ * ownerPrincipalId`, `payerPrincipalId === speakerPrincipalId` and
+ * `!room`; an unknown speaker or payer (undefined) gets nothing. Naming a
+ * tool here grants nothing (approvals and grants still decide every call),
+ * but it must not tell one person about another person's access. */
 export interface ReachContext {
   botId?: string;
   threadId?: string;
+  /** the bot's owner */
+  ownerPrincipalId?: string;
+  /** the person this turn speaks for; undefined for an operator, a routine
+   * with no person, or an unknown speaker */
+  speakerPrincipalId?: string;
+  /** whose account pays for this turn's engine */
+  payerPrincipalId?: string;
+  /** a room (group) turn: several people read the reply */
+  room?: boolean;
 }
 
 /** What one provider adds for a turn. */
@@ -101,7 +118,30 @@ export function reachSummaryPrompt(input: ReachSummaryInput): string {
     " When several reads are independent, call them together in one step.";
 }
 
+// The direct turn's contributions, computed once by the server with the
+// whole context above, kept per thread for the engine driver (Grok offers
+// the tools directly, drivers/acp/grok.ts). A driver never calls the
+// providers itself: it would not know who speaks. A room turn forgets them.
+const TURNS_MAX = 512;
+const byThread = new Map<string, { lines: string[]; tools: string[] }>();
+
+export function noteTurnReach(threadId: string, reach: { lines: string[]; tools: string[] }): void {
+  byThread.delete(threadId);
+  if (!reach.lines.length && !reach.tools.length) return;
+  byThread.set(threadId, { lines: [...reach.lines], tools: [...reach.tools] });
+  while (byThread.size > TURNS_MAX) byThread.delete(byThread.keys().next().value!);
+}
+
+export function turnReachFor(threadId: string | undefined): { lines: string[]; tools: string[] } | undefined {
+  return threadId ? byThread.get(threadId) : undefined;
+}
+
+export function forgetTurnReach(threadId: string): void {
+  byThread.delete(threadId);
+}
+
 /** Test seam. */
 export function resetReachProviders(): void {
   providers.clear();
+  byThread.clear();
 }

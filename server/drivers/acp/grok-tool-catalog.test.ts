@@ -73,6 +73,9 @@ describe("grokCatalogSection", () => {
     expect(section.text).toContain("- agents (70 tools; search_tool for the others): tool_07, tool_42");
     expect(section.text).not.toContain("tool_08");
     expect(section.text).toContain("Already used, call directly with use_tool without search_tool first: agents__tool_07.");
+    // a truncated server: the list is not complete, so it must not say so
+    expect(section.text).not.toContain("This list is complete");
+    expect(section.text).toContain("without calling a tool");
   });
 
   it("offers pinned tools and their lines even before the catalog is read", () => {
@@ -85,8 +88,13 @@ describe("grokCatalogSection", () => {
   it("stays under its budget with many servers", () => {
     const servers = Array.from({ length: 40 }, (_, s) => ({ name: `server_${s}`, session: { enabled: true, status: "ready",
       tools: Array.from({ length: 30 }, (_, i) => ({ name: `a_rather_long_tool_name_${i}`, enabled: true })) } }));
-    const section = grokCatalogSection({ catalog: readGrokCatalog({ servers }) })!;
+    // enough servers that even the names-only fallback must be cut
+    for (let s = 40; s < 400; s += 1) servers.push({ name: `server_${s}`, session: { enabled: true, status: "ready", tools: [{ name: "t", enabled: true }] } } as never);
+    const section = grokCatalogSection({ catalog: readGrokCatalog({ servers }), known: ["server_3__a_rather_long_tool_name_1"] })!;
     expect(section.text.length).toBeLessThanOrEqual(GROK_CATALOG_CHARS_MAX);
     expect(section.text).toContain("server_0 (30)");
+    // cut at a whole entry, never mid-name, and the bot's own tools survive
+    expect(section.text).toMatch(/(\(30\)[,.]|tools\.|first: [^\n]*\.)$/);
+    expect(section.text).toContain("Already used, call directly with use_tool without search_tool first: server_3__a_rather_long_tool_name_1.");
   });
 });

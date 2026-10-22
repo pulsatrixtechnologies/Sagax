@@ -840,7 +840,7 @@ import * as grokVoice from "./tts/grok.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
-import { reachContributions, reachSummaryPrompt } from "./turn-reach.ts";
+import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt } from "./turn-reach.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope, TurnImageInput } from "./contracts.ts";
@@ -23259,6 +23259,8 @@ async function runGroupMemberTurn(
       });
     }
   }
+  // a room turn carries no reach contributions (owner-only, turn-reach.ts)
+  forgetTurnReach(threadId);
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) : "" },
@@ -26548,12 +26550,30 @@ function turnReachPrompt(bot: BotRecord, instance: Parameters<typeof withholdHos
     ...(integrations.messages ? ["messages"] : []),
     ...(integrations.composio ? ["the person's connected apps (composio)"] : []),
   ];
+  // Solo server: the operator at this computer owns its bots and pays (the
+  // machine's own logins). Organization server: the speaker and the payer
+  // as the turn resolves them (turnPayer); an operator turn has no person.
+  const ownerPrincipalId = effectiveBotOwner(bot).trim().toLowerCase();
+  const solo = IDENTITY.kind !== "perspicax";
+  const speakerPrincipalId = speaker.origin === "operator"
+    ? (solo ? ownerPrincipalId : undefined)
+    : speaker.principalId?.trim().toLowerCase() || undefined;
+  const payerPrincipalId = solo ? ownerPrincipalId : autoPayerKey(bot, speaker);
+  const reach = reachContributions({
+    botId: bot.id,
+    threadId,
+    ownerPrincipalId,
+    ...(speakerPrincipalId ? { speakerPrincipalId } : {}),
+    ...(payerPrincipalId && payerPrincipalId !== "unknown" ? { payerPrincipalId } : {}),
+    room: false,
+  });
+  noteTurnReach(threadId, reach);
   return reachSummaryPrompt({
     servers: Object.keys(integrations.custom ?? {}),
     builtins,
     claudeAi: claudeAiConnectorsForTurn(account),
     grokCloud: grokCloudConnectorsForTurn(account) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
-    lines: reachContributions({ botId: bot.id, threadId }).lines,
+    lines: reach.lines,
   });
 }
 

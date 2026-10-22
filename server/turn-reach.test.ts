@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { reachContributions, reachSummaryPrompt, registerReachProvider, resetReachProviders } from "./turn-reach.ts";
+import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt, registerReachProvider, resetReachProviders, turnReachFor } from "./turn-reach.ts";
 
 afterEach(() => resetReachProviders());
+
+const ME = { botId: "b1", ownerPrincipalId: "jc", speakerPrincipalId: "jc", payerPrincipalId: "jc", room: false };
 
 describe("reachSummaryPrompt", () => {
   it("names what the turn mounted in one short line, with the no-tool rule", () => {
@@ -39,20 +41,38 @@ describe("reach providers", () => {
     registerReachProvider("remote-session", ({ threadId }) => threadId === "t1"
       ? { line: "Remote session open on MAC-DEMO-01", tools: ["agents__remote_session_snapshot", "not a tool", "agents__remote_session_exec"] }
       : null);
-    expect(reachContributions({ threadId: "t1" })).toEqual({
+    expect(reachContributions({ threadId: "t1", ...ME })).toEqual({
       lines: ["Remote session open on MAC-DEMO-01"],
       tools: ["agents__remote_session_exec", "agents__remote_session_snapshot"],
     });
-    expect(reachContributions({ threadId: "t2" })).toEqual({ lines: [], tools: [] });
-    const text = reachSummaryPrompt({ servers: [], builtins: [], lines: reachContributions({ threadId: "t1" }).lines });
+    expect(reachContributions({ threadId: "t2", ...ME })).toEqual({ lines: [], tools: [] });
+    const text = reachSummaryPrompt({ servers: [], builtins: [], lines: reachContributions({ threadId: "t1", ...ME }).lines });
     expect(text).toContain("Remote session open on MAC-DEMO-01.");
   });
 
   it("ignores a provider that throws, and removes one on request", () => {
     registerReachProvider("bad", () => { throw new Error("boom"); });
     const off = registerReachProvider("good", () => ({ line: "ok" }));
-    expect(reachContributions({}).lines).toEqual(["ok"]);
+    expect(reachContributions(ME).lines).toEqual(["ok"]);
     off();
-    expect(reachContributions({}).lines).toEqual([]);
+    expect(reachContributions(ME).lines).toEqual([]);
+  });
+
+  it("gives every provider the speaker, the payer, the owner and whether it is a room, so it can keep payer == speaker", () => {
+    // an owner-only feature (a remote session the owner opened) shows to the owner speaking in their own conversation only
+    registerReachProvider("owner-only", (context) =>
+      !context.room && context.speakerPrincipalId === context.ownerPrincipalId && context.payerPrincipalId === context.speakerPrincipalId
+        ? { line: "Remote session open", tools: ["agents__remote_session_snapshot"] } : null);
+    expect(reachContributions(ME).tools).toEqual(["agents__remote_session_snapshot"]);
+    expect(reachContributions({ ...ME, speakerPrincipalId: "member", payerPrincipalId: "member" }).tools).toEqual([]);
+    expect(reachContributions({ ...ME, payerPrincipalId: "owner-org" }).tools).toEqual([]);
+    expect(reachContributions({ ...ME, room: true }).tools).toEqual([]);
+  });
+
+  it("keeps the direct turn's contributions per thread for the driver, and forgets them for a room turn", () => {
+    noteTurnReach("t1", { lines: ["x"], tools: ["agents__a_b"] });
+    expect(turnReachFor("t1")).toEqual({ lines: ["x"], tools: ["agents__a_b"] });
+    forgetTurnReach("t1");
+    expect(turnReachFor("t1")).toBeUndefined();
   });
 });

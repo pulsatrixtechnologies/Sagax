@@ -21,12 +21,17 @@ export type StepEntry =
 export function mergeSteps(messages: readonly Message[], nameOf?: StepNameOf): StepEntry[] {
   const entries: StepEntry[] = [];
   // Finished tool searches (Grok's search_tool, Claude's ToolSearch) are
-  // housekeeping: all of them fold into the first one, so the calls they
-  // sat between merge too ("Viewed tickets ×3", not six alternating rows).
+  // housekeeping: within one stretch of steps (no narration between) they
+  // fold into the first one, which keeps its place and lists them in the
+  // order they ran, so the calls they sat between merge too ("Viewed
+  // tickets ×3", not six alternating rows).
   let searches: Extract<StepEntry, { kind: "steps" }> | undefined;
   for (const message of messages) {
     if (!isToolStep(message)) {
       entries.push({ kind: "message", id: message.id, message });
+      // a narration splits the stretch: a later search stays after it, in
+      // the order it ran
+      searches = undefined;
       continue;
     }
     const reading = readStep(message.tool, nameOf);

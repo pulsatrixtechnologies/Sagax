@@ -92,11 +92,13 @@ export function grokCatalogSection(input: {
   const pinnedLines = input.lines?.filter(Boolean) ?? [];
   if (!ready.length && !notReady.length && !favored.size && !pinnedLines.length) return null;
   const rows: string[] = [];
+  let truncated = false;
   for (const server of ready) {
     if (server.tools.length <= GROK_CATALOG_SERVER_TOOLS_MAX) {
       rows.push(`- ${server.name}: ${server.tools.join(", ")}`);
       continue;
     }
+    truncated = true;
     const mine = server.tools.filter((tool) => favored.has(`${server.name}__${tool}`));
     rows.push(`- ${server.name} (${server.tools.length} tools; search_tool for the others)${mine.length ? `: ${mine.join(", ")}` : ""}`);
   }
@@ -106,21 +108,35 @@ export function grokCatalogSection(input: {
   // Tools this bot already used keep the direct-call rule (grok-tool-usage).
   const known = [...new Set(input.known ?? [])].sort((a, b) => a.localeCompare(b));
   const pinned = [...new Set(input.pinned ?? [])].filter((name) => !known.includes(name)).sort((a, b) => a.localeCompare(b));
-  let text = (ready.length
-    ? "Your MCP tools on this turn, by server (use_tool takes <server>__<tool>). This list is complete: answer what connectors, tools or access you have from it, without calling a tool."
-    : "") +
-    (rows.length ? `\n${rows.join("\n")}` : "") +
+  const tail =
     (notReady.length ? `\nNot connected now: ${notReady.map((server) => `${server.name} (${server.status})`).join(", ")}.` : "") +
     (pinnedLines.length ? `\n${pinnedLines.join("\n")}` : "") +
     (known.length ? `\nAlready used, call directly with use_tool without search_tool first: ${known.join(", ")}.` : "") +
     (pinned.length ? `\nOpen for this conversation, call directly with use_tool: ${pinned.join(", ")}.` : "");
-  text = text.trim();
+  // A server shown with a count is not listed in full: never call the list complete then.
+  const header = !ready.length ? ""
+    : truncated
+      ? "Your MCP tools on this turn, by server (use_tool takes <server>__<tool>); a server shown with a count has more, found with search_tool. Answer what connectors, tools or access you have from this, without calling a tool."
+      : "Your MCP tools on this turn, by server (use_tool takes <server>__<tool>). This list is complete: answer what connectors, tools or access you have from it, without calling a tool.";
+  let text = `${header}${rows.length ? `\n${rows.join("\n")}` : ""}${tail}`.trim();
   if (text.length > GROK_CATALOG_CHARS_MAX) {
-    // too many servers: keep the instructions and the server names
-    const names = ready.map((server) => `${server.name} (${server.tools.length})`).join(", ");
-    text = `Your MCP servers on this turn, with their tool counts: ${names}. Answer what connectors or access you have from this without calling a tool; use search_tool to find a tool, and call a tool you already saw directly with use_tool.` +
-      (notReady.length ? ` Not connected now: ${notReady.map((server) => server.name).join(", ")}.` : "");
-    text = text.slice(0, GROK_CATALOG_CHARS_MAX);
+    // Too many servers: the server names with their counts, cut at a whole
+    // entry, and the bot's own tools (the tail) kept.
+    const intro = "Your MCP servers on this turn, with their tool counts (search_tool finds a tool; use_tool takes <server>__<tool>): ";
+    const outro = ". Answer what connectors or access you have from this without calling a tool.";
+    const keptTail = tail.length <= GROK_CATALOG_CHARS_MAX / 2 ? tail : "";
+    const room = GROK_CATALOG_CHARS_MAX - intro.length - outro.length - keptTail.length - " and N more".length - 8;
+    const entries = ready.map((server) => `${server.name} (${server.tools.length})`);
+    let listed = "";
+    let shown = 0;
+    for (const entry of entries) {
+      const next = listed ? `${listed}, ${entry}` : entry;
+      if (next.length > room) break;
+      listed = next;
+      shown += 1;
+    }
+    const more = entries.length - shown;
+    text = `${intro}${listed}${more ? ` and ${more} more` : ""}${outro}${keptTail}`.trim();
   }
   return { id: GROK_KNOWN_TOOLS_SECTION, text };
 }

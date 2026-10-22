@@ -61,6 +61,31 @@ describe("the steps of a group, opened", () => {
       ["Viewed tickets in ConnectWise PSA", 3],
       ["Looking for a tool", 1],
     ]);
+    // opened, the folded row lists its calls in the order they ran, and each
+    // merged row keeps its calls in order too
+    const folded = entries[0]!;
+    const order = folded.kind === "steps" ? folded.messages.map((message) => Number(message.at)) : [];
+    expect(order).toEqual(order.toSorted((a, b) => a - b));
+    expect(order).toHaveLength(4);
+  });
+
+  it("keeps a search in its place when a narration sits between it and the first one", () => {
+    const words = said("Now the computer.");
+    const entries = mergeSteps([
+      step("search_tool", true, { query: "tickets" }),
+      step("use_tool", true, { tool_name: "perspicax__cw_psa__query", tool_input: { resource: "service.tickets" } }),
+      words,
+      step("search_tool", true, { query: "remote" }),
+      step("use_tool", true, { tool_name: "remote__status", tool_input: {} }),
+    ]);
+    // the narration splits the stretch: the second search stays after it
+    expect(entries.map((entry) => entry.kind === "steps" ? [entry.label, entry.messages.length] : entry.kind)).toEqual([
+      ["Looked for a tool", 1],
+      ["Viewed tickets in ConnectWise PSA", 1],
+      "message",
+      ["Looked for a tool", 1],
+      ["Read data in Remote", 1],
+    ]);
   });
 
   it("keeps a turn's narration in its place between the steps", () => {

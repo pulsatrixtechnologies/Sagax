@@ -23,7 +23,7 @@ import { grokReadOnlyAllowRules } from "./grok-read-only-tools.ts";
 import { gateReadOnlyTools, grokApprovalGateEnabled } from "./grok-approval-gate.ts";
 import { knownGrokTools, knownGrokToolsSection, recordGrokToolUse, useToolName } from "./grok-tool-usage.ts";
 import { grokCatalogFor, grokCatalogSection, rememberGrokCatalog } from "./grok-tool-catalog.ts";
-import { reachContributions } from "../../turn-reach.ts";
+import { turnReachFor } from "../../turn-reach.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { grokAliasBase, grokToolNameProblem } from "../../mcp-tool-names.ts";
 
@@ -1032,7 +1032,8 @@ const support: AcpSupport = {
   volatileSection: ({ botId, serverNames, sessionId, threadId }) => {
     const known = knownGrokTools(botId, serverNames);
     const catalog = grokCatalogFor(sessionId);
-    const reach = reachContributions({ ...(botId ? { botId } : {}), ...(threadId ? { threadId } : {}) });
+    // computed by the server with the speaker and payer (turn-reach.ts)
+    const reach = turnReachFor(threadId) ?? { lines: [], tools: [] };
     if (!catalog && !reach.tools.length && !reach.lines.length) return knownGrokToolsSection(known);
     return grokCatalogSection({ catalog, known, pinned: reach.tools, lines: reach.lines });
   },
