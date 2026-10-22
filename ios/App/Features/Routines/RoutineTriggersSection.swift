@@ -76,7 +76,10 @@ struct RoutineTriggersSection: View {
         guard let type = hook.sourceType, !type.isEmpty else { return String(localized: "Webhook") }
         let label = WebhookPublicURL.sourceLabel(type)
         if hook.sourceEvents.isEmpty { return "\(label) · \(String(localized: "Every event"))" }
-        return "\(label) · \(hook.sourceEvents.joined(separator: ", "))"
+        let events = hook.sourceEvents.map { kind in
+            WebhookPublicURL.eventLabel(kind).map { String(localized: String.LocalizationValue($0)) } ?? kind
+        }
+        return "\(label) · \(events.joined(separator: ", "))"
     }
 
     private func delivery(_ hook: WebhookListing) -> String {

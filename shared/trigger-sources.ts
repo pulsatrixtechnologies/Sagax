@@ -29,6 +29,8 @@ export const TRIGGER_FILTER_KEYS = [
   "label",
   "sender",
   "reviewer",
+  "assignee",
+  "status",
   "channel",
   "reaction",
   "team",
@@ -58,6 +60,10 @@ export interface TriggerSourceDefinition {
   /** Normalized event kinds this source emits, in the order shown. */
   events: readonly string[];
   filters: readonly TriggerFilterKey[];
+  /** A finer kind and the broader kind it refines. A trigger that picked
+   * the broader one (made before the finer one existed) still runs for it:
+   * an approval is still a submitted review. */
+  parents?: Readonly<Record<string, string>>;
   /** Some providers (Microsoft Graph basic notifications) send no detail
    * at reception: filters on these keys are handed to the run as the
    * owner's conditions, checked by the bot before it acts. */
@@ -76,8 +82,18 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     type: "github",
     label: "GitHub",
     secretMode: "generated",
-    events: ["pr.opened", "pr.merged", "pr.closed", "pr.review_requested", "pr.review_submitted", "ci.failed", "ci.succeeded", "issue.opened", "push", "release.published"],
-    filters: ["repo", "branch", "label", "sender", "reviewer", "keyword"],
+    events: [
+      "pr.opened", "pr.updated", "pr.merged", "pr.closed",
+      "pr.review_requested", "pr.review_submitted", "pr.review_approved", "pr.review_changes_requested", "pr.review_commented",
+      "pr.comment", "pr.review_comment", "pr.thread_resolved", "pr.thread_reopened",
+      "ci.failed", "ci.succeeded", "issue.opened", "issue.assigned", "push", "release.published",
+    ],
+    filters: ["repo", "branch", "label", "sender", "reviewer", "assignee", "keyword"],
+    parents: {
+      "pr.review_approved": "pr.review_submitted",
+      "pr.review_changes_requested": "pr.review_submitted",
+      "pr.review_commented": "pr.review_submitted",
+    },
   },
   gitlab: {
     type: "gitlab",
@@ -124,8 +140,8 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     type: "sentry",
     label: "Sentry",
     secretMode: "provided",
-    events: ["issue.created", "issue.resolved", "issue.assigned", "alert.triggered", "error.created"],
-    filters: ["project", "environment", "level", "keyword"],
+    events: ["issue.created", "issue.resolved", "issue.assigned", "issue.archived", "issue.unresolved", "alert.triggered", "error.created"],
+    filters: ["project", "environment", "level", "assignee", "keyword"],
     replayWindowSeconds: 300,
   },
   pagerduty: {
@@ -139,11 +155,20 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     type: "linear",
     label: "Linear",
     secretMode: "provided",
-    events: ["issue.created", "issue.updated", "issue.removed", "comment.created"],
-    filters: ["team", "project", "label", "sender", "keyword"],
+    events: ["issue.created", "issue.updated", "issue.status_changed", "issue.removed", "comment.created", "cycle.completed"],
+    filters: ["team", "project", "label", "status", "assignee", "sender", "keyword"],
+    parents: { "issue.status_changed": "issue.updated" },
     replayWindowSeconds: 60,
   },
 };
+
+/** Whether a trigger that picked `selected` (empty: every kind) runs for an
+ * event of `kind`, its broader kind included. */
+export function triggerEventSelected(type: TriggerSourceType, selected: readonly string[], kind: string): boolean {
+  if (!selected.length || selected.includes(kind)) return true;
+  const parents = TRIGGER_SOURCES[type].parents;
+  return parents !== undefined && Object.hasOwn(parents, kind) && selected.includes(parents[kind]!);
+}
 
 export function isTriggerSourceType(value: unknown): value is TriggerSourceType {
   return typeof value === "string" && (TRIGGER_SOURCE_TYPES as readonly string[]).includes(value);

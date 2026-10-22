@@ -143,3 +143,25 @@ describe("TypedTriggerRow", () => {
     expect(html).toContain("Generic Webhooks (v3)");
   });
 });
+
+describe("typed trigger labels (parity R5 to R7)", () => {
+  it("gives every event and filter of every source an English and a French label", async () => {
+    const { TRIGGER_SOURCES: sources } = await import("../../shared/trigger-sources");
+    const en = (await import("../locales/en.json")).default as Record<string, string>;
+    const fr = (await import("../locales/fr.json")).default as Record<string, string>;
+    const keys = Object.values(sources).flatMap((source) => [
+      ...source.events.map((kind) => `triggers.event.${kind.replace(/\./g, "_")}`),
+      ...source.filters.map((key) => `triggers.filter.${key}`),
+    ]);
+    expect(keys.filter((key) => !en[key])).toEqual([]);
+    expect(keys.filter((key) => !fr[key])).toEqual([]);
+  });
+  it("offers the new GitHub, Linear and Sentry events", async () => {
+    const { TRIGGER_SOURCES: sources } = await import("../../shared/trigger-sources");
+    expect(sources.github.events).toEqual(expect.arrayContaining([
+      "pr.updated", "pr.review_approved", "pr.review_changes_requested", "pr.review_commented", "pr.comment", "pr.review_comment", "pr.thread_resolved", "pr.thread_reopened", "issue.assigned",
+    ]));
+    expect(sources.linear.events).toEqual(expect.arrayContaining(["issue.status_changed", "cycle.completed"]));
+    expect(sources.sentry.events).toEqual(expect.arrayContaining(["issue.archived", "issue.unresolved"]));
+  });
+});
