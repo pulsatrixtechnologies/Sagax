@@ -71,6 +71,7 @@ import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { gateServer, mcpStdioServer } from "../mcp-gate-config.ts";
 import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, directoryCallTarget } from "../mcp-directory.ts";
+import { sagaxReviewsAuto } from "./sagax-reviewer.ts";
 
 export { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 
@@ -416,7 +417,7 @@ function extendShellExclusions(policy: Record<string, unknown>, patterns: readon
 /** Ask and Edits both run Codex's workspace-write sandbox with the person as
  * reviewer: Codex has no narrower "edits only" mode, so the selector never
  * offers Edits for it (supportsApprovalMode) and a stray value asks. */
-function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprovalParams {
+export function codexNamedApprovalParams(mode: Exclude<ApprovalMode, "custom">, sagaxReviews = false): CodexApprovalParams {
   if (mode === "full") {
     return {
       thread: {
@@ -434,12 +435,14 @@ function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprov
   return {
     thread: {
       approvalPolicy: "on-request",
-      approvalsReviewer: mode === "auto" ? "auto_review" : "user",
+      // Approve for me: Codex's own reviewer, unless Sagax decides for
+      // this bot (sagax-reviewer.ts, parity A13)
+      approvalsReviewer: mode === "auto" && !sagaxReviews ? "auto_review" : "user",
       sandbox: "workspace-write",
     },
     turn: {
       approvalPolicy: "on-request",
-      approvalsReviewer: mode === "auto" ? "auto_review" : "user",
+      approvalsReviewer: mode === "auto" && !sagaxReviews ? "auto_review" : "user",
       sandboxPolicy: { type: "workspaceWrite" },
     },
   };
@@ -2017,7 +2020,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           // on a resumed thread would keep the previous named mode sticky.
           approvalParams = customApprovalParams(effectiveConfig);
         } else {
-          approvalParams = namedApprovalParams(approvalMode);
+          approvalParams = codexNamedApprovalParams(approvalMode, approvalMode === "auto" && sagaxReviewsAuto(turn.botId));
         }
         // Organization server: read-only and asking, every command or write
         // is then a request the handler below declines.
