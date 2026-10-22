@@ -100,17 +100,21 @@ export function grokCatalogSection(input: {
     const mine = server.tools.filter((tool) => favored.has(`${server.name}__${tool}`));
     rows.push(`- ${server.name} (${server.tools.length} tools; search_tool for the others)${mine.length ? `: ${mine.join(", ")}` : ""}`);
   }
-  // known or pinned tools on a server the catalog does not list yet
-  const listed = new Set(ready.map((server) => server.name));
-  const extra = [...favored].filter((name) => !listed.has(name.slice(0, name.indexOf("__")))).sort((a, b) => a.localeCompare(b));
+  // Names only, and no "call it directly" rule for a tool the model has not
+  // seen: measured on the bench, that rule saved a round but made the model
+  // deliberate over arguments it had no schema for (+4 to 6 s per turn).
+  // Tools this bot already used keep the direct-call rule (grok-tool-usage).
+  const known = [...new Set(input.known ?? [])].sort((a, b) => a.localeCompare(b));
+  const pinned = [...new Set(input.pinned ?? [])].filter((name) => !known.includes(name)).sort((a, b) => a.localeCompare(b));
   let text = (ready.length
-    ? "Your MCP tools on this turn, by server. Call any of them directly with use_tool (tool_name <server>__<tool>), with no search_tool first; this list is complete, so answer what connectors, tools or access you have from it without calling a tool."
-    : "MCP tools you can call directly with use_tool, with no search_tool first.") +
+    ? "Your MCP tools on this turn, by server (use_tool takes <server>__<tool>). This list is complete: answer what connectors, tools or access you have from it, without calling a tool."
+    : "") +
     (rows.length ? `\n${rows.join("\n")}` : "") +
-    (extra.length ? `\n- also: ${extra.join(", ")}` : "") +
     (notReady.length ? `\nNot connected now: ${notReady.map((server) => `${server.name} (${server.status})`).join(", ")}.` : "") +
     (pinnedLines.length ? `\n${pinnedLines.join("\n")}` : "") +
-    "\nPass tool_input from the tool's name and the request; if a call reports bad arguments, search_tool that one tool once. Independent reads go together in the same step.";
+    (known.length ? `\nAlready used, call directly with use_tool without search_tool first: ${known.join(", ")}.` : "") +
+    (pinned.length ? `\nOpen for this conversation, call directly with use_tool: ${pinned.join(", ")}.` : "");
+  text = text.trim();
   if (text.length > GROK_CATALOG_CHARS_MAX) {
     // too many servers: keep the instructions and the server names
     const names = ready.map((server) => `${server.name} (${server.tools.length})`).join(", ");

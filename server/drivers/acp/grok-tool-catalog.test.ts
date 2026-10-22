@@ -48,13 +48,14 @@ describe("readGrokCatalog", () => {
 });
 
 describe("grokCatalogSection", () => {
-  it("names every ready tool by its use_tool name, with the no-search and no-call rules", () => {
+  it("names every ready tool by its use_tool name, with the no-call rule for capability questions", () => {
     const section = grokCatalogSection({ catalog: readGrokCatalog(LIST) })!;
     expect(section.id).toBe(GROK_KNOWN_TOOLS_SECTION);
     expect(section.text).toContain("- perspicax: api_list, cw_psa_get_ticket");
     expect(section.text).toContain("- remote: diagnostics, status");
-    expect(section.text).toContain("no search_tool first");
     expect(section.text).toContain("without calling a tool");
+    // no direct-call rule for tools the model never saw (bench: +4 to 6 s of argument deliberation)
+    expect(section.text).not.toContain("search_tool first");
     expect(section.text).toContain("Not connected now: vercel (needs sign-in)");
     expect(section.text).not.toContain("shell");
   });
@@ -71,11 +72,12 @@ describe("grokCatalogSection", () => {
     const section = grokCatalogSection({ catalog, known: ["agents__tool_07"], pinned: ["agents__tool_42"] })!;
     expect(section.text).toContain("- agents (70 tools; search_tool for the others): tool_07, tool_42");
     expect(section.text).not.toContain("tool_08");
+    expect(section.text).toContain("Already used, call directly with use_tool without search_tool first: agents__tool_07.");
   });
 
   it("offers pinned tools and their lines even before the catalog is read", () => {
     const section = grokCatalogSection({ catalog: undefined, pinned: ["agents__remote_session_snapshot"], lines: ["Remote session open on MAC-DEMO-01."] })!;
-    expect(section.text).toContain("also: agents__remote_session_snapshot");
+    expect(section.text).toContain("Open for this conversation, call directly with use_tool: agents__remote_session_snapshot.");
     expect(section.text).toContain("Remote session open on MAC-DEMO-01.");
     expect(grokCatalogSection({ catalog: [] })).toBeNull();
   });
