@@ -36,6 +36,7 @@ const { OutboundCard } = await import("@/components/OutboundCard");
 const { WidgetBody } = await import("@/components/widget/WidgetBody");
 const { netCheckWidget } = await import("../../shared/net-tools/widget");
 const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
+const { RoutineChangeLine } = await import("@/components/RoutineToggleLine");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -169,6 +170,13 @@ describe("no UUID on screen", () => {
     expect(visibleText(createElement(OutboundCard, { message: call }))).toContain("Ne pas appeler");
     expect(visibleText(createElement(OutboundCard, { message: pay }))).toMatch(/3 articles achetés · 45,20\s\$/);
     setLocale("en");
+  });
+
+  it("a routine change line names the routine, never its id", () => {
+    const event = { action: "updated" as const, turnKey: "u1", routines: [{ id: THREAD_ID, name: "Revue des billets GECKO", botId: BOT_ID }] };
+    for (const action of ["created", "updated", "deleted"] as const) {
+      expectNoUuid(visibleText(createElement(RoutineChangeLine, { event: { ...event, action }, canOpen: () => true, onOpen: () => {} })));
+    }
   });
 
   it("allowed recipients name a bot, never its id (parité 1C)", () => {

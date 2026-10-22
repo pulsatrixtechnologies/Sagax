@@ -513,6 +513,11 @@ export interface RoutineManagerOptions {
    * card, its Undo, the person's switch while the conversation is open).
    * Changes made elsewhere (the console, a deleted bot) never call it. */
   onEnabledChanged?: (routine: Routine, change: RoutineEnabledChange) => void;
+  /** 2026-10-21 (JC): a bot created, updated or deleted a routine from a
+   * conversation; its named line goes there (server/routine-chat-events.ts).
+   * `updated` is a definition edit, never a bare on/off flip (onEnabledChanged
+   * carries those). Changes with no conversation (console, API) do not call it. */
+  onRoutineChanged?: (routine: Routine, change: RoutineChangeNote) => void;
   /** 2026-10-16: whether the routine's person is there now, for a routine
    * with onlyWhenPresent (server/routine-away.ts). Absent: unknown (runs). */
   presence?: (routine: Routine) => AwayVerdict;
@@ -544,8 +549,25 @@ export interface RoutineEnabledChange {
   messageId?: string;
 }
 
+/** Where a routine's definition was created, updated or deleted, for its
+ * named line in that conversation (server/routine-chat-events.ts). */
+export interface RoutineChangeNote {
+  action: "created" | "updated" | "deleted";
+  threadId: string;
+  /** the routine card the change was confirmed on, when there is one */
+  messageId?: string;
+}
+
 /** Slice 6: routine fields whose edit moves runAs to the editor. */
 const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
+
+/** Fields whose edit is a definition change worth an "Updated routine" line
+ * (everything the editor exposes but the bare enabled flip). */
+const ROUTINE_DEFINITION_FIELDS = [
+  "name", "prompt", "target", "botId", "groupId", "runOn", "schedule",
+  "durationMinutes", "timeoutMinutes", "attachments", "continuity", "overlap",
+  "onlyWhenPresent", "precheck",
+] as const;
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const CATCH_UP_MS = 12 * 60 * 60_000;
@@ -1553,6 +1575,7 @@ export class RoutineManager {
       if (request) this.rememberRoutineRequest(request, routine.id, at);
     }, discardResults);
     this.emitRoutine(routine);
+    this.noteRoutineChanged("created", routine, request, meta);
     return this.routineWithHealth(routine);
   }
 
@@ -1593,6 +1616,10 @@ export class RoutineManager {
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
     const enabledChanged = clean.enabled !== routine.enabled;
+    // A definition edit (anything but a bare on/off flip): its named line goes
+    // in the conversation. Read before commitMutation rewrites `routine`.
+    const definitionChanged = ROUTINE_DEFINITION_FIELDS.some((field) =>
+      JSON.stringify((clean as Record<string, unknown>)[field] ?? null) !== JSON.stringify((routine as unknown as Record<string, unknown>)[field] ?? null));
     // Definition-only edits retain due work and offline catch-up.
     let nextRunAt = routine.nextRunAt;
     let nominal = routine.nominalRunAt;
@@ -1672,7 +1699,26 @@ export class RoutineManager {
         // The change is committed; its line in the conversation is a courtesy.
       }
     }
+    if (definitionChanged) this.noteRoutineChanged("updated", routine, request, meta);
     return this.routineWithHealth(routine);
+  }
+
+  /** Raise onRoutineChanged when a create/update/delete came from a
+   * conversation (a routine card, or the person's own edit while it is open). */
+  private noteRoutineChanged(
+    action: RoutineChangeNote["action"],
+    routine: Routine,
+    request?: { threadId: string; messageId: string },
+    meta?: RoutineWriteMeta,
+  ): void {
+    if (!this.options.onRoutineChanged) return;
+    const conversation = request?.threadId ? { threadId: request.threadId, messageId: request.messageId } : meta?.conversation;
+    if (!conversation?.threadId) return;
+    try {
+      this.options.onRoutineChanged(cloneRoutine(routine), { action, threadId: conversation.threadId, messageId: conversation.messageId });
+    } catch {
+      // The change is committed; its line in the conversation is a courtesy.
+    }
   }
 
   remove(id: string, request?: RoutineRequestCommitFor<"delete">): boolean {
@@ -1680,6 +1726,9 @@ export class RoutineManager {
     if (request && this.matchingRoutineRequestReceipt(request)) return true;
     const at = this.routines.findIndex((r) => r.id === id);
     if (at === -1) return false;
+    // Keep the name and ownership for the "Deleted routine" line: the routine
+    // is gone once spliced, so the chip has nothing live to read.
+    const removed = cloneRoutine(this.routines[at]);
     const changedRuns: RoutineRun[] = [];
     this.commitMutation(() => {
       this.routines.splice(at, 1);
@@ -1701,6 +1750,7 @@ export class RoutineManager {
     });
     for (const run of changedRuns) this.emitRun(run);
     this.options.emit?.({ kind: "routine.deleted", routineId: id });
+    this.noteRoutineChanged("deleted", removed, request);
     return true;
   }
 
