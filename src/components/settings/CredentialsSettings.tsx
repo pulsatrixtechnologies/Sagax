@@ -16,6 +16,7 @@ import { useStore } from "@/state/store";
 import type { VaultItemKind } from "../../../shared/credential-vault";
 import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
 import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
+import { PhoneCardScanButton, scannedCardFields } from "./PhoneCardScanButton";
 import { botLabel } from "@/lib/human-label";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -291,6 +292,7 @@ function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Pro
       {(draft.kind === "login" || draft.kind === "apiKey") && <input className={inputClass} dir="ltr" value={draft.domains} onChange={set("domains")} placeholder={t("vault.field.sitesHint")} aria-label={t("vault.field.sites")} />}
       {draft.kind === "card" && !readOnly && (
         <>
+          {!item && <PhoneCardScanButton onRead={(card) => setDraft((current) => ({ ...current, ...scannedCardFields(card) }))} />}
           <input className={inputClass} value={draft.holder} onChange={set("holder")} placeholder={t("vault.field.holder")} aria-label={t("vault.field.holder")} autoComplete="off" />
           <input className={inputClass} dir="ltr" type="password" value={draft.pan} onChange={set("pan")} placeholder={keep ?? t("vault.field.pan")} aria-label={t("vault.field.pan")} autoComplete="off" inputMode="numeric" />
           <input className={inputClass} dir="ltr" type="password" value={draft.cvv} onChange={set("cvv")} placeholder={keep ?? t("vault.field.cvv")} aria-label={t("vault.field.cvv")} autoComplete="off" inputMode="numeric" />

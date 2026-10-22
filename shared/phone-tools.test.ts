@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkPhoneToolResult, isPhoneToolCallName, parsePhoneToolArgs, phoneToolGrantKey, phoneToolsFrameAllowed } from "./phone-tools.ts";
+import { checkPhoneToolResult, isPhoneRequestKind, isPhoneToolCallName, parsePhoneToolArgs, phoneToolGrantKey, phoneToolsFrameAllowed } from "./phone-tools.ts";
 
 describe("parsePhoneToolArgs", () => {
   it("refuses an unknown tool and names the known ones", () => {
@@ -92,5 +92,20 @@ describe("phoneToolsFrameAllowed", () => {
     expect(phoneToolsFrameAllowed({ kind: "phone-tools", audience: "ann" }, "bob", "local")).toBe(false);
     expect(phoneToolsFrameAllowed({ kind: "phone-tools", audience: "local" }, undefined, "local")).toBe(true);
     expect(phoneToolsFrameAllowed({ kind: "message" }, "bob", "local")).toBe(true);
+  });
+});
+
+describe("card scan (row 84)", () => {
+  it("is a request kind the phone offers, never a bot tool", () => {
+    expect(isPhoneRequestKind("card_scan")).toBe(true);
+    expect(parsePhoneToolArgs("card_scan", {}).ok).toBe(false);
+    expect(phoneToolGrantKey("card_scan", {})).toBeNull();
+  });
+
+  it("accepts only a sealed envelope, never a number in clear (JC 2026-10-21)", () => {
+    const enc = "B" + "A".repeat(86);
+    const sealed = { encapsulatedKey: enc, ciphertext: "A".repeat(80) };
+    expect(checkPhoneToolResult("card_scan", {}, { number: "4111111111111111" }).ok).toBe(false);
+    expect(checkPhoneToolResult("card_scan", {}, { ...sealed, number: "4111111111111111" })).toEqual({ ok: true, result: sealed });
   });
 });

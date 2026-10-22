@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { createPhoneToolBroker, PHONE_ONLINE_MS, phoneToolTurn, type PhoneToolAuditRow } from "./phone-tools.ts";
+import { cardScanRequester, createPhoneToolBroker, PHONE_ONLINE_MS, phoneToolTurn, type PhoneToolAuditRow } from "./phone-tools.ts";
 
 describe("phone tool broker", () => {
   const dirs: string[] = [];
@@ -234,5 +234,48 @@ describe("housekeeping (review of #960)", () => {
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("card scan through the broker (row 84)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("is never offered as a bot tool, and the computer can cancel it", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-scan-"));
+    dirs.push(dataDir);
+    const notified: string[] = [];
+    const broker = createPhoneToolBroker({ dataDir, notify: (person) => notified.push(person) });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["card_scan", "status"], transport: "protected" });
+    expect(broker.availableTools("ann")).toEqual(["card_scan", "status"]);
+    expect(broker.botTools("ann")).toEqual(["status"]);
+    const request = broker.request({ person: "ann", botId: "", botName: "", threadId: "card-scan:ann", tool: "card_scan", args: {} });
+    expect(request.allowAlways).toBe(false);
+    expect(broker.cancel("bob", request.id)).toBe(false);
+    expect(broker.cancel("ann", request.id)).toBe(true);
+    expect(broker.pendingFor("ann")).toEqual([]);
+    await expect(broker.wait(request.id, { botId: "", threadId: "card-scan:ann" }, 10)).resolves.toEqual({ status: "unknown" });
+    expect(notified.filter((person) => person === "ann").length).toBe(2);
+  });
+});
+
+describe("who may start a card scan (crypto review of #961)", () => {
+  const base = { person: "ann", desktopOwnerHeader: true, desktopManaged: true, companionMarked: false };
+  it("the desktop app (its owner token), or a person's browser session", () => {
+    expect(cardScanRequester({ ...base, auth: "loopback" })).toBe("ann");
+    expect(cardScanRequester({ ...base, auth: "cookie" })).toBe("ann");
+  });
+  it("never a native app's bearer session, a bot's or an ephemeral session, nor loopback without the desktop's token", () => {
+    expect(cardScanRequester({ ...base, auth: "bearer" })).toBeNull();
+    expect(cardScanRequester({ ...base, auth: "bot" })).toBeNull();
+    expect(cardScanRequester({ ...base, auth: "loopback", desktopOwnerHeader: false })).toBeNull();
+    // a header a phone could send does not decide anything
+    expect(cardScanRequester({ ...base, auth: "loopback", companionMarked: true })).toBe("ann");
+    expect(cardScanRequester({ ...base, person: "" , auth: "cookie" })).toBeNull();
+  });
+  it("on a server outside the desktop app, a loopback caller is not the computer's owner", () => {
+    expect(cardScanRequester({ ...base, auth: "loopback", desktopManaged: false, desktopOwnerHeader: false })).toBeNull();
   });
 });

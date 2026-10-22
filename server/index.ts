@@ -1074,8 +1074,8 @@ import { createMeetingRoutes } from "./routes/meetings.ts";
 import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
 // Phone tools (audit row 81): the person's own iPhone, approved on the phone.
-import { createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./routes/phone-tools.ts";
-import { createPhoneToolBroker, phoneToolTurn } from "./phone-tools.ts";
+import { createPhoneCardScanRoutes, createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./routes/phone-tools.ts";
+import { cardScanRequester, createPhoneToolBroker, phoneToolTurn } from "./phone-tools.ts";
 import { phoneConnectionTransport } from "../shared/phone-transport.ts";
 import { ipcPeer } from "./request-auth.ts";
 import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT, PHONE_TOOLS_FRAME, phoneToolsFrameAllowed } from "../shared/phone-tools.ts";
@@ -1404,7 +1404,8 @@ const phoneTools = createPhoneToolBroker({
   audit: (row) => appendAdminAction(DATA_DIR, {
     category: "approval",
     action: `phoneTool.${row.outcome}`,
-    target: { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name },
+    // a card scan comes from the person's own computer, not a bot
+    target: row.botId ? { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name } : { kind: "vault", name: "card scan" },
     changed: [`${row.tool}:${row.access}`],
     actor: { kind: "person", principalId: row.person, via: "sagax" },
   }),
@@ -4055,7 +4056,7 @@ function agentsIntegration(
           ownTurn: ownEnvironmentOrigin(bot, threadId) === "owner",
           tainted: phoneToolTaintedThreads.has(threadId),
         });
-        return "error" in turn ? "" : phoneTools.availableTools(turn.person).join(",");
+        return "error" in turn ? "" : phoneTools.botTools(turn.person).join(",");
       })(),
       // recall_topic: a person's turn in a single-stream segment
       // (server/single-stream.ts). The route re-checks.
@@ -32707,6 +32708,23 @@ ROUTES.push(createPhoneToolRoutes({
     return { person, deviceId: `session:${auth.session.id}`, transport };
   },
   botName: (botId) => store.bot(botId)?.name,
+}));
+// "Scanner avec l'iPhone" (row 84): the person at their own computer asks
+// their phone to read a card; told apart by the session (cardScanRequester),
+// never by a header a phone could send.
+ROUTES.push(createPhoneCardScanRoutes({
+  broker: () => phoneTools,
+  desktop: (req, auth) => {
+    const owner = req.headers["x-openmausbot-desktop-owner"];
+    return cardScanRequester({
+      person: actorPrincipalId(auth),
+      auth: auth.kind === "loopback"
+        ? "loopback"
+        : auth.session.ephemeral || isBotActSession(auth.session) ? "bot" : auth.via === "bearer" ? "bearer" : "cookie",
+      desktopManaged: DESKTOP_MANAGED && Boolean(desktopMutationToken),
+      desktopOwnerHeader: secureTokenMatch(typeof owner === "string" ? owner : undefined, desktopMutationToken ?? ""),
+    });
+  },
 }));
 // This person's phones for APNs pushes (server/routes/push-devices.ts).
 ROUTES.push(createPushDeviceRoutes({

@@ -515,6 +515,28 @@ Health is not offered.
   from the companion's vouched phone or a person's own device session, never
   a bot's session. The `phone-tools` frame carries no data and reaches the
   person's own streams only.
+- **Scanner avec l'iPhone** (row 84): the vault's New card form on the
+  computer asks the person's phone to read a card (`card_scan`, never a bot
+  tool: `/api/me/phone-tools/card-scan`, the computer only, never a bot's
+  shell or session nor a phone). End to end (JC 2026-10-21): the form makes
+  a one-time P-256 key and sends its public half; the phone reads the card
+  on the device (`CardPhotoScanner`, Vision), shows the last four digits and
+  seals the number, the expiry and the name for that key
+  (`PhoneCardSeal.swift`, `shared/phone-card-seal.ts`: HPKE base mode,
+  P-256, HKDF-SHA256, AES-256-GCM, bound to the request and the key). The
+  server relays the envelope and never holds the number in clear, not even
+  in memory (nor its logs, live frames, pushes or crash reports); the form
+  opens it and fills the fields. This is not a defence against a malicious
+  server: it serves the form's code and sees a card typed in the vault
+  anyway. Both screens show a six digit code drawn from the key, a pairing
+  check that the right form and the right phone are talking, not an
+  authentication (20 bits a server could grind; a commit-reveal could come
+  later). HPKE base mode authenticates no sender: only a native session of
+  the same person may answer (the companion's phone or the app's bearer
+  session), and only the person's computer starts a scan (the desktop app's
+  owner token or a browser session, never a native bearer session). The
+  security code is never read. Only over HTTPS or Tailscale, iOS 17 or
+  later.
 
 ## iOS feature parity routes (2026-10-03)
 

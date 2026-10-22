@@ -396,6 +396,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/me\/phone-tools\/requests$/ },
   { methods: ["POST"], path: /^\/api\/me\/phone-tools\/requests\/[\w-]+$/ },
   { methods: ["GET", "DELETE"], path: /^\/api\/me\/phone-tools\/grants$/ },
+  // "Scanner avec l'iPhone" from the person's own computer (the handler refuses a bot or a phone)
+  { methods: ["GET", "POST"], path: /^\/api\/me\/phone-tools\/card-scan$/ },
+  { methods: ["POST"], path: /^\/api\/me\/phone-tools\/card-scan\/[\w-]+\/wait$/ },
+  { methods: ["DELETE"], path: /^\/api\/me\/phone-tools\/card-scan\/[\w-]+$/ },
   // People's custom labels (server/routes/person-labels.ts): everyone reads
   // them; the handler lets a person change their own, an organization admin
   // anyone's and a team manager their team's people.

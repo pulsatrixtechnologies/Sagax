@@ -145,17 +145,27 @@ final class PhoneToolCenter: ObservableObject {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sagax.phone-tool.\(request.id)", content: content, trigger: nil))
     }
 
-    /// The person's choice on the card. Photos pass the picked images.
-    func choose(_ choice: PhoneToolRules.Choice, photos: [Data]? = nil) async {
+    /// The person's choice on the card. Photos pass the picked images; a
+    /// card scan passes the card the person saw.
+    func choose(_ choice: PhoneToolRules.Choice, photos: [Data]? = nil, card: WidgetJSON? = nil) async {
         guard let request = current else { return }
         close()
         if choice == .deny || request.tool == nil || !offered.contains(request.tool!) {
             clipboardText = nil
             await send(request, PhoneToolAnswer.denied)
         } else {
-            let prepared: WidgetJSON? = request.tool == .clipboard ? PhoneToolShaping.clipboard(clipboardText) : nil
+            // a card scan sends the sealed card the person saw; the clipboard what was read first
+            let prepared: WidgetJSON? = card ?? (request.tool == .clipboard ? PhoneToolShaping.clipboard(clipboardText) : nil)
             await run(request, decision: PhoneToolRules.decision(choice), photos: photos, prepared: prepared)
         }
+        await next()
+    }
+
+    /// The phone could not do it and says why (the asker reads the reason).
+    func refuse(_ reason: String) async {
+        guard let request = current else { return }
+        close()
+        await send(request, PhoneToolAnswer.refused(reason))
         await next()
     }
 
@@ -184,7 +194,7 @@ final class PhoneToolCenter: ObservableObject {
 
     private func present(_ request: PhoneToolRequest, clipboardPreview: String? = nil) {
         guard let top = Self.topViewController() else { return }
-        let host = UIHostingController(rootView: PhoneToolCard(request: request, clipboardPreview: clipboardPreview).themeOverlay())
+        let host = UIHostingController(rootView: PhoneToolCard(request: request, clipboardPreview: clipboardPreview, protectedTransport: session?.phoneCredentialTransportIsProtected ?? false).themeOverlay())
         // a question stays until answered: no swipe away, Refuser is the way out
         host.isModalInPresentation = true
         if let sheet = host.sheetPresentationController {

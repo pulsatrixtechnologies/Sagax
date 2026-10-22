@@ -1,6 +1,134 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Pairing code %@ %@: your computer's form shows the same when it is the one asking.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing code %@ %@: your computer's form shows the same when it is the one asking."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code de jumelage %@ %@ : le formulaire de votre ordinateur affiche le même quand c'est bien lui qui demande."
+          }
+        }
+      }
+    },
+    "The card could not be sealed for the computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The card could not be sealed for the computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La carte n'a pas pu être scellée pour l'ordinateur."
+          }
+        }
+      }
+    },
+    "This request cannot be sealed for your computer. Ask again from the New card form.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This request cannot be sealed for your computer. Ask again from the New card form."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette demande ne peut pas être scellée pour votre ordinateur. Redemandez depuis le formulaire Nouvelle carte."
+          }
+        }
+      }
+    },
+    "This iPhone needs iOS 17 to seal a card for your computer.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This iPhone needs iOS 17 to seal a card for your computer."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cet iPhone a besoin d'iOS 17 pour sceller une carte pour votre ordinateur."
+          }
+        }
+      }
+    },
+    "Scan a card for your computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan a card for your computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanner une carte pour votre ordinateur"
+          }
+        }
+      }
+    },
+    "Your computer asks to scan a payment card. The number, the expiry and the name go to its New card form; the security code is never read.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your computer asks to scan a payment card. The number, the expiry and the name go to its New card form; the security code is never read."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre ordinateur demande de scanner une carte de paiement. Le numéro, l'expiration et le nom vont dans son formulaire Nouvelle carte ; le code de sécurité n'est jamais lu."
+          }
+        }
+      }
+    },
+    "This needs a secure connection (HTTPS or Tailscale). Type the card on your computer instead.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This needs a secure connection (HTTPS or Tailscale). Type the card on your computer instead."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il faut une connexion sécurisée (HTTPS ou Tailscale). Tapez plutôt la carte sur votre ordinateur."
+          }
+        }
+      }
+    },
+    "Send to the computer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send to the computer"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer à l'ordinateur"
+          }
+        }
+      }
+    },
     "Used %@ on this phone (always allowed).": {
       "localizations": {
         "en": {

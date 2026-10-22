@@ -21,14 +21,16 @@ import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
 import {
   checkPhoneToolResult,
+  isPhoneTool,
+  PHONE_REQUEST_KINDS,
   PHONE_TOOL_REQUEST_TTL_MS,
-  PHONE_TOOLS,
   phoneToolAccess,
   phoneToolGrantKey,
   PHONE_TOOLS_NEED_PROTECTED_TRANSPORT,
   type PhoneToolAccess,
   type PhoneTransport,
   type PhoneToolDecision,
+  type PhoneRequestKind,
   type PhoneToolId,
   type PhoneToolRequestWire,
 } from "../shared/phone-tools.ts";
@@ -49,7 +51,7 @@ export interface PhoneToolAuditRow {
   person: string;
   botId: string;
   threadId: string;
-  tool: PhoneToolId;
+  tool: PhoneRequestKind;
   access: PhoneToolAccess;
   /** requested, or what the phone decided, or expired */
   outcome: "requested" | PhoneToolDecision | "expired";
@@ -69,7 +71,7 @@ export interface PhoneToolBrokerDeps {
 }
 
 export type PhoneToolOutcome =
-  | { status: "done"; tool: PhoneToolId; result: Record<string, unknown> }
+  | { status: "done"; tool: PhoneRequestKind; result: Record<string, unknown> }
   | { status: "denied" }
   | { status: "failed"; error: string }
   | { status: "expired" }
@@ -81,7 +83,7 @@ export type PhoneAnswerOutcome = { ok: true } | { ok: false; status: 400 | 403 |
 
 interface Device {
   deviceName: string;
-  tools: PhoneToolId[];
+  tools: PhoneRequestKind[];
   transport: PhoneTransport;
   seenAt: number;
 }
@@ -101,12 +103,16 @@ const grantsFile = z.object({
 
 export interface PhoneToolBroker {
   /** `transport` absent counts as plain local Wi-Fi: nothing is offered. */
-  registerDevice(person: string, deviceId: string, device: { deviceName: string; tools: readonly PhoneToolId[]; transport?: PhoneTransport }): void;
-  /** The tools this person's phones can run right now, sorted. */
-  availableTools(person: string): PhoneToolId[];
+  registerDevice(person: string, deviceId: string, device: { deviceName: string; tools: readonly PhoneRequestKind[]; transport?: PhoneTransport }): void;
+  /** What this person's phones can do right now, sorted (card_scan included). */
+  availableTools(person: string): PhoneRequestKind[];
+  /** The same, as a bot may ask: never card_scan. */
+  botTools(person: string): PhoneToolId[];
   /** A registered phone of this person (the answer route checks it). */
   hasDevice(person: string, deviceId: string): boolean;
-  request(input: { person: string; botId: string; botName: string; threadId: string; tool: PhoneToolId; args: Record<string, unknown> }): PhoneToolRequestWire;
+  request(input: { person: string; botId: string; botName: string; threadId: string; tool: PhoneRequestKind; args: Record<string, unknown> }): PhoneToolRequestWire;
+  /** The person's own computer gives up on a request it made (card_scan). */
+  cancel(person: string, requestId: string): boolean;
   /** Wait up to `ms` for the answer of a request this bot made in this conversation. */
   wait(requestId: string, owner: { botId: string; threadId: string }, ms: number): Promise<PhoneToolOutcome>;
   pendingFor(person: string): PhoneToolRequestWire[];
@@ -226,7 +232,7 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       const who = personKey(person);
       if (!who || !deviceId) return;
       const mine = devices.get(who) ?? new Map<string, Device>();
-      const tools = PHONE_TOOLS.filter((tool) => device.tools.includes(tool));
+      const tools = PHONE_REQUEST_KINDS.filter((tool) => device.tools.includes(tool));
       if (!tools.length) mine.delete(deviceId);
       else mine.set(deviceId, { deviceName: device.deviceName.slice(0, 80), tools, transport: device.transport === "protected" ? "protected" : "local", seenAt: now() });
       if (mine.size) devices.set(who, mine);
@@ -235,13 +241,28 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
 
     availableTools(person) {
       const who = personKey(person);
-      const tools = new Set<PhoneToolId>();
+      const tools = new Set<PhoneRequestKind>();
       for (const device of devices.get(who)?.values() ?? []) {
         // plain local Wi-Fi: the answers would cross the network in clear
         if (device.transport !== "protected" || !reachable(who, device)) continue;
         for (const tool of device.tools) tools.add(tool);
       }
       return [...tools].sort();
+    },
+
+    botTools(person) {
+      return this.availableTools(person).filter(isPhoneTool);
+    },
+
+    cancel(person, requestId) {
+      const who = personKey(person);
+      const request = requests.get(requestId);
+      if (!request || request.person !== who || request.outcome) return false;
+      audit(request, "deny");
+      settle(request, { status: "denied" });
+      requests.delete(requestId);
+      deps.notify(who);
+      return true;
     },
 
     hasDevice(person, deviceId) {
@@ -430,4 +451,25 @@ export function phoneToolTurn(input: {
   const owner = input.ownerPrincipal.trim().toLowerCase();
   if (!person || person !== owner) return { error: "Only the bot's owner can use their own phone through it." };
   return { person };
+}
+
+/** Who may start a card scan (crypto review of #961): the person at their
+ * own computer, told apart by the kind of session, never by a header a
+ * phone could send. The desktop app is a loopback caller with the app's
+ * owner token; a browser is a cookie session. A native app's bearer session
+ * (a phone), a bot's or an ephemeral session, and a loopback caller without
+ * the desktop's token (a bot's shell, a server outside the desktop app) are
+ * refused. */
+export function cardScanRequester(input: {
+  person: string;
+  auth: "loopback" | "cookie" | "bearer" | "bot";
+  desktopManaged: boolean;
+  desktopOwnerHeader: boolean;
+  companionMarked?: boolean;
+}): string | null {
+  const person = input.person.trim().toLowerCase();
+  if (!person) return null;
+  if (input.auth === "cookie") return person;
+  if (input.auth === "loopback") return input.desktopManaged && input.desktopOwnerHeader ? person : null;
+  return null;
 }

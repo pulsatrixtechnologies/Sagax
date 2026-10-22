@@ -16,6 +16,7 @@ import { z } from "zod";
 import { parsePhoneToolArgs, phoneAnswerSchema, phoneDeviceSchema, PHONE_TOOL_CALL_WAIT_MS } from "../../shared/phone-tools.ts";
 import { PhoneToolUnavailable, type PhoneToolBroker } from "../phone-tools.ts";
 import type { RequestAuth } from "../request-auth.ts";
+import { isCardSealPublicKey } from "../../shared/phone-card-seal.ts";
 import type { PhoneTransport } from "../../shared/phone-transport.ts";
 import type { InternalCapabilityView, InternalRouteHandler } from "./internal-route.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -130,5 +131,63 @@ export function createPhoneToolInternalRoutes(deps: PhoneToolInternalDeps): Inte
     const outcome = await broker.wait(requestId, owner, waitMs);
     if (outcome.status === "unknown") return json(res, 404, { error: "No such phone request in this conversation." });
     return json(res, 200, outcome);
+  };
+}
+
+// "Scanner avec l'iPhone" (audit row 84): the person's own computer, in the
+// vault's New card form, asks their iPhone to read a card (Vision, on the
+// phone). Never a bot: the request has no bot and no conversation.
+//   GET    /api/me/phone-tools/card-scan            { available }
+//   POST   /api/me/phone-tools/card-scan            { publicKey } start: { requestId }
+//   POST   /api/me/phone-tools/card-scan/:id/wait   { status, sealed? }
+//   DELETE /api/me/phone-tools/card-scan/:id        the form gave up
+// The phone seals the number, the expiry and the name for the form's
+// one-time key (shared/phone-card-seal.ts); this route relays that envelope
+// once and never holds the number in clear (never the security code).
+const CARD_SCAN_ID = /^\/api\/me\/phone-tools\/card-scan\/([\w-]{1,64})(\/wait)?$/;
+
+export interface PhoneCardScanRouteDeps {
+  broker(): PhoneToolBroker;
+  /** The person at their own computer (the desktop app, or their signed-in
+   * session); null for a bot's shell or session, a phone, or a service. */
+  desktop(req: IncomingMessage, auth: RequestAuth): string | null;
+  waitMs?: number;
+}
+
+export function createPhoneCardScanRoutes(deps: PhoneCardScanRouteDeps): RouteHandler {
+  return async ({ req, res, path, method, auth, json, readBody }) => {
+    const match = CARD_SCAN_ID.exec(path);
+    // a literal path, so scripts/tool-policy reads it (an admin row: never a bot's)
+    if (path !== "/api/me/phone-tools/card-scan" && !match) return PASS;
+    res.setHeader("cache-control", "no-store");
+    const person = deps.desktop(req, auth);
+    if (!person) return json(res, 403, { error: "Only you, at your computer, can ask your phone to scan a card." });
+    const broker = deps.broker();
+    const owner = { botId: "", threadId: `card-scan:${person.trim().toLowerCase()}` };
+    if (path === "/api/me/phone-tools/card-scan") {
+      if (method === "GET") return json(res, 200, { available: broker.availableTools(person).includes("card_scan") });
+      if (method !== "POST") return json(res, 405, { error: "GET or POST" });
+      // the form's one-time key: the phone seals the card for it alone
+      const body = (await readBody(req).catch(() => ({}))) as { publicKey?: unknown };
+      if (!isCardSealPublicKey(body.publicKey)) return json(res, 400, { error: "send { publicKey }: the form's one-time P-256 key, base64url" });
+      try {
+        const request = broker.request({ person, botId: owner.botId, botName: "", threadId: owner.threadId, tool: "card_scan", args: { publicKey: body.publicKey } });
+        return json(res, 200, { requestId: request.id, expiresAt: request.expiresAt });
+      } catch (error) {
+        if (error instanceof PhoneToolUnavailable) return json(res, error.status, { error: error.message });
+        throw error;
+      }
+    }
+    const requestId = match![1]!;
+    if (match![2]) {
+      if (method !== "POST") return json(res, 405, { error: "POST" });
+      const outcome = await broker.wait(requestId, owner, deps.waitMs ?? PHONE_TOOL_CALL_WAIT_MS);
+      if (outcome.status === "unknown") return json(res, 404, { error: "No such scan." });
+      // the sealed envelope as the phone sent it: only the form can open it
+      if (outcome.status === "done") return json(res, 200, { status: "done", sealed: outcome.result });
+      return json(res, 200, outcome);
+    }
+    if (method !== "DELETE") return json(res, 405, { error: "DELETE" });
+    return json(res, 200, { ok: true, cancelled: broker.cancel(person, requestId) });
   };
 }
