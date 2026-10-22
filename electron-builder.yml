@@ -89,6 +89,8 @@ extraResources:
     to: licenses/jsquash-webp-LICENSE.txt
   - from: third_party/jsquash-webp/libwebp-LICENSE.txt
     to: licenses/libwebp-LICENSE.txt
+  - from: third_party/jsquash-webp/libwebp-PATENTS.txt
+    to: licenses/libwebp-PATENTS.txt
   # Code adapted from T3 Code (MIT): the bots' browser egress gate, the Antigravity runtime, citations.
   - from: third_party/t3-code/LICENSE
     to: licenses/t3-code-LICENSE.txt
