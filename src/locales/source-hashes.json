@@ -13879,7 +13879,11 @@
       "settings.showSuggestions.show": "6dfe38d3b58a3cfa643ff57eeca4739c7b9060adf6593057d565f403f304335c",
       "settings.allHistory.title": "633de0649cae35655fbd39e614798ccd96f171b310a09f322b9de6f95c9c55d4",
       "settings.allHistory.show": "d7e03e1757ab43c30973f5f0252a4606c40aca0563b53d55c48f9f3d08454be0",
-      "palette.cmd.botHistory": "e2095d3f4fbd0a427cf8498a6d060c16f3c5b7fe4a7bc6b798b689edeecfda72"
+      "palette.cmd.botHistory": "e2095d3f4fbd0a427cf8498a6d060c16f3c5b7fe4a7bc6b798b689edeecfda72",
+      "botPanel.teamMemorySharing": "97daaf749c4f806e6da8d90a5f9226aa8411d9a154df69aad8738734b212f5b7",
+      "botPanel.teamMemorySharing.help": "aaafcd08814fce58759c6d8860a02de265eb61bcf05b4a59944c5d6cc30f1db3",
+      "botPanel.teamMemorySharing.private": "c63eb6720c6e88493897548d3620d45e539d18574465f7b26fdddcbade044ee2",
+      "botPanel.teamMemorySharing.shared": "e3c4b39d6d5013477c98cd58236fed455f37aa7017b7168ce1980a449aaf438a"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -22436,7 +22440,11 @@
       "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120",
       "approval.tool.runCommandCloud": "95e6026051beb75f25c2e72d5c85ca38f95489c5d50a44cdda30a7be4ae1d400",
       "approval.tool.runCommandComputer": "1aff3145399783a21a8aea6f30b6fe544c4e671081d200d624da939c13abbf47",
-      "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
+      "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df",
+      "botPanel.teamMemorySharing": "97daaf749c4f806e6da8d90a5f9226aa8411d9a154df69aad8738734b212f5b7",
+      "botPanel.teamMemorySharing.help": "aaafcd08814fce58759c6d8860a02de265eb61bcf05b4a59944c5d6cc30f1db3",
+      "botPanel.teamMemorySharing.private": "c63eb6720c6e88493897548d3620d45e539d18574465f7b26fdddcbade044ee2",
+      "botPanel.teamMemorySharing.shared": "e3c4b39d6d5013477c98cd58236fed455f37aa7017b7168ce1980a449aaf438a"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

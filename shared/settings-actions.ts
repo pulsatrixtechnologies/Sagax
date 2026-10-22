@@ -156,6 +156,7 @@ botField("bot.pinned", "pinned", "boolean", "Pinned in the sidebar", "Sidebar > 
 botField("bot.hidden", "hidden", "boolean", "Archived (hidden)", "Bot editor > ... > Archive");
 botField("bot.memoryEnabled", "memoryEnabled", "boolean", "Memory on", "Bot editor > Memory");
 botField("bot.memoryUpkeep", "memoryUpkeep", "any", "Memory upkeep", "Bot editor > Memory");
+botField("bot.teamMemorySharing", "teamMemorySharing", "any", "Team memory sharing (shared, private)", "Bot editor > Memory > Team memory");
 botField("bot.browser", "browser", "boolean", "Browser", "Bot editor > Access > Browser");
 botField("bot.browserProfile", "browserProfile", "string?", "Browser profile", "Bot editor > Access > Browser");
 botField("bot.computer", "computer", "enum:auto|off", "Works on (Auto or Off)", "Bot editor > Workspace");

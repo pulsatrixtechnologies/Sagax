@@ -467,6 +467,7 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   autoApprove: "bots.approvalLevel",
   acknowledgeLocalAuto: "bots.approvalLevel",
   memoryEnabled: "bots.behaviour",
+  teamMemorySharing: "bots.behaviour",
   memoryUpkeep: "bots.behaviour",
   voiceNotes: "bots.behaviour",
   emailDrafts: "bots.behaviour",

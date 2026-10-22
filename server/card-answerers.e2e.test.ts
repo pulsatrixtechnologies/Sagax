@@ -26,6 +26,12 @@
 //      dialog's direct writes stay admin; a local service confirms none
 //  10. that card also notifies, and lists in the inbox of, the members who may
 //      confirm it (never a stranger, never another kind of approval)
+//  11. per-bot team memory sharing: "shared" (the default) lists the card
+//      for every member of the section, marked not answerable where they
+//      cannot answer; "private" keeps it to the members who see the bot and
+//      its thread or channel (owner and those members still get it)
+//  12. the bot's own memory never travels as a team-memory card, whatever
+//      the setting
 //
 // No new card, prompt or gate appears anywhere: the provider's own approval
 // is the card, and these only decide whose answer it accepts.
@@ -471,6 +477,128 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
       expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: command, behavior: "deny" }, BOSS)).status).toBe(200);
     } finally {
       for (const stream of Object.values(streams)) stream.close();
+    }
+  }, 90_000);
+
+  it("shares a team-memory card with the whole section by default, and keeps it to those who see the bot when private", async () => {
+    // Both bots sit in one section; Ada uses only the first, Bob only the second.
+    const bot = await makeTeamBot("Sharing A", "Dispatch Sharing", [ADA]);
+    await makeTeamBot("Sharing B", "Dispatch Sharing", [BOB]);
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Ada's sharing title" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    const inbox = async (as: string, requestId: string) => ((await api("GET", "/api/approvals", undefined, as)).body.pending ?? [])
+      .filter((item: any) => item.requestId === requestId);
+    const listed = (as: string, requestId: string) => waitFor(async () => { const rows = await inbox(as, requestId); return rows.length ? rows : null; }, 10_000);
+    const ownView = async () => ((await api("GET", "/api/bots?messages=0", undefined, BOSS)).body.bots as any[]).find((candidate) => candidate.id === bot.id);
+    expect((await ownView())?.teamMemorySharing).toBeUndefined();
+
+    // shared (the default): Bob, a member of the section, sees the card, but
+    // may not answer on a conversation he cannot open
+    const sharedRequest = await proposeTeamMemory(bot, threadId, "Shared board");
+    const adas = await listed(ADA, sharedRequest);
+    expect(adas![0]).toMatchObject({ threadId, decidable: true });
+    const bobs = await listed(BOB, sharedRequest);
+    expect(bobs, "a member of the section sees a shared card").toHaveLength(1);
+    expect(bobs![0]).toMatchObject({ threadId, decidable: false, bulk: "not-yours" });
+    expect(bobs![0].message?.card?.teamMemoryRequest?.section).toBe("Dispatch Sharing");
+    expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: sharedRequest, behavior: "deny" }, ADA)).status).toBe(200);
+
+    // private: only the people who see the bot and the conversation
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { teamMemorySharing: "everyone" }, BOSS)).status).toBe(400);
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { teamMemorySharing: "private" }, BOSS)).status).toBe(200);
+    expect((await ownView())?.teamMemorySharing).toBe("private");
+    const streams = { ada: openStream(ADA), bob: openStream(BOB), boss: openStream(BOSS) };
+    try {
+      await Promise.all(Object.values(streams).map((stream) => stream.ready()));
+      const requestId = await proposeTeamMemory(bot, threadId, "Private board");
+      const notified = (stream: ReturnType<typeof openStream>) => waitFor(async () =>
+        stream.frames.find((frame) => frame.kind === "notify" && frame.notification?.requestId === requestId) ?? null, 5_000);
+      // the owner and the member who uses this bot still get it
+      expect(await notified(streams.boss)).not.toBeNull();
+      expect(await notified(streams.ada)).not.toBeNull();
+      const adaRows = await listed(ADA, requestId);
+      expect(adaRows![0]).toMatchObject({ threadId, decidable: true });
+      expect(adaRows![0].message?.card?.requestId).toBe(requestId);
+      // the other member of the section gets nothing: no frame, no row, no title, no card
+      expect(await notified(streams.bob)).toBeNull();
+      const bobInbox = await api("GET", "/api/approvals", undefined, BOB);
+      expect(bobInbox.status).toBe(200);
+      expect(JSON.stringify(bobInbox.body)).not.toContain(requestId);
+      expect(JSON.stringify(bobInbox.body)).not.toContain("Ada's sharing title");
+      expect(JSON.stringify(bobInbox.body)).not.toContain("Private board");
+      expect((await api("GET", `/api/threads/${threadId}/messages`, undefined, BOB)).status).toBe(404);
+      expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "allow" }, BOB)).status).toBeOneOf([403, 404]);
+      expect((await teamEntry("Dispatch Sharing", "Private board"))?.status).toBe("proposed");
+      expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId, behavior: "allow" }, ADA)).status).toBe(200);
+      expect((await teamEntry("Dispatch Sharing", "Private board"))?.status).toBe("accepted");
+    } finally {
+      for (const stream of Object.values(streams)) stream.close();
+    }
+    // back to shared: the default is stored as no setting at all
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { teamMemorySharing: "shared" }, BOSS)).status).toBe(200);
+    expect((await ownView())?.teamMemorySharing).toBeUndefined();
+  }, 90_000);
+
+  it("keeps a private bot's channel card from a member of its section outside that channel", async () => {
+    const bot = await makeTeamBot("Room sharing", "Room Sharing", [ADA, BOB]);
+    const room = await api("POST", "/api/groups", { memberIds: [bot.id], name: "Ada and the owner", humanIds: [BOSS, ADA] }, BOSS);
+    expect(room.status, JSON.stringify(room.body)).toBe(201);
+    const group = room.body.group as { id: string; threadId: string };
+    const inbox = async (as: string, requestId: string) => ((await api("GET", "/api/approvals", undefined, as)).body.pending ?? [])
+      .filter((item: any) => item.requestId === requestId);
+    const listed = (as: string, requestId: string) => waitFor(async () => { const rows = await inbox(as, requestId); return rows.length ? rows : null; }, 10_000);
+
+    // shared: Bob, outside the channel, sees it and may not answer it
+    const sharedRequest = await proposeTeamMemory(bot, group.threadId, "Shared room board");
+    expect((await listed(BOB, sharedRequest))![0]).toMatchObject({ decidable: false });
+    expect((await api("POST", `/api/threads/${group.threadId}/respond`, { requestId: sharedRequest, behavior: "deny" }, BOSS)).status).toBe(200);
+
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { teamMemorySharing: "private" }, BOSS)).status).toBe(200);
+    const requestId = await proposeTeamMemory(bot, group.threadId, "Private room board");
+    // the member in the channel still gets it
+    const adas = await listed(ADA, requestId);
+    expect(adas![0]).toMatchObject({ threadId: group.threadId, decidable: true, roomName: "Ada and the owner" });
+    // a member of the section outside the channel gets nothing
+    const bobs = await api("GET", "/api/approvals", undefined, BOB);
+    expect(bobs.status).toBe(200);
+    expect(JSON.stringify(bobs.body)).not.toContain(requestId);
+    expect(JSON.stringify(bobs.body)).not.toContain("Private room board");
+    expect((await api("POST", `/api/threads/${group.threadId}/respond`, { requestId, behavior: "allow" }, BOB)).status).toBeOneOf([403, 404]);
+    expect((await teamEntry("Room Sharing", "Private room board"))?.status).toBe("proposed");
+    expect((await api("POST", `/api/threads/${group.threadId}/respond`, { requestId, behavior: "deny" }, BOSS)).status).toBe(200);
+  }, 90_000);
+
+  it("never sends a bot's own memory to another member as a card, shared or private", async () => {
+    const bot = await makeTeamBot("Own memory", "Dispatch Own", [ADA]);
+    await makeTeamBot("Own memory B", "Dispatch Own", [BOB]);
+    const task = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Ada's own" }, ADA);
+    expect(task.status, JSON.stringify(task.body)).toBe(201);
+    const threadId = task.body.task.threadId as string;
+    for (const sharing of ["shared", "private"] as const) {
+      expect((await api("PATCH", `/api/bots/${bot.id}`, { teamMemorySharing: sharing }, BOSS)).status).toBe(200);
+      const note = `Ada own note ${sharing} zq9`;
+      const minted = await fetch(`${BASE}/api/testing/internal-capability`, {
+        method: "POST", headers: { "content-type": "application/json", "x-openmausbot-test-capability": CAPABILITY_KEY },
+        body: JSON.stringify({ botId: bot.id, threadId, kind: "agents" }),
+      });
+      expect(minted.status).toBe(201);
+      const { token } = await minted.json() as { token: string };
+      const wrote = await fetch(`${BASE}/api/internal/memory`, {
+        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "append", text: note }),
+      });
+      expect(wrote.status, await wrote.clone().text()).toBe(200);
+      // the owner reads it in the bot's memory
+      expect(JSON.stringify((await api("GET", `/api/bots/${bot.id}/memory/file?path=MEMORY.md`, undefined, BOSS)).body)).toContain(note);
+      // Bob, a member of the same section: no card, no row, no memory file
+      const bobInbox = await api("GET", "/api/approvals", undefined, BOB);
+      expect(JSON.stringify(bobInbox.body)).not.toContain(note);
+      const bobMemory = await api("GET", `/api/bots/${bot.id}/memory/file?path=MEMORY.md`, undefined, BOB);
+      expect(bobMemory.status).toBeOneOf([403, 404]);
+      expect(JSON.stringify(bobMemory.body)).not.toContain(note);
+      // and it is not team memory either
+      expect(JSON.stringify((await api("GET", "/api/team-memory?section=Dispatch%20Own", undefined, BOSS)).body)).not.toContain(note);
     }
   }, 90_000);
 

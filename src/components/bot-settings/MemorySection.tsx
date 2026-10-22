@@ -41,8 +41,9 @@ import {
   type LendingReview,
   markMemoryReviewed,
 } from "@/lib/memory";
+import { canEditBotField } from "@/lib/bot-capabilities";
 import { ApiError, useStore, type Bot } from "@/state/store";
-import { HelpTip, PILL, SwitchRow } from "../SettingsPrimitives";
+import { HelpTip, PILL, PillSelect, SettingRow, SwitchRow } from "../SettingsPrimitives";
 import { AdvancedFold } from "./AdvancedFold";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { inputCls } from "./field";
@@ -81,6 +82,29 @@ export function MemoryToggleCard({ enabled, busy, onToggle }: { enabled: boolean
         disabled={busy}
         onChange={onToggle}
       />
+    </PaneSection>
+  );
+}
+
+/** Team memory, apart from this bot's own memory and anyone's personal
+ * memory: who gets the "Remember this for the team?" cards this bot
+ * proposes. Shared (the default): every member of its section. Private:
+ * only the people who see this bot and the conversation. */
+export function TeamMemorySharingCard({ value, disabled, onChange }: { value: "shared" | "private"; disabled?: boolean; onChange: (next: "shared" | "private") => void }) {
+  return (
+    <PaneSection>
+      <SettingRow title={t("botPanel.teamMemorySharing")} subtitle={t("botPanel.teamMemorySharing.help")} className="px-0 py-0">
+        <PillSelect<"shared" | "private">
+          ariaLabel={t("botPanel.teamMemorySharing")}
+          value={value}
+          disabled={disabled}
+          onChange={onChange}
+          options={[
+            { value: "shared", label: t("botPanel.teamMemorySharing.shared") },
+            { value: "private", label: t("botPanel.teamMemorySharing.private") },
+          ]}
+        />
+      </SettingRow>
     </PaneSection>
   );
 }
@@ -292,7 +316,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
   const [lendingReview, setLendingReview] = useState<LendingReview | null>(null);
   const [lendingReviewStale, setLendingReviewStale] = useState(false);
   const [reviewing, setReviewing] = useState(false);
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
 
   const refresh = async (openPath?: string) => {
     const [nextOverview, nextJournal, nextUpkeep] = await Promise.all([
@@ -448,6 +472,11 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
   return (
     <div className="flex flex-col gap-5">
       <MemoryToggleCard enabled={bot.memoryEnabled !== false} busy={Boolean(bot.busy)} onToggle={onToggle} />
+      <TeamMemorySharingCard
+        value={bot.teamMemorySharing === "private" ? "private" : "shared"}
+        disabled={!canEditBotField(state.config, bot, "teamMemorySharing")}
+        onChange={(next) => dispatch({ type: "updateBot", botId: bot.id, patch: { teamMemorySharing: next } })}
+      />
 
       {lendingReview && (
         <LendingReviewNotice

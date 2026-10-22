@@ -2709,5 +2709,9 @@
   "chat.inputRequest.answered": "Resposta enviada: o trabalho continua.",
   "approval.tool.runCommandCloud": "executar um comando no seu computador na nuvem",
   "approval.tool.runCommandComputer": "executar um comando no seu computador",
-  "approval.details.more": "Detalhes"
+  "approval.details.more": "Detalhes",
+  "botPanel.teamMemorySharing": "Memória da equipe",
+  "botPanel.teamMemorySharing.help": "Quem recebe os fatos que este bot propõe para a equipe. Compartilhada: todos os membros da seção dele. Privada: só quem vê este bot e a conversa. A memória pessoal nunca é compartilhada, em nenhum dos casos.",
+  "botPanel.teamMemorySharing.shared": "Compartilhada",
+  "botPanel.teamMemorySharing.private": "Privada"
 }

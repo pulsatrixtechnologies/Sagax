@@ -704,6 +704,7 @@ import { createTeamManifest, parseTeamManifest } from "./team-manifest.ts";
 import { readThreadEvents } from "./thread-events.ts";
 import { TeamMemory, TEAM_MEMORY_KINDS, type TeamMemoryKind } from "./team-memory.ts";
 import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
+import { isTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf } from "../shared/team-memory-sharing.ts";
 import { describeTool, readBotActivity } from "./activity.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
 import { OutboundRequestService } from "./outbound-requests.ts";
@@ -2560,7 +2561,8 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
     return teamMemoryReviewRefusal({
       admin: auth.scopes.includes("admin"),
       shared: teamMemoryShared(),
-      memberOfSection: personMayUseTeamSection(auth, teamMemoryCard.card.teamMemoryRequest.section),
+      memberOfSection: personMayUseTeamSection(auth, teamMemoryCard.card.teamMemoryRequest.section)
+        && teamMemoryContextAllows(threadId, teamMemoryCard.from?.botId, channelViewerId(auth)),
     });
   }
   // A Cloud home is one person's: a device paired with chat-only access (a
@@ -2595,16 +2597,49 @@ function viewerUsesTeamSection(viewer: AuthzViewer | undefined, section: string)
     sectionContextKey(bot.section) === key && canOnBot(viewer, "bot.use", botFacts(bot)));
 }
 
-/** Delivery of a team-memory card to someone who is not its bot's owner:
- * the same people cardAnswerRefusal lets answer it as a section member (a
- * shared server, never a Cloud home, a person who can use a bot of the
- * card's current section), and never in a confidential thread. Admins
- * answer by their scope and keep reaching it as they do for any card. */
-function teamMemoryMemberMayAnswer(threadId: string, card: { teamMemoryRequest?: { section?: unknown } } | null | undefined, viewerId: string | undefined): boolean {
-  const section = card?.teamMemoryRequest?.section;
-  if (typeof section !== "string" || !viewerId) return false;
-  if (CLOUD_HOME || !teamMemoryShared() || store.isConfidentialThread(threadId)) return false;
-  return viewerUsesTeamSection(authzViewerFromId(viewerId), section);
+/** Delivery of a team-memory card to someone who is not its bot's owner
+ * (shared/team-memory-sharing.ts): the same people cardAnswerRefusal lets
+ * answer it as a section member (a shared server, never a Cloud home, a
+ * person who can use a bot of the card's current section), never in a
+ * confidential thread and never for a personal memory card. A bot set to
+ * "private" sharing reaches only the members who already see it and the
+ * card's thread or channel (memberSeesFrame, the live stream's rule).
+ * Admins confirm by their scope without being delivered the card: proposed
+ * entries wait for them on the section's team-memory page. */
+function teamMemoryMemberMayAnswer(threadId: string, card: { teamMemoryRequest?: { section?: unknown }; confidentialMemoryRequest?: unknown } | null | undefined, viewerId: string | undefined, botId?: string): boolean {
+  if (!viewerId) return false;
+  const bot = botId ? store.bot(botId) : store.botByThread(threadId);
+  return teamMemoryCardReachesMember({
+    card,
+    sharing: teamMemorySharingOf(bot),
+    sharedServer: teamMemoryShared(),
+    cloudHome: Boolean(CLOUD_HOME),
+    confidential: store.isConfidentialThread(threadId),
+    memberOfSection: (section) => viewerUsesTeamSection(authzViewerFromId(viewerId), section),
+    seesCardContext: () => memberSeesFrame({ threadId, ...(bot ? { botId: bot.id } : {}) }, viewerId),
+  });
+}
+
+/** The answer side of a "private" bot's team-memory card: only a person who
+ * sees the card's bot and thread or channel. "shared": no extra condition. */
+function teamMemoryContextAllows(threadId: string, botId: string | undefined, viewerId: string | undefined): boolean {
+  const bot = botId ? store.bot(botId) : store.botByThread(threadId);
+  if (!viewerId || teamMemorySharingOf(bot) === "shared") return true;
+  return memberSeesFrame({ threadId, ...(bot ? { botId: bot.id } : {}) }, viewerId);
+}
+
+/** Whether this viewer may answer a card on this thread, as POST
+ * .../respond's gates read it: a thread or channel they see, and on an
+ * organization server their own bot thread or a channel they may post in
+ * (a read-only member reads only). */
+function viewerMayAnswerOnThread(threadId: string, viewerId: string | undefined): boolean {
+  if (!viewerId) return true;
+  if (!subjectSeesChannel({ kind: "thread", id: threadId }, viewerId)) return false;
+  if (!privateThreads()) return true;
+  const owner = store.botByThread(threadId);
+  if (owner && !botThreadReadable(owner, threadId, viewerId, "thread.post")) return false;
+  const room = store.groupByThread(threadId);
+  return !room || groupPostAllowed(room, viewerId);
 }
 
 /** The team-memory dialog is an admin page (the route needs admin scope,
@@ -11237,6 +11272,7 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
     let scope: InboxScope;
     let decidable: boolean;
     let waitingOn: InboxApproval["waitingOn"];
+    let teamMemberRow = false;
     if (question) {
       // a question is the person's who asked it (its thread's starter or
       // requester), else the bot owner's; never an admin's by rank
@@ -11253,12 +11289,17 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       if (orgAdmin) { scope = "org"; decidable = true; }
       else if (ownerId === viewer.principalId) { scope = "org"; decidable = false; waitingOn = "admin"; }
       else continue;
-    } else if (ownerId !== viewer.principalId && teamMemoryMemberMayAnswer(threadId, card, viewer.principalId)
+    } else if (ownerId !== viewer.principalId && teamMemoryMemberMayAnswer(threadId, card, viewer.principalId, bot.id)
       && !cardAnswerRefusal(auth, threadId, card.requestId!, "allow")) {
       // a team-memory card is also the team's: a member of its current
       // section who may confirm it finds it here, as in the conversation
+      // (an organization server's private thread stays its person's)
+      if (!readable) continue;
       scope = "mine";
-      decidable = true;
+      teamMemberRow = true;
+      // shown, but answerable only where the respond route would take it
+      decidable = viewerMayAnswerOnThread(threadId, viewerId);
+      if (!decidable) waitingOn = "owner";
     } else if (ownerId === viewer.principalId) {
       // the same answerer rules as the card in the conversation
       scope = "mine";
@@ -11275,7 +11316,7 @@ function inboxPending(auth: RequestAuth, viewer: InboxViewer): InboxApproval[] {
       waitingOn = "owner";
     }
     // the card exactly as this person's conversation shows it
-    const shown = decidable && (readable || (card.adminApproval && orgAdmin)) ? projectMessages(threadId, [message], approvalViewer)[0] as Message | undefined : undefined;
+    const shown = (decidable || teamMemberRow) && (readable || (card.adminApproval && orgAdmin)) ? projectMessages(threadId, [message], approvalViewer)[0] as Message | undefined : undefined;
     if (decidable && !question && !shown?.card?.requestId) continue;
     const type = approvalTypeOf(card);
     const kind: InboxKind = question ? "question"
@@ -11486,8 +11527,8 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
   if (!isApprovalCardMessage(row)) return message;
   // A team-memory card is the team's (cardAnswerRefusal): a person who can
   // use a bot of that section gets the card itself, not "waiting on owner".
-  if (teamMemoryMemberMayAnswer(threadId, row.card as { teamMemoryRequest?: { section?: unknown } } | undefined, viewer.userId)) return message;
   const bot = botForApproval(threadId, row);
+  if (teamMemoryMemberMayAnswer(threadId, row.card as { teamMemoryRequest?: { section?: unknown } } | undefined, viewer.userId, bot?.id)) return message;
   const audience = bot
     ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, row.card as { destinationAnswerer?: unknown } | undefined), host: approvalHostOf(bot) })
     : { userId: "\0", deviceId: null as string | null };
@@ -11649,7 +11690,7 @@ function scopeChannelApproval(
     // A team-memory card also reaches the section members who may confirm it.
     // cheap exits first: the card is looked up only for a viewer who could be a member
     if (!viewer.userId || CLOUD_HOME || !teamMemoryShared()) return { action: "drop" };
-    return teamMemoryMemberMayAnswer(String(note.threadId ?? ""), noteCard(note.threadId, (note as { requestId?: unknown }).requestId), viewer.userId) ? { action: "same" } : { action: "drop" };
+    return teamMemoryMemberMayAnswer(String(note.threadId ?? ""), noteCard(note.threadId, (note as { requestId?: unknown }).requestId), viewer.userId, bot.id) ? { action: "same" } : { action: "drop" };
   }
   if (kind === "runtime") {
     const event = payload.event;
@@ -34150,6 +34191,7 @@ const orgBotsDeps: BotsDeps = {
       ...(source.voice !== undefined ? { voice: source.voice } : {}),
       ...(source.voiceNotes !== undefined ? { voiceNotes: source.voiceNotes } : {}),
       ...(source.memoryEnabled !== undefined ? { memoryEnabled: source.memoryEnabled } : {}),
+      ...(source.teamMemorySharing !== undefined ? { teamMemorySharing: source.teamMemorySharing } : {}),
       ...(source.memoryUpkeep !== undefined ? { memoryUpkeep: source.memoryUpkeep } : {}),
       ...(source.browser !== undefined ? { browser: source.browser } : {}),
       ...(source.computer !== undefined ? { computer: source.computer } : {}),
@@ -43677,6 +43719,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.emailDrafts !== undefined) {
         if (typeof body.emailDrafts !== "boolean") return json(res, 400, { error: "emailDrafts must be true or false" });
         patch.emailDrafts = body.emailDrafts;
+      }
+      if (body.teamMemorySharing !== undefined) {
+        if (!isTeamMemorySharing(body.teamMemorySharing)) return json(res, 400, { error: "teamMemorySharing must be \"shared\" or \"private\"" });
+        // absent reads as shared: the default stays unwritten
+        patch.teamMemorySharing = body.teamMemorySharing === "private" ? "private" : undefined;
       }
       if (body.memoryEnabled !== undefined) {
         if (typeof body.memoryEnabled !== "boolean") return json(res, 400, { error: "memoryEnabled must be true or false" });
