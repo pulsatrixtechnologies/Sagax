@@ -103,7 +103,7 @@ One container for the server plus Caddy for HTTPS at `https://maus.example.com`.
 3. **Get the deploy files and set the name:**
 
    ```sh
-   git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot/deploy
+   git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax/deploy
    cp .env.example .env
    nano .env                # DOMAIN=maus.example.com ; ENGINES=@anthropic-ai/claude-code @openai/codex
    ```
@@ -268,7 +268,7 @@ same release without an npm install prompt or an implicit upgrade.
   Check that installation succeeded before starting. A service restart by itself
   does not update the installed package. For foreground `npx` usage, specify the
   desired release as `npx --yes openmausbot@X.Y.Z serve --tunnel`.
-- **Path B:** `cd pulsa-bot/deploy && docker compose pull omb && docker compose up -d`.
+- **Path B:** `cd sagax/deploy && docker compose pull omb && docker compose up -d`.
 
 Routines and queued work survive a restart. A teammate turn running at that moment runs again once at the next start, told to check what it already did, and the bot that asked for it is told. A person's own turn and a running routine are not run again: the conversation says it was interrupted. Update between runs where you can.
 

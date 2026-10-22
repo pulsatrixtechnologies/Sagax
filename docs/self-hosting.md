@@ -208,13 +208,14 @@ Requirements: Docker with Compose, a DNS name pointing at the machine, and
 ports 80/443 open.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot/deploy
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax/deploy
 cp .env.example .env            # set DOMAIN
 docker compose pull omb && docker compose up -d
 ```
 
-That uses the image CI publishes on every `main` push
-(`ghcr.io/milind-soni/openmausbot`, tagged `latest`, `sha-…` and `v…`).
+That uses Sagax's own image, which CI publishes on release tags
+(`ghcr.io/pulsatrixtechnologies/sagax:latest`). To stay on one release, pin
+its tag in `deploy/docker-compose.yml` (for example `:v<version>`).
 To build from your checkout instead: `docker compose up -d --build`.
 
 Then sign the engine CLIs in **inside the container** (their logins live on
@@ -268,7 +269,7 @@ Requirements: Node 24+, pnpm, and at least one agent CLI installed and
 signed in on the server.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax
 pnpm install
 
 # choose where data lives and start the server

@@ -49,7 +49,7 @@ Requirements for building from source:
 
 ```sh
 git clone https://github.com/pulsatrixtechnologies/sagax.git
-cd pulsa-bot
+cd sagax
 corepack enable
 pnpm install --frozen-lockfile
 pnpm package:linux

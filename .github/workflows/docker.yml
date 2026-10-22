@@ -166,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           docker rm -f omb >/dev/null
-          docker tag openmausbot:ci ghcr.io/milind-soni/openmausbot:latest
+          docker tag openmausbot:ci ghcr.io/pulsatrixtechnologies/sagax:latest
           printf 'DOMAIN=localhost\nENGINES=\n' > deploy/.env
           docker compose -f deploy/docker-compose.yml up -d --no-build
           ready=0
