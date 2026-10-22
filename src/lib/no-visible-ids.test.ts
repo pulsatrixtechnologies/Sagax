@@ -24,7 +24,6 @@ await import("@/components/dev-pods/all-pods");
 const { devPodDefinitions } = await import("@/components/dev-pods/registry");
 const { environmentData } = await import("@/components/dev-pods/pods/environment");
 const { folderLabel } = await import("@/components/dev-pods/sources");
-const { connectedAccountLabel, disconnectAccountConfirmation } = await import("@/components/plugins/connected-apps");
 const { personLabel: directoryPersonLabel } = await import("@/components/OrgDirectory");
 const { runAsOptionLabel } = await import("@/components/routines/RunAsField");
 const { ownerLabel } = await import("@/components/settings/OrgSharing");
@@ -203,8 +202,6 @@ describe("no UUID on screen", () => {
       personLabel("", "ann@example.com", PERSON_ID),
       botLabel(undefined, BOT_ID),
       engineLabel(undefined, ENGINE_ID),
-      connectedAccountLabel({ id: ACCOUNT_ID }, 0),
-      disconnectAccountConfirmation("Gmail", { id: ACCOUNT_ID }),
       directoryPersonLabel({ id: PERSON_ID } as Parameters<typeof directoryPersonLabel>[0]),
       runAsOptionLabel({ principalId: PERSON_ID, name: "", selectable: false }),
       ownerLabel({ ownerName: "", ownerPrincipalId: PERSON_ID } as Parameters<typeof ownerLabel>[0]),
@@ -218,7 +215,5 @@ describe("no UUID on screen", () => {
     expect(botLabel(undefined, BOT_ID)).toBe(t("ids.deletedBot"));
     expect(engineLabel(undefined, ENGINE_ID)).toBe(t("ids.removedEngine"));
     expect(engineLabel(undefined, "claude")).toBe("claude");
-    expect(connectedAccountLabel({ id: ACCOUNT_ID, alias: "Work" }, 0)).toBe("Work");
-    expect(connectedAccountLabel({ id: ACCOUNT_ID }, 1)).toBe(t("ids.accountN", { n: 2 }));
   });
 });

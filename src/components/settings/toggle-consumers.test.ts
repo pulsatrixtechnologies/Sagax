@@ -4,7 +4,6 @@
 // preference (so the screen reacts). toggle -> consumer table: the PR body.
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectedAppsEnabled } from "@/lib/feature-flags";
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
@@ -40,24 +39,16 @@ describe("local switches: setter stores, consumer reads", () => {
   }
 });
 
-describe("Connected apps switch (server feature)", () => {
-  it("reads features.connectedApps, true only when switched on", () => {
-    expect(connectedAppsEnabled({ features: { connectedApps: true } })).toBe(true);
-    expect(connectedAppsEnabled({ features: { connectedApps: false } })).toBe(false);
-    expect(connectedAppsEnabled(null)).toBe(false);
-  });
-
-  it("hides the Connect apps pill everywhere it is drawn when off", () => {
+describe("Connect apps sidebar entry (always available)", () => {
+  it("draws the Connect apps entry on the rail and the wide foot, ungated", () => {
     const sidebar = read("components/Sidebar.tsx");
-    expect(sidebar).toContain("const connectedApps = connectedAppsEnabled(state.config);");
-    // rail (icon) and wide foot, both gated
-    expect(sidebar).toContain("{connectedApps && <SidebarConnectApps iconOnly");
-    expect(sidebar).toContain("{connectedApps && <SidebarConnectApps onOpen=");
+    expect(sidebar).not.toContain("connectedAppsEnabled");
+    expect(sidebar).toContain("<SidebarConnectApps iconOnly");
+    expect(sidebar).toContain("<SidebarConnectApps onOpen=");
     expect((sidebar.match(/<SidebarConnectApps/g) ?? []).length).toBe(2);
-    // the pill under the last message
+    // the chat no longer draws a connect-apps pill
     const chat = read("components/ChatView.tsx");
-    expect(chat).toContain("{connectedAppsEnabled(state.config) && <ConversationConnectApps");
-    expect((chat.match(/<ConversationConnectApps/g) ?? []).length).toBe(1);
+    expect(chat).not.toContain("ConversationConnectApps");
   });
 });
 

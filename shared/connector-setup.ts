@@ -6,8 +6,7 @@
 //   - a Grok bot on the person's own xAI account: grok.com/connectors (xAI
 //     documents no per-connector deep link: "New Connector", then the app);
 //   - a Claude bot on the person's own subscription: claude.ai Customize >
-//     Connectors;
-//   - otherwise Sagax's own Connect apps card (Composio), when it knows the app.
+//     Connectors.
 //
 // Sagax never holds a token for these and never signs anyone in. An engine
 // account that belongs to someone else (the payer is not the speaker,
@@ -19,7 +18,6 @@
 // card's bot, never a sign-in tool. Until then a Grok card stays "pending".
 import { claudeAiConnectorCapabilities, grokConnectorCapabilities, type ConnectorCapability } from "./engine-connectors.ts";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "./grok-cloud-connectors.ts";
-import { composioSlugFor } from "./grok-import.ts";
 import { containsUuid, isOpaqueId } from "./human-id.ts";
 
 /** Where a person adds, signs in to and removes their claude.ai connectors. */
@@ -36,8 +34,6 @@ export interface ConnectorSetupTarget {
   label: string;
   /** the xAI cloud connector id (shared/grok-cloud-connectors.ts) */
   grok?: string;
-  /** the Composio toolkit slug, when Sagax knows one */
-  composio?: string;
   /** what it reaches, to read the claude.ai inventory by service */
   capabilities: ConnectorCapability[];
 }
@@ -69,15 +65,6 @@ const ALIASES: Array<[RegExp, string]> = [
   [/^(?:x|twitter|x \(twitter\))$/, "x"],
 ];
 
-const COMPOSIO_BY_ID: Record<string, string> = {
-  "microsoft-teams": "microsoft_teams",
-  outlook: "outlook",
-  gmail: "gmail",
-  "google-drive": "googledrive",
-  salesforce: "salesforce",
-  x: "twitter",
-};
-
 function cleanName(raw: string): string {
   // oxlint-disable-next-line no-control-regex -- control characters never belong in a name on screen
   return raw.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, 60).trim();
@@ -96,35 +83,29 @@ export function resolveConnectorSetupTarget(raw: string): ConnectorSetupTarget |
       id: grok.id,
       label: grok.id === "outlook" ? "Outlook" : grok.name,
       grok: grok.id,
-      ...(COMPOSIO_BY_ID[grok.id] ? { composio: COMPOSIO_BY_ID[grok.id] } : {}),
       capabilities: grokConnectorCapabilities(grok.id),
     };
   }
-  const composio = composioSlugFor(label);
   return {
     id: key.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "app",
     label,
-    ...(composio ? { composio } : {}),
     capabilities: claudeAiConnectorCapabilities(label),
   };
 }
 
 export type ConnectorSetupRoute =
   | { route: ConnectorSetupProvider; url: string }
-  | { route: "composio"; slug: string }
   | { refusal: "foreign" | "not_on_engine" | "no_route" };
 
-/** Where the person signs in. Engine connectors first (JC 2026-10-21), on
- * the person's own engine account only; Sagax's Connect apps otherwise. */
+/** Where the person signs in: the engine's own connectors, on the person's
+ * own engine account only (JC 2026-10-21). */
 export function chooseConnectorSetupRoute(input: {
   target: ConnectorSetupTarget;
   /** the engine the bot runs on */
   engine: "grok" | "claude" | "other";
   /** server/harness-connectors.ts accountConnectorsForTurn */
   account: "own" | "foreign" | "none";
-  /** Sagax's Connect apps (Composio) are on for this bot */
-  composio: boolean;
-  prefer?: ConnectorSetupProvider | "composio";
+  prefer?: ConnectorSetupProvider;
 }): ConnectorSetupRoute {
   const { target } = input;
   if (input.account === "foreign" && input.engine !== "other") return { refusal: "foreign" };
@@ -132,10 +113,7 @@ export function chooseConnectorSetupRoute(input: {
     : input.engine === "grok" ? (target.grok ? { route: "grok", url: GROK_CONNECTORS_URL } : null)
       : input.engine === "claude" ? { route: "claude", url: CLAUDE_AI_CONNECTORS_URL }
         : null;
-  const composioRoute: ConnectorSetupRoute | null = input.composio && target.composio ? { route: "composio", slug: target.composio } : null;
-  if (input.prefer === "composio" && composioRoute) return composioRoute;
   if (engineRoute) return engineRoute;
-  if (composioRoute) return composioRoute;
   if (input.account === "own" && input.engine === "grok") return { refusal: "not_on_engine" };
   return { refusal: "no_route" };
 }

@@ -1,16 +1,13 @@
 /** Isolated gallery for headless screenshots of the "Connect Microsoft
- * Teams" card (shared/connector-setup.ts) beside the Composio connection
- * card it sits next to in the chat. No server: the buttons do nothing here.
- * Not shipped in the app. ?skin=<id>&lang=<code>&only=<sample> */
+ * Teams" card (shared/connector-setup.ts). No server: the buttons do nothing
+ * here. Not shipped in the app. ?skin=<id>&lang=<code>&only=<sample> */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import type { ConnectorSetupView } from "../../shared/connector-setup";
 import { ConnectorSetupBody } from "../components/connector-setup/ConnectorSetupCard";
-import { ConnectorCard } from "../components/ConnectorCard";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
-import type { Message } from "../state/store";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
@@ -24,10 +21,6 @@ const teams: ConnectorSetupView = {
   url: "https://grok.com/connectors", status: "waiting", owner: "0123456789abcdef", createdAt: 1,
 };
 const outlook: ConnectorSetupView = { ...teams, id: "cs_0123456789abcdef02", connector: "outlook", label: "Outlook", provider: "claude", url: "https://claude.ai/customize/connectors" };
-const composio = {
-  id: "m1", role: "bot", kind: "connector", at: 1, text: "",
-  connector: { slug: "slack", label: "Slack", description: "Post updates and read channels", status: "required", resumeKey: "gallery-key-1" },
-} as unknown as Message;
 
 const noop = () => {};
 const samples: Array<{ id: string; width: number; render: () => JSX.Element }> = [
@@ -37,7 +30,6 @@ const samples: Array<{ id: string; width: number; render: () => JSX.Element }> =
   { id: "checking", width: 560, render: () => <ConnectorSetupBody view={outlook} checking opened onConnect={noop} onDone={noop} /> },
   { id: "connected", width: 560, render: () => <ConnectorSetupBody view={{ ...teams, status: "connected" }} checking={false} opened onConnect={noop} onDone={noop} /> },
   { id: "narrow", width: 340, render: () => <ConnectorSetupBody view={teams} checking={false} opened onConnect={noop} onDone={noop} /> },
-  { id: "neighbour", width: 560, render: () => <ConnectorCard botId="b1" threadId="t1" message={composio} /> },
 ];
 
 function Gallery() {

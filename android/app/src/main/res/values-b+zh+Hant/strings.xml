@@ -73,7 +73,6 @@
     <string name="mobile_collapse_9cf188d3">收起</string>
     <string name="mobile_collapsed_0084e8fa">已收起</string>
     <string name="mobile_computer_924645b3">電腦</string>
-    <string name="mobile_configure_composio_on_your_compute_4281e8b0">請先在電腦上設定 Composio。提供者憑證絕不會傳回此手機。</string>
     <string name="mobile_confirm_computer_d778cfbd">確認電腦</string>
     <string name="mobile_connect_b65463cb">連線</string>
     <string name="mobile_connect_card_label_c9e612b4">連線至 %1$s</string>

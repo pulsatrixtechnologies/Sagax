@@ -367,8 +367,7 @@ export function readStep(tool: StepTool, nameOf?: StepNameOf): StepReading {
   if (kind) return { label: kindLabel(kind, phase, args, nameOf), target: kindTarget(kind, args, tool) };
   const mcp = mcpLabel(tool, phase);
   if (mcp) return mcp;
-  const composio = shared.composioActionPhrase(name);
-  const display = composio ?? name.replace(/_+/g, " ");
+  const display = name.replace(/_+/g, " ");
   const summary = tool.summary && tool.summary !== tool.name && !/^[[{]/.test(tool.summary.trim()) ? oneLine(tool.summary) : undefined;
   return { label: t(`step.use.${phase}` as LocaleKey, { name: display }), target: summary };
 }

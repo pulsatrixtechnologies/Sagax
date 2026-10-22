@@ -57,6 +57,5 @@ export function requestSourceForCard(messages: Message[], messageId: string): st
 
 export function requestNeedsInput(message: Message): boolean {
   return Boolean((message.card?.requestId && !message.card.answered && !message.card.dismissed && !message.card.expired && !isPersistentQuestionCard(message.card)) ||
-    (message.connector && !message.connector.dismissed && !message.connector.resumed && message.connector.status !== "connected") ||
     (message.secret && !message.secret.provided && !message.secret.dismissed && !message.secret.superseded));
 }

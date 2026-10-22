@@ -167,8 +167,6 @@ botField("bot.cloudBackend", "cloudBackend", "enum:box|vps", "Cloud computer kin
 botField("bot.cwd", "cwd", "string?", "Working folder", "Bot editor > Access > Folder");
 botField("bot.mcpServers", "mcpServers", "array", "MCP servers it may use (null: all)", "Bot editor > Access > Tools", selfReach);
 botField("bot.toolScope", "toolScope", "any", "Tool selection", "Bot editor > Access > Tool selection", selfReach);
-botField("bot.connectorScopes", "connectorScopes", "any", "Connected apps scopes", "Bot editor > Access > Connected apps", selfReach);
-botField("bot.composio", "composio", "any", "Connected apps (Composio)", "Bot editor > Access > Connected apps", selfReach);
 botField("bot.parkDirectMessages", "parkDirectMessages", "boolean", "Park direct messages while busy", "Bot editor > Behaviour");
 botField("bot.alwaysAllow", "alwaysAllow", "array", "Always allowed tools", "Bot editor > Access > Always allowed", always("rule-change"));
 // 2026-10-21 (parité 1C): people and bots it writes to without a card
@@ -561,7 +559,7 @@ add({
   classes: always("rule-change"),
 });
 
-const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio", "composio"]);
+const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio"]);
 
 // ── server configuration (PATCH /api/config) ──────────────────────────
 function config(key: string, family: SettingFamily, path: string, value: SettingValue, label: string, where: string, classes: SettingSpec["classes"] = serverWide): void {
@@ -574,7 +572,7 @@ function config(key: string, family: SettingFamily, path: string, value: Setting
 }
 config("server.newBotDefaults", "server", "newBotDefaults", "object", "New bot defaults", "Settings > General > System > New bots",
   // a default that sets a level, grants or tools for every new bot widens
-  (v, ctx) => /"(approvalMode|alwaysAllow|routines|toolScope|mcpServers|connectorScopes|composio|fullAccess)"/.test(JSON.stringify(v ?? null)) ? ["rule-change"] : serverWide(v, ctx));
+  (v, ctx) => /"(approvalMode|alwaysAllow|routines|toolScope|mcpServers|fullAccess)"/.test(JSON.stringify(v ?? null)) ? ["rule-change"] : serverWide(v, ctx));
 config("server.threads", "server", "threads", "object", "Conversation cleanup", "Settings > General > Advanced > Threads");
 config("server.showToolCalls", "server", "features.showToolCalls", "boolean", "Show tool calls", "Settings > Appearance");
 config("server.feature", "server", "features", "object", "Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker})", "Settings > Experimental");

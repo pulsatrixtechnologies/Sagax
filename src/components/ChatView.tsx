@@ -87,7 +87,7 @@ import { BotAvatar } from "./Avatar";
 import { BotHeaderPill, botPillActions } from "./BotHeaderPill";
 import { TurnPresence } from "./TurnPresence";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
-import { connectedAppsEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { showToolCallRows } from "@/lib/tool-activity-rows";
 import { normalizeState, stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
@@ -126,7 +126,6 @@ import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } fro
 import { WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
-import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { CallRecordRow } from "./CallRecordRow";
@@ -178,7 +177,6 @@ import { unreadMessageIds } from "@/lib/unread-divider";
 import { appendComposerDraft, appendDraftAttachments, useReplyDraft } from "@/lib/drafts";
 import { OtherAuthorLabel } from "./MessageAuthor";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
-import { ConversationConnectApps } from "./ConnectAppsPill";
 import { AccessCard } from "./AccessCard";
 import { transcriptLookups, type TranscriptLookups } from "@/lib/transcript-derivations";
 import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
@@ -1323,8 +1321,6 @@ const MessagesList = memo(function MessagesList({
               ) : null;
             case "secret":
               return m.secret ? <SecretRequestCard botId={botId} threadId={threadId} message={m} /> : null;
-            case "connector":
-              return m.connector ? <ConnectorCard botId={botId} threadId={threadId} message={m} /> : null;
             case "options":
               return optionsCardRow({ message: m, transcript, botId, botName, threadId });
             case "widget":
@@ -2364,9 +2360,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               </button>
             </div>
           )}
-          {/* The latest turn needed an app that is not connected
-              (src/lib/connect-apps-signal.ts): Connect apps, on those apps. */}
-          {connectedAppsEnabled(state.config) && <ConversationConnectApps botId={bot.id} messages={messages} busy={Boolean(bot.busy)} />}
           </>}
           {computerStarting && (
             <div className="flex justify-start">

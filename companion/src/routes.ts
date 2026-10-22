@@ -454,22 +454,6 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "POST", path: /^\/api\/routines\/[\w-]+\/run$/ },
   { method: "POST", path: /^\/api\/routine-runs\/[\w-]+\/(?:cancel|seen)$/ },
 
-  // Multi-account Composio management exposes opaque ids and aliases only.
-  // Account-level removal is allowed: the handler still proves the account
-  // belongs to the host's own user before revoking, and a paired client can
-  // already add accounts — connectable but not disconnectable is the bug
-  // being fixed here. The whole-service DELETE stays denied: it belongs to
-  // the host.
-  { method: "GET", path: /^\/api\/connectors\/catalog$/ },
-  { method: "GET", path: /^\/api\/connectors\/connected$/ },
-  { method: "GET", path: /^\/api\/connectors$/ },
-  { method: "POST", path: /^\/api\/connectors\/[\w-]+\/authorize$/ },
-  { method: "DELETE", path: /^\/api\/connectors\/[\w-]+\/accounts\/[\w-]+$/ },
-  // Inline connector cards are scoped by bot, transcript message, and
-  // thread. They expose the same opaque OAuth authorization already allowed
-  // above, then only poll, resume, or dismiss that exact pending card.
-  { method: "GET", path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },
-  { method: "POST", path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/(?:authorize|resume|dismiss)$/ },
   // A remote client may decline or retry a credential request, but never
   // claim that it stored a host credential. Saving and `provided` stay local
   // to the host's OS-backed credential store.

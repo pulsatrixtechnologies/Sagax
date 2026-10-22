@@ -283,15 +283,6 @@ export interface InstalledPackageMetadata {
 
 /** One service's connector tool grant: `"*"` widens to every tool on the
  * service, an explicit list names exact tools. */
-export interface ConnectorToolGrant {
-  tools: "*" | string[];
-}
-
-/** Lowercased Composio service slug, e.g. `gmail`. */
-export const CONNECTOR_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,80}$/;
-/** Composio tool names are upper-snake, e.g. `GMAIL_SEND_EMAIL`. */
-export const CONNECTOR_TOOL_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
-
 /** A bot as a client may see it. Wire form: no provider session
  * bookkeeping (resumeCursors), no elevation journal (approvalGrant), no
  * settlement receipts (lastProfileRequestId, lastTeamSetupReceipt); the
@@ -447,14 +438,6 @@ export interface WireBot {
    * `bot:<id>`, `email:<address>`, `phone:+<digits>`
    * (shared/allowed-recipients.ts). Anyone else keeps the card. */
   allowedRecipients?: string[];
-  /** Whether this bot may use the workspace's connected apps. */
-  composio?: boolean;
-  /** Which connected-app tools this bot may call, by service slug. Absent
-   * defers to the legacy `composio` boolean above (unset/true = every tool,
-   * false = none); an explicit `{}` grants no tools. Grants never travel in
-   * shareable exports and imported bots always land with none. */
-  connectorTools?: Record<string, ConnectorToolGrant>;
-  connectorScopes?: { apps: Record<string, "read" | "write"> };
   outbound?: { policy: "ask" | "allow"; dailyCap: number };
   /** Ordered backups used only by opt-in, pre-prompt startup recovery. */
   fallback?: Array<{ instanceId: string; model: string }>;
@@ -647,7 +630,7 @@ export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
   text?: string;
   /** kind "routines" (2026-10-15): one compact line in the conversation
    * saying this turn turned routines on or off (server/routine-chat-events.ts).
@@ -687,7 +670,6 @@ export interface WireMessage {
    * `text` is always its readable fallback, for clients that do not know
    * the kind. */
   widget?: WidgetPayload;
-  connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** One idempotently updated status card for a routine run. */
   routineRun?: RoutineRunCardData;
@@ -1059,21 +1041,6 @@ export interface LiveSettings {
   voice: string;
   readTypedReplies: boolean;
   idleMinutes: number;
-}
-
-export interface ConnectorCardData {
-  /** Composio toolkit slug. It is validated server-side before every action. */
-  slug: string;
-  label: string;
-  description: string;
-  status: "required" | "authorizing" | "connected" | "failed";
-  /** Cards created by one agent request resume together after all connect. */
-  resumeKey: string;
-  /** Account alias supplied by the agent when adding a second account. */
-  alias?: string;
-  error?: string;
-  dismissed?: boolean;
-  resumed?: boolean;
 }
 
 export interface SecretRequestCardData {

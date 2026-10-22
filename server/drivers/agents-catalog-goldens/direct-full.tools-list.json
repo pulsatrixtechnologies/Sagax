@@ -1231,8 +1231,7 @@
             "type": "string",
             "enum": [
               "grok",
-              "claude",
-              "composio"
+              "claude"
             ],
             "description": "Only when the person named where."
           },

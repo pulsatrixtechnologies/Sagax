@@ -1326,7 +1326,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
 `src/components/routines/RoutineOwnerName.test.ts` and
 `server/org-bot-force.test.ts`:
 
-- Connected apps (Composio) is experimental (`features.connectedApps`, off):
+- Connected apps is experimental (`features.connectedApps`, off):
   off hides the sidebar entry, the Settings > Connected apps page and the tour's
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
@@ -1642,7 +1642,7 @@ rules, covered by `server/owner-approval.test.ts`,
   (`memberBotAdminApproval`): a server command, a file outside the bot's
   workspace, a host-level `agents` tool or built-in MCP server (`computer`,
   `browser`, `shell`...), an unknown server or tool. A remote or personal MCP
-  server, Sagax's own `perspicax_*` mounts, Composio and a web search are
+  server, Sagax's own `perspicax_*` mounts and a web search are
   the owner's (`ownerScopedTool`, `ownerScopedMcpServerFor`).
 - On the owner route, the owner's rules then the bot's mode answer before a
   card (`ownerDecision`): deny wins, then ask, then allow. A rule is one
@@ -1731,8 +1731,8 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   inside as written and as resolved and none through a symbolic link; a
   deny or ask catches either, case-insensitively and in one Unicode form.
   A server's readOnlyHint never makes a call a read. Tools are named whole,
-  server included; products match known server ids (or a Perspicax or
-  Composio gateway's tool prefix).
+  server included; products match known server ids (or a Perspicax
+  gateway's tool prefix).
 - Model reviewer (examen automatique, 2026-10-21, Grok Bot parity A1, JC:
   "OUI, comme Grok"; `server/custom-rules-model.ts`, contract
   `customRulesJudgePrompt` / `modelCustomDecision` in shared/custom-rules.ts):
@@ -3784,8 +3784,8 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
 - Grok rules of #918 are unchanged otherwise: organization turn (host
   tools withheld), no tool selection.
 - Every outward call through a connector waits for the approval card
-  (`isOutboundTool` via `connectorWriteKind`, same reading for an MCP tool
-  and a Composio slug): sends, automatic replies (out of office, mailbox
+  (`isOutboundTool` via `connectorWriteKind`, same reading for an MCP tool):
+  sends, automatic replies (out of office, mailbox
   settings), Teams posts and chats, events and meetings (create, insert,
   change, cancel), answering an invitation, every SharePoint, OneDrive or
   Google Drive write (upload, save, permissions, grant access). On an
@@ -3815,12 +3815,12 @@ took 13 tool calls and ended in "I can't". Now one call posts a card.
 - Agents tool `open_connector_setup` (`server/drivers/agents-connector-setup.ts`,
   loaded directly, never deferred; Grok is told to call
   `agents__open_connector_setup` with use_tool without search_tool):
-  connector by name, optional `via` (grok, claude, composio) and `language`.
+  connector by name, optional `via` (grok, claude) and `language`.
 - Where (`shared/connector-setup.ts` `chooseConnectorSetupRoute`): engine
   connectors first. A Grok bot on the person's own xAI account:
   https://grok.com/connectors (xAI documents no per-connector link). A Claude
   bot on the person's own subscription: https://claude.ai/customize/connectors.
-  Else Sagax's Connect apps card (Composio, the existing
+  Else Sagax's Connect apps card (the existing
   `/api/internal/connectors/request`). An engine account that is someone
   else's (#943 `accountConnectorsForTurn` "foreign") is refused. Only a
   person's own turn (`connectorSetupSpeaker`: person or operator, never a
@@ -5669,7 +5669,7 @@ its JSON reply or choose it saved as a `.json` file (`openmaus.grok/1`, or
 pi-grokbot-import's `grokbot-bundle/v1`; the format ids stay upstream's).
 `shared/grok-import.ts` turns it into an `openmaus.package` v2 with one bot:
 instructions (cut at the soul limit, with a note), skills off, routines with
-a cron or a plain time paused, apps as connector requirements (Composio
+a cron or a plain time paused, apps as connector requirements (connector
 slugs when known), memories only when exported, key-shaped text redacted.
 Event routines and unreadable schedules are listed under Left out with their
 original text. The preview and Add are the templates' own

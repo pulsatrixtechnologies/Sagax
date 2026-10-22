@@ -1034,9 +1034,6 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             if (turn.toolScope !== undefined && approval === "prompt") appServerArgs.push("-c", `mcp_servers.${mountName}.default_tools_approval_mode="prompt"`);
           }
         };
-        if (turn.integrations?.composio) {
-          mountSelected("composio", "openmausbot_connectors", turn.integrations.composio);
-        }
         if (turn.integrations?.agents) {
           // Sagax's own coordination tools never ask, as on Claude
           // (mcp__agents is pre-allowed): "auto" quiets only read-only tools,
@@ -2322,7 +2319,6 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         queueing: true,
         computerMcp: true,
         localComputerMcp: true,
-        composioMcp: true,
         agentsMcp: true,
       customMcp: true,
         phoneMcp: true,

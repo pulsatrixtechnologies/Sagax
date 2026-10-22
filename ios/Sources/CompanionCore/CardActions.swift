@@ -1,9 +1,8 @@
 // What the interactive cards may do, as the Electron renderer decides it
 // (feature parity matrix, package WP2): the approval dock
 // (`PendingApproval.tsx`), the option card's dismiss (`OptionCard.tsx`), the
-// credential card's resume and dismiss (`SecretRequestCard.tsx`), the
-// connector card (`ConnectorCard.tsx`), the access card (`AccessCard.tsx`),
-// the parallel task card (`ParallelTaskCard.tsx`), the goal run card
+// credential card's resume and dismiss (`SecretRequestCard.tsx`), the access
+// card (`AccessCard.tsx`), the parallel task card (`ParallelTaskCard.tsx`), the goal run card
 // (`GoalRunCard.tsx`) and the error row's Retry (`ChatView.tsx` `ErrorRow`).
 //
 // Pure rules only, so they are unit tested without a simulator. The views in
@@ -516,40 +515,6 @@ public enum SecretCardRules {
     /// "Try again": the key is saved (or declined) but resuming failed.
     public static func canRetryResume(_ secret: SecretRequestCardData) -> Bool {
         outcome(secret) != nil && secret.superseded != true && secret.resumed != true && !(secret.error ?? "").isEmpty
-    }
-}
-
-// MARK: - Connector card (ConnectorCard.tsx)
-
-public enum ConnectorCardRules {
-    public enum Action: Hashable, Sendable {
-        /// Connect securely / Try again / Open again.
-        case connect(label: ConnectLabel)
-        case continueTask
-        case continuing
-    }
-
-    public enum ConnectLabel: Hashable, Sendable { case connectSecurely, tryAgain, openAgain }
-
-    public static func action(_ card: ConnectorRequestCard) -> Action {
-        switch card.state {
-        case .connected:
-            return card.resumed == true ? .continuing : .continueTask
-        case .authorizing:
-            return .connect(label: .openAgain)
-        case .failed:
-            return .connect(label: .tryAgain)
-        default:
-            return .connect(label: .connectSecurely)
-        }
-    }
-
-    /// The desktop polls status every 4 s, 75 times, while authorizing.
-    public static let pollInterval: TimeInterval = 4
-    public static let pollLimit = 75
-
-    public static func polls(_ card: ConnectorRequestCard) -> Bool {
-        card.state == .authorizing && card.dismissed != true
     }
 }
 

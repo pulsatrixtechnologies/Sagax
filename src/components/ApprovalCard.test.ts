@@ -579,13 +579,6 @@ describe("ApprovalCard outbound holds", () => {
     expect(html).toContain("Create linear comment ×2");
   });
 
-  it("phrases a Composio slug on a plain permission card as words", () => {
-    const message = outboundMessage();
-    message.card!.outboundRequest = undefined;
-    message.card!.tool = "mcp__composio__LINEAR_CREATE_LINEAR_COMMENT";
-    const html = openRequestHtml(message, bot);
-    expect(html).toContain("Kiwi wants to create linear comment");
-  });
 });
 
 describe("ApprovalCard for a change that applied on its own", () => {

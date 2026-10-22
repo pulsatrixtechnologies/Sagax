@@ -1162,16 +1162,14 @@ public enum AccessRules {
 /// An admin's Access patch (`PATCH /api/bots/:id`); nil fields are left out.
 public struct BotAccessPatch: Encodable, Hashable, Sendable {
     public var browser: Bool?
-    public var composio: Bool?
     public var alwaysAllow: [String]?
     public var mcpServers: [String]?
     public var memoryEnabled: Bool?
     public var memoryUpkeep: Bool?
 
-    public init(browser: Bool? = nil, composio: Bool? = nil, alwaysAllow: [String]? = nil, mcpServers: [String]? = nil,
+    public init(browser: Bool? = nil, alwaysAllow: [String]? = nil, mcpServers: [String]? = nil,
                 memoryEnabled: Bool? = nil, memoryUpkeep: Bool? = nil) {
         self.browser = browser
-        self.composio = composio
         self.alwaysAllow = alwaysAllow
         self.mcpServers = mcpServers
         self.memoryEnabled = memoryEnabled

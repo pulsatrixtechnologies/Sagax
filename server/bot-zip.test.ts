@@ -82,7 +82,7 @@ function richBot(fx: ReturnType<typeof fixture>) {
     avatarUrl: avatar, avatarCrop: "circle", mascotLook: { character: "owl" } as BotRecord["mascotLook"],
     modelSelection: { instanceId: "fixture", model: "fixture-model", effort: "high" }, approvalMode: "auto", autoApprove: true,
     alwaysAllow: ["Bash"], computer: "local", browser: true, cwd: tmpdir(), mcpServers: ["docs"], speakReplies: true, voice: "alloy", voiceNotes: false,
-    memoryUpkeep: false, connectorTools: { github: { tools: "*" } }, connectorScopes: { apps: { github: "read" } }, notifications: false,
+    memoryUpkeep: false, notifications: false,
     playbooks: [{ key: "digest", name: "Digest", summary: "Weekly digest", triggers: ["digest"], instructions: "Summarize." }],
     projects: [{ id: "p1", name: "Q4" }],
   });
@@ -290,7 +290,6 @@ describe("bot zip round trip", () => {
     expect(manifest).toMatchObject({ format: "sagax.bot", version: 1, appVersion: "0.4.15-test", bot: { id: source.id, name: "Atlas" } });
     expect(manifest.marketplaces).toEqual([{ name: "acme", source: "acme/private-tools", needsToken: true }]);
     expect(manifest.mcpServers).toEqual([{ name: "docs", transport: "http", url: "https://mcp.example.com/docs", valueNames: ["Authorization"] }]);
-    expect(manifest.connectedApps).toEqual(["github"]);
     expect(manifest.redacted).toBeGreaterThanOrEqual(2);
     const text = Buffer.concat(inspected.reader.under("").map((name) => inspected.reader.read(name))).toString("utf8");
     expect(text).not.toContain("sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789");

@@ -59,8 +59,7 @@ export type DecisionKind =
  * `profile` a bot proposed a profile change, `model` a bot proposed a default-model
  * switch, `user` the human's answer, and
  * auto-review sources the isolated model reviewer. connector-scope rows
- * come from the connected-app grants verdict: the person pre-decided them
- * by editing a bot's connectorTools, so the call itself needed no card. */
+ * are kept for reading historical logs from older releases. */
 export type DecisionSource =
   | AutoVerdictSource
   /** nobody answered an AI client's hidden-thread approval in time */

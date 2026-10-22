@@ -1,5 +1,5 @@
 // Connections, Logs and Settings (console design 4.6, 4.8, 4.9 and section
-// 5): engines, people's connections, MCP servers, Composio, marketplaces and
+// 5): engines, people's connections, MCP servers, marketplaces and
 // the skills library, with a Test per line; the server log tail and the
 // incidents; the organization's policies. Never a key, a token, an env
 // value or a header value: providers and names only.
@@ -28,14 +28,13 @@ import { LOG_LEVELS, type LogLevel, type LogLine } from "./server-log-ring.ts";
 
 export interface ConnectionsView {
   engines: Array<{ id: string; name: string; installed: boolean; version: string | null; orgKey: boolean; people: number }>;
-  people: Array<{ person: AdminPerson; engines: Array<{ id: string; via: EngineVia; ok: boolean | null; checkedAt: number | null }>; mcpServers: number; composioApps: number }>;
+  people: Array<{ person: AdminPerson; engines: Array<{ id: string; via: EngineVia; ok: boolean | null; checkedAt: number | null }>; mcpServers: number }>;
   mcpServers: Array<{ id: string; name: string; scope: "org" | "person"; owner: AdminPerson | null; transport: "remote" | "stdio"; state: string }>;
-  composio: { configured: boolean; apps: Array<{ slug: string; name: string; people: number }> };
   marketplaces: Array<{ id: string; name: string; url: string; allowed: boolean; plugins: number }>;
   skills: Array<{ id: string; name: string; source: string | null; version: string | null; bots: number }>;
 }
 
-export type TestKind = "engine" | "mcp" | "marketplace" | "composio";
+export type TestKind = "engine" | "mcp" | "marketplace";
 export interface TestResult { ok: boolean; reason: string | null; label: string | null }
 
 export interface Policies {
@@ -275,9 +274,9 @@ export function opsRoutes(deps: OpsDeps): ConsoleRoute[] {
       async handle(ctx) {
         const body = objectBody(ctx.body);
         const kind = body?.kind;
-        if (!body || onlyKeys(body, ["kind", "id", "principalId"]) || (kind !== "engine" && kind !== "mcp" && kind !== "marketplace" && kind !== "composio")
+        if (!body || onlyKeys(body, ["kind", "id", "principalId"]) || (kind !== "engine" && kind !== "mcp" && kind !== "marketplace")
           || typeof body.id !== "string" || !body.id || body.id.length > 120 || (body.principalId !== undefined && (typeof body.principalId !== "string" || body.principalId.length > 160))) {
-          return badRequest("Send { \"kind\": \"engine\", \"mcp\", \"marketplace\" or \"composio\", \"id\", \"principalId\"? }.");
+          return badRequest("Send { \"kind\": \"engine\", \"mcp\" or \"marketplace\", \"id\", \"principalId\"? }.");
         }
         const principalId = typeof body.principalId === "string" ? body.principalId : null;
         const { result, latencyMs } = await timed(() => deps.test(kind, body.id as string, principalId));

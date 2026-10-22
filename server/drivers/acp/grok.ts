@@ -908,7 +908,7 @@ const support: AcpSupport = {
   async configureSession({ request, sessionId, turn, currentModelId, sessionModels, notice }) {
     if (turn.toolScope !== undefined) {
       const available = new Set([
-        ...(turn.integrations?.agents ? ["agents"] : []), ...(turn.integrations?.composio ? ["composio"] : []),
+        ...(turn.integrations?.agents ? ["agents"] : []),
         ...(turn.integrations?.browser ? ["browser"] : []), ...(turn.integrations?.localComputer ? ["computer"] : []),
         ...Object.keys(turn.integrations?.custom ?? {}),
       ].filter((name) => canUseMcpServer(turn.toolScope, name)));

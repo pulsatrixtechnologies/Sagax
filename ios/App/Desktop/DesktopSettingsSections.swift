@@ -484,13 +484,6 @@ struct DesktopExperimentalSettings: View {
                 isOn: browseBots, label: Text("Show Browse Bots in the sidebar"), identifier: "desktop-settings.browse-bots",
                 disabled: saving, divided: true
             ) { Task { _ = await model.apply(.feature("templates", !browseBots), key: "templates") } }
-            let connectedApps = config?.features?.connectedApps == true
-            DesktopFeatureRow(
-                title: Text("Connected apps"),
-                detail: Text("Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers."),
-                isOn: connectedApps, label: Text("Turn on Connected apps"), identifier: "desktop-settings.connected-apps",
-                disabled: saving, divided: true
-            ) { Task { _ = await model.apply(.feature("connectedApps", !connectedApps), key: "connectedApps") } }
             DesktopFeatureRow(
                 title: Text(verbatim: DevPodsStrings.settingTitle),
                 detail: Text(verbatim: DevPodsStrings.settingDetail),
@@ -559,14 +552,6 @@ struct DesktopAPIKeysSettings: View {
                     key(.openaiCompat, Text("OpenAI-compatible API key"), config)
                 }
             }
-        }
-        DesktopSettingsCard(
-            Text("Connected apps"),
-            summary: Self.summary(config, [.composio]),
-            subtitle: Text("Gmail, GitHub, Slack, Notion, and hundreds more run through your own Composio project. Create a free account and copy the project API key from platform.composio.dev."),
-            open: false, identifier: "connections.apps"
-        ) {
-            key(.composio, Text("Composio project key"), config)
         }
     }
 

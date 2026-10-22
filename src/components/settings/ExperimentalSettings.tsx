@@ -7,7 +7,7 @@
 // (2026-10-15): one way to reach them, no second switch here.
 import { useEffect, useState } from "react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, connectedAppsEnabled, dataWindowEnabled, decisionModelEnabled, meetingNotetakerEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, decisionModelEnabled, meetingNotetakerEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
@@ -19,7 +19,7 @@ import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
 import { canEditConfig } from "@/lib/viewer";
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "connectedApps" | "decisionModel" | "dataWindow" | "meetingNotetaker";
+type ExperimentalFeature = "skillAuthoring" | "browser" | "decisionModel" | "dataWindow" | "meetingNotetaker";
 
 /** One feature: its label, and a grey "Not available on this server" line
  * with the reason on demand when the server cannot run it. */
@@ -88,7 +88,6 @@ export function ExperimentalSettings() {
   const { state, dispatch } = useStore();
   const skillAuthoring = skillAuthoringEnabled(state.config);
   const browser = builtInBrowserEnabled(state.config);
-  const connectedApps = connectedAppsEnabled(state.config);
   const decisionModel = decisionModelEnabled(state.config);
   const dataWindow = dataWindowEnabled(state.config);
   // A server that predates the Data window (Sagax 0.5.2 and earlier, e.g. an
@@ -137,7 +136,7 @@ export function ExperimentalSettings() {
   const busy = saving !== null;
   // The dev context pods are this computer's own choice: no server round trip.
   const devPods = useDevPodPrefs().enabled;
-  const on = Number(skillAuthoring) + Number(browser) + Number(connectedApps) + Number(decisionModel) + Number(dataWindow) + Number(meetingNotetaker) + Number(devPods);
+  const on = Number(skillAuthoring) + Number(browser) + Number(decisionModel) + Number(dataWindow) + Number(meetingNotetaker) + Number(devPods);
 
   return (
     <div data-settings-card="experimental.features" className="flex flex-col gap-2">
@@ -168,16 +167,6 @@ export function ExperimentalSettings() {
           below={editConfig && (browser || profiles.length > 0) && <BrowserProfilesBelow count={profiles.length} />}
         />
         {browser && editConfig && <MyChromeSettings />}
-        <div data-experimental-connected-apps="">
-          <FeatureRow
-            feature="connectedApps"
-            label={t("settings.experimental.connectedApps")}
-            ariaKey="settings.experimental.connectedAppsAria"
-            checked={connectedApps}
-            busy={busy}
-            onToggle={() => void toggle("connectedApps", !connectedApps)}
-          />
-        </div>
         <FeatureRow
           feature="decisionModel"
           label={t("settings.experimental.decisionModel")}

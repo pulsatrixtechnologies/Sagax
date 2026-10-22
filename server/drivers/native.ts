@@ -60,7 +60,7 @@ export function appendNative(threadId: string, entry: { dir: "in" | "out"; sourc
   try {
     // The session-setup messages carry the credentials the agent is handed —
     // the boat and comms tokens ride inside session/new's mcpServers env, and
-    // an MCP header can carry a Composio key. These files are ordinary
+    // an MCP header can carry a provider key. These files are ordinary
     // 0644 files people paste into bug reports, so values are masked while
     // the shape stays intact.
     appendFileSync(

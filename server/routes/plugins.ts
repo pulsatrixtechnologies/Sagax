@@ -7,8 +7,7 @@
 //        official MCP Registry's community servers (server/plugin-registry.ts).
 //        Each listing says whether it is installed (an MCP server with its URL).
 //   GET  /api/plugins/installed
-//        { plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? }
-//                   | { kind: "composio", slug, name, connected, logo?, domain? }], count }
+//        { plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? }], count }
 //   POST /api/plugins/install { id, region?, trust?, returnTo?, callbackOrigin? }
 //        adds the server (enabled; a server that still needs a sign-in is never
 //        mounted for a turn) and, when it asks for one, starts its OAuth sign-in:
@@ -28,8 +27,7 @@ import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export type InstalledPlugin =
-  | { kind: "mcp"; name: string; url: string; domain: string; enabled: boolean; auth: string; icon?: string; catalogId?: string }
-  | { kind: "composio"; slug: string; name: string; connected: boolean; logo?: string; domain?: string };
+  | { kind: "mcp"; name: string; url: string; domain: string; enabled: boolean; auth: string; icon?: string; catalogId?: string };
 
 export interface PluginRouteDeps {
   registry: RegistrySearch;
@@ -68,7 +66,7 @@ export function createPluginRoutes(deps: PluginRouteDeps): RouteHandler {
       const cursor = url.searchParams.get("cursor") || undefined;
       if (cursor && cursor.length > 500) return json(res, 400, { error: "cursor is not one this server returned" });
       const [page, installed] = await Promise.all([deps.registry.search(q, cursor), deps.installed()]);
-      const installedUrls = new Set(installed.flatMap((plugin) => (plugin.kind === "mcp" ? [plugin.url] : [])));
+      const installedUrls = new Set(installed.map((plugin) => plugin.url));
       const mark = (listing: PluginListing) => {
         const region = listing.regions?.find((candidate) => installedUrls.has(candidate.url));
         return { ...listing, installed: installedUrls.has(listing.url) || Boolean(region), ...(region ? { installedRegion: region.id } : {}) };

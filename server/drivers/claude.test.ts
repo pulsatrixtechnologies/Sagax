@@ -2764,39 +2764,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain("mcp__dweb");
   });
 
-  // the harness gates both the integration and the prompt hint on
-  // capabilities.composioMcp, so the flag and the mount must agree — a bot
-  // told about tools its driver never mounted burns the turn hunting
-  it("mounts the user's connected apps and claims the capability that gates them", async () => {
-    await create();
-    const dump = join(scratch, "dump.json");
-    process.env.FAKE_CLAUDE_DUMP = dump;
-
-    expect(instance.adapter.capabilities.composioMcp).toBe(true);
-    await instance.adapter.sendTurn({
-      threadId: "t-composio",
-      text: "hi",
-      integrations: {
-        composio: {
-          command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
-          env: { SAGAX_CONNECTOR_UPSTREAM_URL: "https://example.test/mcp" },
-        },
-      },
-    });
-    await recorder.until((e) => e.type === "turn.completed");
-
-    const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.mcpConfig.mcpServers.composio).toMatchObject({
-      command: process.execPath,
-      args: ["/tmp/connector-proxy.js"],
-      env: { SAGAX_CONNECTOR_UPSTREAM_URL: "https://example.test/mcp" },
-    });
-    // the user's Composio key must not be readable via `ps`
-    expect(JSON.stringify(seen.argv)).not.toContain("ak_test");
-    expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain("mcp__composio");
-  });
-
   // the config file holds live credentials, so it must not outlive the turn —
   // including when the CLI dies mid-turn, which is the path that leaks if
   // cleanup is hung off the happy-path result instead of settle()
@@ -2812,10 +2779,12 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       threadId: "t-cleanup",
       text: "hi",
       integrations: {
-        composio: {
-          command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
-          env: { SAGAX_CONNECTOR_UPSTREAM_URL: "https://example.test/mcp" },
+        custom: {
+          notes: {
+            command: process.execPath,
+            args: ["/tmp/notes-mcp.js"],
+            env: { NOTES_TOKEN: "secret-token" },
+          },
         },
       },
     });
@@ -4338,7 +4307,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await create(undefined, { CLAUDE_CONFIG_DIR: instanceConfigDir });
     const dump = join(scratch, "generate-text-env.json");
     process.env.FAKE_CLAUDE_DUMP = dump;
-    const names = ["XAI_API_KEY", "COMPOSIO_API_KEY", "BOX_TOKEN", "OPENCODE_API_KEY", "SAGAX_TTS_KEY"] as const;
+    const names = ["XAI_API_KEY", "BOX_TOKEN", "OPENCODE_API_KEY", "SAGAX_TTS_KEY"] as const;
     for (const name of names) process.env[name] = `${name}-must-not-leak`;
 
     await expect(instance.generateText?.("summarize safely")).resolves.toBe("fake generated text");

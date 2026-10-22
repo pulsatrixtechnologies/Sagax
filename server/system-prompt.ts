@@ -8,7 +8,6 @@
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { teammateAvailabilityPrompt, type RosterMember } from "./peer-roster.ts";
-import type { ConnectorToolGrant } from "../shared/wire.ts";
 import { CW_FAMILIES, CW_REQUIRED_FIELDS, CW_VIEWS, CW_WIDGET_EXAMPLE, cwOrList } from "../shared/cw-widgets/schema.ts";
 
 export type PromptPart = { id: string; label: string; text: string };
@@ -203,33 +202,6 @@ export function cloudHomePrompt(sharedComputerTools: boolean): string {
     ? " If they ask for something on their own Mac or PC, check list_shared_computers: a Mac they lend to My Cloud is reachable through shared_computer, within the folders and apps it allows. If none is lent and online, say so in one sentence: they can turn on Let My Cloud use this Mac under Settings → Sagax Cloud in the desktop app on that Mac."
     : " You cannot see or use their Mac or PC, its screen or its files from here. If they ask for something on it, say so in one sentence.")
     + " Offer what works here: the built-in browser and their cloud computer, a desktop in the cloud. Call it their cloud computer, as the app does. Never ask them to set up this computer or a Local VM; neither exists here.";
-}
-
-export const COMPOSIO_PROMPT =
-  " The user's connected apps (Gmail, Calendar, Slack, Notion, and the rest) are reachable through the composio tools — find the right one with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. Reach for them before telling the user you have no access to a service.";
-
-/** The connected-apps paragraph, personalized to the bot's grants (issue
- * #1737). A bot with no grants record keeps the legacy all-tools sentence;
- * a record names exactly the granted services and tells the model a
- * refusal is a grant question for the person, never a reason to hunt for
- * what else exists; a record granting nothing gets no paragraph at all.
- * Like the persona, the text only changes when settings change, so the
- * stable-prompt split from #1758 is preserved. */
-export function composioSystemPrompt(grants: Record<string, ConnectorToolGrant> | undefined): string {
-  if (grants === undefined) return COMPOSIO_PROMPT;
-  const services = Object.keys(grants);
-  if (services.length === 0) return "";
-  const named = services.map(connectorServiceLabel).join(", ");
-  return ` The user's connected apps assigned to this bot (${named}) are reachable through the composio tools — find the right one with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. Only the tools this bot was granted will run; when a needed tool is refused, tell the user and ask them to grant it in Sagax. Reach for the granted services before telling the user you have no access.`;
-}
-
-/** "gmail" → "Gmail", "google_calendar" → "Google Calendar". The prompt
- * must not call the network, so the label is derived from the slug. */
-function connectorServiceLabel(slug: string): string {
-  return slug
-    .split(/[-_]+/)
-    .map((part) => (part ? part[0]!.toUpperCase() + part.slice(1) : part))
-    .join(" ");
 }
 
 /** Names the user-added MCP servers a turn actually mounted, so the bot

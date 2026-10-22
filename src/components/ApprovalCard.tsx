@@ -15,7 +15,7 @@ import { ApprovalHeading, TechnicalDetails } from "@/components/ApprovalParts";
 import { StepRow } from "@/components/StepRow";
 import { CustomRuleNoticeLine, CustomRuleSavedInset } from "@/components/CustomRuleNotice";
 import { approvalPlain, describeAllowRule, describeApproval, isTechnicalText, parseToolId, type ApprovalRisk, type ToolHints } from "@/lib/approval-describe";
-import { composioActionPhrase, outboundSummary } from "@/lib/approval-summary";
+import { outboundSummary } from "@/lib/approval-summary";
 import { cronLocale, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
 import { cronScheduleLabel } from "../../shared/cron-label";
 import { PROFILE_REQUEST_FIELDS, type ProfileRequestField } from "../../shared/profile-request";
@@ -195,15 +195,9 @@ export function toolLabel(tool?: string, input?: string, hints?: ToolHints): str
   const key = nice[tool];
   if (key) return t(key);
   const { server, name } = parseToolId(tool);
-  // A Composio slug reads as a verb phrase: LINEAR_CREATE_LINEAR_COMMENT is
-  // "create linear comment".
-  const composio = composioActionPhrase(name);
-  if (!server) return composio ?? name.replace(/_/g, " ");
-  // Composio's own slug already names the app ("create linear comment"):
-  // "in Composio" would name the broker, not where the action lands.
-  if (server === "composio" && composio) return composio;
+  if (!server) return name.replace(/_/g, " ");
   const described = describeApproval(tool, input, hints);
-  const action = described.action ?? composio ?? name.replace(/_+/g, " ");
+  const action = described.action ?? name.replace(/_+/g, " ");
   // Sagax's own built-in servers (sagax-environment, sagax-computer) are the
   // bot itself: never "... in Sagax Computer" (shared approvalAction).
   return described.product && !server.startsWith("sagax-") ? t("approval.phrase.inProduct", { action, product: described.product }) : action;

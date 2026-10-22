@@ -633,7 +633,7 @@ module's own test under `server/routes/`.
 | `GET /api/computer/status`, `POST /api/computer/update`, `POST /api/computer/reset` (`{ confirm: true }`) | `{ kind: "org-sandbox" \| "local", configured, state, diskState: "normal" \| "almostFull" \| "full", workspaceBytes, limitBytes?, version?, problem? }` | the person (organization) or the owner (personal) |
 | `POST /api/me/server-environment/update` | rebuilds the person's server environment from the current image, keeping `/workspace` | the person (organization) |
 | `GET /api/plugins/search?q=&cursor=` | `{ featured, results, nextCursor, registryAvailable }` | member |
-| `GET /api/plugins/installed` | `{ plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? } \| { kind: "composio", slug, name, connected, logo?, domain? }], count }` | member |
+| `GET /api/plugins/installed` | `{ plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? }], count }` | member |
 | `POST /api/plugins/install` | `{ id, trust?, returnTo?, callbackOrigin? }` -> `{ name, alreadyInstalled, auth, authorizationUrl? }` | admin or owner |
 | `POST /api/mcp/servers/:name/oauth/start` | adds `returnTo` and `callbackOrigin` | admin or owner |
 | `PATCH /api/groups/:id` | adds `pinned` | member |
