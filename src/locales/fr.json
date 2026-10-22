@@ -10104,5 +10104,9 @@
   "botActivity.outcome.running": "En cours",
   "botActivity.outcome.allowed": "Autorisé",
   "botActivity.outcome.denied": "Refusé",
-  "botActivity.outcome.needsYou": "Votre attention"
+  "botActivity.outcome.needsYou": "Votre attention",
+  "app.title": "App interactive",
+  "app.live": "En direct",
+  "app.escaped": "L'app a tenté de quitter son bac à sable et a été réinitialisée.",
+  "app.blocked": "L'app a quitté son bac à sable à répétition et a été arrêtée."
 }

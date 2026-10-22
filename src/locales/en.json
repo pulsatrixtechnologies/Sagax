@@ -10104,5 +10104,9 @@
   "botActivity.outcome.running": "Running",
   "botActivity.outcome.allowed": "Allowed",
   "botActivity.outcome.denied": "Denied",
-  "botActivity.outcome.needsYou": "Needs you"
+  "botActivity.outcome.needsYou": "Needs you",
+  "app.title": "Interactive app",
+  "app.live": "Live",
+  "app.escaped": "The app tried to leave its sandbox and was reset.",
+  "app.blocked": "The app kept leaving its sandbox and was stopped."
 }
