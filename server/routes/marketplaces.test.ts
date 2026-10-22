@@ -113,11 +113,17 @@ describe("marketplace visibility route (close the private-repo leak)", () => {
     expect(alice.audits).toEqual([{ action: "marketplace.visibility", target: { kind: "marketplace", id: "alice", name: "alice" }, before: { visibility: "private" }, after: { visibility: "org" } }]);
   });
 
-  it("refuses org-wide when the caller may not share", async () => {
+  it("org-wide is admins only: a non-admin sharing org is refused (403)", async () => {
     const alice = await serveVisibility(SESSION("alice"), () => ({ principal: "alice" }), false);
     const res = await fetch(`${alice.base}/alice/visibility`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility: "org" }) });
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("marketplace_org_admin_only");
+  });
+
+  it("a non-admin keeps control of their own privacy: setting it back to private is allowed", async () => {
+    const alice = await serveVisibility(SESSION("alice"), () => ({ principal: "alice" }), false);
+    const res = await fetch(`${alice.base}/shared/visibility`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ visibility: "private" }) });
+    expect(res.status).toBe(200);
   });
 
   it("defaults a new marketplace to private and passes the choice through", async () => {

@@ -28445,12 +28445,11 @@ function marketplaceViewer(auth: RequestAuth): MarketplaceViewer {
   return principal ? { principal } : {};
 }
 /** Who may share a marketplace with the whole organization. Decision for JC
- * (2026-10-21): a person who manages marketplaces may share their OWN
- * marketplace org-wide (the default on add stays private). To reserve
- * org-wide sharing to administrators instead, return `orgAdminCaller(auth)`
- * (or, on a solo server, `computerOwner(auth)`) here. */
+ * (2026-10-22): ADMINS ONLY. A non-admin may add and manage marketplaces but
+ * can only keep them private (the default); they cannot set visibility to
+ * `org`. On a solo server the computer owner is the only person and may share. */
 function mayShareMarketplaceOrgWide(auth: RequestAuth): boolean {
-  return mayManageMarketplaces(auth);
+  return orgAdminCaller(auth) || computerOwner(auth);
 }
 /** Add a plugin's servers to `current` (written by the caller) under free
  * names; returns the plugin's name of each to the name it got. */
