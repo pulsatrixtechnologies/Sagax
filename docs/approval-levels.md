@@ -247,6 +247,17 @@ keys, nor the person's own rules apply to them; only what that reviewer
 leaves to Sagax does. Use **Ask** or **Auto-accept edits** to have every
 such call go through Sagax.
 
+The same holds for Codex (`approvalsReviewer: auto_review`), Qwen
+(`--approval-mode auto`) and Cursor (`--auto-review`) on **Approve for me**:
+their own reviewer decides first. Grok Bot has a single reviewer, so a bot
+can be switched to one reviewer (Grok Bot parity A13,
+`server/drivers/sagax-reviewer.ts`): with `DATA_DIR/sagax-reviewer.json`
+`{"bots": ["<botId>"]}` (or `{"bots": "all"}`), Approve for me on those
+engines starts Qwen at `auto-edit` and Codex and Cursor with the person as
+reviewer, so every other call reaches Sagax's approval path, where the
+person's rules and saved commands still answer without a card. Off by
+default until each engine is benched; read at each turn, no deploy needed.
+
 ### A Primary Bot's level covers the work it delegates
 
 Approvals were where a team's owner spent their day: every teammate a Primary

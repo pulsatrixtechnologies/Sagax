@@ -307,6 +307,14 @@
               "local_vm"
             ],
             "description": "Optional, on yourself, when your Workspace is Auto: where that thread works (this_computer = their files and apps, browser = web only, cloud = keeps running while they are away, local_vm = isolated). A place not allowed or offline falls back."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "On yourself: read-only (starts in Ask)."
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "On yourself: resume your earlier thread by id."
           }
         },
         "required": [

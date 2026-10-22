@@ -30,6 +30,7 @@ async function serve(options: {
   importGate?: Parameters<typeof createCredentialVaultRoutes>[0]["importGate"];
   exportBlocked?: () => boolean;
   browser?: Parameters<typeof createCredentialVaultRoutes>[0]["browser"];
+  purchaseStepUp?: Parameters<typeof createCredentialVaultRoutes>[0]["purchaseStepUp"];
   resumeFails?: boolean;
 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sagax-vault-routes-"));
@@ -45,6 +46,7 @@ async function serve(options: {
     ...(options.importGate ? { importGate: options.importGate } : {}),
     ...(options.exportBlocked ? { exportBlocked: options.exportBlocked } : {}),
     ...(options.browser ? { browser: options.browser } : {}),
+    ...(options.purchaseStepUp ? { purchaseStepUp: options.purchaseStepUp } : {}),
     onePassword: new OnePassword({ env: {}, exec: async () => { throw new Error("absent"); }, organization: () => false }),
     principal: () => options.principal === undefined ? LOCAL_VAULT_PRINCIPAL : options.principal,
     botExists: (id) => id === "bot-a",
@@ -376,6 +378,31 @@ describe("import and export routes", () => {
     expect(asked.at(-1)).toEqual({ format: "bitwarden-json", stepUp: "ceremony-id" });
     const exports = audits.filter((row) => row.action === "credentials.export");
     expect(exports).toEqual([{ action: "credentials.export", detail: { format: "bitwarden-json", count: 1, referencesLeftOut: 0, notInFormat: 0 } }]);
+  });
+
+  it("answers a purchase only with the security key when the person chose money (parity A12, #648 and #932)", async () => {
+    let refuse = true;
+    const asked: Array<{ detail: Record<string, unknown>; stepUp: unknown }> = [];
+    const { call, vault } = await serve({
+      purchaseStepUp: (_auth, detail, stepUp) => {
+        asked.push({ detail, stepUp });
+        return refuse ? { status: 403, body: { code: "step_up_required", target: { kind: "settings", action: "purchase.allow", detail } } } : null;
+      },
+    });
+    const saved = vault.create(LOCAL_VAULT_PRINCIPAL, { kind: "card", name: "Shop card", card: { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, holder: "Ada Lovelace" } });
+    const opened = vault.openPurchase(LOCAL_VAULT_PRINCIPAL, { botId: "bot-a", threadId: "thread-1", pageUrl: "https://shop.example.test/pay", amount: "4", currency: "USD", cardId: saved.id });
+    const path = `/api/me/credentials/purchases/${opened.listing.id}/answer`;
+    const refused = await call("POST", path, { decision: "once" });
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({ code: "step_up_required", target: { action: "purchase.allow" } });
+    expect(refused.text).not.toContain("4242424242424242");
+    // nothing was answered: the purchase still waits
+    expect(vault.pendingPurchases(LOCAL_VAULT_PRINCIPAL).map((row) => row.id)).toEqual([opened.listing.id]);
+    refuse = false;
+    const answered = await call("POST", path, { decision: "once", stepUp: "ceremony-id" });
+    expect(answered.status).toBe(200);
+    expect(asked.at(-1)).toEqual({ detail: { purchaseId: opened.listing.id, decision: "once" }, stepUp: "ceremony-id" });
+    expect(vault.pendingPurchases(LOCAL_VAULT_PRINCIPAL)).toEqual([]);
   });
 
   it("refuses every export when the organization turned exports off, before the gate, and says so in the list (2026-10-18)", async () => {

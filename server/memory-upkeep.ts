@@ -23,7 +23,7 @@ import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { DATA_DIR } from "./config.ts";
-import { CaptureBuffer, captureItemLimit, capturePrompt, captureSize, newCandidates, parseCandidates, worthCapturing, type Candidate, type CaptureBatch, type CaptureTurn } from "./memory-capture.ts";
+import { CaptureBuffer, captureItemLimit, capturePrompt, captureSize, parseCandidates, splitCandidates, worthCapturing, type Candidate, type CaptureBatch, type CaptureTurn } from "./memory-capture.ts";
 import { factIdentity, lineFactIdentity, notebookIdentities } from "./memory-entries.ts";
 import { mergeTopicText } from "./memory-topics.ts";
 import { applyMoves, MAX_MOVES, organizeCandidates, organizePrompt, parseMoves } from "./memory-organize.ts";
@@ -118,6 +118,9 @@ export interface CaptureReport {
   aboutMe: number;
   /** MEMORY.md entries moved into topic files afterwards. */
   organized?: number;
+  /** Facts the model found that memory already held: the "N already known"
+   * of the receipt (parity M3). Absent on reports written before it. */
+  known?: number;
   note?: string;
 }
 
@@ -302,10 +305,11 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
 
   /** Files one conversation's items as that conversation's: its source
    * label, its thread on every journal row. */
-  function fileCandidates(botId: string, threadId: string, candidates: readonly Candidate[]): { added: number; topics: number } {
+  function fileCandidates(botId: string, threadId: string, candidates: readonly Candidate[]): { added: number; topics: number; known: number } {
     const before = readRaw(botId, "MEMORY.md");
     const archiveBefore = readRaw(botId, ARCHIVE_PATH);
-    const fresh = newCandidates(candidates, before ?? "");
+    const { fresh, known: inNotebook } = splitCandidates(candidates, before ?? "");
+    let known = inNotebook;
     const source = `${deps.sourceLabel(botId, threadId)} (noticed)`;
     let added = 0;
     const byTopic = new Map<string, Candidate[]>();
@@ -330,8 +334,9 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       const current = readRaw(botId, path);
       if (current !== null && Buffer.byteLength(current, "utf8") > TOPIC_MAX_BYTES) continue;
       const seen = notebookIdentities(current ?? "");
-      const lines = group
-        .filter((candidate) => !seen.has(factIdentity(candidate.text)))
+      const unseen = group.filter((candidate) => !seen.has(factIdentity(candidate.text)));
+      known += group.length - unseen.length;
+      const lines = unseen
         .map((candidate) => memoryEntry(candidate.text, { source, now: now(), ...(candidate.until ? { until: candidate.until } : {}) }));
       if (!lines.length) continue;
       const title = name.replace(/\.md$/, "").replace(/-/g, " ");
@@ -345,7 +350,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       existing.set(name.toLowerCase(), name);
       topics += lines.length;
     }
-    return { added, topics };
+    return { added, topics, known };
   }
 
   /**
@@ -427,17 +432,19 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
       return refused;
     }
     const filed = attribute(parseCandidates(answer, today, captureItemLimit(conversations.length)), conversations, still);
-    const { added, topics } = writing(bot.id, () => {
+    const { added, topics, known } = writing(bot.id, () => {
       let added = 0;
       let topics = 0;
+      let known = 0;
       conversations.forEach((conversation, i) => {
         const own = filed.filter((item) => item.at === i).map((item) => item.candidate);
         if (!own.length) return;
         const result = fileCandidates(bot.id, conversation.threadId, own);
         added += result.added;
         topics += result.topics;
+        known += result.known;
       });
-      return { added, topics };
+      return { added, topics, known };
     });
     // Every parsed fact counts for About me, not only new ones: the bot may
     // already have noted it in its own memory, and About me is where every
@@ -447,7 +454,7 @@ export function createMemoryUpkeep(deps: UpkeepDeps): MemoryUpkeep {
     // whoever wrote MEMORY.md (the bot, the person or this capture), detail
     // that is not core moves to its topic now, not only at night
     const organized = await organize(bot.id);
-    const report: CaptureReport = { at, added, topics, aboutMe, organized };
+    const report: CaptureReport = { at, added, topics, aboutMe, organized, known };
     record(bot.id, { lastCapture: report });
     if (added || topics || aboutMe) log(`memory upkeep: noticed ${added} fact(s) for MEMORY.md, ${topics} for topic files and ${aboutMe} for About me: ${bot.name} (${bot.id}) from ${conversations.map((conversation) => conversation.threadId).join(", ")}`);
     return report;

@@ -41859,6 +41859,54 @@
         }
       }
     },
+    "1 was already known.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 was already known."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 figurait déjà dans la mémoire."
+          }
+        }
+      }
+    },
+    "%lld were already known.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld were already known."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld figuraient déjà dans la mémoire."
+          }
+        }
+      }
+    },
+    "Last capture %@: nothing new.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last capture %@: nothing new."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernière capture %@ : rien de nouveau."
+          }
+        }
+      }
+    },
     "Undoing…": {
       "localizations": {
         "en": {
