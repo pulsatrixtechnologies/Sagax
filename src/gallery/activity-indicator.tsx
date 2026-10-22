@@ -27,7 +27,7 @@ function Conversation({ mode }: { mode: BotActivityMode }) {
   return (
     <section data-gallery-mode={mode} className="flex w-[560px] flex-col gap-4 rounded-2xl bg-app px-6 py-6">
       <div className="flex justify-end">
-        <p className="max-w-[80%] rounded-[18px] bg-bubble-user px-4 py-2 text-[14px] text-bubble-user-ink">{asked}</p>
+        <p className="max-w-[80%] rounded-[18px] bg-bubble-user px-4 py-2 text-[14px] text-ink">{asked}</p>
       </div>
       <div className="flex items-center ps-1">
         <BotActivityIndicator bot={bot} mode={mode} seed="gallery" />
