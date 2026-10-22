@@ -27027,11 +27027,13 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
       const principalId = perspicaxMcp?.turnPrincipal(capability.threadId, capability.generation, capability.botId) || remoteSessionSpeaker(capability.threadId);
       return principalId ? { principalId: principalId.trim().toLowerCase(), botId: capability.botId } : null;
     },
-    // status/close: the support folder's recorded owner must be absent or this
-    // same owner, checked before Perspicax is called (server/remote-session-probe.ts).
+    // status/close: the support folder must name this very owner, checked
+    // before Perspicax is called (server/remote-session-probe.ts). A folder
+    // with no recorded owner (or none at all) is refused to everyone: nobody
+    // status- or close- es a session no one is known to own.
     ownsSupportCode: (code, owner) => {
       const folder = supportFolderOwner(REMOTE_SUPPORT_DIR, code);
-      if (!folder || (!folder.principalId && !folder.botId)) return true;
+      if (!folder || !folder.principalId || !folder.botId) return false;
       return Boolean(owner) && folder.principalId === owner!.principalId.trim().toLowerCase() && folder.botId === owner!.botId;
     },
   }),
@@ -35356,7 +35358,13 @@ ROUTES.push(createRemoteSessionRoutes({ sessions: remoteSessions, principalId: t
 ROUTES.push(createRemoteControlRoutes({
   principalId: terminalPrincipalId,
   live: (auth) => auth.kind === "loopback" || (auth.kind === "session" && sessions.isLive(auth.session.id)),
-  openControl: (input) => remoteSessions.openControl(input),
+  openControl: (input) => {
+    // The notice on the end user's screen names who is in control.
+    const person = isPrincipalId(input.principalId) ? principals.byId(input.principalId) : undefined;
+    const org = process.env.SAGAX_ORG_NAME?.trim() || "Pulsatrix";
+    const technician = [personDisplayName(person) || "", org].filter(Boolean).join(", ").slice(0, 80);
+    return remoteSessions.openControl({ ...input, ...(technician ? { technician } : {}) });
+  },
   upgrade: (req) => desktopViewer.upgradeOf(req),
 }));
 

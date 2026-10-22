@@ -43,11 +43,13 @@ describe("wheelDelta", () => {
 });
 
 describe("keyToVk / isForwardedKey / charVk", () => {
-  it("maps named keys to Windows virtual-key codes", () => {
+  it("maps named keys to Windows virtual-key codes, Cmd to Ctrl (never Win)", () => {
     expect(keyToVk("Enter")).toBe(0x0d);
     expect(keyToVk("ArrowLeft")).toBe(0x25);
     expect(keyToVk("F5")).toBe(0x74);
     expect(keyToVk("KeyA")).toBeNull();
+    expect(keyToVk("MetaLeft")).toBe(0x11);
+    expect(keyToVk("MetaRight")).toBe(0x11);
   });
   it("forwards navigation/modifier keys and anything held with Ctrl/Alt/Meta", () => {
     expect(isForwardedKey("ArrowLeft", { ctrl: false, alt: false, meta: false })).toBe(true);

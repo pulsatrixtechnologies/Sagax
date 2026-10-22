@@ -26,7 +26,7 @@ export interface ControlAuditEvent {
   sessionId: string;
   principalId: string;
   botId: string;
-  kind: "control.start" | "control.grant" | "control.release" | "control.stop" | "control.input_blocked";
+  kind: "control.start" | "control.notice" | "control.grant" | "control.release" | "control.stop" | "control.input_blocked";
   reason?: ControlStopReason;
   os?: RemoteSessionOs;
   /** Counts since the last grant, logged on release (never the keys themselves). */
@@ -41,6 +41,8 @@ export interface ControlProcess {
   writeLine(line: string): void;
   onStdout(cb: (chunk: Uint8Array) => void): void;
   onExit(cb: () => void): void;
+  /** Close the helper's stdin: its input loop ends (EOF) and it exits cleanly. */
+  endInput(): void;
   kill(): void;
 }
 
@@ -52,6 +54,8 @@ export interface OpenControl {
   bin: string;
   principalId: string;
   botId: string;
+  /** Shown in the on-screen notice on the end user's computer. */
+  technician?: string;
   /** Deliver the remote screen size to the viewer (once, and on change). */
   onMeta(meta: HelperMeta): void;
   /** Deliver one JPEG frame to the viewer. */
@@ -63,6 +67,8 @@ export interface OpenControl {
 export interface ControlHandle {
   setControl(granted: boolean): void;
   input(events: readonly ControlEvent[]): void;
+  /** Lift every key and button held right now (client blur or tab hidden). */
+  releaseAll(): void;
   close(reason: ControlStopReason): void;
   readonly granted: boolean;
 }
@@ -70,13 +76,18 @@ export interface ControlHandle {
 const MAX_SECONDS = 26 * 60 * 60;
 const FPS = 6;
 const QUALITY = 60;
+// At most this many non-move events per second reach the helper; the rest are
+// dropped so a runaway client cannot flood the tunnel.
+const INPUT_EVENTS_PER_SECOND = 200;
 
 function defaultSpawn(argv: string[]): ControlProcess {
   const child = spawn(argv[0]!, argv.slice(1), { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+  child.stdin.on("error", () => { /* broken pipe after the helper exits; close follows */ });
   return {
     writeLine(line) { try { child.stdin.write(`${line}\n`); } catch { /* the process is gone; close follows */ } },
     onStdout(cb) { child.stdout.on("data", (chunk: Buffer) => cb(chunk)); },
     onExit(cb) { child.on("close", cb); child.on("error", cb); },
+    endInput() { try { child.stdin.end(); } catch { /* already closed */ } },
     kill() { try { child.kill("SIGTERM"); } catch { /* already gone */ } },
   };
 }
@@ -98,7 +109,13 @@ export function createRemoteControlSessions(deps: {
     if (!controlSupported(input.session.os)) {
       return { error: "Live control is available on Windows for now. The screen stays view-only on this computer." };
     }
-    const built = controlHelperCommand(input.session.os, { fps: FPS, quality: QUALITY, maxSeconds: deadlineSeconds(input.session.endAt) });
+    const built = controlHelperCommand(input.session.os, {
+      fps: FPS,
+      quality: QUALITY,
+      maxSeconds: deadlineSeconds(input.session.endAt),
+      sessionId: input.session.id,
+      ...(input.technician ? { technician: input.technician } : {}),
+    });
     if (!built) return { error: "Live control is not available on this computer." };
 
     // A second open for the same session replaces the first (a viewer
@@ -106,6 +123,8 @@ export function createRemoteControlSessions(deps: {
     handles.get(input.session.id)?.close("replaced");
 
     const proc = spawnControl(tailcatSshArgv(input.bin, input.tunnel.keyPath, input.tunnel.address, built.command));
+    // Deliver the program on the first stdin line; the input events follow.
+    proc.writeLine(built.preamble.trim());
     const decode = createHelperFrameDecoder();
     let granted = false;
     let closed = false;
@@ -114,6 +133,19 @@ export function createRemoteControlSessions(deps: {
     let clicks = 0;
     let keys = 0;
     let chars = 0;
+    // What is currently held down, so a release, a close or a replacement can
+    // lift every key and button and nothing stays stuck on the remote host.
+    const downKeys = new Set<number>();
+    const downButtons = new Set<number>();
+    let rateWindowStart = now();
+    let rateCount = 0;
+
+    const releaseAll = () => {
+      for (const b of downButtons) proc.writeLine(encodeControlEvent({ t: "u", b: b as 0 | 1 | 2 }));
+      for (const k of downKeys) proc.writeLine(encodeControlEvent({ t: "k", k, d: 0 }));
+      downButtons.clear();
+      downKeys.clear();
+    };
 
     const audit = (kind: ControlAuditEvent["kind"], extra: Partial<ControlAuditEvent> = {}) => {
       deps.audit.write({ at: now(), sessionId: input.session.id, principalId: input.principalId, botId: input.botId, kind, ...extra });
@@ -127,9 +159,13 @@ export function createRemoteControlSessions(deps: {
       clearTimeout(timer);
       if (granted) {
         granted = false;
+        releaseAll();
         audit("control.release", { moves, clicks, keys, chars });
       }
       handles.delete(input.session.id);
+      // End stdin first so the helper's input loop sees EOF and exits cleanly,
+      // then kill as a backstop.
+      proc.endInput();
       proc.kill();
       audit("control.stop", { reason });
       input.onClosed(reason);
@@ -150,6 +186,9 @@ export function createRemoteControlSessions(deps: {
     if (typeof (timer as { unref?: () => void }).unref === "function") (timer as { unref: () => void }).unref();
 
     audit("control.start", { os: input.session.os });
+    // The helper shows an always-on-top notice on the end user's screen for
+    // as long as it runs: record that the person was told control started.
+    audit("control.notice");
 
     const handle: InternalHandle = {
       id: input.session.id,
@@ -162,25 +201,36 @@ export function createRemoteControlSessions(deps: {
           resetCounts();
           audit("control.grant");
         } else {
+          releaseAll();
           audit("control.release", { moves, clicks, keys, chars });
           resetCounts();
         }
       },
       input(events) {
-        if (closed) return;
-        if (!granted) {
-          if (!blockedLogged) { blockedLogged = true; audit("control.input_blocked"); }
+        if (closed || !granted) {
+          if (!closed && !granted && !blockedLogged) { blockedLogged = true; audit("control.input_blocked"); }
           return;
         }
         for (const ev of coalesceEvents(events)) {
           const valid = parseControlEvent(ev);
           if (!valid) continue;
-          if (valid.t === "m") moves++;
-          else if (valid.t === "d") clicks++;
-          else if (valid.t === "k") { if (valid.d === 1) keys++; }
-          else if (valid.t === "x") chars += valid.s.length;
+          if (valid.t === "m") {
+            moves++;
+          } else {
+            // Rate-cap everything but moves so a runaway client cannot flood.
+            if (now() - rateWindowStart >= 1000) { rateWindowStart = now(); rateCount = 0; }
+            if (rateCount >= INPUT_EVENTS_PER_SECOND) continue;
+            rateCount++;
+            if (valid.t === "d") { clicks++; downButtons.add(valid.b); }
+            else if (valid.t === "u") { downButtons.delete(valid.b); }
+            else if (valid.t === "k") { if (valid.d === 1) { keys++; downKeys.add(valid.k); } else { downKeys.delete(valid.k); } }
+            else if (valid.t === "x") { chars += valid.s.length; }
+          }
           proc.writeLine(encodeControlEvent(valid));
         }
+      },
+      releaseAll() {
+        if (!closed && granted) releaseAll();
       },
       close,
     };

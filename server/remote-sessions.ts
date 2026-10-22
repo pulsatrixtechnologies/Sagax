@@ -324,10 +324,12 @@ export function createRemoteSessionService(deps: {
         const foreign = dir
           ? supportOwnersOfId(dir, input.id).some((owner) => owner.principalId !== principalId || owner.botId !== input.botId)
           : false;
+        if (theirs || foreign) {
+          throw Object.assign(new Error("That remote session belongs to someone else."), { status: 403 });
+        }
         // A Flow session folder has no owner until its first publish: bind it
         // to this person and bot now, and refuse a later publish by anyone else.
-        const flowBind = bindFlowOwner(home(), input.id, { principalId, botId: input.botId });
-        if (theirs || foreign || flowBind === "other") {
+        if (bindFlowOwner(home(), input.id, { principalId, botId: input.botId }) === "other") {
           throw Object.assign(new Error("That remote session belongs to someone else."), { status: 403 });
         }
         let row = rows.find((candidate) => candidate.id === input.id && candidate.botId === input.botId);
@@ -453,6 +455,7 @@ export function createRemoteSessionService(deps: {
       principalId: string;
       botId: string;
       id: string;
+      technician?: string;
       onMeta: OpenControl["onMeta"];
       onFrame: OpenControl["onFrame"];
       onClosed: OpenControl["onClosed"];
@@ -467,6 +470,7 @@ export function createRemoteSessionService(deps: {
         bin: tailcatBin(),
         principalId: input.principalId,
         botId: input.botId,
+        ...(input.technician ? { technician: input.technician } : {}),
         onMeta: input.onMeta,
         onFrame: input.onFrame,
         onClosed: input.onClosed,

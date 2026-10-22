@@ -1,13 +1,19 @@
 // The user-mode helper that runs on the end user's computer, over the tunnel
 // a stage-1 session already established, to give the technician live control.
-// It is delivered in the session command itself (no binary shipped, nothing
-// installed): on Windows a short PowerShell program that injects input with
-// SendInput (standard rights, the user's own session) and streams the screen
-// as JPEG frames with CopyFromScreen. It exits when the server closes its
-// stdin (the technician released control or the session closed) or when its
-// deadline passes, and it writes nothing to disk. The server never
+// It is delivered in the session command itself (no helper binary shipped):
+// on Windows a short PowerShell program whose input loop and screen capture
+// are compiled C# (Add-Type), so it injects with SendInput and captures with
+// CopyFromScreen at standard rights, in the user's own session. It exits when
+// its stdin closes (control released or session closed), when the end-user
+// script's stop file appears, or at a hard deadline. The server never
 // interpolates anything the person typed into this script: only the bounded
-// numbers below.
+// values below.
+//
+// It writes no files of its own; note that `Add-Type` compiles to the user's
+// temp folder and that PowerShell script-block logging (event 4104), if an
+// admin turned it on, records the script, and that antivirus may inspect an
+// `-EncodedCommand` or an `Add-Type` build. The end-user console window and
+// the on-screen notice keep the session visible and consented.
 import type { RemoteSessionOs } from "../shared/remote-session.ts";
 
 export interface ControlHelperOptions {
@@ -17,6 +23,10 @@ export interface ControlHelperOptions {
   quality: number;
   /** Hard stop in seconds, so an orphaned helper cannot outlive the session. */
   maxSeconds: number;
+  /** The 12-hex session id, so the helper watches the end-user script's stop file. */
+  sessionId: string;
+  /** Who is in control, shown in the on-screen notice. Trimmed, bounded, no newlines. */
+  technician?: string;
 }
 
 function clampInt(value: number, min: number, max: number): number {
@@ -27,105 +37,167 @@ function clampInt(value: number, min: number, max: number): number {
 
 /** True when live control is available for this OS. Windows only for now;
  * macOS and Linux would need a tool we do not ship, so the screen there stays
- * read-only (see the PR body: a JC decision). */
+ * read-only (the signed helper app, a JC decision, will cover all three). */
 export function controlSupported(os: RemoteSessionOs): boolean {
   return os === "windows";
 }
 
-/** The command the server runs over `tailcat ssh <addr>` for live control, or
- * null when this OS has no control path. Returns the script too, so a test can
- * assert its contents without decoding base64. */
-export function controlHelperCommand(os: RemoteSessionOs, options: ControlHelperOptions): { command: string; script: string } | null {
+const SESSION_ID = /^[0-9a-f]{12}$/;
+
+/** A short bootstrap and the real script. The bootstrap is the tunnel command
+ * (tiny, so no cmd.exe length limit); it reads the base64 script from the
+ * first stdin line and runs it, and the script then reads the input events
+ * from the rest of stdin. Returns null when this OS has no control path. */
+export function controlHelperCommand(os: RemoteSessionOs, options: ControlHelperOptions): { command: string; script: string; preamble: string } | null {
   if (os !== "windows") return null;
   const script = windowsControlScript(options);
-  // -EncodedCommand takes base64 of UTF-16LE: it carries a long program
-  // through ssh with no quoting, and the bytes are our own, never the person's.
-  const encoded = Buffer.from(script, "utf16le").toString("base64");
-  return { command: `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encoded}`, script };
+  const scriptB64 = Buffer.from(script, "utf8").toString("base64");
+  // The command run over the tunnel stays small: it reads one base64 line
+  // (the program) from stdin and runs it. Delivering the program on stdin
+  // avoids any cmd.exe argument-length limit on the remote side.
+  const bootstrap = "$ErrorActionPreference='Stop';$b=[Console]::In.ReadLine();Invoke-Expression ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)))";
+  const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${bootstrap}"`;
+  return { command, script, preamble: `${scriptB64}\n` };
 }
 
-/** Normalized pointer space (shared/remote-control NORM_MAX), mapped to the
- * SendInput absolute range 0..65535 across the whole virtual desktop. */
+function psString(value: string): string {
+  // A PowerShell single-quoted literal: double any single quote; strip control chars.
+  // oxlint-disable-next-line no-control-regex -- the notice text keeps no control characters
+  return `'${value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/'/g, "''")}'`;
+}
+
 export function windowsControlScript(options: ControlHelperOptions): string {
   const fps = clampInt(options.fps, 2, 15);
   const quality = clampInt(options.quality, 30, 90);
   const maxSeconds = clampInt(options.maxSeconds, 1, 26 * 60 * 60);
   const frameInterval = Math.max(1, Math.round(1000 / fps));
-  // The P/Invoke surface: SendInput for mouse and keyboard, the virtual-screen
-  // metrics for the absolute mapping, and GDI+ for JPEG encoding.
+  const sessionId = SESSION_ID.test(options.sessionId) ? options.sessionId : "000000000000";
+  const noticeText = (options.technician?.trim() ? `Contrôle à distance en cours : ${options.technician.trim()}` : "Contrôle à distance en cours").slice(0, 120);
+  const notice = psString(noticeText);
+  // The input loop and the SendInput surface are compiled C# so they run on a
+  // plain background thread with no PowerShell runspace (Windows PowerShell 5.1
+  // has none for a scriptblock thread). The C# reads stdin itself.
   return String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 public static class PxInput {
   [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
   [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
   [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
   [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION u; }
-  [DllImport("user32.dll", SetLastError=true)] public static extern uint SendInput(uint n, INPUT[] p, int cb);
-  public const uint MOUSE=0, KEYBD=1;
-  public const uint MOVE=0x0001, ABSOLUTE=0x8000, VIRTUALDESK=0x4000, LDOWN=0x0002, LUP=0x0004, RDOWN=0x0008, RUP=0x0010, MDOWN=0x0020, MUP=0x0040, WHEEL=0x0800;
-  public const uint KEYUP=0x0002, UNICODE=0x0004;
-  static INPUT[] One() { INPUT[] a = new INPUT[1]; a[0].type = 0; return a; }
-  public static void Mouse(uint flags, int dx, int dy, uint data) {
-    INPUT[] a = One(); a[0].type = MOUSE; a[0].u.mi.dwFlags = flags; a[0].u.mi.dx = dx; a[0].u.mi.dy = dy; a[0].u.mi.mouseData = data;
+  [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint n, INPUT[] p, int cb);
+  [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] static extern IntPtr SetProcessDpiAwarenessContext(IntPtr v);
+  const uint MOUSE=0, KEYBD=1;
+  const uint MOVE=0x0001, ABSOLUTE=0x8000, VIRTUALDESK=0x4000, LDOWN=0x0002, LUP=0x0004, RDOWN=0x0008, RUP=0x0010, MDOWN=0x0020, MUP=0x0040, WHEEL=0x0800;
+  const uint KEYUP=0x0002, UNICODE=0x0004;
+  const int SM_XVIRTUALSCREEN=76, SM_YVIRTUALSCREEN=77, SM_CXVIRTUALSCREEN=78, SM_CYVIRTUALSCREEN=79;
+  public static volatile bool Stop = false;
+
+  public static void SetDpi() {
+    try { SetProcessDpiAwarenessContext(new IntPtr(-4)); } catch { try { SetProcessDPIAware(); } catch { } }
+  }
+  static void Mouse(uint flags, int dx, int dy, uint data) {
+    INPUT[] a = new INPUT[1]; a[0].type = MOUSE; a[0].u.mi.dwFlags = flags; a[0].u.mi.dx = dx; a[0].u.mi.dy = dy; a[0].u.mi.mouseData = data;
     SendInput(1, a, Marshal.SizeOf(typeof(INPUT)));
   }
-  public static void Key(ushort vk, bool up) {
-    INPUT[] a = One(); a[0].type = KEYBD; a[0].u.ki.wVk = vk; a[0].u.ki.dwFlags = up ? KEYUP : 0;
+  static void Key(ushort vk, bool up) {
+    INPUT[] a = new INPUT[1]; a[0].type = KEYBD; a[0].u.ki.wVk = vk; a[0].u.ki.dwFlags = up ? KEYUP : 0;
     SendInput(1, a, Marshal.SizeOf(typeof(INPUT)));
   }
-  public static void Unicode(char c, bool up) {
-    INPUT[] a = One(); a[0].type = KEYBD; a[0].u.ki.wScan = c; a[0].u.ki.dwFlags = UNICODE | (up ? KEYUP : 0);
+  static void Unicode(char c, bool up) {
+    INPUT[] a = new INPUT[1]; a[0].type = KEYBD; a[0].u.ki.wScan = c; a[0].u.ki.dwFlags = UNICODE | (up ? KEYUP : 0);
     SendInput(1, a, Marshal.SizeOf(typeof(INPUT)));
+  }
+  static void Move(int nx, int ny) {
+    // normalized 0..10000 -> absolute 0..65535 across the whole virtual desktop
+    // (ABSOLUTE | VIRTUALDESK maps 0..65535 onto the full multi-monitor extent).
+    int sx = (int)Math.Round((nx / 10000.0) * 65535.0);
+    int sy = (int)Math.Round((ny / 10000.0) * 65535.0);
+    Mouse(MOVE | ABSOLUTE | VIRTUALDESK, sx, sy, 0);
+  }
+  static int ParseInt(string s) { int v; return int.TryParse(s, out v) ? v : 0; }
+  // Read input events from stdin until EOF, injecting each. One fixed shape
+  // per line; nothing is evaluated. On EOF the helper is told to stop.
+  public static void PumpInput() {
+    TextReader stdin = Console.In;
+    string line;
+    while ((line = stdin.ReadLine()) != null) {
+      try {
+        line = line.Trim();
+        if (line.Length == 0) continue;
+        int sp = line.IndexOf(' ');
+        string op = sp < 0 ? line : line.Substring(0, sp);
+        string rest = sp < 0 ? "" : line.Substring(sp + 1);
+        if (op == "m") { string[] p = rest.Split(' '); if (p.Length == 2) Move(ParseInt(p[0]), ParseInt(p[1])); }
+        else if (op == "d") { int b = ParseInt(rest); Mouse(b == 0 ? LDOWN : b == 1 ? RDOWN : MDOWN, 0, 0, 0); }
+        else if (op == "u") { int b = ParseInt(rest); Mouse(b == 0 ? LUP : b == 1 ? RUP : MUP, 0, 0, 0); }
+        else if (op == "w") { int d = ParseInt(rest); Mouse(WHEEL, 0, 0, unchecked((uint)(d * 120))); }
+        else if (op == "k") { string[] p = rest.Split(' '); if (p.Length == 2) Key((ushort)ParseInt(p[0]), ParseInt(p[1]) == 0); }
+        else if (op == "x") { string s = PxJson.Unquote(rest); for (int i = 0; i < s.Length; i++) { Unicode(s[i], false); Unicode(s[i], true); } }
+      } catch { }
+    }
+    Stop = true;
+  }
+}
+public static class PxJson {
+  // Minimal JSON-string unescape for the one "x <json string>" event.
+  public static string Unquote(string raw) {
+    raw = raw.Trim();
+    if (raw.Length < 2 || raw[0] != '"') return "";
+    System.Text.StringBuilder sb = new System.Text.StringBuilder();
+    for (int i = 1; i < raw.Length; i++) {
+      char c = raw[i];
+      if (c == '"') break;
+      if (c == '\\' && i + 1 < raw.Length) {
+        char n = raw[++i];
+        if (n == 'n') sb.Append('\n'); else if (n == 't') sb.Append('\t'); else if (n == 'r') sb.Append('\r');
+        else if (n == 'u' && i + 4 < raw.Length) { int code = Convert.ToInt32(raw.Substring(i + 1, 4), 16); sb.Append((char)code); i += 4; }
+        else sb.Append(n);
+      } else sb.Append(c);
+    }
+    return sb.ToString();
   }
 }
 "@
 
-$NORM = 10000
+[PxInput]::SetDpi()
 $deadline = (Get-Date).AddSeconds(${maxSeconds})
+$stopFile = Join-Path $env:TEMP ('px-assist-${sessionId}\stop')
 
-function Get-Bounds { [System.Windows.Forms.SystemInformation]::VirtualScreen }
-
-# Map a normalized 0..$NORM point to the SendInput absolute range over the
-# whole virtual desktop (0..65535), so a multi-monitor host maps correctly.
-function Send-Move([int]$nx, [int]$ny) {
-  $b = Get-Bounds
-  $ax = [int](($nx / $NORM) * 65535.0)
-  $ay = [int](($ny / $NORM) * 65535.0)
-  [PxInput]::Mouse([PxInput]::MOVE -bor [PxInput]::ABSOLUTE -bor [PxInput]::VIRTUALDESK, $ax, $ay, 0)
-}
-
-# Input runs on its own thread so the frame loop never stalls behind a click.
-$inputThread = [System.Threading.Thread]::new({
-  $stdin = [Console]::In
-  while ($true) {
-    $line = $stdin.ReadLine()
-    if ($null -eq $line) { break }
-    $line = $line.Trim()
-    if ($line.Length -eq 0) { continue }
-    try {
-      $sp = $line.IndexOf(' ')
-      $op = if ($sp -lt 0) { $line } else { $line.Substring(0, $sp) }
-      $rest = if ($sp -lt 0) { '' } else { $line.Substring($sp + 1) }
-      switch ($op) {
-        'm' { $p = $rest.Split(' '); Send-Move ([int]$p[0]) ([int]$p[1]) }
-        'd' { $b = [int]$rest; if ($b -eq 0) { [PxInput]::Mouse([PxInput]::LDOWN,0,0,0) } elseif ($b -eq 1) { [PxInput]::Mouse([PxInput]::RDOWN,0,0,0) } else { [PxInput]::Mouse([PxInput]::MDOWN,0,0,0) } }
-        'u' { $b = [int]$rest; if ($b -eq 0) { [PxInput]::Mouse([PxInput]::LUP,0,0,0) } elseif ($b -eq 1) { [PxInput]::Mouse([PxInput]::RUP,0,0,0) } else { [PxInput]::Mouse([PxInput]::MUP,0,0,0) } }
-        'w' { $d = [int]$rest; [PxInput]::Mouse([PxInput]::WHEEL,0,0,[uint32]($d * 120)) }
-        'k' { $p = $rest.Split(' '); [PxInput]::Key([uint16][int]$p[0], ([int]$p[1] -eq 0)) }
-        'x' { $s = ($rest | ConvertFrom-Json); foreach ($ch in $s.ToCharArray()) { [PxInput]::Unicode($ch, $false); [PxInput]::Unicode($ch, $true) } }
-      }
-    } catch { }
-  }
+# A small always-on-top notice on the end user's screen, so control is never
+# silent. It lives on its own thread and closes when the helper exits.
+$noticeThread = [System.Threading.Thread]::new([System.Threading.ThreadStart]{
+  try {
+    $f = New-Object System.Windows.Forms.Form
+    $f.FormBorderStyle = 'None'; $f.TopMost = $true; $f.ShowInTaskbar = $false
+    $f.StartPosition = 'Manual'; $f.BackColor = [System.Drawing.Color]::FromArgb(250, 211, 100)
+    $f.Width = 360; $f.Height = 34
+    $f.Left = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Width - $f.Width - 16; $f.Top = 16
+    $l = New-Object System.Windows.Forms.Label
+    $l.Dock = 'Fill'; $l.TextAlign = 'MiddleCenter'; $l.Text = ${notice}
+    $l.ForeColor = [System.Drawing.Color]::FromArgb(49, 55, 55)
+    $f.Controls.Add($l)
+    $t = New-Object System.Windows.Forms.Timer; $t.Interval = 500
+    $t.add_Tick({ if ([PxInput]::Stop) { $f.Close() } })
+    $t.Start()
+    [System.Windows.Forms.Application]::Run($f)
+  } catch { }
 })
+$noticeThread.SetApartmentState([System.Threading.ApartmentState]::STA)
+$noticeThread.IsBackground = $true
+$noticeThread.Start()
+
+$inputThread = [System.Threading.Thread]::new([System.Threading.ThreadStart]{ [PxInput]::PumpInput() })
 $inputThread.IsBackground = $true
 $inputThread.Start()
 
-# Binary stdout: type byte, 4-byte big-endian length, payload.
 $out = [Console]::OpenStandardOutput()
 function Write-Frame([byte]$type, [byte[]]$payload) {
   $len = $payload.Length
@@ -139,8 +211,11 @@ $params.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter([System.Dr
 
 $lastW = 0; $lastH = 0; $lastHash = $null
 $sha = [System.Security.Cryptography.SHA1]::Create()
-while ((Get-Date) -lt $deadline) {
-  $b = Get-Bounds
+# One capture loop. It ends on the deadline, when input stops (stdin EOF), or
+# when the end-user script's stop file appears.
+while ((Get-Date) -lt $deadline -and -not [PxInput]::Stop) {
+  if (Test-Path -LiteralPath $stopFile) { break }
+  $b = [System.Windows.Forms.SystemInformation]::VirtualScreen
   $w = [Math]::Max(1, $b.Width); $h = [Math]::Max(1, $b.Height)
   if ($w -ne $lastW -or $h -ne $lastH) {
     $meta = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -Compress @{ w = $w; h = $h }))
@@ -155,11 +230,11 @@ while ((Get-Date) -lt $deadline) {
     $bmp.Save($ms, $jpeg, $params)
     $bytes = $ms.ToArray()
     $ms.Dispose()
-    # Skip an identical frame so an idle screen sends nothing.
     $hash = [Convert]::ToBase64String($sha.ComputeHash($bytes))
     if ($hash -ne $lastHash) { Write-Frame 0x46 $bytes; $lastHash = $hash }
   } finally { $g.Dispose(); $bmp.Dispose() }
   Start-Sleep -Milliseconds ${frameInterval}
 }
+[PxInput]::Stop = $true
 `;
 }

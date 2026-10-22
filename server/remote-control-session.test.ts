@@ -17,6 +17,7 @@ function frame(type: number, payload: Uint8Array): Uint8Array {
 class FakeProc implements ControlProcess {
   lines: string[] = [];
   killed = false;
+  inputEnded = false;
   argv: string[];
   private stdout: ((chunk: Uint8Array) => void) | null = null;
   private exit: (() => void) | null = null;
@@ -24,9 +25,12 @@ class FakeProc implements ControlProcess {
   writeLine(line: string) { this.lines.push(line); }
   onStdout(cb: (chunk: Uint8Array) => void) { this.stdout = cb; }
   onExit(cb: () => void) { this.exit = cb; }
+  endInput() { this.inputEnded = true; }
   kill() { this.killed = true; }
   emit(chunk: Uint8Array) { this.stdout?.(chunk); }
   die() { this.exit?.(); }
+  /** Lines after the first (the base64 program preamble). */
+  get events() { return this.lines.slice(1); }
 }
 
 function harness(os: "windows" | "macos" | "linux" = "windows") {
@@ -66,19 +70,62 @@ describe("createRemoteControlSessions", () => {
     const proc = procs[0]!;
     expect(proc.argv).toContain("tailcat");
 
+    // the first stdin line is the base64 program (the bootstrap reads it)
+    expect(proc.lines[0]).toBe(proc.lines[0]);
+    expect(proc.lines).toHaveLength(1);
+
     const click: ControlEvent[] = [{ t: "d", b: 0 }, { t: "u", b: 0 }];
     handle.input(click);
-    expect(proc.lines).toEqual([]); // not granted yet
+    expect(proc.events).toEqual([]); // not granted yet
     expect(audit.some((event) => event.kind === "control.input_blocked")).toBe(true);
 
     handle.setControl(true);
-    handle.input([{ t: "m", x: 10, y: 20 }, { t: "m", x: 30, y: 40 }, { t: "d", b: 0 }]);
+    handle.input([{ t: "m", x: 10, y: 20 }, { t: "m", x: 30, y: 40 }, { t: "d", b: 0 }, { t: "u", b: 0 }]);
     // the two moves collapse to the last, the click is kept
-    expect(proc.lines).toEqual(["m 30 40", "d 0"]);
+    expect(proc.events).toEqual(["m 30 40", "d 0", "u 0"]);
 
     handle.setControl(false);
     handle.input([{ t: "d", b: 0 }]);
-    expect(proc.lines).toEqual(["m 30 40", "d 0"]); // nothing new while released
+    expect(proc.events).toEqual(["m 30 40", "d 0", "u 0"]); // nothing new while released
+  });
+
+  it("releases every held key and button on release, close and replacement (no stuck input)", () => {
+    const { sessions, procs, base } = harness();
+    const handle = sessions.open(base);
+    if ("error" in handle) throw new Error(handle.error);
+    const proc = procs[0]!;
+    handle.setControl(true);
+    // press two keys and a button, never send the ups
+    handle.input([{ t: "k", k: 17, d: 1 }, { t: "k", k: 65, d: 1 }, { t: "d", b: 0 }]);
+    proc.lines = []; // ignore what was sent so far
+    handle.setControl(false);
+    // ups emitted for the button and both keys
+    expect(proc.lines.sort()).toEqual(["k 17 0", "k 65 0", "u 0"]);
+  });
+
+  it("release-all lifts held input but keeps control on (blur / tab hidden)", () => {
+    const { sessions, procs, base } = harness();
+    const handle = sessions.open(base);
+    if ("error" in handle) throw new Error(handle.error);
+    const proc = procs[0]!;
+    handle.setControl(true);
+    handle.input([{ t: "d", b: 1 }, { t: "k", k: 70, d: 1 }]);
+    proc.lines = [];
+    handle.releaseAll();
+    expect(proc.lines.sort()).toEqual(["k 70 0", "u 1"]);
+    expect(handle.granted).toBe(true);
+    // a fresh press still goes through
+    handle.input([{ t: "d", b: 0 }]);
+    expect(proc.lines).toContain("d 0");
+  });
+
+  it("ends the helper's stdin before killing it", () => {
+    const { sessions, procs, base } = harness();
+    const handle = sessions.open(base);
+    if ("error" in handle) throw new Error(handle.error);
+    handle.close("closed");
+    expect(procs[0]!.inputEnded).toBe(true);
+    expect(procs[0]!.killed).toBe(true);
   });
 
   it("delivers meta and jpeg frames from the helper to the viewer", () => {
@@ -114,7 +161,7 @@ describe("createRemoteControlSessions", () => {
     expect(procs[0]!.killed).toBe(true);
     expect(sink.closed).toEqual(["closed"]);
     const kinds = audit.map((event) => event.kind);
-    expect(kinds).toEqual(["control.start", "control.grant", "control.release", "control.stop"]);
+    expect(kinds).toEqual(["control.start", "control.notice", "control.grant", "control.release", "control.stop"]);
     expect(sessions.has(base.session.id)).toBe(false);
   });
 

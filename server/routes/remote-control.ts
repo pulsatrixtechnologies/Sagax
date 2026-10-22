@@ -17,6 +17,11 @@ const CONTROL = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions\/([a-f0-9]{12})\/c
 /** Enough for a burst of input; frames only go the other way. */
 const WS_MAX_BYTES = 128 * 1024;
 const EVENTS_PER_MESSAGE = 200;
+/** Drop screen frames while the socket's send buffer is backed up this far,
+ * so a slow viewer never makes the server buffer without bound. */
+const FRAME_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
+/** Re-check the viewer's session is still live on this cadence. */
+const LIVENESS_MS = 15_000;
 
 export function isRemoteControlPath(path: string): boolean {
   return CONTROL.test(path);
@@ -68,11 +73,13 @@ export function createRemoteControlRoutes(deps: RemoteControlRouteDeps): RouteHa
     const { socket } = upgrade;
     upgrade.release();
     res.detachSocket(socket);
+    if (socket.destroyed) return;
     socket.write(
       `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${websocketAccept(shake.key)}\r\n\r\n`,
     );
 
     let handle: ControlHandle | null = null;
+    let liveness: ReturnType<typeof setInterval> | null = null;
     const ws = webSocketSession(socket, {
       onText(text) {
         if (!handle) return;
@@ -81,7 +88,13 @@ export function createRemoteControlRoutes(deps: RemoteControlRouteDeps): RouteHa
         if (!message || typeof message !== "object" || Array.isArray(message)) return;
         const record = message as Record<string, unknown>;
         if (record.t === "grant") {
+          // A grant is honored only while the viewer's session is still live.
+          if (record.on === true && !deps.live(auth)) { handle.close("closed"); return; }
           handle.setControl(record.on === true);
+          return;
+        }
+        if (record.t === "release") {
+          handle.releaseAll();
           return;
         }
         if (record.t === "ev" && Array.isArray(record.e)) {
@@ -94,6 +107,7 @@ export function createRemoteControlRoutes(deps: RemoteControlRouteDeps): RouteHa
         }
       },
       onClose() {
+        if (liveness) clearInterval(liveness);
         handle?.close("closed");
       },
     }, WS_MAX_BYTES);
@@ -103,8 +117,11 @@ export function createRemoteControlRoutes(deps: RemoteControlRouteDeps): RouteHa
       botId,
       id,
       onMeta: (meta) => ws.sendText(JSON.stringify({ t: "meta", w: meta.w, h: meta.h })),
-      onFrame: (bytes) => ws.sendBinary(bytes),
+      // Drop a frame when the socket is already backed up: a slow viewer must
+      // not make the server buffer screenshots without bound.
+      onFrame: (bytes) => { if (!socket.destroyed && socket.writableLength < FRAME_BACKPRESSURE_BYTES) ws.sendBinary(bytes); },
       onClosed: (reason) => {
+        if (liveness) clearInterval(liveness);
         ws.sendText(JSON.stringify({ t: "closed", reason }));
         ws.close();
       },
@@ -115,6 +132,10 @@ export function createRemoteControlRoutes(deps: RemoteControlRouteDeps): RouteHa
       return;
     }
     handle = opened;
+    liveness = setInterval(() => {
+      if (!deps.live(auth)) { if (liveness) clearInterval(liveness); handle?.close("closed"); ws.close(); }
+    }, LIVENESS_MS);
+    if (typeof (liveness as { unref?: () => void }).unref === "function") (liveness as { unref: () => void }).unref();
     return;
   };
 }

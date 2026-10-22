@@ -46,7 +46,10 @@ const NAMED_VK: Record<string, number> = {
   ArrowLeft: 0x25, ArrowUp: 0x26, ArrowRight: 0x27, ArrowDown: 0x28,
   Insert: 0x2d, Delete: 0x2e,
   ShiftLeft: 0x10, ShiftRight: 0x10, ControlLeft: 0x11, ControlRight: 0x11,
-  AltLeft: 0x12, AltRight: 0x12, MetaLeft: 0x5b, MetaRight: 0x5c,
+  AltLeft: 0x12, AltRight: 0x12,
+  // Mac Command maps to Ctrl so Cmd+C and friends work on Windows; we never
+  // send VK_LWIN implicitly (an explicit Win button is a separate affordance).
+  MetaLeft: 0x11, MetaRight: 0x11,
   CapsLock: 0x14,
   F1: 0x70, F2: 0x71, F3: 0x72, F4: 0x73, F5: 0x74, F6: 0x75,
   F7: 0x76, F8: 0x77, F9: 0x78, F10: 0x79, F11: 0x7a, F12: 0x7b,
@@ -86,4 +89,10 @@ export function controlMessage(events: readonly ControlEvent[]): string {
 
 export function grantMessage(on: boolean): string {
   return JSON.stringify({ t: "grant", on });
+}
+
+/** Ask the server to lift every key and button held right now (blur, tab
+ * hidden): control stays on, but nothing stays stuck on the remote host. */
+export function releaseMessage(): string {
+  return JSON.stringify({ t: "release" });
 }

@@ -10,6 +10,7 @@ import {
   keyToVk,
   mouseButton,
   normalizedPoint,
+  releaseMessage,
   wheelDelta,
 } from "@/lib/remote-control-input";
 
@@ -50,6 +51,13 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
     pending.current = [];
     try { socket.send(controlMessage(batch)); } catch { /* the socket is closing */ }
   }, []);
+
+  const sendRelease = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    flush();
+    try { socket.send(releaseMessage()); } catch { /* closing */ }
+  }, [flush]);
 
   const queue = useCallback((event: ControlEvent) => {
     pending.current.push(event);
@@ -110,9 +118,11 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
     queue({ t: "m", x: point.x, y: point.y });
   }, [queue]);
 
-  const onPointerDown = useCallback((event: { clientX: number; clientY: number; button: number; preventDefault(): void }) => {
+  const onPointerDown = useCallback((event: { clientX: number; clientY: number; button: number; pointerId?: number; preventDefault(): void }) => {
     event.preventDefault();
     surfaceRef.current?.focus();
+    // Keep receiving pointer events even if the cursor leaves the frame mid-drag.
+    if (typeof event.pointerId === "number") { try { surfaceRef.current?.setPointerCapture(event.pointerId); } catch { /* unsupported */ } }
     const r = rect();
     if (r) { const point = normalizedPoint(event.clientX, event.clientY, r); queue({ t: "m", x: point.x, y: point.y }); }
     const button = mouseButton(event.button);
@@ -161,13 +171,21 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
       const vk = keyToVk(event.code) ?? charVk(event.key);
       if (vk !== null) queue({ t: "k", k: vk, d: 0 });
     };
+    // Losing focus or hiding the tab can swallow the keyup/pointerup, so ask
+    // the server to lift everything held: nothing stays stuck on the host.
+    const onBlur = () => sendRelease();
+    const onVisibility = () => { if (document.hidden) sendRelease(); };
     window.addEventListener("keydown", onKeyDown, true);
     window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [phase, queue]);
+  }, [phase, queue, sendRelease]);
 
   return {
     phase,
