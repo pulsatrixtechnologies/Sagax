@@ -93,6 +93,19 @@ public struct AssistantTurnFold: Hashable, Sendable {
     }
 }
 
+/// Where the phone draws its "New" line when an unread conversation opens:
+/// above the first row that is not the person's own after their last
+/// message, the replies they have not read yet. Nil when they wrote last or
+/// the conversation holds no line of theirs (nothing tells what is new).
+public enum NewMessagesDivider {
+    public static func anchor(_ rows: [TranscriptRow]) -> String? {
+        guard let lastOwn = rows.lastIndex(where: { $0.role == .user }) else { return nil }
+        let after = rows.index(after: lastOwn)
+        guard after < rows.endIndex else { return nil }
+        return rows[after...].first { $0.role != .user }?.id
+    }
+}
+
 /// A transcript entry: a message, or one stretch of work (tool steps and a
 /// settled turn's narration) read as a single line.
 public enum TranscriptRow: Identifiable, Hashable, Sendable {

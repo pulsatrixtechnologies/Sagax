@@ -817,6 +817,8 @@ final class Session: ObservableObject {
             pairingRequested = true
         case let .chat(threadId):
             openChat(threadId: threadId)
+        case let .bot(id):
+            openBot(id: id)
         case .inbox:
             pendingInbox = true
         }
@@ -832,6 +834,17 @@ final class Session: ObservableObject {
     func openChat(threadId: String) {
         guard let chat = state.chat(forThread: threadId) else { return }
         pendingChat = chat
+    }
+
+    /// `sagax://bot/<id>`: that bot's (or room's) current conversation. An
+    /// id this phone does not know lands on the roster silently, like a
+    /// stale chat link.
+    func openBot(id: String) {
+        if let bot = state.bot(id) {
+            pendingChat = .bot(bot)
+        } else if let room = state.rooms.first(where: { $0.id == id }) {
+            pendingChat = .room(room)
+        }
     }
 
     func consumePendingChat() {

@@ -20,6 +20,8 @@ struct ApprovalDock: View {
     @EnvironmentObject private var session: Session
     @State private var requestId: String?
     @State private var answering = false
+    /// The ask whose whole detail is open (`ApprovalDetailSheet`).
+    @State private var detail: PendingApproval?
     /// Taps on Allow and on Deny, for their haptics (`feedback`).
     @State private var allowed = 0
     @State private var refused = 0
@@ -47,6 +49,15 @@ struct ApprovalDock: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.attentionText)
                         .fixedSize(horizontal: false, vertical: true)
+                        // a permission ask opens its whole detail
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard !ApprovalDockRules.isProposal(pending.card) else { return }
+                            Haptics.selection()
+                            detail = pending
+                        }
+                        .accessibilityAddTraits(ApprovalDockRules.isProposal(pending.card) ? [] : .isButton)
+                        .accessibilityHint(ApprovalDockRules.isProposal(pending.card) ? Text(verbatim: "") : Text("Shows the whole request"))
                         .accessibilityIdentifier("approval-dock-title")
                     Spacer(minLength: 4)
                     if approvals.count > 1 {
@@ -110,6 +121,9 @@ struct ApprovalDock: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("approval-dock")
+            .sheet(item: $detail) { pending in
+                ApprovalDetailSheet(chat: chat, pending: pending)
+            }
         }
     }
 
