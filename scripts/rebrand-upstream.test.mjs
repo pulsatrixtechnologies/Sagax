@@ -85,6 +85,7 @@ describe("rebrand-upstream narrow rules", () => {
       `* **${Old} 0.1.95 sync**: pinned threads\n`,
       ` * unambiguous, else double-quoted (from ${Old}, used by the importer)\n`,
       `if (/^(?:Sagax|${Old})\\/[\\d.]+/i.test(ua)) return "app";\n`,
+      `    expect(out.text).not.toContain("${Old}");\n`,
     ];
     for (const text of refs) expect(rebrandFile("server/x.ts", text)).toBe(text);
     // the product name itself still changes

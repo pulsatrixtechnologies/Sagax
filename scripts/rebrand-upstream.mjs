@@ -17,7 +17,8 @@
 // binary files, nor the compatibility code that must keep reading the old
 // names (SKIP_EXACT). Some old spellings are protected on
 // purpose (PROTECT): the upstream credit in every language (About, README,
-// CONTRIBUTING) and the upstream pull requests a port names, live endpoints and wire contracts of services this
+// CONTRIBUTING), the upstream pull requests a port names, tests that assert
+// the old name is gone, live endpoints and wire contracts of services this
 // project does not run, store identities of shipped apps, and identifiers
 // written into files people already have. A few narrow rules (the deploy
 // image, the native apps' copy files, the Android signing variables) also
@@ -148,6 +149,8 @@ const PROTECT = [
   // upstream pull requests and releases named as the source of a port or sync
   re(`OpenMausBot(?:\\s|\\/\\/|\\*)+#\\d+`),
   re(`\\(from OpenMausBot\\b`),
+  // a test asserting the old name never shows (renaming it would test nothing)
+  re(`not\\.toContain\\(["'\`]OpenMausBot["'\`]\\)`),
   re(`OpenMausBot v?\\d+\\.\\d+(?:\\.\\d+)?`),
   re(`base stays OpenMausBot`),
   re(`settings \\(OMB_\\*\\)`),
