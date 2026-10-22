@@ -1262,7 +1262,7 @@
     },
     {
       "name": "publish_remote_session",
-      "description": "Post the connected Tailcat remote-support session into this chat. Call it as soon as the end user connects. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
+      "description": "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
