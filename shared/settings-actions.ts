@@ -576,6 +576,7 @@ config("server.newBotDefaults", "server", "newBotDefaults", "object", "New bot d
 config("server.threads", "server", "threads", "object", "Conversation cleanup", "Settings > General > Advanced > Threads");
 config("server.showToolCalls", "server", "features.showToolCalls", "boolean", "Show tool calls", "Settings > Appearance");
 config("server.feature", "server", "features", "object", "Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker})", "Settings > Experimental");
+config("server.routinesInConversation", "server", "features.routinesInConversation", "boolean", "Routines in conversation", "Settings > Organization > Bots");
 config("server.roomTurnTimeout", "server", "rooms.turnTimeoutMinutes", "number", "Room turn limit", "Settings > Organization > Rooms");
 config("server.mcpCallTimeout", "server", "mcp.callTimeoutMinutes", "number", "MCP call time limit", "Settings > Organization");
 config("server.localVm", "computer", "localVm", "object", "Local VM ({mode, maxInstances, idleTimeoutMinutes})", "Settings > Computer");

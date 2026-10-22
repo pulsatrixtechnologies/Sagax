@@ -41,12 +41,10 @@ describe("Settings > Organization (Perspicax)", () => {
     expect(html).toContain("GOX Technologies");
     expect(html).toContain("Linked to Pulsatrix · Admin");
     expect(html).toContain("Manage in Perspicax");
-    // rows, not cards: Full access, commands waiting, group turns, MCP calls
-    for (const id of ["organization.fullAccess", "organization.adminApprovals", "organization.roomTurns", "organization.mcpCalls"]) {
+    // rows, not cards: Full access, commands waiting, routines, group turns, MCP calls
+    for (const id of ["organization.fullAccess", "organization.adminApprovals", "organization.routinesInConversation", "organization.roomTurns", "organization.mcpCalls"]) {
       expect(html, id).toContain(`data-settings-card="${id}"`);
     }
-    // 2026-10-22 (JC): routines always run in the background; no switch
-    expect(html).not.toContain('data-settings-card="organization.routinesInConversation"');
     expect(html).toContain("Nothing is waiting.");
     expect(html).toMatch(/id="room-turn-timeout"[^>]*value="7"/);
     // no help paragraphs, no native select (the admin's Team secrets form, #932, is its own group and has two)

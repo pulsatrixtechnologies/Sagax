@@ -28,22 +28,25 @@ export const ROUTINE_REPORT_CONTRACT =
 /** The marker on a line of its own, in the shapes models write it in. */
 const MARKER_LINE = /^[\s`*_[(<"']*nothing[\s_-]to[\s_-]report[\s`*_\])>"'.!]*$/i;
 
-/** A final message that only says nothing happened. */
-const NO_OP = new RegExp([
+/** The no-op phrases: a message that says only that nothing happened. */
+const NO_OP_PHRASES = [
   "nothing (?:new |else |more )?to (?:report|do|flag|signal)",
   "no (?:action|follow[- ]up|change)s? (?:is |are )?(?:needed|required)",
   "nothing (?:found|changed|happened|new)",
   "rien (?:de nouveau |d'autre |de plus )?à (?:signaler|faire|rapporter)",
   "rien de (?:nouveau|neuf)",
-  "aucune? (?:action|suivi|changement)s? (?:n'est |requis|requise|nécessaire)",
-].join("|"), "i");
+  "aucune? (?:action|suivi|changement)s? (?:n'est )?(?:requis|requise|nécessaire)",
+].join("|");
 
-/** The routine asks to stay quiet when it has nothing ("silent if 0"). */
-const ASKS_SILENCE = /\b(?:silent|silence|silently|stay quiet|keep quiet|say nothing|silencieu(?:x|se)|ne (?:rien )?dis rien|sans rien dire)\b/i;
-
-/** How long a no-op report may be and still be only that. */
-const NO_OP_MAX = 240;
-const NO_OP_MAX_WHEN_ASKED = 600;
+/** The WHOLE message is one of those phrases (JC review 2026-10-22): a real
+ * finding that merely contains a no-op phrase ("DB01 is down. Nothing to flag
+ * on the others.") must still reach the person, so this matches the full
+ * string, a short benign lead-in and trailing punctuation aside — never a
+ * no-op clause tacked onto a report. */
+const NO_OP_FULL = new RegExp(
+  `^(?:(?:ok(?:ay)?|done|all (?:good|clear|set|quiet))[\\s,.;:—-]+)?(?:${NO_OP_PHRASES})[\\s.!…]*$`,
+  "i",
+);
 
 export interface RoutineReportOutcome {
   /** Nothing for the person: post nothing. */
@@ -52,7 +55,7 @@ export interface RoutineReportOutcome {
   report: string;
 }
 
-export function routineReportOutcome(output: string | undefined, prompt?: string): RoutineReportOutcome {
+export function routineReportOutcome(output: string | undefined): RoutineReportOutcome {
   const text = (output ?? "").trim();
   if (!text) return { quiet: true, report: "" };
   const lines = text.split(/\r?\n/);
@@ -63,9 +66,9 @@ export function routineReportOutcome(output: string | undefined, prompt?: string
   if (MARKER_LINE.test(lines[0]!.trim())) {
     return { quiet: true, report: lines.slice(1).join("\n").trim() };
   }
-  const limit = prompt && ASKS_SILENCE.test(prompt) ? NO_OP_MAX_WHEN_ASKED : NO_OP_MAX;
-  // a question is for the person, whatever else the message says
-  const quiet = text.length <= limit && !text.includes("?") && NO_OP.test(text);
+  // A question is always for the person; otherwise only a whole-message no-op
+  // is silent (the marker is the real mechanism, this is a safety net).
+  const quiet = !text.includes("?") && NO_OP_FULL.test(text);
   return { quiet, report: text };
 }
 
@@ -76,15 +79,22 @@ export interface RoutineRunReportFacts {
   quiet?: boolean;
   /** An approval or question card in the run's task waits on the person. */
   needsPerson?: boolean;
+  /** 2026-10-22 (JC): this routine posts its completed results in the
+   * conversation. A completed run with a result posts only when this is on;
+   * otherwise it is silent and stays in Automations. Approvals, questions and
+   * errors surface whichever this is, and a quiet run never posts. */
+  postResults?: boolean;
 }
 
-/** Whether a run has something for the person's conversation now. */
+/** Whether a run has something for the person's conversation now. A plain
+ * completed result posts only when the routine opts in (postResults); an
+ * approval, a question, a team that needs input, or an error always does. */
 export function routineRunReportable(run: RoutineRunReportFacts): boolean {
   if (run.goalStatus === "needs-input") return true;
   switch (run.status) {
     case "waiting": return run.needsPerson === true;
     case "failed": return true;
-    case "completed": return run.quiet !== true;
+    case "completed": return run.quiet !== true && run.postResults === true;
     default: return false;
   }
 }

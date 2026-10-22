@@ -17,12 +17,19 @@ describe("routineReportOutcome", () => {
     }
   });
 
-  it("is quiet when the final message is a short no-op report (JC's Carnot run)", () => {
-    const carnot = "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.";
-    expect(routineReportOutcome(carnot)).toEqual({ quiet: true, report: carnot });
-    expect(routineReportOutcome("Rien à signaler.").quiet).toBe(true);
-    expect(routineReportOutcome("Aucune nouvelle facture, rien à faire aujourd'hui.").quiet).toBe(true);
-    expect(routineReportOutcome("No new tickets. Nothing to do.").quiet).toBe(true);
+  it("is quiet only when the WHOLE message is a no-op (JC review 2026-10-22)", () => {
+    for (const quiet of ["Nothing to report.", "Rien à signaler.", "Nothing to flag.", "Done. Nothing to report.", "ok — nothing to do", "No change needed."]) {
+      expect(routineReportOutcome(quiet).quiet, quiet).toBe(true);
+    }
+    // a real finding that merely contains a no-op phrase must still reach the person
+    for (const report of [
+      "DB01 is down. Nothing to flag on the others.",
+      "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.",
+      "No new tickets. Nothing to do.",
+      "Aucune nouvelle facture, rien à faire aujourd'hui.",
+    ]) {
+      expect(routineReportOutcome(report).quiet, report).toBe(false);
+    }
   });
 
   it("is quiet when nothing was said at all", () => {
@@ -35,42 +42,41 @@ describe("routineReportOutcome", () => {
       quiet: false,
       report: "3 invoices without a PO: #1201, #1207, #1210. I drafted the reminders.",
     });
-    // a question needs the person
+    // a question needs the person, even a bare one
     expect(routineReportOutcome("Nothing to report on Carnot, but should I also check Alubar?").quiet).toBe(false);
-    // a long report that happens to contain the words is still a report
+    // a long report that happens to end with the words is still a report
     const long = `${"Ticket #4410 moved to Waiting on client; ".repeat(12)}nothing to report otherwise.`;
     expect(routineReportOutcome(long).quiet).toBe(false);
     // the marker in the middle of a sentence is not the marker
     expect(routineReportOutcome("Found 2 issues. I did not write NOTHING_TO_REPORT because there is work.").quiet).toBe(false);
-  });
-
-  it("a routine that asks to stay silent lets a longer no-op report stay quiet", () => {
-    const report = `Checked the Carnot board: ${"every open invoice already has a PO, ".repeat(6)}so nothing to report.`;
-    expect(report.length).toBeGreaterThan(240);
-    expect(routineReportOutcome(report).quiet).toBe(false);
-    expect(routineReportOutcome(report, "Run the skill exactly as written ... silent if 0").quiet).toBe(true);
-    expect(routineReportOutcome(report, "Vérifie les factures, reste silencieux s'il n'y a rien").quiet).toBe(true);
   });
 });
 
 describe("routineRunReportable", () => {
   it("never posts while a run is queued or running, nor when it ends with nothing to report", () => {
     for (const status of ["queued", "running", "cancelled", "missed", "nothing_to_report"] as const) {
-      expect(routineRunReportable({ status }), status).toBe(false);
+      expect(routineRunReportable({ status, postResults: true }), status).toBe(false);
     }
-    expect(routineRunReportable({ status: "completed", quiet: true })).toBe(false);
-    expect(routineRunReportable({ status: "completed", goalStatus: "completed", quiet: true })).toBe(false);
+    expect(routineRunReportable({ status: "completed", quiet: true, postResults: true })).toBe(false);
+    expect(routineRunReportable({ status: "completed", goalStatus: "completed", quiet: true, postResults: true })).toBe(false);
   });
 
-  it("posts a result, an error, and a wait on the person", () => {
-    expect(routineRunReportable({ status: "completed" })).toBe(true);
-    expect(routineRunReportable({ status: "failed" })).toBe(true);
-    expect(routineRunReportable({ status: "waiting", needsPerson: true })).toBe(true);
-    expect(routineRunReportable({ status: "waiting", goalStatus: "needs-input" })).toBe(true);
+  it("posts a completed result only when the routine posts results (JC 2026-10-22)", () => {
+    expect(routineRunReportable({ status: "completed", postResults: true })).toBe(true);
+    expect(routineRunReportable({ status: "completed", postResults: false })).toBe(false);
+    expect(routineRunReportable({ status: "completed" })).toBe(false);
+  });
+
+  it("an error, a question or an approval surfaces whichever way postResults is set", () => {
+    for (const postResults of [true, false, undefined]) {
+      expect(routineRunReportable({ status: "failed", postResults })).toBe(true);
+      expect(routineRunReportable({ status: "waiting", needsPerson: true, postResults })).toBe(true);
+      expect(routineRunReportable({ status: "waiting", goalStatus: "needs-input", postResults })).toBe(true);
+    }
   });
 
   it("a wait on delegated work or a usage limit is not the person's", () => {
-    expect(routineRunReportable({ status: "waiting" })).toBe(false);
-    expect(routineRunReportable({ status: "waiting", goalStatus: "paused" })).toBe(false);
+    expect(routineRunReportable({ status: "waiting", postResults: true })).toBe(false);
+    expect(routineRunReportable({ status: "waiting", goalStatus: "paused", postResults: true })).toBe(false);
   });
 });

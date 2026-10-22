@@ -1917,6 +1917,10 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var redacted: Bool? = nil
     /// Skip scheduled runs while the person is away. Absent means it runs.
     public var onlyWhenPresent: Bool? = nil
+    /// Post this routine's completed result in the conversation (2026-10-22).
+    /// Absent inherits the installation default; a quiet run stays silent and
+    /// questions, approvals and errors always reach the person.
+    public var postResults: Bool? = nil
     /// Skipped runs to report once the person is back.
     public var awaySkips: RoutineAwaySkips? = nil
 }
@@ -1998,6 +2002,9 @@ public struct RoutineInput: Encodable, Sendable {
     /// "Only when I'm here". Nil leaves the stored value alone on an edit
     /// and means off on a create.
     public var onlyWhenPresent: Bool? = nil
+    /// Post results in the conversation. Nil leaves the stored value alone on
+    /// an edit and inherits the installation default on a create.
+    public var postResults: Bool? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",

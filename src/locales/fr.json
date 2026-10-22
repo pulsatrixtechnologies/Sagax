@@ -10178,5 +10178,7 @@
   "app.blocked": "L'app a quitté son bac à sable à répétition et a été arrêtée.",
   "routines.post.routine": "Routine : {name}",
   "routines.post.openRun": "Voir le run",
-  "routines.post.review": "Examiner"
+  "routines.post.review": "Examiner",
+  "routines.postResults.label": "Publier les résultats dans la conversation",
+  "routines.postResults.help": "Quand c'est activé, cette routine publie son résultat comme message dans la conversation. Sinon elle roule en arrière-plan et le résultat reste dans Automatisations ; les questions, les approbations et les erreurs te parviennent toujours."
 }

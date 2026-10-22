@@ -133,6 +133,14 @@ export interface Routine {
   suspended?: { reason: RoutineSuspendReason; at: number };
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** 2026-10-22 (JC): whether this routine's completed runs post their
+   * result message in the person's conversation. `true` posts (as a visible
+   * report, never the prompt); `false`/absent is silent and the result lives
+   * only in Automations. Approvals, questions and errors always surface, and
+   * a NOTHING_TO_REPORT run stays silent, whichever this is. Absent on a new
+   * routine inherits the installation default (features.routinesInConversation);
+   * existing routines were migrated to true so nothing went silent. */
+  postResults?: boolean;
   /** Occurrences skipped while the person was away; `reportedAt` once they
    * are back. Cleared by POST /api/routines/:id/away-seen. */
   awaySkips?: { count: number; firstAt: number; lastAt: number; reportedAt?: number };
@@ -230,6 +238,9 @@ export interface RoutineInput {
   continuity?: boolean;
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** 2026-10-22: post this routine's results in the conversation. `null`
+   * clears it back to the installation default; omission preserves it. */
+  postResults?: boolean | null;
   attachments?: RoutineContextAttachment[];
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;

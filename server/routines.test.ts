@@ -4039,13 +4039,15 @@ describe("background runs: nothing to report (JC 2026-10-22)", () => {
     expect(h.changed.at(-1)).toMatchObject({ status: "completed", quiet: true });
   });
 
-  it("a routine that says silent if 0 and a no-op final message completes quiet", async () => {
-    const { run } = await runOnce(
-      "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.",
-      "Run the skill gox-shaina-factures-carnot exactly as written, silent if 0",
-    );
-    expect(run).toMatchObject({ status: "completed", quiet: true });
-    expect(run.output).toContain("October 22 is outside days 1-5");
+  it("the Carnot run with the marker completes quiet; a bare multi-sentence no-op posts", async () => {
+    const carnot = "The 8:40 run is the invoicing-days boost. October 22 is outside days 1-5, so this pass ends with nothing to report.";
+    const withMarker = await runOnce(`${carnot}\n\nNOTHING_TO_REPORT`);
+    expect(withMarker.run).toMatchObject({ status: "completed", quiet: true, output: carnot });
+    // Without the marker, a whole message that is not a pure no-op is NOT
+    // auto-silenced (JC review 2026-10-22): the marker is the real mechanism.
+    const bare = await runOnce(carnot);
+    expect(bare.run.status).toBe("completed");
+    expect(bare.run.quiet).toBeUndefined();
   });
 
   it("a run with a result is not quiet", async () => {
@@ -4079,5 +4081,47 @@ describe("background runs: nothing to report (JC 2026-10-22)", () => {
     await reported.manager.tick();
     const done = reported.manager.finishGoalRun(reported.manager.listRuns()[0]!.id, "completed", "Two clients need a call back.");
     expect(done?.quiet).toBeUndefined();
+  });
+});
+
+describe("postResults migration and per-routine choice (JC 2026-10-22)", () => {
+  it("pins every existing routine to postResults=true once, then marks the file migrated", () => {
+    const file = tempFile();
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      routines: [{
+        id: "old", routineId: "old", name: "Existing", prompt: "Do it", botId: "maus-1", target: "bot", runOn: "maus",
+        schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.parse("2026-01-01T00:00:00Z") },
+        durationMinutes: 30, enabled: true, nextRunAt: null, createdAt: 1, updatedAt: 1,
+      }],
+      runs: [],
+    }));
+    const opts = { file, now: () => Date.parse("2026-10-22T12:00:00Z"), botState: () => "ready" as const,
+      createTask: () => ({ threadId: "t" }), startTurn: async () => {} };
+    const first = new RoutineManager(opts);
+    expect(first.listRoutines()[0]?.postResults).toBe(true);
+    const saved = JSON.parse(readFileSync(file, "utf8"));
+    expect(saved.postResultsMigrated).toBe(true);
+    expect(saved.routines[0].postResults).toBe(true);
+    // A new routine made after the migration stays silent by default (undefined).
+    const fresh = first.create({ name: "New", prompt: "Do it", botId: "maus-1",
+      schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.parse("2026-11-01T00:00:00Z") } });
+    expect(fresh.postResults).toBeUndefined();
+    // A reload does not pin it (migration already done).
+    const second = new RoutineManager({ ...opts, now: () => Date.parse("2026-10-22T13:00:00Z") });
+    expect(second.getRoutine(fresh.id)?.postResults).toBeUndefined();
+    expect(second.getRoutine("old")?.postResults).toBe(true);
+  });
+
+  it("stores an explicit per-routine choice and clears it with null", () => {
+    const h = harness();
+    const routine = h.manager.create({ name: "R", prompt: "Do it", botId: "maus-1", postResults: true,
+      schedule: { type: "once", at: new Date(2026, 7, 18).getTime() } });
+    expect(routine.postResults).toBe(true);
+    expect(h.manager.update(routine.id, { postResults: false })?.postResults).toBe(false);
+    expect(h.manager.update(routine.id, { postResults: null })?.postResults).toBeUndefined();
+    // omitting it preserves the stored value
+    expect(h.manager.update(routine.id, { postResults: true })?.postResults).toBe(true);
+    expect(h.manager.update(routine.id, { name: "R2" })?.postResults).toBe(true);
   });
 });

@@ -10178,5 +10178,7 @@
   "app.blocked": "The app kept leaving its sandbox and was stopped.",
   "routines.post.routine": "Routine: {name}",
   "routines.post.openRun": "View run",
-  "routines.post.review": "Review"
+  "routines.post.review": "Review",
+  "routines.postResults.label": "Post results in the conversation",
+  "routines.postResults.help": "When on, this routine posts its result as a message in the conversation. When off, it runs in the background and the result stays in Automations; questions, approvals and errors always reach you."
 }

@@ -9635,7 +9635,7 @@ function finishGroupGoalRun(
       ));
     }
   }
-  if (routineRun?.status === "completed" && !routineRun.quiet) {
+  if (routineRun?.status === "completed" && !routineRun.quiet && routineEffectivePostResults(routineRun)) {
     const coordinator = store.bot(routineRun.botId);
     if (coordinator) {
       const notificationBot = routineSourceOwner(routineRun)?.bot ?? coordinator;
@@ -15631,8 +15631,9 @@ bus.subscribe((event: RuntimeEvent) => {
         // A failed peer turn stays a chip too. The bot that delegated is woken
         // with the failure and answers the person in its own thread — buzzing
         // here as well would ring twice for one piece of news.
-        // A routine run with nothing to report rings nothing (2026-10-22).
-        if ((!routineRun || (routineRun.status === "completed" && !routineRun.quiet)) && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
+        // A routine run with nothing to report, or one whose routine does not
+        // post results to the conversation, rings nothing (2026-10-22).
+        if ((!routineRun || (routineRun.status === "completed" && !routineRun.quiet && routineEffectivePostResults(routineRun))) && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
           // the frame carries the bot's avatar so every desktop client can
           // show the notification under that bot's own face
           const completionDetail = routineRun
@@ -20982,6 +20983,15 @@ function routineRunNeedsPerson(run: RoutineRun): boolean {
   return Boolean(run.threadId && store.messagesFor(run.threadId).some((message) => message.card && !message.card.answered));
 }
 
+/** Whether this run's routine posts its completed results in the conversation
+ * (JC 2026-10-22): the routine's own choice, else the installation default
+ * (features.routinesInConversation). A deleted routine falls back to the
+ * default. Approvals, questions and errors surface regardless. */
+function routineEffectivePostResults(run: Pick<RoutineRun, "routineId">): boolean {
+  const own = routines?.getRoutine(run.routineId)?.postResults;
+  return own ?? routinesInConversationEnabled(cfg);
+}
+
 /** 2026-10-22 (JC): a run works in the background, in its own hidden task.
  * Nothing reaches the person's conversation while it is queued or running,
  * nor when it ends with nothing to report (server/routine-report.ts): no
@@ -20992,7 +21002,7 @@ function routineRunNeedsPerson(run: RoutineRun): boolean {
  * turns unread. Replaying a transition never adds another message. */
 function syncRoutineRunToSource(run: RoutineRun): string | null {
   const source = routineSourceOwner(run);
-  const reportable = routineRunReportable({ ...run, needsPerson: run.status === "waiting" && routineRunNeedsPerson(run) });
+  const reportable = routineRunReportable({ ...run, needsPerson: run.status === "waiting" && routineRunNeedsPerson(run), postResults: routineEffectivePostResults(run) });
   // A bot run's task stays hidden (Automations, Open run) from its start.
   const execution = run.target === "bot" && run.triggerSource !== "webhook" && run.threadId && run.threadId !== source?.threadId
     ? store.taskByThread(run.botId, run.threadId)

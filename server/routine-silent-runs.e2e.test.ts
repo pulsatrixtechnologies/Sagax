@@ -21,7 +21,7 @@ it("a silent run leaves the chat and sidebar untouched; a reporting run posts on
   const scratch = mkdtempSync(join(tmpdir(), "sagax-silent-routines-"));
   const fixture = await launchVerificationServer({
     ...process.env,
-    FAKE_CLAUDE_REPLIES: JSON.stringify([QUIET, REPORT, QUIET]),
+    FAKE_CLAUDE_REPLIES: JSON.stringify([QUIET, REPORT, REPORT, QUIET]),
     FAKE_CLAUDE_REPLY_STATE: join(scratch, "reply-index"),
   });
   const api = async (method: string, path: string, body?: unknown, status = 200) => {
@@ -72,7 +72,20 @@ it("a silent run leaves the chat and sidebar untouched; a reporting run posts on
     expect(afterQuiet.tasks.find((task: any) => task.threadId === quietRun.threadId)).toMatchObject({ routineRunId: quiet.id, unread: false });
     expect(afterQuiet.tasks.filter((task: any) => !task.routineRunId).map((task: any) => task.threadId)).toEqual([main]);
 
-    // 2. A result: one message, the bot's report, the routine named under it.
+    // 2. A result on a routine that does NOT post results (the default):
+    // still nothing reaches the conversation; it lives in Automations.
+    const { run: silentReport } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
+    await expect.poll(async () => (await runState(silentReport.id))?.status, { timeout: 20_000 }).toBe("completed");
+    await control(["wait", "--bot", bot.id, "--task", (await runState(silentReport.id)).threadId]);
+    const silentReportRun = await runState(silentReport.id);
+    expect(silentReportRun.quiet).toBeUndefined();
+    expect(silentReportRun.output).toBe(REPORT);
+    expect((await messages(main)).map((message) => message.id)).toEqual(before.map((message) => message.id));
+    expect((await currentBot()).tasks.find((task: any) => task.threadId === main).unread).toBeFalsy();
+
+    // 3. Turn the routine's own "post results" on: now a result posts ONE
+    // message, the bot's report, the routine named under it, never the prompt.
+    await api("PATCH", `/api/routines/${routine.id}`, { postResults: true });
     const { run: reported } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
     await expect.poll(async () => (await runState(reported.id))?.status, { timeout: 20_000 }).toBe("completed");
     await control(["wait", "--bot", bot.id, "--task", (await runState(reported.id)).threadId]);
@@ -82,22 +95,20 @@ it("a silent run leaves the chat and sidebar untouched; a reporting run posts on
     expect(posted).toHaveLength(1);
     expect(posted[0]).toMatchObject({ role: "bot", kind: "routine.run", text: `${REPORT}\n\nRoutine “[ConnectWise Finance] Carnot without PO”` });
     expect(posted[0].routineRun).toMatchObject({ status: "completed", summary: REPORT, executionThreadId: reportedRun.threadId });
-    // never the routine's instructions in the person's conversation
     expect(JSON.stringify(await messages(main))).not.toContain("gox-shaina-factures-carnot");
     expect((await currentBot()).tasks.find((task: any) => task.threadId === main).unread).toBe(true);
 
-    // 3. The old "Routines in conversation" switch no longer puts the work in
-    // the chat: the run still has its own task, and a quiet one stays out.
-    const config = await api("PATCH", "/api/config", { features: { routinesInConversation: true } });
-    expect(config).toBeTruthy();
-    const count = (await messages(main)).length;
-    const { run: joined } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
-    await expect.poll(async () => (await runState(joined.id))?.status, { timeout: 20_000 }).toBe("completed");
-    const joinedRun = await runState(joined.id);
-    expect(joinedRun.threadId).not.toBe(main);
-    expect(joinedRun.quiet).toBe(true);
-    expect(await messages(main)).toHaveLength(count);
-    writeFileSync(join(fixture.info.dataDir, "silent-routines.evidence.json"), JSON.stringify({ quietRun, reportedRun, joinedRun, posted }, null, 2));
+    // 4. A quiet run stays silent even with postResults on, and never
+    // creates a visible sub-thread row under the bot.
+    const countBeforeQuiet = (await messages(main)).length;
+    const { run: quietOn } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
+    await expect.poll(async () => (await runState(quietOn.id))?.status, { timeout: 20_000 }).toBe("completed");
+    const quietOnRun = await runState(quietOn.id);
+    expect(quietOnRun.quiet).toBe(true);
+    expect((await messages(main)).length).toBe(countBeforeQuiet);
+    expect((await currentBot()).tasks.filter((task: any) => !task.routineRunId).map((task: any) => task.threadId)).toEqual([main]);
+
+    writeFileSync(join(fixture.info.dataDir, "silent-routines.evidence.json"), JSON.stringify({ quietRun, silentReportRun, reportedRun, quietOnRun, posted }, null, 2));
   } finally {
     await fixture.close();
     await removeTempDir(scratch);
