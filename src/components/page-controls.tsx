@@ -7,7 +7,7 @@ import { Check, Copy, ExternalLink, Globe, Lock, Users } from "lucide-react";
 import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { api } from "@/state/store";
+import { api, ApiError } from "@/state/store";
 import {
   DEFAULT_PAGES_POLICY,
   PAGE_ACCESS,
@@ -56,13 +56,25 @@ export function previewSrc(path: string, options: { annotate?: boolean } = {}): 
   return options.annotate ? `${path}?annotate=1` : path;
 }
 
+/** Switching a page to "anyone with the link" asks the same second press as
+ * a first publish. Pure. */
+export function needsLinkConfirm(current: PageAccess, next: PageAccess): boolean {
+  return next === "link" && current !== "link";
+}
+
+/** A refusal in words: a closed public-link switch proposes My organization. */
+export function pageErrorText(cause: unknown): string {
+  if (cause instanceof ApiError && cause.body?.code === "link_sharing_off") return t("pages.linkOffError");
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
 /** The organization's switch for public links, as this person reads it. */
 export function usePagesPolicy(): PagesPolicy {
   const [policy, setPolicy] = useState<PagesPolicy>(DEFAULT_PAGES_POLICY);
   useEffect(() => {
     let live = true;
     api<PagesPolicy>("/api/pages/policy")
-      .then((answer) => { if (live && typeof answer?.linkSharing === "boolean") setPolicy({ linkSharing: answer.linkSharing }); })
+      .then((answer) => { if (live && typeof answer?.linkSharing === "boolean") setPolicy({ ...DEFAULT_PAGES_POLICY, ...answer }); })
       .catch(() => { /* an older server: no switch, links allowed */ });
     return () => { live = false; };
   }, []);

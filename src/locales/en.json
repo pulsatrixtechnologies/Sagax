@@ -9772,5 +9772,17 @@
   "pages.editor.saved": "Saved as version {n}. It is not online yet.",
   "pages.editor.savedPublished": "Saved and published as version {n}.",
   "pages.admin.linkSharing": "Public links",
-  "pages.admin.linkSharingHint": "Lets people publish a page for anyone with the link. Off: no new public link, and pages already shared by link are shown only to people signed in to this server."
+  "pages.admin.linkSharingHint": "Lets people publish a page for anyone with the link. Off: no new public link, and pages already shared by link are shown only to people signed in to this server.",
+  "pages.linkOffError": "Your organization turned off public links. Choose My organization instead.",
+  "pages.confirmLinkChange": "Anyone with the link will see this page, without signing in. Confirm to switch it to a public link.",
+  "pages.annotate.full": "At most {max} annotations. Send these first, or remove some.",
+  "pages.annotate.messagePreview": "Message sent to the bot",
+  "pages.readers.title": "Reader comments",
+  "pages.readers.hint": "People who can read this page may leave a comment with a name. You approve each one before anyone else sees it.",
+  "pages.readers.forbidden": "Your organization does not allow reader comments.",
+  "pages.readers.pending": "Waiting for your approval ({count})",
+  "pages.readers.approved": "Shown under the page ({count})",
+  "pages.readers.approve": "Approve this comment",
+  "pages.admin.readerComments": "Reader comments",
+  "pages.admin.readerCommentsHint": "Lets people allow comments on their own pages (off on each page until they turn it on; every comment waits for their approval). Off: no page takes or shows reader comments."
 }

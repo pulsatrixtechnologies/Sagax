@@ -11,7 +11,7 @@
 // with a permanent banner (no script, nothing to dismiss) that embeds the
 // page in a frame sandboxed to scripts only, whose navigation the wrapper's
 // `frame-src` limits to the page's own frame path.
-import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, pageCsp, pageFrameSandbox, type PageKind } from "../shared/published-pages.ts";
+import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_LIMITS, pageCsp, pageFrameSandbox, type PageKind, type ReaderComment } from "../shared/published-pages.ts";
 
 /** Server side, before every HTML version is served: no element that can
  * reach the network outside CSP. `<link>` (hints such as prerender, which
@@ -286,6 +286,10 @@ export interface WrapperInput {
   preview?: boolean;
   /** The preview's annotation mode: the frame runs the annotation script. */
   annotate?: boolean;
+  /** Reader comments (a reading link with them on): the approved ones and
+   * the form's action. A plain form, no script; the wrapper's CSP pins
+   * form-action to that path. */
+  comments?: { action: string; approved: ReaderComment[] };
 }
 
 /** The banner's words. Pure. */
@@ -310,8 +314,45 @@ export function wrapperDocument(input: WrapperInput): string {
     + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
     + "<style>html,body{margin:0;height:100%}body{display:flex;flex-direction:column;font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}"
     + ".sagax-banner{flex:none;padding:8px 14px;background:#fff4ce;color:#3d2e00;border-bottom:2px solid #d4a600;font-weight:600}"
-    + "iframe{flex:1;border:0;width:100%;background:#fff}</style></head><body>"
+    + "iframe{flex:1;border:0;width:100%;background:#fff}"
+    + (input.comments ? COMMENTS_STYLE : "")
+    + "</style></head><body>"
     + `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`
     + `<iframe src="${escapeHtml(input.frameUrl)}" sandbox="${sandbox}" referrerpolicy="no-referrer" allow="" title="${escapeHtml(input.title)}"></iframe>`
+    + (input.comments ? commentsSection(input.comments, input.lang, input.personName) : "")
     + "</body></html>";
+}
+
+const COMMENTS_STYLE = ".sagax-comments{flex:none;max-height:40vh;overflow:auto;border-top:1px solid #d0d7de;padding:8px 14px;background:#f6f8fa;color:#1f2328}"
+  + ".sagax-comments summary{cursor:pointer;font-weight:600}.sagax-comments li{margin:6px 0}.sagax-comments .who{font-weight:600}"
+  + ".sagax-comments form{display:flex;flex-direction:column;gap:6px;max-width:40rem;margin-top:8px}"
+  + ".sagax-comments input,.sagax-comments textarea{font:inherit;padding:4px 6px;border:1px solid #d0d7de;border-radius:6px}"
+  + ".sagax-comments .trap{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}"
+  + ".sagax-comments button{align-self:flex-start;font:inherit;padding:4px 12px;border-radius:6px;border:1px solid #1f6feb;background:#1f6feb;color:#fff}"
+  + "@media (prefers-color-scheme:dark){.sagax-comments{background:#161b22;color:#e6edf3;border-color:#30363d}.sagax-comments input,.sagax-comments textarea{background:#0d1117;color:#e6edf3;border-color:#30363d}}";
+
+/** The comments under a shared page: the approved ones (escaped text), then
+ * a plain form. A hidden "website" field is the honeypot. Pure. */
+function commentsSection(comments: { action: string; approved: ReaderComment[] }, lang: "fr" | "en", personName: string): string {
+  const fr = lang === "fr";
+  const items = comments.approved.map((entry) => `<li><span class="who">${escapeHtml(entry.name)}</span> : ${escapeHtml(entry.text)}</li>`).join("");
+  return `<details class="sagax-comments"${comments.approved.length ? " open" : ""}><summary>${fr ? "Commentaires" : "Comments"} (${comments.approved.length})</summary>`
+    + (items ? `<ul>${items}</ul>` : "")
+    + `<form method="post" action="${escapeHtml(comments.action)}">`
+    + `<label>${fr ? "Votre nom" : "Your name"} <input name="name" required maxlength="${PAGE_LIMITS.readerNameChars}" autocomplete="name"></label>`
+    + `<label>${fr ? "Commentaire" : "Comment"} <textarea name="text" required rows="3" maxlength="${PAGE_LIMITS.readerCommentChars}"></textarea></label>`
+    + `<label class="trap" aria-hidden="true">Website <input name="website" tabindex="-1" autocomplete="off"></label>`
+    + `<small>${escapeHtml(fr ? `Votre commentaire sera visible après l'approbation de ${bannerName(personName)}. N'y mettez aucun renseignement personnel ni mot de passe.` : `Your comment shows once ${bannerName(personName)} approves it. Never put personal information or a password in it.`)}</small>`
+    + `<button type="submit">${fr ? "Envoyer" : "Send"}</button></form></details>`;
+}
+
+/** The answer to a reader's comment: a plain page, no script, a link back. Pure. */
+export function commentAnswerDocument(input: { lang: "fr" | "en"; back: string; ok: boolean; message?: string }): string {
+  const fr = input.lang === "fr";
+  const text = input.message ?? (input.ok
+    ? (fr ? "Merci. Votre commentaire attend l'approbation de la personne qui a publié la page." : "Thank you. Your comment waits for the approval of the person who published the page.")
+    : (fr ? "Ce commentaire n'a pas pu être envoyé." : "This comment could not be sent."));
+  return `<!doctype html><html lang="${input.lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">`
+    + `<title>${fr ? "Commentaire" : "Comment"}</title><style>body{font:15px/1.5 system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem}</style></head>`
+    + `<body><p>${escapeHtml(text)}</p><p><a href="${escapeHtml(input.back)}">${fr ? "Revenir à la page" : "Back to the page"}</a></p></body></html>`;
 }

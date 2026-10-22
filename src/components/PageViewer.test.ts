@@ -6,7 +6,9 @@ import { describe, expect, it } from "vitest";
 
 import { annotationPrompt, parseAnnotationMessage, PAGE_ANNOTATION_MESSAGE } from "../../shared/published-pages";
 import { previewSrc } from "./page-controls";
-import { acceptAnnotation, republishBody } from "./PageViewer";
+import { ApiError } from "@/state/store";
+import { t } from "@/lib/i18n";
+import { acceptAnnotation, needsLinkConfirm, pageErrorText, republishBody, MAX_ANNOTATIONS } from "./PageViewer";
 
 const message = (extra: Record<string, unknown> = {}) => ({ type: PAGE_ANNOTATION_MESSAGE, v: 1, n: 1, tag: "H1", text: " Rapport \n mensuel ", path: "body > h1", ...extra });
 
@@ -39,8 +41,10 @@ describe("annotations from the preview frame", () => {
       items: [{ anchor: { tag: "h1", text: "Rapport", path: "body > h1" }, note: "Plus court" }, { anchor: { tag: "p", text: "", path: "p" }, note: "" }],
     });
     expect(text).toContain("« Bilan » (version 3)");
-    expect(text).toContain("1. <h1> « Rapport » : Plus court");
-    expect(text).toContain("2. <p> : (sans note)");
+    // the page's own words are a quote, never an instruction
+    expect(text).toContain("non fiable");
+    expect(text).toContain("1. <h1>, texte de la page : « Rapport »\n   Note : Plus court");
+    expect(text).toContain("2. <p>\n   Note : (sans note)");
     expect(text).not.toMatch(/[A-Za-z0-9_-]{16,}/);
   });
 });
@@ -55,5 +59,29 @@ describe("the viewer's frame and Save and publish", () => {
     const now = 1_000;
     expect(republishBody({ access: "org", expiresAt: 5_000 }, 4, now)).toEqual({ version: 4, access: "org", expiresAt: 5_000 });
     expect(republishBody({ access: "link", expiresAt: 500 }, 4, now)).toEqual({ version: 4, access: "link", expiresAt: null });
+  });
+});
+
+describe("review of #952", () => {
+  it("keeps at most 50 annotations, here and in the message (F3)", () => {
+    const frame = {} as Window;
+    let list: ReturnType<typeof acceptAnnotation> = [];
+    for (let n = 1; n <= MAX_ANNOTATIONS + 5; n += 1) list = acceptAnnotation(list, { source: frame, data: message({ n }) }, frame);
+    expect(MAX_ANNOTATIONS).toBe(50);
+    expect(list).toHaveLength(50);
+    const items = Array.from({ length: 60 }, () => ({ anchor: { tag: "p", text: "x", path: "p" }, note: "n" }));
+    expect(annotationPrompt({ title: "B", version: 1, items })).not.toContain("51. ");
+  });
+
+  it("switching a published page to anyone with the link asks the same second press as a first publish (F4)", () => {
+    expect(needsLinkConfirm("org", "link")).toBe(true);
+    expect(needsLinkConfirm("private", "link")).toBe(true);
+    expect(needsLinkConfirm("link", "link")).toBe(false);
+    expect(needsLinkConfirm("link", "org")).toBe(false);
+  });
+
+  it("a refusal because public links are off proposes My organization", () => {
+    expect(pageErrorText(new ApiError("x", 403, { code: "link_sharing_off" }))).toBe(t("pages.linkOffError"));
+    expect(pageErrorText(new Error("autre"))).toBe("autre");
   });
 });

@@ -82,6 +82,10 @@ window.fetch = async (input, init) => {
     page = { ...page, versions: [...page.versions, { n, kind, title: page.title, createdAt: Date.now(), state: "proposed", bytes: 10, botId: page.botId, author: "person" }] };
     return reply({ page, version: n }, 201);
   }
+  if (rest === "/reader-comments") return reply({ enabled: true, allowed: true, comments: [
+    { id: "r1", at: now - 600_000, name: "Marie", text: "Très clair, merci!", status: "pending" },
+    { id: "r2", at: now - 7_200_000, name: "Luc", text: "Les chiffres d'août manquent.", status: "approved" },
+  ] });
   if (rest === "/comments" && method === "GET") return reply({ comments });
   if (rest === "/comments" && method === "POST") {
     const comment = { id: `c${comments.length + 1}`, at: Date.now(), text: String(body?.text ?? "") } as PageComment;

@@ -624,6 +624,12 @@ add({
   write: (_ids, v) => typeof v === "boolean" ? { method: "PUT", path: "/api/admin/pages/policy", body: { linkSharing: v } } : "value is true or false.",
   classes: always("org"),
 });
+add({
+  key: "org.pagesReaderComments", family: "organization", target: "none", value: "boolean", label: "Reader comments on published pages", where: "Settings > Pages > Organization pages",
+  read: () => ({ path: "/api/admin/pages/policy", field: "readerComments" }),
+  write: (_ids, v) => typeof v === "boolean" ? { method: "PUT", path: "/api/admin/pages/policy", body: { readerComments: v } } : "value is true or false.",
+  classes: always("org"),
+});
 
 // ── connections (the person's own) ─────────────────────────────────────
 add({

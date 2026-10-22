@@ -5863,8 +5863,32 @@ Grok Bot parity, chat rows 31 to 34. Covered by
   again; the link itself is kept. Settings action `org.pagesLinkSharing`
   (class org: a card at every level). On by default (the page itself still
   starts private and asks a second press for a link).
+- Review of #952: every PATCH field is checked before anything changes (no
+  rename kept behind a refused access); switching a published page to a link
+  asks the same second press as a first publish; a refusal for a closed link
+  switch reads "Choisissez « Mon organisation »" (`pageErrorText`). At most 50
+  annotations; the message quotes the page's text as untrusted, never as
+  instructions, and the panel shows it in full before Send; an anchor's text
+  and path lose secret-shaped text. The editor, comment and reader-comment
+  routes are one regex per line with their method, so each has its own
+  tool-policy row, all `defaultEnabled: false`.
+- Reader comments (JC 2026-10-21): per page, off by default
+  (`PATCH /api/pages/:id { readerComments }`), and an admin policy
+  (`readerComments` in the pages policy, on = allowed; off: no page takes or
+  shows them; settings action `org.pagesReaderComments`). On a reading link
+  with them on, the wrapper adds a plain form (no script; `form-action` pinned
+  to `/pages/comment/<token>`) and the approved comments, escaped. `POST
+  /pages/comment/<token>` (before the auth gate): only a reader of a published
+  page with them open, an Origin (when sent) of this host, urlencoded, 16 KB,
+  name 60 and text 1000 characters, secret-shaped text removed, honeypot
+  `website` thanked and dropped, 5 posts per address per 10 minutes
+  (`requestSource`), 50 pending and 200 kept per page. Each waits as
+  `pending` and is never shown before its person approves it in the viewer
+  (`GET /api/pages/:id/reader-comments`, `POST .../:cid/approve`, `DELETE
+  .../:cid`). Page history: `reader-comments`, `reader-comment`,
+  `reader-comment-approve`, `reader-comment-remove`.
 - Not done here: iOS (C11, annotation is desktop only on Grok too; #937 holds
-  the phone screens), comments by readers, multi-file pages.
+  the phone screens), multi-file pages.
 
 ## Voice notes, microphone choice, logs and feedback (2026-10-16)
 

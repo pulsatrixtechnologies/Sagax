@@ -13641,7 +13641,19 @@
       "pages.editor.saved": "dd3c68a1e2466561919c62c0340f036e46233c30fa67e22d13488b8fe9a373e5",
       "pages.editor.savedPublished": "2d98a5e4240a1d07db277fc528c3f45fb683b62703acc963e47f14498df8c482",
       "pages.admin.linkSharing": "a95952c8b021cc1f3b6f8788966065c0536362bb5e4a3e8cf000629c42a04460",
-      "pages.admin.linkSharingHint": "7f7299430f0da02f3348505a75a6cfb1f7008f3744715cb2a036fcd014533b93"
+      "pages.admin.linkSharingHint": "7f7299430f0da02f3348505a75a6cfb1f7008f3744715cb2a036fcd014533b93",
+      "pages.linkOffError": "c929b187fed30febded3462f908aeefce2695b54ec09ba5231f1d2e7e14a043c",
+      "pages.confirmLinkChange": "4ff02ee92df54b8c86cead5e3492f346e690f8d56031d4975581e6a0c356aa0b",
+      "pages.annotate.full": "4305bf5c0819330aa540dcba676159f2ffb14d501cd12ea2bbc3645ff04a3c4d",
+      "pages.annotate.messagePreview": "eae53dd074a88c8f03ab62728cc3c88f3ce41885a26a2e4106a81b1fa4996ad0",
+      "pages.readers.title": "c3a8f96a1b862d37f48e131e87aa8ef64fa87771b832a8b7fa1153d889c89b38",
+      "pages.readers.hint": "a09e5f186190560201c4220d22a7ca415eb35067b3363f68be97d895f5c47be8",
+      "pages.readers.forbidden": "75e7b1f0bf30f2df1fa05d3a5a456f0c9a56bf9fcc58ef22500a23f676b23908",
+      "pages.readers.pending": "caf2294989767c406483cec29540dbde70e9c6952f58a6eabf2255a13d32870a",
+      "pages.readers.approved": "534420d7b699c0f86cc797dfb051e395ec0df7ed6ef0a67cce42c605506043c1",
+      "pages.readers.approve": "3fcb1117110f65595dc09563c2717784ee85542bf47d4e13bb3536372a72845a",
+      "pages.admin.readerComments": "c3a8f96a1b862d37f48e131e87aa8ef64fa87771b832a8b7fa1153d889c89b38",
+      "pages.admin.readerCommentsHint": "2f0c86ee2075f720f562c82c5cd63ca318a7173e5150491808bc2f0656d48cfb"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

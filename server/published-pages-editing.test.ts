@@ -13,6 +13,7 @@ import { json, readBody } from "./harness/http.ts";
 import { PublishedPages } from "./published-pages.ts";
 import { ANNOTATE_SOURCE, pageDocument, presentationToHtml, splitSlides } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
+import { policyFor } from "./tool-policy.ts";
 import {
   createPublishedPageRoutes,
   handlePublishedPagePublic,
@@ -64,10 +65,14 @@ function options(pages: PublishedPages, viewer: PageViewer): PublicPageOptions {
   return { pages, viewer: () => viewer, names: () => ({ botName: "Scout", personName: "Alice" }), separate: null };
 }
 
-async function hit(opts: PublicPageOptions, url: string, headers: Record<string, string> = {}): Promise<Answer> {
+async function hit(opts: PublicPageOptions, url: string, headers: Record<string, string> = {}, method = "GET", body?: string): Promise<Answer> {
   const path = new URL(url, "http://x").pathname;
-  const { req, res, done } = request(url, "GET", { host: "sagax.example.com", "accept-language": "fr-CA", ...headers });
-  expect(handlePublishedPagePublic(opts, req, res, path, "GET")).toBe(true);
+  const { req, res, done } = request(url, method, { host: "sagax.example.com", "accept-language": "fr-CA", ...headers });
+  process.nextTick(() => {
+    if (body !== undefined) req.push(body);
+    req.push(null);
+  });
+  expect(handlePublishedPagePublic(opts, req, res, path, method)).toBe(true);
   return done;
 }
 
@@ -306,13 +311,13 @@ describe("the organization's switch for public links", () => {
     const page = proposed(pages);
     const rows: unknown[] = [];
     const handler = routes(pages, { isAdmin: (auth) => auth.kind === "session" && auth.session.principalId === "pr_admin", audit: (_auth, _req, row) => rows.push(row) });
-    expect((await call(handler, alice, "GET", "/api/pages/policy")).body).toEqual({ linkSharing: true });
+    expect((await call(handler, alice, "GET", "/api/pages/policy")).body).toEqual({ linkSharing: true, readerComments: true });
     expect((await call(handler, alice, "PUT", "/api/admin/pages/policy", { linkSharing: false })).status).toBe(403);
     const off = await call(handler, session("pr_admin"), "PUT", "/api/admin/pages/policy", { linkSharing: false });
     expect(off.status).toBe(200);
-    expect(off.body).toEqual({ linkSharing: false });
+    expect(off.body).toEqual({ linkSharing: false, readerComments: true });
     expect(rows).toEqual([{ action: "page.policy", target: { kind: "pages", id: "linkSharing", name: "off" } }]);
-    expect((await call(handler, alice, "GET", "/api/pages/policy")).body).toEqual({ linkSharing: false });
+    expect((await call(handler, alice, "GET", "/api/pages/policy")).body).toEqual({ linkSharing: false, readerComments: true });
     const refused = await call(handler, alice, "POST", `/api/pages/${page.id}/publish`, { version: 1, access: "link", expiresAt: null });
     expect(refused.status).toBe(403);
     expect(refused.body!.code).toBe("link_sharing_off");
@@ -342,6 +347,160 @@ describe("the organization's switch for public links", () => {
     first.setPolicy({ linkSharing: false });
     const result = first.propose({ botId: "bot1", threadId: "t1", title: "R", kind: "html", content: HTML, ownerId: "pr_alice" });
     expect(result.ok).toBe(true);
-    expect(new PublishedPages(dir, () => now).policy()).toEqual({ linkSharing: false });
+    expect(new PublishedPages(dir, () => now).policy()).toEqual({ linkSharing: false, readerComments: true });
+  });
+});
+
+describe("review of #952: tool policy rows (F1)", () => {
+  it("the editor's and comments' routes are off by default; writes are writes, deletes are admin", () => {
+    const read = policyFor("GET", "/api/pages/abcdefgh1234/versions/1/source");
+    expect(read).toMatchObject({ matched: true, readOnly: true, defaultEnabled: false });
+    expect(policyFor("GET", "/api/pages/abcdefgh1234/comments")).toMatchObject({ matched: true, defaultEnabled: false });
+    for (const [method, path] of [["POST", "/api/pages/abcdefgh1234/versions"], ["POST", "/api/pages/abcdefgh1234/comments"]] as const) {
+      expect(policyFor(method, path), `${method} ${path}`).toMatchObject({ matched: true, readOnly: false, tier: "write", defaultEnabled: false });
+    }
+    expect(policyFor("DELETE", "/api/pages/abcdefgh1234/comments/c1")).toMatchObject({ matched: true, readOnly: false, defaultEnabled: false });
+    for (const [method, path] of [["GET", "/api/pages/abcdefgh1234/reader-comments"], ["POST", "/api/pages/abcdefgh1234/reader-comments/c1/approve"], ["DELETE", "/api/pages/abcdefgh1234/reader-comments/c1"]] as const) {
+      expect(policyFor(method, path), `${method} ${path}`).toMatchObject({ matched: true, defaultEnabled: false });
+    }
+  });
+});
+
+describe("review of #952: PATCH checks everything before renaming (F2)", () => {
+  it("a bad access, an unpublished page or a closed link switch leaves the title as it was", async () => {
+    const pages = store();
+    const page = proposed(pages);
+    const handler = routes(pages);
+    expect((await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { title: "Nouveau", access: "everyone" })).status).toBe(400);
+    expect((await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { title: "Nouveau", expiresAt: now - 1 })).status).toBe(400);
+    expect((await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { title: "Nouveau", access: "org" })).status).toBe(409);
+    pages.publish(page.id, { version: 1, access: "org", expiresAt: null });
+    pages.setPolicy({ linkSharing: false });
+    expect((await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { title: "Nouveau", access: "link" })).status).toBe(403);
+    expect(pages.get(page.id)!.title).toBeUndefined();
+    const both = await call(handler, alice, "PATCH", `/api/pages/${page.id}`, { title: "Nouveau", access: "private" });
+    expect(both.status).toBe(200);
+    expect(both.body!.page).toMatchObject({ title: "Nouveau", access: "private" });
+  });
+});
+
+describe("review of #952: annotation anchors in comments (F3)", () => {
+  it("redacts secret-shaped text in the anchor's path as well as its text", async () => {
+    const pages = store();
+    const page = proposed(pages);
+    const handler = routes(pages, { redact: (text) => text.replace(/sk-[A-Za-z0-9]{10,}/g, "[secret]") });
+    const added = await call(handler, alice, "POST", `/api/pages/${page.id}/comments`, { text: "x", anchor: { tag: "p", text: "sk-abcdefghijklmnop", path: "body > p.sk-abcdefghijklmnop" } });
+    expect(added.body!.comment.anchor).toEqual({ tag: "p", text: "[secret]", path: "body > p.[secret]" });
+  });
+});
+
+describe("reader comments on a published page (JC 2026-10-21)", () => {
+  const form = (fields: Record<string, string>) => new URLSearchParams(fields).toString();
+  const formHeaders = { "content-type": "application/x-www-form-urlencoded" };
+  function shared(pages: PublishedPages, access: "link" | "org" | "private" = "link") {
+    const page = proposed(pages);
+    pages.publish(page.id, { version: 1, access, expiresAt: null });
+    const token = pages.path(pages.get(page.id)!.linkId!).slice("/pages/view/".length);
+    return { id: page.id, token };
+  }
+
+  it("off by default: no form in the wrapper, form-action stays 'none', a post is a 404", async () => {
+    const pages = store();
+    const { token } = shared(pages);
+    const wrapper = await hit(options(pages, null), `/pages/view/${token}`);
+    expect(wrapper.body).not.toContain("<form");
+    expect(String(wrapper.headers["content-security-policy"])).toContain("form-action 'none'");
+    const posted = await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: "Bravo" }));
+    expect(posted.status).toBe(404);
+  });
+
+  it("its person turns them on; the wrapper gets a script-free form pinned by CSP to this page's comment path", async () => {
+    const pages = store();
+    const { id, token } = shared(pages);
+    const handler = routes(pages);
+    const on = await call(handler, alice, "PATCH", `/api/pages/${id}`, { readerComments: true });
+    expect(on.status).toBe(200);
+    expect(on.body!.page.readerComments).toBe(true);
+    expect((await call(handler, bob, "PATCH", `/api/pages/${id}`, { readerComments: true })).status).toBe(404);
+    const wrapper = await hit(options(pages, null), `/pages/view/${token}`);
+    expect(wrapper.body).toContain(`<form method="post" action="/pages/comment/${token}"`);
+    expect(wrapper.body).not.toContain("<script");
+    const csp = String(wrapper.headers["content-security-policy"]);
+    expect(csp).toContain("script-src 'none'");
+    expect(csp).toContain(`form-action sagax.example.com/pages/comment/${token}`);
+    // the honeypot is in the form
+    expect(wrapper.body).toContain('name="website"');
+  });
+
+  it("a reader's comment waits for approval, redacted and size-checked; approved ones show escaped", async () => {
+    const pages = store();
+    const { id, token } = shared(pages);
+    pages.setReaderComments(id, true);
+    const handler = routes(pages);
+    const posted = await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob <b>", text: "Super page, ghp_abcdefghijklmnopqrstuvwxyz0123456789 <script>x</script>" }));
+    expect(posted.status).toBe(200);
+    expect(posted.body).toContain("approbation");
+    expect(String(posted.headers["content-security-policy"])).toContain("default-src 'none'");
+    let wrapper = await hit(options(pages, null), `/pages/view/${token}`);
+    expect(wrapper.body).not.toContain("Super page");
+    const listed = await call(handler, alice, "GET", `/api/pages/${id}/reader-comments`);
+    expect(listed.body!.comments).toHaveLength(1);
+    const comment = listed.body!.comments[0];
+    expect(comment).toMatchObject({ status: "pending", name: "Bob <b>" });
+    expect(comment.text).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789");
+    expect((await call(handler, bob, "GET", `/api/pages/${id}/reader-comments`)).status).toBe(404);
+    expect((await call(handler, alice, "POST", `/api/pages/${id}/reader-comments/${comment.id}/approve`, {})).status).toBe(200);
+    wrapper = await hit(options(pages, null), `/pages/view/${token}`);
+    expect(wrapper.body).toContain("Super page");
+    expect(wrapper.body).toContain("Bob &lt;b&gt;");
+    expect(wrapper.body).toContain("&lt;script&gt;");
+    expect(pages.get(id)!.history.map((entry) => entry.action)).toEqual(expect.arrayContaining(["reader-comments", "reader-comment", "reader-comment-approve"]));
+    expect((await call(handler, alice, "DELETE", `/api/pages/${id}/reader-comments/${comment.id}`)).status).toBe(200);
+    wrapper = await hit(options(pages, null), `/pages/view/${token}`);
+    expect(wrapper.body).not.toContain("Super page");
+    for (const bad of [form({ name: "Bob", text: "" }), form({ name: "Bob", text: "x".repeat(PAGE_LIMITS.readerCommentChars + 1) }), form({ name: "", text: "ok" }), form({ name: "x".repeat(PAGE_LIMITS.readerNameChars + 1), text: "ok" })]) {
+      expect((await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", bad)).status).toBe(400);
+    }
+  });
+
+  it("a filled honeypot is thanked and dropped; a burst from one address is rate-limited", async () => {
+    const pages = store();
+    const { id, token } = shared(pages);
+    pages.setReaderComments(id, true);
+    const trap = await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bot", text: "spam", website: "http://spam.example" }));
+    expect(trap.status).toBe(200);
+    expect(pages.readerComments(id)).toHaveLength(0);
+    const statuses: number[] = [];
+    for (let index = 0; index < PAGE_LIMITS.readerCommentsPerWindow + 1; index += 1) {
+      statuses.push((await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: `c${index}` }))).status);
+    }
+    expect(statuses.slice(0, -1).every((status) => status === 200)).toBe(true);
+    expect(statuses.at(-1)).toBe(429);
+  });
+
+  it("only a reader of the page, from this page's own origin, while it is published", async () => {
+    const pages = store();
+    const { id, token } = shared(pages, "org");
+    pages.setReaderComments(id, true);
+    expect((await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: "x" }))).status).toBe(404);
+    const reader: PageViewer = { principalId: "pr_bob", computerOwner: false };
+    expect((await hit(options(pages, reader), `/pages/comment/${token}`, { ...formHeaders, origin: "https://evil.example" }, "POST", form({ name: "Bob", text: "x" }))).status).toBe(403);
+    expect((await hit(options(pages, reader), `/pages/comment/${token}`, { ...formHeaders, origin: "http://sagax.example.com" }, "POST", form({ name: "Bob", text: "x" }))).status).toBe(200);
+    pages.revoke(id);
+    expect((await hit(options(pages, reader), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: "x" }))).status).toBe(404);
+  });
+
+  it("an admin can forbid them: the person cannot turn them on, and pages that had them stop taking and showing them", async () => {
+    const pages = store();
+    const { id, token } = shared(pages);
+    pages.setReaderComments(id, true);
+    const rows: unknown[] = [];
+    const handler = routes(pages, { isAdmin: (auth) => auth.kind === "session" && auth.session.principalId === "pr_admin", audit: (_auth, _req, row) => rows.push(row) });
+    const off = await call(handler, session("pr_admin"), "PUT", "/api/admin/pages/policy", { readerComments: false });
+    expect(off.body).toEqual({ linkSharing: true, readerComments: false });
+    expect(rows).toEqual([{ action: "page.policy", target: { kind: "pages", id: "readerComments", name: "off" } }]);
+    expect((await call(handler, alice, "PATCH", `/api/pages/${id}`, { readerComments: true })).status).toBe(403);
+    expect((await hit(options(pages, null), `/pages/view/${token}`)).body).not.toContain("<form");
+    expect((await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: "x" }))).status).toBe(404);
   });
 });

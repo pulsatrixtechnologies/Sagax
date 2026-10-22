@@ -9772,5 +9772,17 @@
   "pages.editor.saved": "Enregistrée comme version {n}. Elle n'est pas encore en ligne.",
   "pages.editor.savedPublished": "Enregistrée et publiée comme version {n}.",
   "pages.admin.linkSharing": "Liens publics",
-  "pages.admin.linkSharingHint": "Permet de publier une page pour toute personne ayant le lien. Désactivé : aucun nouveau lien public, et les pages déjà partagées par lien ne sont montrées qu'aux personnes connectées à ce serveur."
+  "pages.admin.linkSharingHint": "Permet de publier une page pour toute personne ayant le lien. Désactivé : aucun nouveau lien public, et les pages déjà partagées par lien ne sont montrées qu'aux personnes connectées à ce serveur.",
+  "pages.linkOffError": "Votre organisation a désactivé les liens publics. Choisissez plutôt « Mon organisation ».",
+  "pages.confirmLinkChange": "Toute personne ayant le lien verra cette page, sans se connecter. Confirmez pour la passer en lien public.",
+  "pages.annotate.full": "Au plus {max} annotations. Envoyez celles-ci d'abord, ou retirez-en.",
+  "pages.annotate.messagePreview": "Message envoyé au Bot",
+  "pages.readers.title": "Commentaires des lecteurs",
+  "pages.readers.hint": "Les personnes qui peuvent lire cette page peuvent laisser un commentaire avec un nom. Vous approuvez chacun avant que quiconque le voie.",
+  "pages.readers.forbidden": "Votre organisation ne permet pas les commentaires des lecteurs.",
+  "pages.readers.pending": "En attente de votre approbation ({count})",
+  "pages.readers.approved": "Affichés sous la page ({count})",
+  "pages.readers.approve": "Approuver ce commentaire",
+  "pages.admin.readerComments": "Commentaires des lecteurs",
+  "pages.admin.readerCommentsHint": "Permet aux personnes d'accepter des commentaires sur leurs pages (désactivés sur chaque page tant qu'elles ne les activent pas; chaque commentaire attend leur approbation). Désactivé : aucune page ne reçoit ni n'affiche de commentaires de lecteurs."
 }

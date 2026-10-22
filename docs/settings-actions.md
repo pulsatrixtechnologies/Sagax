@@ -349,6 +349,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | People from before: days | Settings > Organization > People | `sagax_settings` get, set `org.interimAttachDays` | organisation |
 | Plugin marketplaces | Connect apps > Sources | `sagax_settings` get, set `org.pluginMarketplaces` | organisation |
 | Public links for published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesLinkSharing` | organisation |
+| Reader comments on published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesReaderComments` | organisation |
 
 ### Ordinateur
 

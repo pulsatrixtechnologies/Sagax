@@ -11,21 +11,29 @@
 // its fields are plain text (parseAnnotationMessage). Nothing reaches a bot
 // until the person presses Send.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Highlighter, Loader2, MessageSquare, Pencil, Play, Save, Send, Share2, Trash2, X, XCircle } from "lucide-react";
+import { Check, Highlighter, Loader2, MessageSquare, Pencil, Play, Save, Send, Share2, Trash2, X, XCircle } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { api, useStore } from "@/state/store";
 import {
   annotationPrompt,
   PAGE_KINDS,
+  PAGE_LIMITS,
   parseAnnotationMessage,
   type PageAccess,
   type PageAnchor,
   type PageComment,
   type PageKind,
   type PublishedPageSummary,
+  type ReaderComment,
 } from "../../shared/published-pages";
-import { AccessPicker, ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { AccessPicker, ACCESS_LABEL, ExpirySelect, expiryFromHours, LinkRow, needsLinkConfirm, pageErrorText, previewSrc, usePagesPolicy, when } from "./page-controls";
+import { SwitchRow } from "./SettingsPrimitives";
+
+export { needsLinkConfirm, pageErrorText };
+
+/** The viewer keeps at most this many annotations (and sends no more). */
+export const MAX_ANNOTATIONS = PAGE_LIMITS.annotations;
 import { ViewerDialog } from "./ViewerDialog";
 
 export interface Annotation {
@@ -39,7 +47,7 @@ export interface Annotation {
 export function acceptAnnotation(list: Annotation[], event: { source: unknown; data: unknown }, frame: Window | null): Annotation[] {
   if (!frame || event.source !== frame) return list;
   const parsed = parseAnnotationMessage(event.data);
-  if (!parsed || list.some((entry) => entry.n === parsed.n)) return list;
+  if (!parsed || list.length >= MAX_ANNOTATIONS || list.some((entry) => entry.n === parsed.n)) return list;
   const { n, ...anchor } = parsed;
   return [...list, { n, anchor, note: "" }];
 }
@@ -61,9 +69,7 @@ type Panel = "edit" | "comments" | "share" | "annotate" | null;
 const BUTTON = "inline-flex items-center gap-1.5 rounded-lg border border-hairline/60 px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised disabled:opacity-40";
 const PRIMARY = "inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-white disabled:opacity-40";
 
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
+const errorText = pageErrorText;
 
 export function PageViewerDialog({ pageId, version: initialVersion, onClose, returnFocus, onChange }: {
   pageId: string;
@@ -219,6 +225,7 @@ export function PageViewerDialog({ pageId, version: initialVersion, onClose, ret
         <aside className="flex w-[min(380px,40vw)] shrink-0 flex-col gap-3 overflow-y-auto border-l border-hairline/40 p-3 text-[12.5px]">
           {panel === "annotate" && (
             <AnnotationPanel annotations={annotations} setAnnotations={setAnnotations} sent={sent} busy={busy}
+              message={annotationPrompt({ title, version: version ?? 0, items: annotations, lang: document.documentElement.lang.startsWith("en") ? "en" : "fr" })}
               onSend={() => {
                 const text = annotationPrompt({ title, version: version ?? 0, items: annotations, lang: document.documentElement.lang.startsWith("en") ? "en" : "fr" });
                 dispatch({ type: "send", botId: page.botId, threadId: page.threadId, text });
@@ -245,8 +252,10 @@ export function PageViewerDialog({ pageId, version: initialVersion, onClose, ret
   );
 }
 
-function AnnotationPanel({ annotations, setAnnotations, sent, busy, onSend, onComment }: {
+function AnnotationPanel({ annotations, setAnnotations, sent, busy, message, onSend, onComment }: {
   annotations: Annotation[];
+  /** Exactly what Send writes in the conversation, shown before it goes. */
+  message: string;
   setAnnotations(update: (list: Annotation[]) => Annotation[]): void;
   sent: boolean;
   busy: boolean;
@@ -278,6 +287,13 @@ function AnnotationPanel({ annotations, setAnnotations, sent, busy, onSend, onCo
           </li>
         ))}
       </ol>
+      {annotations.length >= MAX_ANNOTATIONS && <p className="text-warning">{t("pages.annotate.full", { max: String(MAX_ANNOTATIONS) })}</p>}
+      {annotations.length > 0 && (
+        <details open className="rounded-lg border border-hairline/40 p-2">
+          <summary className="cursor-pointer text-ink-secondary">{t("pages.annotate.messagePreview")}</summary>
+          <pre data-page-annotation-message className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words font-sans text-[12px] text-ink">{message}</pre>
+        </details>
+      )}
       <button type="button" data-page-annotation-send disabled={annotations.length === 0} className={PRIMARY} onClick={onSend}>
         <Send size={13} />{t("pages.annotate.send")}
       </button>
@@ -389,6 +405,7 @@ function CommentsPanel({ pageId, version, call, onCount }: { pageId: string; ver
           </li>
         ))}
       </ul>
+      <ReaderComments pageId={pageId} call={call} />
       <textarea aria-label={t("pages.comments.add")} placeholder={t("pages.comments.placeholder")} value={text} rows={3} maxLength={2000} onChange={(event) => setText(event.target.value)}
         className="w-full rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]" />
       <button type="button" disabled={!text.trim()} className={PRIMARY} onClick={() => void add()}>{t("pages.comments.add")}</button>
@@ -408,12 +425,18 @@ function SharePanel({ page, version, busy, linkOff, call, onChange }: {
   const [hours, setHours] = useState(0);
   const [confirmLink, setConfirmLink] = useState(false);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
+  const [pendingAccess, setPendingAccess] = useState<PageAccess | null>(null);
   const live = page.status === "published";
   const act = async (path: string, init: RequestInit) => {
     const answer = await call<{ page: PublishedPageSummary }>(path, init);
     if (answer) onChange(answer.page);
     setConfirmLink(false);
     setConfirmUnpublish(false);
+    setPendingAccess(null);
+  };
+  const changeAccess = (next: PageAccess) => {
+    if (needsLinkConfirm(page.access, next)) return setPendingAccess(next);
+    void act("", { method: "PATCH", body: JSON.stringify({ access: next }) });
   };
   const shown = page.versions.find((entry) => entry.n === version);
   return (
@@ -424,13 +447,22 @@ function SharePanel({ page, version, busy, linkOff, call, onChange }: {
           <LinkRow page={page} />
           <label className="flex items-center gap-2 text-ink">
             {t("pages.whoCanSee")}
-            <select value={page.access} disabled={busy} onChange={(event) => void act("", { method: "PATCH", body: JSON.stringify({ access: event.target.value }) })}
+            <select value={pendingAccess ?? page.access} disabled={busy} onChange={(event) => changeAccess(event.target.value as PageAccess)}
               className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
               {(["private", "org", "link"] as const).map((entry) => (
                 <option key={entry} value={entry} disabled={entry === "link" && linkOff && page.access !== "link"}>{t(ACCESS_LABEL[entry])}</option>
               ))}
             </select>
           </label>
+          {pendingAccess && (
+            <div role="alert" className="flex flex-col gap-2">
+              <p className="text-warning">{t("pages.confirmLinkChange")}</p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={busy} className={PRIMARY} onClick={() => void act("", { method: "PATCH", body: JSON.stringify({ access: pendingAccess }) })}>{t("pages.publishConfirm")}</button>
+                <button type="button" className={BUTTON} onClick={() => setPendingAccess(null)}>{t("pages.cancel")}</button>
+              </div>
+            </div>
+          )}
           {linkOff && page.access === "link" && <p className="text-warning">{t("pages.linkOffActive")}</p>}
           <ExpirySelect value={-1} disabled={busy} onChange={(next) => void act("", { method: "PATCH", body: JSON.stringify({ expiresAt: expiryFromHours(next) }) })} />
           {page.currentVersion !== version && shown?.state !== "declined" && (
@@ -467,6 +499,53 @@ function SharePanel({ page, version, busy, linkOff, call, onChange }: {
           </button>
         </>
       )}
+    </section>
+  );
+}
+
+/** Readers' comments on a published page (JC 2026-10-21): off unless the
+ * person turns them on, and only while the organization allows them. A
+ * reader's comment waits here until the person approves it. */
+function ReaderComments({ pageId, call }: { pageId: string; call: Call }) {
+  const [state, setState] = useState<{ comments: ReaderComment[]; enabled: boolean; allowed: boolean } | null>(null);
+  const load = useCallback(() => {
+    api<{ comments: ReaderComment[]; enabled: boolean; allowed: boolean }>(`/api/pages/${encodeURIComponent(pageId)}/reader-comments`)
+      .then(setState)
+      .catch(() => setState(null));
+  }, [pageId]);
+  useEffect(load, [load]);
+  if (!state) return null;
+  const toggle = async (next: boolean) => {
+    const answer = await call<{ page: PublishedPageSummary }>("", { method: "PATCH", body: JSON.stringify({ readerComments: next }) });
+    if (answer) setState({ ...state, enabled: next });
+  };
+  const act = async (path: string, init: RequestInit) => {
+    if (await call<{ ok: true }>(path, init)) load();
+  };
+  const pending = state.comments.filter((entry) => entry.status === "pending");
+  const approved = state.comments.filter((entry) => entry.status === "approved");
+  const row = (comment: ReaderComment) => (
+    <li key={comment.id} data-reader-comment={comment.status} className="space-y-1 rounded-lg bg-raised/45 p-2">
+      <div className="flex items-center gap-2 text-[11.5px] text-ink-tertiary">
+        <span className="min-w-0 flex-1 truncate"><span className="font-medium text-ink">{comment.name}</span> · {when(comment.at)}</span>
+        {comment.status === "pending" && (
+          <button type="button" className="table-action" aria-label={t("pages.readers.approve")} title={t("pages.readers.approve")}
+            onClick={() => void act(`/reader-comments/${encodeURIComponent(comment.id)}/approve`, { method: "POST", body: "{}" })}><Check size={13} /></button>
+        )}
+        <button type="button" className="table-action" aria-label={t("pages.comments.delete")} title={t("pages.comments.delete")}
+          onClick={() => void act(`/reader-comments/${encodeURIComponent(comment.id)}`, { method: "DELETE" })}><Trash2 size={12} /></button>
+      </div>
+      <p className="whitespace-pre-wrap text-ink">{comment.text}</p>
+    </li>
+  );
+  return (
+    <section aria-label={t("pages.readers.title")} className="flex flex-col gap-2 border-t border-hairline/30 pt-2">
+      <SwitchRow label={t("pages.readers.title")} description={state.allowed ? t("pages.readers.hint") : t("pages.readers.forbidden")}
+        checked={state.enabled && state.allowed} disabled={!state.allowed} onChange={(next) => void toggle(next)} />
+      {pending.length > 0 && <h4 className="text-[12px] font-medium text-ink">{t("pages.readers.pending", { count: String(pending.length) })}</h4>}
+      <ul className="flex flex-col gap-2">{pending.map(row)}</ul>
+      {approved.length > 0 && <h4 className="text-[12px] font-medium text-ink">{t("pages.readers.approved", { count: String(approved.length) })}</h4>}
+      <ul className="flex flex-col gap-2">{approved.map(row)}</ul>
     </section>
   );
 }

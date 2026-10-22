@@ -89,7 +89,7 @@ it("lot R8 through the real server: rename, the person's edit (secrets out), com
     expect(frame.headers.get("content-security-policy")).toMatch(/script-src 'nonce-[^']+'/);
     expect(await frame.text()).toContain("sagax-page-annotation");
     // the switch: this computer's owner is its admin
-    expect((await api("/api/admin/pages/policy", "PUT", { linkSharing: false })).body).toEqual({ linkSharing: false });
+    expect((await api("/api/admin/pages/policy", "PUT", { linkSharing: false })).body).toEqual({ linkSharing: false, readerComments: true });
     expect((await api(`/api/pages/${id}/publish`, "POST", { version: edited.body.version, access: "link", expiresAt: null })).status).toBe(403);
     expect((await api(`/api/pages/${id}/publish`, "POST", { version: edited.body.version, access: "org", expiresAt: null })).status).toBe(200);
   } finally {
