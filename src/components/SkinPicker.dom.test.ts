@@ -133,7 +133,7 @@ describe("SkinPicker", () => {
     systemDark = false;
     const trigger = modePill()!.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!;
     await act(async () => { trigger.click(); await flush(); });
-    const auto = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Auto"))!;
+    const auto = [...document.body.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Auto"))!;
     await act(async () => { auto.click(); await flush(); });
     expect(localStorage.getItem(SKIN_MODE_KEY)).toBe("auto");
     expect(worn()).toEqual(["daylight", "green"]);
@@ -148,7 +148,7 @@ describe("SkinPicker", () => {
     await act(async () => { swatch("red")!.click(); await flush(); });
     const depth = host.querySelector<HTMLElement>('[data-settings-row="skinDepth"]')!;
     await act(async () => { depth.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!.click(); await flush(); });
-    const full = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Full"))!;
+    const full = [...document.body.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Full"))!;
     await act(async () => { full.click(); await flush(); });
     expect(document.documentElement.dataset.skinDepth).toBe("full");
     expect(localStorage.getItem("omb-skin-depth")).toBe("full");
@@ -156,7 +156,7 @@ describe("SkinPicker", () => {
     expect(host.querySelector('[data-settings-row="skinDepth"]')).toBeNull();
     const textureRow = host.querySelector<HTMLElement>('[data-settings-row="skinTexture"]')!;
     await act(async () => { textureRow.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!.click(); await flush(); });
-    const dots = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Dots"))!;
+    const dots = [...document.body.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Dots"))!;
     await act(async () => { dots.click(); await flush(); });
     expect(document.documentElement.dataset.skinTexture).toBe("dots");
     expect(localStorage.getItem("omb-skin-texture")).toBe("dots");
