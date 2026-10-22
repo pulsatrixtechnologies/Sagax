@@ -55,7 +55,7 @@ import kotlin.math.min
 object AttachmentImportRules {
     const val TOO_MANY: String = "Send up to ${AttachmentPolicy.MAXIMUM_ITEMS} items at a time."
 
-    fun unreadable(name: String): String = "OpenMausBot couldn't read $name. Try exporting it to Files first."
+    fun unreadable(name: String): String = "Sagax couldn't read $name. Try exporting it to Files first."
 
     fun unsupported(name: String): String =
         "$name isn't a supported attachment. Try an image, PDF, text, Word, Excel, or PowerPoint file."

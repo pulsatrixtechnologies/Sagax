@@ -1140,7 +1140,7 @@
       "at": 1791930008000,
       "role": "bot",
       "kind": "widget",
-      "text": "**Sources** · What Scout read for this answer\n- ChatKit widgets guide · developers.openai.com\n- Widget Builder gallery · widgets.chatkit.studio\n- shared/wire.ts · OpenMausBot · this computer",
+      "text": "**Sources** · What Scout read for this answer\n- ChatKit widgets guide · developers.openai.com\n- Widget Builder gallery · widgets.chatkit.studio\n- shared/wire.ts · Sagax · this computer",
       "widget": {
         "v": 1,
         "root": {
@@ -1255,7 +1255,7 @@
                     {
                       "type": "Caption",
                       "id": "n18",
-                      "value": "OpenMausBot · this computer"
+                      "value": "Sagax · this computer"
                     }
                   ]
                 }

@@ -86,7 +86,7 @@ object RoutineRules {
             "and full run logs remain available. If the previous run is still active, " +
             "the next occurrence is skipped instead of queued."
     const val UNKNOWN_SCHEDULE_NOTE: String =
-        "This routine uses a schedule added by a newer OpenMausBot. Choose One time, " +
+        "This routine uses a schedule added by a newer Sagax. Choose One time, " +
             "Selected days, or Every X minutes before saving."
 
     const val CHECKING_CLOUD: String = "Checking Cloud VM availability…"
@@ -96,7 +96,7 @@ object RoutineRules {
         "Uses this agent's selected model and computer setting on the paired computer."
     const val CLOUD_READY_FOOTER: String =
         "Runs the agent and its tools inside its Boat virtual machine. The VM wakes " +
-            "automatically for each run; keep OpenMausBot running so its scheduler can " +
+            "automatically for each run; keep Sagax running so its scheduler can " +
             "launch the job."
     const val CLOUD_BLOCKED_FOOTER: String =
         "This existing Cloud VM choice is preserved, but it cannot run until the paired " +

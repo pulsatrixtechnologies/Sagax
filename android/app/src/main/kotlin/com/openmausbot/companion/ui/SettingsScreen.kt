@@ -692,7 +692,7 @@ private const val COPIED_LABEL_MILLIS = 2_000L
  */
 internal fun troubleshootingText(status: Session.Status): String = when (status) {
     Session.Status.Live -> "This computer is connected and responding normally."
-    Session.Status.Connecting -> "OpenMausBot is trying the saved connection automatically."
+    Session.Status.Connecting -> "Sagax is trying the saved connection automatically."
     Session.Status.Unauthorized -> "This phone was removed from the computer. Pair it again to reconnect."
     Session.Status.Unpaired -> "This phone is not paired with a computer."
     is Session.Status.Offline -> status.message

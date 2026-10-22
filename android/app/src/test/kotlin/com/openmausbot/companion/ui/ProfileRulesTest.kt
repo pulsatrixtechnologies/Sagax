@@ -169,7 +169,7 @@ class ProfileRulesTest {
             ProfileRules.generateFooter(ConfigStatus(imageGen = ConfigFlag(configured = true))),
         )
         assertEquals(
-            "To generate images, configure the shared image provider in OpenMausBot on your " +
+            "To generate images, configure the shared image provider in Sagax on your " +
                 "computer. Provider keys cannot be added from a phone.",
             ProfileRules.generateFooter(null),
         )
@@ -322,7 +322,7 @@ class ProfileRulesTest {
         )
         assertEquals(
             "Your computer's built-in voices need no key, and it reports none it can use. " +
-                "Switch the voice engine in OpenMausBot on the computer to turn speech back on.",
+                "Switch the voice engine in Sagax on the computer to turn speech back on.",
             ProfileRules.voiceCopy(noVoices).footer,
         )
 
@@ -400,7 +400,7 @@ class ProfileRulesTest {
             ProfileRules.voiceCopy(unconfigured).unconfiguredNotice,
         )
         assertEquals(
-            "Add the shared Fish Audio API key in OpenMausBot on the computer. " +
+            "Add the shared Fish Audio API key in Sagax on the computer. " +
                 "The key is never returned to this phone.",
             ProfileRules.voiceCopy(unconfigured).footer,
         )
@@ -421,7 +421,7 @@ class ProfileRulesTest {
             ProfileRules.voiceCopy(noServer).unconfiguredNotice,
         )
         assertEquals(
-            "Add the address of your Chatterbox server in OpenMausBot on the computer to turn " +
+            "Add the address of your Chatterbox server in Sagax on the computer to turn " +
                 "speech back on.",
             ProfileRules.voiceCopy(noServer).footer,
         )
