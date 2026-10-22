@@ -5,8 +5,7 @@
 # declared on the `omb` service (the namespace owner).
 #
 #   cp .env.example .env   # set DOMAIN
-#   docker compose pull omb && docker compose up -d     # prebuilt image
-#   docker compose up -d --build                        # or build from source
+#   docker compose up -d --build   # builds the image from this checkout
 services:
   omb:
     # Graceful shutdown drains turns (5 s) then cleans up (6 s) before the
@@ -21,10 +20,9 @@ services:
         NATIVE_ENGINES: ${NATIVE_ENGINES:-}
         SAGAX_COMMIT_SHA: ${SAGAX_COMMIT_SHA:-}
         SAGAX_BUILD_TIME: ${SAGAX_BUILD_TIME:-}
-    # Sagax's own image, published by CI on release tags. Pin a release
-    # (for example :v<version>) instead of latest if you prefer;
-    # `docker compose up --build` builds from source instead.
-    image: ghcr.io/pulsatrixtechnologies/sagax:latest
+    # Built from this checkout (build.context is the repository root); there
+    # is no published image to pull yet. The local name only labels the build.
+    image: sagax:local
     restart: unless-stopped
     # The bots' browsers (docs/browser-packaging.md, "Process hygiene"): an
     # init collects the browser processes whose parents exit, and Chrome

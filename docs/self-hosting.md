@@ -216,13 +216,13 @@ ports 80/443 open.
 ```sh
 git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax/deploy
 cp .env.example .env            # set DOMAIN
-docker compose pull omb && docker compose up -d
+docker compose up -d --build
 ```
 
-That uses Sagax's own image, which CI publishes on release tags
-(`ghcr.io/pulsatrixtechnologies/sagax:latest`). To stay on one release, pin
-its tag in `deploy/docker-compose.yml` (for example `:v<version>`).
-To build from your checkout instead: `docker compose up -d --build`.
+The compose file builds the image from your checkout (the repository root is
+the build context) and names it `sagax:local`. There is no public prebuilt
+Sagax image to pull yet. To stay on one release, check out its tag before you
+build (`git checkout pulsa-v<version>`).
 
 Then sign the engine CLIs in **inside the container** (their logins live on
 the `data` volume, so they survive restarts and image upgrades) and mint a
@@ -256,14 +256,12 @@ What the stack does, so you can adapt it:
   own pairing is the login. A shared-password `basic_auth` block is there,
   commented out, if you want a second wall in front of pairing.
 
-Upgrade with `docker compose pull omb && docker compose up -d` (or
-`git pull && docker compose up -d --build`). State (chats, routines,
+Upgrade with `git pull && docker compose up -d --build`. State (chats, routines,
 engine logins, paired sessions) is on the `data` volume; back that up.
 
-The published image installs the current Chrome for Testing whenever a new
-Stable ships. A build from source keeps the Chrome (and any `ENGINES`) it
-installed first, because those layers sit beneath the app and stay cached
-across code changes. To pick up the current ones, rebuild with a new tag:
+A local build keeps the Chrome for Testing (and any `ENGINES`) it installed
+first, because those layers sit beneath the app and stay cached across code
+changes. To pick up the current ones, rebuild with a new tag:
 
 ```sh
 docker compose build --build-arg CHROME_CACHE_TAG=$(date +%F) omb && docker compose up -d
@@ -1675,7 +1673,7 @@ stopped, then start it again. A foreground server runs whatever the checkout
 holds: `git checkout vX.Y.Z`, build, then `pnpm omb serve`.
 
 ```sh
-docker compose -f deploy/docker-compose.yml pull omb && docker compose -f deploy/docker-compose.yml up -d   # Docker
+git pull && docker compose -f deploy/docker-compose.yml up -d --build   # Docker
 git pull && pnpm install && pnpm build && sudo systemctl restart openmausbot   # from source
 ```
 

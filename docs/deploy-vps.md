@@ -123,7 +123,7 @@ One container for the server plus Caddy for HTTPS at `https://maus.example.com`.
 4. **Start it:**
 
    ```sh
-   docker compose pull omb && docker compose up -d
+   docker compose up -d --build   # builds the image from this checkout
    docker compose ps        # omb "healthy", caddy "running"
    ```
 
@@ -281,7 +281,7 @@ on its own.
   Check that the build succeeded before starting. A service restart by itself
   does not update the checkout. For a foreground server, check out the release
   the same way, then run `pnpm omb serve --tunnel`.
-- **Path B:** `cd sagax/deploy && docker compose pull omb && docker compose up -d`.
+- **Path B:** `cd sagax && git pull && cd deploy && docker compose up -d --build`.
 
 Routines and queued work survive a restart. A teammate turn running at that moment runs again once at the next start, told to check what it already did, and the bot that asked for it is told. A person's own turn and a running routine are not run again: the conversation says it was interrupted. Update between runs where you can.
 
