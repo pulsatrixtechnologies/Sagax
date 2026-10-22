@@ -659,7 +659,8 @@ import { routineRunCard } from "./routine-run-card.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
-import { recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
+import { recordRoutineChange, recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
+import { botReplyQuoteId } from "./reply-to-turn.ts";
 import { nextOccurrence, PREWARM_ENGINE_LEAD_MS, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -14345,8 +14346,13 @@ bus.subscribe((event: RuntimeEvent) => {
     const routed = group && m.role === "bot" && m.kind === "text" ? routedRoomReplies.get(event.threadId) : undefined;
     const routedBy = routed && speaker && routed.botId === speaker.botId ? routed.routedBy : undefined;
     if (routedBy) routedRoomReplies.delete(event.threadId);
+    // The quote chip above a 1:1 reply: which of the person's messages it
+    // answers, when that is worth showing (server/reply-to-turn.ts).
+    const quoteId = proven && !group && m.role === "bot" && m.kind === "text" && !m.replyToId
+      ? botReplyQuoteId(store.messagesFor(event.threadId), owner?.messageId)
+      : undefined;
     const message = store.appendMessage(event.threadId, group && m.role === "bot" ? { ...m, from: speaker, ...(routedBy ? { routedBy } : {}) }
-      : proven ? { ...m, requestMessageId: owner.messageId } : m);
+      : proven ? { ...m, requestMessageId: owner.messageId, ...(quoteId ? { replyToId: quoteId } : {}) } : m);
     return message;
   };
   // A client abort sometimes arrives as assistant text or as runtime.error.
@@ -21247,6 +21253,23 @@ routines = new RoutineManager({
     recordRoutineToggle(store, {
       threadId: change.threadId,
       action: change.enabled ? "enabled" : "disabled",
+      atMessageId: change.messageId,
+      routine: {
+        id: routine.id,
+        name: routine.name,
+        ...(routine.botId ? { botId: routine.botId } : {}),
+        ...(routine.groupId ? { groupId: routine.groupId } : {}),
+        ...(routine.runAs ? { runAs: routine.runAs } : {}),
+      },
+    });
+  },
+  // 2026-10-21 (JC): "Created/Updated/Deleted routine · <name>" in the
+  // conversation a bot's routine change came from (server/routine-chat-events.ts).
+  onRoutineChanged: (routine, change) => {
+    if (!threadStillExists(change.threadId)) return;
+    recordRoutineChange(store, {
+      threadId: change.threadId,
+      action: change.action,
       atMessageId: change.messageId,
       routine: {
         id: routine.id,

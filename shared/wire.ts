@@ -611,13 +611,19 @@ export interface VoiceCallMark {
  * writes its "Disabled · 1 routine" line (server/routine-chat-events.ts). */
 export const ROUTINE_CONVERSATION_HEADER = "x-sagax-conversation";
 
-/** WireMessage.routineToggle: the routines one turn turned on or off. */
+/** WireMessage.routineToggle: a routine change this turn made, as one quiet
+ * line in the conversation. `enabled`/`disabled` group every routine a turn
+ * turned on or off into one count line ("Disabled · 5 routines"). `created`/
+ * `updated`/`deleted` (2026-10-21, JC) are a bot touching a routine's
+ * definition: one named line each ("Updated routine · <name>"), the name never
+ * a UUID (shared/human-id.ts). */
 export interface RoutineToggleEvent {
-  action: "enabled" | "disabled";
+  action: "enabled" | "disabled" | "created" | "updated" | "deleted";
   /** The user message that started the turn (the line groups by it); the
    * thread's first message id, or "", when no person spoke first. */
   turnKey: string;
-  /** In the order they changed; the name as it was then. */
+  /** In the order they changed; the name as it was then. The created/updated/
+   * deleted lines carry exactly one routine. */
   routines: Array<{ id: string; name: string; botId?: string; groupId?: string; runAs?: string }>;
 }
 
