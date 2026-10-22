@@ -45,3 +45,11 @@ export function loadComputerStatus(signal?: AbortSignal): Promise<ComputerStatus
 export function updateComputer(): Promise<ComputerStatusView> {
   return api<ComputerStatusView>("/api/computer/update", { method: "POST", body: "{}" });
 }
+
+/** The heavier rebuild (Reset): from the last snapshot, confirmed by the
+ * caller. Unlike update it is not held back by a working bot (it is confirmed
+ * first); the server erases the organization workspace or recreates the Local
+ * VM container per its own rules (server/routes/computer-status.ts). */
+export function resetComputer(): Promise<ComputerStatusView> {
+  return api<ComputerStatusView>("/api/computer/reset", { method: "POST", body: JSON.stringify({ confirm: true }) });
+}

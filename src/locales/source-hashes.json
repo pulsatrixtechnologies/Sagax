@@ -13896,7 +13896,19 @@
       "settings.hdMascots.subtitle": "e797d87584643b266f2171f240454af44d2dcbec4289100a6918941148c1d7ae",
       "customRules.form.riskMissing": "7b235a1538e6cb19d4b74fa53a71afc3a3a39213cd52bee2b8124d7802978496",
       "approval.whyRisk": "a5a5c617485efbfcb253eb161ae57ffa60dcd5cef8d44794549b784cc86729ef",
-      "sidebar.preview.richBlock": "64306606ec7e41a68ed141a37989f0c2514ee26e2cc54436583592c38017c03a"
+      "sidebar.preview.richBlock": "64306606ec7e41a68ed141a37989f0c2514ee26e2cc54436583592c38017c03a",
+      "computerCare.updateNow.allTogether": "9157f31ce1d8ab6414efd1776577d8b325f7554f4abaa04d277aa94b9e116825",
+      "computerCare.busy.working": "fb9de403f309e15955b251d89bce3da3fb2a8c002a35ac6180d95e003f4083ea",
+      "computerCare.busy.stop": "300c88bb31db226580ea35a28b2e930ddb05f328b4e6a63601850a6643b882df",
+      "computerCare.busy.stopping": "ea2ad890161a02bc6e4c95148a8e3ee497741822b1b082df8fbd0a73b1fdc981",
+      "computerCare.busy.stopError": "1d0a61aa7775688611f07df48b30fecf86d0bc5beb1cfbf2080b60957c4caf4d",
+      "computerCare.reset.title": "3163557e4dd7de90f8d53e2165ada158b53295c3758d25d81e654c8adbd27291",
+      "computerCare.reset.hint": "0336b5e4ff939f18b2cf8962abef2a3eae13cb7e94d224460f38fc4e56acb1be",
+      "computerCare.reset.button": "daee7606b339f3c339076fe2c9f372a3ff40c8ee896005d829c7481b64ca5303",
+      "computerCare.reset.confirm": "0f4987111d96c4714126dcc167e4dafa32674710aeae15b65158cf3b343ae5e2",
+      "computerCare.reset.confirmBusy": "32299a758e5590ca75a2452bd09f192ba476a23f178bce2d32a3edc29145ad87",
+      "computerCare.reset.running": "ab99d1659a646cb8cd605799e80bd6aaec672530204d1e62c2984d86d16315ee",
+      "computerCare.reset.error": "991bd6da5c71a2a6687d4bec954218d8476b63438997b6a2e98b6c22bc9f951a"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -972,6 +972,8 @@ import { createSecurityKeyRoutes, securityKeyCeremonyRoutes, settingsStepUp } fr
 import { SETTINGS_ACTION_CLASS, STEP_UP_CLASSES, approvalModeLoosens, botActClasses, toolChangesRules, type StepUpAnswer, type StepUpClass, type StepUpRefusal, type StepUpSettingsAction } from "../shared/step-up.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
+import { createComputerWorkingBotsRoutes, type WorkingBotsRefusal } from "./routes/computer-working-bots.ts";
+import { workingBots, type WorkingBotHold } from "./computer-working-bots.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
 import { createMyChromeRoutes } from "./routes/my-chrome.ts";
 import { createTeamLibraryGrokRoutes } from "./routes/team-library-grok.ts";
@@ -28188,6 +28190,48 @@ ROUTES.push(createComputerStatusRoutes({
     release: (key) => computerCareScheduler.release(key),
     busy: (key) => computerCareScheduler.busy(key),
   },
+}));
+// Settings > Computer: who is working on the computer now (same gate as the
+// routes above), so the person can stop a bot's task and let a held-back
+// Update through. The stop itself reuses POST /api/bots/:id/interrupt with its
+// own authorization. A personal server reports the Local VM's lease holder; an
+// organization server reports the signed-in person's own bots with a live turn
+// (server/computer-working-bots.ts, server/routes/computer-working-bots.ts).
+const localComputerManagementRefusal = (auth: RequestAuth): WorkingBotsRefusal | null =>
+  (auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin") || adminOrDelegate(auth, "host.shell"))
+    ? null
+    : { status: 403, body: { error: "forbidden: only this computer's owner can manage its computer" } };
+function computerManagementPrincipal(auth: RequestAuth): string | undefined {
+  return auth.kind === "session" ? auth.session.principalId?.trim() || undefined : undefined;
+}
+ROUTES.push(createComputerWorkingBotsRoutes({
+  guard: (auth) => {
+    if (IDENTITY.kind === "perspicax") {
+      return computerManagementPrincipal(auth)
+        ? null
+        : { status: 403, body: { error: "Sign in with Pulsatrix to use a server environment.", code: "identity_perspicax" } };
+    }
+    return localComputerManagementRefusal(auth);
+  },
+  list: async (auth) => workingBots({
+    holders: () => {
+      if (IDENTITY.kind === "perspicax") {
+        const principalId = computerManagementPrincipal(auth);
+        if (!principalId) return [];
+        const out: WorkingBotHold[] = [];
+        for (const bot of store.bots) {
+          if (bot.temporary) continue;
+          for (const task of threadsShownTo(bot, store.tasks(bot.id), principalId)) {
+            if (threadBusy(bot.id, task.threadId)) out.push({ botId: bot.id, threadId: task.threadId });
+          }
+        }
+        return out;
+      }
+      const lease = localVmLeaseFor(SHARED_LOCAL_VM_TARGET).current(localVmOwnerBusy);
+      return lease ? [{ botId: lease.botId, threadId: lease.threadId }] : [];
+    },
+    botName: (botId) => store.bot(botId)?.name ?? null,
+  }),
 }));
 // Settings > Computer: scheduled update in a maintenance window and the disk
 // saver (server/computer-care.ts, server/routes/computer-care.ts), for the
