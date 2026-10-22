@@ -260,6 +260,9 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_RPC_FAILURE_FILE;
     delete process.env.FAKE_ACP_RPC_FAILURE_METHOD;
     delete process.env.FAKE_ACP_RPC_FAILURE_AFTER_OUTPUT;
+    delete process.env.FAKE_ACP_REASONING_FAIL_TIMES;
+    delete process.env.FAKE_ACP_REASONING_COUNT_FILE;
+    delete process.env.SAGAX_ACP_REASONING_CONTINUE_MAX;
     delete process.env.FAKE_ACP_RPC_FAILURE_AFTER_USAGE;
     delete process.env.FAKE_ACP_LOAD_ERROR;
     delete process.env.FAKE_ACP_ALLOW_ALWAYS;
@@ -2230,6 +2233,56 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(recorder.events.some((e) => e.type === "item.completed")).toBe(false);
     expect(recorder.events.find((e) => e.type === "runtime.error")?.message)
       .toMatch(/no reply, image, or tool result/);
+  });
+
+  it("a reasoning_only empty response is nudged on the live session and recovers", async () => {
+    // Grok/xAI reporting "empty response from model (reasoning_only)" over
+    // session/prompt (rpc -32603): the model spent the turn on reasoning and
+    // committed no content. The driver must nudge the same session once more
+    // and surface the answer, not break the bot with a hard internal error.
+    process.env.FAKE_ACP_REASONING_FAIL_TIMES = "1";
+    await create(GrokAgentDriver, "reasoning-only-error");
+    await instance.adapter.sendTurn({ threadId: "t-reason-recover", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: true, stopReason: null });
+    // the nudge produced a real answer
+    expect(recorder.events.some((e) => e.type === "item.completed" && (e as any).itemType === "assistant_text")).toBe(true);
+    // the reasoning still streamed to the UI
+    expect(recorder.events.some((e) => e.type === "content.delta" && (e as any).streamKind === "reasoning_text")).toBe(true);
+    // the person was told Sagax asked it to finish, and no hard error surfaced
+    expect(recorder.events.some((e) => e.type === "runtime.notice" && /reasoning/i.test((e as any).message))).toBe(true);
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
+  });
+
+  it("a model that only ever reasons gives up gracefully after a bounded retry, never a hard internal error", async () => {
+    const countFile = join(scratch, "reasoning-count");
+    process.env.FAKE_ACP_REASONING_FAIL_TIMES = "99";
+    process.env.FAKE_ACP_REASONING_COUNT_FILE = countFile;
+    process.env.SAGAX_ACP_REASONING_CONTINUE_MAX = "2";
+    await create(GrokAgentDriver, "reasoning-only-error");
+    await instance.adapter.sendTurn({ threadId: "t-reason-giveup", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: false, stopReason: "reasoning_only" });
+    const err = recorder.events.find((e) => e.type === "runtime.error") as { message?: string } | undefined;
+    expect(err?.message).toMatch(/reasoning without a final answer/i);
+    // never the raw internal-error string the bot saw in production
+    expect(err?.message).not.toMatch(/Internal error|session\/prompt|reasoning_only/);
+    // bounded: the first prompt plus exactly the two nudges, and no more
+    expect(Number(readFileSync(countFile, "utf8"))).toBe(3);
+    // the session was evicted so the next turn starts clean
+    expect(instance.adapter.hasSession("t-reason-giveup")).toBe(false);
+  });
+
+  it("a genuine internal error without reasoning_only still surfaces (no swallowing)", async () => {
+    const failureFile = join(scratch, "rpc-failure.json");
+    writeFileSync(failureFile, JSON.stringify({ code: -32603, message: "Internal error", data: { details: "database connection lost", service: "session", errorName: "APIError" } }));
+    process.env.FAKE_ACP_RPC_FAILURE_FILE = failureFile;
+    await create(GrokAgentDriver);
+    await instance.adapter.sendTurn({ threadId: "t-real-error", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: false, stopReason: "rpc_error" });
+    const err = recorder.events.find((e) => e.type === "runtime.error") as { message?: string } | undefined;
+    expect(err?.message).toContain("database connection lost");
   });
 
   it("preserves ACP error codes for provider setup classification", async () => {
