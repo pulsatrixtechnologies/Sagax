@@ -478,6 +478,48 @@ describe("trusted approval-mode persistence", () => {
     expect(setMode).toHaveBeenCalledWith("bot-1", "full", { acknowledgeLocalAuto: false, allThreads: true });
   });
 
+  it("names the open conversation on an organization Full grant and keeps it off the ordinary patch", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("full") }));
+    await persistBotUpdate(
+      "bot-1",
+      { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true, threadId: "talk", title: "Ops" },
+      new AbortController().signal,
+      request,
+    );
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ title: "Ops" });
+    expect(request.mock.calls[1]?.[0]).toBe("/api/bots/bot-1");
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({
+      approvalMode: "full", confirmFullAccess: true, threadId: "talk",
+    });
+  });
+
+  it("keeps the shown thread on a model switch, which the server needs to pick the conversation", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
+    const modelSelection = { instanceId: "codex", model: "gpt-5.6-sol" };
+    await persistBotUpdate("bot-1", { modelSelection, threadId: "talk" }, new AbortController().signal, request);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ modelSelection, threadId: "talk" });
+  });
+
+  it("keeps the thread with a model switch coalesced into an organization Full grant", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("full") }));
+    const modelSelection = { instanceId: "codex", model: "gpt-5.6-sol" };
+    await persistBotUpdate(
+      "bot-1",
+      { approvalMode: "full", organizationFullAccess: true, modelSelection, threadId: "talk" },
+      new AbortController().signal,
+      request,
+    );
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ modelSelection, threadId: "talk" });
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({ approvalMode: "full", threadId: "talk" });
+  });
+
+  it("drops a Full grant's thread when the queue switched back to an ordinary level", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
+    await persistBotUpdate("bot-1", { approvalMode: "ask", organizationFullAccess: true, threadId: "talk" },
+      new AbortController().signal, request);
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ approvalMode: "ask" });
+  });
+
   it("never sends a Full confirmation over HTTP after a rapid switch back to Ask", async () => {
     const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
     await persistBotUpdate(
@@ -1752,6 +1794,25 @@ describe("sections and the Primary Bot", () => {
     });
 
     expect(next.bots[0]?.computer).toBeUndefined();
+  });
+
+  it("shows a Full grant on the open conversation immediately", () => {
+    const current = {
+      ...bot("juniper", "Dispatch"),
+      messages: [],
+      approvalMode: "auto" as const,
+      threadId: "talk",
+      tasks: [{ threadId: "talk", title: "Talk", createdAt: 1, approvalMode: "auto" as const, autoApprove: true }],
+    };
+    const next = reducer({ ...initialState, bots: [current] }, {
+      type: "updateBot",
+      botId: current.id,
+      patch: { approvalMode: "full", organizationFullAccess: true, confirmFullAccess: true, threadId: "talk" },
+    });
+    const saved = next.bots[0]!;
+    expect(saved.approvalMode).toBe("full");
+    expect(saved.tasks?.[0]).toMatchObject({ threadId: "talk", approvalMode: "full", autoApprove: false });
+    expect(saved.tasks?.find((task) => task.threadId !== "talk")).toBeUndefined();
   });
 });
 

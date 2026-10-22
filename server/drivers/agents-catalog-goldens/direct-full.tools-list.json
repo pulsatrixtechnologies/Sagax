@@ -2376,7 +2376,7 @@
     },
     {
       "name": "propose_team_memory",
-      "description": "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a workspace admin to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
+      "description": "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a member of this team, or a workspace admin, to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,

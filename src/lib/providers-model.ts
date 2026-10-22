@@ -26,7 +26,7 @@ export interface ProviderGroup<T extends InstanceLike = InstanceLike> {
 const KNOWN: Array<{ id: ProviderId; name: string; kinds: string[]; manageUrl?: string; bringsConnectors?: boolean }> = [
   { id: "claude", name: "Claude", kinds: ["claudeAgent"], manageUrl: "https://claude.ai/customize/connectors", bringsConnectors: true },
   { id: "openai", name: "ChatGPT / Codex", kinds: ["codex"], manageUrl: "https://chatgpt.com/#settings/Connectors" },
-  { id: "xai", name: "Grok", kinds: ["grokAgent", "grok"] },
+  { id: "xai", name: "Grok", kinds: ["grokAgent", "grok"], manageUrl: "https://grok.com/connectors" },
   { id: "google", name: "Gemini", kinds: ["geminiAgent"] },
 ];
 
@@ -67,4 +67,11 @@ export function accountDetail(instance: InstanceLike): "email" | "apiKey" | "not
   if (instance.snapshot.account?.email) return "email";
   if (instance.snapshot.authenticated === false) return "notSignedIn";
   return "signedIn";
+}
+
+/** A Grok engine is set up on this installation: only then are the xAI
+ * account's connector names worth listing (they are managed on grok.com). */
+export function grokProviderConfigured(instances: readonly InstanceLike[]): boolean {
+  const kinds = KNOWN.find((entry) => entry.id === "xai")!.kinds;
+  return instances.some((instance) => kinds.includes(instance.driverKind) && instance.snapshot.state === "available");
 }

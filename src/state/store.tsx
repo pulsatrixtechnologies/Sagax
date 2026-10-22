@@ -3116,6 +3116,8 @@ export function reducer(state: AppState, action: Action): AppState {
         ...rest
       } = action.patch;
       const botPatch: Partial<Bot> = { ...rest };
+      const followThread = typeof action.patch.threadId === "string" ? action.patch.threadId : undefined;
+      const followMode = action.patch.approvalMode;
       if (computer === null) botPatch.computer = undefined;
       else if (computer !== undefined) botPatch.computer = computer;
       // A dropped grants record returns the bot to the absent legacy field,
@@ -3124,7 +3126,15 @@ export function reducer(state: AppState, action: Action): AppState {
       else if (connectorTools !== undefined) botPatch.connectorTools = connectorTools;
       if (connectorScopes === null) botPatch.connectorScopes = undefined;
       else if (connectorScopes !== undefined) botPatch.connectorScopes = connectorScopes;
-      return updateBot(next, action.botId, (b) => ({ ...b, ...botPatch }));
+      return updateBot(next, action.botId, (b) => {
+        const updated: Bot = { ...b, ...botPatch };
+        if (followThread && followMode && updated.tasks) {
+          updated.tasks = updated.tasks.map((task) => task.threadId === followThread
+            ? { ...task, approvalMode: followMode, autoApprove: followMode === "auto" }
+            : task);
+        }
+        return updated;
+      });
     }
     case "threadActive": {
       const bot = state.bots.find((b) => b.threadId === action.threadId);
@@ -3717,16 +3727,26 @@ export async function persistBotUpdate(
     confirmFullAccess,
     applyToAllThreads,
     organizationFullAccess,
-    ...ordinaryPatch
+    ...withThread
   } = patch;
+  // threadId rides the body with modelSelection only (the server pins the
+  // shown conversation for a model switch). The organization Full grant also
+  // names it, on its own request. Anywhere else it would be refused.
+  const { threadId: openThreadId, ...withoutThread } = withThread;
+  const ordinaryPatch: typeof withThread = withThread.modelSelection !== undefined ? withThread : withoutThread;
   if (approvalMode === "full" && organizationFullAccess === true) {
     // Organization server: ordinary fields first, then the Full grant alone
-    // (the server refuses anything riding along with it).
+    // (the server refuses anything riding along with it). The open
+    // conversation is named so the level on screen is the one just saved.
     if (Object.keys(ordinaryPatch).length) {
       await request(`/api/bots/${botId}`, { method: "PATCH", body: JSON.stringify(ordinaryPatch), signal });
     }
     const result = await request(`/api/bots/${botId}`, { method: "PATCH", signal,
-      body: JSON.stringify({ approvalMode: "full", ...(confirmFullAccess === true ? { confirmFullAccess: true } : {}) }) });
+      body: JSON.stringify({
+        approvalMode: "full",
+        ...(confirmFullAccess === true ? { confirmFullAccess: true } : {}),
+        ...(typeof openThreadId === "string" ? { threadId: openThreadId } : {}),
+      }) });
     return result.bot;
   }
   const trustedMode = approvalMode === "full" || approvalMode === "custom"
