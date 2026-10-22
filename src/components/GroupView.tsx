@@ -95,7 +95,7 @@ import { GroupPeoplePicker, useOrgDirectory } from "./GroupPeoplePicker";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { groupHumanLabel } from "@/lib/private-threads";
 import { ManageMembersPanel } from "./ManageMembersPanel";
-import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
+import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
 import { groupActivityRuns, isHiddenStatusActivity, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
@@ -1643,8 +1643,7 @@ export function GroupView({ group: stored }: { group: Group }) {
           readOnlyNote={!remoteClient && !ownsRoom}
           details={
             <>
-              <section>
-                <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("groupPanel.people")}</h3>
+              <PanelSection title={t("groupPanel.people")}>
                 <ChannelMembers
                   part="humans"
                   humans={channelHumans}
@@ -1680,9 +1679,8 @@ export function GroupView({ group: stored }: { group: Group }) {
                     onDone={() => setPickingPeople(false)}
                   />
                 )}
-              </section>
-              <section>
-                <h3 className="mb-1.5 text-[13px] text-ink-secondary">Bots</h3>
+              </PanelSection>
+              <PanelSection title="Bots">
                 <ChannelMembers
                   part="bots"
                   humans={[]}
@@ -1716,7 +1714,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                     {t("room.members.manage")}
                   </button>
                 )}
-              </section>
+              </PanelSection>
               {!remoteClient && !ownsRoom && viewerListed && (
                 <button
                   type="button"
@@ -1731,24 +1729,20 @@ export function GroupView({ group: stored }: { group: Group }) {
           advanced={
             remoteClient ? null : (
               <>
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
+                <PanelSection title={t("room.responder.aria")}>
                   <DefaultResponderSelect group={group} members={members} disabled={!ownsRoom} />
-                </section>
+                </PanelSection>
                 {(group.humanIds?.length ?? 0) > 0 && (
-                  <section>
-                    <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.mentionAll.title")}</h3>
+                  <PanelSection title={t("room.mentionAll.title")}>
                     <RoomMentionAll group={group} disabled={!ownsRoom} />
-                  </section>
+                  </PanelSection>
                 )}
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.turnLimit.aria")}</h3>
+                <PanelSection title={t("room.turnLimit.aria")}>
                   <ConversationTurnLimit group={group} />
-                </section>
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
+                </PanelSection>
+                <PanelSection title={t("room.folder.title")}>
                   <RoomWorkingFolder group={group} disabled={!ownsRoom || !folderEditable} adminOnlyNote={ownsRoom && !folderEditable} />
-                </section>
+                </PanelSection>
               </>
             )
           }
