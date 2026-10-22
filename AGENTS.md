@@ -4925,8 +4925,9 @@ it after an upstream merge instead of renaming by hand.
   helpers, the App Store text) says Sagax; resource names keep the old word.
   Android release signing reads `SAGAX_KEYSTORE_FILE`,
   `SAGAX_KEYSTORE_PASSWORD`, `SAGAX_KEY_ALIAS` and `SAGAX_KEY_PASSWORD`
-  first, and still reads the `OPENMAUSBOT_*` names for two releases. A
-  `SAGAX_*` variable that is set but empty counts as unset.
+  first, and still reads the `OPENMAUSBOT_*` names for two releases. A set
+  variable, even an empty one, wins over `keystore.properties`; an empty
+  `SAGAX_*` one counts as unset only for the fallback to the old name.
 - Not kept: the deploy stack (`deploy/docker-compose.yml`) builds its image
   from the checkout as `sagax:local`, never the upstream author's image.
   There is no public Sagax image yet. The self-hosting and VPS docs run the

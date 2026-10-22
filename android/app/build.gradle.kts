@@ -31,15 +31,19 @@ private val keystoreProperties = Properties().apply {
     if (file.isFile) file.inputStream().use(::load)
 }
 
-// An empty or blank value counts as unset at every step, so a CI that maps a
-// missing SAGAX_* secret to "" still reaches the OPENMAUSBOT_* one and then
-// keystore.properties.
+// The environment wins over keystore.properties: once either variable is set,
+// even to "", the file is not read for that value. A blank SAGAX_* variable
+// counts as unset only for the fallback to the OPENMAUSBOT_* one, so a CI that
+// maps a missing SAGAX_* secret to "" still reaches the old name. Blank with no
+// old name set gives no value (no silent fallback to the file).
 private fun nonBlank(value: String?): String? = value?.takeIf(String::isNotBlank)
 
-private fun signingMaterial(property: String, environment: String, legacyEnvironment: String): String? =
-    nonBlank(System.getenv(environment))
-        ?: nonBlank(System.getenv(legacyEnvironment))
-        ?: nonBlank(keystoreProperties.getProperty(property))
+private fun signingMaterial(property: String, environment: String, legacyEnvironment: String): String? {
+    val current = System.getenv(environment)
+    val legacy = System.getenv(legacyEnvironment)
+    if (current != null || legacy != null) return nonBlank(current) ?: nonBlank(legacy)
+    return nonBlank(keystoreProperties.getProperty(property))
+}
 
 private val storeFilePath = signingMaterial("storeFile", "SAGAX_KEYSTORE_FILE", "OPENMAUSBOT_KEYSTORE_FILE")
 private val storePasswordValue = signingMaterial("storePassword", "SAGAX_KEYSTORE_PASSWORD", "OPENMAUSBOT_KEYSTORE_PASSWORD")
@@ -66,7 +70,8 @@ private val releaseKeystore: java.io.File? = when {
             prefix = "Release signing is half-configured. Missing: ",
             separator = ", ",
             postfix = ". Supply all of it, or none of it for an unsigned build. " +
-                "The older OPENMAUSBOT_* variables are still read when the SAGAX_* ones are unset or empty.",
+                "The older OPENMAUSBOT_* variables are still read when the SAGAX_* ones are unset or empty; " +
+                "a set variable, even an empty one, takes precedence over keystore.properties.",
         )
     )
     else -> rootProject.file(storeFilePath!!).also {
