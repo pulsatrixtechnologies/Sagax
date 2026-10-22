@@ -22,6 +22,16 @@ export function isPhoneTool(value: unknown): value is PhoneToolId {
   return typeof value === "string" && (PHONE_TOOLS as readonly string[]).includes(value);
 }
 
+/** What a phone can be asked: the bots' tools, plus card_scan, which only
+ * the person's own computer asks (Settings > Vault > New card, "Scanner
+ * avec l'iPhone", audit row 84) and never a bot. */
+export const PHONE_REQUEST_KINDS = [...PHONE_TOOLS, "card_scan"] as const;
+export type PhoneRequestKind = typeof PHONE_REQUEST_KINDS[number];
+
+export function isPhoneRequestKind(value: unknown): value is PhoneRequestKind {
+  return typeof value === "string" && (PHONE_REQUEST_KINDS as readonly string[]).includes(value);
+}
+
 /** What the person decided on the phone. */
 export const PHONE_TOOL_DECISIONS = ["deny", "once", "always"] as const;
 export type PhoneToolDecision = typeof PHONE_TOOL_DECISIONS[number];
@@ -33,7 +43,7 @@ export type PhoneToolAccess = "read" | "write";
 /** Tools whose card never offers "Toujours permettre": a shortcut can do
  * anything the person's Shortcuts can (send a message, pay), the clipboard
  * may hold a password, and a photo is picked by hand each time anyway. */
-export const PHONE_TOOLS_ONCE_ONLY: ReadonlySet<PhoneToolId> = new Set(["shortcut", "clipboard", "photos"]);
+export const PHONE_TOOLS_ONCE_ONLY: ReadonlySet<PhoneRequestKind> = new Set(["shortcut", "clipboard", "photos", "card_scan"]);
 
 /** How long a request waits for the phone before it expires. */
 export const PHONE_TOOL_REQUEST_TTL_MS = 5 * 60_000;
@@ -104,7 +114,7 @@ export function parsePhoneToolArgs(tool: unknown, raw: unknown): ParsedPhoneTool
 }
 
 /** Whether a request reads the phone or changes it. */
-export function phoneToolAccess(tool: PhoneToolId, args: Record<string, unknown>): PhoneToolAccess {
+export function phoneToolAccess(tool: PhoneRequestKind, args: Record<string, unknown>): PhoneToolAccess {
   if ((tool === "reminders" || tool === "calendar") && args.action === "create") return "write";
   if (tool === "shortcut") return "write";
   return "read";
@@ -116,7 +126,7 @@ export function phoneToolAccess(tool: PhoneToolId, args: Record<string, unknown>
  * that very set of fields; reading reminders or the calendar. Anything
  * that changes the phone (creating a reminder or an event), a precise
  * position, a shortcut, the clipboard and photos are asked each time. */
-export function phoneToolGrantKey(tool: PhoneToolId, args: Record<string, unknown>): string | null {
+export function phoneToolGrantKey(tool: PhoneRequestKind, args: Record<string, unknown>): string | null {
   if (PHONE_TOOLS_ONCE_ONLY.has(tool) || phoneToolAccess(tool, args) === "write") return null;
   if (tool === "location") return args.precise === true ? null : "location:read:approximate";
   if (tool === "contacts") {
@@ -186,7 +196,29 @@ export const phoneToolResultSchemas = {
     }).optional(),
     focus: z.object({ focused: z.boolean() }).optional(),
   }),
-} satisfies Record<PhoneToolId, z.ZodTypeAny>;
+  // read on the phone (Vision), for the computer's New card form: never the security code
+  card_scan: z.object({
+    number: z.string().max(40),
+    expMonth: z.number().int().min(1).max(12).optional(),
+    expYear: z.number().int().min(2000).max(2100).optional(),
+    holder: text(80).optional(),
+  }),
+} satisfies Record<PhoneRequestKind, z.ZodTypeAny>;
+
+/** Luhn check of a 13 to 19 digit card number. */
+export function luhnValid(digits: string): boolean {
+  if (!/^\d{13,19}$/.test(digits)) return false;
+  let sum = 0;
+  for (let index = 0; index < digits.length; index += 1) {
+    let value = Number(digits[digits.length - 1 - index]);
+    if (index % 2 === 1) {
+      value *= 2;
+      if (value > 9) value -= 9;
+    }
+    sum += value;
+  }
+  return sum % 10 === 0;
+}
 
 /** Six decimals is about 10 cm; three is about 100 m, enough for "near
  * which street" and the default unless the bot asked for precise. */
@@ -197,10 +229,23 @@ export type CheckedPhoneToolResult = { ok: true; result: Record<string, unknown>
 /** The phone's answer, cut down to what the request asked for. The schemas
  * strip unknown keys; this also drops contact fields the bot did not ask
  * for and coarsens a position that was not asked precise. */
-export function checkPhoneToolResult(tool: PhoneToolId, args: Record<string, unknown>, raw: unknown): CheckedPhoneToolResult {
+export function checkPhoneToolResult(tool: PhoneRequestKind, args: Record<string, unknown>, raw: unknown): CheckedPhoneToolResult {
   const parsed = phoneToolResultSchemas[tool].safeParse(raw);
   if (!parsed.success) return { ok: false, error: "The phone's answer could not be read." };
   const result = parsed.data as Record<string, unknown>;
+  if (tool === "card_scan") {
+    const number = String(result.number).replace(/[\s-]/g, "");
+    if (!luhnValid(number)) return { ok: false, error: "The phone did not read a valid card number." };
+    return {
+      ok: true,
+      result: {
+        number,
+        ...(typeof result.expMonth === "number" ? { expMonth: result.expMonth } : {}),
+        ...(typeof result.expYear === "number" ? { expYear: result.expYear } : {}),
+        ...(typeof result.holder === "string" && result.holder.trim() ? { holder: result.holder.trim() } : {}),
+      },
+    };
+  }
   if (tool === "location") {
     const digits = args.precise === true ? 6 : 3;
     const out: Record<string, unknown> = {
@@ -243,7 +288,7 @@ export function checkPhoneToolResult(tool: PhoneToolId, args: Record<string, unk
 /** A request as the phone receives it (GET /api/me/phone-tools/requests). */
 export interface PhoneToolRequestWire {
   id: string;
-  tool: PhoneToolId;
+  tool: PhoneRequestKind;
   args: Record<string, unknown>;
   access: PhoneToolAccess;
   botId: string;
@@ -261,7 +306,7 @@ export interface PhoneToolRequestWire {
 /** What a phone says it can do (POST /api/me/phone-tools/device). */
 export const phoneDeviceSchema = z.object({
   deviceName: z.string().trim().max(80).default(""),
-  tools: z.array(z.enum(PHONE_TOOLS)).max(PHONE_TOOLS.length),
+  tools: z.array(z.enum(PHONE_REQUEST_KINDS)).max(PHONE_REQUEST_KINDS.length),
   /** How the phone reaches this server: "protected" is HTTPS or Tailscale.
    * On plain local Wi-Fi the phone offers nothing (JC 2026-10-21): the
    * answers would cross the network in clear. Absent is "local". */

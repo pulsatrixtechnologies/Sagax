@@ -9,7 +9,7 @@ import { json, readBody } from "../harness/http.ts";
 import { createPhoneToolBroker, type PhoneToolBroker } from "../phone-tools.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { dispatchInternalRoutes } from "./internal-route.ts";
-import { createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./phone-tools.ts";
+import { createPhoneCardScanRoutes, createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./phone-tools.ts";
 import { dispatchRoutes } from "./table.ts";
 
 describe("phone tool routes", () => {
@@ -127,5 +127,85 @@ describe("phone tool routes", () => {
     expect((await call("GET", "/api/me/phone-tools/grants", undefined, ann)).body).toEqual({ grants: [{ botId: "bot1", botName: "Wren", tool: "status", access: "read", key: "status:read" }] });
     expect((await call("DELETE", "/api/me/phone-tools/grants", { botId: "bot1", key: "status:read" }, ann)).body).toEqual({ ok: true, removed: true });
     expect((await call("GET", "/api/me/phone-tools/grants", undefined, ann)).body).toEqual({ grants: [] });
+  });
+});
+
+describe("Scanner avec l'iPhone (row 84)", () => {
+  const servers: Server[] = [];
+  const dirs: string[] = [];
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))));
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function serve() {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-card-scan-"));
+    dirs.push(dir);
+    const broker = createPhoneToolBroker({ dataDir: dir, notify: () => {} });
+    const routes = [
+      createPhoneToolRoutes({
+        broker: () => broker,
+        phone: (req) => (req.headers["x-device"] === "phone-a" ? { person: String(req.headers["x-who"]), deviceId: "phone-a", transport: "protected" as const } : null),
+        botName: () => undefined,
+      }),
+      createPhoneCardScanRoutes({
+        broker: () => broker,
+        // the computer: x-desktop names the person; a bot's shell has none
+        desktop: (req) => (typeof req.headers["x-desktop"] === "string" ? req.headers["x-desktop"] : null),
+        waitMs: 200,
+      }),
+    ];
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const auth = { kind: "loopback", scopes: ["admin"] } as unknown as RequestAuth;
+      const handled = await dispatchRoutes(routes, { req, res, url, path: url.pathname, method: req.method ?? "GET", auth, json, readBody });
+      if (!handled) json(res, 404, { from: "inline" });
+    });
+    servers.push(server);
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    return async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
+      const res = await fetch(base + path, { method, headers: { "content-type": "application/json", ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+      return { status: res.status, body: await res.json() as Record<string, unknown> };
+    };
+  }
+
+  const phone = { "x-who": "ann", "x-device": "phone-a" };
+  const desk = { "x-desktop": "ann" };
+
+  it("is offered only when a phone of the person can scan, and only to the person's computer", async () => {
+    const call = await serve();
+    expect((await call("GET", "/api/me/phone-tools/card-scan", undefined, desk)).body).toEqual({ available: false });
+    await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
+    expect((await call("GET", "/api/me/phone-tools/card-scan", undefined, desk)).body).toEqual({ available: true });
+    expect((await call("POST", "/api/me/phone-tools/card-scan", {})).status).toBe(403);
+  });
+
+  it("the phone scans, the computer gets the number, expiry and name once, never the security code", async () => {
+    const call = await serve();
+    await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
+    const started = await call("POST", "/api/me/phone-tools/card-scan", {}, desk);
+    const id = String(started.body.requestId);
+    expect(started.status).toBe(200);
+    const pending = await call("GET", "/api/me/phone-tools/requests", undefined, phone);
+    expect(pending.body.requests).toMatchObject([{ id, tool: "card_scan", allowAlways: false }]);
+    expect((await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, desk)).body).toEqual({ status: "pending", requestId: id });
+    await call("POST", `/api/me/phone-tools/requests/${id}`, { decision: "once", result: { number: "4111 1111 1111 1111", expMonth: 9, expYear: 2029, holder: "ANN", cvc: "123" } }, phone);
+    // another person's computer reads nothing
+    expect((await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, { "x-desktop": "bob" })).status).toBe(404);
+    const done = await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, desk);
+    expect(done.body).toEqual({ status: "done", card: { number: "4111111111111111", expMonth: 9, expYear: 2029, holder: "ANN" } });
+    expect(JSON.stringify(done.body)).not.toContain("123\"");
+    // read once
+    expect((await call("POST", `/api/me/phone-tools/card-scan/${id}/wait`, {}, desk)).status).toBe(404);
+  });
+
+  it("the computer can cancel, and a phone cannot answer Toujours permettre", async () => {
+    const call = await serve();
+    await call("POST", "/api/me/phone-tools/device", { tools: ["card_scan"], transport: "protected" }, phone);
+    const first = String((await call("POST", "/api/me/phone-tools/card-scan", {}, desk)).body.requestId);
+    expect((await call("POST", `/api/me/phone-tools/requests/${first}`, { decision: "always", result: { number: "4111111111111111" } }, phone)).status).toBe(400);
+    expect((await call("DELETE", `/api/me/phone-tools/card-scan/${first}`, undefined, desk)).body).toEqual({ ok: true, cancelled: true });
+    expect((await call("GET", "/api/me/phone-tools/requests", undefined, phone)).body.requests).toEqual([]);
   });
 });

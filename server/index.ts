@@ -1074,7 +1074,7 @@ import { createMeetingRoutes } from "./routes/meetings.ts";
 import { approvalTypeOf } from "./approval-type.ts";
 import { createMeetingInternalRoutes } from "./routes/meeting-internal.ts";
 // Phone tools (audit row 81): the person's own iPhone, approved on the phone.
-import { createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./routes/phone-tools.ts";
+import { createPhoneCardScanRoutes, createPhoneToolInternalRoutes, createPhoneToolRoutes } from "./routes/phone-tools.ts";
 import { createPhoneToolBroker, phoneToolTurn } from "./phone-tools.ts";
 import { phoneConnectionTransport } from "../shared/phone-transport.ts";
 import { ipcPeer } from "./request-auth.ts";
@@ -4055,7 +4055,7 @@ function agentsIntegration(
           ownTurn: ownEnvironmentOrigin(bot, threadId) === "owner",
           tainted: phoneToolTaintedThreads.has(threadId),
         });
-        return "error" in turn ? "" : phoneTools.availableTools(turn.person).join(",");
+        return "error" in turn ? "" : phoneTools.botTools(turn.person).join(",");
       })(),
       // recall_topic: a person's turn in a single-stream segment
       // (server/single-stream.ts). The route re-checks.
@@ -32707,6 +32707,17 @@ ROUTES.push(createPhoneToolRoutes({
     return { person, deviceId: `session:${auth.session.id}`, transport };
   },
   botName: (botId) => store.bot(botId)?.name,
+}));
+// "Scanner avec l'iPhone" (row 84): the person at their own computer asks
+// their phone to read a card; never a phone, a bot's shell or session. A
+// loopback POST already needed the desktop app's owner header (request-auth).
+ROUTES.push(createPhoneCardScanRoutes({
+  broker: () => phoneTools,
+  desktop: (req, auth) => {
+    if (req.headers["x-openmausbot-companion"] === "1") return null;
+    if (auth.kind === "session" && (auth.session.ephemeral || isBotActSession(auth.session))) return null;
+    return actorPrincipalId(auth) || null;
+  },
 }));
 // This person's phones for APNs pushes (server/routes/push-devices.ts).
 ROUTES.push(createPushDeviceRoutes({

@@ -515,6 +515,16 @@ Health is not offered.
   from the companion's vouched phone or a person's own device session, never
   a bot's session. The `phone-tools` frame carries no data and reaches the
   person's own streams only.
+- **Scanner avec l'iPhone** (row 84): the vault's New card form on the
+  computer asks the person's phone to read a card (`card_scan`, never a bot
+  tool: `/api/me/phone-tools/card-scan`, the computer only, never a bot's
+  shell or session nor a phone). The phone shows the card, reads it on the
+  device (`CardPhotoScanner`, Vision), shows the last four digits, and sends
+  the number, the expiry and the name only when the person taps Send; the
+  security code is never read. Only over HTTPS or Tailscale. The server
+  checks the number (Luhn), keeps it in memory until the form reads it once,
+  and never logs it; the form fills the fields and the person saves the card
+  as if typed.
 
 ## iOS feature parity routes (2026-10-03)
 

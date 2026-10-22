@@ -144,4 +144,16 @@ final class PhoneToolsTests: XCTestCase {
         XCTAssertEqual(preview?.count, 201)
         XCTAssertEqual(preview?.last, "…")
     }
+
+    func testACardScanIsOnceOnlyAndSendsNoSecurityCode() throws {
+        let scan = try wire(tool: "card_scan", allowAlways: true, preApproved: true)
+        XCTAssertEqual(scan.tool, .cardScan)
+        XCTAssertTrue(PhoneTool.cardScan.fromComputer)
+        XCTAssertEqual(PhoneToolRules.choices(for: scan), [.deny, .once])
+        XCTAssertFalse(PhoneToolRules.runsWithoutCard(scan, appActive: true, offered: [.cardScan]))
+        let card = PhoneToolShaping.scannedCard(number: "4111 1111 1111 1111", expMonth: 9, expYear: 2029, holder: "MARIE TREMBLAY")
+        XCTAssertEqual(card, .object(["number": .string("4111111111111111"), "expMonth": .number(9), "expYear": .number(2029), "holder": .string("MARIE TREMBLAY")]))
+        XCTAssertEqual(PhoneToolShaping.scannedCard(number: "4111111111111111", expMonth: 13, expYear: nil, holder: nil).object?.keys.sorted(), ["number"])
+        XCTAssertEqual(PhoneToolShaping.maskedNumber("4111111111111111"), "•••• 1111")
+    }
 }

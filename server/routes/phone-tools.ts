@@ -132,3 +132,56 @@ export function createPhoneToolInternalRoutes(deps: PhoneToolInternalDeps): Inte
     return json(res, 200, outcome);
   };
 }
+
+// "Scanner avec l'iPhone" (audit row 84): the person's own computer, in the
+// vault's New card form, asks their iPhone to read a card (Vision, on the
+// phone). Never a bot: the request has no bot and no conversation.
+//   GET    /api/me/phone-tools/card-scan            { available }
+//   POST   /api/me/phone-tools/card-scan            start: { requestId }
+//   POST   /api/me/phone-tools/card-scan/:id/wait   { status, card? } (number, expiry, name; never the security code)
+//   DELETE /api/me/phone-tools/card-scan/:id        the form gave up
+// The card number crosses this route once, to the form that asked; the
+// server keeps it only in memory until that read and never logs it.
+const CARD_SCAN = "/api/me/phone-tools/card-scan";
+const CARD_SCAN_ID = /^\/api\/me\/phone-tools\/card-scan\/([\w-]{1,64})(\/wait)?$/;
+
+export interface PhoneCardScanRouteDeps {
+  broker(): PhoneToolBroker;
+  /** The person at their own computer (the desktop app, or their signed-in
+   * session); null for a bot's shell or session, a phone, or a service. */
+  desktop(req: IncomingMessage, auth: RequestAuth): string | null;
+  waitMs?: number;
+}
+
+export function createPhoneCardScanRoutes(deps: PhoneCardScanRouteDeps): RouteHandler {
+  return async ({ req, res, path, method, auth, json }) => {
+    const match = CARD_SCAN_ID.exec(path);
+    if (path !== CARD_SCAN && !match) return PASS;
+    res.setHeader("cache-control", "no-store");
+    const person = deps.desktop(req, auth);
+    if (!person) return json(res, 403, { error: "Only you, at your computer, can ask your phone to scan a card." });
+    const broker = deps.broker();
+    const owner = { botId: "", threadId: `card-scan:${person.trim().toLowerCase()}` };
+    if (path === CARD_SCAN) {
+      if (method === "GET") return json(res, 200, { available: broker.availableTools(person).includes("card_scan") });
+      if (method !== "POST") return json(res, 405, { error: "GET or POST" });
+      try {
+        const request = broker.request({ person, botId: owner.botId, botName: "", threadId: owner.threadId, tool: "card_scan", args: {} });
+        return json(res, 200, { requestId: request.id, expiresAt: request.expiresAt });
+      } catch (error) {
+        if (error instanceof PhoneToolUnavailable) return json(res, error.status, { error: error.message });
+        throw error;
+      }
+    }
+    const requestId = match![1]!;
+    if (match![2]) {
+      if (method !== "POST") return json(res, 405, { error: "POST" });
+      const outcome = await broker.wait(requestId, owner, deps.waitMs ?? PHONE_TOOL_CALL_WAIT_MS);
+      if (outcome.status === "unknown") return json(res, 404, { error: "No such scan." });
+      if (outcome.status === "done") return json(res, 200, { status: "done", card: outcome.result });
+      return json(res, 200, outcome);
+    }
+    if (method !== "DELETE") return json(res, 405, { error: "DELETE" });
+    return json(res, 200, { ok: true, cancelled: broker.cancel(person, requestId) });
+  };
+}

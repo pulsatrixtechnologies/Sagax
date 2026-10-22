@@ -28,7 +28,7 @@ enum PhoneToolError: LocalizedError {
 
 @MainActor
 enum PhoneToolRunner {
-    static func run(_ request: PhoneToolRequest, photos: [Data]?) async throws -> WidgetJSON {
+    static func run(_ request: PhoneToolRequest, photos: [Data]?, card: WidgetJSON? = nil) async throws -> WidgetJSON {
         guard let tool = request.tool else { throw PhoneToolError.invalid("This phone does not know that tool.") }
         switch tool {
         case .location: return try await location(precise: request.flag("precise"))
@@ -41,6 +41,9 @@ enum PhoneToolRunner {
         case .shortcut: return try await shortcut(request)
         case .clipboard: return PhoneToolShaping.clipboard(UIPasteboard.general.hasStrings ? UIPasteboard.general.string : nil)
         case .status: return await status()
+        case .cardScan:
+            guard let card else { throw PhoneToolError.invalid("No card was read.") }
+            return card
         }
     }
 

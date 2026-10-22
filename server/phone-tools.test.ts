@@ -236,3 +236,27 @@ describe("housekeeping (review of #960)", () => {
     }
   });
 });
+
+describe("card scan through the broker (row 84)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("is never offered as a bot tool, and the computer can cancel it", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-scan-"));
+    dirs.push(dataDir);
+    const notified: string[] = [];
+    const broker = createPhoneToolBroker({ dataDir, notify: (person) => notified.push(person) });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["card_scan", "status"], transport: "protected" });
+    expect(broker.availableTools("ann")).toEqual(["card_scan", "status"]);
+    expect(broker.botTools("ann")).toEqual(["status"]);
+    const request = broker.request({ person: "ann", botId: "", botName: "", threadId: "card-scan:ann", tool: "card_scan", args: {} });
+    expect(request.allowAlways).toBe(false);
+    expect(broker.cancel("bob", request.id)).toBe(false);
+    expect(broker.cancel("ann", request.id)).toBe(true);
+    expect(broker.pendingFor("ann")).toEqual([]);
+    await expect(broker.wait(request.id, { botId: "", threadId: "card-scan:ann" }, 10)).resolves.toEqual({ status: "unknown" });
+    expect(notified.filter((person) => person === "ann").length).toBe(2);
+  });
+});

@@ -13794,7 +13794,14 @@
       "step.phone.tool.photos": "5e3147ab51e0084c3c817707f1aed1510260c13f45697bfe380dc51f6c179151",
       "step.phone.tool.shortcut": "5753ea3780f34ad1295fb9957f1575e7e7578aa0e891d89524c26ad6f504cb1d",
       "step.phone.tool.clipboard": "285d69f0c5d1a00bb2eccde0cb4c93367b3e94955acff9fabd895f81a0c45c59",
-      "step.phone.tool.status": "0dba1ed6a91b0f61b809aeb16b1dae29e7fa0c973cbe66e00e5b82afd553f3ff"
+      "step.phone.tool.status": "0dba1ed6a91b0f61b809aeb16b1dae29e7fa0c973cbe66e00e5b82afd553f3ff",
+      "vault.phoneScan.button": "df629e13412299428fffdc8eac63d1edbd7b47bc64cf96dcad341330e96671fc",
+      "vault.phoneScan.cancel": "9d4e52da94a75e6642cf53eac9c424ca30e6adcddc7ca5ebe51bafdb612719b5",
+      "vault.phoneScan.waiting": "5f74943526ed42be25d94a225afe7bde43d77d5ba73252e2b2a555813c4c6b40",
+      "vault.phoneScan.done": "71b5ab7f68d19591ea02e5bb138ca148f0bd6c5c51fbbd38e55e02a4f16b5f87",
+      "vault.phoneScan.denied": "87108060e28ea86a5592be28761baf3be37003b3b01c76b32e391667ae28cc9c",
+      "vault.phoneScan.expired": "ad417952a8322edf5c43870788e5bc7de1b2877f91757a7db78915734cbf7b80",
+      "vault.phoneScan.failed": "8d2fa8649bdce255b5ecd8c87799b69dcee6751aa72aafcb523c60349e94593e"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

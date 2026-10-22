@@ -11,12 +11,19 @@ import Foundation
 /// The tools a bot may ask this phone for.
 public enum PhoneTool: String, CaseIterable, Codable, Sendable, Identifiable {
     case location, contacts, reminders, calendar, photos, shortcut, clipboard, status
+    /// "Scanner avec l'iPhone" (audit row 84): only the person's own
+    /// computer asks it, from the vault's New card form; never a bot.
+    case cardScan = "card_scan"
 
     public var id: String { rawValue }
 
     /// "Toujours permettre" is never offered: a shortcut can do anything,
-    /// the clipboard may hold a password, a photo is picked by hand anyway.
-    public var onceOnly: Bool { self == .shortcut || self == .clipboard || self == .photos }
+    /// the clipboard may hold a password, a photo is picked by hand anyway,
+    /// a card is scanned by hand each time.
+    public var onceOnly: Bool { self == .shortcut || self == .clipboard || self == .photos || self == .cardScan }
+
+    /// The person's computer asked, not a bot.
+    public var fromComputer: Bool { self == .cardScan }
 }
 
 /// A request waiting on this phone (GET /api/me/phone-tools/requests).
@@ -306,6 +313,23 @@ public enum PhoneToolShaping {
         guard side > maxSide, side > 0 else { return (width, height) }
         let factor = maxSide / side
         return ((width * factor).rounded(), (height * factor).rounded())
+    }
+
+    /// A card read on this phone, for the computer's New card form: the
+    /// number, the expiry and the name. There is no security code here:
+    /// it is never read and never sent.
+    public static func scannedCard(number: String, expMonth: Int?, expYear: Int?, holder: String?) -> WidgetJSON {
+        var row: [String: WidgetJSON] = ["number": .string(number.filter { $0.isASCII && $0.isNumber })]
+        if let expMonth, (1...12).contains(expMonth) { row["expMonth"] = .number(Double(expMonth)) }
+        if let expYear, (2000...2100).contains(expYear) { row["expYear"] = .number(Double(expYear)) }
+        if let holder, !holder.isEmpty { row["holder"] = .string(String(holder.prefix(80))) }
+        return .object(row)
+    }
+
+    /// The last four digits, for the card that confirms what goes.
+    public static func maskedNumber(_ number: String) -> String {
+        let digits = number.filter { $0.isASCII && $0.isNumber }
+        return "•••• " + String(digits.suffix(4))
     }
 
     /// shortcuts://run-shortcut for a name the person has, with text input.

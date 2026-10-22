@@ -13,11 +13,21 @@ struct PhoneToolCard: View {
     let request: PhoneToolRequest
     /// The clipboard's text, read before the card showed (only this goes).
     var clipboardPreview: String?
+    /// HTTPS or Tailscale: a scanned card number never crosses cleartext Wi-Fi.
+    var protectedTransport = true
     @State private var picking = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var working = false
 
     var body: some View {
+        if request.tool == .cardScan {
+            PhoneCardScanCard(request: request, protectedTransport: protectedTransport)
+        } else {
+            toolCard
+        }
+    }
+
+    private var toolCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: PhoneToolWords.symbol(request.tool))
@@ -141,6 +151,7 @@ enum PhoneToolWords {
         case .shortcut: "square.stack.3d.up"
         case .clipboard: "doc.on.clipboard"
         case .status: "battery.75percent"
+        case .cardScan: "creditcard.viewfinder"
         case nil: "questionmark.circle"
         }
     }
@@ -155,6 +166,7 @@ enum PhoneToolWords {
         case .shortcut: String(localized: "Shortcuts")
         case .clipboard: String(localized: "Clipboard")
         case .status: String(localized: "Battery, network and Focus")
+        case .cardScan: String(localized: "Scan a card for your computer")
         }
     }
 
@@ -185,6 +197,8 @@ enum PhoneToolWords {
             return String(localized: "Read the text on your clipboard.")
         case .status:
             return String(localized: "Read the battery, the network and whether a Focus is on.")
+        case .cardScan:
+            return String(localized: "Your computer asks to scan a payment card. The number, the expiry and the name go to its New card form; the security code is never read.")
         case nil:
             return String(localized: "This version of Sagax does not know this tool. Update the app to use it.")
         }
@@ -238,5 +252,66 @@ enum PhoneToolPhotos {
             if let jpeg = scaled.jpegData(compressionQuality: 0.7) { out.append(jpeg) }
         }
         return out
+    }
+}
+
+/// "Scanner avec l'iPhone" (audit row 84): the computer's New card form
+/// asked. The card is read on this phone (CardPhotoScanner, Vision); the
+/// person sees what was read before it goes, and only the number, the
+/// expiry and the name go. Never over cleartext Wi-Fi.
+private struct PhoneCardScanCard: View {
+    let request: PhoneToolRequest
+    let protectedTransport: Bool
+    @State private var read: CardScanResult?
+    @State private var working = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                Image(systemName: PhoneToolWords.symbol(.cardScan))
+                    .font(.title2)
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(Color.accentColor.opacity(0.15)))
+                Text("Scan a card for your computer").font(.headline)
+            }
+            Text(PhoneToolWords.what(request))
+                .fixedSize(horizontal: false, vertical: true)
+            if !protectedTransport {
+                Text("This needs a secure connection (HTTPS or Tailscale). Type the card on your computer instead.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let read, let number = read.pan {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verbatim: PhoneToolShaping.maskedNumber(number)).font(.body.monospacedDigit())
+                    if let month = read.expMonth, let year = read.expYear {
+                        Text(verbatim: String(format: "%02d/%d", month, year)).foregroundStyle(.secondary)
+                    }
+                    if let holder = read.holder { Text(verbatim: holder).foregroundStyle(.secondary) }
+                }
+                Button {
+                    working = true
+                    Task { await PhoneToolCenter.shared.choose(.once, card: PhoneToolShaping.scannedCard(number: number, expMonth: read.expMonth, expYear: read.expYear, holder: read.holder)) }
+                } label: {
+                    Text("Send to the computer").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(working)
+            } else {
+                CardPhotoScanner { result in read = result }
+            }
+            Spacer(minLength: 0)
+            Button(role: .cancel) {
+                working = true
+                Task { await PhoneToolCenter.shared.choose(.deny) }
+            } label: {
+                Text("Deny").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .disabled(working)
+        }
+        .padding(20)
     }
 }
