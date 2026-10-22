@@ -3,18 +3,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { CodeStatus } from "../../shared/code-runs.ts";
-import { codeRowVisible, codeStatusOnce, resetCodeStatusCache } from "@/lib/code-runs";
+import { codeHashTarget, codeStatusOnce, resetCodeStatusCache } from "@/lib/code-runs";
 
 afterEach(() => resetCodeStatusCache());
 
-describe("codeRowVisible", () => {
-  it("hides the row while loading and when Perspicax does not serve the agents API", () => {
-    expect(codeRowVisible(null)).toBe(false);
-    expect(codeRowVisible({ available: false, reason: "not_available" })).toBe(false);
+describe("codeHashTarget", () => {
+  it("opens the Code section from #code, and one run from #code/<run>", () => {
+    expect(codeHashTarget("#code")).toEqual({});
+    expect(codeHashTarget("#code/run_42-a")).toEqual({ runId: "run_42-a" });
   });
-  it("shows it when Code works, and on the other gates (solo, sign-in, unreachable)", () => {
-    expect(codeRowVisible({ available: true })).toBe(true);
-    for (const reason of ["solo", "no_session", "unreachable"] as const) expect(codeRowVisible({ available: false, reason })).toBe(true);
+  it("leaves pairing links and other addresses alone", () => {
+    for (const hash of ["", "#", "#code=ABCD-EFGH", "#code=x&auto=1", "#codex", "#approvals", "#code/", "#code/a/b"]) {
+      expect(codeHashTarget(hash)).toBeNull();
+    }
   });
 });
 

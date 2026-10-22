@@ -48,6 +48,7 @@ import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference"
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
 import { isInboxHash } from "../shared/approvals-inbox";
+import { codeHashTarget } from "@/lib/code-runs";
 import { takeSettingsReturn } from "@/lib/settings-return";
 import { saveSidebarAttentionPinned, toggleSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -116,6 +117,13 @@ function Shell() {
   // opened with one, the screen opens with them.
   useEffect(() => {
     if (isInboxHash(window.location.hash)) dispatch({ type: "showApprovals" });
+  }, [dispatch]);
+  // `#code` (or `#code/<run>`) opens the Code section, then leaves the address.
+  useEffect(() => {
+    const target = codeHashTarget(window.location.hash);
+    if (!target) return;
+    dispatch({ type: "showCode", ...target });
+    try { history.replaceState(history.state, "", `${location.pathname}${location.search}`); } catch { /* ignore */ }
   }, [dispatch]);
   // Back from a sign-in a Settings page asked for (Settings > Security: the
   // first key needs a fresh one): that page opens again.
