@@ -12,6 +12,8 @@ import {
   ruleCandidateFor,
   ruleCoversExactScope,
   WHOLE_CALL_KEY,
+  APP_KEY,
+  APP_RULE_TOOL,
   ruleInputFor,
   ruleScopeFor,
   scopeKeepable,
@@ -473,5 +475,66 @@ describe("a shell line reported beside no input (Codex, ACP)", () => {
     expect(matchOwnerRule([rule], bash("npm run deploy"))).toBeUndefined();
     expect(matchOwnerRule([rule], bash("npm install"))).toBeUndefined();
     expect(matchOwnerRule([rule], bash("npm install", { dangerouslyDisableSandbox: true }))?.id).toBe("s1");
+  });
+});
+
+describe("app rules on the person's own computer (parité R10, ligne 80)", () => {
+  const CLICK = "mcp__computer__click";
+  const TYPE = "mcp__sagax-desktop__computer_use";
+  const clickSafari = JSON.stringify({ pid: 812, element_index: 5 });
+  const typeSafari = JSON.stringify({ tool_name: "type_text", arguments: { pid: 812, text: "bonjour" } });
+  const SAFARI = { label: "Safari", bundleId: "com.apple.Safari", team: "apple" };
+  const appRule = (candidate: NonNullable<ReturnType<typeof cardRuleCandidate>>): OwnerRule => ({
+    id: "r_app", ownerId: ALICE, botId: "bot_1", tool: candidate.tool, scope: candidate.scope, behavior: "allow",
+    description: candidate.description, ...(candidate.from ? { from: candidate.from } : {}), createdAt: 1, updatedAt: 1,
+  });
+
+  it("keeps the signed app the server read, never the whole call", () => {
+    const candidate = cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {});
+    expect(candidate).toMatchObject({ tool: APP_RULE_TOOL, scope: { [APP_KEY]: "Safari", bundle: "com.apple.Safari", team: "apple" } });
+    expect(candidate?.from).toBeUndefined();
+    expect(candidate?.description).toContain("Safari");
+  });
+
+  it("covers every coverable screen action of that app, never another app or another signature", () => {
+    const rule = appRule(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {})!);
+    const call = (over: Partial<RuleCall>) => ({ ownerId: ALICE, botId: "bot_1", tool: CLICK, input: clickSafari, app: SAFARI, ...over });
+    expect(matchOwnerRule([rule], call({}))?.id).toBe("r_app");
+    expect(matchOwnerRule([rule], call({ tool: TYPE, input: typeSafari }))?.id).toBe("r_app");
+    expect(matchOwnerRule([rule], call({ app: { label: "Notes", bundleId: "com.apple.Notes", team: "apple" } }))).toBeUndefined();
+    // a copied "Safari" signed by someone else is another app
+    expect(matchOwnerRule([rule], call({ app: { label: "Safari", bundleId: "com.apple.Safari", team: "ABCDE12345" } }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ app: { label: "Safari", bundleId: "com.evil.Safari", team: "apple" } }))).toBeUndefined();
+    // the server read no app (another turn, another computer): no match
+    expect(matchOwnerRule([rule], call({ app: undefined }))).toBeUndefined();
+    // a call an app rule never covers (foreground, a file written)
+    expect(matchOwnerRule([rule], call({ input: JSON.stringify({ pid: 812, delivery_mode: "foreground" }) }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ input: JSON.stringify({ pid: 812, debug_image_out: "/tmp/a.png" }) }))).toBeUndefined();
+    // another bot, another person, a tool that is not a screen action
+    expect(matchOwnerRule([rule], call({ botId: "bot_2" }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ ownerId: BOB }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ tool: "mcp__sagax-desktop__run_command", input: JSON.stringify({ command: "ls" }) }))).toBeUndefined();
+  });
+
+  it("an app rule missing its signature never covers anything (no empty scope, no older label-only rule)", () => {
+    const base = appRule(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {})!);
+    const call = { ownerId: ALICE, botId: "bot_1", tool: CLICK, input: clickSafari, app: SAFARI };
+    expect(matchOwnerRule([{ ...base, scope: {} }], call)).toBeUndefined();
+    expect(matchOwnerRule([{ ...base, scope: { [APP_KEY]: "Safari" } }], call)).toBeUndefined();
+  });
+
+  it("answers an ordinary card, never a held card, a key or a turn that is not the person's own", () => {
+    const rule = appRule(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {})!);
+    const call = { ownerId: ALICE, botId: "bot_1", tool: CLICK, input: clickSafari, app: SAFARI };
+    expect(ownerDecision({ mode: "approval", rules: [rule], call })).toMatchObject({ kind: "allow", source: "owner-rule" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, autonomyRefused: true }).kind).toBe("card");
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, stepUpRequired: true }).kind).toBe("card");
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, personMustAnswer: true }).kind).toBe("card");
+  });
+
+  it("a held, an admin's or an origin card keeps its own rule", () => {
+    for (const situation of [{ held: true }, { from: "admin" as const }, { from: "origin" as const }]) {
+      expect(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, situation)?.tool).not.toBe(APP_RULE_TOOL);
+    }
   });
 });

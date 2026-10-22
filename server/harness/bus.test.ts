@@ -476,3 +476,46 @@ describe("EventBus streamed text", () => {
     await bus.flush();
   });
 });
+
+describe("publish gate (parité R10)", () => {
+  const opened = (threadId: string, extra: Record<string, unknown> = {}) => ({
+    type: "request.opened", requestType: "permission", tool: "mcp__computer__click", summary: "click", threadId, provider: "claude", eventId: `e-${Math.random()}`, createdAt: "2026-10-21T00:00:00.000Z", ...extra,
+  }) as unknown as RuntimeEvent;
+  const done = (threadId: string) => ({ type: "turn.completed", threadId, provider: "claude", eventId: `d-${Math.random()}`, createdAt: "2026-10-21T00:00:00.000Z" }) as unknown as RuntimeEvent;
+
+  it("holds an event, keeps the thread's order, and drops an adapter's screenApp", async () => {
+    const bus = new EventBus(() => {});
+    const seen: RuntimeEvent[] = [];
+    bus.subscribe((event) => { seen.push(event); });
+    let release!: (event: RuntimeEvent) => void;
+    bus.setPublishGate((event) => event.type === "request.opened" ? new Promise((resolve) => { release = (e) => resolve(e); }) : null);
+    bus.publish(opened("t1", { screenApp: { label: "Forged", bundleId: "x", team: "y" } }));
+    bus.publish(done("t1"));
+    bus.publish(done("t2"));
+    expect(seen.map((e) => `${e.type}:${e.threadId}`)).toEqual(["turn.completed:t2"]);
+    release({ ...(opened("t1") as object), screenApp: { label: "Safari", bundleId: "com.apple.Safari", team: "apple" } } as RuntimeEvent);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seen.map((e) => `${e.type}:${e.threadId}`)).toEqual(["turn.completed:t2", "request.opened:t1", "turn.completed:t1"]);
+    const held = seen[1] as Extract<RuntimeEvent, { type: "request.opened" }>;
+    expect(held.screenApp?.label).toBe("Safari");
+  });
+
+  it("strips screenApp when no gate holds the event", () => {
+    const bus = new EventBus(() => {});
+    const seen: RuntimeEvent[] = [];
+    bus.subscribe((event) => { seen.push(event); });
+    bus.publish(opened("t1", { screenApp: { label: "Forged", bundleId: "x", team: "y" } }));
+    expect("screenApp" in (seen[0] as object)).toBe(false);
+  });
+});
+
+describe("publish gate failure (review of #954)", () => {
+  it("publishes the event unchanged when the gate throws", () => {
+    const bus = new EventBus(() => {});
+    const seen: RuntimeEvent[] = [];
+    bus.subscribe((event) => { seen.push(event); });
+    bus.setPublishGate(() => { throw new Error("boom"); });
+    bus.publish({ type: "turn.completed", threadId: "t1", provider: "claude", eventId: "x", createdAt: "2026-10-21T00:00:00.000Z" } as unknown as RuntimeEvent);
+    expect(seen).toHaveLength(1);
+  });
+});

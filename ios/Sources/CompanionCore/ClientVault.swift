@@ -28,6 +28,8 @@ public struct VaultItemPublic: Decodable, Equatable, Sendable, Identifiable {
     public var hasNotes: Bool
     public var card: VaultCardPublic?
     public var address: VaultAddressPublic?
+    /// "1password" for a 1Password reference (allowed once only, review of #954).
+    public var source: String?
 
     /// What the row shows. Never a number. */
     public var subtitle: String {

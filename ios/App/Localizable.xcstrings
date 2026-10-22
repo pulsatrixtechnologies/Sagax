@@ -72329,6 +72329,102 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Copier la version" } },
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Copiar a versão" } }
       }
+    },
+    "Requested by %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Requested by %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demandé par %@" } }
+      }
+    },
+    "Replaced by a newer request": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Replaced by a newer request" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Remplacée par une demande plus récente" } }
+      }
+    },
+    "You signed in to %@ yourself": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You signed in to %@ yourself" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tu t'es connecté toi-même à %@" } }
+      }
+    },
+    "Login \"%@\" allowed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Login \"%@\" allowed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Identifiant « %@ » permis" } }
+      }
+    },
+    "always for %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "always for %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "toujours pour %@" } }
+      }
+    },
+    "this time": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "this time" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "cette fois" } }
+      }
+    },
+    "%@ can type it into that site's page but never read it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ can type it into that site's page but never read it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ peut le saisir dans la page de ce site, sans jamais le lire." } }
+      }
+    },
+    "Looking in your vault…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Looking in your vault…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Recherche dans ton coffre…" } }
+      }
+    },
+    "No saved login for this site. Add one on your computer, or sign in there yourself.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No saved login for this site. Add one on your computer, or sign in there yourself." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun identifiant enregistré pour ce site. Ajoute-en un sur ton ordinateur, ou connecte-toi toi-même là-bas." } }
+      }
+    },
+    "In 1Password": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In 1Password" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Dans 1Password" } }
+      }
+    },
+    "Read from 1Password only when the bot fills it, never added to chat. 1Password may ask you to approve.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read from 1Password only when the bot fills it, never added to chat. 1Password may ask you to approve." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lu dans 1Password seulement au remplissage, jamais ajouté à la conversation. 1Password peut te demander d'approuver." } }
+      }
+    },
+    "Card photos": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Card photos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Photos de la carte" } }
+      }
+    },
+    "From Photos": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "From Photos" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Depuis Photos" } }
+      }
+    },
+    "Reading the card…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reading the card…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lecture de la carte…" } }
+      }
+    },
+    "No card was read. Try a sharper photo, or type it.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No card was read. Try a sharper photo, or type it." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune carte lue. Essaie une photo plus nette, ou saisis-la." } }
+      }
+    },
+    "Check what was read and type the security code yourself.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Check what was read and type the security code yourself." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérifie ce qui a été lu et saisis toi-même le code de sécurité." } }
+      }
     }
   },
   "version": "1.0"

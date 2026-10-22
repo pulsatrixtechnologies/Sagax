@@ -77,6 +77,22 @@ const cards: Record<string, { card: NonNullable<Message["card"]>; tool: string }
   },
 };
 
+// card=app: a click in one app of the person's own computer, whose Always
+// allow keeps that app (parité R10, ligne 80)
+cards.app = {
+  tool: "mcp__computer__click",
+  card: {
+    requestId: "req-3",
+    tool: "mcp__computer__click",
+    mcpTool: "mcp__computer__click",
+    title: "",
+    subtitle: "",
+    toolInput: JSON.stringify({ pid: 812, window_id: 2, element_index: 14 }),
+    options: ["Allow", "Deny"],
+    ownerRule: { tool: "computer_app", scope: { app: "Safari" }, description: "Utiliser Safari sur cet ordinateur (voir, cliquer et saisir du texte)" },
+  } as unknown as NonNullable<Message["card"]>,
+};
+
 // card=candidate: the command card without an owner rule, whose Always allow
 // saves the server's proposed custom rule in one click
 if (which === "candidate") cards.candidate = { ...cards.command!, card: { ...cards.command!.card, ownerRule: undefined } };

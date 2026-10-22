@@ -14,6 +14,7 @@ import { failedTurnCause } from "../../shared/failed-turn";
 import { isStoppedTurnName } from "../../shared/client-cancel";
 import { localDay } from "@/lib/transcript-derivations";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../../shared/sandbox-wake";
+import { ONE_PASSWORD_WAITING } from "../../shared/credential-vault";
 import { isQuietWorkspaceLine, parseWorkspaceLine, type WorkspaceLine } from "../../shared/workspace-line";
 import type { SelectedComputer } from "../../shared/execution-target";
 import type { LocaleKey } from "@/locales";
@@ -45,6 +46,8 @@ export function statusActivity(message: Message): { kind: "recovery" | "notice" 
   // (server/sandbox-k8s-wake.ts): the server's fixed rows, in the person's language.
   if (name === SANDBOX_WAKE_NOTICE) return { kind: "notice", text: t("chat.sandboxWakingAsleep") };
   if (name === SANDBOX_WAKE_TIMEOUT_NOTICE) return { kind: "notice", text: t("chat.sandboxWakeTimeout") };
+  // A fill reads 1Password, which may ask the person first (parité R10).
+  if (name === ONE_PASSWORD_WAITING) return { kind: "notice", text: t("vault.onePassword.waiting") };
   // Auto changed where the bot works (shared/workspace-line.ts).
   const workspace = parseWorkspaceLine(name);
   if (workspace) return { kind: "notice", text: workspaceLineText(workspace) };

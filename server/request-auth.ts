@@ -712,7 +712,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases\/pay_[a-f0-9]{16}\/answer$/ },
   { methods: ["DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/grants\/[\w-]{1,128}$/ },
   // A bot's login request card: the handler checks the card is the caller's.
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss|onepassword)$/ },
   // The person's own memory sync token for the desktop's Settings > Memory
   // (server/perspicax-memory-sync-token.ts): the session's own sub only.
   { methods: ["GET", "POST"], path: /^\/api\/me\/memory-sync-token$/, feature: "orgDirectory" },
