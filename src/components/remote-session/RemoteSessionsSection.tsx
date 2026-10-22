@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Monitor } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Monitor, X } from "lucide-react";
 
 import { formatEndLabel, publicText, type RemoteSessionView } from "../../../shared/remote-session";
 import { cn } from "@/lib/cn";
@@ -9,14 +9,24 @@ import { clearRemoteSessionLocal, focusRemoteSessionLocal } from "@/lib/remote-s
 import type { Bot } from "@/state/store";
 import { remoteClosePhase } from "./remote-close";
 import { closeRemoteSession, focusRemoteSession } from "./remote-session-client";
-import { remoteControllable, RemoteTakeover } from "./RemoteScreenCard";
+import { remoteControllable, RemoteTakeover, STOP_CONFIRM_MS } from "./RemoteScreenCard";
+import { RemoteSessionActions } from "./RemoteSessionActions";
+import { remoteOsLabel } from "./RemoteSessionFacts";
+import { RemoteSessionThumb } from "./RemoteSessionThumb";
 import { useRemoteSessions } from "./use-remote-sessions";
 
 export { remoteClosePhase };
 
-function endLabel(view: RemoteSessionView): string {
+/** The row's title: the computer's name, the code only when the name is
+ * unknown. The code never repeats in the subtitle (it is in the tooltip). */
+export function remoteRowTitle(view: RemoteSessionView): string {
+  return publicText(view.hostname) || view.code;
+}
+
+/** The row's subtitle: user, OS, when the session ends on its own. */
+export function remoteRowSubtitle(view: RemoteSessionView): string {
   const time = formatEndLabel(view.endAt);
-  return time ? `${view.code}, ${t("remoteSession.ends", { time })}` : view.code;
+  return [publicText(view.user), remoteOsLabel(view), time ? t("remoteSession.endsAt", { time }) : ""].filter(Boolean).join(" \u00b7 ");
 }
 
 /** Close stays on its own button: it never takes control. */
@@ -54,12 +64,14 @@ export function takeRemoteControl(input: {
 
 /** The sidebar list. Always there: an empty list says so in one line. */
 export function RemoteSessionsPanel({
+  botId,
   rows,
   confirmId,
   error,
   onTakeControl,
   onClose,
 }: {
+  botId: string;
   rows: RemoteSessionView[];
   confirmId: string | null;
   error: string | null;
@@ -78,39 +90,45 @@ export function RemoteSessionsPanel({
       {rows.length > 0 && (
         <div className={GROUPED_CARD}>
           {rows.map((view) => {
-            const name = publicText(view.hostname) || view.code;
-            const user = publicText(view.user);
+            const title = remoteRowTitle(view);
             const confirming = confirmId === view.id;
+            const takeControl = remoteControllable(view) && !view.headless ? () => onTakeControl(view) : undefined;
             return (
-              <div key={view.id} data-remote-session-row="" className={cn("flex flex-col gap-2", GROUPED_ROW)}>
-                <div className="min-w-0">
-                  <span className="block truncate text-[13px] font-medium leading-[18px] text-ink">{name}</span>
-                  {user && <span className="block truncate text-[13px] leading-[18px] text-ink-secondary">{user}</span>}
-                  <span className="block text-[13px] leading-[18px] text-ink-secondary">{endLabel(view)}</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {remoteControllable(view) && !view.headless && (
-                    <button
-                      type="button"
-                      data-remote-take-control=""
-                      onClick={() => onTakeControl(view)}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised"
-                    >
-                      <Monitor size={14} aria-hidden="true" /> {t("remoteSession.takeControl")}
-                    </button>
-                  )}
+              <div key={view.id} data-remote-session-row="" className={cn("flex flex-col gap-2.5", GROUPED_ROW)}>
+                <div className="flex items-start gap-2.5">
+                  <RemoteSessionThumb botId={botId} view={view} {...(takeControl ? { onTakeControl: takeControl } : {})} />
+                  <div className="min-w-0 flex-1" title={t("remoteSession.codeTitle", { code: view.code })}>
+                    <span data-remote-row-title="" className="block truncate text-[13px] font-medium leading-[18px] text-ink">{title}</span>
+                    <span data-remote-row-subtitle="" className="line-clamp-2 break-words text-[12.5px] leading-[18px] text-ink-secondary">{remoteRowSubtitle(view)}</span>
+                  </div>
                   <button
                     type="button"
                     data-remote-close={confirming ? "confirm" : "ask"}
                     aria-label={confirming ? t("remoteSession.confirmClose") : t("remoteSession.close")}
+                    title={confirming ? t("remoteSession.confirmClose") : t("remoteSession.close")}
                     onClick={(event) => { event.stopPropagation(); onClose(view); }}
                     className={confirming
-                      ? "rounded-lg border border-danger/60 px-2.5 py-1 text-[12.5px] text-danger hover:bg-raised"
-                      : "rounded-lg border border-hairline/50 px-2.5 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink"}
+                      ? "inline-flex h-[24px] shrink-0 items-center rounded-full bg-danger px-2.5 text-[12px] font-medium leading-4 text-[#fff] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/60 motion-reduce:transition-none"
+                      : "ui-icon-button -mr-1 -mt-0.5 size-6 shrink-0 hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"}
                   >
-                    {confirming ? t("remoteSession.confirmClose") : t("remoteSession.close")}
+                    {confirming ? t("remoteSession.confirmShort") : <X size={14} aria-hidden="true" />}
                   </button>
                 </div>
+                <RemoteSessionActions
+                  botId={botId}
+                  view={view}
+                  compact
+                  leading={takeControl && view.state === "connected" ? (
+                    <button
+                      type="button"
+                      data-remote-take-control=""
+                      onClick={takeControl}
+                      className="ui-button h-[28px] gap-1.5 px-[11px] text-[12.5px] leading-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+                    >
+                      <Monitor size={15} aria-hidden="true" className="shrink-0" /> <span className="truncate">{t("remoteSession.takeControl")}</span>
+                    </button>
+                  ) : undefined}
+                />
               </div>
             );
           })}
@@ -127,6 +145,12 @@ export function RemoteSessionsSection({ bot }: { bot: Bot }) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [controlling, setControlling] = useState<string | null>(null);
+  // a first press on X is forgotten after a few seconds, like Stop on the screen card
+  useEffect(() => {
+    if (!confirmId) return;
+    const timer = setTimeout(() => setConfirmId(null), STOP_CONFIRM_MS);
+    return () => clearTimeout(timer);
+  }, [confirmId]);
   const controlled = rows.find((row) => row.id === controlling) ?? null;
 
   const takeControl = (view: RemoteSessionView) => {
@@ -159,6 +183,7 @@ export function RemoteSessionsSection({ bot }: { bot: Bot }) {
   return (
     <>
       <RemoteSessionsPanel
+        botId={bot.id}
         rows={rows}
         confirmId={confirmId}
         error={error}
