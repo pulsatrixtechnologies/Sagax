@@ -4,6 +4,7 @@
 // First of all, SAGAX_* settings onto the names the code reads (step 1 of
 // the rename, electron/legacy-names.mjs).
 import { isReadOnlyCommand, runCommandOf } from "../shared/read-only-command.ts";
+import { remoteSessionToolCall } from "./remote-session-exec.ts";
 import "../electron/legacy-env-boot.mjs";
 import { ENVIRONMENT_PATHS, HEALTH_IDENTITY } from "../electron/legacy-names.mjs";
 import { healthzBody } from "./healthz.ts";
@@ -14494,6 +14495,13 @@ bus.subscribe((event: RuntimeEvent) => {
       // server of the turn could have spelled (sagax-internal-tools.ts).
       const foreignServers = permission && asker && event.requestId ? foreignMcpServerNames(asker, event.threadId) : [];
       const internalTool = permission && asker && event.requestId ? sagaxInternalTool(event.mcpTool ?? event.tool, foreignServers) : null;
+      // Tailcat (2026-10-22, server/remote-session-exec.ts): a command on a
+      // client's computer that does more than read is the person's call every
+      // time: a card no level, rule or Always allow answers.
+      const remoteCall = permission && asker && event.requestId
+        ? remoteSessionToolCall(event.mcpTool ?? event.tool, typeof event.input === "string" ? event.input : undefined)
+        : null;
+      if (remoteCall?.remote && !remoteCall.readOnly) event.requiresExplicitApproval = true;
       // 2026-10-19 (owner setup, server/owner-autonomy.ts): a Perspicax read
       // or coordination lease on Sagax's own mount, never a name another
       // server of the turn could have spelled, never a guest's turn.

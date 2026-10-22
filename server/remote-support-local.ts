@@ -504,7 +504,7 @@ async function statusCall(input: {
   return { text: withConnectedNote(marked.text) };
 }
 
-export const CONNECTED_NOTE = "Connected. Sagax posts the session card in this chat and the row in the bot panel by itself, and the screen shows in the Computer tab. Tell the person it is connected. Do not write a screenshot to the Desktop and do not open Preview.";
+export const CONNECTED_NOTE = "Connected. Sagax posts the session card and the live screen in this chat by itself. Tell the person it is connected. To look at the computer, call remote_session_snapshot (one call); to run a command, remote_session_exec. Do not write a screenshot to the Desktop and do not open Preview.";
 
 /** A connected status tells the bot the card is coming, so it stops checking. */
 function withConnectedNote(text: string): string {

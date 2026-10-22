@@ -136,13 +136,12 @@ describe("Détails du poste", () => {
 });
 
 describe("the action row", () => {
-  it("makes Prendre le contrôle the one filled action, the rest grey pills of the same size", () => {
-    act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view, onTakeControl: () => {} })));
-    const primary = $("[data-remote-take-control]")!;
-    expect(primary.className).toContain("ui-button-primary");
+  it("shows three grey pills of the same size; Take control is on the screen card", () => {
+    act(() => root.render(createElement(RemoteSessionActions, { botId: "melonie", view })));
+    expect($("[data-remote-take-control]")).toBeNull();
     const secondary = [...document.querySelectorAll<HTMLElement>("[data-remote-action]")];
     expect(secondary.map((button) => button.dataset.remoteAction)).toEqual(["shell", "upload", "download"]);
-    for (const button of [primary, ...secondary]) {
+    for (const button of secondary) {
       expect(button.className).toContain("ui-button");
       expect(button.querySelector("svg")).not.toBeNull();
     }

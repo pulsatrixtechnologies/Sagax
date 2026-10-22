@@ -209,8 +209,9 @@ function recorder(existing: Set<string> = new Set()) {
     commands.push(argv);
     const last = argv.at(-1) ?? "";
     if (argv[1] === "cp") return { code: 0, stdout: "", stderr: "" };
-    if (last.includes("sagax-transfer") && !last.includes("-EncodedCommand")) return { code: 0, stdout: `${TRANSFER}\r\n`, stderr: "" };
     const script = last.includes("-EncodedCommand") ? decodeWindows(last) : last;
+    // the transfer folder command is encoded too (the Windows session shell is PowerShell)
+    if (script.includes("sagax-transfer")) return { code: 0, stdout: `${TRANSFER}\r\n`, stderr: "" };
     if (script.includes("Test-Path") || script.includes("sagax-exists")) return { code: 0, stdout: existing.has(carriedPath(last)) ? "yes" : "no", stderr: "" };
     if (last.includes("-EncodedCommand")) return { code: 0, stdout: WINDOWS_LISTING, stderr: "" };
     return { code: 0, stdout: "", stderr: "" };

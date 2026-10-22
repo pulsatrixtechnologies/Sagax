@@ -29,6 +29,16 @@ describe("production image sources", () => {
     }
   });
 
+  // `tailcat ssh` and `tailcat cp` exec the system ssh client with tailcat as
+  // its ProxyCommand: without openssh-client in the runtime image every remote
+  // session shell, inventory, screenshot and file transfer fails on the server.
+  it("ships the ssh client tailcat execs for remote sessions", () => {
+    const dockerfile = read("Dockerfile");
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf("\nFROM "));
+    expect(runtime).toMatch(/apt-get install -y --no-install-recommends[^\n]*\bopenssh-client\b/);
+    expect(runtime).toContain("/usr/local/bin/tailcat");
+  });
+
   it("defaults the image to the full set and exports the build args", () => {
     const dockerfile = read("Dockerfile");
     expect(dockerfile).toContain("ARG ENGINE_SET=all");

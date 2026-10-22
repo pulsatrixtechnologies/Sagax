@@ -72,3 +72,24 @@ export function resolveTailcatBinary(options: TailcatLookup = {}): string | null
   }
   return null;
 }
+
+/** The system ssh client `tailcat ssh` and `tailcat cp` exec (tailcat is only
+ * its ProxyCommand), or null when this host has none: then no remote shell,
+ * probe, screenshot or file transfer can work here, and callers say so
+ * instead of starting a shell that ends at once. */
+export function resolveSystemSsh(options: Pick<TailcatLookup, "env" | "platform" | "exists"> = {}): string | null {
+  const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  const exists = options.exists ?? existsSync;
+  const name = platform === "win32" ? "ssh.exe" : "ssh";
+  const pathEntry = Object.entries(env).find(([key]) => key.toLowerCase() === "path");
+  const delimiter = platform === "win32" ? ";" : ":";
+  const flavor = platform === "win32" ? path.win32 : path.posix;
+  const dirs = String(pathEntry?.[1] ?? "").split(delimiter).filter((dir) => dir && flavor.isAbsolute(dir));
+  if (platform !== "win32") for (const dir of ["/usr/bin", "/bin", "/usr/local/bin"]) if (!dirs.includes(dir)) dirs.push(dir);
+  for (const dir of dirs) {
+    const candidate = flavor.join(dir, name);
+    if (exists(candidate)) return candidate;
+  }
+  return null;
+}

@@ -1,18 +1,16 @@
-// Tailcat stage 1: the panel always shows its section, Prendre le contrôle
-// opens the Computer tab in every mode, the card carries every fact and the
-// action buttons, and the screen stays read-only.
+// Tailcat stage 1: the panel always shows its section, the card carries every
+// fact and the action buttons. Since 2026-10-22 the screen is in the chat
+// (RemoteScreenCard) and Take control opens its window, never the Computer tab.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { formatEndLabel, type RemoteSessionView } from "../../../shared/remote-session";
 import { setLocale, t } from "@/lib/i18n";
-import { endRemoteControl, remoteControlBot, startRemoteControl } from "@/lib/remote-session-focus";
 import { StoreProvider } from "@/state/store";
-import { computerTabIsRemoteOnly, visiblePanelTabs } from "../bot-settings/panel-tabs";
+import { visiblePanelTabs } from "../bot-settings/panel-tabs";
 import { RemoteSessionCard } from "./RemoteSessionCard";
-import { RemoteSessionControl, RemoteSessionScreen } from "./RemoteSessionControl";
-import { RemoteSessionsPanel, takeRemoteControl } from "./RemoteSessionsSection";
+import { RemoteSessionsPanel } from "./RemoteSessionsSection";
 
 const ADDRESS = "tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd";
 
@@ -36,30 +34,13 @@ const view: RemoteSessionView = {
 
 describe("tailcat stage 1", () => {
   afterEach(() => {
-    endRemoteControl();
     setLocale("en");
   });
 
-  it("shows the Computer tab for a remote session in control, in Simple too", () => {
-    expect(visiblePanelTabs({ advanced: false, computerOff: false, remoteControl: false })).toEqual(["details", "library"]);
-    expect(visiblePanelTabs({ advanced: false, computerOff: false, remoteControl: true })).toEqual(["details", "library", "computer"]);
-    expect(visiblePanelTabs({ advanced: true, computerOff: true, remoteControl: false })).toEqual(["details", "library"]);
-    expect(visiblePanelTabs({ advanced: true, computerOff: true, remoteControl: true })).toEqual(["details", "library", "computer"]);
-    expect(visiblePanelTabs({ advanced: true, computerOff: false, remoteControl: false })).toEqual(["details", "library", "computer"]);
-    expect(computerTabIsRemoteOnly({ advanced: false, computerOff: false })).toBe(true);
-    expect(computerTabIsRemoteOnly({ advanced: true, computerOff: true })).toBe(true);
-    expect(computerTabIsRemoteOnly({ advanced: true, computerOff: false })).toBe(false);
-  });
-
-  it("Prendre le contrôle marks the session in control before it opens the Computer tab", () => {
-    const seen: Array<string | null> = [];
-    takeRemoteControl("melonie", view.id, () => seen.push(remoteControlBot()));
-    expect(seen).toEqual(["melonie"]);
-    endRemoteControl();
-    expect(remoteControlBot()).toBeNull();
-    startRemoteControl("melonie");
-    startRemoteControl("melonie");
-    expect(remoteControlBot()).toBe("melonie");
+  it("never shows the Computer tab for a remote session: Simple hides it, a bot that works nowhere has none", () => {
+    expect(visiblePanelTabs({ advanced: false, computerOff: false })).toEqual(["details", "library"]);
+    expect(visiblePanelTabs({ advanced: true, computerOff: true })).toEqual(["details", "library"]);
+    expect(visiblePanelTabs({ advanced: true, computerOff: false })).toEqual(["details", "library", "computer"]);
   });
 
   it("the panel row shows computer, user, code and end time, with Prendre le contrôle and a two-step close", () => {
@@ -91,8 +72,9 @@ describe("tailcat stage 1", () => {
     for (const value of ["POSTE-01", "exemple\\usager", t("remoteSession.rights.standard"), "BQDHS7", "SN40", "PowerEdge R650", "Intel Xeon Silver", "32 Go", "200 Go libres sur 500 Go"]) {
       expect(card).toContain(value);
     }
-    expect(card).toContain("data-remote-take-control");
-    expect(card).toContain(t("remoteSession.takeControl"));
+    // the screen card comes first, the facts card under it
+    expect(card.indexOf("data-remote-screen-card")).toBeGreaterThanOrEqual(0);
+    expect(card.indexOf("data-remote-screen-card")).toBeLessThan(card.indexOf("data-remote-session-card"));
     expect(card).toContain(t("remoteSession.shell"));
     expect(card).toContain(t("remoteSession.upload"));
     expect(card).toContain(t("remoteSession.download"));
@@ -105,18 +87,5 @@ describe("tailcat stage 1", () => {
       createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: { ...view, elevated: true } }),
     ));
     expect(elevated).toContain(t("remoteSession.rights.admin"));
-  });
-
-  it("the Computer tab is a read-only picture, and says so when no session is there", () => {
-    const screen = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: "blob:screen", missed: false }));
-    expect(screen).toContain('data-remote-input="none"');
-    expect(screen).not.toMatch(/onmouse|tabindex|contenteditable/i);
-    // the picture keeps its own proportions: no fixed 16:10 box leaving a dark band under it
-    expect(screen).toContain("data-remote-session-shot");
-    expect(screen).not.toContain("aspect-[16/10]");
-    const empty = renderToStaticMarkup(createElement(StoreProvider, null, createElement(RemoteSessionControl, { botId: "melonie", showEmpty: true })));
-    expect(empty).toContain("data-remote-session-control-empty");
-    expect(empty).toContain("No remote session is open.");
-    expect(renderToStaticMarkup(createElement(StoreProvider, null, createElement(RemoteSessionControl, { botId: "melonie" })))).toBe("");
   });
 });

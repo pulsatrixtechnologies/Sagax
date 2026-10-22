@@ -5,7 +5,7 @@ import type { LocaleKey } from "@/locales";
 import { useStore } from "@/state/store";
 import { RemoteSessionActions } from "./RemoteSessionActions";
 import { RemoteSessionFacts } from "./RemoteSessionFacts";
-import { takeRemoteControl } from "./RemoteSessionsSection";
+import { RemoteScreenCard, remoteHasScreen } from "./RemoteScreenCard";
 
 const SUGGESTION_LABEL: Record<string, LocaleKey> = {
   "disk-critical": "remoteSession.suggest.disk-critical",
@@ -43,7 +43,10 @@ export function remoteSuggestionText(id: string, host: string): string | null {
   return key ? t(key, { host }) : null;
 }
 
-/** The chat card for one remote computer. Suggestions send a short prompt. */
+/** The chat card for one remote computer: its live screen first, drawn like
+ * the bot's own computer screen (RemoteScreenCard), then the facts and the
+ * actions, details folded. A server without a desktop has no screen: its
+ * facts card says shell only. Suggestions send a short prompt. */
 export function RemoteSessionCard({ botId, threadId, view, detailsOpen = false }: { botId: string; threadId: string; view: RemoteSessionView; detailsOpen?: boolean }) {
   const { dispatch } = useStore();
   const host = publicText(view.hostname) || view.code;
@@ -54,8 +57,10 @@ export function RemoteSessionCard({ botId, threadId, view, detailsOpen = false }
   };
   const hints = view.state === "connected" ? view.suggestions.filter((hint) => SUGGESTION_LABEL[hint.id]) : [];
   return (
+    <div data-remote-session="" className="flex flex-col gap-3">
+    {remoteHasScreen(view) && <RemoteScreenCard botId={botId} view={view} />}
     <div data-remote-session-card="" data-remote-state={view.state} className="@container/remote overflow-hidden rounded-xl border border-hairline text-ink">
-      <RemoteSessionFacts view={view} detailsOpen={detailsOpen} />
+      <RemoteSessionFacts view={view} detailsOpen={detailsOpen} botId={botId} />
       {hints.length > 0 && (
         <div data-remote-hints="" className="border-t border-hairline/40 px-3 pb-3 pt-2.5">
           <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-ink-tertiary">
@@ -85,12 +90,9 @@ export function RemoteSessionCard({ botId, threadId, view, detailsOpen = false }
         </div>
       )}
       <div className="border-t border-hairline/40">
-        <RemoteSessionActions
-          botId={botId}
-          view={view}
-          onTakeControl={() => takeRemoteControl(botId, view.id, () => dispatch({ type: "toggleComputer", open: true }))}
-        />
+        <RemoteSessionActions botId={botId} view={view} />
       </div>
+    </div>
     </div>
   );
 }

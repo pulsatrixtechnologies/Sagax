@@ -117,6 +117,10 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   // a usage card (server/resource-usage/): read-only, on a computer this
   // person already reaches; the target's own rights are checked
   resource_usage: "conversation",
+  // the speaker's own Tailcat session: a fixed read, and one command that
+  // asks unless it only reads (server/remote-session-exec.ts)
+  remote_session_snapshot: "read",
+  remote_session_exec: "conversation",
   // join_meeting only stages a consent card; the person approves each join
   join_meeting: "conversation",
 });

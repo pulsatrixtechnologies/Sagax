@@ -89,4 +89,20 @@ describe("tailcat terminal adapter", () => {
       rows: 24,
     })).rejects.toThrow("This remote computer is not connected from here.");
   });
+  it("says the server has no ssh client instead of opening a shell nobody can type in", async () => {
+    const adapter = createTailcatAdapter({
+      targets: () => [{ id: ID, hostLabel: "POSTE-01", label: "Session à distance" }],
+      tunnel: () => ({ keyPath: "/k/client.private.json", address: ADDRESS }),
+      systemSsh: () => null,
+    });
+    await expect(adapter.open(ID, {
+      auth: { principalId: "person-1" } as never,
+      principalId: "person-1",
+      botId: "bot-1",
+      sessionId: "term-3",
+      cols: 80,
+      rows: 24,
+    })).rejects.toThrow("This Sagax server has no ssh client, so the remote shell cannot open. Install openssh-client on the server.");
+    expect(captured.argv).toHaveLength(0);
+  });
 });

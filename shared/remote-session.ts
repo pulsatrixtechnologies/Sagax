@@ -30,6 +30,17 @@ export interface RemoteSessionFacts {
   ramGb?: number;
 }
 
+/** Why the facts (and the screen) are or are not there, so the card says it
+ * instead of n/a everywhere:
+ * - pending: Sagax is reading the computer (inventory in progress);
+ * - ready: read;
+ * - no-tunnel: this server does not have the session's tunnel (opened
+ *   outside Sagax, for example by a script on another computer);
+ * - no-answer: the tunnel is here but the computer did not answer;
+ * - os-unknown: the computer answered neither uname nor PowerShell;
+ * - no-client: this Sagax server has no ssh client (tailcat execs it). */
+export type RemoteInventoryState = "pending" | "ready" | "no-tunnel" | "no-answer" | "os-unknown" | "no-client";
+
 export interface RemoteSessionView {
   id: string;
   code: string;
@@ -47,6 +58,15 @@ export interface RemoteSessionView {
   disk?: string;
   /** The session the Computer tab is showing. Absent on the others. */
   focused?: boolean;
+  /** Absent on a card written before 2026-10-22 (treated as ready). */
+  inventory?: RemoteInventoryState;
+  /** False while the OS is not known yet (`os` is then only a placeholder). */
+  osKnown?: boolean;
+  /** A server without a desktop (Server Core, a Linux server): shell only. */
+  headless?: boolean;
+  /** macOS refused the screenshot: Screen Recording is not allowed for the
+   * program that runs the session on that Mac. */
+  screenDenied?: boolean;
   suggestions: RemoteSessionSuggestion[];
 }
 
@@ -129,7 +149,7 @@ export function formatDisk(freeGb: number, totalGb: number): { text: string; fre
 }
 
 const INVENTORY_KEYS = new Set([
-  "hostname", "user", "model", "serial", "cpu", "os", "admin",
+  "hostname", "user", "model", "serial", "cpu", "os", "admin", "gui",
   "ramBytes", "diskFreeKb", "diskTotalKb",
 ]);
 
@@ -142,6 +162,8 @@ export function parseInventory(stdout: string): {
   cpu?: string;
   osName?: string;
   elevated?: boolean;
+  /** false: no desktop on that computer (shell only). */
+  gui?: boolean;
   ramGb?: number;
   diskFreeGb?: number;
   diskTotalGb?: number;
@@ -159,6 +181,7 @@ export function parseInventory(stdout: string): {
   const freeKb = Number(out.diskFreeKb);
   const totalKb = Number(out.diskTotalKb);
   const admin = out.admin?.toLowerCase();
+  const gui = out.gui?.toLowerCase();
   return {
     ...(out.hostname ? { hostname: out.hostname } : {}),
     ...(out.user ? { user: out.user } : {}),
@@ -167,6 +190,7 @@ export function parseInventory(stdout: string): {
     ...(out.cpu ? { cpu: out.cpu } : {}),
     ...(out.os ? { osName: out.os } : {}),
     ...(admin === "true" || admin === "false" ? { elevated: admin === "true" } : {}),
+    ...(gui === "true" || gui === "false" ? { gui: gui === "true" } : {}),
     ...(Number.isFinite(ramBytes) && ramBytes > 0 ? { ramGb: ramBytes / (1024 ** 3) } : {}),
     ...(Number.isFinite(freeKb) && freeKb >= 0 ? { diskFreeGb: freeKb / (1024 ** 2) } : {}),
     ...(Number.isFinite(totalKb) && totalKb > 0 ? { diskTotalGb: totalKb / (1024 ** 2) } : {}),

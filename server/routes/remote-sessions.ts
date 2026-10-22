@@ -20,7 +20,7 @@ import type { PublishRemoteSession, RemoteSessionService } from "../remote-sessi
 import { remoteCallerIsAgent } from "./remote-session-files.ts";
 
 const LIST = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions$/;
-const ONE = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions\/([a-f0-9]{12})(?:\/(close|focus|shell|upload|download|screen))?$/;
+const ONE = /^\/api\/bots\/([\w-]{1,80})\/remote-sessions\/([a-f0-9]{12})(?:\/(close|focus|shell|upload|download|screen|os))?$/;
 const UPLOAD_JSON_MAX = 12_000_000;
 
 const publishBody = z.object({
@@ -37,6 +37,12 @@ const publishBody = z.object({
   ram: z.string().max(80).optional(),
   disk: z.string().max(200).optional(),
   os_name: z.string().max(200).optional(),
+}).strict();
+
+const execBody = z.object({
+  session: z.string().max(20).optional(),
+  command: z.string().max(8000).optional(),
+  timeout_seconds: z.number().int().min(1).max(120).optional(),
 }).strict();
 
 export function parsePublishBody(body: unknown, now: number): { error: string } | { value: Omit<PublishRemoteSession, "botId" | "threadId" | "principalId"> } {
@@ -160,8 +166,20 @@ export function createRemoteSessionRoutes(deps: {
     }
     if (action === "screen" && method === "GET") {
       const png = await deps.sessions.screen(principalId, botId, id);
-      if (!png) return json(res, 404, { error: "The screen is not available." });
+      if (!png) {
+        // the card says why (view.inventory, headless, screenDenied)
+        const view = deps.sessions.list(principalId, botId).find((row) => row.id === id) ?? null;
+        return json(res, 404, { error: "The screen is not available.", ...(view ? { session: view } : {}) });
+      }
       return sendBytes(res, 200, "image/png", png);
+    }
+    if (action === "os" && method === "POST") {
+      // the technician names the OS the computer could not (or told wrong)
+      const body = z.object({ os: z.enum(["windows", "macos", "linux"]) }).strict().safeParse(await readJson(req));
+      if (!body.success) return json(res, 400, { error: "os must be windows, macos or linux." });
+      const session = await deps.sessions.setOs(principalId, botId, id, body.data.os);
+      if (!session) return json(res, 404, { error: "That remote session is not open." });
+      return json(res, 200, { session });
     }
     return json(res, 405, { error: "method not allowed" });
   };
@@ -177,6 +195,27 @@ export function createRemoteSessionInternalRoutes(deps: {
 }): InternalRouteHandler {
   const now = deps.now ?? (() => Date.now());
   return async ({ res, path, method, json, capability, readBody: readJson }) => {
+    if (path === "/api/internal/remote-sessions/exec" || path === "/api/internal/remote-sessions/snapshot") {
+      if (method !== "POST") return json(res, 405, { error: "method not allowed" });
+      if (!deps.ownsThread(capability.botId, capability.threadId)) {
+        return json(res, 403, { error: "source conversation does not belong to sender" });
+      }
+      // the person speaking: a session is theirs, never the conversation owner's
+      const principalId = deps.speaker
+        ? deps.speaker(capability.threadId)?.trim().toLowerCase()
+        : deps.sessions.principalFor(capability.botId, capability.threadId);
+      if (!principalId) return json(res, 403, { error: "No person speaks in this turn, so no remote session is theirs." });
+      const parsed = execBody.safeParse(await readJson());
+      if (!parsed.success) return json(res, 400, { error: "Send session (optional) and, for exec, command and timeout_seconds (optional)." });
+      const target = { principalId, botId: capability.botId, threadId: capability.threadId, ...(parsed.data.session ? { id: parsed.data.session } : {}) };
+      const result = path.endsWith("/snapshot")
+        ? await deps.sessions.snapshot(target)
+        : parsed.data.command
+          ? await deps.sessions.exec({ ...target, command: parsed.data.command, ...(parsed.data.timeout_seconds ? { timeoutMs: parsed.data.timeout_seconds * 1000 } : {}) })
+          : { error: "command: the command line to run on the remote computer." };
+      if ("error" in result) return json(res, 409, { error: result.error });
+      return json(res, 200, result);
+    }
     if (path !== "/api/internal/remote-sessions/publish") return PASS;
     if (method !== "POST") return json(res, 405, { error: "method not allowed" });
     if (!deps.ownsThread(capability.botId, capability.threadId)) {

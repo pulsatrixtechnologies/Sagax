@@ -828,6 +828,25 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "remote_session_snapshot",
+    description: "Read the connected Tailcat remote computer in one call: OS, uptime, CPU, memory, disks, top processes. No card.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { session: { type: "string", description: "Support code; default: this chat's session." } } },
+  },
+  {
+    name: "remote_session_exec",
+    description: "Run one command on the connected Tailcat remote computer (sh on macOS/Linux, PowerShell on Windows); returns exit code and output. A read-only command runs at once, any other asks the person.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        command: { type: "string", maxLength: 8000 },
+        session: { type: "string", description: "Support code; default: this chat's session." },
+        timeout_seconds: { type: "integer", minimum: 1, maximum: 120 },
+      },
+      required: ["command"],
+    },
+  },
+  {
     name: "join_meeting",
     description: "Join a Google Meet as a notetaker (link from the person or a calendar event). Posts a consent card; nothing joins until they approve. You get the transcript after, to post notes.",
     inputSchema: {
@@ -1792,7 +1811,7 @@ export const PERSPICAX_TOOLS = [
     end_at: { type: "string", description: "optional RFC 3339 end. Omit it for 2 hours from now. Never later than 24 hours" },
     start_minutes: { type: "integer", minimum: 5, maximum: 30, description: "minutes allowed before the first script fetch (default 15)" },
   }),
-  pxTool("remote_support_status", "The state of a remote support session you opened: waiting, fetched, started, connected, ended or expired. Call it when the person says the script is launched, not in a loop. fetch_ip_count must be exactly 1 (one address took the script): above 1 someone else read the code, do not connect, close it (cancelled) and open a new one. When the end user has started, this same call connects this computer with the local technician key and marks the session connected; if it still says started, call it once more. Once connected, Sagax posts the session card in the chat and the row in the bot panel by itself, and the screen shows in the Computer tab: never write a screenshot to the Desktop or open Preview. The address stays on this computer: it is not in this result, and you do not repeat it or run tailcat yourself. Pass the code remote_support_open answered.", { code: { type: "string", description: "the code remote_support_open answered" }, mark_connected: { type: "boolean", description: "omit it. Sagax marks the session connected after the local key reaches the computer" } }, ["code"]),
+  pxTool("remote_support_status", "The state of a remote support session you opened: waiting, fetched, started, connected, ended or expired. Call it when the person says the script is launched, not in a loop. fetch_ip_count must be exactly 1 (one address took the script): above 1 someone else read the code, do not connect, close it (cancelled) and open a new one. When the end user has started, this same call connects this computer with the local technician key and marks the session connected; if it still says started, call it once more. Once connected, Sagax posts the session card and the live screen in the chat by itself: never write a screenshot to the Desktop or open Preview. Then use remote_session_snapshot. The address stays on this computer: it is not in this result, and you do not repeat it or run tailcat yourself. Pass the code remote_support_open answered.", { code: { type: "string", description: "the code remote_support_open answered" }, mark_connected: { type: "boolean", description: "omit it. Sagax marks the session connected after the local key reaches the computer" } }, ["code"]),
   pxTool("remote_support_close", "Close a remote support session you opened: outcome ended for a session that ran, cancelled for one that never connected. The end user's script stops the tunnel within 10 s. Always call it at the end.", { code: { type: "string", description: "the code remote_support_open answered" }, outcome: { type: "string", enum: ["ended", "cancelled"] } }, ["code", "outcome"]),
   pxTool("review_write", "Approve or refuse a write waiting for an approver: the review id from the pending answer and decision approve or refuse. Only the named approver can decide it.", { id: { type: "string" }, decision: { type: "string", enum: ["approve", "refuse"] } }, ["id", "decision"]),
 ];

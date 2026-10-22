@@ -280,7 +280,8 @@ describe("remote support on this computer", () => {
     expect(guide).toContain("Sessions à distance");
     expect(status).toContain("fetch_ip_count must be exactly 1");
     expect(status).toContain("never write a screenshot to the Desktop or open Preview");
-    expect(status).toContain("posts the session card in the chat");
+    expect(status).toContain("posts the session card and the live screen in the chat");
+    expect(status).toContain("remote_session_snapshot");
     expect(publish).toContain("posted by itself");
     for (const text of [open, status, publish, guide]) expect(text).not.toMatch(/[–—]/);
   });

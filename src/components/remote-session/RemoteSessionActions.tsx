@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { CheckCircle2, Download, Loader2, Monitor, Terminal, Upload, type LucideIcon } from "lucide-react";
+import { CheckCircle2, Download, Loader2, Terminal, Upload, type LucideIcon } from "lucide-react";
 
 import type { RemoteSessionView } from "../../../shared/remote-session";
 import { cn } from "@/lib/cn";
@@ -17,11 +17,10 @@ export function remoteFileNotice(kind: "sent" | "downloaded", name: string): str
 type Pending = "shell" | "upload" | "download" | null;
 
 // One height, one radius, one type size for every action (Grok Bot's 30 px
-// pill): Prendre le contrôle is the filled pill, the rest are grey pills. In
-// a narrow card (the Computer tab, a phone) the grey ones become three equal
-// tiles, icon over label, so no label is cut and nothing wraps.
+// pill), all grey pills (Take control is on the screen card). In a narrow
+// card (a phone) they become three equal tiles, icon over label, so no label
+// is cut and nothing wraps.
 const ACTION = "ui-button min-w-0 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
-const PRIMARY = "ui-button-primary h-9 w-full font-medium @min-[460px]/actions:h-[30px] @min-[460px]/actions:w-auto";
 const SECONDARY = "h-auto flex-col gap-1 rounded-xl px-1.5 py-2 text-[12px] leading-4 @min-[460px]/actions:h-[30px] @min-[460px]/actions:flex-row @min-[460px]/actions:gap-1.5 @min-[460px]/actions:rounded-full @min-[460px]/actions:px-[13px] @min-[460px]/actions:py-0 @min-[460px]/actions:text-[13px] @min-[460px]/actions:leading-[18px]";
 
 function ActionButton({ icon: Icon, label, title, busy, className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { icon: LucideIcon; label: string; busy?: boolean }) {
@@ -33,10 +32,10 @@ function ActionButton({ icon: Icon, label, title, busy, className, ...props }: R
   );
 }
 
-/** Shell, upload and download for one connected session. The chat card adds
- * Prendre le contrôle (onTakeControl), which opens the Computer tab. Upload
- * and download go through the remote file browser. */
-export function RemoteSessionActions({ botId, view, onTakeControl }: { botId: string; view: RemoteSessionView; onTakeControl?: () => void }) {
+/** Shell, upload and download for one connected session. Take control lives
+ * on the screen card (RemoteScreenCard). Upload and download go through the
+ * remote file browser. */
+export function RemoteSessionActions({ botId, view }: { botId: string; view: RemoteSessionView }) {
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -109,15 +108,6 @@ export function RemoteSessionActions({ botId, view, onTakeControl }: { botId: st
   return (
     <div data-remote-actions="" className="@container/actions flex flex-col gap-2 px-3 py-3">
       <div className={"flex flex-col gap-2 @min-[460px]/actions:flex-row @min-[460px]/actions:items-center"}>
-        {onTakeControl && (
-          <ActionButton
-            data-remote-take-control=""
-            icon={Monitor}
-            label={t("remoteSession.takeControl")}
-            onClick={onTakeControl}
-            className={PRIMARY}
-          />
-        )}
         <div className={"grid grid-cols-3 gap-2 @min-[460px]/actions:flex @min-[460px]/actions:items-center"}>
           <ActionButton data-remote-action="shell" className={SECONDARY} icon={Terminal} label={t("remoteSession.shell")} busy={pending === "shell"} disabled={busy} onClick={() => void shell()} />
           <ActionButton

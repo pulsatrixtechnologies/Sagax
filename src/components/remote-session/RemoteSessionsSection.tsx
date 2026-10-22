@@ -5,22 +5,21 @@ import { formatEndLabel, publicText, type RemoteSessionView } from "../../../sha
 import { cn } from "@/lib/cn";
 import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
 import { t } from "@/lib/i18n";
-import { clearRemoteSessionLocal, focusRemoteSessionLocal, startRemoteControl } from "@/lib/remote-session-focus";
-import { useStore, type Bot } from "@/state/store";
+import { clearRemoteSessionLocal, focusRemoteSessionLocal } from "@/lib/remote-session-focus";
+import type { Bot } from "@/state/store";
+import { remoteClosePhase } from "./remote-close";
 import { closeRemoteSession, focusRemoteSession } from "./remote-session-client";
+import { remoteControllable, RemoteTakeover } from "./RemoteScreenCard";
 import { useRemoteSessions } from "./use-remote-sessions";
+
+export { remoteClosePhase };
 
 function endLabel(view: RemoteSessionView): string {
   const time = formatEndLabel(view.endAt);
   return time ? `${view.code}, ${t("remoteSession.ends", { time })}` : view.code;
 }
 
-/** First click asks. The next click on the same row closes. */
-export function remoteClosePhase(confirmId: string | null, id: string): "ask" | "commit" {
-  return confirmId === id ? "commit" : "ask";
-}
-
-/** Close stays on its own button: it never focuses the Computer tab. */
+/** Close stays on its own button: it never takes control. */
 export async function runRemoteSessionClose(input: {
   confirmId: string | null;
   viewId: string;
@@ -38,34 +37,19 @@ export async function runRemoteSessionClose(input: {
   else input.onClosed();
 }
 
-/** Focus this session and open the Computer tab, in Simple as in Advanced.
- * The tab shows the read-only screen for now; live mouse and keyboard
- * control is a later addition to that same tab (RemoteSessionControl). */
-export function beginRemoteControl(input: {
+/** Take control from the panel row: focus the session (the shell follows
+ * it) and open the same window as the chat's screen card, never the
+ * Computer tab. */
+export function takeRemoteControl(input: {
   botId: string;
   sessionId: string;
   focusLocal: (botId: string, sessionId: string) => void;
   focusRemote: (botId: string, sessionId: string) => void;
-  openComputer: () => void;
+  openWindow: () => void;
 }): void {
   input.focusLocal(input.botId, input.sessionId);
   void input.focusRemote(input.botId, input.sessionId);
-  input.openComputer();
-}
-
-/** The Prendre le contrôle wiring every surface shares (panel row, chat card). */
-export function takeRemoteControl(botId: string, sessionId: string, openComputerTab: () => void): void {
-  beginRemoteControl({
-    botId,
-    sessionId,
-    focusLocal: focusRemoteSessionLocal,
-    focusRemote: focusRemoteSession,
-    openComputer: () => {
-      // before the tab opens, so Simple does not close it again
-      startRemoteControl(botId);
-      openComputerTab();
-    },
-  });
+  input.openWindow();
 }
 
 /** The sidebar list. Always there: an empty list says so in one line. */
@@ -105,14 +89,16 @@ export function RemoteSessionsPanel({
                   <span className="block text-[13px] leading-[18px] text-ink-secondary">{endLabel(view)}</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    data-remote-take-control=""
-                    onClick={() => onTakeControl(view)}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised"
-                  >
-                    <Monitor size={14} aria-hidden="true" /> {t("remoteSession.takeControl")}
-                  </button>
+                  {remoteControllable(view) && !view.headless && (
+                    <button
+                      type="button"
+                      data-remote-take-control=""
+                      onClick={() => onTakeControl(view)}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-2.5 py-1 text-[12.5px] text-ink hover:bg-raised"
+                    >
+                      <Monitor size={14} aria-hidden="true" /> {t("remoteSession.takeControl")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     data-remote-close={confirming ? "confirm" : "ask"}
@@ -137,13 +123,20 @@ export function RemoteSessionsPanel({
 
 /** Sidebar list of the bot's connected sessions, with an empty state. */
 export function RemoteSessionsSection({ bot }: { bot: Bot }) {
-  const { dispatch } = useStore();
   const { rows, reload } = useRemoteSessions(bot.id);
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [controlling, setControlling] = useState<string | null>(null);
+  const controlled = rows.find((row) => row.id === controlling) ?? null;
 
   const takeControl = (view: RemoteSessionView) => {
-    takeRemoteControl(bot.id, view.id, () => dispatch({ type: "toggleComputer", open: true }));
+    takeRemoteControl({
+      botId: bot.id,
+      sessionId: view.id,
+      focusLocal: focusRemoteSessionLocal,
+      focusRemote: focusRemoteSession,
+      openWindow: () => setControlling(view.id),
+    });
   };
 
   const close = (view: RemoteSessionView) => {
@@ -164,12 +157,15 @@ export function RemoteSessionsSection({ bot }: { bot: Bot }) {
   };
 
   return (
-    <RemoteSessionsPanel
-      rows={rows}
-      confirmId={confirmId}
-      error={error}
-      onTakeControl={takeControl}
-      onClose={close}
-    />
+    <>
+      <RemoteSessionsPanel
+        rows={rows}
+        confirmId={confirmId}
+        error={error}
+        onTakeControl={takeControl}
+        onClose={close}
+      />
+      {controlled && <RemoteTakeover botId={bot.id} view={controlled} state="running" onClose={() => setControlling(null)} />}
+    </>
   );
 }
