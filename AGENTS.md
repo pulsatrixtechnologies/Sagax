@@ -603,6 +603,17 @@ you don't tell me anything in the chat."
   small "Routine: <name> · View run" line (`src/components/RoutineRunCard.tsx`).
   Automations > Logs lists a quiet run as "Nothing to report"
   (`routineRunMatchesStatus`). iOS gets the same: nothing is posted or pushed.
+- JC, same day: "I am not in thread mode, everything should be unified in a
+  single chat page." A run for a person (`runAs`, organization server)
+  reports into their own conversation with the bot (`personMainThread`, else
+  `ensureViewerThread`), never a new "<name> · Results" thread. Such threads,
+  old ones included (`markRoutineResultsThreads` at start), carry
+  `routineResults: true`: still listed with threads shown, but never a
+  stream segment, a main thread, a row under the bot, a dot or a preview
+  (`isStreamSegment`, `mainThread`, `taskHiddenFromSidebar`,
+  `taskCountsAsBotUnread`, iOS `BotTask.isHiddenFromPerson`).
+- No "Showing saved messages" banner over an archived conversation
+  (`SavedMessagesNotice` removed); offline keeps `ChatStaleBanner`.
 - Tests: `server/routine-report.test.ts`, `server/routines.test.ts` ("background
   runs"), `server/routine-silent-runs.e2e.test.ts`, `src/lib/routine-quiet.test.ts`,
   `src/components/RoutineRunCard.test.ts`.
