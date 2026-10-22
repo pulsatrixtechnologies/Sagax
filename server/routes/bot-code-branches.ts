@@ -29,7 +29,33 @@ import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 import { CodeWorkCollector, type CodeWorkToolCall, type RepositoryInfo } from "../activity-code-work.ts";
 import { BranchActionError, BranchArchive, BranchGit, BranchPulls, folderName, githubRepo, hostGit, proposedMessage, redactPaths, validBranchName, type GitExec } from "../code-branches.ts";
+import { RemoteBranchGit, type RemoteExec } from "../remote-code-branches.ts";
 import type { BotBranchActionBody, BotBranchInfo, BotBranchState } from "../../shared/bot-code-branches.ts";
+
+/** The bot's own working computer, where a branch's repository is when it is
+ * not on this server (the bot cloned and worked there). The same transport
+ * as the bot's remote session / computer-use shell, reused not duplicated. */
+export interface RemoteBranchReach {
+  /** A computer is connected for this bot (even in another conversation). */
+  computer: boolean;
+  /** It can be reached right now. */
+  online: boolean;
+  /** Its name, never an address. */
+  host?: string;
+  /** Its OS is known to be macOS or Linux (git runs on a POSIX shell only). */
+  osKnown: boolean;
+  /** Windows: no command runs there from the panel yet (review of #965). */
+  windows?: boolean;
+}
+
+export interface RemoteBranchDeps {
+  /** The bot's working computer for this conversation, or null when there is
+   * no such transport or no computer at all (then the branch stays "elsewhere"). */
+  reach(botId: string, threadId: string, viewerId: string | undefined): RemoteBranchReach | null;
+  /** One shell command on that computer, bound to this bot/conversation and
+   * the acting person (per-bot scope: never another bot's computer). */
+  exec(botId: string, threadId: string, viewerId: string | undefined): RemoteExec;
+}
 
 export interface BranchTask {
   threadId: string;
@@ -66,10 +92,21 @@ export interface BotCodeBranchRouteDeps {
   /** One line in the admin activity log (who, what, which branch). */
   audit(auth: RequestAuth, action: string, target: { botId: string; branch: string; repo?: string }, after?: Record<string, unknown>): void;
   exec?: GitExec;
+  /** How a branch whose repository is on the bot's own computer is reached
+   * and acted on. Absent: no such transport (the branch stays "elsewhere"). */
+  remote?: RemoteBranchDeps;
 }
 
 const SCAN = 500;
 const ACTIONS = new Set(["commit", "push", "pr", "delete"]);
+
+/** Why a branch on the bot's own computer cannot be acted on right now. The
+ * UI words these by code; these are the fallback when it does not. */
+const REMOTE_BLOCKED: Record<"offline" | "no_path" | "unknown_os", string> = {
+  offline: "The bot's computer is offline, so its branches cannot be acted on from here.",
+  no_path: "The folder where the bot worked on this branch is not known.",
+  unknown_os: "This computer's operating system is not known yet, so no command runs there.",
+};
 
 export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHandler {
   const exec = deps.exec ?? hostGit;
@@ -130,11 +167,81 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
     const { task, repository } = found;
 
     if (!repository) {
-      if (!action) {
-        const info: BotBranchInfo = { branch, place: "elsewhere", canPublish: false, publishBlocked: "elsewhere" };
-        return json(res, 200, info);
+      // The repository is not on this server. If the bot has its own working
+      // computer connected, the branch lives there (where it cloned and
+      // worked), and the same actions run there over that computer's shell.
+      const reach = deps.remote?.reach(bot.id, threadId, viewerId) ?? null;
+      if (!reach || !reach.computer) {
+        // No bot computer at all: nothing this server can act on.
+        if (!action) return json(res, 200, { branch, place: "elsewhere", canPublish: false, publishBlocked: "elsewhere" } satisfies BotBranchInfo);
+        return json(res, 409, { error: "This branch's repository is not on this server, so its actions run where the bot worked. Ask the bot to do it there.", code: "elsewhere" });
       }
-      return json(res, 409, { error: "This branch's repository is not on this server, so its actions run where the bot worked. Ask the bot to do it there.", code: "elsewhere" });
+      const cwd = task.cwd?.trim() ? task.cwd.trim() : "";
+      const unreachable = !reach.online || !cwd || !reach.osKnown || Boolean(reach.windows);
+      if (unreachable) {
+        // The computer is there but the panel cannot act: one plain reason.
+        const code = !reach.online ? "offline" : !cwd ? "no_path" : "unknown_os";
+        const info: BotBranchInfo = {
+          branch,
+          place: "remote",
+          canPublish: false,
+          ...(reach.host ? { host: reach.host } : {}),
+          ...(cwd ? { folderName: folderName(cwd) } : {}),
+          ...(code === "offline" ? { offline: true } : {}),
+          ...(code === "no_path" ? { noPath: true } : {}),
+          ...(code === "offline" ? { publishBlocked: "offline" as const } : code === "unknown_os" ? { publishBlocked: "unknown_os" as const } : {}),
+        };
+        if (!action) return json(res, 200, info);
+        return json(res, code === "offline" ? 502 : 409, { error: REMOTE_BLOCKED[code], code });
+      }
+      const exec = deps.remote!.exec(bot.id, threadId, viewerId);
+      const git = new RemoteBranchGit(exec, cwd, branch);
+      const target = { botId: bot.id, branch };
+      try {
+        if (!action) {
+          const state = await git.state();
+          const repoName = await git.originRepo();
+          const info: BotBranchInfo = {
+            branch,
+            place: "remote",
+            folderName: folderName(cwd),
+            ...(reach.host ? { host: reach.host } : {}),
+            ...(repoName ? { repo: repoName } : {}),
+            state,
+            proposedMessage: proposedMessage(state.changes, task.title),
+            canPublish: true,
+          };
+          return json(res, 200, info);
+        }
+        if (action === "diff") return json(res, 200, await git.diff());
+        // A live pull request read needs gh on the computer; the card keeps
+        // what the bot's own calls said in the meantime.
+        if (action === "pull") return json(res, 200, { pull: null });
+        if (!ACTIONS.has(action)) return json(res, 404, { error: "no such action" });
+        if (action === "commit") {
+          const paths = Array.isArray(body.paths) ? body.paths.filter((entry): entry is string => typeof entry === "string").slice(0, 500) : undefined;
+          const message = typeof body.message === "string" ? body.message : "";
+          const { sha } = await git.commit(message, paths);
+          deps.audit(auth, "code.branch.commit", target, { sha: sha.slice(0, 12), files: paths?.length ?? "all", on: "bot_computer" });
+          return json(res, 200, { ok: true, sha, state: await git.state() });
+        }
+        if (action === "push") {
+          const { remote } = await git.push();
+          deps.audit(auth, "code.branch.push", target, { remote, on: "bot_computer" });
+          return json(res, 200, { ok: true, remote, state: await git.state() });
+        }
+        if (action === "pr") {
+          const out = await git.openPr(task.title);
+          deps.audit(auth, "code.branch.pull_request", target, out.pull ? { number: out.pull.number, url: out.pull.url, on: "bot_computer" } : { compareUrl: out.compareUrl, on: "bot_computer" });
+          return json(res, 200, { ok: true, ...(out.pull ? { pull: out.pull } : {}), ...(out.compareUrl ? { compareUrl: out.compareUrl } : {}), state: await git.state() });
+        }
+        await git.deleteLocal(body.confirmUnpushed === true);
+        deps.audit(auth, "code.branch.delete", target, { confirmedUnpushed: body.confirmUnpushed === true, on: "bot_computer" });
+        return json(res, 200, { ok: true });
+      } catch (error) {
+        if (error instanceof BranchActionError) return json(res, error.status, { error: error.message, code: error.code });
+        return json(res, 500, { error: "git failed on this branch." });
+      }
     }
 
     const organization = deps.organization();
