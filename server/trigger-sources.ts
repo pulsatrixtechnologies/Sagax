@@ -96,6 +96,18 @@ function names(value: unknown, field: string): string[] | undefined {
   return out.length ? out.slice(0, 30) : undefined;
 }
 
+/** Every identity of a person the provider sent (name, handle, email, id),
+ * so a filter on any one of them matches. */
+function identities(value: unknown, ...keys: string[]): string[] | undefined {
+  const out = Array.from(new Set(keys.map((key) => str(get(value, key), 200)).filter((entry): entry is string => Boolean(entry))));
+  return out.length ? out : undefined;
+}
+
+/** GitHub marks app and bot accounts `type: "Bot"`. */
+function isBotAccount(...accounts: unknown[]): boolean {
+  return accounts.some((account) => str(get(account, "type"))?.toLowerCase() === "bot");
+}
+
 function compact<T extends Record<string, unknown>>(input: T): T {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as T;
 }
@@ -105,7 +117,7 @@ function event(
   kind: string,
   title: string,
   fields: NormalizedTriggerEvent["fields"],
-  extra: Partial<Pick<NormalizedTriggerEvent, "url" | "occurredAt" | "text" | "resource">> = {},
+  extra: Partial<Pick<NormalizedTriggerEvent, "url" | "occurredAt" | "text" | "resource" | "fromBot">> = {},
 ): NormalizedTriggerEvent {
   return compact({
     source,
@@ -116,6 +128,7 @@ function event(
     occurredAt: extra.occurredAt,
     text: extra.text?.slice(0, MAX_TEXT),
     resource: extra.resource,
+    fromBot: extra.fromBot || undefined,
   });
 }
 
@@ -277,6 +290,7 @@ function githubEvents(request: SourceRequest, payload: JsonValue | undefined): N
       const comment = get(payload, "comment");
       return one(event("github", "pr.review_comment", title, { ...base, reviewer: str(get(comment, "user", "login")) }, {
         url: str(get(comment, "html_url"), 500) ?? extra.url, text: str(get(comment, "body"), MAX_TEXT), occurredAt: str(get(comment, "created_at")),
+        fromBot: isBotAccount(get(comment, "user"), get(payload, "sender")),
       }));
     }
     if (name === "pull_request_review_thread") {
@@ -313,7 +327,7 @@ function githubEvents(request: SourceRequest, payload: JsonValue | undefined): N
     if (!kind) return { ignored: `Issue action “${action ?? "none"}” is not handled` };
     const issue = get(payload, "issue");
     return one(event("github", kind, str(get(issue, "title")) ?? "Issue", {
-      repo, label: names(get(issue, "labels"), "name"), sender, assignee: kind === "issue.assigned" ? str(get(payload, "assignee", "login")) : undefined,
+      repo, label: names(get(issue, "labels"), "name"), sender, assignee: kind === "issue.assigned" ? identities(get(payload, "assignee"), "login", "id") : undefined,
     }, {
       url: str(get(issue, "html_url"), 500), text: str(get(issue, "body"), MAX_TEXT),
     }));
@@ -327,6 +341,7 @@ function githubEvents(request: SourceRequest, payload: JsonValue | undefined): N
     const comment = get(payload, "comment");
     return one(event("github", "pr.comment", str(get(issue, "title")) ?? "Pull request", { repo, label: names(get(issue, "labels"), "name"), sender }, {
       url: str(get(comment, "html_url"), 500) ?? str(get(issue, "html_url"), 500), text: str(get(comment, "body"), MAX_TEXT), occurredAt: str(get(comment, "created_at")),
+      fromBot: isBotAccount(get(comment, "user"), get(payload, "sender")),
     }));
   }
   if (name === "push") {
@@ -463,7 +478,7 @@ function sentryEvents(request: SourceRequest, payload: JsonValue | undefined): N
     const issue = get(data, "issue");
     return one(event("sentry", kind, str(get(issue, "title")) ?? "Sentry issue", {
       project: str(get(issue, "project", "slug")), level: str(get(issue, "level")),
-      assignee: str(get(issue, "assignedTo", "email")) ?? str(get(issue, "assignedTo", "name")),
+      assignee: identities(get(issue, "assignedTo"), "name", "email", "id"),
     }, { url: str(get(issue, "web_url"), 500), text: str(get(issue, "culprit"), MAX_TEXT) }));
   }
   if (resource === "event_alert" || resource === "metric_alert") {
@@ -539,7 +554,7 @@ function linearEvents(request: SourceRequest, payload: JsonValue | undefined): N
         project: str(get(issue, "project", "name")),
         label: names(get(issue, "labels"), "name"),
         status: str(get(issue, "state", "name")),
-        assignee: str(get(issue, "assignee", "name")) ?? str(get(issue, "assignee", "email")),
+        assignee: identities(get(issue, "assignee"), "name", "displayName", "email", "id"),
         sender,
       }, { url: str(get(payload, "url"), 500), text: str(get(data, "body"), MAX_TEXT) ?? str(get(data, "description"), MAX_TEXT), occurredAt: str(get(payload, "createdAt")) }),
       dedupeKey: `linear:${key}`,
@@ -578,8 +593,11 @@ export type FilterResult =
  * sent nothing for is deferred when the source says so (Graph basic
  * notifications), else it is a miss: a filter never passes by absence. */
 export function matchSourceFilters(config: TriggerSourceConfig, normalized: NormalizedTriggerEvent): FilterResult {
-  if (!triggerEventSelected(config.type, config.events, normalized.kind)) {
+  if (!triggerEventSelected(config.type, config.events, normalized.kind, config.catalog)) {
     return { match: false, reason: `Event “${normalized.kind}” is not selected` };
+  }
+  if (normalized.fromBot && !config.includeBotComments) {
+    return { match: false, reason: "Comment posted by a GitHub app or bot: this trigger leaves those out" };
   }
   const deferrable = new Set(TRIGGER_SOURCES[config.type].deferredFilters ?? []);
   const deferred: Array<{ key: TriggerFilterKey; values: string[] }> = [];

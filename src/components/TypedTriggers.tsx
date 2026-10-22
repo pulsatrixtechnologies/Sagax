@@ -23,6 +23,7 @@ import {
   TRIGGER_RATE_LIMIT_DEFAULT,
   TRIGGER_RATE_LIMIT_MAX,
   TRIGGER_SOURCES,
+  triggerEveryEvent,
   type GraphConnectorOption,
   type TriggerAutomationStatus,
   type TriggerFilterKey,
@@ -63,6 +64,8 @@ export interface TypedDraft {
   pollerLead?: string;
   /** Write only: the poller's password or the ICS link. Memory only. */
   pollerSecret?: string;
+  /** GitHub: also run for comments posted by an app or bot. */
+  includeBotComments?: boolean;
 }
 
 export const EMPTY_TYPED_DRAFT: TypedDraft = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
@@ -88,6 +91,7 @@ export function typedSourceConfig(type: TriggerSourceType, draft: TypedDraft): T
     if (values.length) filters[key] = values;
   }
   const config: TriggerSourceConfig = { type, events: draft.events.filter((kind) => definition.events.includes(kind)), filters };
+  if (type === "github" && draft.includeBotComments) config.includeBotComments = true;
   const rate = Number(draft.rateLimit);
   if (draft.rateLimit.trim() && Number.isInteger(rate) && rate >= 1 && rate <= TRIGGER_RATE_LIMIT_MAX) config.rateLimitPerMinute = rate;
   if (GRAPH_TYPES.has(type) && draft.tenantId.trim()) config.tenantId = draft.tenantId.trim();
@@ -141,8 +145,13 @@ export function typedTriggerInput(type: TriggerSourceType, draft: TypedDraft, ba
 }
 
 export function draftFromConfig(config: TriggerSourceConfig): TypedDraft {
+  // A trigger saved before the current catalog with nothing checked runs
+  // for the old set only: show those checked, so saving keeps them.
+  const every = triggerEveryEvent(config.type, config.catalog);
+  const legacy = !config.events.length && every.length < TRIGGER_SOURCES[config.type].events.length;
   return {
-    events: [...config.events],
+    events: legacy ? [...every] : [...config.events],
+    ...(config.includeBotComments ? { includeBotComments: true } : {}),
     filters: Object.fromEntries(Object.entries(config.filters).map(([key, values]) => [key, (values ?? []).join(", ")])),
     signingSecret: "",
     tenantId: config.tenantId ?? "",
@@ -374,6 +383,20 @@ export function TypedSourceFields({
           ))}
         </div>
       </fieldset>
+      {type === "github" && (
+        <div className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-[11.5px] font-medium text-ink-secondary">{t("triggers.typed.botComments")}</span>
+            <span className="mt-0.5 block text-[10.5px] text-ink-tertiary">{t("triggers.typed.botCommentsHelp")}</span>
+          </span>
+          <Switch
+            checked={Boolean(draft.includeBotComments)}
+            aria-label={t("triggers.typed.botComments")}
+            data-typed-bot-comments
+            onClick={() => onChange({ ...draft, includeBotComments: !draft.includeBotComments })}
+          />
+        </div>
+      )}
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="block">
           <span className="mb-1 block text-[11px] text-ink-secondary">{t("triggers.typed.rateLimit")}</span>

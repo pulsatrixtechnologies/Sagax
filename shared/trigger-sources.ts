@@ -64,6 +64,10 @@ export interface TriggerSourceDefinition {
    * the broader one (made before the finer one existed) still runs for it:
    * an approval is still a submitted review. */
   parents?: Readonly<Record<string, string>>;
+  /** The events of catalog 1. A trigger saved before catalog 2 with no
+   * event checked (“every event”) keeps meaning this set, so it does not
+   * start running for every comment or push it never asked for. */
+  legacyEvents?: readonly string[];
   /** Some providers (Microsoft Graph basic notifications) send no detail
    * at reception: filters on these keys are handed to the run as the
    * owner's conditions, checked by the bot before it acts. */
@@ -89,6 +93,7 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
       "ci.failed", "ci.succeeded", "issue.opened", "issue.assigned", "push", "release.published",
     ],
     filters: ["repo", "branch", "label", "sender", "reviewer", "assignee", "keyword"],
+    legacyEvents: ["pr.opened", "pr.merged", "pr.closed", "pr.review_requested", "pr.review_submitted", "ci.failed", "ci.succeeded", "issue.opened", "push", "release.published"],
     parents: {
       "pr.review_approved": "pr.review_submitted",
       "pr.review_changes_requested": "pr.review_submitted",
@@ -142,6 +147,7 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     secretMode: "provided",
     events: ["issue.created", "issue.resolved", "issue.assigned", "issue.archived", "issue.unresolved", "alert.triggered", "error.created"],
     filters: ["project", "environment", "level", "assignee", "keyword"],
+    legacyEvents: ["issue.created", "issue.resolved", "issue.assigned", "alert.triggered", "error.created"],
     replayWindowSeconds: 300,
   },
   pagerduty: {
@@ -158,16 +164,30 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     events: ["issue.created", "issue.updated", "issue.status_changed", "issue.removed", "comment.created", "cycle.completed"],
     filters: ["team", "project", "label", "status", "assignee", "sender", "keyword"],
     parents: { "issue.status_changed": "issue.updated" },
+    legacyEvents: ["issue.created", "issue.updated", "issue.removed", "comment.created"],
     replayWindowSeconds: 60,
   },
 };
 
-/** Whether a trigger that picked `selected` (empty: every kind) runs for an
- * event of `kind`, its broader kind included. */
-export function triggerEventSelected(type: TriggerSourceType, selected: readonly string[], kind: string): boolean {
-  if (!selected.length || selected.includes(kind)) return true;
+/** Version of the event catalog a trigger was saved against. 2 added the
+ * GitHub comments, reviews and threads, Linear status and cycles, Sentry
+ * archived and unresolved. */
+export const TRIGGER_CATALOG_VERSION = 2;
+
+/** The kinds “every event” means for a trigger saved against `catalog`
+ * (absent: before versions existed, so 1). */
+export function triggerEveryEvent(type: TriggerSourceType, catalog: number | undefined): readonly string[] {
+  const definition = TRIGGER_SOURCES[type];
+  return (catalog ?? 1) < TRIGGER_CATALOG_VERSION && definition.legacyEvents ? definition.legacyEvents : definition.events;
+}
+
+/** Whether a trigger that picked `selected` (empty: every kind of its
+ * catalog) runs for an event of `kind`, its broader kind included. */
+export function triggerEventSelected(type: TriggerSourceType, selected: readonly string[], kind: string, catalog?: number): boolean {
+  const pool = selected.length ? selected : triggerEveryEvent(type, catalog);
+  if (pool.includes(kind)) return true;
   const parents = TRIGGER_SOURCES[type].parents;
-  return parents !== undefined && Object.hasOwn(parents, kind) && selected.includes(parents[kind]!);
+  return parents !== undefined && Object.hasOwn(parents, kind) && pool.includes(parents[kind]!);
 }
 
 export function isTriggerSourceType(value: unknown): value is TriggerSourceType {
@@ -181,6 +201,12 @@ export interface TriggerSourceConfig {
   events: string[];
   /** Each key with values must match at least one of them. */
   filters: Partial<Record<TriggerFilterKey, string[]>>;
+  /** Event catalog the trigger was saved against (TRIGGER_CATALOG_VERSION);
+   * absent on a trigger saved before versions existed. */
+  catalog?: number;
+  /** GitHub: also run for PR and inline review comments posted by a GitHub
+   * app or bot. Off by default so a bot never triggers itself. */
+  includeBotComments?: boolean;
   /** Deliveries accepted per minute before 429 (1 to 120, default 10). */
   rateLimitPerMinute?: number;
   /** Microsoft Graph: only notifications from this tenant are accepted. */
@@ -283,6 +309,8 @@ export interface NormalizedTriggerEvent {
   text?: string;
   /** Provider resource path or id the bot can fetch through its connector. */
   resource?: string;
+  /** A comment posted by an app or bot account (GitHub `type: "Bot"`). */
+  fromBot?: boolean;
 }
 
 /** Shown once after create (or rotate of a generated secret): where the

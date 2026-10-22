@@ -13503,7 +13503,9 @@
       "triggers.event.issue_archived": "a3305ec63c46bb9042c4bb4287fd5d0642e1242605d6093920746f39e41609ca",
       "triggers.event.issue_unresolved": "c72bfdec2ef85c6310aff9f58461c52648b48ca137cf15abaff663eb46745415",
       "triggers.event.issue_status_changed": "26c73abd33603b6a0a2be4db45c15269c8a529b2e64363f42c4a94117f3356fe",
-      "triggers.event.cycle_completed": "cf149a85e135a92d34bde58559c2207d30065695d8f56c7f94b1c5e33ed3610b"
+      "triggers.event.cycle_completed": "cf149a85e135a92d34bde58559c2207d30065695d8f56c7f94b1c5e33ed3610b",
+      "triggers.typed.botComments": "2f891a1a5b7004563ac77e30524feb3fbc92f5625bca57f5914f0f42fb2300bd",
+      "triggers.typed.botCommentsHelp": "e3a4e29b7756a0a061e8de3364d3a422bcd65de273db30b3b84188828b4a65cd"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

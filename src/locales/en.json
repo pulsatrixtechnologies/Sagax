@@ -6548,6 +6548,8 @@
   "triggers.typed.events": "Events",
   "triggers.typed.managedInTriggers": "This trigger is verified by its provider's signature and has no bearer token. Manage its secret in Triggers.",
   "triggers.typed.eventsHelp": "None checked means every event below.",
+  "triggers.typed.botComments": "Include comments from GitHub apps and bots",
+  "triggers.typed.botCommentsHelp": "Off: PR comments and inline review comments posted by a GitHub app or bot account never start a run, so a bot cannot trigger itself.",
   "triggers.typed.filters": "Filters",
   "triggers.typed.filtersHelp": "Comma-separated values; * matches anything. Every filled filter must match.",
   "triggers.typed.deferred": "Checked by the bot, not a security boundary: {provider} sends no details with the notification.",

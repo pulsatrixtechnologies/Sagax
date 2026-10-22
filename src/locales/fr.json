@@ -7156,6 +7156,8 @@
   "triggers.typed.events": "Événements",
   "triggers.typed.managedInTriggers": "Ce déclencheur est vérifié par la signature de son fournisseur et n'a pas de jeton bearer. Gérez son secret dans Déclencheurs.",
   "triggers.typed.eventsHelp": "Aucun coché : tous les événements ci-dessous.",
+  "triggers.typed.botComments": "Inclure les commentaires des apps et bots GitHub",
+  "triggers.typed.botCommentsHelp": "Désactivé : les commentaires de PR et de revue en ligne publiés par une app ou un compte bot GitHub ne lancent jamais d'exécution ; un bot ne peut donc pas se déclencher lui-même.",
   "triggers.typed.filters": "Filtres",
   "triggers.typed.filtersHelp": "Valeurs séparées par des virgules ; * remplace n'importe quoi. Chaque filtre rempli doit correspondre.",
   "triggers.typed.deferred": "Vérifié par le bot, ce n'est pas une barrière de sécurité : {provider} n'envoie aucun détail avec la notification.",
