@@ -26,6 +26,12 @@ vi.mock("@/lib/sidebar-shortcuts-preferences", async (importOriginal) => ({
   migrateSidebarShortcuts: () => false,
 }));
 
+const flags = vi.hoisted(() => ({ connectedApps: true }));
+vi.mock("@/lib/feature-flags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/feature-flags")>(),
+  connectedAppsEnabled: () => flags.connectedApps,
+}));
+
 vi.mock("@/lib/sidebar-logo-preferences", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/sidebar-logo-preferences")>(),
   useShowSidebarLogo: () => fixture.showLogo,
@@ -158,6 +164,16 @@ describe("sidebar header", () => {
     // the avatar comes first, then the pill
     expect(foot.indexOf("aria-haspopup")).toBeLessThan(foot.indexOf("data-sidebar-connect-apps"));
     expect(html).toMatch(/data-sidebar-foot[^>]*class="px-4 pb-4"/);
+  });
+
+  it("draws no Connect apps pill, wide or collapsed, once Connected apps is switched off", () => {
+    flags.connectedApps = false;
+    try {
+      expect(render()).not.toContain("data-sidebar-connect-apps");
+      fixture.density = "icons";
+      expect(render()).not.toContain("data-sidebar-connect-apps");
+      expect(render()).toContain("data-sidebar-account-rail");
+    } finally { flags.connectedApps = true; }
   });
 
   it("keeps one Connect apps icon on the collapsed rail", () => {

@@ -87,7 +87,7 @@ import { BotAvatar } from "./Avatar";
 import { BotHeaderPill, botPillActions } from "./BotHeaderPill";
 import { TurnPresence } from "./TurnPresence";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
-import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { showToolCallRows } from "@/lib/tool-activity-rows";
 import { normalizeState, stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
@@ -2366,7 +2366,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           )}
           {/* The latest turn needed an app that is not connected
               (src/lib/connect-apps-signal.ts): Connect apps, on those apps. */}
-          <ConversationConnectApps botId={bot.id} messages={messages} busy={Boolean(bot.busy)} />
+          {connectedAppsEnabled(state.config) && <ConversationConnectApps botId={bot.id} messages={messages} busy={Boolean(bot.busy)} />}
           </>}
           {computerStarting && (
             <div className="flex justify-start">

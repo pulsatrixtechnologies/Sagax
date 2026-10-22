@@ -24,6 +24,12 @@ vi.mock("./SidebarProfileMenu", async (original) => ({
     return createElement("span", { "data-test-account": avatarOnly ? "avatar" : "row", "aria-haspopup": "menu" });
   },
 }));
+const flags = vi.hoisted(() => ({ connectedApps: true }));
+vi.mock("@/lib/feature-flags", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/feature-flags")>(),
+  connectedAppsEnabled: () => flags.connectedApps,
+}));
+
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return {

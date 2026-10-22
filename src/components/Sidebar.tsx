@@ -46,7 +46,7 @@ import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { ModelPicker } from "./ModelPicker";
-import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
@@ -2495,6 +2495,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 }) {
   const store = useStore();
   const { state } = store;
+  const connectedApps = connectedAppsEnabled(state.config);
   const listFade = useScrollFade();
   const dispatch: typeof store.dispatch = (action) => {
     store.dispatch(action);
@@ -3490,7 +3491,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         )}
         {density === "icons" ? (
           <>
-            <SidebarConnectApps iconOnly icon={<Puzzle size={20} />} onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
+            {connectedApps && <SidebarConnectApps iconOnly icon={<Puzzle size={20} />} onOpen={() => dispatch({ type: "togglePlugins", open: true })} />}
             {/* one avatar, like the wide foot: its menu holds Settings,
                 Approvals, Code and the rest; Browse bots is a tab of Connect apps */}
             <div data-sidebar-account-rail className="flex h-10 items-center justify-center">
@@ -3505,7 +3506,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           // label's width is capped against (styles.css, .sidebar-apps-pill).
           <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
             <SidebarProfileMenu avatarOnly withName places={accountPlaces} />
-            <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
+            {connectedApps && <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />}
             {/* a waiting update, right of the pill, which gives way when it
                 widens (JC, 2026-10-18) */}
             <SidebarUpdatePill />

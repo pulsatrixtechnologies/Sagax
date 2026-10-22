@@ -259,6 +259,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Language (fr, en; empty follows the system) | Settings > General > Appearance | `sagax_settings` set `appearance.language` | simple |
 | Simple or Advanced | Settings > Appearance | `sagax_settings` set `appearance.interfaceMode` | simple |
 | Show threads | Settings > Appearance | `sagax_settings` set `appearance.showThreads` | simple |
+| Show the Suggestions card in the bot panel | Settings > Appearance | `sagax_settings` set `appearance.showSuggestions` | simple |
+| Show the All history row in the bot panel | Settings > Appearance | `sagax_settings` set `appearance.showAllHistory` | simple |
 | Threads location | Settings > Appearance | `sagax_settings` set `appearance.threadsLocation` | simple |
 | Background effect | Settings > Appearance > Background | `sagax_settings` set `appearance.backgroundEffect` | simple |
 | Glyph ripple | Settings > Appearance > Background | `sagax_settings` set `appearance.glyphRipple` | simple |

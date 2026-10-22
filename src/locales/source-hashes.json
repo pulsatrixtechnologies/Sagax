@@ -13870,7 +13870,12 @@
       "remoteSession.screenFailed": "e4d30ead33151f59489bfc7e634125ea00dce94c2eed8302b05fa923543a9392",
       "remoteSession.screenLoading": "e261c1a53449426f689e2b4a9c26984312665d942b7297fdd8e4a83afa481636",
       "remoteSession.screenOsUnknown": "7ddea63627f5984e8ee518c651e92101e1e4be569477eca4fcf5e16d5f6bb760",
-      "remoteSession.confirmStop": "9d401f681b0f72eef26776e3e58543d43a3d713083d85faccfc6b78667d17b46"
+      "remoteSession.confirmStop": "9d401f681b0f72eef26776e3e58543d43a3d713083d85faccfc6b78667d17b46",
+      "settings.showSuggestions.title": "a80b6a6cb8e22ab77707a21cf33171245f305faca5501c7f24a3d8a98aa808e6",
+      "settings.showSuggestions.show": "6dfe38d3b58a3cfa643ff57eeca4739c7b9060adf6593057d565f403f304335c",
+      "settings.allHistory.title": "633de0649cae35655fbd39e614798ccd96f171b310a09f322b9de6f95c9c55d4",
+      "settings.allHistory.show": "d7e03e1757ab43c30973f5f0252a4606c40aca0563b53d55c48f9f3d08454be0",
+      "palette.cmd.botHistory": "e2095d3f4fbd0a427cf8498a6d060c16f3c5b7fe4a7bc6b798b689edeecfda72"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
