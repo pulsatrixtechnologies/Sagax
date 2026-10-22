@@ -240,7 +240,7 @@ describe("the wide foot's account pill (reference design)", () => {
     // the outer box takes the rest of the row, never less than about eight
     // characters of the name beside the avatar
     const outer = /^<div class="([^"]*)"/.exec(html)?.[1] ?? "";
-    expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex-1", "min-w-[7rem]"]));
+    expect(outer.split(" ")).toEqual(expect.arrayContaining(["flex-1", "min-w-[7.5rem]"]));
     const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
     expect(pill).toContain("w-full");
     // the name is one line, cut only by the room it has (never in markup)
