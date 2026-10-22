@@ -13420,6 +13420,8 @@
       "remoteSession.field.cpu": "54aac653f06e8f298e547bfae26e1226cf14e373a6fe4ea8a041915ca132d01b",
       "remoteSession.field.ram": "c3963aedaac6c83c04cf8fb997b479c61e66b3caeecfadd2f2d4bd5b0aef1778",
       "remoteSession.field.disk": "340e0cf3bfa8d23dad5fa37503e9491fd6e5e8c99cc801849be39cb10a44ad9f",
+      "remoteSession.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df",
+      "remoteSession.hideDetails": "c9722a7a962a84359c87e56fe578f36a2bc75e66eee3ebce15963229fa12667d",
       "remoteSession.hints": "2f10a267695b10d971f4b0b90f49a05775513344f89577128becb6f151c1029f",
       "remoteSession.closed": "471c38535ebe33433171d1984efa2e5ad50e44ab91321f5e28be810dce5be824",
       "remoteSession.tunnelMissing": "4b587caadffd9370e462b6095d943791bcc81cf0288236c151626dc6112c3f34",

@@ -9551,6 +9551,8 @@
   "remoteSession.field.cpu": "Processor",
   "remoteSession.field.ram": "Memory",
   "remoteSession.field.disk": "Disk",
+  "remoteSession.details": "Details",
+  "remoteSession.hideDetails": "Hide details",
   "remoteSession.hints": "Leads",
   "remoteSession.closed": "Session closed",
   "remoteSession.tunnelMissing": "The tunnel for this computer is not on this server.",
