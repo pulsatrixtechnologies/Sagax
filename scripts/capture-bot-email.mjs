@@ -47,7 +47,11 @@ try {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const reply = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-    if (url.pathname.endsWith("/inbound-mail")) return reply({ available: true, address: "cryptic@bots.acme.example", enabled });
+    if (url.pathname.endsWith("/inbound-mail") && route.request().method() === "PUT") {
+      const { localPart } = JSON.parse(route.request().postData() ?? "{}");
+      return localPart === "factures" ? reply({ error: "taken", message: "taken" }, 409) : reply({ available: true, address: `${localPart}@bots.acme.example`, enabled, canChange: true });
+    }
+    if (url.pathname.endsWith("/inbound-mail")) return reply({ available: true, address: "cryptic@bots.acme.example", enabled, canChange: true });
     return reply({ error: "not in this gallery" }, 404);
   });
   for (const { id, label } of skins) {
@@ -60,12 +64,18 @@ try {
     await page.locator('[data-gallery-panel="overview"]').screenshot({ path: join(outDir, `profile-${label}.png`) });
     await page.locator('[data-gallery-panel="builder"]').screenshot({ path: join(outDir, `trigger-builder-${label}.png`) });
     await page.locator('[data-gallery-panel="row"]').screenshot({ path: join(outDir, `trigger-row-${label}.png`) });
-    if (label === "light") {
-      enabled = false;
-      await page.goto(`${base}?skin=${id}&lang=fr`, { waitUntil: "load" });
-      await page.waitForSelector("[data-bot-email-off]");
-      await page.locator('[data-gallery-panel="overview"]').screenshot({ path: join(outDir, `profile-turned-off-${label}.png`) });
-    }
+    // addresses are off by default (JC decision 1): greyed, waiting for the admin
+    enabled = false;
+    await page.goto(`${base}?skin=${id}&lang=fr`, { waitUntil: "load" });
+    await page.waitForSelector("[data-bot-email-pending]");
+    await page.locator('[data-gallery-panel="overview"]').screenshot({ path: join(outDir, `profile-pending-${label}.png`) });
+    // the owner changes it (JC decision 4): the form, then a taken name
+    await page.click('[data-bot-email-address] button:has-text("Changer")');
+    await page.waitForSelector("[data-bot-email-form]");
+    await page.fill("[data-bot-email-form] input", "factures");
+    await page.click("[data-bot-email-save]");
+    await page.waitForSelector('[data-bot-email-form] [role="alert"]');
+    await page.locator('[data-gallery-panel="overview"]').screenshot({ path: join(outDir, `profile-change-${label}.png`) });
   }
   await browser.close();
   console.log(`screenshots in ${outDir}`);

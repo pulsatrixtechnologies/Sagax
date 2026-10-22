@@ -963,7 +963,7 @@ import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./h
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
-import { BOT_MAIL_ASSERTION_ACTORS, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
+import { BOT_MAIL_ASSERTION_ACTORS, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
 import { isRelaySource } from "../shared/trigger-sources.ts";
 import { BotMailAddresses } from "./bot-mail-addresses.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
@@ -2475,7 +2475,10 @@ function guestWorkThread(from: BotRecord, target: BotRecord, fromThreadId: strin
  * the owner is told about one, and when its engine cannot be confined. */
 const ROUTINE_FROM_BEFORE = "This routine was made before this update. Open it and save it once to run it with full access.";
 const CONVERSATION_FROM_BEFORE = "This conversation is from before My Cloud was only yours, so this bot works in it without a shell. Start a new conversation to use it fully.";
+const BOTMAIL_ENGINE_REFUSAL = "This bot's engine can't run a routine woken by email without a shell. Use Claude or Codex for this bot, or turn on full tools for this Bot email trigger.";
+const BOTMAIL_CONFINED_WHY = "This run was woken by an email: no shell, and every change or send asks first. The trigger's owner can turn on full tools for it.";
 function confinedWhy(threadId: string): string {
+  if (!cloudGuestDriven(threadId) && botmailConfined(threadId)) return BOTMAIL_CONFINED_WHY;
   const run = activeRoutineRunForThread(threadId);
   const writer = run ? cloudRoutineAuthors?.writer(run.routineId) : undefined;
   return run && writer && !cloudOwnerPerson(writer) ? ROUTINE_FROM_BEFORE : CONVERSATION_FROM_BEFORE;
@@ -7831,6 +7834,8 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   // own level. Judged by the conversation the turn runs in (a room's, for a
   // room turn), never by whichever of the bot's conversations is active.
   if (cloudGuestDriven(threadId)) return "ask";
+  // A mail-woken routine run (bot email, S2): Ask, whatever the bot's level.
+  if (botmailConfined(threadId)) return "ask";
   const mode = approvalModeForOrigin(approvalModeFor(bot), { peerInitiated });
   if (!supportsApprovalMode(bot.modelSelection, mode)) {
     return "ask";
@@ -7855,7 +7860,7 @@ function fullAccessForSource(botId: string, threadId: string): boolean {
 /** On a Cloud home a turn a guest drives keeps a card for every change,
  * even one to the bot itself. */
 function selfApplyBlocked(threadId: string): boolean {
-  return cloudGuestDriven(threadId);
+  return cloudGuestDriven(threadId) || botmailConfined(threadId);
 }
 
 /** Whether a bot's routine, skill, profile or model change applies without
@@ -10398,7 +10403,7 @@ const terminalFeature = installTerminalFeature({
     // 2026-10-20 (security review): never on a guest's turn, nor on a turn
     // that is not the person's own (a routine, a webhook, another bot)
     const bot = store.bot(botId);
-    if (!bot || cloudGuestDriven(threadId)) return null;
+    if (!bot || cloudGuestDriven(threadId) || botmailConfined(threadId)) return null;
     const origin = ownEnvironmentTurnOrigin({
       speaker: turnSpeakers.get(threadId),
       ownerPrincipalId: principalId,
@@ -12292,7 +12297,7 @@ const limitFailover = createLimitFailoverHost({
     }
     const bot = store.projectBotForTask(botId, threadId);
     if (!bot) return [];
-    const guestConfined = cloudGuestDriven(threadId);
+    const guestConfined = cloudGuestDriven(threadId) || botmailConfined(threadId);
     return autoEnginesFor(bot, (speaker ?? { origin: "person" }) as TurnSpeaker, guestConfined).map((engine) => ({
       instanceId: engine.instanceId, driverKind: engine.driverKind,
       models: engine.models.options.map((option) => option.id), defaultModel: engine.models.default,
@@ -14568,7 +14573,9 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       // A turn a guest drives on a Cloud home is Ask, room turns included,
       // and no command the owner saved answers for it.
-      const guestDriven = cloudGuestDriven(event.threadId);
+      // A mail-woken routine run (S2) is held the same way: Ask, and no rule
+      // the owner saved answers for it.
+      const guestDriven = cloudGuestDriven(event.threadId) || botmailConfined(event.threadId);
       const ownApprovalMode = (who: BotRecord) => approvalModeForTurn(who, isInternalTurn(event.threadId), event.threadId);
       // A room turn runs at the level it was sent with, which a Chief's
       // handoff may have raised (roomTurnApprovalMode). The bot's own level
@@ -18856,7 +18863,7 @@ async function startTurn(
       role: autoContinuing && !opts?.autoSkip?.length ? "continue" : worker ? "worker" : "orchestration",
       fallback: worker ? "worker" : "orchestration",
       // A guest's turn on a Cloud home only goes to an engine that confines it.
-      guestConfined: cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id),
+      guestConfined: cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id) || botmailConfined(threadId),
       ...(opts?.autoSkip ? { skip: opts.autoSkip } : {}),
     });
     // Recorded on the task once the turn is admitted (below), never before.
@@ -18990,8 +18997,12 @@ async function startTurn(
   // refused, in one plain line, before anything is recorded.
   // (The thread is idle here: a mark a turn that never started left is stale.)
   guestDrivenTurns.delete(threadId);
-  const guestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id);
+  // A mail-woken routine run (bot email, S2) is confined the same way: no
+  // shell, no reads outside its folder.
+  const mailConfined = botmailConfined(threadId);
+  const guestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id) || mailConfined;
   if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") {
+    if (mailConfined && !cloudGuestDriven(threadId)) throw Object.assign(new Error(BOTMAIL_ENGINE_REFUSAL), { status: 409, code: "botmail_engine" });
     throw Object.assign(new Error(guestEngineRefusal(threadId)), { status: 409, code: "guest_engine" });
   }
   // Codex and the API drivers cannot start without a prompt. Sending them
@@ -21832,6 +21843,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           // if the bot/receipt write fails, so a failed deletion is retryable.
           routines!.disableForBot(bot.id);
           webhooks.disableForBot(bot.id);
+          botMailResync();
           calendarCalls!.removeBot(bot.id);
           browserLive.closeForBot(bot.id);
           browserNetworkDebug.clearBot(bot.id);
@@ -26779,7 +26791,7 @@ function connectorSwitchForTurn(bot: BotRecord, threadId: string, speaker: TurnS
   const base = registry.get(bot.modelSelection.instanceId);
   if (!base) return null;
   const current = { instanceId: base.instanceId, engineLabel: engineDisplayName(base), models: [], reach: engineReachFor(bot, base, speaker) };
-  const candidates = autoEnginesFor(bot, speaker, cloudGuestDriven(threadId)).flatMap((engine) => {
+  const candidates = autoEnginesFor(bot, speaker, cloudGuestDriven(threadId) || botmailConfined(threadId)).flatMap((engine) => {
     const live = engine.instanceId === base.instanceId ? undefined : registry.get(engine.instanceId);
     if (!live) return [];
     return [{
@@ -27596,7 +27608,39 @@ ROUTES.push(createBotInboundMailReadRoutes({
   bot: (id) => store.bot(id),
   organization: () => IDENTITY.kind === "perspicax" && Boolean(perspicaxDirectory),
   address: (botId) => botMailAddresses.forBot(botId),
+  // v2 (JC decision 4): the person acting owns the bot; their Perspicax id
+  ownerSub: (auth, botId) => {
+    const owner = botMailOwner(botId);
+    const acting = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : localPrincipalId();
+    return owner?.sub && acting && acting === owner.principalId ? owner.sub : null;
+  },
+  setLocalPart: (botId, sub, localPart) => botMailAddresses.setLocalPart(botId, sub, localPart),
+  record: (auth, row) => appendAdminAction(DATA_DIR, {
+    category: "bot",
+    action: "bot-mail.address-changed",
+    target: { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name ?? "" },
+    after: { address: row.address },
+    actor: orgAuditActor(auth),
+  }),
 }));
+/** v2 (S3): a bot deleted or given to another owner: Perspicax's list follows. */
+function botMailResync(): void {
+  try {
+    void botMailAddresses.resync();
+  } catch {
+    /* before start-up finished: the first read syncs */
+  }
+}
+/** v2 (S2): a routine run woken by bot email is confined (no shell, a card
+ * for every write or outbound call, no Always-allow or Full) unless its
+ * trigger's owner turned on full tools. */
+function botmailConfined(threadId: string): boolean {
+  try {
+    return botmailRunConfined(activeRoutineRunForThread(threadId), (id) => webhooks.list().find((hook) => hook.id === id) ?? null);
+  } catch {
+    return false;
+  }
+}
 const inboundMail = createBotInboundMailRoute({
   identity: () => IDENTITY.kind,
   publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
@@ -27616,7 +27660,7 @@ const inboundMail = createBotInboundMailRoute({
     category: "webhook",
     action: "bot-mail.delivered",
     target: { kind: "bot", id: row.botId, name: row.botName },
-    after: { triggers: row.triggers, delivered: row.delivered, duplicate: row.duplicate, ignored: row.ignored, senderDomain: row.senderDomain },
+    after: { triggers: row.triggers, delivered: row.delivered, duplicate: row.duplicate, ignored: row.ignored, sender: row.sender },
     actor: { kind: "person", principalId: row.ownerPrincipalId, via: "perspicax-mail" },
   }),
 });
@@ -31212,7 +31256,7 @@ function strictCardRule(
  * scope key for key; none while a security key of theirs protects one of
  * the classes, or on a guest's turn. */
 function keptCardRule(bot: BotRecord, threadId: string, candidate: { tool: string; scope: Record<string, string> }, classes: readonly StepUpClass[] = []): OwnerRule | undefined {
-  if (cloudGuestDriven(threadId)) return undefined;
+  if (cloudGuestDriven(threadId) || botmailConfined(threadId)) return undefined;
   const answerer = approvalOwnerId(bot, threadId);
   if (!answerer) return undefined;
   if (classes.length && securityKeys.required(answerer, [...classes], answerer).length) return undefined;
@@ -34276,6 +34320,7 @@ async function importPackageFor(raw: unknown, ownerPrincipalId: string): Promise
     throw error;
   }
   for (const bot of result.bots) store.patchBot(bot.id, { ownerUserId: ownerPrincipalId });
+  botMailResync();
   settleMemberAutoLevels(result.bots.map((bot) => bot.id));
   for (const bot of result.bots) {
     const current = store.bot(bot.id);
@@ -34407,6 +34452,7 @@ const orgBotsDeps: BotsDeps = {
     if (previous) grants.push({ target: `user:${previous}`, level: "manage", by: previous, at: Date.now() } as (typeof grants)[number]);
     if (bot.chiefOfStaff) store.clearPrimaryBot(botId);
     store.patchBot(botId, { ownerUserId: ownerPrincipalId });
+    botMailResync();
     store.setBotGrants(botId, grants);
     settleMemberAutoLevels([botId]);
     audienceChanged();

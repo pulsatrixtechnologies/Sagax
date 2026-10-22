@@ -640,8 +640,9 @@ function startComputerDouble(upstreamPort) {
     // PARITY_BOT_MAIL=1 (B21 / CO5): the bot's own address as an
     // organization server linked to Perspicax answers it (this fixture is a
     // personal server, which answers available:false).
-    if (process.env.PARITY_BOT_MAIL === "1" && /^\/api\/bots\/[\w-]+\/inbound-mail$/.test(url.pathname) && req.method === "GET") {
-      return sendJson(res, 200, { available: true, address: "ara@bots.acme.example", enabled: true });
+    // PARITY_BOT_MAIL=pending: the address waits for the administrator.
+    if ((process.env.PARITY_BOT_MAIL === "1" || process.env.PARITY_BOT_MAIL === "pending") && /^\/api\/bots\/[\w-]+\/inbound-mail$/.test(url.pathname) && req.method === "GET") {
+      return sendJson(res, 200, { available: true, address: "ara@bots.acme.example", enabled: process.env.PARITY_BOT_MAIL === "1", canChange: true });
     }
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {

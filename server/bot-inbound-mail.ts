@@ -30,10 +30,11 @@
 //     one admin activity row per delivery, metadata only (bot, trigger
 //     counts, the sender's domain);
 //   - every answer carries `X-Sagax-Mail-Api: 1`.
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
-import type { NormalizedTriggerEvent } from "../shared/trigger-sources.ts";
+import type { NormalizedTriggerEvent, TriggerSourceConfig } from "../shared/trigger-sources.ts";
 import type { ConsoleAssertion, ConsoleAssertionActor } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
 import type { WebhookReceiveResult } from "./webhooks.ts";
@@ -59,6 +60,8 @@ const mailSchema = z.object({
   version: z.literal(1),
   botId: z.string().regex(/^[\w-]{1,128}$/),
   messageId: oneLine(998).refine((value) => value.trim().length > 0),
+  /** v2 (F6): Perspicax's dedupe key, 64 lowercase hex; the delivery id. */
+  dedupeKey: z.string().regex(/^[0-9a-f]{64}$/),
   receivedAt: z.string().max(64).refine((value) => Number.isFinite(Date.parse(value))),
   from: z.object({
     address: z.string().max(320).regex(ADDRESS),
@@ -103,11 +106,14 @@ export function senderDomain(address: string): string {
  * (sender, SPF, DKIM, attachments) sits in the same text as the body, so it
  * stays inside the fence as data. */
 export function botmailEvent(mail: InboundMail): NormalizedTriggerEvent {
+  // v2 (F5): the bare address is the sender; a display name is anyone's to
+  // choose, so it stands on its own line, marked unverified.
   const name = mail.from.name?.trim();
   const attachments = mail.attachments.map((item) =>
     `${item.name} (${item.type}, ${item.size} bytes, ${item.accepted ? "accepted" : "refused"})`);
   const header = [
-    `From: ${name ? `${name} <${mail.from.address}>` : mail.from.address}`,
+    `sender: ${mail.from.address}`,
+    ...(name ? [`Display name (unverified): ${name}`] : []),
     `To: ${mail.to}`,
     `SPF: ${mail.auth.spf}, DKIM: ${mail.auth.dkim}, Verified: ${mail.auth.verified ? "yes" : "no"}`,
     ...(attachments.length ? [`Attachments (listed only, not attached): ${attachments.join("; ")}`] : []),
@@ -124,6 +130,21 @@ export function botmailEvent(mail: InboundMail): NormalizedTriggerEvent {
   };
 }
 
+/** v2 (S2): whether a run is a mail-woken routine run that must stay
+ * confined: no shell, every write or outbound call behind its own card (no
+ * Always-allow, no Full). Its trigger's owner may opt in to the bot's usual
+ * tools (`source.allowFullTools`). A webhook run whose trigger is gone is
+ * confined too: what woke it can no longer be told. */
+export function botmailRunConfined(
+  run: { triggerSource?: string; webhookId?: string } | null | undefined,
+  triggerOf: (webhookId: string) => { source?: Pick<TriggerSourceConfig, "type" | "allowFullTools"> } | null | undefined,
+): boolean {
+  if (!run || run.triggerSource !== "webhook" || !run.webhookId) return false;
+  const trigger = triggerOf(run.webhookId);
+  if (!trigger) return true;
+  return trigger.source?.type === "botmail" && trigger.source.allowFullTools !== true;
+}
+
 /** One admin activity row, metadata only. */
 export interface BotMailDeliveryRow {
   botId: string;
@@ -133,7 +154,8 @@ export interface BotMailDeliveryRow {
   delivered: number;
   duplicate: number;
   ignored: number;
-  senderDomain: string;
+  /** JC decision 3 (v2): the full sender address (never the subject or text). */
+  sender: string;
 }
 
 export interface BotMailRouteDeps {
@@ -160,8 +182,8 @@ function send(res: ServerResponse, status: number, body: unknown): true {
   return true;
 }
 
-/** The body as JSON, `undefined` when it is not JSON or over `max`. */
-function readCapped(req: IncomingMessage, max: number): Promise<unknown> {
+/** The raw body, null when it is over `max` or the stream fails. */
+function readRaw(req: IncomingMessage, max: number): Promise<Buffer | null> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let bytes = 0;
@@ -172,20 +194,15 @@ function readCapped(req: IncomingMessage, max: number): Promise<unknown> {
       if (bytes > max) {
         over = true;
         chunks.length = 0;
-        resolve(undefined);
+        resolve(null);
         return;
       }
       chunks.push(chunk);
     });
     req.on("end", () => {
-      if (over) return;
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      } catch {
-        resolve(undefined);
-      }
+      if (!over) resolve(Buffer.concat(chunks));
     });
-    req.on("error", () => resolve(undefined));
+    req.on("error", () => resolve(null));
   });
 }
 
@@ -226,7 +243,19 @@ export function createBotInboundMailRoute(deps: BotMailRouteDeps): (req: Incomin
       req.resume();
       return send(res, 400, { error: "invalid" });
     }
-    const mail = parseInboundMail(await readCapped(req, BOT_MAIL_BODY_MAX));
+    // v2 (S1): the assertion signs this exact body. Missing or different: 401.
+    if (!assertion.bodySha256 || !/^[0-9a-f]{64}$/.test(assertion.bodySha256)) return unauthorized();
+    const raw = await readRaw(req, BOT_MAIL_BODY_MAX);
+    if (!raw) return send(res, 400, { error: "invalid" });
+    const digest = createHash("sha256").update(raw).digest();
+    if (!timingSafeEqual(digest, Buffer.from(assertion.bodySha256, "hex"))) return unauthorized();
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(raw.toString("utf8"));
+    } catch {
+      return send(res, 400, { error: "invalid" });
+    }
+    const mail = parseInboundMail(parsedBody);
     if (!mail) return send(res, 400, { error: "invalid" });
 
     const bot = deps.bot(mail.botId);
@@ -244,7 +273,7 @@ export function createBotInboundMailRoute(deps: BotMailRouteDeps): (req: Incomin
       const event = botmailEvent(mail);
       for (const id of triggers) {
         try {
-          const result = deps.ingest(id, event, mail.messageId);
+          const result = deps.ingest(id, event, mail.dedupeKey);
           if (!result) ignored += 1;
           else if (result.duplicate) duplicate += 1;
           else if (result.ignored || result.captured || !result.runId) ignored += 1;
@@ -265,7 +294,7 @@ export function createBotInboundMailRoute(deps: BotMailRouteDeps): (req: Incomin
       delivered,
       duplicate,
       ignored: ignored + rateLimited,
-      senderDomain: senderDomain(mail.from.address),
+      sender: mail.from.address,
     });
     return send(res, 202, {
       triggers: triggers.length,

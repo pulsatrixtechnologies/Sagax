@@ -7,11 +7,14 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { json, readBody } from "../harness/http.ts";
-import type { BotInboundMail } from "../bot-mail-addresses.ts";
+import type { BotInboundMail, LocalPartResult } from "../bot-mail-addresses.ts";
 import { createBotInboundMailReadRoutes, type BotInboundMailReadDeps } from "./bot-inbound-mail.ts";
 import { dispatchRoutes } from "./table.ts";
 
 const servers: Server[] = [];
+let changes: Array<{ botId: string; sub: string; localPart: string }> = [];
+let audits: Array<Record<string, unknown>> = [];
+let answerChange: (localPart: string) => LocalPartResult = (localPart) => ({ ok: true, mail: { available: true, address: `${localPart}@bots.example.org`, enabled: false } });
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))));
 });
@@ -26,6 +29,13 @@ async function serve(deps: Partial<BotInboundMailReadDeps> = {}): Promise<string
     bot: (id) => (id === "bot_abc" || id === "bot_off" || id === "bot_local" ? { id } : null),
     organization: () => true,
     address: async (id) => MAIL[id] ?? { available: false, address: null, enabled: false },
+    // the loopback caller owns bot_abc and bot_off, not bot_local
+    ownerSub: (_auth, id) => (id === "bot_local" ? null : "u_123"),
+    setLocalPart: async (botId, sub, localPart) => {
+      changes.push({ botId, sub, localPart });
+      return answerChange(localPart);
+    },
+    record: (_auth, row) => audits.push(row as unknown as Record<string, unknown>),
     ...deps,
   })];
   const server = createServer(async (req, res) => {
@@ -47,8 +57,8 @@ describe("GET /api/bots/:id/inbound-mail", () => {
     const on = await fetch(`${base}/api/bots/bot_abc/inbound-mail`);
     expect(on.status).toBe(200);
     expect(on.headers.get("cache-control")).toBe("no-store");
-    expect(await on.json()).toEqual({ available: true, address: "cryptic@bots.example.org", enabled: true });
-    expect(await (await fetch(`${base}/api/bots/bot_off/inbound-mail`)).json()).toEqual({ available: true, address: "ember@bots.example.org", enabled: false });
+    expect(await on.json()).toEqual({ available: true, address: "cryptic@bots.example.org", enabled: true, canChange: true });
+    expect(await (await fetch(`${base}/api/bots/bot_off/inbound-mail`)).json()).toEqual({ available: true, address: "ember@bots.example.org", enabled: false, canChange: true });
   });
 
   it("available false on a solo server, without asking Perspicax", async () => {
@@ -62,7 +72,7 @@ describe("GET /api/bots/:id/inbound-mail", () => {
     const base = await serve({ address: async () => { throw new Error("down"); } });
     const response = await fetch(`${base}/api/bots/bot_abc/inbound-mail`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ available: false, address: null, enabled: false });
+    expect(await response.json()).toEqual({ available: false, address: null, enabled: false, canChange: false });
   });
 
   it("404 for a bot that is not there; other methods and paths pass", async () => {
@@ -70,5 +80,64 @@ describe("GET /api/bots/:id/inbound-mail", () => {
     expect((await fetch(`${base}/api/bots/nobody/inbound-mail`)).status).toBe(404);
     expect(await (await fetch(`${base}/api/bots/bot_abc/inbound-mail`, { method: "POST" })).json()).toEqual({ from: "inline routes" });
     expect(await (await fetch(`${base}/api/bots/bot_abc/inbound-mail/x`)).json()).toEqual({ from: "inline routes" });
+  });
+});
+
+describe("PUT /api/bots/:id/inbound-mail (v2, JC decision 4): the owner changes the address", () => {
+  const put = (base: string, botId: string, body: unknown) => fetch(`${base}/api/bots/${botId}/inbound-mail`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  afterEach(() => {
+    changes = [];
+    audits = [];
+    answerChange = (localPart) => ({ ok: true, mail: { available: true, address: `${localPart}@bots.example.org`, enabled: false } });
+  });
+
+  it("sends the owner's Perspicax id and the new local part, answers the new address, writes one audit row", async () => {
+    const base = await serve();
+    const res = await put(base, "bot_abc", { localPart: "factures" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ available: true, address: "factures@bots.example.org", enabled: false, canChange: true });
+    expect(changes).toEqual([{ botId: "bot_abc", sub: "u_123", localPart: "factures" }]);
+    expect(audits).toEqual([{ botId: "bot_abc", address: "factures@bots.example.org" }]);
+  });
+
+  it("403 for anyone but the owner, without asking Perspicax; a viewer who is not the owner sees no Change", async () => {
+    const base = await serve();
+    const res = await put(base, "bot_local", { localPart: "factures" });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "not_owner" });
+    expect(changes).toEqual([]);
+    expect(await (await fetch(`${base}/api/bots/bot_local/inbound-mail`)).json()).toMatchObject({ canChange: false });
+  });
+
+  it("400 on a malformed local part before Perspicax is asked", async () => {
+    const base = await serve();
+    for (const localPart of ["", "Factures", "-x", "a b", 7]) {
+      const res = await put(base, "bot_abc", { localPart });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid" });
+    }
+    expect(changes).toEqual([]);
+  });
+
+  it.each([
+    ["taken", 409],
+    ["invalid", 400],
+    ["not_owner", 403],
+    ["no_bot", 404],
+    ["unavailable", 503],
+  ] as const)("maps Perspicax's %s to %i with a readable reason, no audit row", async (error, status) => {
+    answerChange = () => ({ ok: false, error });
+    const base = await serve();
+    const res = await put(base, "bot_abc", { localPart: "factures" });
+    expect(res.status).toBe(status);
+    const body = await res.json() as { error: string; message: unknown };
+    expect(body.error).toBe(error);
+    expect(typeof body.message).toBe("string");
+    expect(audits).toEqual([]);
+  });
+
+  it("off on a solo server", async () => {
+    const base = await serve({ organization: () => false });
+    expect((await put(base, "bot_abc", { localPart: "factures" })).status).toBe(404);
   });
 });

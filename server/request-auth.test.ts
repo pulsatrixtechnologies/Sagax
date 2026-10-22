@@ -135,6 +135,7 @@ describe("scopes", () => {
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
       ["GET", "/api/bots/x/inbound-mail"], // the bot's own email address (Perspicax relay), read-only
+      ["PUT", "/api/bots/x/inbound-mail"], // its owner changes it (the handler checks the owner)
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
       ["POST", "/api/bots/x/primary"], ["DELETE", "/api/bots/x/primary"], // the owner's own Primary Bot, both ways

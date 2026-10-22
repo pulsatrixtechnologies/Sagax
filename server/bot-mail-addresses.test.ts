@@ -88,7 +88,8 @@ describe("BotMailAddresses (contract B)", () => {
     expect(await px.addresses.forBot("bot_abc")).toEqual({ available: true, address: "cryptic@bots.example.org", enabled: true });
     expect(px.seen).toHaveLength(1);
     expect(px.seen[0]).toMatchObject({ path: BOT_MAIL_ADDRESSES_PATH, authorization: `Bearer ${TOKEN}` });
-    expect(px.seen[0]!.body).toEqual({ bots: [
+    // v2 (F8): the list is every bot with a Perspicax owner: complete
+    expect(px.seen[0]!.body).toEqual({ complete: true, bots: [
       { id: "bot_abc", name: "Cryptic", owner_sub: "u_123" },
       { id: "bot_off", name: "Ember", owner_sub: "u_123" },
     ] });
@@ -101,6 +102,10 @@ describe("BotMailAddresses (contract B)", () => {
     px.tick(2);
     await px.addresses.forBot("bot_abc");
     expect(px.seen).toHaveLength(2);
+    // the last bot gone: an empty, complete list
+    px.roster.splice(0, px.roster.length);
+    await px.addresses.resync();
+    expect(px.seen[2]!.body).toEqual({ complete: true, bots: [] });
   });
 
   it("a bot with no Perspicax owner has no address and is never sent", async () => {
@@ -157,5 +162,55 @@ describe("BotMailAddresses (contract B)", () => {
     expect((await px.addresses.forBot("bot_599")).available).toBe(true);
     expect(px.seen[0]!.body.bots).toHaveLength(500);
     expect(px.seen[0]!.body.bots[0].id).toBe("bot_599");
+    // a partial list never says complete: Perspicax would drop the others
+    expect(px.seen[0]!.body).not.toHaveProperty("complete");
+  });
+});
+
+describe("BotMailAddresses: re-sync and the owner's new address (v2)", () => {
+  it("resync() forgets the cache and sends the full list again at once (ownership transfer, delete)", async () => {
+    const px = await fakePerspicax((_req, body, res) => answer(res, 200, enabledAnswer(body)));
+    await px.addresses.forBot("bot_abc");
+    px.roster.splice(1, 1); // bot_off deleted
+    await px.addresses.resync();
+    expect(px.seen).toHaveLength(2);
+    expect(px.seen[1]!.body).toEqual({ complete: true, bots: [{ id: "bot_abc", name: "Cryptic", owner_sub: "u_123" }] });
+    await px.addresses.forBot("bot_abc");
+    expect(px.seen).toHaveLength(2);
+  });
+
+  it("changes the local part for the owner, then forgets the cache", async () => {
+    const px = await fakePerspicax((req, body, res) => {
+      if (req.url?.endsWith("/local-part")) return answer(res, 200, { bot_id: "bot_abc", address: `${body.local_part}@bots.example.org`, enabled: true });
+      answer(res, 200, enabledAnswer(body));
+    });
+    await px.addresses.forBot("bot_abc");
+    const changed = await px.addresses.setLocalPart("bot_abc", "u_123", "factures");
+    expect(changed).toEqual({ ok: true, mail: { available: true, address: "factures@bots.example.org", enabled: true } });
+    const call = px.seen.find((seen) => seen.path.endsWith("/local-part"))!;
+    expect(call).toMatchObject({ path: `${BOT_MAIL_ADDRESSES_PATH}/bot_abc/local-part`, authorization: `Bearer ${TOKEN}`, body: { owner_sub: "u_123", local_part: "factures" } });
+    const before = px.seen.length;
+    await px.addresses.forBot("bot_abc");
+    expect(px.seen.length).toBe(before + 1);
+  });
+
+  it.each([
+    [400, { error: "invalid" }, "invalid"],
+    [403, { error: "not_owner" }, "not_owner"],
+    [404, { error: "no_bot" }, "no_bot"],
+    [409, { error: "taken" }, "taken"],
+    [404, { error: "not_found" }, "unavailable"],
+    [500, { error: "boom" }, "unavailable"],
+  ])("maps Perspicax's %s %j to %s", async (status, body, error) => {
+    const px = await fakePerspicax((_req, _body, res) => answer(res, status, body));
+    expect(await px.addresses.setLocalPart("bot_abc", "u_123", "factures")).toEqual({ ok: false, error });
+  });
+
+  it("never calls Perspicax for a malformed local part", async () => {
+    const px = await fakePerspicax((_req, body, res) => answer(res, 200, enabledAnswer(body)));
+    for (const bad of ["", "-x", "x-", "Majuscule", "a b", "é", "a".repeat(41), "a/b"]) {
+      expect(await px.addresses.setLocalPart("bot_abc", "u_123", bad)).toEqual({ ok: false, error: "invalid" });
+    }
+    expect(px.seen).toHaveLength(0);
   });
 });

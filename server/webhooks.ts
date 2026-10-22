@@ -256,6 +256,7 @@ const sourceConfigSchema = z.object({
   filters: z.partialRecord(z.enum(TRIGGER_FILTER_KEYS), filterValuesSchema).default({}),
   catalog: z.number().int().min(1).max(TRIGGER_CATALOG_VERSION).optional(),
   includeBotComments: z.boolean().optional(),
+  allowFullTools: z.boolean().optional(),
   rateLimitPerMinute: z.number().int().min(1).max(TRIGGER_RATE_LIMIT_MAX).optional(),
   tenantId: z.string().trim().max(100).optional(),
   graph: graphConfigSchema.optional(),
@@ -435,6 +436,8 @@ function cleanSource(input: z.input<typeof sourceConfigSchema>): TriggerSourceCo
     type: parsed.data.type, events: Array.from(new Set(parsed.data.events)), filters, catalog: parsed.data.catalog ?? TRIGGER_CATALOG_VERSION,
   };
   if (parsed.data.includeBotComments && config.type === "github") config.includeBotComments = true;
+  // Bot email (S2): the owner's opt-in to the bot's usual tools; off by default.
+  if (parsed.data.allowFullTools && config.type === "botmail") config.allowFullTools = true;
   if (parsed.data.rateLimitPerMinute !== undefined) config.rateLimitPerMinute = parsed.data.rateLimitPerMinute;
   if (parsed.data.tenantId) config.tenantId = parsed.data.tenantId;
   const { graph, poller } = parsed.data;

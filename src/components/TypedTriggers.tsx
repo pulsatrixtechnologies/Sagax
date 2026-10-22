@@ -67,6 +67,8 @@ export interface TypedDraft {
   pollerSecret?: string;
   /** GitHub: also run for comments posted by an app or bot. */
   includeBotComments?: boolean;
+  /** Bot email (S2): the owner's opt-in to the bot's usual tools. */
+  allowFullTools?: boolean;
 }
 
 export const EMPTY_TYPED_DRAFT: TypedDraft = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
@@ -98,7 +100,7 @@ export function BotMailAddressLine({ mail }: { mail: BotInboundMail | null }) {
           {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}{t(copied ? "triggers.copied" : "triggers.botmail.copy")}
         </button>
       </div>
-      {!mail.enabled && <p className="mt-1 text-[11px] text-warning">{t("botPanel.email.disabled")}</p>}
+      {!mail.enabled && <p className="mt-1 text-[11px] text-ink-secondary">{t("botPanel.email.pending")}</p>}
     </div>
   );
 }
@@ -125,6 +127,7 @@ export function typedSourceConfig(type: TriggerSourceType, draft: TypedDraft): T
   }
   const config: TriggerSourceConfig = { type, events: draft.events.filter((kind) => definition.events.includes(kind)), filters };
   if (type === "github" && draft.includeBotComments) config.includeBotComments = true;
+  if (type === "botmail" && draft.allowFullTools) config.allowFullTools = true;
   const rate = Number(draft.rateLimit);
   if (draft.rateLimit.trim() && Number.isInteger(rate) && rate >= 1 && rate <= TRIGGER_RATE_LIMIT_MAX) config.rateLimitPerMinute = rate;
   if (GRAPH_TYPES.has(type) && draft.tenantId.trim()) config.tenantId = draft.tenantId.trim();
@@ -185,6 +188,7 @@ export function draftFromConfig(config: TriggerSourceConfig): TypedDraft {
   return {
     events: legacy ? [...every] : [...config.events],
     ...(config.includeBotComments ? { includeBotComments: true } : {}),
+    ...(config.allowFullTools ? { allowFullTools: true } : {}),
     filters: Object.fromEntries(Object.entries(config.filters).map(([key, values]) => [key, (values ?? []).join(", ")])),
     signingSecret: "",
     tenantId: config.tenantId ?? "",
@@ -459,6 +463,20 @@ export function TypedSourceFields({
         )}
       </div>
       <ConnectionFields type={type} draft={draft} onChange={onChange} secretSet={pollerSecretSet} />
+      {type === "botmail" && (
+        <div className="flex items-start justify-between gap-3">
+          <span className="min-w-0">
+            <span className="block text-[11.5px] font-medium text-ink-secondary">{t("triggers.botmail.fullTools")}</span>
+            <span className="mt-0.5 block text-[10.5px] text-warning">{t("triggers.botmail.fullToolsHelp")}</span>
+          </span>
+          <Switch
+            checked={Boolean(draft.allowFullTools)}
+            aria-label={t("triggers.botmail.fullTools")}
+            data-botmail-full-tools=""
+            onClick={() => onChange({ ...draft, allowFullTools: !draft.allowFullTools })}
+          />
+        </div>
+      )}
       {relay && (
         <div className="space-y-2">
           <p data-botmail-relay="" className="flex items-center gap-1.5 text-[11px] text-ink-secondary"><ShieldCheck size={12} aria-hidden="true" />{t("triggers.botmail.relay")}</p>

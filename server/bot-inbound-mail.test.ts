@@ -3,6 +3,7 @@
 // trigger catalog, the delivery route `POST /api/org/inbound-mail` with a
 // fake assertion verifier and a real WebhookManager behind it, the filters
 // (subject contains, sender exact or glob), the fence and the run prompt.
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -18,6 +19,7 @@ import {
   createBotInboundMailRoute,
   parseInboundMail,
   senderDomain,
+  botmailRunConfined,
   type BotMailRouteDeps,
 } from "./bot-inbound-mail.ts";
 import type { ConsoleAssertion } from "./oidc-rp.ts";
@@ -31,6 +33,7 @@ const mail = (extra: Record<string, unknown> = {}) => ({
   version: 1,
   botId: "bot_abc",
   messageId: "<CAF123@mail.example.com>",
+  dedupeKey: "e".repeat(64),
   receivedAt: "2026-10-21T22:14:03Z",
   from: { address: "ana@example.com", name: "Ana Tremblay" },
   to: "cryptic@bots.example.org",
@@ -96,7 +99,10 @@ describe("parseInboundMail and botmailEvent", () => {
       resource: "<CAF123@mail.example.com>",
       occurredAt: "2026-10-21T22:14:03.000Z",
     });
-    expect(event.text).toContain("From: Ana Tremblay <ana@example.com>");
+    // v2 (F5): the bare address is the sender; the display name stands apart, unverified
+    expect(event.text).toContain("sender: ana@example.com");
+    expect(event.text).toContain("Display name (unverified): Ana Tremblay");
+    expect(event.text).not.toContain("Ana Tremblay <ana@example.com>");
     expect(event.text).toContain("SPF: pass");
     expect(event.text).toContain("DKIM: pass");
     expect(event.text).toContain("Verified: yes");
@@ -115,6 +121,9 @@ describe("parseInboundMail and botmailEvent", () => {
     ["no bot", mail({ botId: "" })],
     ["a bot id with a slash", mail({ botId: "a/b" })],
     ["no message id", mail({ messageId: "" })],
+    ["no dedupe key (v2)", mail({ dedupeKey: undefined })],
+    ["a dedupe key that is not 64 lowercase hex", mail({ dedupeKey: "E".repeat(64) })],
+    ["a short dedupe key", mail({ dedupeKey: "e".repeat(63) })],
     ["a sender without an address", mail({ from: { name: "Ana" } })],
     ["a sender that is not an address", mail({ from: { address: "ana" } })],
     ["a date that is not one", mail({ receivedAt: "yesterday" })],
@@ -244,6 +253,15 @@ describe("WebhookManager with a botmail trigger", () => {
     expect(queued[0]!.prompt).toContain("[UNTRUSTED BOTMAIL EVENT DATA ");
   });
 
+  it("keeps the owner's full-tools opt-in for bot email only (S2)", () => {
+    const { hooks } = manager();
+    const { webhook } = hooks.create(botmailTrigger({ source: { type: "botmail", events: [], filters: {}, allowFullTools: true } }));
+    expect(webhook.source?.allowFullTools).toBe(true);
+    expect(hooks.update(webhook.id, { source: { type: "botmail", events: [], filters: {} } })?.source?.allowFullTools).toBeUndefined();
+    const other = hooks.create({ ...botmailTrigger(), source: { type: "github", events: [], filters: {}, allowFullTools: true } });
+    expect(other.webhook.source?.allowFullTools).toBeUndefined();
+  });
+
   it("stops with the bot (disableForBot)", () => {
     const { hooks } = manager();
     const { webhook } = hooks.create(botmailTrigger());
@@ -255,7 +273,18 @@ describe("WebhookManager with a botmail trigger", () => {
 // ── the route ───────────────────────────────────────────────────────────
 
 const tokens = new Map<string, ConsoleAssertion>();
+/** Tokens whose `body_sha256` the test sets itself (else `post` signs the body it sends). */
+const fixedHash = new Set<string>();
+const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 let jti = 0;
+function tokenWithHash(sub: string, bodySha256: string | undefined): string {
+  const id = token(sub);
+  fixedHash.add(id);
+  const found = tokens.get(id)!;
+  if (bodySha256 === undefined) delete found.bodySha256;
+  else found.bodySha256 = bodySha256;
+  return id;
+}
 function token(sub: string, actor: ConsoleAssertion["actor"] = "perspicax-mail"): string {
   jti += 1;
   const id = `tok${jti}`;
@@ -313,10 +342,14 @@ beforeEach(() => {
 });
 
 async function post(body: unknown, bearer?: string, raw?: string) {
+  const text = raw ?? JSON.stringify(body);
+  // Perspicax signs the exact body it sends (v2, S1)
+  const found = bearer ? tokens.get(bearer) : undefined;
+  if (found && !fixedHash.has(bearer!) && found.bodySha256 === undefined) found.bodySha256 = sha(text);
   const res = await fetch(`${base}${BOT_MAIL_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
-    body: raw ?? JSON.stringify(body),
+    body: text,
   });
   return { status: res.status, header: res.headers.get("x-sagax-mail-api"), body: await res.json().catch(() => null) as Record<string, unknown> | null };
 }
@@ -337,6 +370,16 @@ describe(`POST ${BOT_MAIL_PATH}`, () => {
     expect(await post(mail(), once)).toMatchObject({ status: 401, body: { error: "unauthorized" } });
     identity = "solo";
     expect(await post(mail(), token("u_123"))).toMatchObject({ status: 401, body: { error: "unauthorized" } });
+  });
+
+  it("401 when the assertion does not sign this exact body (v2, S1)", async () => {
+    state.hooks.create(botmailTrigger());
+    expect(await post(mail(), tokenWithHash("u_123", undefined))).toMatchObject({ status: 401, header: "1", body: { error: "unauthorized" } });
+    expect(await post(mail(), tokenWithHash("u_123", sha(JSON.stringify(mail({ subject: "autre" })))))).toMatchObject({ status: 401, body: { error: "unauthorized" } });
+    expect(await post(mail(), tokenWithHash("u_123", "Z".repeat(64)))).toMatchObject({ status: 401, body: { error: "unauthorized" } });
+    expect(state.queued).toHaveLength(0);
+    // the same body, signed: delivered
+    expect(await post(mail(), tokenWithHash("u_123", sha(JSON.stringify(mail()))))).toMatchObject({ status: 202, body: { delivered: 1 } });
   });
 
   it("400 on a body that is not the contract's, or over 256 KiB", async () => {
@@ -373,23 +416,26 @@ describe(`POST ${BOT_MAIL_PATH}`, () => {
     expect(got).toMatchObject({ status: 202, body: { triggers: 2, delivered: 1, duplicate: 0, ignored: 1 } });
     expect(got.body).not.toHaveProperty("reason");
     expect(state.queued).toHaveLength(1);
-    expect(rows).toEqual([{ botId: "bot_abc", botName: "Cryptic", ownerPrincipalId: "pr_jc", triggers: 2, delivered: 1, duplicate: 0, ignored: 1, senderDomain: "example.com" }]);
+    // JC decision 3 (v2): the audit row keeps the full sender address, never the subject or the text
+    expect(rows).toEqual([{ botId: "bot_abc", botName: "Cryptic", ownerPrincipalId: "pr_jc", triggers: 2, delivered: 1, duplicate: 0, ignored: 1, sender: "ana@example.com" }]);
     const audit = JSON.stringify(rows);
-    expect(audit).not.toContain("ana@");
     expect(audit).not.toContain("Facture");
+    expect(audit).not.toContain("voici");
   });
 
-  it("202 duplicate when Perspicax sends the same message id again", async () => {
+  it("202 duplicate on the same dedupe key (v2, F6), whatever the message id", async () => {
     state.hooks.create(botmailTrigger());
     expect((await post(mail(), token("u_123"))).body).toMatchObject({ delivered: 1 });
-    expect(await post(mail(), token("u_123"))).toMatchObject({ status: 202, body: { triggers: 1, delivered: 0, duplicate: 1, ignored: 0 } });
-    expect(state.queued).toHaveLength(1);
+    expect(await post(mail({ messageId: "<another@mail.example.com>" }), token("u_123"))).toMatchObject({ status: 202, body: { triggers: 1, delivered: 0, duplicate: 1, ignored: 0 } });
+    // the same message id with another key is another mail
+    expect((await post(mail({ dedupeKey: "f".repeat(64) }), token("u_123"))).body).toMatchObject({ delivered: 1 });
+    expect(state.queued).toHaveLength(2);
   });
 
   it("429 when every trigger is over its rate", async () => {
     state.hooks.create(botmailTrigger({ source: { type: "botmail", events: [], filters: {}, rateLimitPerMinute: 1 } }));
     expect((await post(mail(), token("u_123"))).status).toBe(202);
-    expect(await post(mail({ messageId: "<other@mail.example.com>" }), token("u_123"))).toMatchObject({ status: 429, header: "1", body: { error: "rate_limited" } });
+    expect(await post(mail({ dedupeKey: "a".repeat(64) }), token("u_123"))).toMatchObject({ status: 429, header: "1", body: { error: "rate_limited" } });
   });
 
   it("never echoes or logs the message", async () => {
@@ -410,3 +456,20 @@ describe(`POST ${BOT_MAIL_PATH}`, () => {
   });
 });
 
+describe("botmailRunConfined (v2, S2): a mail-woken run is confined unless its owner opted in", () => {
+  const trigger = (extra: Record<string, unknown> = {}) => ({ source: { type: "botmail" as const, events: [], filters: {}, ...extra } });
+  it("confines a running webhook run of a botmail trigger", () => {
+    expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => trigger())).toBe(true);
+  });
+  it("does not when the owner turned on full tools for that trigger", () => {
+    expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => trigger({ allowFullTools: true }))).toBe(false);
+  });
+  it("confines a run whose trigger is gone (fail closed)", () => {
+    expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => null)).toBe(true);
+  });
+  it("leaves other runs alone", () => {
+    expect(botmailRunConfined(null, () => trigger())).toBe(false);
+    expect(botmailRunConfined({ triggerSource: "schedule", webhookId: undefined }, () => trigger())).toBe(false);
+    expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => ({ source: { type: "github" as const, events: [], filters: {} } }))).toBe(false);
+  });
+});

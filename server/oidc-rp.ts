@@ -514,6 +514,10 @@ export interface ConsoleAssertion {
    * member API of 2026-10-09) or `perspicax-mail` (the mail relay delivering
    * a mail to one of the person's bots, 2026-10-21). */
   actor: ConsoleAssertionActor;
+  /** `body_sha256`: lowercase hex SHA-256 of the exact request body, when
+   * the signer binds the assertion to it (the mail relay must, contract v2
+   * of 2026-10-21; the route compares it). Absent otherwise. */
+  bodySha256?: string;
 }
 
 /** The actors a console assertion may name. The admin API accepts only the
@@ -570,7 +574,11 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
   const serverId = stringClaim(claims.server_id, 256) ?? null;
   if (input.serverId && serverId !== input.serverId) throw new OidcError(`${kind}_server`, "The console assertion is meant for another linked server.");
   const locale = typeof claims.locale === "string" && /^[A-Za-z]{2}([-_][A-Za-z0-9]{2,8})?$/.test(claims.locale) ? claims.locale : undefined;
-  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor };
+  if (claims.body_sha256 !== undefined && (typeof claims.body_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(claims.body_sha256))) {
+    throw new OidcError(`${kind}_body`, "The assertion's body digest is not a SHA-256.");
+  }
+  const bodySha256 = typeof claims.body_sha256 === "string" ? claims.body_sha256 : undefined;
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor, ...(bodySha256 ? { bodySha256 } : {}) };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine

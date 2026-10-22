@@ -1078,13 +1078,14 @@ public struct BotInboundMail: Decodable, Equatable, Sendable {
 }
 
 /// What the profile shows: the address (not an id, shown as is) and
-/// whether the administrator turned it off.
+/// whether it still waits for the administrator to turn it on (addresses
+/// are off by default, JC decision 1 of 2026-10-21).
 public struct BotInboundMailRow: Equatable, Sendable {
     public var address: String
-    public var turnedOff: Bool
-    public init(address: String, turnedOff: Bool) {
+    public var waitingForAdmin: Bool
+    public init(address: String, waitingForAdmin: Bool) {
         self.address = address
-        self.turnedOff = turnedOff
+        self.waitingForAdmin = waitingForAdmin
     }
 }
 
@@ -1094,7 +1095,7 @@ public enum BotInboundMailRules {
         guard let answer, answer.available == true, let address = answer.address,
               address.count <= 320, isAddress(address)
         else { return nil }
-        return BotInboundMailRow(address: address, turnedOff: answer.enabled != true)
+        return BotInboundMailRow(address: address, waitingForAdmin: answer.enabled != true)
     }
 
     static func isAddress(_ value: String) -> Bool {

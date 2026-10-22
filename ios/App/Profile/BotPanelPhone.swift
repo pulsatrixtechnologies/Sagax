@@ -443,13 +443,16 @@ private struct PhoneBotPanelContent: View {
     }
 
     /// The bot's own email address (B21 / CO5): the address with a copy
-    /// button, then the one rule, or the administrator's off state. Absent
+    /// button, then the one rule, or the wait for the administrator (off by
+    /// default). Changing it is on the desktop (the owner's PUT). Absent
     /// when there is none (solo server, older Perspicax, inbound mail off).
     private func emailCard(_ row: BotInboundMailRow) -> some View {
         VStack(spacing: 0) {
             ProfileCard {
                 ProfileRow(icon: ProfileRowIcon(systemImage: "envelope", size: 16), title: Text("Email address"),
-                           subtitle: Text(verbatim: row.address), height: Theme.Profile.routineRow) {
+                           // greyed while the administrator has not turned it on
+                           subtitle: Text(verbatim: row.address).foregroundColor(row.waitingForAdmin ? Theme.textTertiary : Theme.textSecondary),
+                           height: Theme.Profile.routineRow) {
                     Button {
                         UIPasteboard.general.string = row.address
                         Haptics.selection()
@@ -468,11 +471,9 @@ private struct PhoneBotPanelContent: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("panel-email")
-            if row.turnedOff {
-                ProfileFooter(text: "Turned off by the administrator")
-            } else {
-                ProfileFooter(text: "Mail received at this address only wakes a routine (Bot email trigger).")
-            }
+            ProfileFooter(text: row.waitingForAdmin
+                ? "Waiting for the administrator to turn it on"
+                : "Mail received at this address only wakes a routine (Bot email trigger).")
         }
     }
 

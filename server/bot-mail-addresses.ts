@@ -20,6 +20,14 @@ export const BOT_MAIL_BATCH_MAX = 500;
 const TIMEOUT_MS = 5_000;
 const ANSWER_MAX_BYTES = 256 * 1024;
 const ADDRESS = /^[^\s@<>()",;:]{1,64}@[A-Za-z0-9.-]{1,253}$/;
+/** v2: the local part an owner may ask for (Perspicax checks uniqueness and
+ * reserved names). */
+export const BOT_MAIL_LOCAL_PART = /^[a-z0-9]([a-z0-9.-]{0,38}[a-z0-9])?$/;
+
+/** The owner's change of address, as Sagax reports it. */
+export type LocalPartResult =
+  | { ok: true; mail: BotInboundMail }
+  | { ok: false; error: "invalid" | "not_owner" | "no_bot" | "taken" | "unavailable" };
 
 /** One of this server's bots, as contract B names it. */
 export interface BotMailBot {
@@ -104,23 +112,63 @@ export class BotMailAddresses {
     this.snapshot = null;
   }
 
-  private refresh(first: string): Promise<Snapshot> {
+  /** v2 (S3): a bot changed owner or was deleted: forget the cache and send
+   * the full list now, so Perspicax's owner and rows stay right. Never throws. */
+  async resync(): Promise<void> {
+    this.snapshot = null;
+    if (!this.options.link()) return;
+    try {
+      await this.inflight;
+      await this.refresh("", true);
+    } catch {
+      /* a failed sync is retried by the next read */
+    }
+  }
+
+  /** v2 (JC decision 4): the owner picks the bot's local part. `ownerSub`
+   * is the Perspicax user id of the person acting, already checked to own
+   * the bot here. */
+  async setLocalPart(botId: string, ownerSub: string, localPart: string): Promise<LocalPartResult> {
+    if (!BOT_MAIL_LOCAL_PART.test(localPart)) return { ok: false, error: "invalid" };
+    const link = this.options.link();
+    if (!link || !/^[\w-]{1,128}$/.test(botId)) return { ok: false, error: "unavailable" };
+    const result = await link.linkPostJson(`${BOT_MAIL_ADDRESSES_PATH}/${encodeURIComponent(botId)}/local-part`, { owner_sub: ownerSub, local_part: localPart }, { timeoutMs: TIMEOUT_MS, maxBytes: 16 * 1024 });
+    this.snapshot = null;
+    if (result.ok) {
+      const body = result.body as { bot_id?: unknown; address?: unknown; enabled?: unknown } | null;
+      if (!body || typeof body.address !== "string" || !ADDRESS.test(body.address) || body.address.length > 320 || typeof body.enabled !== "boolean") {
+        return { ok: false, error: "unavailable" };
+      }
+      return { ok: true, mail: { available: true, address: body.address, enabled: body.enabled } };
+    }
+    const code = (result.body as { error?: unknown } | undefined)?.error;
+    const known: Record<number, string> = { 400: "invalid", 403: "not_owner", 404: "no_bot", 409: "taken" };
+    if (result.status && known[result.status] === code) return { ok: false, error: code as "invalid" | "not_owner" | "no_bot" | "taken" };
+    return { ok: false, error: "unavailable" };
+  }
+
+  private refresh(first: string, evenEmpty = false): Promise<Snapshot> {
     // One call at a time; a read that waits gets that call's answer.
-    this.inflight ??= this.fetch(first).finally(() => {
+    this.inflight ??= this.fetch(first, evenEmpty).finally(() => {
       this.inflight = null;
     });
     return this.inflight;
   }
 
-  private async fetch(first: string): Promise<Snapshot> {
+  private async fetch(first: string, evenEmpty: boolean): Promise<Snapshot> {
     const link = this.options.link();
     const owned = this.options.bots().filter((bot) => bot.ownerSub);
     const ordered = [...owned.filter((bot) => bot.id === first), ...owned.filter((bot) => bot.id !== first)].slice(0, BOT_MAIL_BATCH_MAX);
     const at = this.now();
     const asked = new Set(ordered.map((bot) => bot.id));
     let entries: Map<string, BotInboundMail> | null = null;
-    if (link && ordered.length) {
+    // A re-sync sends even an empty list: the last bot was deleted.
+    if (link && (ordered.length || evenEmpty)) {
+      // v2 (F8): `complete` only when this is every bot with an owner:
+      // Perspicax then drops the rows of bots not listed.
+      const complete = ordered.length === owned.length;
       const result = await link.linkPostJson(BOT_MAIL_ADDRESSES_PATH, {
+        ...(complete ? { complete: true } : {}),
         bots: ordered.map((bot) => ({ id: bot.id, name: bot.name, owner_sub: bot.ownerSub })),
       }, { timeoutMs: TIMEOUT_MS, maxBytes: ANSWER_MAX_BYTES });
       if (result.ok) {

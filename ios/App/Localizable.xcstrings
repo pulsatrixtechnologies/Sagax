@@ -74220,10 +74220,10 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Adresse courriel copiée" } }
       }
     },
-    "Turned off by the administrator": {
+    "Waiting for the administrator to turn it on": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Turned off by the administrator" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Désactivée par l'administrateur" } }
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for the administrator to turn it on" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente d'activation par l'administrateur" } }
       }
     },
     "Mail received at this address only wakes a routine (Bot email trigger).": {

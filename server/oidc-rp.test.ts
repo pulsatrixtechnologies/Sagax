@@ -479,6 +479,17 @@ describe("OIDC relying party: console assertions (slice 7)", () => {
     await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mcp" } }) }), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
   });
 
+  it("carries the body digest the mail relay signs (v2, S1), and refuses one that is not a SHA-256", async () => {
+    const party = rp();
+    const digest = "a".repeat(64);
+    const mail = (value: unknown) => assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mail" }, body_sha256: value }) });
+    await expect(party.verifyConsoleAssertion(mail(digest), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).resolves.toMatchObject({ bodySha256: digest });
+    await expect(party.verifyConsoleAssertion(mail("A".repeat(64)), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_body" });
+    await expect(party.verifyConsoleAssertion(mail(7), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_body" });
+    const plain = await party.verifyConsoleAssertion(assertion(), ORIGIN);
+    expect(plain.bodySha256).toBeUndefined();
+  });
+
   it.each([
     ["another typ", { header: (h: Bend) => ({ ...h, typ: "JWT" }) }, "console_assertion_typ"],
     ["no typ", { header: (h: Bend) => { const { typ: _typ, ...rest } = h; return rest; } }, "console_assertion_typ"],

@@ -229,7 +229,28 @@ describe("Bot email trigger (B21, 2026-10-21)", () => {
     const none = renderToStaticMarkup(createElement(BotMailAddressLine, { mail: { available: false, address: null, enabled: false } }));
     expect(none).toContain("This bot has no email address yet.");
     const off = renderToStaticMarkup(createElement(BotMailAddressLine, { mail: { available: true, address: "e@bots.example.org", enabled: false } }));
-    expect(off).toContain("Turned off by the administrator");
+    expect(off).toContain("Waiting for the administrator to turn it on");
     expect(renderToStaticMarkup(createElement(BotMailAddressLine, { mail: null }))).toBe("");
+  });
+});
+
+describe("Bot email: the owner's full-tools switch (v2, S2)", () => {
+  const empty = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
+  it("is offered for bot email only, off by default, with its warning", async () => {
+    const { TypedSourceFields } = await import("./TypedTriggers");
+    const html = renderToStaticMarkup(createElement(TypedSourceFields, { type: "botmail", draft: empty, onChange: vi.fn(), creating: true }));
+    expect(html).toContain("Give these runs the bot&#x27;s usual tools");
+    expect(html).toContain("no shell, and every change or send asks you first");
+    expect(html).toMatch(/data-botmail-full-tools=""[^>]*aria-checked="false"|aria-checked="false"[^>]*data-botmail-full-tools=""/);
+    const github = renderToStaticMarkup(createElement(TypedSourceFields, { type: "github", draft: empty, onChange: vi.fn(), creating: true }));
+    expect(github).not.toContain("data-botmail-full-tools");
+  });
+
+  it("is saved with the source and read back, for bot email only", async () => {
+    const { typedSourceConfig, draftFromConfig } = await import("./TypedTriggers");
+    expect(typedSourceConfig("botmail", { ...empty, allowFullTools: true })).toEqual({ type: "botmail", events: [], filters: {}, allowFullTools: true });
+    expect(typedSourceConfig("botmail", empty)).toEqual({ type: "botmail", events: [], filters: {} });
+    expect(typedSourceConfig("github", { ...empty, allowFullTools: true })).not.toHaveProperty("allowFullTools");
+    expect(draftFromConfig({ type: "botmail", events: [], filters: {}, allowFullTools: true }).allowFullTools).toBe(true);
   });
 });

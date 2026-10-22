@@ -237,6 +237,10 @@ export interface TriggerSourceConfig {
   /** GitHub: also run for PR and inline review comments posted by a GitHub
    * app or bot. Off by default so a bot never triggers itself. */
   includeBotComments?: boolean;
+  /** Bot email (2026-10-21, S2): a mail-woken run is confined (no shell,
+   * a card for every write or outbound call, no Always-allow or Full) unless
+   * the owner turns this on for the trigger. Off by default. */
+  allowFullTools?: boolean;
   /** Deliveries accepted per minute before 429 (1 to 120, default 10). */
   rateLimitPerMinute?: number;
   /** Microsoft Graph: only notifications from this tenant are accepted. */
