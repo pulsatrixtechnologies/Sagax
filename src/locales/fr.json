@@ -10020,5 +10020,11 @@
   "orgCalls.add": "Ajouter",
   "orgCalls.remove": "Retirer",
   "outbound.purchase.mismatch": "La boutique a confirmé {total}, et non les {amount} que vous avez permis. Vérifiez la commande.",
-  "outbound.purchase.declared": "Reçu déclaré par le bot, pas lu par Sagax sur la page de la boutique."
+  "outbound.purchase.declared": "Reçu déclaré par le bot, pas lu par Sagax sur la page de la boutique.",
+  "remoteFolder.browseButton": "Parcourir",
+  "remoteFolder.browse": "Parcourir les dossiers de l'ordinateur du bot",
+  "remoteFolder.noComputer": "Aucun ordinateur n'est connecté à ce bot. Saisissez le chemin absolu.",
+  "remoteFolder.loading": "Chargement…",
+  "remoteFolder.noSubfolder": "Aucun sous-dossier ici.",
+  "remoteFolder.choose": "Choisir ce dossier"
 }

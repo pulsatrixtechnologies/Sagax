@@ -24,6 +24,7 @@ import { useDesktopCapabilities } from "../DesktopCapabilities";
 import { BrowserUnavailableNote, SettingsText } from "../SettingsLink";
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { RemoteFolderField } from "../remote-session/RemoteFolderField";
 import { PILL, PillSelect, Switch } from "../SettingsPrimitives";
 import { ProposalStatus } from "./ProposalStatus";
 import { ToolSelectionCard } from "./ToolSelectionCard";
@@ -99,11 +100,12 @@ function WorkingFolder({ bot }: { bot: Bot }) {
             void save((draft ?? bot.cwd ?? "").trim() || null);
           }}
         >
-          <input
-            className={cn(inputCls, "font-mono text-[12.5px]")}
+          <RemoteFolderField
+            botId={bot.id}
+            inputClassName={cn(inputCls, "font-mono text-[12.5px]")}
             placeholder={t("botPanel.access.placeholder")}
             value={draft ?? bot.cwd ?? ""}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
           />
           <button type="submit" disabled={saving || draft === null} className={cn(PILL, "shrink-0")}>
             {t("common.save")}
