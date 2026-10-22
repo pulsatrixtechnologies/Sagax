@@ -37,7 +37,7 @@ describe("remote session card", () => {
     const html = renderToStaticMarkup(createElement(
       StoreProvider,
       null,
-      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view }),
+      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view, detailsOpen: true }),
     ));
     expect(html).toContain("data-remote-session-card");
     expect(html).toContain("POSTE-02");
@@ -53,6 +53,24 @@ describe("remote session card", () => {
     expect(html).toContain(t("remoteSession.shell"));
     expect(html).not.toContain(ADDRESS);
     expect(html).not.toContain(view.id);
+  });
+
+  it("folds the machine details until the person opens them", () => {
+    const html = renderToStaticMarkup(createElement(
+      StoreProvider,
+      null,
+      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view }),
+    ));
+    expect(html).toContain("POSTE-02");
+    expect(html).toContain("UD6HFH");
+    expect(html).toContain('data-remote-details-toggle=""');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(t("remoteSession.details"));
+    // the folded row sums up the model and the memory, nothing more
+    expect(html).toContain("OptiPlex · 16 Go");
+    for (const hidden of ["SN1", "Intel Core i5", "120 Go libres sur 476 Go", "data-remote-field=\"serial\""]) {
+      expect(html).not.toContain(hidden);
+    }
   });
 
   it("keeps a closed session visible and drops the hints", () => {
@@ -151,7 +169,7 @@ describe("remote session surfaces", () => {
     const card = renderToStaticMarkup(createElement(
       StoreProvider,
       null,
-      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: bare }),
+      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: bare, detailsOpen: true }),
     ));
     expect(card).toContain("UD6HFH");
     expect(card).toContain(t("remoteSession.unknown"));

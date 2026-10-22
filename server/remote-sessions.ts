@@ -45,6 +45,8 @@ import {
   transferDirCommand,
   type RunCommand,
 } from "./remote-session-probe.ts";
+import { existsCommand, LIST_TIMEOUT_MS, listDirCommand, readExists, readListing, type ListResult } from "./remote-session-files.ts";
+import { remoteJoin, safeRemoteDir, scpSafePath, sensitiveRemoteDir } from "../shared/remote-files.ts";
 
 const FILE = "remote-sessions.json";
 const UPLOAD_MAX = 8 * 1024 * 1024;
@@ -529,17 +531,32 @@ export function createRemoteSessionService(deps: {
         return { error: "This remote computer did not open a shell." };
       }
     },
-    async upload(principalId: string, botId: string, id: string, name: string, bytes: Buffer): Promise<{ name: string } | { error: string }> {
+    /** `dir`: the folder the person chose in the remote file browser; without
+     * it the file goes to the transfer folder. A file already there is never
+     * replaced unless `overwrite` says so (the person confirmed it). System
+     * folders (shared/remote-files.ts sensitiveRemoteDir) are refused. */
+    async upload(principalId: string, botId: string, id: string, name: string, bytes: Buffer, options: { dir?: string; overwrite?: boolean } = {}): Promise<{ name: string } | { error: string; code?: "exists" | "sensitive" }> {
       const safeName = safeUploadName(name);
       const session = owned(principalId, botId, id);
       if (!session || session.state !== "connected") return { error: "That remote session is not open." };
       if (!safeName) return { error: "Choose a simple file name." };
       if (bytes.length === 0 || bytes.length > UPLOAD_MAX) return { error: "The file must be under 8 MB." };
+      const chosen = options.dir === undefined ? "" : safeRemoteDir(options.dir, session.os);
+      if (chosen === null || (chosen && !scpSafePath(chosen))) return { error: "That folder cannot receive a file. Choose a folder whose name has no quotes or symbols." };
+      if (chosen && sensitiveRemoteDir(chosen, session.os)) return { error: "Sagax does not send files into this system folder.", code: "sensitive" };
       if (!tunnelOf(session)) return { error: "The tunnel for this remote computer is not on this server yet." };
-      const listed = await ssh(session, transferDirCommand(session.os), 15_000);
-      const remoteDir = safeRemotePath(listed?.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() ?? "");
-      if (!listed || listed.code !== 0 || !remoteDir) return { error: "The remote computer did not accept a folder for the file." };
-      const remotePath = session.os === "windows" ? `${remoteDir}\\${safeName}` : `${remoteDir}/${safeName}`;
+      let remoteDir = chosen;
+      if (!remoteDir) {
+        const listed = await ssh(session, transferDirCommand(session.os), 15_000);
+        remoteDir = safeRemotePath(listed?.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() ?? "") ?? "";
+        if (!listed || listed.code !== 0 || !remoteDir || !scpSafePath(remoteDir)) return { error: "The remote computer did not accept a folder for the file." };
+      }
+      const remotePath = remoteJoin(remoteDir, safeName, session.os);
+      if (!options.overwrite) {
+        const there = readExists(await ssh(session, existsCommand(session.os, remotePath), 15_000));
+        if (there === null) return { error: "The remote computer did not say whether that file already exists, so nothing was sent." };
+        if (there) return { error: `${safeName} is already in that folder.`, code: "exists" };
+      }
       const localDir = path.join(deps.dataDir, "remote-session-transfers");
       mkdirSync(localDir, { recursive: true, mode: 0o700 });
       const local = path.join(localDir, `${randomBytes(8).toString("hex")}-${safeName.replaceAll(" ", "_")}`);
@@ -558,7 +575,7 @@ export function createRemoteSessionService(deps: {
       const safe = safeRemotePath(remotePath);
       const session = owned(principalId, botId, id);
       if (!session || session.state !== "connected") return { error: "That remote session is not open." };
-      if (!safe) return { error: "That path cannot be downloaded." };
+      if (!safe || !scpSafePath(safe)) return { error: "That path cannot be downloaded." };
       const tunnel = tunnelOf(session);
       if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
       const localDir = path.join(deps.dataDir, "remote-session-transfers");
@@ -576,6 +593,16 @@ export function createRemoteSessionService(deps: {
       } finally {
         rmSync(local, { force: true });
       }
+    },
+    /** One folder of the remote computer, read only, for its owner. */
+    async listDir(principalId: string, botId: string, id: string, requested: unknown): Promise<ListResult> {
+      const session = owned(principalId, botId, id);
+      if (!session || session.state !== "connected") return { status: 403, error: "That remote session is not open for you." };
+      const dir = safeRemoteDir(requested, session.os);
+      if (dir === null) return { status: 400, error: "That folder path cannot be listed." };
+      if (!tunnelOf(session)) return { status: 409, error: "The tunnel for this remote computer is not on this server yet." };
+      const result = await ssh(session, listDirCommand(session.os, dir), LIST_TIMEOUT_MS);
+      return readListing(result, session.os);
     },
     async screen(principalId: string, botId: string, id: string): Promise<Buffer | null> {
       const session = owned(principalId, botId, id);

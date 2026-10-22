@@ -92,6 +92,8 @@ describe("remote session service", () => {
         };
       }
       if (command.includes("sagax-transfer")) return { code: 0, stdout: "C:/Temp/sagax-transfer\n", stderr: "" };
+      // the "is a file already there" check before an upload (#959): nothing is
+      if (command.includes("-EncodedCommand")) return { code: 0, stdout: "no", stderr: "" };
       if (command.includes("px-sagax-shot.png") && argv[1] === "ssh") return { code: 0, stdout: "C:/Temp/px-sagax-shot.png\n", stderr: "" };
       if (argv[1] === "cp") {
         const dest = argv.at(-1) ?? "";
