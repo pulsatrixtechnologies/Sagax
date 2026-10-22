@@ -203,6 +203,13 @@ export type RuntimeEvent = RuntimeEventBase &
         /** A permission ask's full arguments as redacted JSON, for the
          * card's collapsed technical details (summary stays one line). */
         input?: string;
+        /** An engine's own connector call (Grok's use_tool to a server Sagax
+         * did not mount, server/drivers/acp/connector-ask.ts). */
+        engineConnector?: boolean;
+        /** The driver read this ask as outward-facing (a send, an engine
+         * connector call that is not plainly a read): the outbound guard
+         * holds it and no session-wide allow is offered (review of #943). */
+        outbound?: boolean;
       }
     | {
         type: "request.resolved";

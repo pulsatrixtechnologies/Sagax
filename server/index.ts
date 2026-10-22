@@ -705,7 +705,7 @@ import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { describeTool, readBotActivity } from "./activity.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
 import { OutboundRequestService } from "./outbound-requests.ts";
-import { DEFAULT_OUTBOUND_POLICY, connectorCallsIn, normalizeOutboundPolicy, outboundCallsIn } from "../shared/outbound.ts";
+import { DEFAULT_OUTBOUND_POLICY, connectorCallsIn, isOutboundTool, normalizeOutboundPolicy, outboundCallsIn } from "../shared/outbound.ts";
 import { normalizeAllowedRecipients, sendRecipientsAllowed } from "../shared/allowed-recipients.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
 import { connectorAccessDecision, describeConnectorScopes, normalizeConnectorScopes } from "../shared/connector-scopes.ts";
@@ -837,7 +837,9 @@ import { VoiceLatencyLog } from "./voice-latency.ts";
 import { turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
-import { ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, claudeAiConnectorsPrompt, createHarnessConnectorRoutes, runClaudeCli } from "./harness-connectors.ts";
+import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
+import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
+import { connectorNeed } from "../shared/engine-connectors.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope, TurnImageInput } from "./contracts.ts";
@@ -14579,6 +14581,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const baseVerdict = permission && asker && event.requestId
         ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
           recipientsAllowed: recipientsListed,
+          ...(event.outbound === true ? { outbound: true } : {}),
           requiresExplicitApproval: event.requiresExplicitApproval,
           sagaxGate: event.sagaxGate === true,
           ruleAllowed: Boolean(gateAllowKey && !strictCard && !guestDriven && !gateGrantBlocked && botForThread(asker.id, event.threadId)?.alwaysAllow?.includes(gateAllowKey)),
@@ -14905,7 +14908,10 @@ bus.subscribe((event: RuntimeEvent) => {
           // a member's bot is approved one action at a time: a session rule
           // (Claude's own suggestion) could reach past its workspace. Never on
           // a guest's turn either: an "always" for it would outlive it.
-          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && !destinationAnswerer && !foreignDestination && safetyEffect?.kind !== "hold" ? true : undefined,
+          // Review of #943: never on an outward call (a send, an engine
+          // connector's write): each one is approved on its own card.
+          allowSession: permission && event.allowSession && !event.requiresExplicitApproval && !strictCard && !memberAsker && !guestDriven && !destinationAnswerer && !foreignDestination && safetyEffect?.kind !== "hold"
+            && event.outbound !== true && !isOutboundTool(event.mcpTool ?? event.tool) ? true : undefined,
           ...(adminApproval ? { adminApproval: true } : {}),
           ...(destinationAnswerer ? { destinationAnswerer } : {}),
           ...(serverCommandHolder ? { serverCommandHolder: true } : {}),
@@ -14913,8 +14919,10 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(adminApproval && orgAdminNames().length ? { adminNames: orgAdminNames() } : {}),
           // The text stays for cards saved before heldCode existed, and for
           // clients that do not know the key yet.
-          held: approvalHeldReason(heldContext),
-          heldCode: approvalHeldNote(heldContext),
+          // An engine connector's call whose arguments the engine did not
+          // send says so (review of #943).
+          held: permission && event.engineConnector === true && !event.input ? HELD_NOTE["approval.held.connectorNoDetails"] : approvalHeldReason(heldContext),
+          heldCode: permission && event.engineConnector === true && !event.input ? "approval.held.connectorNoDetails" : approvalHeldNote(heldContext),
           approvalScope: event.approvalScope,
           ...(plain ? { plain: { title: plain.title, line: plain.line, ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
@@ -18606,6 +18614,36 @@ async function startTurn(
     // Recorded on the task once the turn is admitted (below), never before.
     if (autoTurn) bot = { ...bot, modelSelection: autoTurn.pick.selection };
   }
+  // A request that needs a mail, calendar, Teams or SharePoint connector the
+  // bot's engine lacks runs on the engine of this person that has it, for
+  // this request only (server/connector-switch.ts). A card's continuation
+  // stays where the request went. Never for Auto (its own pick), a warm-up,
+  // work handed out or a routine.
+  // Only the person's own new message, never a card's continuation, a
+  // compaction or a computer choice (those stay on the bot's engine), and
+  // only its raw text (review of #943): a fresh or edited send's `text` is
+  // what they typed; a drained queue line passes the composed prompt (page,
+  // mail or data context, a quoted reply) as `text`, so only its stored
+  // message is read.
+  let connectorSwitch: ConnectorSwitch | null = null;
+  const personText = opts?.userMessage
+    ? (opts.userMessage.role === "user" && opts.userMessage.kind === "text" ? opts.userMessage.text ?? "" : "")
+    : text;
+  if (!autoTurn && !opts?.warmOnly && !opts?.cardContinuation && !opts?.computerSelectionContinuation && !opts?.compactOnly && personText) {
+    const switchSpeaker = resolveTurnSpeaker({
+      speaker: opts?.speaker,
+      sender: opts?.sender ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.sender),
+      peerAsk: opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk),
+      trigger: opts?.trigger,
+      automationSource: opts?.automationSource,
+    });
+    const personsRequest = (switchSpeaker.origin === "person" || switchSpeaker.origin === "operator")
+      && !opts?.automationSource && !opts?.peerAsk && !opts?.userMessage?.peerAsk && !(opts?.commsDepth ?? 0) && !opts?.coordination;
+    connectorSwitch = personsRequest ? connectorSwitchForTurn(bot, threadId, switchSpeaker, personText) : null;
+    if (connectorSwitch) {
+      bot = { ...bot, modelSelection: { instanceId: connectorSwitch.instanceId, model: connectorSwitch.model, ...(connectorSwitch.effort ? { effort: connectorSwitch.effort } : {}) } };
+    }
+  }
   // Routines and legacy peer delivery already have their own completion
   // owners. Only ordinary chats opt into this scheduler; its child turns
   // carry an exact node id rather than inheriting a routine's lifetime.
@@ -18974,6 +19012,10 @@ async function startTurn(
       });
     }
   } else autoTurnsByThread.delete(threadId);
+  if (connectorSwitch) {
+    const line = { engine: connectorSwitch.engineLabel, connector: connectorSwitch.connector };
+    store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${connectorSwitchText(line)}`, ok: true, connectorSwitch: line } });
+  }
   // Admitted: every refusal above has passed and no other turn runs on this
   // thread, so this is the one moment the ledger's "who asked" may change.
   if (!warmOnly && opts?.trigger) turnTriggers.set(threadId, opts.trigger);
@@ -20076,7 +20118,7 @@ async function startTurn(
         { id: "composio", label: "Connected apps", text: integrations.composio ? composioSystemPrompt(liveBot?.connectorTools ?? bot.connectorTools) + describeConnectorScopes((liveBot ?? bot).connectorScopes) : "" },
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
-        { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, speaker)) },
+        { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
         { id: "data", label: "Data", text: integrations.data ? BUILT_IN_DATA_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
@@ -20264,6 +20306,7 @@ async function startTurn(
         ...(integrations.browser && browserIsThePlace(plan) ? { preloadBrowserTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
+        grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(bot, instance, speaker, turnAccess?.via)),
         ...pluginDirsFor(bot, instance),
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         cwd,
@@ -23158,7 +23201,7 @@ async function runGroupMemberTurn(
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
-    { id: "claude-ai", label: "Claude connectors", text: claudeAiConnectorsPrompt(claudeAiConnectorsFor(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" })) },
+    { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
@@ -23363,6 +23406,7 @@ async function runGroupMemberTurn(
         ...(integrations.browser && browserIsThePlace(roomPlan) ? { preloadBrowserTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
+        grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(readyBot, instance, roomSpeaker, roomTurnAccess?.via)),
         ...pluginDirsFor(readyBot, instance),
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         ...(instance.instanceId === roomTurnSelection(readyBot).instanceId
@@ -26427,19 +26471,96 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
  * `via` is the turn's access; without it (the prompt is built before the
  * access is materialized) the planned access stands in. */
 function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
+  return claudeAiConnectorsForTurn(accountConnectorInput(bot, instance, speaker, via));
+}
+/** The turn's account and whose it is (review of #943, point 5): engine
+ * connectors only on the sign-in of the person the turn is for. */
+function accountConnectorInput(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): ClaudeAiTurnInput {
   let planned = via;
-  if (IDENTITY.kind === "perspicax" && planned === undefined && instance.driverKind === "claudeAgent") {
+  let payerPrincipalId: string | undefined;
+  if (IDENTITY.kind === "perspicax" && (instance.driverKind === "claudeAgent" || instance.driverKind === "grokAgent" || instance.driverKind === "grok")) {
     const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-    planned = plan.ok ? plan.via : undefined;
+    if (plan.ok) {
+      planned ??= plan.via;
+      payerPrincipalId = plan.payerPrincipalId ?? "";
+    }
   }
-  return claudeAiConnectorsForTurn({
+  return {
     identity: IDENTITY.kind,
     restrictedByPolicy: managedPolicy.restrictsMcp(),
     driver: instance.driverKind,
     ...(planned ? { via: planned } : {}),
+    ...(payerPrincipalId !== undefined ? { payerPrincipalId } : {}),
     speaker,
     ownerPrincipalId: effectiveBotOwner(bot),
     localPrincipalId: localPrincipalId(),
+  };
+}
+/** The connectors an engine reaches for the person a turn is for: their
+ * own sign-in only (accountConnectorsForTurn). Claude's from the cached
+ * claude.ai inventory (connected ones; read again in the background, never
+ * waited on), Grok's from the xAI catalog on an organization turn. */
+function engineReachFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): Array<{ connector: string }> | null {
+  const input = accountConnectorInput(bot, instance, speaker, via);
+  if (claudeAiConnectorsForTurn(input)) {
+    const account = claudeAccountForPrincipal(connectorPrincipalFor(input));
+    if ("unavailable" in account) return [];
+    // a cold inventory is unknown: read in the background, never waited on
+    const inventory = claudeAiInventory.peek(account.key, { cli: account.cli, env: account.env });
+    if (!inventory || inventory.auth === "unknown") return null;
+    if (inventory.auth !== "subscription") return [];
+    return inventory.connectors.filter((connector) => connector.status === "connected").map((connector) => ({ connector: connector.name }));
+  }
+  // Grok's cloud connectors are a catalog: which ones this person connected
+  // on grok.com is never known here, so a Grok engine's reach is unknown.
+  if (grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined) return null;
+  return [];
+}
+/** A model's catalogue price (input + output), when known. */
+function catalogPrice(driverKind: string, model: string): number | undefined {
+  const facts = autoCatalogLookup(driverKind, model);
+  return facts?.costInput === undefined && facts?.costOutput === undefined ? undefined : (facts?.costInput ?? 0) + (facts?.costOutput ?? 0);
+}
+/** JC 2026-10-21 (review of #943): a request that needs a connector the
+ * bot's engine lacks runs on another engine this person may use that has
+ * it (server/connector-switch.ts), or null. `personText` is only what the
+ * person typed (never the prompt composed around it: page, mail or data
+ * context, a quoted reply). SAGAX_CONNECTOR_SWITCH=0 turns it off. */
+function connectorSwitchForTurn(bot: BotRecord, threadId: string, speaker: TurnSpeaker, personText: string): ConnectorSwitch | null {
+  if (process.env.SAGAX_CONNECTOR_SWITCH?.trim() === "0") return null;
+  const need = connectorNeed(personText);
+  if (!need) return null;
+  const base = registry.get(bot.modelSelection.instanceId);
+  if (!base) return null;
+  const current = { instanceId: base.instanceId, engineLabel: engineDisplayName(base), models: [], reach: engineReachFor(bot, base, speaker) };
+  const candidates = autoEnginesFor(bot, speaker, cloudGuestDriven(threadId)).flatMap((engine) => {
+    const live = engine.instanceId === base.instanceId ? undefined : registry.get(engine.instanceId);
+    if (!live) return [];
+    return [{
+      instanceId: engine.instanceId,
+      engineLabel: engine.displayName,
+      models: engine.models.options.map((option) => ({ id: option.id, ...((price) => price === undefined ? {} : { price })(catalogPrice(engine.driverKind, option.id)) })),
+      ...(engine.models.default ? { defaultModel: engine.models.default } : {}),
+      ...(engine.effortLevels ? { effortLevels: engine.effortLevels } : {}),
+      reach: engineReachFor(bot, live, speaker, engine.via as TurnAccess["via"]),
+    }];
+  });
+  const basePrice = catalogPrice(base.driverKind, bot.modelSelection.model);
+  return pickConnectorSwitch({
+    need, current, candidates,
+    base: { model: bot.modelSelection.model, ...(basePrice !== undefined ? { price: basePrice } : {}), ...(bot.modelSelection.effort ? { effort: bot.modelSelection.effort } : {}) },
+  });
+}
+/** What a turn is told about mail, calendar, Teams and SharePoint
+ * (harness-connectors.ts engineConnectorsPrompt). */
+function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker): string {
+  const input = accountConnectorInput(bot, instance, speaker);
+  const account = accountConnectorsForTurn(input);
+  return engineConnectorsPrompt({
+    driver: instance.driverKind,
+    claudeAi: claudeAiConnectorsForTurn(input),
+    grokCloud: grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+    foreign: account === "foreign",
   });
 }
 /** Where a person sets their model keys (Perspicax console, slice 4). */
@@ -32941,6 +33062,34 @@ ROUTES.push(createVoiceModeRoutes(voiceModeDeps));
 // The caller's own claude.ai connectors, read through their own Claude
 // account (server/harness-connectors.ts); always on, no server switch.
 const claudeAiInventory = new ClaudeAiConnectorInventory({ run: runClaudeCli });
+/** The CLI and environment of a person's own Claude account (their
+ * claude.ai connectors), or why there is none. */
+function claudeAccountForPrincipal(principalId: string): { cli: string; env: NodeJS.ProcessEnv; key: string } | { unavailable: "no_engine" | "not_signed_in" | "key" } {
+  const entries = Object.entries(instanceConfigs(cfg)).filter(([, entry]) => entry.driver === "claudeAgent");
+  const [instanceId, entry] = entries.find(([id]) => id === "claude") ?? entries[0] ?? [];
+  if (!instanceId || !entry) return { unavailable: "no_engine" as const };
+  const config = (entry.config ?? {}) as { cli?: unknown; configDir?: unknown };
+  const cli = typeof config.cli === "string" && config.cli.trim() ? config.cli : "claude";
+  const env: NodeJS.ProcessEnv = { ...process.env, ...entry.environment };
+  if (IDENTITY.kind === "perspicax") {
+    if (!engineLogins?.signedIn(principalId, "claudeAgent")) return { unavailable: "not_signed_in" as const };
+    env.CLAUDE_CONFIG_DIR = engineLogins.loginDir(principalId, "claudeAgent");
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+    return { cli, env, key: `person:${principalId}` };
+  }
+  // a workspace key that runs every Claude bot replaces the login
+  if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
+  if (typeof config.configDir === "string" && config.configDir.trim()) {
+    try {
+      env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);
+    } catch {
+      return { unavailable: "no_engine" as const };
+    }
+  }
+  return { cli, env, key: `instance:${instanceId}` };
+}
+
 ROUTES.push(createHarnessConnectorRoutes({
   settingsDelegate: (auth) => adminOrDelegate(auth, "server.settings"),
   organization: IDENTITY.kind === "perspicax",
@@ -32952,31 +33101,7 @@ ROUTES.push(createHarnessConnectorRoutes({
   },
   localPrincipalId,
   isAdmin: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : true),
-  claudeAccountFor: (principalId) => {
-    const entries = Object.entries(instanceConfigs(cfg)).filter(([, entry]) => entry.driver === "claudeAgent");
-    const [instanceId, entry] = entries.find(([id]) => id === "claude") ?? entries[0] ?? [];
-    if (!instanceId || !entry) return { unavailable: "no_engine" as const };
-    const config = (entry.config ?? {}) as { cli?: unknown; configDir?: unknown };
-    const cli = typeof config.cli === "string" && config.cli.trim() ? config.cli : "claude";
-    const env: NodeJS.ProcessEnv = { ...process.env, ...entry.environment };
-    if (IDENTITY.kind === "perspicax") {
-      if (!engineLogins?.signedIn(principalId, "claudeAgent")) return { unavailable: "not_signed_in" as const };
-      env.CLAUDE_CONFIG_DIR = engineLogins.loginDir(principalId, "claudeAgent");
-      delete env.ANTHROPIC_API_KEY;
-      delete env.ANTHROPIC_AUTH_TOKEN;
-      return { cli, env, key: `person:${principalId}` };
-    }
-    // a workspace key that runs every Claude bot replaces the login
-    if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
-    if (typeof config.configDir === "string" && config.configDir.trim()) {
-      try {
-        env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);
-      } catch {
-        return { unavailable: "no_engine" as const };
-      }
-    }
-    return { cli, env, key: `instance:${instanceId}` };
-  },
+  claudeAccountFor: claudeAccountForPrincipal,
   inventory: claudeAiInventory,
 }));
 

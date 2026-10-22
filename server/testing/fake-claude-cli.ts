@@ -115,6 +115,7 @@
 //                      survives a respawn between turns.
 //   FAKE_CLAUDE_CONTEXT_TOKENS report this latest-prompt size in a scripted
 //                      room-plan reply, for automatic compaction fixtures.
+//   FAKE_CLAUDE_MCP_LIST what `claude mcp list` prints (claude.ai connectors).
 //   FAKE_CLAUDE_AUTH   in (default) | out | unsupported | malformed |
 //                      inherited-api-key | file (signed in while fake-auth.json
 //                      exists in the Claude config dir; `auth logout` removes it)
@@ -382,6 +383,14 @@ if (argv[0] === "--help") {
     `Usage: claude [options]\n\nOptions:\n  --model <model>  Model\n${has ? "  --autocompact <tokens>  Compaction window\n" : ""}  -h, --help  Display help\n`,
   );
   process.exit(0);
+}
+
+// `claude mcp list` (the claude.ai connectors inventory,
+// server/harness-connectors.ts): FAKE_CLAUDE_MCP_LIST is printed as is,
+// e.g. "claude.ai Gmail: https://example.invalid/mcp - ✓ Connected".
+if (argv[0] === "mcp" && argv[1] === "list") {
+  process.stdout.write(process.env.FAKE_CLAUDE_MCP_LIST ?? "No MCP servers configured.\n", () => process.exit(0));
+  await new Promise(() => {});
 }
 
 if (argv[0] === "update") {

@@ -8,6 +8,8 @@
 // Shared between the harness (which enforces it) and the app (which shows
 // the setting), so both agree on what "outbound" means.
 
+import { connectorWriteKind } from "./engine-connectors.ts";
+
 export type OutboundPolicy = {
   /** ask: every outbound call waits for a tap. allow: up to dailyCap a day. */
   policy: "ask" | "allow";
@@ -74,7 +76,15 @@ export function isOutboundTool(name: string): boolean {
   const tokens = actionTokens(name);
   if (tokens.length === 0) return false;
   if (READ_VERBS.has(tokens[0])) return false;
+  // A draft, a reply draft included, sends nothing until it is sent.
+  if (tokens.includes("DRAFT") && !tokens.includes("SEND") && !tokens.includes("SENDS")) return false;
   if (tokens.some((token) => SEND_VERBS.has(token))) return true;
+  // A mail, Teams, calendar or file connector acts as the person outside the
+  // app: an event mails its attendees, a SharePoint write lands in a shared
+  // site, and an engine's own connector server fails closed on any call that
+  // is not a read or a draft (shared/engine-connectors.ts). Same reading for
+  // an MCP tool and a Composio slug (GOOGLECALENDAR_CREATE_EVENT).
+  if (connectorWriteKind(name)) return true;
   if (tokens.includes("DRAFT")) return false;
   return tokens.some((token) => CREATE_VERBS.has(token)) && tokens.some((token) => SENT_NOUNS.has(token));
 }

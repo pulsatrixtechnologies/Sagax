@@ -354,3 +354,10 @@ describe("1Password waiting row (parité R10)", () => {
     expect(row?.text).toContain("1Password");
   });
 });
+
+describe("the connector switch line (review of #943)", () => {
+  it("reads in the person's language, from the structured line", () => {
+    const message: Message = { id: "cs", at: 1, role: "bot", kind: "activity", tool: { name: "notice: Switched to Claude for Gmail.", ok: true, connectorSwitch: { engine: "Claude", connector: "Gmail" } } };
+    expect(statusActivity(message)).toEqual({ kind: "notice", text: "Switched to Claude for Gmail" });
+  });
+});

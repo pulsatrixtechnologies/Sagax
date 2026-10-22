@@ -104,6 +104,7 @@ import { gateServer, mcpStdioServer } from "../../mcp-gate-config.ts";
 import type { GateAnswer, GateAsk } from "../../mcp-gate-approval.ts";
 import { takeSafetyNote } from "../../safety-review.ts";
 import { gatedMcpAsk } from "./gated-mcp-ask.ts";
+import { connectorAsk } from "./connector-ask.ts";
 import { TURN_TOKEN_ENV, warmCommsEnv } from "../spawn-contract.ts";
 import { acpHostToolRequest } from "../host-tools.ts";
 import { readUseToolCall } from "../../../shared/mcp-gateway-call.ts";
@@ -173,6 +174,9 @@ interface AcpTurn {
    * turn mounted through the gate. The agent's own ask about a call to one
    * of them is answered allow-once; the gate decides (gated-mcp-ask.ts). */
   gatedServers?: ReadonlySet<string>;
+  /** Every MCP server Sagax mounted for this turn: a use_tool call to any
+   * other is an engine's own connector (connector-ask.ts). */
+  mountedServers?: ReadonlySet<string>;
   /** this turn's stage timestamps, logged once when it settles */
   latency?: TurnLatency;
   state: {
@@ -444,7 +448,7 @@ export interface AcpSupport {
    *  snapshot share `transformEnv` and must not see a per-turn overlay. */
   applyTurnEnv?(
     env: Record<string, string | undefined>,
-    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean; approvalGated?: boolean; localKeyPrincipal?: string; threadId: string; mcpServers: Array<{ name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> }> },
+    ctx: { model?: string; requestedModel?: string; fullAuto: boolean; botId?: string; cwd: string; toolScope?: SendTurnInput["toolScope"]; withholdHostTools?: boolean; accountConnectors?: boolean; approvalGated?: boolean; localKeyPrincipal?: string; threadId: string; mcpServers: Array<{ name: string; command: string; args: string[]; env: Array<{ name: string; value: string }> }> },
   ): void;
   /** Organization server (SendTurnInput.access): point this one turn's child
    *  at the payer's own home and key, never the server's own login.
@@ -1572,6 +1576,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           const mcpTool = !isQuestion && !["execute", "edit", "delete", "move"].includes(kind) && /^(?:mcp__)?[a-z][\w-]{0,63}__[a-z][a-z0-9_]{0,63}$/i.test(mcpTitle)
             ? mcpTitle
             : undefined;
+          // An engine's own connector (Grok's use_tool to the xAI account's
+          // cloud connectors): its arguments for the card, and whether it
+          // acts outside the app, fail closed (connector-ask.ts).
+          const connector = isQuestion || isShellCommand ? { engineConnector: false, outward: false } : connectorAsk(toolCall, current.mountedServers);
           const rawSummary = String(toolCall.rawInput?.command ?? toolCall.title ?? tool);
           const summary = rawSummary.slice(0, isQuestion ? MAX_QUESTION_TEXT : 200);
           // One structured question beside the flat choices: the richer card
@@ -1596,7 +1604,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             if (!current.asks.delete(requestId)) return "unavailable";
             clearTimeout(timer);
             const want = behavior === "allow" ? "allow" : "reject";
-            const forSession = want === "allow" && always === true && !isQuestion && !current.controlsHost;
+            const forSession = want === "allow" && always === true && !isQuestion && !current.controlsHost && !connector.outward;
             // A structured card replies in the Q:/A: block format; recover the
             // picked label from it so exact-match keeps working. Flat clients
             // send the bare label, which the single-question fallback inside
@@ -1613,7 +1621,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 ? named.length === 1 && typeof named[0].optionId === "string" ? named[0].optionId : null
                 : forSession
                   ? optionAlways ?? optionFor("allow")
-                  : optionFor(want);
+                  // an outward call is allowed once, never Grok's allow_always
+                  : connector.outward && want === "allow"
+                    ? options.find((o) => o.kind === "allow_once" && typeof o.optionId === "string")?.optionId ?? null
+                    : optionFor(want);
             // the agent keeps its own allow_always; when it offered none, the
             // driver keeps the operation for the session instead
             if (forSession && !optionAlways && optionId && operationKey) {
@@ -1671,8 +1682,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             choices: askQuestions?.[0]?.options.map(option => option.label) ?? (isQuestion ? questionChoices : undefined),
             ...(askQuestions ? { questions: askQuestions } : {}),
             approvalScope: current.controlsHost ? "local-computer" : undefined,
-            // the driver can honor a session-wide allow either way
-            allowSession: !isQuestion && !current.controlsHost ? true : undefined,
+            // the driver can honor a session-wide allow either way, except
+            // for an outward call (review of #943): once each time
+            allowSession: !isQuestion && !current.controlsHost && !connector.outward ? true : undefined,
+            ...(connector.input ? { input: connector.input } : {}),
+            ...(connector.engineConnector ? { engineConnector: true } : {}),
+            ...(connector.outward ? { outbound: true } : {}),
           });
         };
 
@@ -2001,6 +2016,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         support.applyTurnEnv?.(env, {
           model: resolvedModel, requestedModel: turn.model, fullAuto: turnConfig.fullAuto === true, botId: turn.botId, cwd, toolScope: turn.toolScope,
           withholdHostTools: turn.withholdHostTools === true,
+          accountConnectors: turn.grokCloudConnectors === true,
           approvalGated,
           localKeyPrincipal: turn.access?.localKeyPrincipal,
           threadId, mcpServers,
@@ -2315,6 +2331,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           turnConfig,
           controlsHost,
           ...(approvalGated ? { gatedServers: new Set(mcpServers.map((server) => server.name)) } : {}),
+          mountedServers: new Set(mcpServers.map((server) => server.name)),
           state,
           latency,
           acknowledge,

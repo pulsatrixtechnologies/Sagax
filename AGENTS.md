@@ -3741,6 +3741,72 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   call those servers with no prompt. Gateway tools stay off. A tool
   selection turns the connectors off too.
 
+## Mail, Teams, calendar and SharePoint through the engines' connectors (parité R9 + R11, 2026-10-21)
+
+JC: prioritize the connectors the engines already bring (claude.ai
+connectors, the xAI account's cloud connectors on grok.com) over any
+Microsoft 365 enterprise app or Entra app registration of our own. Sagax
+builds no Graph client, no Teams bot registration and no mailbox for this.
+
+- What each engine brings is one pure table, `shared/engine-connectors.ts`:
+  capabilities `mail`, `calendar`, `teams`, `sharepoint` (and `files`), by
+  claude.ai connector name (Microsoft 365, Gmail, Google Calendar, ...) and
+  by Grok cloud connector id (`shared/grok-cloud-connectors.ts`). Codex and
+  Gemini bring none. Connect apps > Manage > Providers and the engine cards
+  (Settings > Engines) show it; the names stay read-only ("Manage on ...").
+- A turn is told what its own engine reaches (`engineConnectorsPrompt` in
+  `server/harness-connectors.ts`, the "claude-ai" prompt section).
+- Whose connectors (review of #943): only the sign-in of the person the
+  turn is for (`accountConnectorsForTurn`: the speaker, a routine's owner).
+  When the account is someone else's (another person's subscription pays,
+  the machine's login in solo for anyone but the operator) the turn is
+  told they belong to someone else and nothing is offered; Grok's cloud
+  connectors stay off (`grokCloudConnectors` on the turn,
+  `grokCloudConnectorEnv(..., ownAccount)`).
+- Automatic engine switch (JC 2026-10-21, `server/connector-switch.ts`): a
+  person's request that needs mail, calendar, Teams or SharePoint
+  (`connectorNeed` on the person's raw message only, never the prompt
+  composed around it: page, mail or data context, a quoted reply, a
+  drained queue's prompt) and whose bot's engine lacks it runs, for that
+  request only, on another engine of that person that has it. Candidates:
+  `autoEnginesFor` (allowed engines and models, approval level); never a
+  model whose catalogue price is above the bot's own (unknown prices on
+  one side only: no switch); the bot's effort kept when accepted. Reach:
+  their own sign-in only and only when known (Claude from the cached
+  claude.ai inventory, never waited on, a cold cache is unknown; Grok's
+  connected connectors are never known, so Grok is neither a target nor a
+  reason). Unknown on the bot's engine: no switch. One line "Passé à
+  Claude pour Gmail" (`tool.connectorSwitch`) after admission. Card
+  continuations, compactions, computer choices, Auto, warm-ups, routines
+  and handed-out work stay on the bot's engine. Covered by
+  `server/connector-switch.e2e.test.ts`. `SAGAX_CONNECTOR_SWITCH=0` turns
+  it off.
+- Grok rules of #918 are unchanged otherwise: organization turn (host
+  tools withheld), no tool selection.
+- Every outward call through a connector waits for the approval card
+  (`isOutboundTool` via `connectorWriteKind`, same reading for an MCP tool
+  and a Composio slug): sends, automatic replies (out of office, mailbox
+  settings), Teams posts and chats, events and meetings (create, insert,
+  change, cancel), answering an invitation, every SharePoint, OneDrive or
+  Google Drive write (upload, save, permissions, grant access). On an
+  engine connector server (`isEngineConnectorServer`) any call that is not
+  a read or a draft asks (fail closed). Reads, drafts and reply drafts do
+  not. Full access and the primary bot rule are unchanged.
+- An outward card never offers "always for this session", and the ACP
+  driver answers Grok's ask once, never `allow_always`
+  (`server/drivers/acp/connector-ask.ts`). A Grok `use_tool` call to a
+  server Sagax did not mount is an engine connector: the card gets its
+  `tool_input`, or says Grok did not share the details
+  (`approval.held.connectorNoDetails`), and is outward unless its name
+  plainly reads.
+- The card shows every recipient's address (`Name <address>`; a name that
+  looks like another address or a domain is dropped): a display name is
+  the sender's to choose.
+- Needs its own infrastructure, so not built here (flagged for JC): a
+  dedicated inbound address per bot (B21, iOS CO5), a Teams app per bot
+  (B20, needs a Bot Framework registration), a free message in a Meet or
+  Zoom meeting chat (G10).
+
 ## Engine slash commands in the chat
 
 Typing "/" in a conversation or a group lists Sagax's own commands and

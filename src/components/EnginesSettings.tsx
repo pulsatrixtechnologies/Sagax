@@ -20,6 +20,7 @@ import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
 import { ManageMyKeysLink } from "./settings/MyEngines";
 import { EngineConnect, paysWithText } from "./EngineConnect";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
+import { EngineConnectorsLine } from "./plugins/EngineCapabilities";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { viewerIsOrgAdmin } from "@/lib/group-owner";
@@ -311,6 +312,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
       {!mine && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
       {instance.snapshot.warning && <EngineWarningNotice warning={instance.snapshot.warning} className="mt-3" />}
+      {engineReady(instance) && <EngineConnectorsLine driverKind={instance.driverKind} />}
       {!mine && instance.claudeAccount && <ClaudeAccountSettings instance={instance} />}
       {!mine && engineReady(instance) && instance.snapshot.authenticated === true && (
         (instance.authentication?.method === "device-code" || instance.authentication?.method === "browser-pkce") && deviceSignInProvider(instance.driverKind) === "codex"
