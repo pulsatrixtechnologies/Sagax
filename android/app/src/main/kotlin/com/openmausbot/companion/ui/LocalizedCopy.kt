@@ -97,7 +97,7 @@ private val localizedCopyResources = mapOf(
     "Archive" to R.string.mobile_a11y_archive,
     "Archived" to R.string.mobile_archived_eddc813f,
     "Art direction" to R.string.mobile_art_direction_52d878a2,
-    "Ask %1\$s" to R.string.mobile_composer_ask_bot,
+    "Message %1\$s" to R.string.mobile_composer_message_bot,
     "Automatic" to R.string.mobile_share_route_automatic,
     "Avatar" to R.string.mobile_avatar_7631b26e,
     "Back" to R.string.mobile_back_b52b36b7,
@@ -610,8 +610,8 @@ private val localizedCopyResources = mapOf(
 @Composable
 internal fun localizedMobileCopy(source: String): String {
     localizedCopyResources[source]?.let { return stringResource(it) }
-    Regex("""^Ask (.+)$""")
-        .matchEntire(source)?.let { return stringResource(R.string.mobile_composer_ask_bot, it.groupValues[1]) }
+    Regex("""^Message (.+)$""")
+        .matchEntire(source)?.let { return stringResource(R.string.mobile_composer_message_bot, it.groupValues[1]) }
     Regex("""^Today (.+)$""")
         .matchEntire(source)?.let { return stringResource(R.string.mobile_date_today_with_time, it.groupValues[1]) }
     Regex("""^Yesterday (.+)$""")
