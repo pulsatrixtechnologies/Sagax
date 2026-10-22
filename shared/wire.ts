@@ -417,6 +417,10 @@ export interface WireBot {
   emailDrafts?: boolean;
   /** Whether this bot uses native memory. Absent/true = enabled. */
   memoryEnabled?: boolean;
+  /** How far this bot's team-memory cards travel (shared/team-memory-sharing.ts):
+   * absent or "shared", every member of its section; "private", only the
+   * members who see this bot and the card's conversation or channel. */
+  teamMemorySharing?: "shared" | "private";
   /** Queue direct-chat messages behind outstanding delegated work. */
   parkDirectMessages?: boolean;
   /** true after an edit/branch-switch rewound the visible conversation. */

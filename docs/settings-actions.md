@@ -139,6 +139,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Archived (hidden) | Bot editor > ... > Archive | `sagax_settings` get, set `bot.hidden` | simple |
 | Memory on | Bot editor > Memory | `sagax_settings` get, set `bot.memoryEnabled` | simple |
 | Memory upkeep | Bot editor > Memory | `sagax_settings` get, set `bot.memoryUpkeep` | simple |
+| Team memory sharing (shared, private) | Bot editor > Memory > Team memory | `sagax_settings` get, set `bot.teamMemorySharing` | simple (autrui pour élargir à shared) |
 | Browser | Bot editor > Access > Browser | `sagax_settings` get, set `bot.browser` | simple |
 | Browser profile | Bot editor > Access > Browser | `sagax_settings` get, set `bot.browserProfile` | simple |
 | Works on (Auto or Off) | Bot editor > Workspace | `sagax_settings` get, set `bot.computer` | simple |

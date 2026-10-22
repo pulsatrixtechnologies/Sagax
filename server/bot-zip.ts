@@ -74,6 +74,7 @@ import { restoreSkillManifest, setSkillEnabled, skillManifestForExport } from ".
 import { cleanBotGrants, cleanBotPerspicax, parseConnectorTools, type BotRecord, type Message, type Store, type TaskRecord } from "./store.ts";
 import type { WebhookTrigger } from "./webhooks.ts";
 import { TRIGGER_SOURCES, type TriggerSourceConfig } from "../shared/trigger-sources.ts";
+import { storedTeamMemorySharing } from "../shared/team-memory-sharing.ts";
 import { syncMemoryIndex, workspaceDir } from "./workspace.ts";
 import { ZipError, ZipReader, ZipWriter } from "./zip.ts";
 
@@ -134,6 +135,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   voiceNotes: "settings",
   emailDrafts: "settings",
   memoryEnabled: "settings",
+  teamMemorySharing: "settings",
   memoryUpkeep: "settings",
   parkDirectMessages: "settings",
   approvePeerComms: "settings",
@@ -378,7 +380,9 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
   const host_: Record<string, unknown> = {};
   const record = bot as unknown as Record<string, unknown>;
   for (const [key, policy] of Object.entries(BOT_FIELD_POLICY)) {
-    const value = record[key];
+    // team memory sharing leaves in its stored form only ("private" or
+    // nothing), so a corrupted value cannot break the import or the clone
+    const value = key === "teamMemorySharing" ? storedTeamMemorySharing(bot) : record[key];
     if (value === undefined) continue;
     if (policy === "identity") identity[key] = structuredClone(value);
     else if (policy === "settings") settings[key] = structuredClone(value);
@@ -764,6 +768,9 @@ const settingsSchema = z.object({
   voiceNotes: z.boolean().optional(),
   emailDrafts: z.boolean().optional(),
   memoryEnabled: z.boolean().optional(),
+  // read as the bot reads it (shared/team-memory-sharing.ts): an archive
+  // written before export normalized it still imports, unknown as private
+  teamMemorySharing: z.unknown().optional(),
   memoryUpkeep: z.boolean().optional(),
   parkDirectMessages: z.boolean().optional(),
   approvePeerComms: z.boolean().optional(),
@@ -925,6 +932,7 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       ...(settings.voiceNotes !== undefined ? { voiceNotes: settings.voiceNotes } : {}),
       ...(settings.emailDrafts !== undefined ? { emailDrafts: settings.emailDrafts } : {}),
       ...(settings.memoryEnabled !== undefined ? { memoryEnabled: settings.memoryEnabled } : {}),
+      ...(storedTeamMemorySharing(settings) ? { teamMemorySharing: "private" as const } : {}),
       ...(settings.memoryUpkeep !== undefined ? { memoryUpkeep: settings.memoryUpkeep } : {}),
       ...(settings.parkDirectMessages !== undefined ? { parkDirectMessages: settings.parkDirectMessages } : {}),
       ...(settings.approvePeerComms !== undefined ? { approvePeerComms: settings.approvePeerComms } : {}),

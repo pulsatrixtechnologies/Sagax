@@ -77,6 +77,7 @@ import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreen
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
+import { teamMemorySettled } from "@/lib/team-memory-settled";
 import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-up-client";
 import type { StepUpTarget } from "../../shared/step-up";
 import { permissionMissingMessage } from "@/lib/permissions";
@@ -662,6 +663,8 @@ export interface Bot {
   emailDrafts?: boolean;
   /** whether this bot uses native memory (on unless switched off) */
   memoryEnabled?: boolean;
+  /** who gets this bot's team-memory cards: its section (absent, "shared") or only those who see the bot and the conversation ("private") */
+  teamMemorySharing?: "shared" | "private";
   pinned?: boolean;
   hidden?: boolean;
   /** Sidebar section this bot renders under; absent = unsectioned. */
@@ -1730,6 +1733,9 @@ export type Action =
   | { type: "botPatched"; bot: BotAnnouncement }
   | { type: "messageAdded"; threadId: string; message: Message }
   | { type: "messagePatched"; threadId: string; message: Message }
+  /** A card the server already settled elsewhere (a late answer's 409):
+   * show its real outcome, found by its request on that conversation. */
+  | { type: "cardSettled"; threadId: string; requestId: string; patch: Partial<OptionCardData> }
   /** `restoreLeafId` puts back the branch an optimistic edit replaced; a
    * plain send falls back to the removed row's parent. */
   | { type: "optimisticMessageRemoved"; threadId: string; sendId: string; restoreLeafId?: string | null }
@@ -2750,6 +2756,14 @@ export function reducer(state: AppState, action: Action): AppState {
       const task = group.tasks?.find((candidate) => candidate.threadId === action.threadId);
       const kept = cleared.groups.find((candidate) => candidate.id === group.id)?.messages ?? [];
       return rewindThreadUpdatedAt(cleared, action.threadId, kept, task?.createdAt ?? group.createdAt);
+    }
+    case "cardSettled": {
+      const settle = (messages: Message[]) => messages.map((m) =>
+        m.card?.requestId === action.requestId ? { ...m, card: { ...m.card, ...action.patch } } : m);
+      const group = state.groups.find((g) => g.threadId === action.threadId);
+      if (group) return { ...state, groups: state.groups.map((g) => (g.id === group.id ? { ...g, messages: settle(g.messages) } : g)) };
+      const bot = state.bots.find((b) => b.threadId === action.threadId);
+      return bot ? updateBot(state, bot.id, (b) => ({ ...b, messages: settle(b.messages) })) : state;
     }
     case "messagePatched": {
       const bot = state.bots.find((b) => b.threadId === action.threadId);
@@ -4614,6 +4628,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               }
             })
             .catch((error) => {
+              // settled already, elsewhere: the card shows the real outcome
+              const settled = teamMemorySettled(error);
+              if (settled) {
+                rawDispatch({ type: "cardSettled", threadId: action.threadId, requestId: action.requestId, patch: settled.card });
+                showError(settled.text);
+                action.onError?.(settled.text);
+                return;
+              }
               // A settings flush failure deliberately stops the response;
               // otherwise it could resume work under a stale approval level.
               showError(error);
@@ -4658,7 +4680,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 body: JSON.stringify({ text: action.answer, threadId: action.threadId }),
               });
             })
-            .catch(showError);
+            .catch((error) => {
+              // settled already, elsewhere: the card shows the real outcome
+              const settled = teamMemorySettled(error);
+              const threadId = action.threadId ?? host?.threadId;
+              if (settled && card?.requestId && threadId) {
+                rawDispatch({ type: "cardSettled", threadId, requestId: card.requestId, patch: settled.card });
+                showError(settled.text);
+                return;
+              }
+              showError(error);
+            });
           break;
         }
         case "dismissCard": {
@@ -4717,6 +4749,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             avatarZoom: source.avatarZoom,
             avatarFocusX: source.avatarFocusX,
             avatarFocusY: source.avatarFocusY,
+            // a private bot's copy stays private; anything else is the default
+            ...(source.teamMemorySharing !== undefined && source.teamMemorySharing !== "shared" ? { teamMemorySharing: "private" as const } : {}),
           };
           // A copy of a restricted bot is restricted from its first moment.
           api("/api/bots", {
