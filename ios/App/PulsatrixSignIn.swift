@@ -1,8 +1,7 @@
 // "Sign in with Pulsatrix" on an organization server: the server's own
 // sign-in runs in the system authentication sheet, sharing Safari's cookies
 // and passkeys, so a person already signed in to Perspicax is not asked
-// again. The server ends it on `sagax://pair?address=...&token=...` (or
-// `openmausbot://pair` on a server that predates the phone return), the
+// again. The server ends it on `sagax://pair?address=...&token=...`, the
 // same invite a pairing QR code carries, and the app redeems it through the
 // existing pairing path (`POST /api/pair`). A refusal ends on
 // `sagax://pair?error=<code>`. No Perspicax token reaches the phone: the
@@ -19,8 +18,8 @@ final class PulsatrixWebSignIn: NSObject, ObservableObject, ASWebAuthenticationP
     @Published private(set) var running = false
     private var session: ASWebAuthenticationSession?
 
-    /// Open the sign-in on `origin`, asking for `scheme` (`sagax` when the
-    /// server advertises it). `completion` always runs, with what the sheet
+    /// Open the sign-in on `origin`, asking for `scheme` (`sagax`).
+    /// `completion` always runs, with what the sheet
     /// ended on: an invite, a refusal, a cancel or something unexpected.
     func start(origin: URL, scheme: String, completion: @escaping (PulsatrixSignInOutcome) -> Void) {
         guard !running, let url = PulsatrixSignIn.startURL(base: origin, returnScheme: scheme) else {

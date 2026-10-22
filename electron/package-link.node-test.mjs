@@ -6,16 +6,18 @@ import { packageUrlFromCommandLine, packageUrlFromDeepLink } from "./package-lin
 describe("BotMRR package deep links", () => {
   it("accepts a public GitHub package URL", () => {
     const target = "https://raw.githubusercontent.com/acme/bots/main/reddit-lead-miner.md";
-    assert.equal(packageUrlFromDeepLink(`openmausbot://install?url=${encodeURIComponent(target)}`), target);
     assert.equal(packageUrlFromDeepLink(`sagax://install?url=${encodeURIComponent(target)}`), target);
-    assert.equal(packageUrlFromCommandLine(["Sagax", "--flag", `openmausbot://install?url=${encodeURIComponent(target)}`]), target);
+    assert.equal(packageUrlFromDeepLink(`SAGAX://install?url=${encodeURIComponent(target)}`), target);
+    const retired = "otherapp";
+    assert.equal(packageUrlFromDeepLink(`${retired}://install?url=${encodeURIComponent(target)}`), null, "the former prefix no longer installs anything");
+    assert.equal(packageUrlFromCommandLine(["Sagax", "--flag", `sagax://install?url=${encodeURIComponent(target)}`]), target);
   });
 
   it("rejects other commands, hosts, protocols, credentials, and unsupported file types", () => {
-    assert.equal(packageUrlFromDeepLink("openmausbot://settings"), null);
-    assert.equal(packageUrlFromDeepLink("openmausbot://install?url=https://evil.example/bot.json"), null);
-    assert.equal(packageUrlFromDeepLink("openmausbot://install?url=http://raw.githubusercontent.com/a/b/main/bot.json"), null);
-    assert.equal(packageUrlFromDeepLink("openmausbot://install?url=https://user@example.com/bot.json"), null);
-    assert.equal(packageUrlFromDeepLink("openmausbot://install?url=https://github.com/acme/bot/run.sh"), null);
+    assert.equal(packageUrlFromDeepLink("sagax://settings"), null);
+    assert.equal(packageUrlFromDeepLink("sagax://install?url=https://evil.example/bot.json"), null);
+    assert.equal(packageUrlFromDeepLink("sagax://install?url=http://raw.githubusercontent.com/a/b/main/bot.json"), null);
+    assert.equal(packageUrlFromDeepLink("sagax://install?url=https://user@example.com/bot.json"), null);
+    assert.equal(packageUrlFromDeepLink("sagax://install?url=https://github.com/acme/bot/run.sh"), null);
   });
 });

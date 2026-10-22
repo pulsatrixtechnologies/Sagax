@@ -151,7 +151,7 @@ admin console session for alice:
    one answers 400.
 7. S2-7 and S2-8: in a browser with a throwaway profile, open
    `/auth/oidc/start?client=desktop` (and `?client=phone`), sign in, and read
-   the `openmausbot://` address the browser is sent to; redeem it with
+   the `sagax://` address the browser is sent to; redeem it with
    `POST /api/auth/pair` (desktop) or `POST /api/pair` (phone) once.
    S2-7b: listen with `nc -l 127.0.0.1 53123` and open
    `/auth/oidc/start?client=desktop&return=http://127.0.0.1:53123/<43 url-safe chars>`:
@@ -167,7 +167,7 @@ admin console session for alice:
   ephemeral port at a random 43-character state, serves its FR/EN page with
   a nonce CSP, takes only that state, that Host and that Origin, a credential
   or an error once, then closes; it times out and can be cancelled; the
-  return decision (loopback, else openmausbot:// only when this exact copy of
+  return decision (loopback, else sagax:// only when this exact copy of
   the app owns the scheme, else none with a reason).
 
 The desktop return into a real Electron window is checked with the app's
@@ -204,7 +204,7 @@ on stdout (and always written to the app's `server.log`), never the
 credential.
 
 The desktop click-through is checked by hand on a build that is not the
-system's openmausbot handler (the dev build next to an installed
+system's sagax handler (the dev build next to an installed
 `/Applications/Sagax.app`): "Sign in with Pulsatrix" opens the default
 browser (a passkey works there), /pair in the app shows "Annuler" and
 "Rouvrir le navigateur" while it waits, the browser ends on "Connexion

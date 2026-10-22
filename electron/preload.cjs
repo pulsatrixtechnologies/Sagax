@@ -325,14 +325,14 @@ const bridge = {
       return () => ipcRenderer.removeListener("window:maximized-changed", handler);
     },
   },
-  /** A reviewed BotMRR package opened through openmausbot://install. */
+  /** A reviewed BotMRR package opened through sagax://install. */
   onPackageInstall: (cb) => {
     packageInstallListeners.add(cb);
     if (pendingPackageInstallUrl) cb(pendingPackageInstallUrl);
     return () => packageInstallListeners.delete(cb);
   },
-  /** A chat link (sagax:// or openmausbot://, thread/… or bot/…) opened from
-   * outside the app; main hands it over in the openmausbot:// form. In server
+  /** A chat link (sagax://thread/… or sagax://bot/…) opened from
+   * outside the app; main hands it over in the lowercase form. In server
    * mode main sends it to the bundled organization page (BUNDLED_EXTRA). */
   onChatLink: (cb) => {
     chatLinkListeners.add(cb);

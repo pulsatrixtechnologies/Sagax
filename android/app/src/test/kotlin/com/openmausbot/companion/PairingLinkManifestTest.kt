@@ -79,7 +79,7 @@ class PairingLinkManifestTest {
     fun `the pairing deep link is handled only by the trampoline`() {
         assertTrue(
             activity(".PairingLinkActivity").hasPairingFilter(),
-            "PairingLinkActivity must own the openmausbot://pair filter",
+            "PairingLinkActivity must own the sagax://pair filter",
         )
         assertFalse(
             activity(".MainActivity").hasPairingFilter(),
@@ -188,11 +188,12 @@ class ShareReceiveManifestTest {
 class PairingLinkTest {
     @Test
     fun `only the pairing scheme and host are an invite`() {
-        assertTrue(PairingLink.isInvite("openmausbot", "pair"))
+        val retired = "otherapp"
         assertTrue(PairingLink.isInvite("sagax", "pair"))
-        assertTrue(PairingLink.isInvite("OpenMausBot", "PAIR"))
+        assertTrue(PairingLink.isInvite("SAGAX", "PAIR"))
+        assertFalse(PairingLink.isInvite(retired, "pair"))
         assertFalse(PairingLink.isInvite("https", "pair"))
-        assertFalse(PairingLink.isInvite("openmausbot", "join"))
+        assertFalse(PairingLink.isInvite("sagax", "join"))
         assertFalse(PairingLink.isInvite(null, null))
     }
 }
@@ -207,7 +208,7 @@ class PairingLinkTest {
  * prevent. `noHistory` and `persistNever` do not close that in-memory race.
  */
 class PairingHandoffTest {
-    private val url = "openmausbot://pair?address=10.0.0.2:8810&token=omb_pair_secret"
+    private val url = "sagax://pair?address=10.0.0.2:8810&token=omb_pair_secret"
 
     @Test
     fun `the record is finishing before the credential is delivered`() {

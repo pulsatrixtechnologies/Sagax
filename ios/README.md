@@ -324,7 +324,6 @@ sees them:
 - `openmausbot-phone-credential-v1` and `OpenMausBot phone credential v1`:
   the phone credential encryption labels (#63). Changing them breaks
   credential entry.
-- `openmausbot://` thread and auth deep links the desktop still emits.
 - `https://openmausbot.invalid/` reserved origin in binaries.
 - `openmausbot.sidebarCollapsedSections.v1` and
   `openmausbot.sidebarSectionOrder.v1` preference keys.

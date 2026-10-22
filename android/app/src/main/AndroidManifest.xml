@@ -132,9 +132,6 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:host="pair"
-                    android:scheme="openmausbot" />
-                <data
-                    android:host="pair"
                     android:scheme="sagax" />
             </intent-filter>
         </activity>

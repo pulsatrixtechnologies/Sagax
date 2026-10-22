@@ -9,23 +9,29 @@ import XCTest
 final class OrgConnectFlowTests: XCTestCase {
     private let origin = URL(string: "https://bot.acme.test")!
     private let credential = "omb_pair_" + String(repeating: "A1b2_C3d4-", count: 4) + "xyz"
-    private let sagaxIdentity = ServerIdentity(kind: "perspicax", protocol: "oidc", issuer: "https://px.acme.test", loginPath: "/auth/oidc/start", nativeReturn: true, phoneReturnSchemes: ["sagax", "openmausbot"])
+    private let sagaxIdentity = ServerIdentity(kind: "perspicax", protocol: "oidc", issuer: "https://px.acme.test", loginPath: "/auth/oidc/start", nativeReturn: true, phoneReturnSchemes: ["sagax"])
 
     // MARK: return scheme and start URL
 
     func testAServerThatAdvertisesThePhoneReturnIsAskedForSagax() throws {
         XCTAssertEqual(PulsatrixSignIn.returnScheme(for: sagaxIdentity), "sagax")
         XCTAssertEqual(PulsatrixSignIn.startURL(base: origin, returnScheme: "sagax")?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone&return=sagax")
-        let json = #"{"environmentId":"e","label":"Acme","identity":{"kind":"perspicax","nativeReturn":true,"phoneReturnSchemes":["sagax","openmausbot"]}}"#
+        let json = #"{"environmentId":"e","label":"Acme","identity":{"kind":"perspicax","nativeReturn":true,"phoneReturnSchemes":["sagax"]}}"#
         let decoded = try JSONDecoder().decode(ServerEnvironment.self, from: Data(json.utf8))
         XCTAssertEqual(PulsatrixSignIn.returnScheme(for: decoded.identity), "sagax")
     }
 
-    func testAnOlderServerKeepsTheLegacyReturn() {
+    func testEveryServerIsAskedForSagax() {
         let older = ServerIdentity(kind: "perspicax", nativeReturn: true)
-        XCTAssertEqual(PulsatrixSignIn.returnScheme(for: older), "openmausbot")
-        XCTAssertEqual(PulsatrixSignIn.returnScheme(for: nil), "openmausbot")
-        XCTAssertEqual(PulsatrixSignIn.startURL(base: origin, returnScheme: "openmausbot")?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone")
+        XCTAssertEqual(PulsatrixSignIn.returnScheme(for: older), "sagax")
+        XCTAssertEqual(PulsatrixSignIn.returnScheme(for: nil), "sagax")
+        XCTAssertEqual(PulsatrixSignIn.startURL(base: origin)?.absoluteString, "https://bot.acme.test/auth/oidc/start?client=phone&return=sagax")
+    }
+
+    func testTheRetiredPrefixIsNotASignIn() {
+        let retired = "otherapp"
+        let link = URL(string: "\(retired)://pair?address=https%3A%2F%2Fbot.acme.test&token=\(credential)&name=Acme")!
+        XCTAssertEqual(PulsatrixSignIn.outcome(from: link, expectedOrigin: origin), .unexpected)
     }
 
     // MARK: sheet outcomes

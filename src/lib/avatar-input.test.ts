@@ -63,7 +63,7 @@ describe("reset a bot's history", () => {
 
 describe("link to a bot", () => {
   it("is the canonical bot link the app opens", () => {
-    expect(botRefUrl("bot-1")).toBe("openmausbot://bot/bot-1");
+    expect(botRefUrl("bot-1")).toBe("sagax://bot/bot-1");
     expect(parseBotRefUrl(botRefUrl("bot-1"))).toEqual({ botId: "bot-1" });
   });
 });
