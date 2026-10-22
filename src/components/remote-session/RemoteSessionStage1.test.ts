@@ -78,12 +78,12 @@ describe("tailcat stage 1", () => {
     expect(`${first}${second}`).not.toContain(ADDRESS);
   });
 
-  it("the chat card shows every fact and the actions, never the id or the tunnel", () => {
+  it("the chat card shows every fact (details unfolded) and the actions, never the id or the tunnel", () => {
     setLocale("fr");
     const card = renderToStaticMarkup(createElement(
       StoreProvider,
       null,
-      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: { ...view, hostname: `POSTE-01 ${ADDRESS}` } }),
+      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: { ...view, hostname: `POSTE-01 ${ADDRESS}` }, detailsOpen: true }),
     ));
     for (const field of ["poste", "user", "rights", "session", "serial", "model", "cpu", "ram", "disk"]) {
       expect(card).toContain(`data-remote-field="${field}"`);

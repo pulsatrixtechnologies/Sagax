@@ -33,7 +33,7 @@ export function remoteSuggestionText(id: string, host: string): string | null {
 }
 
 /** The chat card for one remote computer. Suggestions send a short prompt. */
-export function RemoteSessionCard({ botId, threadId, view }: { botId: string; threadId: string; view: RemoteSessionView }) {
+export function RemoteSessionCard({ botId, threadId, view, detailsOpen = false }: { botId: string; threadId: string; view: RemoteSessionView; detailsOpen?: boolean }) {
   const { dispatch } = useStore();
   const host = publicText(view.hostname) || view.code;
   const ask = (id: string) => {
@@ -43,7 +43,7 @@ export function RemoteSessionCard({ botId, threadId, view }: { botId: string; th
   };
   return (
     <div data-remote-session-card="" data-remote-state={view.state} className="overflow-hidden rounded-xl border border-hairline text-ink">
-      <RemoteSessionFacts view={view} />
+      <RemoteSessionFacts view={view} detailsOpen={detailsOpen} />
       {view.state === "connected" && view.suggestions.length > 0 && (
         <div className="border-t border-hairline/40 px-3 py-3">
           <div className="mb-2 text-[12px] text-ink-secondary">{t("remoteSession.hints")}</div>

@@ -9581,6 +9581,8 @@
   "remoteSession.field.cpu": "Processeur",
   "remoteSession.field.ram": "Mémoire",
   "remoteSession.field.disk": "Disque",
+  "remoteSession.details": "Détails",
+  "remoteSession.hideDetails": "Masquer les détails",
   "remoteSession.hints": "Pistes",
   "remoteSession.closed": "Session fermée",
   "remoteSession.tunnelMissing": "Le tunnel de ce poste n'est pas sur ce serveur.",
