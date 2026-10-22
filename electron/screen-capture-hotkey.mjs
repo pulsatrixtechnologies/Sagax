@@ -1,6 +1,6 @@
 // Capture the screen to a bot by a global shortcut (parity R7, system 12):
-// the bots' chord with 0 (Cmd+Shift+0 by default, next to the Cmd+Shift+1..9
-// that open a bot). A press takes one picture of the screen under the
+// on macOS the bots' chord with 0 (Cmd+Shift+0 by default, next to the
+// Cmd+Shift+1..9 that open a bot), on Windows Ctrl+Alt+Shift+S. A press takes one picture of the screen under the
 // pointer, then brings the window up; the page puts the picture in the
 // open bot's composer as an attachment. Nothing is sent: the person reads
 // it, writes and sends it like any other picture.
@@ -15,10 +15,32 @@ import { HOTKEY_MODIFIERS, DEFAULT_HOTKEY_MODIFIER } from "./system-tray.mjs";
 /** A picture's longest edge, in pixels: enough to read text, bounded for the upload. */
 export const CAPTURE_MAX_EDGE = 4096;
 
+/** Windows: Ctrl+Shift+0 unhides columns in Excel and the other chords
+ * with 0 clash with layouts that type with AltGr, so one fixed key there. */
+export const WINDOWS_CAPTURE_ACCELERATOR = "Control+Alt+Shift+S";
+
 export function captureAccelerator(platform = process.platform, modifier = DEFAULT_HOTKEY_MODIFIER) {
-  if (platform !== "darwin" && platform !== "win32") return null;
+  if (platform === "win32") return WINDOWS_CAPTURE_ACCELERATOR;
+  if (platform !== "darwin") return null;
   const key = Object.hasOwn(HOTKEY_MODIFIERS, modifier) ? modifier : DEFAULT_HOTKEY_MODIFIER;
   return `${HOTKEY_MODIFIERS[key]}+0`;
+}
+
+/**
+ * Whether to capture, or say Screen Recording is refused. macOS gives a
+ * picture of the wallpaper alone when it is refused, so a refusal is read
+ * first (systemPreferences.getMediaAccessStatus("screen")). "not-determined"
+ * captures: that first capture is what makes macOS ask. Elsewhere: capture.
+ */
+export function capturePermission(platform, status) {
+  if (platform !== "darwin") return "capture";
+  let value;
+  try {
+    value = status();
+  } catch {
+    return "capture";
+  }
+  return value === "denied" || value === "restricted" ? "denied" : "capture";
 }
 
 /** desktopCapturer's thumbnail size for a display: its real pixels, longest

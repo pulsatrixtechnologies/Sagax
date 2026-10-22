@@ -88,7 +88,7 @@ import { createRetroAssistantWindow, DETACHED_QUERY } from "./retro-assistant-wi
 import { createFloatingBotWindows, FLOATING_QUERY, waitForPage as waitForFloatingPage } from "./floating-bot-window.mjs";
 import { createDataWindows } from "./data-window.mjs";
 import { createBotHotkeys, createMascotHotkey, createModifierProbe } from "./mascot-hotkey.mjs";
-import { captureAccelerator, captureThumbnailSize, createCaptureHotkey, pickCaptureSource } from "./screen-capture-hotkey.mjs";
+import { captureAccelerator, capturePermission, captureThumbnailSize, createCaptureHotkey, pickCaptureSource } from "./screen-capture-hotkey.mjs";
 import { readSecureCredentials } from "./secure-credentials.mjs";
 import { createControlPlaneClient } from "./control-plane-client.mjs";
 import {
@@ -4238,19 +4238,25 @@ async function captureScreenToBot() {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
   if (!win) return;
   let png = null;
-  try {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: captureThumbnailSize(display) });
-    const image = pickCaptureSource(sources, display.id)?.thumbnail;
-    if (image && !image.isEmpty()) png = image.toPNG();
-  } catch (error) {
-    slog(`capture hotkey: the screen could not be captured (${error?.name ?? "error"})`);
+  // macOS hands back the wallpaper alone when Screen Recording is refused: say so instead
+  const refused = capturePermission(process.platform, () => systemPreferences.getMediaAccessStatus("screen")) === "denied";
+  if (!refused) {
+    try {
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: captureThumbnailSize(display) });
+      const image = pickCaptureSource(sources, display.id)?.thumbnail;
+      if (image && !image.isEmpty()) png = image.toPNG();
+    } catch (error) {
+      slog(`capture hotkey: the screen could not be captured (${error?.name ?? "error"})`);
+    }
   }
   if (win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
-  win.webContents.send("desktop:screen-capture", png ? { png: png.toString("base64") } : { error: "unavailable" });
+  win.webContents.send("desktop:screen-capture", png
+    ? { png: png.toString("base64") }
+    : { error: refused ? "permission" : "unavailable", platform: process.platform });
 }
 const botHotkeys = createBotHotkeys({
   globalShortcut,

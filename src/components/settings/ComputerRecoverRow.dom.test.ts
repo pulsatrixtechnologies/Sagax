@@ -7,7 +7,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fixture = vi.hoisted(() => ({ api: vi.fn() }));
-vi.mock("@/state/store", () => ({ api: fixture.api }));
+vi.mock("@/state/store", () => {
+  class ApiError extends Error {
+    constructor(message: string, readonly status: number, readonly body: Record<string, unknown>) { super(message); }
+  }
+  return { api: fixture.api, ApiError };
+});
 
 import { ComputerRecoverRow } from "./ComputerRecoverRow";
 
@@ -43,10 +48,27 @@ describe("ComputerRecoverRow", () => {
 
   it("does nothing when the person says no", async () => {
     const confirm = vi.fn().mockResolvedValue(false);
-    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: { configured: true, state: "stopped" }, confirm })));
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: { configured: true, state: "running" }, confirm })));
     await act(async () => (container.querySelector("[data-computer-recover]") as HTMLButtonElement).click());
     await flush();
     expect(fixture.api).not.toHaveBeenCalled();
+  });
+
+  it("offers nothing for a computer that sleeps on purpose", async () => {
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: { configured: true, state: "stopped" } })));
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("says why an update is refused: a bot works, or one already runs", async () => {
+    const { ApiError } = await import("@/state/store") as unknown as { ApiError: new (m: string, s: number, b: Record<string, unknown>) => Error };
+    fixture.api.mockImplementation(async (path: string) => {
+      if (path === "/api/computer/update") throw new ApiError("busy", 409, { code: "computer_busy", error: "A bot is working" });
+      return { configured: true, state: "running" };
+    });
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: { configured: true, state: "running" }, confirm: async () => true })));
+    await act(async () => (container.querySelector("[data-computer-recover]") as HTMLButtonElement).click());
+    await flush();
+    expect(container.querySelector("[role=alert]")?.textContent).toMatch(/bot is working/i);
   });
 
   it("shows nothing where there is no computer to care for", async () => {

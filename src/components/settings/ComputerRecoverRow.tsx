@@ -8,6 +8,7 @@ import { Loader2, RotateCcw } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { computerAction, loadComputerStatus, updateComputer, type ComputerStatusView } from "@/lib/computer-recover";
+import { ApiError } from "@/state/store";
 import { DescribedRow, PILL } from "../SettingsPrimitives";
 
 type Confirm = (message: string) => Promise<boolean>;
@@ -35,8 +36,12 @@ export function ComputerRecoverRow({ initial = null, confirm = defaultConfirm }:
     setError("");
     try {
       setStatus(await updateComputer());
-    } catch {
-      setError(t(recover ? "computerCare.recover.error" : "computerCare.updateNow.error"));
+    } catch (cause) {
+      // the server holds it back: a bot works on it, or an update already runs
+      const code = cause instanceof ApiError ? (cause.body as { code?: unknown } | undefined)?.code : undefined;
+      setError(t(code === "computer_busy" ? "computerCare.refused.busy"
+        : code === "computer_updating" ? "computerCare.refused.updating"
+          : recover ? "computerCare.recover.error" : "computerCare.updateNow.error"));
       loadComputerStatus().then(setStatus, () => {});
     } finally {
       setRunning(false);

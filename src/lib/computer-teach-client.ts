@@ -59,6 +59,10 @@ export function teachAction(botId: string, body: { action: "start" | "discard" }
   return api(path(botId), { method: "POST", body: JSON.stringify(body) });
 }
 
+export function teachStatus(botId: string): Promise<{ recording: boolean; ended?: "control_lost" }> {
+  return api(path(botId));
+}
+
 export function stopTeach(botId: string): Promise<{ steps?: TeachStep[]; recordedAt?: string; expired?: boolean }> {
   return api(path(botId), { method: "POST", body: JSON.stringify({ action: "stop" }) });
 }

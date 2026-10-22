@@ -163,7 +163,12 @@ export function cleanPoint(value: unknown): { x: number; y: number } | undefined
  * as a credential (a title can carry a token or an address with one). */
 export function cleanWindowName(value: unknown): string {
   const name = cleanPageText(value);
-  return name && !looksLikeSecret(name) ? name : "";
+  if (!name || looksLikeSecret(name)) return "";
+  // a title that names someone's address or an account is dropped whole:
+  // an email, or six digits or more in one run (spaces and dashes allowed)
+  if (/[\w.+-]+@[\w-]+\.[\w.-]+/.test(name)) return "";
+  if (/\d(?:[ -]?\d){5,}/.test(name)) return "";
+  return name;
 }
 
 /** The element in words: `the button "Save"`, `the text box "Search"`. */

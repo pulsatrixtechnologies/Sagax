@@ -18,12 +18,13 @@ afterEach(async () => { await Promise.all(servers.splice(0).map((server) => new 
 const OWNER: RequestAuth = { kind: "loopback", scopes: ["admin", "client"] };
 
 async function serve(options: { control?: ControlState; hasComputer?: boolean; mayDrive?: boolean; window?: string; windowFails?: boolean } = {}) {
+  const state = { control: options.control ?? "held" as ControlState };
   const scripts: string[] = [];
   const recordings = new ComputerTeachRecordings();
   const routes = [createComputerTeachRoutes<Bot>({
     bot: (id) => (id === "scout" ? { id } : undefined),
     mayDrive: () => options.mayDrive ?? true,
-    control: () => options.control ?? "held",
+    control: () => state.control,
     shell: () => options.hasComputer === false ? null : {
       kind: "vm", maxScript: 15_000,
       run: async (script) => {
@@ -47,7 +48,7 @@ async function serve(options: { control?: ControlState; hasComputer?: boolean; m
     const res = await fetch(`${base}/api/bots/scout/computer/teach`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     return { status: res.status, body: await res.json() as Record<string, unknown> };
   };
-  return { base, post, scripts, recordings };
+  return { base, post, scripts, recordings, state };
 }
 
 describe("computer teach route", () => {
@@ -113,6 +114,43 @@ describe("computer teach route", () => {
     expect(await (await fetch(`${base}/api/bots/scout/computer/teach`)).json()).toMatchObject({ recording: true });
     await post({ action: "discard" });
     expect(await (await fetch(`${base}/api/bots/scout/computer/teach`)).json()).toMatchObject({ recording: false });
+  });
+});
+
+describe("computer teach limits (parity R7 review)", () => {
+  it("asks the window title at most twice a second, and never once the recording is full", async () => {
+    const { post, scripts, recordings } = await serve();
+    await post({ action: "start" });
+    await post({ action: "event", event: { kind: "click", x: 0.1, y: 0.1 } });
+    await post({ action: "event", event: { kind: "click", x: 0.2, y: 0.2 } });
+    expect(scripts).toHaveLength(1);
+    const recorder = recordings.get("local-owner", "scout")!;
+    while (!recorder.full) recorder.click({ x: 0.5, y: 0.5 }, "", Date.now() + 10_000);
+    const before = scripts.length;
+    const full = await post({ action: "event", event: { kind: "click", x: 0.3, y: 0.3 } });
+    expect(full.body).toMatchObject({ full: true });
+    expect(scripts).toHaveLength(before);
+  });
+
+  it("refuses a flood of events", async () => {
+    const { post } = await serve();
+    await post({ action: "start" });
+    const answers = await Promise.all(Array.from({ length: 40 }, () => post({ action: "event", event: { kind: "key", key: "Tab" } })));
+    expect(answers.some((answer) => answer.status === 429 && answer.body.code === "teach_rate")).toBe(true);
+  });
+
+  it("ends the recording when control goes back to the bot", async () => {
+    const { base, post, state } = await serve();
+    await post({ action: "start" });
+    state.control = "free";
+    expect(await (await fetch(`${base}/api/bots/scout/computer/teach`)).json()).toMatchObject({ recording: false, ended: "control_lost" });
+    state.control = "held";
+    await post({ action: "start" });
+    state.control = "other";
+    const lost = await post({ action: "event", event: { kind: "typing" } });
+    expect(lost.status).toBe(409);
+    expect(lost.body).toMatchObject({ code: "control_lost" });
+    expect((await post({ action: "stop" })).body).toMatchObject({ expired: true });
   });
 });
 

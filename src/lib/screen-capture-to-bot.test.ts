@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { captureFile, captureTarget } from "./screen-capture-to-bot";
+import { captureErrorKey, captureFile, captureTarget } from "./screen-capture-to-bot";
 
 const bot = (id: string, extra: Record<string, unknown> = {}) => ({ id, threadId: `${id}-t`, hidden: false, modelSelection: { instanceId: "claude" }, ...extra });
 const instances = [{ instanceId: "claude", capabilities: { images: true } }, { instanceId: "text-only", capabilities: { images: false } }];
@@ -27,5 +27,12 @@ describe("screen capture to a bot (parity R7, system 12)", () => {
     expect(file.type).toBe("image/png");
     expect(file.name).toMatch(/^Screenshot \d{4}-\d{2}-\d{2} \d{2}\.\d{2}\.\d{2}\.png$/);
     expect(file.size).toBe("png-bytes".length);
+  });
+
+  it("names the person's own settings when the screen could not be captured", () => {
+    expect(captureErrorKey({ error: "permission", platform: "darwin" })).toBe("screenCapture.permissionMac");
+    expect(captureErrorKey({ error: "unavailable", platform: "darwin" })).toBe("screenCapture.unavailableMac");
+    expect(captureErrorKey({ error: "unavailable", platform: "win32" })).toBe("screenCapture.unavailableWindows");
+    expect(captureErrorKey({ error: "unavailable", platform: "other" })).toBe("screenCapture.unavailable");
   });
 });

@@ -44,3 +44,12 @@ export function captureFile(base64: string, at = new Date()): File {
   const name = `Screenshot ${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())} ${two(at.getHours())}.${two(at.getMinutes())}.${two(at.getSeconds())}.png`;
   return new File([bytes], name, { type: "image/png" });
 }
+
+/** The message for a capture the shell could not take, in the words of the
+ * person's system (System Settings on macOS, Settings on Windows). */
+export function captureErrorKey(error: { error: "permission" | "unavailable"; platform: "darwin" | "win32" | "other" }):
+  "screenCapture.permissionMac" | "screenCapture.unavailableMac" | "screenCapture.unavailableWindows" | "screenCapture.unavailable" {
+  if (error.platform === "darwin") return error.error === "permission" ? "screenCapture.permissionMac" : "screenCapture.unavailableMac";
+  if (error.platform === "win32") return "screenCapture.unavailableWindows";
+  return "screenCapture.unavailable";
+}

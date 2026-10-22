@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 import { appendDraftAttachments, changeDraftAttachmentPending, replaceDraftAttachment } from "@/lib/drafts";
 import { handoffAttachmentImagePreview, imageAttachmentFromFile, optimisticImageAttachment, releaseAttachmentImagePreview } from "@/lib/composer-attachments";
 import { t } from "@/lib/i18n";
-import { captureFile, captureTarget } from "@/lib/screen-capture-to-bot";
+import { captureErrorKey, captureFile, captureTarget } from "@/lib/screen-capture-to-bot";
 import { navigate } from "@/lib/view-transitions";
 import { botOpensTo, openBot, useStore } from "@/state/store";
 
@@ -19,7 +19,7 @@ export function useScreenCaptureToBot(showThreads: boolean): void {
   useEffect(() => window.ogb?.onScreenCapture?.((capture) => {
     const { state: now, showThreads: threads } = latest.current;
     if ("error" in capture) {
-      dispatch({ type: "error", message: t("screenCapture.unavailable") });
+      dispatch({ type: "error", message: t(captureErrorKey(capture)) });
       return;
     }
     const target = captureTarget({ selectedId: now.selectedId, bots: now.bots, instances: now.instances });

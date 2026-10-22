@@ -8,7 +8,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { Square } from "lucide-react";
 
 import { t } from "@/lib/i18n";
-import { keyEvent, pointFraction, stopTeach, teachAction, type ComputerTeachEvent } from "@/lib/computer-teach-client";
+import { keyEvent, pointFraction, stopTeach, teachAction, teachStatus, type ComputerTeachEvent } from "@/lib/computer-teach-client";
+import { ApiError } from "@/state/store";
 import { TeachStepsDialog } from "../TeachStepsDialog";
 import type { TeachStep } from "../../../shared/teach-recording";
 
@@ -21,9 +22,26 @@ export function useComputerTeach({ botId, screen, connected }: { botId: string; 
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const typing = useRef(false);
 
+  // control went back to the bot: the server ended the recording, unkept
+  const lost = useCallback(() => {
+    setRecording(false);
+    setNote(t("computerTeach.controlLost"));
+  }, []);
+
   const send = useCallback((event: ComputerTeachEvent) => {
-    queue.current = queue.current.then(() => teachAction(botId, { action: "event", event })).catch(() => {});
-  }, [botId]);
+    queue.current = queue.current.then(() => teachAction(botId, { action: "event", event })).catch((error) => {
+      if (error instanceof ApiError && (error.body as { code?: unknown } | undefined)?.code === "control_lost") lost();
+    });
+  }, [botId, lost]);
+
+  // the hand back can happen from the app's panel: ask every few seconds
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => {
+      teachStatus(botId).then((status) => { if (status.ended === "control_lost") lost(); }, () => {});
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [recording, botId, lost]);
 
   useEffect(() => {
     const element = screen.current;

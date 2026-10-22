@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   captureAccelerator,
+  capturePermission,
   createCaptureHotkey,
   pickCaptureSource,
   captureThumbnailSize,
@@ -23,10 +24,15 @@ const shortcuts = () => {
   };
 };
 
-test("the capture key is the bots' chord with 0", () => {
+test("the capture key is the bots' chord with 0 on macOS, one that no common app uses on Windows", () => {
   assert.equal(captureAccelerator("darwin", "cmd-shift"), "CommandOrControl+Shift+0");
   assert.equal(captureAccelerator("darwin", "ctrl-alt"), "Control+Alt+0");
-  assert.equal(captureAccelerator("win32", "nope"), "CommandOrControl+Shift+0");
+  // Ctrl+Shift+0 unhides columns in Excel: never on Windows
+  for (const chord of ["cmd-shift", "cmd-alt", "ctrl-alt", "nope"]) {
+    const key = captureAccelerator("win32", chord);
+    assert.equal(key, "Control+Alt+Shift+S");
+    assert.notEqual(key, "CommandOrControl+Shift+0");
+  }
   // Linux has no screen capture without a portal prompt: no key there
   assert.equal(captureAccelerator("linux", "cmd-shift"), null);
 });
@@ -89,4 +95,14 @@ test("the picture keeps the display's pixels, bounded", () => {
   const big = captureThumbnailSize({ size: { width: 6016, height: 3384 }, scaleFactor: 2 });
   assert.ok(Math.max(big.width, big.height) <= CAPTURE_MAX_EDGE);
   assert.deepEqual(captureThumbnailSize(null), { width: 1920, height: 1080 });
+});
+
+test("macOS: a refused Screen Recording is said before any capture; the first time asks", () => {
+  assert.equal(capturePermission("darwin", () => "granted"), "capture");
+  // the first real capture is what makes macOS ask
+  assert.equal(capturePermission("darwin", () => "not-determined"), "capture");
+  assert.equal(capturePermission("darwin", () => "denied"), "denied");
+  assert.equal(capturePermission("darwin", () => "restricted"), "denied");
+  assert.equal(capturePermission("darwin", () => { throw new Error("x"); }), "capture");
+  assert.equal(capturePermission("win32", () => "denied"), "capture");
 });

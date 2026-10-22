@@ -381,7 +381,7 @@ const bridge = {
   onScreenCapture: (cb) => {
     const listener = (_event, value) => {
       if (value && typeof value.png === "string") cb({ png: value.png });
-      else cb({ error: "unavailable" });
+      else cb({ error: value?.error === "permission" ? "permission" : "unavailable", platform: value?.platform === "darwin" ? "darwin" : value?.platform === "win32" ? "win32" : "other" });
     };
     ipcRenderer.on("desktop:screen-capture", listener);
     return () => ipcRenderer.removeListener("desktop:screen-capture", listener);

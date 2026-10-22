@@ -99,5 +99,10 @@ describe("a recording of the whole computer (parity R7, system 11)", () => {
     expect(cleanPoint({ x: "1", y: 0 })).toBeUndefined();
     expect(cleanWindowName("Gmail\u0000 - Chrome")).toBe("Gmail - Chrome");
     expect(cleanWindowName(`token ${"aB3".repeat(15)}`)).toBe("");
+    // a title that names a person's address or an account is never kept
+    expect(cleanWindowName("Inbox - jc@example.com - Outlook")).toBe("");
+    expect(cleanWindowName("Compte 4510 2233 8890 - Banque")).toBe("");
+    expect(cleanWindowName("Client 00123456 - CRM")).toBe("");
+    expect(cleanWindowName("Report 2026 - Calc")).toBe("Report 2026 - Calc");
   });
 });

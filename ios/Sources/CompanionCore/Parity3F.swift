@@ -9,16 +9,20 @@ import Foundation
 // MARK: - Computer recover (O4)
 
 public enum ComputerCare {
-    /// Up, or coming up on purpose. Anything else can be recovered.
-    private static let healthy: Set<String> = ["running", "ready", "idle"]
+    /// Up and usable.
+    private static let running: Set<String> = ["running", "ready", "idle"]
+    /// Asleep or not created yet on purpose (an organization's environments
+    /// sleep off hours): it starts with the next task.
+    private static let asleep: Set<String> = ["stopped", "paused", "missing", "starting"]
 
-    /// True when the shared computer is configured and not simply running:
-    /// a problem, a cluster still waking, or a state that is not healthy.
+    /// True for a real failure only: a problem the computer reports, or a
+    /// state that is neither up nor asleep. A computer that sleeps or wakes
+    /// is left alone (parity R7 review: a rebuild removes installed apps).
+    /// Same rule as the desktop (src/lib/computer-recover.ts).
     public static func needsRecover(configured: Bool, state: String, problem: String?, waking: Bool) -> Bool {
         guard configured else { return false }
         if let problem, !problem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        if waking { return true }
-        return !healthy.contains(state)
+        return !running.contains(state) && !asleep.contains(state)
     }
 }
 

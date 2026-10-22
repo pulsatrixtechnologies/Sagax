@@ -21383,6 +21383,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           calendarCalls!.removeBot(bot.id);
           browserLive.closeForBot(bot.id);
           browserNetworkDebug.clearBot(bot.id);
+          computerTeach.discardBot(bot.id);
           await forgetTemporaryBrowser(bot.id);
           // The bot's database and sheet go with the bot; a failure here
           // must not undo a deletion the store already made durable.
@@ -27746,6 +27747,12 @@ ROUTES.push(createComputerStatusRoutes({
   sandbox: () => userSandbox,
   local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
   mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin") || adminOrDelegate(auth, "host.shell"),
+  // never two updates at once, never under a working bot (parity R7)
+  updateGuard: {
+    claim: (key) => computerCareScheduler.claim(key),
+    release: (key) => computerCareScheduler.release(key),
+    busy: (key) => computerCareScheduler.busy(key),
+  },
 }));
 // Settings > Computer: scheduled update in a maintenance window and the disk
 // saver (server/computer-care.ts, server/routes/computer-care.ts), for the

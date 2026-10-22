@@ -14,20 +14,27 @@ export interface ComputerStatusView {
   waking?: { since: number; elapsedMs: number };
 }
 
-/** Up, or coming up on purpose. Anything else can be recovered. */
-const HEALTHY = new Set(["running", "ready", "idle"]);
+/** Up and usable: Update now is offered. */
+const RUNNING = new Set(["running", "ready", "idle"]);
+/** Asleep or not created yet, on purpose (an organization's environments
+ * sleep off hours): it starts with the next task, nothing to offer. */
+const ASLEEP = new Set(["stopped", "paused", "missing", "starting"]);
 
+/** A real failure: the computer reports a problem, or a state that is
+ * neither up nor asleep (unavailable, or one this app does not know). */
 export function needsRecover(status: ComputerStatusView): boolean {
   if (!status.configured) return false;
   if (status.problem?.trim()) return true;
-  if (status.waking) return true;
-  return !HEALTHY.has(status.state);
+  return !RUNNING.has(status.state) && !ASLEEP.has(status.state);
 }
 
-/** The one action the row offers, or none (no computer here). */
+/** The one action the row offers, or none (no computer here, asleep, or
+ * waking: it comes up by itself). */
 export function computerAction(status: ComputerStatusView | null): "recover" | "update" | null {
   if (!status?.configured) return null;
-  return needsRecover(status) ? "recover" : "update";
+  if (needsRecover(status)) return "recover";
+  if (status.waking) return null;
+  return RUNNING.has(status.state) ? "update" : null;
 }
 
 export function loadComputerStatus(signal?: AbortSignal): Promise<ComputerStatusView> {

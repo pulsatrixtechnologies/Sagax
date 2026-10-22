@@ -15,6 +15,11 @@ import { cleanPoint, cleanWindowName, TEACH_MAX_STEPS, type TeachStep } from "..
 /** A recording no one touched for this long is dropped. */
 export const COMPUTER_TEACH_IDLE_MS = 30 * 60_000;
 
+/** The focused window is asked at most this often; a click sooner reuses the last title. */
+export const WINDOW_LOOKUP_MS = 500;
+/** More events than this in one second are refused (a script, not a person). */
+export const TEACH_EVENTS_PER_SECOND = 20;
+
 /** The one command a click runs on the bot's computer: the focused window's
  * title, a moment after the click lands. Fixed text, read only. */
 export const FOCUSED_WINDOW_COMMAND = "sleep 0.2; xdotool getwindowfocus getwindowname 2>/dev/null | head -n 1";
@@ -25,6 +30,8 @@ export class ComputerTeachRecorder {
   private readonly steps: TeachStep[] = [];
   private typing: TeachStep | null = null;
   private window = "";
+  private lastLookup = -Infinity;
+  private recent: number[] = [];
 
   constructor(now = Date.now()) {
     this.startedAt = new Date(now).toISOString();
@@ -41,13 +48,34 @@ export class ComputerTeachRecorder {
     this.typing = null;
   }
 
-  click(point: { x: number; y: number }, window: string, now = Date.now()): void {
+  /** No room for another step: nothing more is asked of the computer. */
+  get full(): boolean {
+    return this.steps.length + (this.typing ? 1 : 0) >= TEACH_MAX_STEPS;
+  }
+
+  /** Count one event; false past TEACH_EVENTS_PER_SECOND in the last second. */
+  allowEvent(now = Date.now()): boolean {
+    this.recent = this.recent.filter((at) => now - at < 1_000);
+    if (this.recent.length >= TEACH_EVENTS_PER_SECOND) return false;
+    this.recent.push(now);
+    return true;
+  }
+
+  /** Whether this click may ask the computer for the focused window (and
+   * counts as that lookup); otherwise it reuses the last title. */
+  takeWindowLookup(now = Date.now()): boolean {
+    if (now - this.lastLookup < WINDOW_LOOKUP_MS) return false;
+    this.lastLookup = now;
+    return true;
+  }
+
+  /** `window` null: not asked this time, the last title stands. */
+  click(point: { x: number; y: number }, window: string | null, now = Date.now()): void {
     this.touchedAt = now;
     this.closeTyping();
-    const clean = cleanWindowName(window);
-    if (clean) this.window = clean;
+    if (window !== null) this.window = cleanWindowName(window);
     const at = cleanPoint(point);
-    this.push({ kind: "click", screen: true, ...(at ? { point: at } : {}), ...(clean ? { window: clean } : {}) });
+    this.push({ kind: "click", screen: true, ...(at ? { point: at } : {}), ...(this.window ? { window: this.window } : {}) });
   }
 
   /** The person types: one secret text step until the next click or key. */
