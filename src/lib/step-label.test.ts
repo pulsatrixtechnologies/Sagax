@@ -19,6 +19,15 @@ describe("step labels in plain words", () => {
     expect(stepLabel({ name: "Read", ok: true })).toBe("Read a file");
   });
 
+  it("says a phone tool waits on the person's phone, and which tool (row 81)", () => {
+    const running = readStep({ name: "mcp__agents__phone_tool", ok: undefined, input: JSON.stringify({ tool: "location" }) });
+    expect(running).toEqual({ label: "Waiting for your phone. Approve it there", target: "Location" });
+    expect(readStep({ name: "mcp__agents__phone_tool", ok: true, input: JSON.stringify({ tool: "contacts", query: "Marie" }) }).label).toBe("Used a tool on your phone");
+    setLocale("fr");
+    expect(readStep({ name: "mcp__agents__phone_tool", ok: undefined, input: JSON.stringify({ tool: "reminders" }) })).toEqual({ label: "L'autorisation doit être donnée sur votre téléphone", target: "Rappels" });
+    expect(readStep({ name: "mcp__agents__phone_tool", ok: false, input: JSON.stringify({ tool: "teleport" }) })).toEqual({ label: "N'a pas pu utiliser un outil de votre téléphone" });
+  });
+
   it("speaks in the tense of the state: running, done, failed", () => {
     expect(stepPhase({ ok: undefined })).toBe("running");
     expect(stepPhase({ ok: true })).toBe("done");

@@ -38,7 +38,7 @@ type Kind =
   | "coordinate" | "ask" | "delegate" | "sendTo" | "checkDelegation"
   | "whosAround" | "rooms" | "postRoom" | "startThread" | "closeThread" | "listThreads"
   | "memory" | "memorySearch" | "readConversations" | "routine" | "skill"
-  | "attachFile" | "react" | "card" | "voiceNote" | "readResult";
+  | "attachFile" | "react" | "card" | "voiceNote" | "readResult" | "phone";
 
 /** Claude and ACP built-ins, by their exact name. */
 const BUILTIN: Record<string, Kind> = {
@@ -94,6 +94,8 @@ const BARE: Record<string, Kind> = {
   react_to_message: "react", remove_reaction: "react",
   create_options_card: "card",
   send_voice_note: "voiceNote",
+  // the person's own iPhone (server/drivers/agents-phone-tools.ts): approved there
+  phone_tool: "phone",
   tool_result_read: "readResult",
   todo_write: "todo",
 };
@@ -112,6 +114,9 @@ const GATEWAY_PRODUCTS: Array<[RegExp, string]> = [
 ];
 
 const TARGET_MAX = 80;
+
+/** phone_tool's tools (shared/phone-tools.ts PHONE_TOOLS), each with its words. */
+const PHONE_TOOL_LABELS = new Set(["location", "contacts", "reminders", "calendar", "photos", "shortcut", "clipboard", "status"]);
 
 function oneLine(text: string, max = TARGET_MAX): string {
   const flat = text.replace(/\s+/g, " ").trim();
@@ -218,6 +223,10 @@ function kindTarget(kind: Kind, args: Record<string, unknown> | undefined, tool:
     case "memorySearch":
     case "readConversations":
       return oneLine(str(args, "query", "q") ?? "") || undefined;
+    case "phone": {
+      const tool = str(args, "tool");
+      return tool && PHONE_TOOL_LABELS.has(tool) ? t(`step.phone.tool.${tool}` as LocaleKey) : undefined;
+    }
     case "postRoom":
     case "startThread":
       return oneLine(str(args, "title", "room", "room_name") ?? "") || undefined;

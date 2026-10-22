@@ -93,6 +93,8 @@ struct ApprovalGrantsPage: View {
                 recipientsSection(bot)
                 alwaysSection(bot)
             }
+            // this iPhone's phone tools and their "Toujours permettre" (Features/PhoneTools)
+            if botId == nil { PhoneToolsSettingsSections() }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)

@@ -1312,6 +1312,8 @@ final class Session: ObservableObject {
                         status = .live
                         // this server pushes to the phone while the app is closed
                         Task { await PushRegistrar.shared.sync() }
+                        // phone tools: what this phone offers, and any request waiting
+                        PhoneToolCenter.shared.streamOpened(self)
                         // Remember what actually carried the stream for
                         // display and legacy ordering. Typed routes retain
                         // their explicit security priority next launch.
@@ -1323,6 +1325,10 @@ final class Session: ObservableObject {
                     if streamed { foldQuietly { state.apply(frame) } } else { state.apply(frame) }
                     // people: presence and labels (#167, #172)
                     PeopleDirectory.shared.apply(frame.frame)
+                    // a bot asks this phone for a tool (Features/PhoneTools)
+                    if case let .unknown(kind) = frame.frame, kind == "phone-tools" {
+                        Task { await PhoneToolCenter.shared.refresh() }
+                    }
                     // a routine changed or ran: the account's routines badge
                     if case let .unknown(kind) = frame.frame, kind.hasPrefix("routine") {
                         Task { await AccountRowModel.shared.refresh(self) }

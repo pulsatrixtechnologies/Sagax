@@ -13783,7 +13783,18 @@
       "engines.connectors.claude": "6833dc878951f2770eea6c91fcfcc2a5ceb1f93492f498f74f24f35808d1b740",
       "engines.connectors.grok": "9d264396fc456b8a5615d79a3d2fc80cc07ea45744ce01b06bf7acd4ffddd6c6",
       "chat.connectorSwitch": "8c404265516355bc888749ab68d8ad7087c50555628d6759fed85300fe0f9237",
-      "approval.held.connectorNoDetails": "d9bc9c36754a96d653b37499a8ecb06f1c8c0e739a95cfdf380bb9257bce3a3f"
+      "approval.held.connectorNoDetails": "d9bc9c36754a96d653b37499a8ecb06f1c8c0e739a95cfdf380bb9257bce3a3f",
+      "step.phone.running": "dc4f268b8a71e5a53ab28ab9f10be3e2a7e4e8db70a945ae36bf03b602c0e01a",
+      "step.phone.done": "034bfc7dbdc6bc75247df39ffebd60b8b130949a260de920c324c5bc8677eabc",
+      "step.phone.failed": "2c6cb0f39a237d9906000e2a2d1135d1b10542e93331011ac0b142ee2a0a25db",
+      "step.phone.tool.location": "15b61974b2707a7b3d4201385e0f01f4ff5eb1f17c5639d98788ee5add2025cd",
+      "step.phone.tool.contacts": "b450645debe2cf0a590edd7f78d36eccd465027d389652dc30d6350542587c04",
+      "step.phone.tool.reminders": "7971dd7526694c6ae3f2db570e44bfaa79cf30a63067a47f161b6e62c5426ef8",
+      "step.phone.tool.calendar": "d5d0a30b517e3beab07609d7e54c378db5e15066f22280af453f587f7eec7474",
+      "step.phone.tool.photos": "5e3147ab51e0084c3c817707f1aed1510260c13f45697bfe380dc51f6c179151",
+      "step.phone.tool.shortcut": "5753ea3780f34ad1295fb9957f1575e7e7578aa0e891d89524c26ad6f504cb1d",
+      "step.phone.tool.clipboard": "285d69f0c5d1a00bb2eccde0cb4c93367b3e94955acff9fabd895f81a0c45c59",
+      "step.phone.tool.status": "0dba1ed6a91b0f61b809aeb16b1dae29e7fa0c973cbe66e00e5b82afd553f3ff"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

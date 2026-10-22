@@ -16,6 +16,7 @@ import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
+import { callPhoneTool, PHONE_TOOL_NAME } from "./agents-phone-tools.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
@@ -508,6 +509,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   }
   // create_options_card, show_widget, update_widget (agents-call-cards.ts).
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
+  if (name === PHONE_TOOL_NAME) return callPhoneTool(args, context);
   if (ARTIFACT_TOOL_NAMES.has(name)) return callArtifactTool(name, args, context);
   // sagax_help (server/self-knowledge.ts): a few sections of the generated
   // knowledge base, chosen and worded for this server and speaker.
