@@ -485,6 +485,8 @@ describe("reader comments on a published page (JC 2026-10-21)", () => {
     expect((await hit(options(pages, null), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: "x" }))).status).toBe(404);
     const reader: PageViewer = { principalId: "pr_bob", computerOwner: false };
     expect((await hit(options(pages, reader), `/pages/comment/${token}`, { ...formHeaders, origin: "https://evil.example" }, "POST", form({ name: "Bob", text: "x" }))).status).toBe(403);
+    // a browser that says the post comes from another site is refused, Origin or not
+    expect((await hit(options(pages, reader), `/pages/comment/${token}`, { ...formHeaders, "sec-fetch-site": "cross-site" }, "POST", form({ name: "Bob", text: "x" }))).status).toBe(403);
     expect((await hit(options(pages, reader), `/pages/comment/${token}`, { ...formHeaders, origin: "http://sagax.example.com" }, "POST", form({ name: "Bob", text: "x" }))).status).toBe(200);
     pages.revoke(id);
     expect((await hit(options(pages, reader), `/pages/comment/${token}`, formHeaders, "POST", form({ name: "Bob", text: "x" }))).status).toBe(404);

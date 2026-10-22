@@ -5879,7 +5879,8 @@ Grok Bot parity, chat rows 31 to 34. Covered by
   with them on, the wrapper adds a plain form (no script; `form-action` pinned
   to `/pages/comment/<token>`) and the approved comments, escaped. `POST
   /pages/comment/<token>` (before the auth gate): only a reader of a published
-  page with them open, an Origin (when sent) of this host, urlencoded, 16 KB,
+  page with them open, an Origin (when sent) of this host, never
+  `Sec-Fetch-Site: cross-site`, urlencoded, 16 KB,
   name 60 and text 1000 characters, secret-shaped text removed, honeypot
   `website` thanked and dropped, 5 posts per address per 10 minutes
   (`requestSource`), 50 pending and 200 kept per page. Each waits as

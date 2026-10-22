@@ -277,7 +277,7 @@ function readForm(req: IncomingMessage): Promise<URLSearchParams | null> {
 
 /** A reader's comment (JC 2026-10-21): only on a published page its reader
  * may read, with reader comments on and allowed; from this host's own form
- * (an Origin, when sent, must be this host); rate-limited per address; name
+ * (an Origin, when sent, must be this host; Sec-Fetch-Site cross-site is refused); rate-limited per address; name
  * and text checked and capped, secret-shaped text removed; a filled honeypot
  * is thanked and dropped. The comment waits for the person's approval and
  * is never shown before. The answer is a plain page with a link back. */
@@ -294,6 +294,12 @@ function serveReaderComment(options: PublicPageOptions, req: IncomingMessage, re
   if (!opened || !ownerActive(options, opened.page) || !pageReadable(opened.page, viewer, options.pages!.policy()) || !readerCommentsOpen(options, opened.page)) {
     req.resume();
     return notFound(req, res, "POST");
+  }
+  // a browser that names another site as the source never posts here
+  if (req.headers["sec-fetch-site"] === "cross-site") {
+    req.resume();
+    reply(403, false);
+    return true;
   }
   const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
   if (origin && origin !== "null") {
