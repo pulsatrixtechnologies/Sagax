@@ -34,7 +34,7 @@ server host; **org** = organization data, settings or secrets;
 | `sagax-environment` `read_file`, `list_files` in `/workspace/attachments` | own | as above | no card, owner's own turn | The files they sent. |
 | `sagax-computer` `computer_select` (the bot picks where it works: the person's cloud computer, their own computer, its Local VM or the built-in browser), mounted by Sagax for this turn, for the person it is for (who answers its cards, or the speaker in their own conversation with someone else's bot) | own | **admin card** on engines that ask first (prod 0.5.27: "Computer select dans Sagax Computer"): the server was in the host-level list | **no card**, at any approval level, on every engine (Claude already pre-allows it); the safety hold, the person's own deny and ask rules and their security key still come first | There is no menu for the person any more: the bot decides where it works. The commands it runs next keep their own rules (on their real computer, always a card). A computer the organization shares stays `agents` `shared_computer` (admin, delegable). Not mounted this turn, someone else's places, a guest-driven turn or another server's spelling: an admin's card, unchanged. |
 | A shell or file tool of the engine itself (Bash, Read, Write, Edit, Glob, Grep, WebFetch...) | host | withheld on every organization turn (admins too); a stray one is an admin card | unchanged; the card goes to the owner by hand if they hold `host.commands`, for their own turn only | It would run in the Sagax server's container. |
-| Same, owner holds `host.commands` | host | admin card | owner's card; no mode or saved command answers it; since 2026-10-19 their own Always allow made on it (`from: admin`, exact command) does while they still hold the right; checked again at the answer and at each use | Delegable right to the shared host. |
+| Same, owner holds `host.commands` | host | admin card | owner's card; no mode or saved command answers it; since 2026-10-19 their own Always allow made on it (`from: admin`; since 2026-10-21 the program of the engine's shell line in its folder, as on a solo bot) does while they still hold the right; checked again at the answer and at each use | Delegable right to the shared host. |
 | `agents` `offer_shell_terminal` (the terminal card) | own | **admin card** on engines that ask first: the shell name pattern read `_shell_` in its name as a server command | the owner's card (judged by its exact name first) | It only stages a card the person approves; the terminal opens on their own destination. |
 | Built-in `agents` tools in the member's own scope (`member-tool-scope.ts`: reads, conversation, memory, own setup, terminal offer) | own | owner card | unchanged | Already the owner's. |
 | `agents` host-level tools: `act`, `add_mcp_server`, `attach_file`, `vm_exec`, `manage_settings`, `api_reload`, `review_write`, cloud-agent tools | host / org | admin card (pre-allowed on Claude, see note) | unchanged; delegable through `host.commands` for the owner's own turn | Each reaches the server or organization settings (`member-tool-scope.ts` lists why). |
@@ -42,7 +42,7 @@ server host; **org** = organization data, settings or secrets;
 | `agents` `manage_pairing` | own | admin card | unchanged in this pass | The route itself is open to members; to reclassify with the tool scope list. |
 | MCP servers acting through the owner's identity (their remote servers, personal connections, claude.ai connectors on their own subscription) | own | owner card | unchanged | Already the owner's. |
 | Other MCP servers (`browser`, `computer`, `files`, `shell`, `terminal`, a server's own MCP server) | host | admin card | unchanged; delegable through `host.commands` | Run on the shared host. |
-| Always allow, session allow, remembered command on a member's bot | rights | stripped or refused for every card | session allow and remembered command unchanged; Always allow (an owner rule with its exact scope) offered on every card since 2026-10-19, an admin's card included (the admin's own rule, `from: admin`) | Standing grants on member bots are a separate decision (Open points). |
+| Always allow, session allow, remembered command on a member's bot | rights | stripped or refused for every card | session allow and the installation's saved command list unchanged (refused). Always allow (an owner rule) offered on every card since 2026-10-19, an admin's card included (`from: admin`). **Decided 2026-10-21 (JC): it remembers.** On an admin's card (or the owner's card under `host.commands`) the engine's shell line is kept as its one program in its folder (`git`, `npm`; a chain or a `cd` keeps the exact line), for that bot only, never workspace-wide; another program asks again. The bot's owner and a workspace admin see it in the bot's Approval rules, with who saved it (by name, never an id or the real folder), and may remove it (never edit someone else's); a holder of `host.shell` who is neither sees and removes only their own. A held card (safety hold, sandbox widening, Codex additional permissions or network) keeps the whole request; a call with no readable arguments offers no rule (see Accepted risks). | A standing grant on one bot, removable by its owner and the admins. |
 | Custom approval level (`config.toml`) | host | runs as Ask, cannot be set | unchanged | The file lives on the shared server. |
 | Full access on a member's bot | own | `bots.fullAccess` + the organization's Full policy + consent | unchanged | Already delegable. |
 | Auto levels while the admin turned `memberAutoApproval` off | org | Ask | unchanged | An organization policy. |
@@ -115,12 +115,34 @@ own installation computer (`/api/bots/:id/computer*`,
 `/api/bots/:id/local-computer*`) and the desktop viewer of the server's own
 Local VM or VPS.
 
+## Accepted risks
+
+1. **2026-10-21, decision JC (told the risk): Always allow on a member's
+   server command keeps the program, as on a solo bot ("Programme comme en
+   solo").** Finding 1 of the review of #938: on the organization's shared
+   server, a rule kept for `npm` (or `git`, `python`) on an admin's card lets
+   that bot run any other line of that one program in that folder with no
+   card (`npm run deploy` after `npm test`, a script the bot wrote and runs
+   with `node`), with the server's rights, until the bot's owner or an admin
+   removes it. Accepted as is, not narrowed. What still holds: it is for
+   that one bot (never workspace-wide, never another bot of the member), in
+   that one folder; a chain, a substitution or a redirect keeps the exact
+   line; a held card (safety hold, `dangerouslyDisableSandbox`, Codex
+   `additionalPermissions` or network, `requiresExplicitApproval`) keeps the
+   whole request; the saver's right (admin, `host.shell`, or the owner's
+   `host.commands`) is checked again at each use, and a security key of
+   theirs still asks; an engine that reports its shell line beside no input
+   (Codex, the ACP engines) is read by that line, and a card with no
+   readable arguments offers no rule, so a rule never covers every command.
+
 ## Open points
 
 1. Done 2026-10-19: the four admin keys are delegable (section 4); a
    shared bot's speaker answers their own destination's card; Always allow
    rules on one's own cloud computer and Local VM, listed and revocable in
-   Settings > Computer.
+   Settings > Computer. Done 2026-10-21: permanent grants on a member's bot
+   (Always allow on its server command keeps the program for that bot;
+   owner and admin see and remove it in the bot's rules).
 2. **`shared_computer`** on an organization server acts on the speaker's own
    desktop: still an admin card.
 3. Hardening noted by the security review, not blocking: a link inside the

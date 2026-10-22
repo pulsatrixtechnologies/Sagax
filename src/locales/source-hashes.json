@@ -9706,6 +9706,8 @@
       "botPanel.rules.save": "1509f561f2416598629b886ad7d3c05a7e221e4e0675c84bbff4ee6d9e03913d",
       "botPanel.rules.cancel": "19766ed6ccb2f4a32778eed80d1928d2c87a18d7c275ccb163ec6709d3eb2e27",
       "botPanel.rules.migrated": "1b5aff88d805a0acc93bdbcd73dd2d60cc1833abf03fd77bbc9020ca40bee07f",
+      "botPanel.rules.savedBy": "59c71c27c8245d74e6b245581f627468fc472e9afc995bc1f0c51a64ad7dcf87",
+      "botPanel.rules.savedBySomeone": "9c93bf0c26f01ea712b617a044e6610280c1f2f13d8bb6e2d98132c93bd69948",
       "botPanel.rules.kind.delete": "1535d13590fe0bf36f462931811e042b32bff5800a422dc32b4d7f770d5dbe9a",
       "botPanel.rules.kind.bulk": "3a358e690b48b2a1fe8c65b6ee4108a06b5f0cd0fc2193a5d1c260defa2d6485",
       "botPanel.rules.kind.externalMessage": "2c67e97c3d62d305594868d94e542cd1e41d171e510d1679348615b9f68b047c",

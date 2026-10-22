@@ -130,7 +130,9 @@ bot working in its owner's environment without a card,
 the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches
 Sagax is a Sagax tool, routed per tool: a card that would act on the shared
 server or beyond the owner's own rights still goes to an organization admin
-(an admin card, answered once and never remembered, whatever the level).
+(an admin card, whatever the level; since 2026-10-21 its Always allow keeps
+the program of a shell line for that bot only, which the bot's owner or an
+admin removes in the bot's Approval rules: `docs/member-admin-audit.md`).
 
 ### Organization rules and "Always allow" off (2026-10-21)
 

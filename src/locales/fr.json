@@ -5841,6 +5841,8 @@
   "botPanel.rules.save": "Enregistrer",
   "botPanel.rules.cancel": "Annuler",
   "botPanel.rules.migrated": "Règle antérieure",
+  "botPanel.rules.savedBy": "Enregistrée par {name} sur une carte d'admin",
+  "botPanel.rules.savedBySomeone": "Enregistrée sur une carte d'admin",
   "botPanel.rules.kind.delete": "Suppressions",
   "botPanel.rules.kind.bulk": "Changements en lot",
   "botPanel.rules.kind.externalMessage": "Messages externes",

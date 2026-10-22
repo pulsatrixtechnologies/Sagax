@@ -338,7 +338,7 @@ import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSI
 import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
-import { matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, scopeKeepable, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { cardRuleCandidate, matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -11666,8 +11666,11 @@ async function answerRequest(
   always?: boolean,
   rememberCommand?: boolean,
 ): Promise<RequestOutcome> {
-  // A member's bot on an organization server is approved one action at a
-  // time: no session allow and no saved command, whatever the answer asks.
+  // A member's bot on an organization server takes no session allow (the
+  // engine's own suggestion could reach past the bot) and no entry in the
+  // installation's saved command list. Its Always allow is an owner rule
+  // for this bot (saveOwnerRuleFromCard, 2026-10-21: the program on an
+  // admin's card), which the bot's owner or an admin may remove.
   const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
   if (decidingBot && memberOwnedInOrg(decidingBot)) {
     always = false;
@@ -14470,8 +14473,12 @@ bus.subscribe((event: RuntimeEvent) => {
       const ownerTool = event.mcpTool ?? event.tool;
       const ownerLayer = Boolean(permission && asker && event.requestId && !baseVerdict?.approve && !strictCard && !guestDriven
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool) && memberOwnScopeTool(ownerTool) !== "conversation");
+      // 2026-10-21 (review of #938): what a rule reads of this call, the
+      // engine's shell line included when it reports one beside no input
+      // (Codex, the ACP engines): never an empty scope
+      const ruleInput = ruleInputFor(typeof event.input === "string" ? event.input : undefined, event.command?.command);
       const ownerCall = ownerLayer && asker
-        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
+        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
         : null;
       // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
       // bypass) and Always allow rules never answer what Sagax itself would
@@ -14532,7 +14539,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // call. Never a guest's turn or someone else's environment.
       const strictCall = strictCard && permission && asker && event.requestId && !guestDriven && !foreignDestination
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool)
-        ? { botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
+        ? { botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
         : null;
       // 2026-10-20 (security review): never on a turn that is not the
       // person's own (a routine, a webhook, another bot)
@@ -14589,22 +14596,23 @@ bus.subscribe((event: RuntimeEvent) => {
       // card shows (this bot, this tool, this target or exact command), never
       // for someone else's environment or a guest's turn. A security key the
       // person chose still asks at each use (ownerDecision step-up).
+      // Review of #938: a held card stays held, an admin's card included
+      // (it keeps the whole request, never the program)
+      const heldCard = safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true;
       const ruleFrom: OwnerRule["from"] = strictCall ? "admin"
-        : safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true ? "hold"
+        : heldCard ? "hold"
           : ownerOriginRefused ? "origin" : undefined;
+      // owner-approval.ts cardRuleCandidate: a card that never had a rule
+      // keeps the whole request; an engine's own shell line on an admin's
+      // card that is not held keeps its program for this bot (2026-10-21,
+      // JC); a call with no readable arguments offers nothing
       const ownerRuleCandidate = (owner?.kind === "card" && owner.reason !== "admin" && owner.reason !== "cross-person") || (strictCall && !baseVerdict?.approve)
-        ? (() => {
-          // 2026-10-20 (security review): a card that never had a rule (an
-          // admin's, a held one, a turn not the person's own) keeps the
-          // whole request, every argument, never only its target
-          const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language), {
-            wholeCall: ruleFrom !== undefined,
-            // 2026-10-20 (JC): a command is kept as its one program, except
-            // on an admin's card or a held one, which keep the very request
-            programScope: ruleFrom !== "admin" && ruleFrom !== "hold",
-          });
-          return scopeKeepable(candidate.scope) ? { ...candidate, ...(ruleFrom ? { from: ruleFrom } : {}) } : undefined;
-        })()
+        ? cardRuleCandidate({
+          tool: ownerTool,
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+          ...(event.command?.command ? { command: event.command.command } : {}),
+          ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
+        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
       // auto` for any model and starts in Manual without a word when auto is
@@ -27416,6 +27424,26 @@ ROUTES.push(createOwnerApprovalRoutes({
   manager: ruleManager,
   ownedBots: botsOwnedBy,
   botName: (botId) => store.bot(botId)?.name,
+  // 2026-10-21 (JC): an Always allow kept on an admin's card of a member's
+  // bot is the bot's: its owner and a workspace admin see everyone's and may
+  // remove them. Review of #938: a holder of host.shell who is neither
+  // answers and saves such cards (strictRuleQualifies) and sees and removes
+  // their own rules for the bot (managesBot below), never someone else's.
+  sharedBotRules: (personId, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    const me = personId.trim().toLowerCase();
+    const owner = effectiveBotOwner(bot).trim().toLowerCase() === me;
+    return owner || workspaceAdminPrincipal(me) ? ownerApprovals.adminRulesForBot(botId) : [];
+  },
+  managesBot: (personId, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot && IDENTITY.kind === "perspicax" && strictRuleQualifies(personId.trim().toLowerCase(), bot, "admin"));
+  },
+  personName: (personId) => {
+    const person = principals.byId(personId.trim().toLowerCase());
+    return person?.name?.trim() || person?.email?.trim() || undefined;
+  },
   ownerOf: (botId) => {
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot) : null;
@@ -30384,6 +30412,15 @@ function strictRuleQualifies(personId: string, bot: BotRecord, kind: "admin" | "
   return person.local === true || person.orgRole === "admin" || principalCan(id, "host.shell");
 }
 
+/** Review of #938: an organization admin (or the local operator), signed
+ * in and not disabled, by their principal id. */
+function workspaceAdminPrincipal(personId: string): boolean {
+  const id = personId.trim().toLowerCase();
+  if (!id || !isPrincipalId(id)) return false;
+  const person = principals.byId(id);
+  return Boolean(person && person.disabledAt === undefined && (person.local === true || person.orgRole === "admin"));
+}
+
 /** The allow rule saved on an admin's card of this bot that answers this
  * call now: its person still holds the right and protects none of the
  * call's classes with a security key. */
@@ -30394,7 +30431,11 @@ function strictCardRule(
   kind: "admin" | "holder",
   stepUpCall: Parameters<typeof callStepUpClasses>[0],
 ): OwnerRule | undefined {
-  const rules = ownerApprovals.adminRulesForBot(bot.id).filter((rule) => strictRuleQualifies(rule.ownerId, bot, kind));
+  // review of #938: a rule kept before main fixed it with the fingerprint
+  // of no arguments (an engine's shell line reported beside no input)
+  // covered every command of the bot: it answers nothing. An empty scope is
+  // only ever its person's explicit "any target" (PATCH anyTarget).
+  const rules = ownerApprovals.adminRulesForBot(bot.id).filter((rule) => (!Object.keys(rule.scope).length || scopeRemembers(rule.scope)) && strictRuleQualifies(rule.ownerId, bot, kind));
   if (!rules.length) return undefined;
   const classes = callStepUpClasses(stepUpCall, threadActionClassContext(bot.id, threadId));
   for (const rule of rules) {
@@ -30525,6 +30566,10 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   const ownerId = strict ? caller! : cardAnswererId(bot, threadId, card);
   if (!caller || caller.toLowerCase() !== ownerId.toLowerCase()) return { status: 403, error: "Only the bot owner can save a rule." };
   const candidate = card.ownerRule;
+  // 2026-10-21 (review of #938): an empty scope is the whole tool, and the
+  // fingerprint of no arguments every such call: never saved from a card
+  // ("any target" stays an explicit edit of one's own rule)
+  if (!scopeRemembers(candidate.scope)) return { status: 409, error: "This approval cannot be remembered as a rule." };
   let saved: OwnerRule;
   try {
     saved = ownerApprovals.add({
@@ -44597,7 +44642,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const adminCheck = adminApprovalCheck(auth, bot.threadId, String(body.requestId));
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "On this card, Always allow keeps a rule for this bot; a session allow or a saved command is not offered." });
       const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
@@ -44720,7 +44765,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const adminCheck = adminApprovalCheck(auth, threadId, requestId);
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "On this card, Always allow keeps a rule for this bot; a session allow or a saved command is not offered." });
       const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);
