@@ -53,3 +53,44 @@ describe("allow rules", () => {
     expect(describeAllowRule("ask_bot:b1", undefined, () => "Dot")).toMatch(/Dot/);
   });
 });
+
+describe("the engines' mail, Teams, calendar and SharePoint connectors on the card", () => {
+  const M365 = "mcp__claude_ai_Microsoft_365__";
+  const now = new Date("2026-10-21T12:00:00");
+
+  it("reads a calendar invitation: what, when and who is invited", () => {
+    const plain = approvalPlain({
+      botName: "Cryptic",
+      tool: `${M365}outlook_create_event`,
+      toolInput: JSON.stringify({
+        subject: "Revue trimestrielle",
+        start: "2026-10-23T14:00:00",
+        end: "2026-10-23T15:00:00",
+        attendees: [{ emailAddress: { address: "ana@example.com", name: "Ana" } }, "bo@example.com", { email: "cy@example.com" }, "di@example.com"],
+      }),
+    }, undefined, now);
+    expect(plain.title).toBe("Allow Cryptic to send a calendar invitation in Microsoft 365?");
+    expect(plain.line).toContain("Revue trimestrielle");
+    expect(plain.line).toContain("to Ana, bo@example.com, cy@example.com and 1 more");
+  });
+
+  it("reads a sent mail, a Teams post, an answered invitation and a SharePoint write", () => {
+    expect(approvalPlain({ botName: "Dot", tool: `${M365}outlook_send_mail`, toolInput: '{"to":["ana@example.com"],"subject":"Suivi"}' }).title)
+      .toBe("Allow Dot to send an email in Microsoft 365?");
+    expect(approvalPlain({ botName: "Dot", tool: `${M365}outlook_send_mail`, toolInput: '{"to":["ana@example.com"],"subject":"Suivi"}' }).line)
+      .toContain("to ana@example.com");
+    expect(approvalPlain({ botName: "Dot", tool: `${M365}teams_send_channel_message`, toolInput: '{"message":"hi"}' }).title)
+      .toBe("Allow Dot to post a message in Teams in Microsoft 365?");
+    expect(approvalPlain({ botName: "Dot", tool: `${M365}outlook_respond_to_event`, toolInput: '{"response":"accept"}' }).title)
+      .toBe("Allow Dot to answer a calendar invitation in Microsoft 365?");
+    expect(approvalPlain({ botName: "Dot", tool: `${M365}sharepoint_upload_file`, toolInput: '{"name":"rapport.pdf"}' }).title)
+      .toBe("Allow Dot to write to SharePoint in Microsoft 365?");
+    // a Grok cloud connector named for the store itself: no "in Sharepoint" twice
+    expect(approvalPlain({ botName: "Dot", tool: "sharepoint__upload_file", toolInput: "{}" }).title).toBe("Allow Dot to write to SharePoint?");
+    expect(approvalPlain({ botName: "Dot", tool: "onedrive__delete_file", toolInput: "{}" }).title).toBe("Allow Dot to write to OneDrive?");
+  });
+
+  it("leaves reads worded as before", () => {
+    expect(approvalPlain({ botName: "Dot", tool: `${M365}outlook_calendar_search`, toolInput: "{}" }).title).not.toMatch(/invitation/);
+  });
+});

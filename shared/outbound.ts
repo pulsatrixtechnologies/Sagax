@@ -8,6 +8,8 @@
 // Shared between the harness (which enforces it) and the app (which shows
 // the setting), so both agree on what "outbound" means.
 
+import { connectorWriteKind } from "./engine-connectors.ts";
+
 export type OutboundPolicy = {
   /** ask: every outbound call waits for a tap. allow: up to dailyCap a day. */
   policy: "ask" | "allow";
@@ -75,6 +77,12 @@ export function isOutboundTool(name: string): boolean {
   if (tokens.length === 0) return false;
   if (READ_VERBS.has(tokens[0])) return false;
   if (tokens.some((token) => SEND_VERBS.has(token))) return true;
+  // A mail, Teams, calendar or SharePoint connector mounted as an MCP server
+  // (the engines' own: claude.ai, the xAI account's cloud connectors) acts
+  // as the person outside the app: an event mails its attendees, a
+  // SharePoint write lands in a shared site (shared/engine-connectors.ts).
+  // Composio slugs keep their own reading (GOOGLECALENDAR_CREATE_EVENT).
+  if (name.includes("__") && connectorWriteKind(name)) return true;
   if (tokens.includes("DRAFT")) return false;
   return tokens.some((token) => CREATE_VERBS.has(token)) && tokens.some((token) => SENT_NOUNS.has(token));
 }

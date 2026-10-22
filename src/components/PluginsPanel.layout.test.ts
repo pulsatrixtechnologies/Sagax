@@ -179,6 +179,14 @@ describe("Plugins panel views", () => {
     expect(providers).toContain("Manage on Grok");
     expect(providers).toContain("Gemini: Google&#x27;s extensions do not reach bots in Sagax.");
     expect(providers).toContain("Manage on ChatGPT / Codex");
+    // parité R9 + R11: what the engines' connectors reach, read-only, and the card on every send
+    expect(providers).toContain("data-engine-capabilities");
+    expect(providers).toMatch(/data-capability="teams"[^]*?Grok · Microsoft Teams/);
+    expect(providers).toMatch(/data-capability="sharepoint"[^]*?Grok · SharePoint/);
+    expect(providers).toContain("Every email sent, Teams post, invitation and SharePoint write asks you first on its card.");
+    // a word the connector's name already says is not repeated
+    expect(providers).not.toMatch(/data-grok-connector="sharepoint"[^<]*<span[^>]*>SharePoint<\/span><span data-connector-capabilities/);
+    expect(providers).toMatch(/data-grok-connector="outlook"[^]*?Email · Calendar/);
   });
 
   it("xAI connectors are a catalog managed on Grok: no Composio action or status, a Grok link, a separate row", () => {

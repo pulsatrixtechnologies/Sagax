@@ -6,6 +6,7 @@ import {
   claudeAiConnectorsPrompt,
   connectorPrincipalFor,
   createHarnessConnectorRoutes,
+  engineConnectorsPrompt,
   parseClaudeAuthStatus,
   parseClaudeMcpList,
   type ClaudeAiTurnInput,
@@ -60,6 +61,40 @@ describe("claudeAiConnectorsForTurn", () => {
     expect(claudeAiConnectorsPrompt(false)).toBe("");
     expect(claudeAiConnectorsPrompt(true)).toContain("mcp__claude_ai_");
     expect(claudeAiConnectorsPrompt(true)).not.toMatch(/[–—]/);
+  });
+});
+
+describe("what a turn is told about mail, Teams, calendar and SharePoint (parité R9 + R11)", () => {
+  it("a Claude turn with the speaker's connectors: whose they are, and every send or write waits for its card", () => {
+    const text = engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: true, grokCloud: false });
+    expect(text).toContain(claudeAiConnectorsPrompt(true).trim());
+    expect(text).toMatch(/approval card/);
+    expect(text).toMatch(/SharePoint/);
+  });
+  it("a Grok organization turn: the xAI account's cloud connectors through use_tool, managed on grok.com", () => {
+    const text = engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: true });
+    expect(text).toContain("use_tool");
+    expect(text).toContain("https://grok.com/connectors");
+    expect(text).toContain("Microsoft Teams");
+    expect(text).toMatch(/approval card/);
+  });
+  it("an engine with none: says which engine has them and offers ask_bot, never claims a send", () => {
+    for (const input of [
+      { driver: "codex", claudeAi: false, grokCloud: false },
+      { driver: "claudeAgent", claudeAi: false, grokCloud: false },
+      // a solo Grok turn: the cloud connectors stay off (#918)
+      { driver: "grokAgent", claudeAi: false, grokCloud: false },
+    ]) {
+      const text = engineConnectorsPrompt(input);
+      expect(text).toContain("ask_bot");
+      expect(text).not.toContain("use_tool");
+      expect(text).not.toContain("mcp__claude_ai_");
+    }
+  });
+  it("never a dash a person would read as an em dash", () => {
+    for (const grokCloud of [true, false]) {
+      for (const claudeAi of [true, false]) expect(engineConnectorsPrompt({ driver: grokCloud ? "grokAgent" : "claudeAgent", claudeAi, grokCloud })).not.toMatch(/[–—]/);
+    }
   });
 });
 

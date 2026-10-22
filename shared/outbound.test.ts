@@ -52,6 +52,37 @@ describe("isOutboundTool", () => {
   });
 });
 
+describe("isOutboundTool, the engines' mail, Teams, calendar and SharePoint connectors", () => {
+  it("keeps the card for every send or write through them", () => {
+    for (const tool of [
+      "outlook_send_mail",
+      "outlook_set_vacation",
+      "teams_send_chat_message",
+      "teams_create_chat",
+      "outlook_create_event",
+      "outlook_update_event",
+      "outlook_delete_event",
+      "outlook_respond_to_event",
+      "sharepoint_upload_file",
+      "sharepoint_update_file",
+      "sharepoint_create_folder",
+      "sharepoint_move_item",
+      "sharepoint_rename_item",
+      "sharepoint_delete_item",
+    ]) {
+      expect(isOutboundTool(`mcp__claude_ai_Microsoft_365__${tool}`), tool).toBe(true);
+    }
+    expect(isOutboundTool("sharepoint__upload_file")).toBe(true);
+    expect(isOutboundTool("outlook__create_event")).toBe(true);
+  });
+
+  it("lets reads and drafts through them run", () => {
+    for (const tool of ["outlook_email_search", "outlook_calendar_search", "find_meeting_availability", "outlook_create_draft", "teams_list_chats", "sharepoint_search", "sharepoint_folder_search"]) {
+      expect(isOutboundTool(`mcp__claude_ai_Microsoft_365__${tool}`), tool).toBe(false);
+    }
+  });
+});
+
 describe("normalizeOutboundPolicy", () => {
   it("accepts ask and allow with a whole-number daily cap", () => {
     expect(normalizeOutboundPolicy({ policy: "ask" })).toEqual({ policy: "ask", dailyCap: OUTBOUND_DEFAULT_CAP });

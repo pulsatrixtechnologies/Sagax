@@ -10,6 +10,8 @@
 // i18n; the phones read those fields). APPROVAL_EN mirrors
 // src/locales/en.json exactly; a test holds them together.
 
+import { connectorWriteKind, type ConnectorWriteKind } from "./engine-connectors.ts";
+
 export type ApprovalTranslate = (key: string, vars?: Record<string, string | number>) => string;
 export interface ApprovalWords {
   t: ApprovalTranslate;
@@ -20,6 +22,14 @@ export interface ApprovalWords {
 export const APPROVAL_EN: Readonly<Record<string, string>> = Object.freeze({
   "approval.card.allowTo": "Allow {name} to {action}?",
   "approval.card.allowToUnnamed": "Allow this bot to {action}?",
+  "approval.connector.calendarCancel": "cancel a calendar event",
+  "approval.connector.calendarInvite": "send a calendar invitation",
+  "approval.connector.calendarRespond": "answer a calendar invitation",
+  "approval.connector.filesWrite": "write to {store}",
+  "approval.connector.mailAutoReply": "turn on an automatic reply",
+  "approval.connector.mailSend": "send an email",
+  "approval.connector.teamsChat": "start a Teams chat",
+  "approval.connector.teamsPost": "post a message in Teams",
   "approval.line.destructive": "Deletes data.",
   "approval.line.destructiveIn": "Deletes data in {product}.",
   "approval.line.execute": "Runs an action.",
@@ -78,6 +88,8 @@ export const APPROVAL_EN: Readonly<Record<string, string>> = Object.freeze({
   "approval.rule.postToRoom": "Post in {target}",
   "approval.rule.tool": "{action}, with any details",
   "approval.summary.dateRange": "{from} to {to}",
+  "approval.summary.more": "{who} and {count} more",
+  "approval.summary.to": "to {who}",
   "approval.tool.action": "an action",
   "approval.tool.changeRoutine": "change a routine",
   "approval.tool.deleteFile": "delete a file",
@@ -445,6 +457,51 @@ function prettyJson(args: Record<string, unknown> | undefined, text: string | un
   return text && isTechnicalText(text) ? text : undefined;
 }
 
+const CONNECTOR_ACTION: Record<ConnectorWriteKind, string> = {
+  "mail-send": "approval.connector.mailSend",
+  "mail-auto-reply": "approval.connector.mailAutoReply",
+  "teams-post": "approval.connector.teamsPost",
+  "teams-chat": "approval.connector.teamsChat",
+  "calendar-invite": "approval.connector.calendarInvite",
+  "calendar-cancel": "approval.connector.calendarCancel",
+  "calendar-respond": "approval.connector.calendarRespond",
+  "files-write": "approval.connector.filesWrite",
+};
+
+const RECIPIENT_KEYS = ["to", "cc", "bcc", "toRecipients", "ccRecipients", "recipients", "attendees", "requiredAttendees", "optionalAttendees", "members", "participants", "emails"];
+const SHOWN_RECIPIENTS = 3;
+
+/** One recipient as a person reads it: the name, else the address. */
+function recipientName(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() && value.length <= 120 ? value.trim() : undefined;
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const inner = record.emailAddress && typeof record.emailAddress === "object" ? record.emailAddress as Record<string, unknown> : undefined;
+  for (const candidate of [record.name, record.displayName, inner?.name, record.email, record.address, inner?.address]) {
+    if (typeof candidate === "string" && candidate.trim() && candidate.length <= 120) return candidate.trim();
+  }
+  return undefined;
+}
+
+/** "to Ana, bo@example.com and 2 more": who a mail, a post or an
+ * invitation reaches, from the call's own arguments. */
+function recipientsOf(args: Record<string, unknown> | undefined, words: ApprovalWords): string | undefined {
+  if (!args) return undefined;
+  const names: string[] = [];
+  for (const key of RECIPIENT_KEYS) {
+    const value = args[key];
+    const list = Array.isArray(value) ? value : typeof value === "string" ? value.split(/[;,]/) : [];
+    for (const item of list) {
+      const name = recipientName(item);
+      if (name && !names.includes(name)) names.push(name);
+    }
+  }
+  if (!names.length) return undefined;
+  const shown = names.slice(0, SHOWN_RECIPIENTS).join(", ");
+  const who = names.length > SHOWN_RECIPIENTS ? words.t("approval.summary.more", { who: shown, count: names.length - SHOWN_RECIPIENTS }) : shown;
+  return words.t("approval.summary.to", { who });
+}
+
 /** The whole reading of one permission ask. `input` is the card's full
  * JSON when the server sent it, else its (maybe truncated) subtitle. */
 export function describeApproval(
@@ -489,6 +546,18 @@ export function describeApproval(
           : undefined;
   const risk = riskFor(op, hints, builtin);
   const summary = summarizeArgs(args, text, now, words);
+  const connector = connectorWriteKind(tool);
+  if (connector) {
+    const store = /onedrive/i.test(tool) ? "OneDrive" : "SharePoint";
+    const action = words.t(CONNECTOR_ACTION[connector], { store });
+    const who = recipientsOf(args, words);
+    const joined = [summary, who].filter(Boolean).join(", ") || undefined;
+    // a connector named for what it acts on (Grok's sharepoint, Microsoft
+    // Teams): "write to SharePoint", not "write to SharePoint in Sharepoint"
+    const last = product?.split(/\s+/).pop()?.toLowerCase();
+    const named = Boolean(last && action.toLowerCase().includes(last));
+    return { action, ...(product && !named ? { product } : {}), summary: joined, risk, server: parsed.server, argsJson };
+  }
   if (!op) {
     // a tool named for itself (flow, memory): "use flow"
     return { action: tokens.join(" ") || parsed.name, verbless: true, product, summary, risk, server: parsed.server, argsJson };

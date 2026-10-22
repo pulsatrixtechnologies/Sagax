@@ -11,6 +11,8 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { openExternalLink } from "@/lib/app-links";
 import { HelpTip } from "./SettingsPrimitives";
+import { CapabilityTags } from "./plugins/EngineCapabilities";
+import { claudeAiConnectorCapabilities } from "../../shared/engine-connectors";
 
 type ConnectorStatus = "connected" | "needs_auth" | "failed" | "unknown";
 type Unavailable = "disabled" | "managed_policy" | "no_engine" | "not_signed_in" | "not_operator" | "key" | "unknown";
@@ -48,7 +50,12 @@ export function harnessUnavailableKey(reason: Unavailable | undefined): LocaleKe
 /** `provider`: inside Plugins > Manage > Providers, under the Claude
  * accounts, which already carry the title and the Manage link: only the
  * connectors and Check again. */
-export function HarnessConnectorsSection({ placement = "panel" }: { placement?: "panel" | "settings" | "provider" } = {}) {
+export function HarnessConnectorsSection({ placement = "panel", onAnswer }: {
+  placement?: "panel" | "settings" | "provider";
+  /** The answer once it loads: Providers reads which connectors reach mail,
+   * calendar, Teams and SharePoint from it (no second request). */
+  onAnswer?: (answer: HarnessConnectorsAnswer) => void;
+} = {}) {
   const [answer, setAnswer] = useState<HarnessConnectorsAnswer | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,13 +64,15 @@ export function HarnessConnectorsSection({ placement = "panel" }: { placement?: 
     setLoading(true);
     setError(null);
     try {
-      setAnswer(await api<HarnessConnectorsAnswer>(`/api/me/harness-connectors${refresh ? "?refresh=1" : ""}`, { timeoutMs: 90_000 }));
+      const next = await api<HarnessConnectorsAnswer>(`/api/me/harness-connectors${refresh ? "?refresh=1" : ""}`, { timeoutMs: 90_000 });
+      setAnswer(next);
+      onAnswer?.(next);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onAnswer]);
 
   useEffect(() => {
     void load();
@@ -161,6 +170,7 @@ function ConnectorList({ connectors }: { connectors: HarnessConnectorsAnswer["cl
               <span className="flex min-w-0 items-center gap-2 text-[13px] text-ink">
                 <Plug size={14} className="shrink-0 text-ink-tertiary" aria-hidden="true" />
                 <span className="truncate">{connector.name}</span>
+                <CapabilityTags capabilities={claudeAiConnectorCapabilities(connector.name)} name={connector.name} />
               </span>
               <span
                 className={cn(
