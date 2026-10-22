@@ -37,7 +37,7 @@ struct AppearanceSettingsView: View {
             SettingsSectionLabel(text: "Skin")
             familyGrid
             SettingsCard {
-                if current.place.family.variants.count > 1 {
+                if current.place.family.variants(for: current.place.scheme, keeping: current.place.variant).count > 1 {
                     variantRow
                     CardHairline(leadingInset: SettingsMetrics.rowInset)
                 }
@@ -100,8 +100,11 @@ struct AppearanceSettingsView: View {
     /// The computer has no Black family; Auto is the phone's own; Hibou 98 only when worn.
     private var families: [SkinFamily] {
         let wornFamily = current.place.family.id
+        let scheme = current.place.scheme
         return SkinFamily.all.filter { family in
             if selection.mode == .computer && family.id == .phone { return false }
+            // a family with no look in the scheme worn now is not offered (the worn one stays)
+            if family.id != wornFamily && family.variants(for: scheme).isEmpty { return false }
             // Hibou 98 stays hidden until it is worn
             return family.id != .retro98 || wornFamily == .retro98
         }
@@ -163,7 +166,7 @@ struct AppearanceSettingsView: View {
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.textPrimary)
             Spacer(minLength: 8)
-            ForEach(state.place.family.variants) { variant in
+            ForEach(state.place.family.variants(for: state.place.scheme, keeping: state.place.variant)) { variant in
                 let selected = variant == state.place.variant
                 let palette = variant.skin(state.place.scheme).palette
                 Button {

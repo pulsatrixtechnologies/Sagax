@@ -91,12 +91,20 @@ describe("SkinPicker", () => {
       [...host.querySelectorAll(`[data-settings-row="skinVariant-${group}"] [data-skin-variant]`)].map((el) => el.getAttribute("data-skin-variant"));
     expect(row("color")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
     expect(row("duo")).toEqual(["aurore", "ocean", "neon", "foret"]);
-    expect(row("ambiance")).toEqual(["cyberpunk", "sunset", "nordic", "candy"]);
-    // a mood without the scheme worn now shows the one it has
-    expect(swatch("candy")!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe("daylight");
+    // dark mode: no light mood (Candy), JC 2026-10-22
+    expect(row("ambiance")).toEqual(["cyberpunk", "sunset", "nordic"]);
+    expect(swatch("candy")).toBeNull();
     const dot = swatch("yellow")!.querySelector("[data-skin]")!;
     expect([dot.getAttribute("data-skin"), dot.getAttribute("data-skin-tint")]).toEqual(["midnight", "yellow"]);
     expect(swatch("basic")!.querySelector("[data-skin]")!.hasAttribute("data-skin-tint")).toBe(false);
+  });
+
+  it("lists only the light moods in a light skin", () => {
+    open("daylight");
+    const row = (group: string) =>
+      [...host.querySelectorAll(`[data-settings-row="skinVariant-${group}"] [data-skin-variant]`)].map((el) => el.getAttribute("data-skin-variant"));
+    expect(row("ambiance")).toEqual(["sunset", "nordic", "candy"]);
+    expect(swatch("candy")!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe("daylight");
   });
 
   it("picks a colour: the skin stays, the tint changes and is remembered", async () => {

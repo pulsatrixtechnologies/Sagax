@@ -97,6 +97,14 @@ public struct SkinFamily: Equatable, Identifiable, Sendable {
         ),
     ]
 
+    /// The variants the picker offers for the scheme worn now: those with a
+    /// skin in it (Plum and Black are dark only, Lagoon and Classic light
+    /// only), so a dark phone never lists a light look and the reverse.
+    /// `keeping` is the variant worn now, always listed.
+    public func variants(for scheme: SkinScheme, keeping worn: SkinVariant? = nil) -> [SkinVariant] {
+        variants.filter { $0 == worn || $0.schemes.contains(scheme) }
+    }
+
     public static func of(_ id: SkinFamilyID) -> SkinFamily {
         all.first { $0.id == id } ?? all[0]
     }
