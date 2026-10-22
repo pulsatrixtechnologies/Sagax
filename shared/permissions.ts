@@ -305,8 +305,8 @@ const definitions = [
     key: "server.settings", group: "server", memberDefault: false, adminOnly: false,
     label: { en: "Change the server's settings", fr: "Changer les réglages du serveur" },
     description: {
-      en: "Change the installation's settings, webhooks, connected apps, bot defaults and organization policies (Full access, marketplaces and their tokens, GitHub app). It changes security and payment settings for everyone. Who is an admin, tool grants, the interim attach window and the server's provider keys (OpenRouter, OpenAI, Anthropic, voice, Composio...) stay with admins.",
-      fr: "Changer les réglages de l'installation, les webhooks, les applications connectées, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils, la fenêtre de rattachement intérimaire et les clés de fournisseurs du serveur (OpenRouter, OpenAI, Anthropic, voix, Composio...) restent aux admins.",
+      en: "Change the installation's settings, webhooks, bot defaults and organization policies (Full access, marketplaces and their tokens, GitHub app). It changes security and payment settings for everyone. Who is an admin, tool grants, the interim attach window and the server's provider keys (OpenRouter, OpenAI, Anthropic, voice...) stay with admins.",
+      fr: "Changer les réglages de l'installation, les webhooks, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils, la fenêtre de rattachement intérimaire et les clés de fournisseurs du serveur (OpenRouter, OpenAI, Anthropic, voix...) restent aux admins.",
     },
   },
   // 2026-10-22 (JC): the experimental features of the server (Settings >
@@ -501,9 +501,6 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   toolScope: "bots.tools",
   mcpServers: "bots.tools",
   mcpAccounts: "bots.tools",
-  composio: "bots.tools",
-  connectorTools: "bots.tools",
-  connectorScopes: "bots.tools",
   outbound: "bots.tools",
   peers: "bots.tools",
   approvePeerComms: "bots.tools",

@@ -20,7 +20,7 @@ export interface Guide {
 
 /** One line more on a Settings page (setting:<id>): what it holds or who sees it. */
 export const SETTING_NOTES: Record<string, { text?: string; access?: string }> = {
-  engines: { text: "Engines and model providers with their sign-in or API keys, the voice engine (xAI, ElevenLabs, Fish Audio) and live calls, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), and the Connected apps (Composio) and Decision model cards." },
+  engines: { text: "Engines and model providers with their sign-in or API keys, the voice engine (xAI, ElevenLabs, Fish Audio) and live calls, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), and the Decision model card." },
   experimental: { text: "Early features, each off until switched on: Connected apps, Meeting notetaker (Google Meet), skill authoring, browser profiles, data window.", access: "on an organization server, only people who may edit the configuration (admins)" },
   backups: { text: "Export full backup (bots, conversations, settings; no secret), import and restore.", access: "solo: the person; organization: permission backup.workspace (off for members by default), restore stays with admins" },
   computer: { text: "Where bots work: this computer, Local VM, cloud computers, self-hosted VPS, isolation, safety and storage.", access: "solo: the person; organization: admins, and each member for their own server environment" },
@@ -104,15 +104,6 @@ export const GUIDES: Guide[] = [
     keywords: "mcp serveur server ajouter add connecteur connector outil tool",
     text: "Partly: add_mcp_server saves the server switched off, only when the person asked. The bot cannot enable, test or edit it: the person turns it on in the sidebar's Connect apps > MCP servers. On an organization server it is an admin-tier action, and the Perspicax admin may limit which servers are allowed (Perspicax Settings > Organisation > Allowed MCP servers).",
     refs: ["tool:add_mcp_server", "card:myConnections.servers", "px:settings:org.mcp"],
-  },
-  {
-    id: "connected-apps",
-    title: "Connect Gmail, Slack, Notion and other apps (Composio)",
-    where: "Settings > Experimental > Connected apps, then Settings > Models and voice > Connected apps, then sidebar Connect apps > Connected apps",
-    access: "organization: admins set it up (Experimental needs the right to edit the configuration)",
-    keywords: "gmail slack notion google drive outlook connecter connect apps applications composio connected apps applications connectees",
-    text: "The person does it: 1) Settings > Experimental > Connected apps (Apps connectées) on; 2) the Composio key in Settings > Models and voice > Connected apps; 3) the sidebar's Connect apps > Connected apps to sign in to each account (several labeled accounts per app). Then each bot's grants choose which tools it gets (Edit bot > Model and tools > Access). On an organization server an admin sets this up.",
-    refs: ["setting:experimental", "setting:engines", "bot-setting:access", "file:docs/composio.md"],
   },
   {
     id: "voice-note",

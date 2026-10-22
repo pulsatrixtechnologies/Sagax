@@ -25,7 +25,7 @@ beforeEach(async () => {
   rows = [];
   speaker = "pr_a";
   caller = "pr_a";
-  context = { engine: "grok", account: "own", composio: true };
+  context = { engine: "grok", account: "own" };
   claudeInventory = null;
   claudeReads = 0;
   clock = 1_000;
@@ -104,21 +104,14 @@ describe("open_connector_setup (bot route)", () => {
   });
 
   it("a Claude bot: claude.ai connectors", async () => {
-    context = { engine: "claude", account: "own", composio: false };
+    context = { engine: "claude", account: "own" };
     const out = await open({ connector: "Outlook", language: "en" });
     expect(out.body).toMatchObject({ route: "claude" });
     expect(rows[0]!.connectorSetup?.url).toBe("https://claude.ai/customize/connectors");
   });
 
-  it("an app Sagax connects itself: the bot is told to show Sagax's own connection card", async () => {
-    context = { engine: "other", account: "none", composio: true };
-    const out = await open({ connector: "Teams" });
-    expect(out.body).toEqual({ ok: true, route: "composio", slug: "microsoft_teams", label: "Microsoft Teams" });
-    expect(rows).toHaveLength(0);
-  });
-
   it("refuses another person's engine account, with no card", async () => {
-    context = { engine: "grok", account: "foreign", composio: true };
+    context = { engine: "grok", account: "foreign" };
     const out = await open({ connector: "Teams" });
     expect(out.status).toBe(409);
     expect(String(out.body.error)).toMatch(/not the person's own/);
@@ -169,7 +162,7 @@ describe("the card's check (person route)", () => {
   });
 
   it("Claude: reads the inventory again and says connected only when it shows it", async () => {
-    context = { engine: "claude", account: "own", composio: false };
+    context = { engine: "claude", account: "own" };
     await open({ connector: "Teams" });
     const id = rows[0]!.connectorSetup!.id;
     // a call is never proof for a Claude card, even the person's own

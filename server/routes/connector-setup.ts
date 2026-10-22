@@ -1,8 +1,7 @@
 // "Connect Microsoft Teams" from the chat (shared/connector-setup.ts).
 //
 // Bot route (INTERNAL_ROUTES, behind the turn's capability):
-//   POST /api/internal/connector-setup/open    open_connector_setup: post the card,
-//        or tell the agents server to show Sagax's own connection card (Composio)
+//   POST /api/internal/connector-setup/open    open_connector_setup: post the card
 // Person route (ROUTES), for the person the card is for only:
 //   POST /api/connector-setup/:id/check        "J'ai terminé" or back from the browser:
 //        the card says "Connecté" only on evidence
@@ -38,8 +37,6 @@ export interface ConnectorSetupContext {
   engine: "grok" | "claude" | "other";
   /** server/harness-connectors.ts accountConnectorsForTurn */
   account: "own" | "foreign" | "none";
-  /** Sagax's Connect apps (Composio) are on for this bot */
-  composio: boolean;
 }
 
 /** The tool calls that settled in each conversation, with whose turn and
@@ -82,14 +79,14 @@ interface Shared {
 
 const openBody = z.object({
   connector: z.string().trim().min(1).max(120),
-  via: z.enum(["grok", "claude", "composio"]).optional(),
+  via: z.enum(["grok", "claude"]).optional(),
   language: z.enum(["fr", "en"]).optional(),
 }).strict();
 
 const REFUSALS = {
   foreign: "This bot's engine runs on an account that is not the person's own (the bot owner's or another person's sign-in), so its connectors are not theirs to connect here. Say so in one sentence; they can use a bot on their own engine account.",
-  not_on_engine: "That connector is not one of Grok's cloud connectors and Sagax's Connect apps are off for this bot. Say so in one sentence.",
-  no_route: "This bot's engine brings no connectors of the person's own account, and Sagax's Connect apps cannot connect that app here. Say so in one sentence; a bot on Claude or Grok (organization server) can connect it.",
+  not_on_engine: "That connector is not one of Grok's cloud connectors. Say so in one sentence.",
+  no_route: "This bot's engine brings no connectors of the person's own account. Say so in one sentence; a bot on Claude or Grok (organization server) can connect it.",
 } as const;
 
 function check(view: ConnectorSetupView, proofs: readonly ConnectorSetupProof[], botId: string | undefined, claude: Array<{ name: string; status: string }> | null, now: number): ConnectorSetupView {
@@ -121,14 +118,13 @@ export function createConnectorSetupInternalRoutes(deps: Shared & {
     const principalId = deps.principal(capability.botId, capability.threadId)?.trim().toLowerCase();
     if (!principalId) return json(res, 403, { error: "No person speaks in this turn, so there is nobody to sign in. Answer in words." });
     const parsed = openBody.safeParse(await readBody());
-    if (!parsed.success) return json(res, 400, { error: "connector names the app (\"Microsoft Teams\", \"Gmail\"); via is grok, claude or composio; language is fr or en." });
+    if (!parsed.success) return json(res, 400, { error: "connector names the app (\"Microsoft Teams\", \"Gmail\"); via is grok or claude; language is fr or en." });
     const target = resolveConnectorSetupTarget(parsed.data.connector);
     if (!target) return json(res, 400, { error: "Name the connector to connect." });
     const context = deps.context(capability.botId, capability.threadId, principalId);
     if (!context) return json(res, 409, { error: "This bot has no engine right now. Answer in words." });
     const route = chooseConnectorSetupRoute({ target, ...context, ...(parsed.data.via ? { prefer: parsed.data.via } : {}) });
     if ("refusal" in route) return json(res, 409, { error: REFUSALS[route.refusal] });
-    if (route.route === "composio") return json(res, 200, { ok: true, route: "composio", slug: route.slug, label: target.label });
     if (!isConnectorSetupUrl(route.url)) return json(res, 500, { error: "no setup page for that connector" });
     const owner = connectorSetupOwner(principalId);
     const existing = deps.cards(capability.threadId).find(({ view }) => view.owner === owner && view.provider === route.route && view.connector === target.id);

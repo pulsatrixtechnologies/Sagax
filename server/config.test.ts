@@ -32,8 +32,8 @@ import { cacheUntilConfigChanges,
   showToolCallsEnabled,
   newRoutinesPaused,
   routinesInConversationEnabled,
-  connectedAppsEnabled,
   templatesEnabled, vpsComputerEnabled, boatComputerEnabled, decisionModelEnabled, dataWindowEnabled, routineGroupSettingsEnabled,
+  stripLegacyComposioConfig,
   saveConfig,
   skillAuthoringEnabled,
   sharedComputersEnabled,
@@ -677,9 +677,6 @@ describe("configuration boundaries", () => {
       features: { routinesInConversation: true },
     });
     expect(routinesInConversationEnabled({ features: { routinesInConversation: true } })).toBe(true);
-    expect(connectedAppsEnabled({})).toBe(false);
-    expect(parseConfigPatch({ features: { connectedApps: true } })).toEqual({ features: { connectedApps: true } });
-    expect(connectedAppsEnabled({ features: { connectedApps: true } })).toBe(true);
   });
 
   it("keeps the sidebar's Templates entry off unless the experimental option is on", () => {
@@ -1332,7 +1329,7 @@ describe("saving OpenCode provider keys", () => {
     }
     expect(refused("OPENCODE_API_KEY")).toContain("OpenCode API key box");
     // Names this server keeps for itself or another engine would never reach OpenCode.
-    for (const name of ["OPENCODE_SERVER_KEY", "SAGAX_CLOUD_BOAT_TOKEN", "SAGAX_LICENSE_KEY", "BOX_TOKEN", "COMPOSIO_API_KEY",
+    for (const name of ["OPENCODE_SERVER_KEY", "SAGAX_CLOUD_BOAT_TOKEN", "SAGAX_LICENSE_KEY", "BOX_TOKEN",
       "OPENAI_COMPAT_API_KEY", "XAI_API_KEY", "MISTRAL_API_KEY", "CURSOR_API_KEY", "FACTORY_API_KEY"]) {
       expect(refused(name)).toBe(`Sagax keeps ${name} for itself, so OpenCode can't be given it here. Put this key in opencode.json instead.`);
     }
@@ -1575,7 +1572,6 @@ describe("credential env preference", () => {
     "SAGAX_FISH_AUDIO_API_KEY",
     "SAGAX_XAI_VOICE_KEY",
     "SAGAX_OPENAI_IMAGE_KEY",
-    "COMPOSIO_API_KEY",
   ] as const;
   let saved: Record<string, string | undefined>;
 
@@ -1918,17 +1914,14 @@ describe("credential env preference", () => {
   it("syncCredentialEnv keeps process.env in step with a credential save", () => {
     process.env.XAI_API_KEY = "boot-injected";
     process.env.BOX_TOKEN = "boot-injected";
-    process.env.COMPOSIO_API_KEY = "boot-injected";
     syncCredentialEnv({
       xai: { key: "just-saved" },
-      composio: { apiKey: "ak_just_saved" },
       box: { token: "" },
       profile: { name: "Ada" },
     });
     // a saved value replaces the boot-time one; a cleared value drops it;
     // untouched sections change nothing
     expect(process.env.XAI_API_KEY).toBe("just-saved");
-    expect(process.env.COMPOSIO_API_KEY).toBe("ak_just_saved");
     expect(process.env.BOX_TOKEN).toBeUndefined();
     expect(process.env.SAGAX_TTS_KEY).toBeUndefined();
     expect(process.env.SAGAX_FISH_AUDIO_API_KEY).toBeUndefined();
@@ -2181,7 +2174,13 @@ describe("changedInstanceIds", () => {
   it("replaces nothing for sections no driver reads", () => {
     expect(reloaded({ onboarding: { hintsSeen: ["tour.composer"] } })).toEqual([]);
     expect(reloaded({ profile: {}, language: "de", tts: {}, features: {} })).toEqual([]);
-    expect(reloaded({ box: { token: "boat" }, composio: { apiKey: "c" }, budgets: { monthlyUsd: 5 } })).toEqual([]);
+    expect(reloaded({ box: { token: "boat" }, budgets: { monthlyUsd: 5 } })).toEqual([]);
+  });
+
+  it("drops a legacy top-level composio block so an old config.json still loads", () => {
+    expect(stripLegacyComposioConfig({ xai: { key: "x" }, composio: { apiKey: "ak" } } as never))
+      .toEqual({ xai: { key: "x" } });
+    expect(parseStoredConfig({ composio: { apiKey: "ak", userId: "u" }, profile: { name: "Ada" } } as never).profile?.name).toBe("Ada");
   });
   // An instance on its own address is injected no workspace key, yet its
   // driver still reads the saved one from the env syncCredentialEnv keeps.
@@ -2195,7 +2194,7 @@ describe("changedInstanceIds", () => {
     const compat = (env: Record<string, string>) => changedInstanceIds(engineLaunches(fleet, {}), engineLaunches(fleet, env));
     expect(compat({ OPENAI_COMPAT_URL: "https://compat.example/v1" })).toEqual(["openaiCompat"]);
     expect(compat({ SAGAX_OPENAI_API_KEY: "o" })).toEqual(["openai"]);
-    expect(compat({ BOX_TOKEN: "boat", COMPOSIO_API_KEY: "c" })).toEqual([]);
+    expect(compat({ BOX_TOKEN: "boat" })).toEqual([]);
   });
   it("names an engine that was added or removed", () => {
     expect(changedInstanceIds({ a: { driver: "fake" } }, { b: { driver: "fake" } })).toEqual(["a", "b"]);

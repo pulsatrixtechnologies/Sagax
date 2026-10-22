@@ -48,15 +48,15 @@ import { applyReaction, normalizeReactions, type ReactionActor, type ReactionMod
 import { migratePeopleDmToThreads, PEOPLE_DM_GENERAL_TITLE } from "./people-dms.ts";
 import type {
   BotActivity, GroupDefaultResponder, GroupTask as GroupTaskRecord, MausColor,
-  ConnectorToolGrant, OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
+  OptionCardData, TaskClosedBy, TaskOpenedBy, TaskUsage, WireBot, WireGroup,
   WireMessage, WireTask, BotProject as BotProjectRecord,
 } from "../shared/wire.ts";
-import { CONNECTOR_SLUG_PATTERN, CONNECTOR_TOOL_NAME_PATTERN, type WireBotGrant } from "../shared/wire.ts";
+import type { WireBotGrant } from "../shared/wire.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { namesEngine } from "./bot-engine.ts";
 // Re-exported under their historical names so server-side importers keep working.
 export type {
-  BotActivity, ConnectorCardData, GroupDefaultResponder, OptionCardData,
+  BotActivity, GroupDefaultResponder, OptionCardData,
   SecretRequestCardData, Surface, TaskClosedBy, TaskOpenedBy, TaskUsage,
 } from "../shared/wire.ts";
 export type { GroupTask as GroupTaskRecord, BotProject as BotProjectRecord } from "../shared/wire.ts";
@@ -358,14 +358,6 @@ function redactBotAuthored<T extends Omit<Message, "id" | "at"> & { at?: number 
     }
     out.card = card;
   }
-  if (out.connector) {
-    out.connector = {
-      ...out.connector,
-      label: redactSecretsInText(out.connector.label),
-      description: redactSecretsInText(out.connector.description),
-      error: out.connector.error ? redactSecretsInText(out.connector.error) : undefined,
-    };
-  }
   if (out.secret) {
     out.secret = {
       ...out.secret,
@@ -517,58 +509,6 @@ export type BotWireProjection = Pick<BotRecord, Exclude<keyof BotRecord, BotWire
 export type BotWireProjectionIsExact = AssertExact<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection> & AssertSameKeys<Omit<WireBot, "avatarUrl" | "tasks">, BotWireProjection>;
 export const botWireProjectionIsExact: BotWireProjectionIsExact = true;
 
-/** Upper bounds keep a grants patch from becoming a persistence blob; they
- * sit far above any real service's tool count. */
-export const CONNECTOR_SLUGS_MAX = 64;
-export const CONNECTOR_TOOLS_PER_SERVICE_MAX = 500;
-
-/** Validate and normalize a connectorTools value at the one boundary every
- * writer shares (patchBot). Returns a canonical copy: slugs checked against
- * the service pattern, tool lists deduplicated in order, `"*"` kept as-is.
- * The legacy clear stays a JSON null at the API edge; here callers pass
- * undefined to return a bot to boolean-only behavior. */
-export function parseConnectorTools(value: unknown): { ok: true; grants: Record<string, ConnectorToolGrant> } | { ok: false; error: string } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return { ok: false, error: "connectorTools must be an object of service slugs to tool grants" };
-  }
-  const entries = Object.entries(value as Record<string, unknown>);
-  if (entries.length > CONNECTOR_SLUGS_MAX) {
-    return { ok: false, error: `connectorTools may name at most ${CONNECTOR_SLUGS_MAX} services` };
-  }
-  const grants: Record<string, ConnectorToolGrant> = {};
-  for (const [slug, grant] of entries) {
-    if (!CONNECTOR_SLUG_PATTERN.test(slug)) {
-      return { ok: false, error: `connectorTools service slugs must be lowercase slugs (got "${slug}")` };
-    }
-    if (!grant || typeof grant !== "object" || Array.isArray(grant)) {
-      return { ok: false, error: `connectorTools.${slug} must be a grant like { tools: "*" } or { tools: ["TOOL_NAME"] }` };
-    }
-    const keys = Object.keys(grant);
-    if (keys.length !== 1 || keys[0] !== "tools") {
-      return { ok: false, error: `connectorTools.${slug} accepts only a tools field` };
-    }
-    const tools = (grant as { tools: unknown }).tools;
-    if (tools === "*") {
-      grants[slug] = { tools: "*" };
-      continue;
-    }
-    if (!Array.isArray(tools) || tools.length === 0) {
-      return { ok: false, error: `connectorTools.${slug}.tools must be "*" or a non-empty list of tool names (use {} to grant no tools)` };
-    }
-    if (tools.length > CONNECTOR_TOOLS_PER_SERVICE_MAX) {
-      return { ok: false, error: `connectorTools.${slug}.tools may list at most ${CONNECTOR_TOOLS_PER_SERVICE_MAX} tools` };
-    }
-    const names: string[] = [];
-    for (const tool of tools) {
-      if (typeof tool !== "string" || !CONNECTOR_TOOL_NAME_PATTERN.test(tool)) {
-        return { ok: false, error: `connectorTools.${slug}.tools names must be Composio tool names like GMAIL_SEND_EMAIL` };
-      }
-      if (!names.includes(tool)) names.push(tool);
-    }
-    grants[slug] = { tools: names };
-  }
-  return { ok: true, grants };
-}
 
 const BOTS_FILE = join(DATA_DIR, "bots.json");
 const GROUPS_FILE = join(DATA_DIR, "groups.json");
@@ -769,6 +709,11 @@ export function directFromGrants(grants: readonly BotGrant[]): string[] {
 export class Store {
   bots: BotRecord[] = [];
   groups: GroupRecord[] = [];
+  /** Names of bots that carried Composio connected-app grants in an older
+   * release, found and dropped at load. The server reads this once at start
+   * to notify admins that those grants are gone and the apps must be
+   * reconnected through an engine connector. */
+  readonly legacyComposioBots: string[] = [];
   private threads = new ThreadCache(() => this.busyThreadIds());
   private defaultSelection: () => ModelSelection;
   private completeNewBotSelection: (selection: ModelSelection) => ModelSelection;
@@ -959,6 +904,23 @@ export class Store {
       });
       if (changed) {
         b.alwaysAllow = [...new Set(migrated)];
+        botsMigrated = true;
+      }
+    }
+    // Composio was removed. A bot record from an older release may still
+    // carry the connected-apps switch (`composio`) or per-service grants
+    // (`connectorTools`, `connectorScopes`). Drop them so they never persist
+    // or travel in an export; a bot that actually had grants is remembered
+    // so admins can be told its apps need reconnecting via an engine
+    // connector (index.ts, at start).
+    for (const b of this.bots) {
+      const legacy = b as unknown as Record<string, unknown>;
+      const hadGrants = legacy.connectorTools && typeof legacy.connectorTools === "object" && Object.keys(legacy.connectorTools as object).length > 0;
+      if ("composio" in legacy || "connectorTools" in legacy || "connectorScopes" in legacy) {
+        if (hadGrants) this.legacyComposioBots.push(b.name);
+        delete legacy.composio;
+        delete legacy.connectorTools;
+        delete legacy.connectorScopes;
         botsMigrated = true;
       }
     }
@@ -2280,10 +2242,7 @@ export class Store {
         next = { id: operation.botId, threadId: operation.threadId, name: operation.fields.name,
           title: "", description: "", soul: "", notifications: true, color: COLORS[nextBots.length % COLORS.length], unread: false,
           resumeCursors: {}, createdAt, ...operation.fields, modelSelection,
-          approvalMode: "auto", autoApprove: true, composio: false, approvePeerComms: false,
-          // No connector tools until someone grants them. An absent record
-          // would mean every tool once connected apps are turned on.
-          connectorTools: {},
+          approvalMode: "auto", autoApprove: true, approvePeerComms: false,
           // A Primary Bot's new teammate is seen by exactly the Primary Bot's audience:
           // a restricted Primary Bot never creates a bot everyone sees.
           ...(chief.visibility && chief.visibility !== "everyone" ? { visibility: structuredClone(chief.visibility) } : {}),
@@ -2464,15 +2423,6 @@ export class Store {
   patchBot(id: string, patch: Partial<BotRecord>): BotRecord | null {
     const bot = this.bot(id);
     if (!bot) return null;
-    // Grants are the one field whose shape every writer must share, so the
-    // store normalizes them itself: API patches arrive pre-validated, import
-    // paths pass {}, and an internal caller that skips the parser still
-    // lands canonical data or stops here.
-    if (patch.connectorTools !== undefined) {
-      const parsed = parseConnectorTools(patch.connectorTools);
-      if (!parsed.ok) throw new Error(parsed.error);
-      patch = { ...patch, connectorTools: parsed.grants };
-    }
     if (Object.hasOwn(patch, "toolScope")) {
       const parsed = parseToolScope(patch.toolScope);
       if (!parsed.ok) throw new Error(parsed.error);

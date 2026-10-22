@@ -87,7 +87,7 @@ export function reachContributions(context: ReachContext): { lines: string[]; to
 }
 
 export interface ReachSummaryInput {
-  /** MCP servers this turn mounted, by name (custom, Perspicax, composio) */
+  /** MCP servers this turn mounted, by name (custom, Perspicax) */
   servers: readonly string[];
   /** built-in places: "the browser", "the computer", "data", … */
   builtins: readonly string[];

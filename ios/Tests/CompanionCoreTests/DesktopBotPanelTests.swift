@@ -122,9 +122,9 @@ final class DesktopBotPanelTests: XCTestCase {
     }
 
     func testOddFeatureValuesReadAsOff() throws {
-        let odd = try config(#"{"features":{"browser":"yes","boatComputer":1,"connectedApps":true}}"#)
+        let odd = try config(#"{"features":{"browser":"yes","boatComputer":1,"templates":true}}"#)
         XCTAssertNil(odd.features?.browser)
-        XCTAssertEqual(odd.features?.connectedApps, true)
+        XCTAssertEqual(odd.features?.templates, true)
     }
 
     func testWebhooksListKeepsOneBotsTriggers() throws {

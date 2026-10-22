@@ -13,14 +13,13 @@ import { copyText } from "@/lib/copy-text";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { openExternalLink } from "@/lib/app-links";
-import { clearConnectorPreferences } from "@/lib/connector-tool-switches";
 import { t } from "@/lib/i18n";
 import {
   addPersonalServer, connectGithubToken, disconnectGithub, disconnectPersonalServer, GITHUB_MCP_URL, loadMyConnections, parseArgsLine,
   parseEnvLines, removePersonalServer, setPersonalServerEnabled, startGithubDevice, startPersonalServerSignIn, suggestServerName,
   type MyConnections, type PersonalServer,
 } from "@/lib/my-connections";
-import { Card, ConfirmPill, Switch } from "../SettingsPrimitives";
+import { Card, Switch } from "../SettingsPrimitives";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const inputClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none";
@@ -60,36 +59,7 @@ export function MyConnectionsSettings({ initial }: { initial?: MyConnections }) 
       {data.managedByAdmin && <IntegrationsManagedNotice />}
       <GithubCard data={data} onChanged={refresh} />
       <ServersCard data={data} onChanged={refresh} />
-      {!data.managedByAdmin && <ConnectorPreferencesCard />}
     </div>
-  );
-}
-
-/** "Effacer les préférences de connecteurs": every connector tool switched off
- * for the whole workspace comes back on (team bots use the same switches, and
- * so do the ones an admin turned off). Accounts stay connected. */
-export function ConnectorPreferencesCard({ clear = clearConnectorPreferences }: { clear?: () => Promise<number> }) {
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const run = async () => {
-    setBusy(true);
-    setNotice(null);
-    try {
-      const count = await clear();
-      setNotice({ tone: "ok", text: count > 0 ? t("myConnections.preferences.cleared", { count }) : t("myConnections.preferences.nothing") });
-    } catch (failure) {
-      setNotice({ tone: "error", text: message(failure) });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Card cardId="myConnections.preferences" title={t("myConnections.preferences.title")} subtitle={t("myConnections.preferences.subtitle")}>
-      <div className="flex flex-wrap items-center gap-3 text-[13px]">
-        <ConfirmPill label={t("myConnections.preferences.clear")} confirmLabel={t("myConnections.preferences.confirm")} onConfirm={() => void run()} disabled={busy} />
-        {notice && <span role={notice.tone === "error" ? "alert" : "status"} className={notice.tone === "error" ? "text-danger" : "text-ink-secondary"} data-connector-preferences-notice>{notice.text}</span>}
-      </div>
-    </Card>
   );
 }
 

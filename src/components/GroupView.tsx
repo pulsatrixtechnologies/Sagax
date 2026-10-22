@@ -75,7 +75,6 @@ import { GroupTaskPicker, PersonThreadPicker, ThreadReturnLink } from "./TaskPic
 import { isPureLeakedSystemHarnessMessage, stripLeakedSystemHarnessMessages } from "../../shared/system-message-guard.ts";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
-import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
@@ -776,8 +775,6 @@ export const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "secret" && m.secret && m.from?.botId ? (
             <SecretRequestCard botId={m.from.botId} threadId={group.threadId} message={m} />
-          ) : m.kind === "connector" && m.connector && m.from?.botId ? (
-            <ConnectorCard botId={m.from.botId} threadId={group.threadId} message={m} />
           ) : m.kind === "options" && m.card?.requestId && m.card.questionRequest ? (
             <div className="flex justify-start">
               <MessageBoundary fallbackText={m.card.subtitle || m.card.title || ""}>

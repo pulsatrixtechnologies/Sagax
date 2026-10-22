@@ -507,7 +507,7 @@ export function toTypebox(schema: unknown): TSchema {
 }
 
 /** pi tool names are lowercase snake identifiers; MCP tool names are not
- * (COMPOSIO_SEARCH_TOOLS, browser_navigate, mcp__x…). Normalize and prefix
+ * (GMAIL_SEND_EMAIL, browser_navigate, mcp__x…). Normalize and prefix
  * with the server so two servers can never collide. */
 function sanitizeToolName(server: string, tool: string): string {
   const raw = `${server}_${tool}`.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");

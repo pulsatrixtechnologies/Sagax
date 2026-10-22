@@ -17,7 +17,7 @@ import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
 import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
-import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
+import { PluginsPanel } from "@/components/PluginsPanel";
 import {
   AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
   PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
@@ -334,14 +334,6 @@ function Shell() {
   useEffect(() => {
     primeNudgeSound();
   }, []);
-
-  // Warm connected-account state as soon as the local server is available.
-  // The modal then opens with the correct Connect/Add account buttons and
-  // quietly revalidates instead of rediscovering every account from scratch.
-  useEffect(() => {
-    if (!state.connected) return;
-    void preloadConnectedApps().catch(() => {});
-  }, [state.connected]);
 
   // Settings, Routines and the other on-request screens stay out of the
   // launch bundle; fetch them once the first paint is done and the app is idle.

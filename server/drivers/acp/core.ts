@@ -1136,15 +1136,6 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         if (agents) {
           servers.push({ name: "agents", command: agents.command, args: agents.args, env: acpEnv(agents.env) });
         }
-        const composio = turn.integrations?.composio;
-        if (composio) {
-          servers.push({
-            name: "composio",
-            command: composio.command,
-            args: composio.args,
-            env: acpEnv(composio.env),
-          });
-        }
         const browser = turn.integrations?.browser;
         if (browser) {
           servers.push({ name: "browser", command: browser.command, args: browser.args, env: acpEnv(browser.env) });
@@ -1192,7 +1183,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             ...(custom.has(server.name) ? { spec: customSpecs[server.name] } : {}),
           }, turn.botId) ?? [],
         });
-        // Sagax's own servers (agents, composio, browser, computer) name their
+        // Sagax's own servers (agents, browser, computer) name their
         // tools admissibly; connectors (Perspicax profiles, URL and stdio
         // servers) can name them anything, so those ride the gate.
         const toolNames = support.mcpToolNames;
@@ -3120,7 +3111,6 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             agentsMcp: true,
         customMcp: true,
             computerMcp: true,
-            composioMcp: true,
             browserMcp: true,
             dataMcp: true,
             images: support.images !== false,

@@ -724,7 +724,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
       additionalProperties: false,
       properties: {
         connector: { type: "string", maxLength: 120, description: "The app, as the person named it." },
-        via: { type: "string", enum: ["grok", "claude", "composio"], description: "Only when the person named where." },
+        via: { type: "string", enum: ["grok", "claude"], description: "Only when the person named where." },
         language: { type: "string", enum: ["fr", "en"], description: "The person's language." },
       },
       required: ["connector"],

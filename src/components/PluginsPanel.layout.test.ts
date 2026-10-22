@@ -12,11 +12,6 @@ import { PluginDetailView } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
 
 const items = buildPluginItems({
-  cards: [
-    { slug: "slack", label: "Slack", blurb: "Post updates", logo: null, domain: "slack.com" },
-    { slug: "notion", label: "Notion", blurb: "Pages", logo: null, domain: "notion.so" },
-  ],
-  status: { slack: { connected: true, accounts: [{ id: "a1", status: "ACTIVE" }] } },
   servers: [{ name: "glitcho", enabled: true, url: "https://qc1.example.net/mcp", auth: "connected" }],
   featured: [{ id: "linear", name: "Linear", description: "Issues", url: "https://mcp.linear.app/mcp", domain: "linear.app", auth: "oauth" }],
   skills: [{ name: "release-notes", description: "Writes notes", source: "local-import", enabled: true }],
@@ -39,8 +34,8 @@ describe("Plugins panel views", () => {
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>[\s\S]*?data-plugins-connected/);
     // the home page has no breadcrumb
     expect(html).not.toContain("data-breadcrumb");
-    // Slack, the glitcho server and one Claude connector
-    expect(html).toContain("3 connected");
+    // the glitcho server and one Claude connector
+    expect(html).toContain("2 connected");
     expect(html).toContain('placeholder="Search across apps and skills"');
     expect(html).not.toContain("Browse Bots");
     // connected sits in the title row, above the pills and the search
@@ -57,7 +52,7 @@ describe("Plugins panel views", () => {
     expect(html).toContain('data-plugins-section="skills"');
     expect(html).toContain("md:grid-cols-2");
     expect(html).toMatch(/data-plugin-row="featured:linear"[\s\S]*?>Connect</);
-    expect(html).toMatch(/data-plugin-row="app:slack"[\s\S]*?data-plugin-status="connected"/);
+    expect(html).toContain('data-plugin-row="mcp:glitcho"');
   });
 
   it("main view: Bot templates sits beside the search, and N connected stays in the title row", () => {
@@ -97,8 +92,7 @@ describe("Plugins panel views", () => {
     expect(html).toMatch(/data-plugins-back[\s\S]*?>[\s\S]*?Connect Apps</);
     expect(html).not.toContain("data-breadcrumb");
     expect(html).toMatch(/id="plugins-title"[^>]*>Manage plugins and skills</);
-    expect(html).toMatch(/data-plugin-card="app:slack"[\s\S]*?1 connector[\s\S]*?Connected/);
-    expect(html).toContain('data-plugin-card="mcp:glitcho"');
+    expect(html).toMatch(/data-plugin-card="mcp:glitcho"[\s\S]*?1 connector[\s\S]*?Connected/);
     // Add manually, Paste config and the rest wait in a collapsed Advanced zone, after the skills
     expect(html).toMatch(/data-plugins-skills[\s\S]*<details[^>]*data-plugins-advanced[^>]*>[\s\S]*Advanced[\s\S]*Add manually[\s\S]*Paste config/);
     expect(html).not.toMatch(/<details[^>]*data-plugins-advanced[^>]*open/);
@@ -189,10 +183,8 @@ describe("Plugins panel views", () => {
     expect(providers).toMatch(/data-grok-connector="outlook"[^]*?Email · Calendar/);
   });
 
-  it("xAI connectors are a catalog managed on Grok: no Composio action or status, a Grok link, a separate row", () => {
+  it("xAI connectors are a catalog managed on Grok: no connect action or status, a Grok link, a separate row", () => {
     const withGrok = buildPluginItems({
-      cards: [{ slug: "gmail", label: "Gmail", blurb: "Mail", logo: null, domain: "gmail.com" }],
-      status: { gmail: { connected: true, accounts: [{ id: "a1", status: "ACTIVE" }] } },
       grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
     });
     const html = renderToStaticMarkup(createElement(ConnectAppsView, {
@@ -211,7 +203,6 @@ describe("Plugins panel views", () => {
     expect(grokGmail).toContain("Manage on Grok");
     expect(grokGmail).not.toContain("data-plugin-status");
     expect(grokGmail).not.toContain(">Connect<");
-    expect(row("app:gmail")).toContain('data-plugin-status="connected"');
 
     const detail = renderToStaticMarkup(createElement(PluginDetailView, {
       ...grokConnectorDetail(withGrok.find((item) => item.key === "grok:gmail")!), onBack: noop,
@@ -220,7 +211,6 @@ describe("Plugins panel views", () => {
     expect(detail).toContain("Grok (xAI)");
     expect(detail).toContain("data-grok-manage");
     expect(detail).not.toContain("No account needed");
-    expect(detail).not.toContain("Composio");
     expect(detail).not.toContain('data-plugin-status="connected"');
   });
 

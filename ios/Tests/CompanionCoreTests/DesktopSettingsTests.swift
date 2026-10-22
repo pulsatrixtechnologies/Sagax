@@ -75,7 +75,7 @@ final class DesktopSettingsTests: XCTestCase {
          "features":{"skillAuthoring":true,"routinesInConversation":false,"browser":false},
          "rooms":{"turnTimeoutMinutes":5},"threads":{"maxConcurrentPerBot":3},"budgets":{"monthlyUsd":100},
          "decider":{"provider":"jev","configured":false,"enabled":false,"jobs":{"roomRouting":true}},
-         "openai":{"configured":true},"mistral":{"configured":false},"composio":{"configured":false,"mode":"unavailable"},
+         "openai":{"configured":true},"mistral":{"configured":false},
          "browserEngine":{"kind":"unavailable","installable":true},"localVm":{"mode":"shared"}}
         """#
         let config = try JSONDecoder().decode(DesktopSettingsConfig.self, from: Data(json.utf8))

@@ -1,5 +1,5 @@
 // Config + data dirs. One file, ~/.sagax/config.json, env fallbacks:
-//   { "xai": {"key":"xai-…"}, "composio": {"apiKey":"ak_…"}, "box": {"token":"…"},
+//   { "xai": {"key":"xai-…"}, "box": {"token":"…"},
 //     "instances": { "<instanceId>": {"driver":"grok", …} } }
 import { DEFAULT_MAX_PARALLEL_PER_PERSON, MAX_PARALLEL_PER_PERSON } from "../shared/parallel-tasks.ts";
 import { readFileSync, mkdirSync, existsSync, renameSync, statSync } from "node:fs";
@@ -315,9 +315,6 @@ const featureConfigSchema = z.object({
    * thread. Off unless explicitly enabled. The run still starts from its own
    * instructions, but the messages stay in that chat. */
   routinesInConversation: z.boolean().optional(),
-  /** Connected apps (Composio) in the sidebar's bottom menu and in
-   * Settings. Off unless explicitly enabled (experimental). */
-  connectedApps: z.boolean().optional(),
   /** Templates in the sidebar's bottom menu (the team library). Off unless
    * explicitly enabled; a package install link still opens the library. */
   templates: z.boolean().optional(),
@@ -575,15 +572,6 @@ const appConfigSchema = z.object({
   openaiCompat: z
     .object({ key: optionalText, url: optionalText, model: optionalText, provider: optionalText })
     .optional(),
-  /** Project key used for Sessions, catalog and agent tools. userId/sessionId
-   * are non-secret local identifiers used to reuse one Composio Session. */
-  composio: z.object({
-    apiKey: optionalText,
-    userId: optionalText,
-    sessionId: optionalText,
-    /** Tools turned off for every bot, by app slug (connector-tool-switches.ts). */
-    disabledTools: z.record(z.string(), z.array(z.string())).optional(),
-  }).optional(),
   /** Historical config section name "box" (the persisted config.json key); the
    * provider is Boat now and the key is kept for compatibility. */
   box: z.object({ token: optionalText }).optional(),
@@ -807,7 +795,6 @@ export interface AppConfig {
   decisions?: { retentionDays?: number };
   billing?: { currency?: string; prices?: Record<string, { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number }> };
   openaiCompat?: { key?: string; url?: string; model?: string; provider?: string };
-  composio?: { apiKey?: string; userId?: string; sessionId?: string; disabledTools?: Record<string, string[]> };
   /** Persisted under the historical config key "box" (ascii.dev renamed Box to Boat). */
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */
@@ -836,7 +823,7 @@ export interface AppConfig {
    * seats shared by all conversations, with per-thread affinity (#1654). */
   localVm?: { mode?: "shared" | "per-bot" | "pool"; maxInstances?: number; idleTimeoutMinutes?: number };
   /** Opt-in product experiments. Every flag defaults to disabled. */
-  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; routinesInConversation?: boolean; connectedApps?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; meetingNotetaker?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
+  features?: { skillAuthoring?: boolean; showToolCalls?: boolean; browser?: boolean; sharedComputers?: boolean; claudeUserMcp?: boolean; llmThreadTitles?: boolean; autoRecall?: boolean; routinesInConversation?: boolean; templates?: boolean; vpsComputer?: boolean; boatComputer?: boolean; decisionModel?: boolean; dataWindow?: boolean; meetingNotetaker?: boolean; routineGroupSettings?: boolean; skillsLibrary?: boolean };
   /** First-run progress; see onboardingConfigSchema. */
   onboarding?: { completedAt?: string; version?: number; reelSeen?: boolean; hintsSeen?: string[]; launchMode?: "solo" | "server"; firstTurnAt?: string };
   /** Named browser sessions any bot can be pointed at. */
@@ -968,8 +955,20 @@ export function foldLegacyNewBotEffort(value: JsonValue): JsonValue {
   return doc;
 }
 
+/** Composio was removed: connected apps now come only from the engines'
+ * own connectors (Claude, Grok) and the Pulsatrix MCP servers. An older
+ * config.json may still carry a top-level `composio` block (the project key
+ * and session ids); strip it before strict parsing so an existing workspace
+ * never fails to load, and so the stored key (never displayed) does not
+ * survive the next write. */
+export function stripLegacyComposioConfig(value: JsonValue): JsonValue {
+  if (!value || typeof value !== "object" || Array.isArray(value) || !("composio" in value)) return value;
+  const { composio: _removed, ...rest } = value as Record<string, JsonValue>;
+  return rest;
+}
+
 export function parseStoredConfig(value: JsonValue): AppConfig {
-  const parsed = storedAppConfigSchema.safeParse(foldLegacyNewBotEffort(value));
+  const parsed = storedAppConfigSchema.safeParse(stripLegacyComposioConfig(foldLegacyNewBotEffort(value)));
   if (!parsed.success) throw new Error(schemaIssue(parsed.error, "Invalid stored configuration"));
   return parsed.data;
 }
@@ -1125,12 +1124,6 @@ export function showToolCallsEnabled(cfg: AppConfig): boolean {
  * Off by default, so scheduled work stays in a hidden thread. */
 export function routinesInConversationEnabled(cfg: AppConfig): boolean {
   return cfg.features?.routinesInConversation === true;
-}
-
-/** Connected apps (Composio) in the sidebar and Settings. Off by default
- * (experimental). */
-export function connectedAppsEnabled(cfg: AppConfig): boolean {
-  return cfg.features?.connectedApps === true;
 }
 
 /** The sidebar's Templates entry. Off by default (experimental). */
@@ -1445,8 +1438,6 @@ export function loadConfig(): AppConfig {
   if (process.env.OPENAI_COMPAT_URL !== undefined) cfg.openaiCompat.url = process.env.OPENAI_COMPAT_URL;
   if (process.env.OPENAI_COMPAT_MODEL !== undefined) cfg.openaiCompat.model = process.env.OPENAI_COMPAT_MODEL;
   if (process.env.OPENAI_COMPAT_PROVIDER !== undefined) cfg.openaiCompat.provider = process.env.OPENAI_COMPAT_PROVIDER;
-  cfg.composio = { ...cfg.composio };
-  if (process.env.COMPOSIO_API_KEY !== undefined) cfg.composio.apiKey = process.env.COMPOSIO_API_KEY;
   // BOX_TOKEN keeps its historical name; the provider is Boat.
   cfg.box = { ...cfg.box };
   if (process.env.BOX_TOKEN !== undefined) cfg.box.token = process.env.BOX_TOKEN;
@@ -1526,7 +1517,6 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads">>): v
     [patch.openaiCompat?.key, "OPENAI_COMPAT_API_KEY"],
     [patch.openai?.key, "SAGAX_OPENAI_API_KEY"],
     [patch.openrouter?.key, "SAGAX_OPENROUTER_API_KEY"],
-    [patch.composio?.apiKey, "COMPOSIO_API_KEY"],
     [patch.box?.token, "BOX_TOKEN"],
     [patch.opencodeGo?.apiKey, "OPENCODE_API_KEY"],
     [patch.tts?.key, "SAGAX_TTS_KEY"],
@@ -1583,8 +1573,6 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "SAGAX_OPENAI_IMAGE_KEY",
   "SAGAX_CUSTOM_IMAGE_KEY",
   "SAGAX_OPENAI_LIVE_KEY",
-  "COMPOSIO_API_KEY",
-  "SAGAX_COMPOSIO_BROKER_TOKEN",
   // The key of the encrypted MCP sign-in vault (server/mcp-oauth.ts).
   "SAGAX_MCP_OAUTH_KEY",
   // Cloud Pro's included Boat, voice and decision relay tokens
@@ -1790,7 +1778,7 @@ export function saveConfig(
   // back after we have successfully recognized the legacy list.
   const storedProfiles = storedBrowserProfilesSchema.safeParse(disk.browserProfiles);
   if (storedProfiles.success) disk.browserProfiles = storedProfiles.data;
-  for (const key of ["xai", "anthropic", "mistral", "cerebras", "groq", "openai", "openrouter", "openaiCompat", "composio", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "mcp", "threads", "context", "memory", "routines", "localVm", "features", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
+  for (const key of ["xai", "anthropic", "mistral", "cerebras", "groq", "openai", "openrouter", "openaiCompat", "box", "opencodeGo", "tts", "decider", "imageGen", "live", "profile", "rooms", "mcp", "threads", "context", "memory", "routines", "localVm", "features", "budgets", "billing", "decisions", "onboarding", "browserEngine"] as const) {
     const section = checkedPatch[key];
     if (!section) continue;
     const current = jsonObjectSchema.safeParse(disk[key]);

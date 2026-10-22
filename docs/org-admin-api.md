@@ -284,8 +284,7 @@ The row above, plus:
   "shared": [{ "botId": "5e38...", "botName": "Atlas", "level": "use", "via": "team" }],
   "connections": {
     "engines": [{ "id": "claude", "via": "subscription", "signedIn": true, "key": false }],
-    "mcpServers": [{ "id": "github", "name": "github", "transport": "remote", "state": "enabled" }],
-    "composioApps": []
+    "mcpServers": [{ "id": "github", "name": "github", "transport": "remote", "state": "enabled" }]
   },
   "routinesAsRunner": [{ "id": "r_1", "name": "Daily digest", "botId": "5e38..." }],
   "permissions": {
@@ -302,9 +301,8 @@ unknown and admin-only keys dropped) or `defaults` (Perspicax sent none: the
 member defaults). `narrowedBy` names the person sheet settings applied on top
 (`sagax_bots` when it says use only, `sagax_integrations` when off).
 
-Connected apps (Composio) belong to the workspace in Sagax, not to a person:
-`composioApps` is always empty. `mcpServers[].state` is `paused` while
-Perspicax `sagax_integrations` is off for the person.
+`mcpServers[].state` is `paused` while Perspicax `sagax_integrations` is off
+for the person.
 
 ### `POST people/{principal}/disable`
 
@@ -806,7 +804,7 @@ row of the admin activity (`org.approvals.*`). Kept in
 
 | Method and path | Role | What |
 |---|---|---|
-| `GET connections` | admin | engines, people's connections, MCP servers, Composio, marketplaces, skills library |
+| `GET connections` | admin | engines, people's connections, MCP servers, marketplaces, skills library |
 | `POST connections/test` | admin | test one line |
 
 ### `GET connections`
@@ -817,13 +815,12 @@ row of the admin activity (`org.approvals.*`). Kept in
   "people": [{
     "person": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" },
     "engines": [{ "id": "claude", "via": "subscription", "ok": null, "checkedAt": null }],
-    "mcpServers": 1, "composioApps": 0
+    "mcpServers": 1
   }],
   "mcpServers": [
     { "id": "docs", "name": "docs", "scope": "org", "owner": null, "transport": "remote", "state": "enabled" },
     { "id": "github", "name": "github", "scope": "person", "owner": { "principalId": "pr_7c1e...", "sub": "01J9...", "name": "Bob" }, "transport": "remote", "state": "enabled" }
   ],
-  "composio": { "configured": true, "apps": [{ "slug": "gmail", "name": "gmail", "people": 3 }] },
   "marketplaces": [{ "id": "acme", "name": "acme", "url": "acme/plugins", "allowed": true, "plugins": 12 }],
   "skills": [{ "id": "digest", "name": "digest", "source": "https://github.com/acme/skills", "version": "3f2a9c1b7d4e", "bots": 2 }]
 }
@@ -835,10 +832,6 @@ row of the admin activity (`org.approvals.*`). Kept in
 - `people[].engines[].ok` and `checkedAt` stay null: Sagax does not check a
   person's engine in the background; `POST connections/test` with
   `principalId` does it on demand.
-- `composio.apps`: the workspace's connected apps (read from Composio, at
-  most 5 s, empty on a timeout); `people` counts the owners of bots granted
-  the app. `composioApps` per person is 0: connected apps belong to the
-  workspace in Sagax.
 - `skills`: the organization's skills library (empty while the library is
   off); `version` is the first 12 hex of the skill's SHA-256.
 
@@ -865,7 +858,6 @@ Answers `{ok, latencyMs, reason, label}`, for example
   `timeout`, `environment_refused` or `no_environment`. No variable value,
   argument or stderr line is ever in the answer or the log.
 - `marketplace`: its address (or `https://github.com/<owner/repo>`) answers.
-- `composio`: Composio answers with the connected apps.
 
 Each test has 10 s. Audited `connections.test`.
 

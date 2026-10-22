@@ -169,7 +169,7 @@ export function piHostToolArgs(withhold: boolean): string[] {
 
 /** Sagax MCP tools a withheld turn may still call. A title that merely
  * starts with "mcp" is not one of them. */
-const SAGAX_MCP_TITLE = /^mcp__(?:agents|browser|composio|computer)(?:__|$)/i;
+const SAGAX_MCP_TITLE = /^mcp__(?:agents|browser|computer)(?:__|$)/i;
 
 /** An ACP `session/request_permission` that would act on this machine.
  * A command, a file change, a move or a delete is declined whatever its
@@ -211,10 +211,10 @@ export function withheldWorkspace(): string {
 /** The MCP server names Sagax passes an ACP engine for a turn (the same
  * names as acp/core.ts mcpServersFor, before a tool scope filter). */
 export function sagaxMcpServerNames(integrations: {
-  agents?: unknown; composio?: unknown; browser?: unknown; localComputer?: unknown; custom?: Record<string, unknown>;
+  agents?: unknown; browser?: unknown; localComputer?: unknown; custom?: Record<string, unknown>;
 } | undefined): string[] {
   const names = [
-    ...(integrations?.agents ? ["agents"] : []), ...(integrations?.composio ? ["composio"] : []),
+    ...(integrations?.agents ? ["agents"] : []),
     ...(integrations?.browser ? ["browser"] : []), ...(integrations?.localComputer ? ["computer"] : []),
     ...Object.keys(integrations?.custom ?? {}),
   ];
