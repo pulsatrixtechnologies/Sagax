@@ -794,6 +794,7 @@ import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
 import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
+import { installResourceUsage } from "./resource-usage/install.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
@@ -10374,6 +10375,39 @@ openRemoteShell = (args) => {
   if (!principalId) return Promise.resolve(null);
   return remoteSessions.openShell({ principalId, botId: args.botId, threadId: args.threadId });
 };
+// The usage card (server/resource-usage/): read-only samples of a computer
+// the person already reaches, under the same rules as its terminal.
+const resourceUsage = installResourceUsage({
+  dataDir: DATA_DIR,
+  cfg: () => cfg,
+  organization: () => IDENTITY.kind === "perspicax",
+  desktopManaged: DESKTOP_MANAGED,
+  access: terminalAccessFor,
+  principalId: terminalPrincipalId,
+  remoteSessions,
+  supportDir: REMOTE_SUPPORT_DIR,
+  speaker: remoteSessionSpeaker,
+  ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+  // the direct request of this turn only: never the last line of the thread
+  personText: (threadId, generation) => {
+    const owner = directRequestOwners.get(threadId);
+    if (!owner?.messageId || owner.automation || owner.stopped || !owner.generations.has(generation)) return undefined;
+    const row = store.messagesFor(threadId).find((message) => message.id === owner.messageId);
+    return row?.role === "user" && typeof row.text === "string" ? row.text : undefined;
+  },
+  post: ({ botId, threadId, view }) => {
+    const bot = store.bot(botId);
+    store.appendMessage(threadId, { role: "bot", kind: "text", text: "", ...(bot ? { from: { botId: bot.id, name: bot.name, color: bot.color } } : {}), resourceUsage: view });
+  },
+  localVm: async (botId, threadId) => {
+    if (IDENTITY.kind === "perspicax") return null;
+    const target = localVmTargetForStatus(botId, threadId);
+    const status = await containerComputerStatus(undefined, undefined, target, { probeDesktop: false }).catch(() => null);
+    const runtime = status?.container === "running" ? (await containerRuntimeStatus()).runtime : null;
+    return runtime ? { runtime, container: target.containerName } : null;
+  },
+});
+process.once("exit", () => resourceUsage.close());
 // A session the bot opened with remote_support_open becomes a panel row and a
 // chat card once remote_support_status says connected (PerspicaxMcp.relay).
 const remoteSessionRegistrar = createRemoteSessionRegistrar({
@@ -27119,6 +27153,8 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
     speaker: remoteSessionSpeaker,
   }),
+  // resource_usage (server/routes/resource-usage.ts)
+  resourceUsage.internalRoute,
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
   createArtifactInternalRoutes({
     artifacts: () => artifactStore,
@@ -35433,6 +35469,7 @@ ROUTES.push(createRemoteControlRoutes({
   upgrade: (req) => desktopViewer.upgradeOf(req),
 }));
 ROUTES.push(createRemoteSessionFileRoutes({ sessions: remoteSessions, principalId: terminalPrincipalId }));
+ROUTES.push(resourceUsage.route);
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds
 // the WebRTC audio; the harness creates the session with the key (which

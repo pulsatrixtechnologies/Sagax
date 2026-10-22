@@ -417,6 +417,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // In-chat terminal: list shell-capable resources and manage the person's own sessions.
   { methods: ["GET"], path: /^\/api\/terminal\/resources$/ },
   { methods: ["GET", "POST"], path: /^\/api\/terminal\/sessions\/[\w-]+(?:\/(?:bot-input|close))?$/ },
+  // The usage card the person asked for (server/routes/resource-usage.ts): the
+  // handler answers the person who asked only.
+  { methods: ["GET", "POST"], path: /^\/api\/resource-usage\/ru_[a-f0-9]{18}(?:\/(?:live|resume|pause))?$/ },
   // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
   // one changes the server's MCP servers: the handler lets through an admin
   // or this computer's own person (clientSessionIsComputerOwner), nobody else.

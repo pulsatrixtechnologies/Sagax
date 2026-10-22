@@ -40,6 +40,7 @@ import {
 import { WorkingDots } from "@/components/WorkingIndicator";
 import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
 import { RemoteSessionCard } from "@/components/remote-session/RemoteSessionCard";
+import { ResourceUsageCard } from "@/components/resource-usage/ResourceUsageCard";
 import { MessageBar, MessageMenuItem } from "./MessageBar";
 import { HOVER_ICON } from "./MessageHoverActions";
 import { messageActionClass } from "@/components/MessageActions";
@@ -605,7 +606,7 @@ const Bubble = memo(function Bubble({
   // A message that is only attachments is just the files: no bubble around them.
   const attachmentsOnly = !webhookView && !replyTarget && !visibleText.trim() &&
     (user ? hasAttachments : generatedPaths.length + linkedFiles.length > 0);
-  const remoteCard = !user && Boolean(message.remoteSession);
+  const remoteCard = !user && Boolean(message.remoteSession || message.resourceUsage);
   const collapsible =
     user && !webhookView && !expanded && (visibleText.length > USER_COLLAPSE_CHARS || visibleText.split("\n").length > USER_COLLAPSE_LINES);
   useEffect(() => {
@@ -777,6 +778,7 @@ const Bubble = memo(function Bubble({
                 </div>
               )}
               {message.remoteSession && <RemoteSessionCard botId={botId} threadId={threadId} view={message.remoteSession} />}
+              {!user && message.resourceUsage && <ResourceUsageCard view={message.resourceUsage} />}
               {message.terminalEmbed && <TerminalChatEmbed embed={message.terminalEmbed} />}
               {!group && <AttachmentGallery images={generatedPaths} files={linkedFiles} message={{ threadId, messageId: message.id }} className={text ? undefined : "mb-0"} eager={eagerAttachments} />}
               {viewRaw && text ? (

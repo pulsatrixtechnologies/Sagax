@@ -766,6 +766,21 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "resource_usage",
+    description:
+      "Live usage card (CPU, memory, disks, network; last minute) for a computer the person reaches, with its first sample. Only when they ask to see usage. Read-only, no approval.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        target: { type: "string", enum: ["this_computer", "sagax_server", "host", "remote_session", "bot_computer"] },
+        host: { type: "string", maxLength: 200, description: "A server host's name (list_terminal_resources)." },
+        session: { type: "string", maxLength: 200, description: "Tailcat session code or computer name; default: this conversation's." },
+      },
+      required: ["target"],
+    },
+  },
+  {
     name: "publish_remote_session",
     description:
       "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
@@ -1673,7 +1688,7 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "launch_cloud_agent", "list_cloud_agents", "get_cloud_agent", "cancel_cloud_agent", "archive_cloud_agent",
   "cloud_agent_follow_up", "cloud_agent_transcript", "find_cloud_agent_by_pr", "list_cloud_agent_artifacts",
   "save_artifact", "update_artifact", "delete_artifact", "list_artifacts",
-  "manage_settings", "sagax_settings", "manage_pairing", "offer_shell_terminal", "list_terminal_resources", "vm_exec",
+  "manage_settings", "sagax_settings", "manage_pairing", "offer_shell_terminal", "list_terminal_resources", "resource_usage", "vm_exec",
   "shared_computer", "list_shared_computers", "nudge_person", "remove_reaction", "retry_thread",
   "read_transcript", "read_transcript_cold", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads",
   "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",

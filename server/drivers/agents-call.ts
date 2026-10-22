@@ -1145,6 +1145,19 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       : " The person can open a shell, send a file, or close the session from that card.";
     return { text: `A remote session card for ${host} is in the chat.${reach} Never repeat a tunnel address or a key.` };
   }
+  if (name === "resource_usage") {
+    const target = typeof args.target === "string" ? args.target.trim() : "";
+    const host = typeof args.host === "string" ? args.host.trim().slice(0, 200) : "";
+    const session = typeof args.session === "string" ? args.session.trim().slice(0, 200) : "";
+    const started = await apiResponse("/api/internal/resource-usage/start", {
+      method: "POST",
+      body: JSON.stringify({ target, ...(host ? { host } : {}), ...(session ? { session } : {}) }),
+    });
+    const r = started.body;
+    if (!started.ok || r.error) return { text: String(r.error ?? "No usage card could be shown."), isError: true };
+    const summary = typeof r.summary === "string" ? r.summary : "";
+    return { text: `${summary} The live card is in the chat (it updates every two seconds for five minutes, then the person can tap Reprendre). Answer in a sentence or two from these numbers; do not repeat the whole card.` };
+  }
   if (name === "offer_shell_terminal") {
     const resourceId = typeof args.resource_id === "string" ? args.resource_id.trim() : "";
     const provider = typeof args.provider === "string" ? args.provider.trim() : "";

@@ -6139,3 +6139,40 @@ opt-out `{"off": [botId]}` or `{"bots": "none"}` in
 `DATA_DIR/grok-approval-gate.json`). Every call that reaches Sagax goes
 through the same `request.opened` path (owner setup #820, member rules
 #776-#812, safety review, security keys), whatever the engine.
+
+## Resource usage card (2026-10-21)
+
+JC: « un graphique de consommation du CPU, RAM, Disque (IO, usage), Network
+usage qui s'affiche de manière esthétique lorsqu'on le demande ». The agents
+tool `resource_usage` (target `this_computer`, `sagax_server`, `host`,
+`remote_session`, `bot_computer`) posts a live card (`resourceUsage` on the
+message) and answers the bot with the first sample in words.
+
+- Only when asked (#876): the server refuses unless the person's message of
+  the turn asks about usage (`askedForResources`, shared/resource-usage.ts, or
+  `askedForView`). Read-only, so no approval card (#875).
+- Rights are the existing ones (server/resource-usage/targets.ts): this
+  computer or the Sagax server for the solo operator or an organization admin;
+  SSH and unRAID hosts by `terminalResourceAllowed`; a Tailcat session only
+  for its person and bot while `readTunnel` resolves (owned + tunnelOf); the
+  bot's Local VM for its owner (solo). Reprendre opens the target again, so
+  the check runs again. Organization: the person's own computer is not offered
+  yet (it would need a native bridge action in the desktop app).
+- Sampling (server/resource-usage/): one read-only loop per card, `scripts.ts`
+  (macOS top, vm_stat, ioreg, netstat -ibn, df; Linux /proc; Windows CIM
+  performance classes, which read the same on a French Windows and need no
+  admin; PowerShell as -EncodedCommand). The loop ends by itself on the
+  computer after the run. `sampler.ts`: 2 s cadence, 5 min runs, pauses after
+  20 s with nobody watching, at most 2 running per person (a third pauses the
+  oldest), a flooding stream is dropped. Parsers are tested from fixtures
+  (`server/resource-usage/fixtures`).
+- Card: `src/components/resource-usage/` (`ResourceUsageBody` is pure), the
+  stream is `GET /api/resource-usage/:id/live`, for the person who asked only.
+  Chart colors are `CHART_PALETTE` (dataviz), values are ink text beside
+  colored marks, a full volume shows an icon and a word, a Valeurs table
+  shows the same numbers. Never an id on screen.
+- Gallery: `src/gallery/resource-usage.html`; captures
+  `node scripts/capture-resource-usage.mjs` (`SAGAX_CHROMIUM` for another
+  headless shell); four of them are in `docs/screenshots/resource-usage/`.
+- iOS and Android show the row's text fallback (none yet): a native card is a
+  follow-up.
