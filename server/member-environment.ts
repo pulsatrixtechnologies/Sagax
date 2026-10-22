@@ -48,6 +48,7 @@
 // (Claude), `<server>__<tool>` (ACP titles, Codex, chat engines' mcpTool).
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../shared/bot-workplace.ts";
+import { sagaxFolder } from "../shared/human-id.ts";
 import type { TurnSpeaker } from "./engine-access.ts";
 import { sensitiveEnvironmentPath } from "./sensitive-path.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
@@ -107,6 +108,17 @@ export function ownEnvironmentSensitiveRead(input: string | undefined): boolean 
   const path = (args as Record<string, unknown>).path;
   if (path === undefined) return false;
   if (typeof path !== "string") return true;
+  // 2026-10-22 (#875, read-only never a card): the bot's own Sagax-made
+  // workspace (workspaces/<bot>, task-workspaces/<bot>/<thread>,
+  // parallel-worktrees/<bot>/<thread>) sits under the server data dir
+  // (~/.sagax, the legacy ~/.openmausbot), so its own name begins with a dot.
+  // That data-dir dotfile is not a user credential: a read of the bot's own
+  // work area is a plain read, so a turn that is not the owner's own runs it
+  // unasked and it never surfaces a card. Only a credential path BELOW the
+  // workspace root still cards; .ssh, .env, .aws and every real secret
+  // elsewhere stay sensitive (sensitiveEnvironmentPath, unchanged).
+  const made = sagaxFolder(path);
+  if (made) return made.rest.length > 0 && sensitiveEnvironmentPath(made.rest.join("/"));
   return sensitiveEnvironmentPath(path);
 }
 
