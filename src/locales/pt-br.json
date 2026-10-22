@@ -2718,5 +2718,8 @@
   "teamMemory.settled.declined": "{who} já recusou ou excluiu esta entrada da memória da equipe.",
   "teamMemory.settled.someoneAccepted": "Outra pessoa já aceitou esta entrada da memória da equipe.",
   "teamMemory.settled.someoneDeclined": "Outra pessoa já recusou ou excluiu esta entrada da memória da equipe.",
-  "teamMemory.settled.gone": "Esta entrada da memória da equipe não está mais disponível."
+  "teamMemory.settled.gone": "Esta entrada da memória da equipe não está mais disponível.",
+  "settings.group.mascots": "Mascotes",
+  "settings.hdMascots.title": "Mascotes HD",
+  "settings.hdMascots.subtitle": "Arte detalhada para os personagens que a têm. Cores e estilos valem para a aparência clássica."
 }

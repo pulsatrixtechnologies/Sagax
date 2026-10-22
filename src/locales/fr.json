@@ -10036,5 +10036,8 @@
   "remoteFolder.noComputer": "Aucun ordinateur n'est connecté à ce bot. Saisissez le chemin absolu.",
   "remoteFolder.loading": "Chargement…",
   "remoteFolder.noSubfolder": "Aucun sous-dossier ici.",
-  "remoteFolder.choose": "Choisir ce dossier"
+  "remoteFolder.choose": "Choisir ce dossier",
+  "settings.group.mascots": "Mascottes",
+  "settings.hdMascots.title": "Mascottes HD",
+  "settings.hdMascots.subtitle": "Illustrations détaillées pour les personnages qui en ont. Les couleurs et les styles s'appliquent à l'apparence classique."
 }

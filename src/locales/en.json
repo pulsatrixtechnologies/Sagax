@@ -10036,5 +10036,8 @@
   "remoteFolder.noComputer": "No computer is connected to this bot. Type the absolute path.",
   "remoteFolder.loading": "Loading…",
   "remoteFolder.noSubfolder": "No subfolder here.",
-  "remoteFolder.choose": "Choose this folder"
+  "remoteFolder.choose": "Choose this folder",
+  "settings.group.mascots": "Mascots",
+  "settings.hdMascots.title": "HD mascots",
+  "settings.hdMascots.subtitle": "Detailed art for the characters that have it. Colors and skins apply to the classic look."
 }
