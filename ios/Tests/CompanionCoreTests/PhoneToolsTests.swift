@@ -108,4 +108,17 @@ final class PhoneToolsTests: XCTestCase {
         let refusal = try JSONSerialization.jsonObject(with: JSONEncoder().encode(PhoneToolAnswer.denied)) as? [String: Any]
         XCTAssertNil(refusal?["result"])
     }
+
+    func testPlainLocalWiFiOffersNothingAndRefusesWithAReason() throws {
+        let ask = try wire(tool: "location", preApproved: true)
+        XCTAssertNil(PhoneToolRules.transportRefusal(protectedTransport: true))
+        let refusal = try XCTUnwrap(PhoneToolRules.transportRefusal(protectedTransport: false))
+        XCTAssertTrue(refusal.contains("HTTPS or Tailscale"))
+        XCTAssertEqual(PhoneToolAnswer.refused(refusal).decision, .deny)
+        XCTAssertEqual(PhoneToolAnswer.refused(refusal).error, refusal)
+        XCTAssertFalse(PhoneToolRules.runsWithoutCard(ask, appActive: true, offered: [.location], protectedTransport: false))
+        XCTAssertTrue(PhoneToolRules.runsWithoutCard(ask, appActive: true, offered: [.location], protectedTransport: true))
+        XCTAssertEqual(PhoneToolRules.transport(protectedTransport: false), "local")
+        XCTAssertEqual(PhoneToolRules.transport(protectedTransport: true), "protected")
+    }
 }

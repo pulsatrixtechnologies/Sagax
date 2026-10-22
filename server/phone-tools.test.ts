@@ -34,7 +34,7 @@ describe("phone tool broker", () => {
   it("offers only what a phone of that person registered, while it is around", () => {
     const { broker, tick } = setup();
     expect(broker.availableTools("ann")).toEqual([]);
-    broker.registerDevice("ann", "phone-a", { deviceName: "iPhone", tools: ["location", "contacts"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "iPhone", tools: ["location", "contacts"], transport: "protected" });
     expect(broker.availableTools("ann")).toEqual(["contacts", "location"]);
     expect(broker.availableTools("bob")).toEqual([]);
     tick(PHONE_ONLINE_MS + 1);
@@ -43,7 +43,7 @@ describe("phone tool broker", () => {
 
   it("keeps a phone that can be woken by a push for a day", () => {
     const { broker, tick } = setup({ pushable: true });
-    broker.registerDevice("ann", "phone-a", { deviceName: "iPhone", tools: ["status"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "iPhone", tools: ["status"], transport: "protected" });
     tick(PHONE_ONLINE_MS + 1);
     expect(broker.availableTools("ann")).toEqual(["status"]);
     tick(24 * 60 * 60_000);
@@ -52,13 +52,13 @@ describe("phone tool broker", () => {
 
   it("refuses a tool no phone of the person offers", () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"], transport: "protected" });
     expect(() => broker.request({ ...ask, tool: "location", args: {} })).toThrow(/phone/);
   });
 
   it("tells the person's phones, and only theirs, and hands the answer to the waiting turn once", async () => {
     const { broker, notified, pushed, audit } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["location"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["location"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "location", args: {} });
     expect(notified).toEqual(["ann"]);
     expect(pushed).toEqual(["ann:location"]);
@@ -84,14 +84,14 @@ describe("phone tool broker", () => {
 
   it("never lets another bot or conversation read an answer", async () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "status", args: {} });
     await expect(broker.wait(request.id, { botId: "bot2", threadId: "t1" }, 10)).resolves.toEqual({ status: "unknown" });
   });
 
   it("says pending when the phone has not answered within the wait, then expires", async () => {
     const { broker, tick } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "status", args: {} });
     await expect(broker.wait(request.id, ask, 5)).resolves.toEqual({ status: "pending", requestId: request.id });
     tick(5 * 60_000 + 1);
@@ -101,7 +101,7 @@ describe("phone tool broker", () => {
 
   it("a refusal reaches the turn as a refusal", async () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["contacts"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["contacts"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "contacts", args: { query: "Marie" } });
     expect(broker.answer("ann", "phone-a", request.id, { decision: "deny" })).toEqual({ ok: true });
     await expect(broker.wait(request.id, ask, 10)).resolves.toEqual({ status: "denied" });
@@ -109,7 +109,7 @@ describe("phone tool broker", () => {
 
   it("an approved request whose iOS call failed says why", async () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["contacts"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["contacts"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "contacts", args: { query: "Marie" } });
     expect(broker.answer("ann", "phone-a", request.id, { decision: "once", error: "Contacts access is off in Settings." })).toEqual({ ok: true });
     await expect(broker.wait(request.id, ask, 10)).resolves.toEqual({ status: "failed", error: "Contacts access is off in Settings." });
@@ -117,7 +117,7 @@ describe("phone tool broker", () => {
 
   it("Toujours permettre covers that bot, that tool and that access only, and survives a restart", () => {
     const { broker, dataDir } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["reminders", "shortcut"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["reminders", "shortcut"], transport: "protected" });
     const first = broker.request({ ...ask, tool: "reminders", args: { action: "list" } });
     expect(broker.answer("ann", "phone-a", first.id, { decision: "always", result: { reminders: [] } })).toEqual({ ok: true });
     expect(broker.request({ ...ask, tool: "reminders", args: { action: "list" } }).preApproved).toBe(true);
@@ -134,7 +134,7 @@ describe("phone tool broker", () => {
 
   it("refuses Toujours permettre where the card does not offer it", () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["shortcut"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["shortcut"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "shortcut", args: { name: "Pay" } });
     expect(request.allowAlways).toBe(false);
     expect(broker.answer("ann", "phone-a", request.id, { decision: "always", result: { started: true } })).toMatchObject({ ok: false, status: 400 });
@@ -143,7 +143,7 @@ describe("phone tool broker", () => {
 
   it("an answer the phone made up is refused, and the turn hears the phone failed", async () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["location"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["location"], transport: "protected" });
     const request = broker.request({ ...ask, tool: "location", args: {} });
     expect(broker.answer("ann", "phone-a", request.id, { decision: "once", result: { latitude: "here" } })).toMatchObject({ ok: false, status: 400 });
     await expect(broker.wait(request.id, ask, 10)).resolves.toEqual({ status: "failed", error: "The phone's answer could not be read." });
@@ -151,7 +151,7 @@ describe("phone tool broker", () => {
 
   it("caps how many requests one person can have waiting", () => {
     const { broker } = setup();
-    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"] });
+    broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"], transport: "protected" });
     for (let i = 0; i < 5; i += 1) broker.request({ ...ask, tool: "status", args: {} });
     expect(() => broker.request({ ...ask, tool: "status", args: {} })).toThrow(/waiting/);
   });
@@ -171,5 +171,36 @@ describe("phoneToolTurn", () => {
     expect(phoneToolTurn({ ...base, speakerPrincipal: "bob" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, speakerPrincipal: "" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, ownsThread: false })).toHaveProperty("error");
+  });
+});
+
+describe("protected transport only (JC 2026-10-21)", () => {
+  it("a phone on plain local Wi-Fi offers nothing to bots", () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-transport-"));
+    try {
+      const broker = createPhoneToolBroker({ dataDir, notify: () => {} });
+      broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["location"], transport: "local" });
+      expect(broker.availableTools("ann")).toEqual([]);
+      expect(() => broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "location", args: {} })).toThrow(/HTTPS or Tailscale/);
+      broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["location"], transport: "protected" });
+      expect(broker.availableTools("ann")).toEqual(["location"]);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("a phone that refuses with a reason", () => {
+  it("hands the reason to the turn", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-reason-"));
+    try {
+      const broker = createPhoneToolBroker({ dataDir, notify: () => {} });
+      broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status"], transport: "protected" });
+      const request = broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "status", args: {} });
+      expect(broker.answer("ann", "phone-a", request.id, { decision: "deny", error: "The phone is on plain local Wi-Fi." })).toEqual({ ok: true });
+      await expect(broker.wait(request.id, { botId: "b", threadId: "t" }, 10)).resolves.toEqual({ status: "failed", error: "The phone is on plain local Wi-Fi." });
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 });

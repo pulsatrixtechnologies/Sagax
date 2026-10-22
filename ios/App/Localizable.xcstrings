@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Off on this connection: phone tools need a secure connection (HTTPS or Tailscale). On plain local Wi-Fi your answers would cross the network in clear.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off on this connection: phone tools need a secure connection (HTTPS or Tailscale). On plain local Wi-Fi your answers would cross the network in clear."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivés sur cette connexion : les outils du téléphone exigent une connexion sécurisée (HTTPS ou Tailscale). Sur le Wi-Fi local ordinaire, vos réponses traverseraient le réseau en clair."
+          }
+        }
+      }
+    },
     "Wants to use a tool on your phone": {
       "localizations": {
         "en": {

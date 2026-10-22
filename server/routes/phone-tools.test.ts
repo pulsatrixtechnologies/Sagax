@@ -67,6 +67,12 @@ describe("phone tool routes", () => {
 
   const ann = { "x-who": "ann", "x-device": "phone-a" };
 
+  it("a phone on plain local Wi-Fi registers, but offers nothing", async () => {
+    const { call } = await serve();
+    expect((await call("POST", "/api/me/phone-tools/device", { tools: ["location"], transport: "local" }, ann)).body).toEqual({ ok: true, tools: [] });
+    expect((await call("POST", "/api/internal/phone-tools", { tool: "location" })).body.error).toMatch(/HTTPS or Tailscale/);
+  });
+
   it("refuses anything that is not a person's phone", async () => {
     const { call } = await serve();
     expect((await call("POST", "/api/me/phone-tools/device", { tools: ["location"] })).status).toBe(403);
@@ -75,7 +81,7 @@ describe("phone tool routes", () => {
 
   it("a phone registers, the bot asks, the phone answers, the turn gets it", async () => {
     const { call } = await serve();
-    expect(await call("POST", "/api/me/phone-tools/device", { deviceName: "iPhone", tools: ["location", "status"] }, ann)).toEqual({ status: 200, body: { ok: true, tools: ["location", "status"] } });
+    expect(await call("POST", "/api/me/phone-tools/device", { deviceName: "iPhone", tools: ["location", "status"], transport: "protected" }, ann)).toEqual({ status: 200, body: { ok: true, tools: ["location", "status"] } });
 
     const asked = call("POST", "/api/internal/phone-tools", { tool: "location", args: { reason: "météo" } });
     // the phone sees it
@@ -91,7 +97,7 @@ describe("phone tool routes", () => {
 
   it("hands back the request id when the phone is slow, and the bot waits again", async () => {
     const { call } = await serve();
-    await call("POST", "/api/me/phone-tools/device", { tools: ["status"] }, ann);
+    await call("POST", "/api/me/phone-tools/device", { tools: ["status"], transport: "protected" }, ann);
     const first = await call("POST", "/api/internal/phone-tools", { tool: "status" });
     expect(first.body.status).toBe("pending");
     const requestId = String(first.body.requestId);
@@ -102,7 +108,7 @@ describe("phone tool routes", () => {
 
   it("refuses a tool no phone offers, bad arguments, and a turn that is not the owner's", async () => {
     const { call } = await serve();
-    await call("POST", "/api/me/phone-tools/device", { tools: ["status"] }, ann);
+    await call("POST", "/api/me/phone-tools/device", { tools: ["status"], transport: "protected" }, ann);
     expect((await call("POST", "/api/internal/phone-tools", { tool: "location" })).status).toBe(409);
     expect((await call("POST", "/api/internal/phone-tools", { tool: "contacts", args: {} })).status).toBe(400);
     const other = await serve({ turnError: "Only the bot's owner, in their own conversation, can use their phone." });
@@ -111,7 +117,7 @@ describe("phone tool routes", () => {
 
   it("lists and removes Toujours permettre grants with the bot's name", async () => {
     const { call, broker } = await serve();
-    await call("POST", "/api/me/phone-tools/device", { tools: ["status"] }, ann);
+    await call("POST", "/api/me/phone-tools/device", { tools: ["status"], transport: "protected" }, ann);
     const request = broker.request({ person: "ann", botId: "bot1", botName: "Wren", threadId: "t1", tool: "status", args: {} });
     await call("POST", `/api/me/phone-tools/requests/${request.id}`, { decision: "always", result: {} }, ann);
     expect((await call("GET", "/api/me/phone-tools/grants", undefined, ann)).body).toEqual({ grants: [{ botId: "bot1", botName: "Wren", tool: "status", access: "read", key: "status:read" }] });

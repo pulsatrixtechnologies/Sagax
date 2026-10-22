@@ -245,7 +245,16 @@ export interface PhoneToolRequestWire {
 export const phoneDeviceSchema = z.object({
   deviceName: z.string().trim().max(80).default(""),
   tools: z.array(z.enum(PHONE_TOOLS)).max(PHONE_TOOLS.length),
+  /** How the phone reaches this server: "protected" is HTTPS or Tailscale.
+   * On plain local Wi-Fi the phone offers nothing (JC 2026-10-21): the
+   * answers would cross the network in clear. Absent is "local". */
+  transport: z.enum(["protected", "local"]).default("local"),
 }).strict();
+
+export type PhoneTransport = "protected" | "local";
+
+/** What the bot and the phone read when the phone is on plain local Wi-Fi. */
+export const PHONE_TOOLS_NEED_PROTECTED_TRANSPORT = "The person's phone is on plain local Wi-Fi: phone tools need a secure connection (HTTPS or Tailscale). Tell the person; they can turn on Secure phone access or Tailscale, then ask again.";
 
 /** The phone's answer to one request. A refusal carries no result; an
  * approved request carries the result, or the error iOS gave (no

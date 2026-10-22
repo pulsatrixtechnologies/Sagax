@@ -25,7 +25,9 @@ import {
   PHONE_TOOLS,
   phoneToolAccess,
   phoneToolGrantKey,
+  PHONE_TOOLS_NEED_PROTECTED_TRANSPORT,
   type PhoneToolAccess,
+  type PhoneTransport,
   type PhoneToolDecision,
   type PhoneToolId,
   type PhoneToolRequestWire,
@@ -75,6 +77,7 @@ export type PhoneAnswerOutcome = { ok: true } | { ok: false; status: 400 | 403 |
 interface Device {
   deviceName: string;
   tools: PhoneToolId[];
+  transport: PhoneTransport;
   seenAt: number;
 }
 
@@ -92,7 +95,8 @@ const grantsFile = z.object({
 });
 
 export interface PhoneToolBroker {
-  registerDevice(person: string, deviceId: string, device: { deviceName: string; tools: readonly PhoneToolId[] }): void;
+  /** `transport` absent counts as plain local Wi-Fi: nothing is offered. */
+  registerDevice(person: string, deviceId: string, device: { deviceName: string; tools: readonly PhoneToolId[]; transport?: PhoneTransport }): void;
   /** The tools this person's phones can run right now, sorted. */
   availableTools(person: string): PhoneToolId[];
   /** A registered phone of this person (the answer route checks it). */
@@ -199,7 +203,7 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       const mine = devices.get(who) ?? new Map<string, Device>();
       const tools = PHONE_TOOLS.filter((tool) => device.tools.includes(tool));
       if (!tools.length) mine.delete(deviceId);
-      else mine.set(deviceId, { deviceName: device.deviceName.slice(0, 80), tools, seenAt: now() });
+      else mine.set(deviceId, { deviceName: device.deviceName.slice(0, 80), tools, transport: device.transport === "protected" ? "protected" : "local", seenAt: now() });
       if (mine.size) devices.set(who, mine);
       else devices.delete(who);
     },
@@ -208,7 +212,8 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       const who = personKey(person);
       const tools = new Set<PhoneToolId>();
       for (const device of devices.get(who)?.values() ?? []) {
-        if (!reachable(who, device)) continue;
+        // plain local Wi-Fi: the answers would cross the network in clear
+        if (device.transport !== "protected" || !reachable(who, device)) continue;
         for (const tool of device.tools) tools.add(tool);
       }
       return [...tools].sort();
@@ -222,6 +227,8 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       sweep();
       const person = personKey(input.person);
       if (!this.availableTools(person).includes(input.tool)) {
+        const local = [...(devices.get(person)?.values() ?? [])].some((device) => device.transport !== "protected" && device.tools.includes(input.tool) && reachable(person, device));
+        if (local) throw new PhoneToolUnavailable(PHONE_TOOLS_NEED_PROTECTED_TRANSPORT);
         throw new PhoneToolUnavailable("No phone of this person can do that right now. Ask them to open Sagax on their iPhone, then try again.");
       }
       const waiting = [...requests.values()].filter((row) => row.person === person && !row.outcome).length;
@@ -312,7 +319,8 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       }
       if (answer.decision === "deny") {
         audit(request, "deny");
-        settle(request, { status: "denied" });
+        // a refusal the phone made itself (plain local Wi-Fi) says why
+        settle(request, answer.error ? { status: "failed", error: answer.error } : { status: "denied" });
         deps.notify(who);
         return { ok: true };
       }

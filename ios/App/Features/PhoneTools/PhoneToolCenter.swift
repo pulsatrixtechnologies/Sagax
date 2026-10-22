@@ -63,8 +63,9 @@ final class PhoneToolCenter: ObservableObject {
     func register() async {
         guard let session else { return }
         let tools = offered
+        let protected = session.phoneCredentialTransportIsProtected
         await session.perform(quietly: true) { client in
-            try await client.registerPhoneTools(deviceName: UIDevice.current.name, tools: tools)
+            try await client.registerPhoneTools(deviceName: UIDevice.current.name, tools: tools, protectedTransport: protected)
         }
     }
 
@@ -85,7 +86,14 @@ final class PhoneToolCenter: ObservableObject {
         guard current == nil, !queue.isEmpty else { return }
         let request = queue.removeFirst()
         let offeredSet = Set(offered)
-        if PhoneToolRules.runsWithoutCard(request, appActive: UIApplication.shared.applicationState == .active, offered: offeredSet) {
+        let protected = session?.phoneCredentialTransportIsProtected ?? false
+        // plain local Wi-Fi: no card, a refusal that says why (JC 2026-10-21)
+        if let reason = PhoneToolRules.transportRefusal(protectedTransport: protected) {
+            await send(request, PhoneToolAnswer.refused(reason))
+            await next()
+            return
+        }
+        if PhoneToolRules.runsWithoutCard(request, appActive: UIApplication.shared.applicationState == .active, offered: offeredSet, protectedTransport: protected) {
             // "Toujours permettre" given earlier, the app open: run it now
             await run(request, decision: .always)
             await next()

@@ -30,7 +30,13 @@ struct PhoneToolsSettingsSections: View {
         } header: {
             Text("Phone tools")
         } footer: {
-            Text("Your own bots may ask this iPhone for these. You approve each request here, with Sagax open; nothing runs in the background.")
+            VStack(alignment: .leading, spacing: 6) {
+                if !session.phoneCredentialTransportIsProtected {
+                    Text("Off on this connection: phone tools need a secure connection (HTTPS or Tailscale). On plain local Wi-Fi your answers would cross the network in clear.")
+                        .foregroundStyle(Theme.danger)
+                }
+                Text("Your own bots may ask this iPhone for these. You approve each request here, with Sagax open; nothing runs in the background.")
+            }
         }
         Section {
             if grants == nil {

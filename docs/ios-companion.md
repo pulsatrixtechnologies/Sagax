@@ -456,6 +456,11 @@ and calendar events (read, or add one), photos the person picks, one of
 their Shortcuts by name, the clipboard text, and battery, network and Focus.
 Health is not offered.
 
+- Only over a protected transport (JC 2026-10-21): hosted HTTPS or
+  Tailscale. On plain local Wi-Fi the phone registers with `transport:
+  "local"`, the server offers nothing from it, and a request that still
+  reaches it is refused with the reason (the bot tells the person);
+  Settings > Approval rules says the tools are off on that connection.
 - The bot sees one tool, `phone_tool` (`server/drivers/agents-phone-tools.ts`),
   only in a 1:1 turn the bot's owner started, and only while a phone of
   theirs offers tools (it registered in the last 15 minutes, or in the last

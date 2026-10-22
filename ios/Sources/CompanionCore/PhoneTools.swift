@@ -89,6 +89,11 @@ public struct PhoneToolAnswer: Encodable, Equatable, Sendable {
     }
 
     public static let denied = PhoneToolAnswer(decision: .deny)
+
+    /// A refusal the phone made itself, with the reason the bot reads.
+    public static func refused(_ reason: String) -> PhoneToolAnswer {
+        PhoneToolAnswer(decision: .deny, error: reason)
+    }
 }
 
 /// A "Toujours permettre" saved for one bot and one tool.
@@ -130,13 +135,25 @@ public enum PhoneToolRules {
     /// A request covered by "Toujours permettre" runs without a card, but
     /// only while the app is open on screen (the phone is unlocked), only
     /// for a tool this phone offers, and never once it expired.
-    public static func runsWithoutCard(_ request: PhoneToolRequest, appActive: Bool, offered: Set<PhoneTool>, now: Date = Date()) -> Bool {
-        guard appActive, request.preApproved, let tool = request.tool, !tool.onceOnly, offered.contains(tool) else { return false }
+    public static func runsWithoutCard(_ request: PhoneToolRequest, appActive: Bool, offered: Set<PhoneTool>, protectedTransport: Bool = true, now: Date = Date()) -> Bool {
+        guard appActive, protectedTransport, request.preApproved, let tool = request.tool, !tool.onceOnly, offered.contains(tool) else { return false }
         return !isExpired(request, now: now)
     }
 
     public static func isExpired(_ request: PhoneToolRequest, now: Date = Date()) -> Bool {
         request.expiresAt > 0 && now.timeIntervalSince1970 * 1000 >= request.expiresAt
+    }
+
+    /// JC 2026-10-21: phone tools only over HTTPS or Tailscale. On plain
+    /// local Wi-Fi the answers would cross the network in clear, so the
+    /// phone offers nothing and refuses with this reason (the bot reads it).
+    public static func transportRefusal(protectedTransport: Bool) -> String? {
+        protectedTransport ? nil : "The phone is on plain local Wi-Fi: phone tools need a secure connection (HTTPS or Tailscale). Tell the person; they can turn on Secure phone access or Tailscale, then ask again."
+    }
+
+    /// What the phone tells the server when it registers.
+    public static func transport(protectedTransport: Bool) -> String {
+        protectedTransport ? "protected" : "local"
     }
 
     /// The tools this phone offers: the person's switches in Settings,
@@ -345,10 +362,11 @@ public enum PhoneToolShaping {
 public extension CompanionClient {
     /// What this phone can do now. Sent when the stream opens and while
     /// the app is open; the server offers a tool only while it is fresh.
-    func registerPhoneTools(deviceName: String, tools: [PhoneTool]) async throws {
+    func registerPhoneTools(deviceName: String, tools: [PhoneTool], protectedTransport: Bool) async throws {
         try await send(makeRequest("POST", "/api/me/phone-tools/device", body: [
             "deviceName": String(deviceName.prefix(80)),
             "tools": tools.map(\.rawValue),
+            "transport": PhoneToolRules.transport(protectedTransport: protectedTransport),
         ]))
     }
 
