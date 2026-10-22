@@ -128,7 +128,7 @@ describe("support tunnel ownership (finding 1)", () => {
     await handleRemoteSupportCall({
       name: "remote_support_open",
       args: {},
-      local: { dir, technicianName: "Ada", orgName: "Acme", now: () => NOW, run, sessionId: () => ID, principalId: "stale-env", botId: BOT },
+      local: { dir, technicianName: "Ada", orgName: "Acme", now: () => NOW, run, sessionId: () => ID },
       post: async () => ({ status: 200, body: { text: JSON.stringify({ code: CODE, page_url: "https://support.example.test/a" }), owner: { principalId: A, botId: BOT } } }),
     });
     expect(JSON.parse(readFileSync(path.join(dir, "sessions", CODE, "open.json"), "utf8"))).toMatchObject({ principalId: A, botId: BOT });
@@ -141,7 +141,7 @@ describe("support tunnel ownership (finding 1)", () => {
     const answer = await handleRemoteSupportCall({
       name: "remote_support_status",
       args: { code: CODE },
-      local: { dir, run: async () => ({ code: 0, stdout: "", stderr: "" }), principalId: B, botId: BOT },
+      local: { dir, run: async () => ({ code: 0, stdout: "", stderr: "" }) },
       post: async () => ({ status: 200, body: { text: JSON.stringify({ state: "started", address: ADDRESS }), owner: { principalId: B, botId: BOT } } }),
     });
     expect(answer.isError).toBe(true);

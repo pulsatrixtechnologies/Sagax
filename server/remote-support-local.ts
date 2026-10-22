@@ -42,11 +42,6 @@ export interface RemoteSupportContext {
   now?: () => Date;
   run?: TailcatRun;
   sessionId?: () => string;
-  /** Who this turn speaks for and which bot, when the server did not say
-   * (the answer of /api/internal/perspicax/tool carries `owner`, which wins:
-   * a proxy kept across turns may hold an older speaker). */
-  principalId?: string;
-  botId?: string;
 }
 
 /** Who opened a session: written into open.json, checked before a tunnel resolves. */
@@ -68,8 +63,6 @@ export function remoteSupportFromEnv(env: NodeJS.ProcessEnv): RemoteSupportConte
     dir,
     technicianName: env.SAGAX_TECHNICIAN_NAME?.trim() ?? "",
     orgName: env.SAGAX_ORG_NAME?.trim() ?? "",
-    principalId: env.SAGAX_REMOTE_SUPPORT_PRINCIPAL?.trim() ?? "",
-    botId: env.SAGAX_BOT_ID?.trim() ?? "",
   };
 }
 
@@ -293,13 +286,17 @@ export interface RememberedOpen {
   botId?: string;
 }
 
-/** The owner the server named in its answer, else the turn's env. Null when neither is known. */
-export function ownerOf(body: Record<string, unknown>, local: RemoteSupportContext): SupportOwner | null {
+/** The owner is only ever the one the Sagax server attached to its answer
+ * (`body.owner`, from the turn's Perspicax principal). The turn env is not
+ * trusted: the engine launches this proxy and could set its environment, so a
+ * forged `SAGAX_REMOTE_SUPPORT_PRINCIPAL` must never name the owner. When the
+ * server named no owner, the folder stays ownerless. */
+export function ownerOf(body: Record<string, unknown>): SupportOwner | null {
   const said = body.owner && typeof body.owner === "object" && !Array.isArray(body.owner) ? body.owner as Record<string, unknown> : null;
-  const principalId = typeof said?.principalId === "string" && said.principalId.trim() ? said.principalId : local.principalId ?? "";
-  const botId = typeof said?.botId === "string" && said.botId.trim() ? said.botId : local.botId ?? "";
-  if (!principalId.trim() || !botId.trim()) return null;
-  return { principalId: normPrincipal(principalId), botId: botId.trim() };
+  const principalId = typeof said?.principalId === "string" ? said.principalId.trim() : "";
+  const botId = typeof said?.botId === "string" ? said.botId.trim() : "";
+  if (!principalId || !botId) return null;
+  return { principalId: normPrincipal(principalId), botId };
 }
 
 /** False when the code's folder names another person or bot as its opener. */
@@ -367,6 +364,9 @@ async function storeAddress(dir: string, code: string, address: string): Promise
   const compact = compactCode(code);
   if (!compact) return false;
   const folder = join(dir, "sessions", compact);
+  // A session closed from the panel (or by remote_support_close) leaves a
+  // `closed` marker: a late or repeated status never writes the address back.
+  if (await exists(join(folder, "closed"))) return false;
   await mkdir(folder, { recursive: true, mode: 0o700 });
   await chmod(folder, 0o700);
   const path = join(folder, "address");
@@ -379,6 +379,19 @@ export async function forgetAddress(dir: string, code: string): Promise<void> {
   const compact = compactCode(code);
   if (!compact) return;
   await rm(join(dir, "sessions", compact, "address"), { force: true });
+}
+
+/** Mark a code's session folder closed so its address stays gone: a later
+ * status for the same code will not re-create it (storeAddress refuses). */
+export async function markSessionClosed(dir: string, code: string): Promise<void> {
+  const compact = compactCode(code);
+  if (!compact) return;
+  const folder = join(dir, "sessions", compact);
+  try {
+    await mkdir(folder, { recursive: true, mode: 0o700 });
+    await writeFile(join(folder, "closed"), `${new Date().toISOString()}\n`, { mode: 0o600 });
+    await rm(join(folder, "address"), { force: true });
+  } catch { /* best effort: the card is already closed */ }
 }
 
 /** Drop the address from what the model reads. Ping with the local key when it is safe to connect. */
@@ -459,7 +472,7 @@ async function openCall(input: {
   if (error) return { text: error, isError: true };
   const shown = presentOpen(posted.body.text);
   if (!shown.ok) return { text: shown.error, isError: true };
-  const owner = ownerOf(posted.body, input.local);
+  const owner = ownerOf(posted.body);
   await rememberSession(input.local.dir, shown.code, prepared.session, {
     ...owner,
     rights: prepared.args.rights === "elevated" ? "elevated" : "standard",
@@ -481,7 +494,7 @@ async function statusCall(input: {
   const posted = await input.post("remote_support_status", forwarded);
   const error = refused(posted.status, posted.body);
   if (error) return { text: error, isError: true };
-  if (!folderAllows(input.local.dir, code, ownerOf(posted.body, input.local))) return { text: NOT_YOURS, isError: true };
+  if (!folderAllows(input.local.dir, code, ownerOf(posted.body))) return { text: NOT_YOURS, isError: true };
   const key = await loadTechnicianKey(input.local.dir);
   const absorbed = await absorbStatus({ dir: input.local.dir, raw: posted.body.text, code, run, keyPath: key?.keyPath ?? null });
   if (!absorbed.markConnected || input.args.mark_connected === true) return { text: withConnectedNote(absorbed.text) };
@@ -510,7 +523,7 @@ async function closeCall(input: {
   const posted = await input.post("remote_support_close", { code, outcome });
   const error = refused(posted.status, posted.body);
   if (error) return { text: error, isError: true };
-  if (folderAllows(input.local.dir, code, ownerOf(posted.body, input.local))) await forgetAddress(input.local.dir, code);
+  if (folderAllows(input.local.dir, code, ownerOf(posted.body))) await markSessionClosed(input.local.dir, code);
   const text = typeof posted.body.text === "string" && posted.body.text ? redact(posted.body.text) : "Done.";
   return { text };
 }

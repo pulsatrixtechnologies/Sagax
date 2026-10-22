@@ -1,7 +1,7 @@
 // Fixed read-only probes for a Tailcat session. The command text is ours:
 // nothing the person or the model typed is interpolated into it.
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -62,26 +62,74 @@ export function supportFolderOwner(dir: string, code: string): { id: string; pri
   return { id, ...(principalId ? { principalId } : {}), ...(botId ? { botId } : {}) };
 }
 
+interface ScannedOwner { code: string; id: string; principalId?: string; botId?: string }
+// The sessions directory is scanned once per change, not once per publish or
+// close: the scan is cached and reused while the directory's mtime is
+// unchanged (a new session folder bumps it, which re-scans).
+const scanCache = new Map<string, { mtimeMs: number; owners: ScannedOwner[] }>();
+
+function scanSupportOwners(dir: string): ScannedOwner[] {
+  const sessions = path.join(path.resolve(dir), "sessions");
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(sessions).mtimeMs;
+  } catch {
+    scanCache.delete(path.resolve(dir));
+    return [];
+  }
+  const cached = scanCache.get(path.resolve(dir));
+  if (cached && cached.mtimeMs === mtimeMs) return cached.owners;
+  const owners: ScannedOwner[] = [];
+  let codes: string[] = [];
+  try {
+    codes = readdirSync(sessions);
+  } catch {
+    codes = [];
+  }
+  for (const code of codes) {
+    const owner = supportFolderOwner(dir, code);
+    if (!owner) continue;
+    owners.push({ code, id: owner.id, ...(owner.principalId ? { principalId: owner.principalId } : {}), ...(owner.botId ? { botId: owner.botId } : {}) });
+  }
+  scanCache.set(path.resolve(dir), { mtimeMs, owners });
+  return owners;
+}
+
 /** Every support folder that holds this session id, with its recorded owner. */
 export function supportOwnersOfId(dir: string, id: string): Array<{ code: string; principalId?: string; botId?: string }> {
   if (!REMOTE_SESSION_ID.test(id)) return [];
-  let codes: string[] = [];
-  try {
-    codes = readdirSync(path.join(path.resolve(dir), "sessions"));
-  } catch {
-    return [];
-  }
-  const owners: Array<{ code: string; principalId?: string; botId?: string }> = [];
-  for (const code of codes) {
-    const owner = supportFolderOwner(dir, code);
-    if (!owner || owner.id !== id) continue;
-    owners.push({ code, ...(owner.principalId ? { principalId: owner.principalId } : {}), ...(owner.botId ? { botId: owner.botId } : {}) });
-  }
-  return owners;
+  return scanSupportOwners(dir)
+    .filter((owner) => owner.id === id)
+    .map((owner) => ({ code: owner.code, ...(owner.principalId ? { principalId: owner.principalId } : {}), ...(owner.botId ? { botId: owner.botId } : {}) }));
 }
 
 export function normPrincipal(value: string): string {
   return value.trim().toLowerCase();
+}
+
+/** Remove session folders under `<dir>/sessions` not touched in `maxAgeMs`
+ * (default 48 h). Best effort, synchronous, nothing thrown. Returns how many
+ * folders were removed. */
+export function pruneSupportSessions(dir: string, now: number, maxAgeMs = 48 * 60 * 60 * 1000): number {
+  const sessions = path.join(path.resolve(dir), "sessions");
+  let codes: string[] = [];
+  try {
+    codes = readdirSync(sessions);
+  } catch {
+    return 0;
+  }
+  const cutoff = now - maxAgeMs;
+  let removed = 0;
+  for (const code of codes) {
+    const folder = path.join(sessions, code);
+    try {
+      if (statSync(folder).mtimeMs >= cutoff) continue;
+      rmSync(folder, { recursive: true, force: true });
+      removed++;
+    } catch { /* leave it for the next sweep */ }
+  }
+  if (removed) scanCache.delete(path.resolve(dir));
+  return removed;
 }
 
 /** A session Sagax opened itself (server/remote-support-local.ts): the
@@ -116,15 +164,62 @@ export function readSupportTunnel(dir: string, row: TunnelOwner): { keyPath: str
  * The Flow session folder first, then the folder of a session Sagax opened. */
 export function readTunnel(home: string, row: TunnelOwner, supportDir?: string): { keyPath: string; address: string } | null {
   if (!REMOTE_SESSION_ID.test(row.id)) return null;
-  const flow = readFlowTunnel(home, row.id);
+  const flow = readFlowTunnel(home, row);
   if (flow) return flow;
   return supportDir ? readSupportTunnel(supportDir, row) : null;
 }
 
-function readFlowTunnel(home: string, id: string): { keyPath: string; address: string } | null {
+/** A Flow session folder (`~/.pulsatrix-flow/tailcat/<id>`) carries no owner
+ * when a Flow skill first drops it. The first person to publish it binds it
+ * (bindFlowOwner); after that only that person and bot resolve its tunnel. */
+export function flowOwner(home: string, id: string): { principalId: string; botId: string } | null {
+  if (!REMOTE_SESSION_ID.test(id)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(sessionDir(home, id), "owner.json"), "utf8")) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const record = parsed as Record<string, unknown>;
+    const principalId = typeof record.principalId === "string" ? normPrincipal(record.principalId) : "";
+    const botId = typeof record.botId === "string" ? record.botId.trim() : "";
+    return principalId && botId ? { principalId, botId } : null;
+  } catch {
+    return null;
+  }
+}
+
+export type FlowBindResult = "no-folder" | "bound" | "match" | "other";
+
+/** Bind a Flow folder to the first publisher. The folder must already exist
+ * (a Flow skill created it); the binding goes in owner.json and never changes. */
+export function bindFlowOwner(home: string, id: string, owner: { principalId: string; botId: string }): FlowBindResult {
+  if (!REMOTE_SESSION_ID.test(id)) return "no-folder";
+  const dir = sessionDir(home, id);
+  try {
+    statSync(dir);
+  } catch {
+    return "no-folder";
+  }
+  const existing = flowOwner(home, id);
+  if (existing) {
+    return existing.principalId === normPrincipal(owner.principalId) && existing.botId === owner.botId.trim() ? "match" : "other";
+  }
+  try {
+    writeFileSync(path.join(dir, "owner.json"), `${JSON.stringify({ principalId: normPrincipal(owner.principalId), botId: owner.botId.trim() })}\n`, { mode: 0o600 });
+    return "bound";
+  } catch {
+    return "no-folder";
+  }
+}
+
+function readFlowTunnel(home: string, row: TunnelOwner): { keyPath: string; address: string } | null {
+  const id = row.id;
   const dir = sessionDir(home, id);
   const keyPath = path.join(dir, "client.private.json");
   const addressPath = path.join(dir, "address");
+  // A bound folder resolves only for the person and bot that first published it.
+  const owner = flowOwner(home, id);
+  if (owner && (!row.principalId || !row.botId || normPrincipal(row.principalId) !== owner.principalId || row.botId !== owner.botId)) {
+    return null;
+  }
   let address = "";
   try {
     address = readFileSync(addressPath, "utf8").trim();

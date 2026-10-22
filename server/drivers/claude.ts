@@ -22,6 +22,7 @@ import { join, dirname, isAbsolute, normalize } from "node:path";
 import { LOGIN_MARKER } from "../principal-engine-logins.ts";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
+import { claudeProtectedDenyRules } from "../engine-protected-paths.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { writeFileAtomic, writeFileAtomicIfChanged } from "../atomic.ts";
 import { augmentedPath } from "../env-path.ts";
@@ -530,6 +531,11 @@ const CLAUDE_RULE = /^[A-Za-z_][\w-]*(\([^\p{Cc}]+\))?$/u;
  * --settings file, the one source --setting-sources project still reads besides
  * the bot's folder, so every bot of the instance gets them; a guest's confined
  * turn never does. A malformed value grants nothing. */
+/** Deny rules applied to every non-guest Claude turn: the protected folders. */
+export function remoteSupportDenyRules(): string[] {
+  return claudeProtectedDenyRules();
+}
+
 export function instanceClaudeAllowRules(env: NodeJS.ProcessEnv = process.env): string[] {
   const raw = env.SAGAX_CLAUDE_ALLOW?.trim();
   if (!raw) return [];
@@ -2211,7 +2217,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (turn.guestConfined) settings.permissions = GUEST_CLAUDE_PERMISSIONS;
       else {
         const allow = instanceClaudeAllowRules();
-        if (allow.length) settings.permissions = { allow };
+        // Always deny reads of the remote-support folder: on an organization
+        // server the engine runs in the Sagax container, so the technician key
+        // and the session addresses would otherwise be on its filesystem.
+        const deny = remoteSupportDenyRules();
+        if (allow.length || deny.length) settings.permissions = { ...(allow.length ? { allow } : {}), ...(deny.length ? { deny } : {}) };
       }
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;

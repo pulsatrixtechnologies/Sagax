@@ -788,8 +788,9 @@ import { installTerminalFeature } from "./terminal-install.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
 import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
 import { recallSupportSession } from "./remote-support-local.ts";
-import { supportOwnersOfId } from "./remote-session-probe.ts";
+import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
+import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
@@ -4017,8 +4018,9 @@ function agentsIntegration(
       // Technician key for remote support: this computer only (desktop PC or
       // the bot's cloud computer). The private file never goes in the env.
       SAGAX_REMOTE_SUPPORT_DIR: join(DATA_DIR, "remote-support"),
-      // the opener written into open.json when the server answer does not name one
-      SAGAX_REMOTE_SUPPORT_PRINCIPAL: safetyPrincipal(threadId).principalId?.trim().toLowerCase() ?? "",
+      // The opener (person and bot) is not read from this env: the engine
+      // launches the proxy and could forge it. It comes only from the owner
+      // the server attaches to the /api/internal/perspicax/tool answer.
       ...(() => {
         const speakerId = safetyPrincipal(threadId).principalId;
         const speaker = speakerId ? principals.byId(speakerId) : undefined;
@@ -10065,7 +10067,8 @@ const desktopViewer = createDesktopViewer({
   // voice mode's live call; in-chat terminal WebSocket (server/routes/terminal.ts)
   acceptsUpgrade: (path) =>
     /^\/api\/bots\/[\w-]+\/voice\/(?:listen|speech)$/.test(path)
-    || /^\/api\/terminal\/sessions\/[\w-]+\/ws$/.test(path),
+    || /^\/api\/terminal\/sessions\/[\w-]+\/ws$/.test(path)
+    || isRemoteControlPath(path),
   target: (id, auth) => {
     if (id === SANDBOX_VIEWER_TARGET) {
       // The caller's own server environment desktop, never anyone else's.
@@ -27024,6 +27027,13 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
       const principalId = perspicaxMcp?.turnPrincipal(capability.threadId, capability.generation, capability.botId) || remoteSessionSpeaker(capability.threadId);
       return principalId ? { principalId: principalId.trim().toLowerCase(), botId: capability.botId } : null;
     },
+    // status/close: the support folder's recorded owner must be absent or this
+    // same owner, checked before Perspicax is called (server/remote-session-probe.ts).
+    ownsSupportCode: (code, owner) => {
+      const folder = supportFolderOwner(REMOTE_SUPPORT_DIR, code);
+      if (!folder || (!folder.principalId && !folder.botId)) return true;
+      return Boolean(owner) && folder.principalId === owner!.principalId.trim().toLowerCase() && folder.botId === owner!.botId;
+    },
   }),
   createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }), confidential: (threadId) => store.isConfidentialThread(threadId) }),
   createRoutineRunInternalRoutes<Routine, RoutineRun>({
@@ -35341,6 +35351,14 @@ terminalFeature.wire(ROUTES, {
   live: (auth) => auth.kind === "loopback" || (auth.kind === "session" && sessions.isLive(auth.session.id)),
 });
 ROUTES.push(createRemoteSessionRoutes({ sessions: remoteSessions, principalId: terminalPrincipalId }));
+// Live control (stage 2): a WebSocket per session, screen frames out and
+// validated input in, open only to the person who owns the session.
+ROUTES.push(createRemoteControlRoutes({
+  principalId: terminalPrincipalId,
+  live: (auth) => auth.kind === "loopback" || (auth.kind === "session" && sessions.isLive(auth.session.id)),
+  openControl: (input) => remoteSessions.openControl(input),
+  upgrade: (req) => desktopViewer.upgradeOf(req),
+}));
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds
 // the WebRTC audio; the harness creates the session with the key (which
