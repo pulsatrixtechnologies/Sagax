@@ -17,10 +17,18 @@ import {
 type Phase = "idle" | "connecting" | "active";
 
 /** Opens the control WebSocket for a session, draws its frames, and forwards
- * the technician's mouse and keyboard while control is active. Input leaves
+ * the technician's mouse and keyboard while control is granted. Input leaves
  * only after the grant, and the socket closes (control released) when the
- * component unmounts or the caller toggles off. */
-export function useRemoteControl(botId: string, sessionId: string | undefined) {
+ * component unmounts.
+ *
+ * `live`: the take-over window (SandboxDesktopModal): the socket opens at
+ * once and `granted` follows the window's Take / Release control, so the
+ * frames keep coming while the person only watches. */
+export function useRemoteControl(botId: string, sessionId: string | undefined, options: { live?: boolean; granted?: boolean } = {}) {
+  const live = options.live === true;
+  const granted = options.granted !== false;
+  const grantedRef = useRef(granted);
+  grantedRef.current = granted;
   const [phase, setPhase] = useState<Phase>("idle");
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [aspect, setAspect] = useState<number | undefined>(undefined);
@@ -60,6 +68,8 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
   }, [flush]);
 
   const queue = useCallback((event: ControlEvent) => {
+    // watching only: nothing the person does reaches the computer
+    if (!grantedRef.current) return;
     pending.current.push(event);
     if (event.t !== "m") flush(); // send clicks and keys at once; moves batch
   }, [flush]);
@@ -75,7 +85,7 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
     socketRef.current = socket;
     socket.onopen = () => {
       setPhase("active");
-      try { socket.send(grantMessage(true)); } catch { /* closed */ }
+      try { socket.send(grantMessage(grantedRef.current)); } catch { /* closed */ }
       flushTimer.current = setInterval(flush, 40);
     };
     socket.onmessage = (message) => {
@@ -103,6 +113,20 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
 
   // Release control when the session changes or the component unmounts.
   useEffect(() => stop, [sessionId, stop]);
+
+  // The take-over window: connected while it is open.
+  useEffect(() => {
+    if (live && sessionId) start();
+  }, [live, sessionId, start]);
+
+  // Take / Release control in the window: one grant message, the frames go on.
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    // given back: what was not sent yet stays here (the server lifts held keys)
+    if (!granted) pending.current = [];
+    try { socket.send(grantMessage(granted)); } catch { /* closing */ }
+  }, [granted]);
 
   const toggle = useCallback(() => {
     if (phase === "idle") start();
@@ -145,7 +169,7 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
 
   // Keyboard is captured on the window while the surface holds focus.
   useEffect(() => {
-    if (phase !== "active") return;
+    if (phase !== "active" || !granted) return;
     const owns = () => surfaceRef.current && document.activeElement === surfaceRef.current;
     const onKeyDown = (event: KeyboardEvent) => {
       if (!owns()) return;
@@ -185,10 +209,11 @@ export function useRemoteControl(botId: string, sessionId: string | undefined) {
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [phase, queue, sendRelease]);
+  }, [phase, granted, queue, sendRelease]);
 
   return {
     phase,
+    granted,
     frameUrl,
     aspect,
     error,

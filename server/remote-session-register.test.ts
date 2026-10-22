@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Message, Store } from "./store.ts";
 import { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 import { createRemoteSessionService, osFromUname } from "./remote-sessions.ts";
-import { readSupportTunnel, readTunnel, type RunCommand } from "./remote-session-probe.ts";
+import { decodeWindowsScript, OS_PROBE_WINDOWS, readSupportTunnel, readTunnel, type RunCommand } from "./remote-session-probe.ts";
 import { createRemoteSessionRegistrar, toolResultObject } from "./remote-session-register.ts";
 import { handleRemoteSupportCall, recallSupportSession, type TailcatRun } from "./remote-support-local.ts";
 
@@ -42,10 +42,11 @@ describe("tool result object", () => {
     expect(toolResultObject({ content: [{ type: "text", text: "not json" }] })).toBeNull();
   });
 
-  it("names the OS from uname, and Windows when there is none", () => {
+  it("names the OS from uname, and never Windows by default", () => {
     expect(osFromUname("Darwin\n")).toBe("macos");
     expect(osFromUname("Linux")).toBe("linux");
-    expect(osFromUname("")).toBe("windows");
+    // 8F2NZU: a Mac shown as Windows because a failed uname meant Windows
+    expect(osFromUname("")).toBeNull();
   });
 });
 
@@ -97,6 +98,18 @@ describe("remote session registrar", () => {
     ]);
   });
 
+  it("takes the OS the support page detected from the connected status, never a default", async () => {
+    const published: Array<{ open: { os?: string } }> = [];
+    const registrar = createRemoteSessionRegistrar({ publish: async (input) => { published.push(input); }, end: async () => undefined, now: () => NOW.getTime() });
+    const call = { threadId: THREAD, botId: BOT, principalId: PERSON };
+    await registrar.observe({ ...call, name: "remote_support_open", args: { session: ID, end_at: "2026-10-21T17:00:00Z" }, result: text({ code: CODE }) });
+    await registrar.observe({ ...call, name: "remote_support_status", args: { code: CODE }, result: text({ state: "connected", os: "macos" }) });
+    expect(published[0]?.open.os).toBe("macos");
+    await registrar.observe({ ...call, name: "remote_support_open", args: { session: "bbbbbbbbbbbb", end_at: "2026-10-21T17:00:00Z" }, result: text({ code: "GVPZGU" }) });
+    await registrar.observe({ ...call, name: "remote_support_status", args: { code: "GVPZGU" }, result: text({ state: "connected", os: "beos" }) });
+    expect(published[1]?.open.os).toBeUndefined();
+  });
+
   it("ignores an unknown code, a refused call and another tool", async () => {
     const published: unknown[] = [];
     const registrar = createRemoteSessionRegistrar({ publish: async (input) => { published.push(input); }, end: async () => undefined, now: () => NOW.getTime() });
@@ -129,7 +142,8 @@ describe("a session the bot opened through the sagax tool path", () => {
       ssh.push(argv.at(-1) ?? "");
       const command = argv.at(-1) ?? "";
       if (command === "uname -s") return { code: 1, stdout: "", stderr: "'uname' is not recognized" };
-      if (command.includes("Win32_ComputerSystem")) {
+      if (command === OS_PROBE_WINDOWS) return { code: 0, stdout: "Win32NT\r\n", stderr: "" };
+      if ((decodeWindowsScript(command) ?? "").includes("Win32_ComputerSystem")) {
         return { code: 0, stdout: ["hostname=POSTE-01", "user=exemple\\usager", "model=PowerEdge", "serial=SN40", "cpu=Xeon", "ramBytes=34359738368", "diskFreeKb=209715200", "diskTotalKb=524288000"].join("\n"), stderr: "" };
       }
       return { code: 0, stdout: "", stderr: "" };

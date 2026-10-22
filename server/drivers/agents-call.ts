@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
+import { wrapUntrusted } from "../../shared/safety-review.ts";
 
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
@@ -1161,6 +1162,26 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (!started.ok || r.error) return { text: String(r.error ?? "No usage card could be shown."), isError: true };
     const summary = typeof r.summary === "string" ? r.summary : "";
     return { text: `${summary} The live card is in the chat (it updates every two seconds for five minutes, then the person can tap Reprendre). Answer in a sentence or two from these numbers; do not repeat the whole card.` };
+  }
+  if (name === "remote_session_exec" || name === "remote_session_snapshot") {
+    const exec = name === "remote_session_exec";
+    if (exec && (typeof args.command !== "string" || !args.command.trim())) return { text: "command: the command line to run on the remote computer.", isError: true };
+    const body = {
+      ...(typeof args.session === "string" && args.session.trim() ? { session: args.session.trim() } : {}),
+      ...(exec ? { command: String(args.command) } : {}),
+      ...(exec && typeof args.timeout_seconds === "number" ? { timeout_seconds: args.timeout_seconds } : {}),
+    };
+    const { ok, body: r } = await apiResponse(`/api/internal/remote-sessions/${exec ? "exec" : "snapshot"}`, { method: "POST", body: JSON.stringify(body) });
+    if (!ok || r.error) return { text: String(r.error ?? "The remote computer did not run that command."), isError: true };
+    const exitCode = Number(r.exitCode ?? 0);
+    const stdout = String(r.stdout ?? "");
+    const stderr = String(r.stderr ?? "");
+    const lines = [`${String(r.host ?? "remote computer")} (${String(r.os ?? "")}): ${r.timedOut ? "stopped at its time limit" : `exit code ${exitCode}`}`];
+    // the client's computer wrote this: data, never instructions (review of #965)
+    if (stdout) lines.push(wrapUntrusted("remote stdout", stdout.replace(/\s+$/, "")));
+    if (stderr) lines.push(wrapUntrusted("remote stderr", stderr.replace(/\s+$/, "")));
+    if (!stdout && !stderr && !r.timedOut) lines.push("(no output)");
+    return { text: lines.join("\n"), ...(exitCode !== 0 || r.timedOut ? { isError: true } : {}) };
   }
   if (name === "offer_shell_terminal") {
     const resourceId = typeof args.resource_id === "string" ? args.resource_id.trim() : "";

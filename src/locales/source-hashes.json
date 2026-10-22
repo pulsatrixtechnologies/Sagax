@@ -13858,7 +13858,19 @@
       "orgCalls.add": "9fd728c66c9a256b121472dabf32a34317aed01d8427d70ec830289cf23a7cc8",
       "orgCalls.remove": "c3812fc4acb861d5182fc2b8155f327f736fbe5e5eb86a7bd7afcb6dc5497282",
       "outbound.purchase.mismatch": "dac8a4e6b402adc107ee17c19cd04c6abd1e65681ef84929eec5422e1adb256f",
-      "outbound.purchase.declared": "677c682f84ee6056b77e1db6df1d9f43c598c498395f647de1f1054077452bc4"
+      "outbound.purchase.declared": "677c682f84ee6056b77e1db6df1d9f43c598c498395f647de1f1054077452bc4",
+      "remoteSession.inventory.pending": "d7b0c9ae435a19ac302b631ccb30cb710ba3feea1cd2daa658a8f7eed2dfeb86",
+      "remoteSession.inventory.no-tunnel": "db20d04b4f916c502d4156e678b9e6ba302182abb5c09fe72fd70d205578db58",
+      "remoteSession.inventory.no-answer": "842fa01102be5a1333349651efc07f1be54740fb9fdd16724e930dbf7a1c392a",
+      "remoteSession.inventory.os-unknown": "015a67cbcccf35d6288e9f268ceb6c20434d07a3cf1f2da5ded5d0704e5e9bdf",
+      "remoteSession.inventory.no-client": "6b71a389004e7509bd50f09a947889051801bed250dca23be82f1445aeb6c2ec",
+      "remoteSession.osUnknown": "f0a17dcfacbe036c569f72fedfb86779f7f66c439c2cb5974a05d0ddcf4d884c",
+      "remoteSession.headless": "8378f6014585aa7785ce5ab40768749e15d2f7dc984209d3bb4632634bc6e686",
+      "remoteSession.screenDenied": "865c8ad16a55adc78738492d610880629fdc9dad6ae2f0d58031c8fc2c9391c6",
+      "remoteSession.screenFailed": "e4d30ead33151f59489bfc7e634125ea00dce94c2eed8302b05fa923543a9392",
+      "remoteSession.screenLoading": "e261c1a53449426f689e2b4a9c26984312665d942b7297fdd8e4a83afa481636",
+      "remoteSession.screenOsUnknown": "7ddea63627f5984e8ee518c651e92101e1e4be569477eca4fcf5e16d5f6bb760",
+      "remoteSession.confirmStop": "9d401f681b0f72eef26776e3e58543d43a3d713083d85faccfc6b78667d17b46"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

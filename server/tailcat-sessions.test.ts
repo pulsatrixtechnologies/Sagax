@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Message, Store } from "./store.ts";
 import { TerminalResourceRegistry } from "./terminal-resources/registry.ts";
 import { createRemoteSessionService, type RemoteSessionService } from "./remote-sessions.ts";
-import type { RunCommand } from "./remote-session-probe.ts";
+import { decodeWindowsScript, type RunCommand } from "./remote-session-probe.ts";
 import { parsePublishBody } from "./routes/remote-sessions.ts";
 import { resolveTailcatBinary } from "./tailcat-bin.ts";
 
@@ -71,7 +71,8 @@ describe("remote session service", () => {
     const registry = new TerminalResourceRegistry();
     const run: RunCommand = async (argv) => {
       calls.push(argv);
-      const command = argv.at(-1) ?? "";
+      const raw = argv.at(-1) ?? "";
+      const command = decodeWindowsScript(raw) ?? raw;
       if (command.includes("Win32_ComputerSystem")) {
         return {
           code: 0,
@@ -93,7 +94,7 @@ describe("remote session service", () => {
       }
       if (command.includes("sagax-transfer")) return { code: 0, stdout: "C:/Temp/sagax-transfer\n", stderr: "" };
       // the "is a file already there" check before an upload (#959): nothing is
-      if (command.includes("-EncodedCommand")) return { code: 0, stdout: "no", stderr: "" };
+      if (raw.includes("-EncodedCommand") && command.includes("Test-Path")) return { code: 0, stdout: "no", stderr: "" };
       if (command.includes("px-sagax-shot.png") && argv[1] === "ssh") return { code: 0, stdout: "C:/Temp/px-sagax-shot.png\n", stderr: "" };
       if (argv[1] === "cp") {
         const dest = argv.at(-1) ?? "";
@@ -164,7 +165,8 @@ describe("remote session service", () => {
     const closed = await service.close(PERSON, BOT, ID);
     expect(closed?.state).toBe("ended");
     expect(closed?.suggestions).toEqual([]);
-    expect(calls.some((argv) => (argv.at(-1) ?? "").includes(`/tmp/px-assist-${ID}/stop`))).toBe(true);
+    // a Windows session gets the PowerShell stop file, encoded (its shell is PowerShell)
+    expect(calls.some((argv) => (decodeWindowsScript(argv.at(-1) ?? "") ?? "").includes(`'px-assist-${ID}'`))).toBe(true);
   });
 
   it("still posts the card when this host has no tunnel", async () => {

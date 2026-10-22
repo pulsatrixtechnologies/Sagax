@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { controlHelperCommand, controlSupported, windowsControlScript } from "./remote-control-helper.ts";
+import { decodeWindowsScript } from "./remote-session-probe.ts";
 
 const OPTS = { fps: 6, quality: 60, maxSeconds: 3600, sessionId: "0123456789ab", technician: "Jean, GOX" };
 
@@ -17,9 +18,13 @@ describe("controlHelperCommand", () => {
     const built = controlHelperCommand("windows", OPTS);
     expect(built).not.toBeNull();
     // the tunnel command stays small (no cmd.exe length limit) and reads the program from stdin
-    expect(built!.command.length).toBeLessThan(400);
-    expect(built!.command).toContain("[Console]::In.ReadLine()");
-    expect(built!.command).toContain("Invoke-Expression");
+    expect(built!.command.length).toBeLessThan(800);
+    // encoded: the session shell on Windows is PowerShell, and a $variable in
+    // a double-quoted -Command would be expanded by it first (8F2NZU)
+    expect(built!.command).not.toContain("$");
+    const bootstrap = decodeWindowsScript(built!.command) ?? "";
+    expect(bootstrap).toContain("[Console]::In.ReadLine()");
+    expect(bootstrap).toContain("Invoke-Expression");
     // the program rides the first stdin line as base64 and decodes to the script
     const b64 = built!.preamble.trim();
     expect(Buffer.from(b64, "base64").toString("utf8")).toBe(built!.script);

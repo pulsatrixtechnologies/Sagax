@@ -1,5 +1,5 @@
-// Which remote session the Computer tab should show. The server keeps the
-// same choice for the shell; this store updates the panel before the next poll.
+// Which remote session is in focus (the one the shell opens on). The server
+// keeps the same choice; this store updates the screen before the next poll.
 import { useSyncExternalStore } from "react";
 
 let focused: { botId: string; id: string } | null = null;
@@ -28,43 +28,6 @@ export function useFocusedRemoteSession(botId: string): string | null {
       return () => listeners.delete(listener);
     },
     () => (focused?.botId === botId ? focused.id : null),
-    () => null,
-  );
-}
-
-// Prendre le contrôle opens the Computer tab in every mode. Simple hides that
-// tab otherwise, so the bot whose remote session is being controlled is kept
-// here until the Computer tab closes.
-let controlling: string | null = null;
-const controlListeners = new Set<() => void>();
-
-function emitControl() {
-  for (const listener of controlListeners) listener();
-}
-
-export function startRemoteControl(botId: string) {
-  if (controlling === botId) return;
-  controlling = botId;
-  emitControl();
-}
-
-export function endRemoteControl() {
-  if (controlling === null) return;
-  controlling = null;
-  emitControl();
-}
-
-export function remoteControlBot(): string | null {
-  return controlling;
-}
-
-export function useRemoteControlBot(): string | null {
-  return useSyncExternalStore(
-    (listener) => {
-      controlListeners.add(listener);
-      return () => controlListeners.delete(listener);
-    },
-    () => controlling,
     () => null,
   );
 }

@@ -1,18 +1,22 @@
 /** Isolated gallery for headless screenshots of a Tailcat remote session:
  * the bot panel's Sessions à distance section above Routines (its
- * neighbour), the chat card, and the Computer tab's read-only screen. The
- * capture answers /api itself (GET .../remote-sessions, .../screen), so
- * ?rows=0 shows the empty state. Not shipped in the app.
+ * neighbour), and the chat card beside the bot computer's own screen card
+ * (the reference it must match): a Windows computer with its live screen, a
+ * computer whose facts are not there yet (the card says why) and a server
+ * without a desktop (shell only). ?takeover=1 opens the take-control window.
+ * The capture answers /api itself (GET .../remote-sessions, .../screen) and
+ * the control WebSocket, so ?rows=0 shows the empty state. Not shipped.
  * ?skin=<id>&lang=<code> */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CalendarClock, Plus } from "lucide-react";
 import type { RemoteSessionView } from "../../shared/remote-session";
+import { ComputerScreen } from "../components/computer/ComputerScreen";
 import { RemoteSessionCard } from "../components/remote-session/RemoteSessionCard";
-import { RemoteSessionControl } from "../components/remote-session/RemoteSessionControl";
-import { RemoteControlSurface } from "../components/remote-session/RemoteControlSurface";
+import { RemoteTakeover } from "../components/remote-session/RemoteScreenCard";
 import { RemoteSessionsSection } from "../components/remote-session/RemoteSessionsSection";
 import { RoutineList } from "../components/routines/RoutineList";
+import { TakeControlPill } from "../components/SandboxDesktopView";
 import { setLocale, t } from "../lib/i18n";
 import type { Routine } from "../lib/routines";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -34,19 +38,56 @@ const view: RemoteSessionView = {
   elevated: false,
   endAt: new Date(NOW + 2 * H).toISOString(),
   hostname: "POSTE-01",
-  osName: "Windows Server 2022",
+  osName: "Windows 11 Professionnel",
   user: "exemple\\usager",
-  model: "PowerEdge R650",
+  model: "OptiPlex 7010",
   serial: "7XK2Q93",
-  cpu: "Intel Xeon Silver 4310",
+  cpu: "Intel Core i7-13700",
   ram: "32 Go",
   disk: "212 Go libres sur 476 Go",
+  inventory: "ready",
   suggestions: [{ id: "rights" }, { id: "cpu" }, { id: "errors" }, { id: "startup" }],
+};
+/** A Mac whose OS the tunnel did not tell yet (8F2NZU): never "Windows". */
+const unknown: RemoteSessionView = {
+  id: "8f2a0c1d2e3f",
+  code: "8F2NZU",
+  state: "connected",
+  os: "windows",
+  osKnown: false,
+  elevated: false,
+  endAt: new Date(NOW + 2 * H).toISOString(),
+  inventory: "os-unknown",
+  suggestions: [],
+};
+const headless: RemoteSessionView = {
+  ...view,
+  id: "aaaaaaaaaaaa",
+  code: "GVPZGU",
+  hostname: "SRV-FICHIERS",
+  osName: "Windows Server 2022 Standard",
+  model: "PowerEdge R650",
+  headless: true,
+  suggestions: [{ id: "cpu" }, { id: "errors" }],
 };
 const routine = (id: string, name: string, everyMinutes: number): Routine => ({
   id, name, prompt: "", target: "bot", botId: "melonie", runOn: "maus", enabled: true,
   schedule: { type: "interval", everyMinutes, anchorAt: 1 }, durationMinutes: 30, nextRunAt: NOW + H, createdAt: 1, updatedAt: 1,
 } as Routine);
+
+// A mocked desktop (never a real screen) for the bot computer's reference card.
+const MOCK_FRAME = "data:image/svg+xml;utf8," + encodeURIComponent(
+  `<svg xmlns='http://www.w3.org/2000/svg' width='1280' height='800'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#1f2933'/><stop offset='1' stop-color='#3e4c59'/></linearGradient></defs><rect width='1280' height='800' fill='url(#g)'/><rect x='200' y='140' width='760' height='440' rx='10' fill='#f5f7fa'/><rect x='200' y='140' width='760' height='36' rx='10' fill='#cbd2d9'/><text x='640' y='380' fill='#52606d' font-family='sans-serif' font-size='28' text-anchor='middle'>Ordinateur du bot</text></svg>`,
+);
+
+function Column({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex w-[520px] shrink-0 flex-col gap-2">
+      <h3 className="text-[12px] font-medium uppercase tracking-wide text-ink-tertiary">{title}</h3>
+      {children}
+    </section>
+  );
+}
 
 function Gallery() {
   return (
@@ -64,32 +105,43 @@ function Gallery() {
           </section>
         </div>
       </aside>
-      <div data-gallery-card="" className="w-[560px] shrink-0">
-        <RemoteSessionCard botId="melonie" threadId="thread-1" view={view} />
+      <div data-gallery-compare="" className="flex shrink-0 items-start gap-6">
+        <Column title="Ordinateur du bot (référence)">
+          <div data-gallery-bot-screen="" className="group/reference">
+            <ComputerScreen
+              source="server"
+              state="running"
+              caption={t("computer.screenOf", { name: "Melonie" })}
+              live={<><img src={MOCK_FRAME} alt="" className="h-full w-full object-contain" /><TakeControlPill onClick={() => {}} /></>}
+              controls={{ pause: () => {}, stop: () => {} }}
+            />
+          </div>
+        </Column>
+        <Column title="Session Tailcat (Windows)">
+          <div data-gallery-card="">
+            <RemoteSessionCard botId="melonie" threadId="thread-1" view={view} />
+          </div>
+        </Column>
       </div>
-      <aside data-gallery-computer="" className="w-[380px] shrink-0 rounded-xl border border-hairline/40 bg-panel px-4 pt-4">
-        <RemoteSessionControl botId="melonie" />
-      </aside>
-      <aside data-gallery-control="" className="flex w-[380px] shrink-0 flex-col gap-4">
-        <div className="overflow-hidden rounded-xl border border-hairline bg-panel">
-          <RemoteControlSurface controllable active connecting={false} frameUrl={MOCK_FRAME} aspect={16 / 9} error={null} missed={false} onToggle={() => {}} />
-        </div>
-        <div className="overflow-hidden rounded-xl border border-hairline bg-panel">
-          <RemoteControlSurface controllable={false} active={false} connecting={false} frameUrl={null} aspect={16 / 10} error={null} missed={false} />
-        </div>
-      </aside>
+      <div data-gallery-states="" className="flex shrink-0 items-start gap-6">
+        <Column title="OS pas encore connu (8F2NZU)">
+          <div data-gallery-unknown="">
+            <RemoteSessionCard botId="melonie" threadId="thread-1" view={unknown} />
+          </div>
+        </Column>
+        <Column title="Serveur sans interface">
+          <div data-gallery-headless="">
+            <RemoteSessionCard botId="melonie" threadId="thread-1" view={headless} />
+          </div>
+        </Column>
+      </div>
+      {params.get("takeover") === "1" && <RemoteTakeover botId="melonie" view={view} state="running" controls={{ pause: () => {}, stop: () => {} }} onClose={() => {}} />}
     </div>
   );
 }
 
-// A mocked frame (a neutral desktop) so a headless capture shows the live
-// control surface without a real session: never a real screen.
-const MOCK_FRAME = "data:image/svg+xml;utf8," + encodeURIComponent(
-  `<svg xmlns='http://www.w3.org/2000/svg' width='640' height='360'><rect width='640' height='360' fill='#1f2933'/><rect x='0' y='0' width='640' height='28' fill='#111827'/><circle cx='320' cy='190' r='40' fill='#374151'/><text x='320' y='320' fill='#9ca3af' font-family='sans-serif' font-size='16' text-anchor='middle'>POSTE-01</text></svg>`,
-);
-
 // the capture serves this list; ?rows=0 serves an empty one
-(window as unknown as { __remoteRows: RemoteSessionView[] }).__remoteRows = params.get("rows") === "0" ? [] : [view];
+(window as unknown as { __remoteRows: RemoteSessionView[] }).__remoteRows = params.get("rows") === "0" ? [] : [view, headless];
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

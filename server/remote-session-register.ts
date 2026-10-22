@@ -150,7 +150,10 @@ export function createRemoteSessionRegistrar(deps: {
         if (!open) return null;
         const once = onceKey(principalId, call.botId, call.threadId, open.id);
         if (published.has(once)) return null;
-        await deps.publish({ principalId, botId: call.botId, threadId: call.threadId, open });
+        // the OS the support page detected, when Perspicax says it: better
+        // than asking the computer, and never a guess
+        const detected = open.os ? null : parseRemoteSessionOs(answer.os);
+        await deps.publish({ principalId, botId: call.botId, threadId: call.threadId, open: detected ? { ...open, os: detected } : open });
         prune(published, (at) => at, 1);
         published.set(once, now());
         return "published";

@@ -9,8 +9,7 @@ import type { TerminalEmbed } from "../../../shared/terminal-resources";
 import { TerminalChatEmbed } from "../terminal/TerminalChatEmbed";
 import { RemoteSessionActions, remoteFileNotice } from "./RemoteSessionActions";
 import { RemoteSessionCard, remoteSuggestionText } from "./RemoteSessionCard";
-import { RemoteSessionScreen } from "./RemoteSessionControl";
-import { beginRemoteControl, remoteClosePhase, RemoteSessionsPanel, RemoteSessionsSection, runRemoteSessionClose } from "./RemoteSessionsSection";
+import { remoteClosePhase, RemoteSessionsPanel, RemoteSessionsSection, runRemoteSessionClose, takeRemoteControl } from "./RemoteSessionsSection";
 
 const ADDRESS = "tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd";
 
@@ -181,35 +180,19 @@ describe("remote session surfaces", () => {
     expect(card).not.toContain(bare.id);
   });
 
-  it("takes control on the Computer tab, keeps the screen read-only, and closes in two steps", async () => {
+  it("takes control in the window, never the Computer tab, and closes in two steps", async () => {
     setLocale("fr");
     const focused: string[] = [];
     const opened: string[] = [];
-    beginRemoteControl({
+    takeRemoteControl({
       botId: "melonie",
       sessionId: view.id,
-      focusLocal: (_bot, id) => focused.push(id),
-      focusRemote: (_bot, id) => focused.push(`remote:${id}`),
-      openComputer: () => opened.push("computer"),
+      focusLocal: (_bot: string, id: string) => focused.push(id),
+      focusRemote: (_bot: string, id: string) => focused.push(`remote:${id}`),
+      openWindow: () => opened.push("window"),
     });
-    beginRemoteControl({
-      botId: "melonie",
-      sessionId: view.id,
-      focusLocal: () => focused.push("again"),
-      focusRemote: () => undefined,
-      openComputer: () => opened.push("computer again"),
-    });
-    expect(focused).toEqual([view.id, `remote:${view.id}`, "again"]);
-    // every mode opens the Computer tab, Simple included
-    expect(opened).toEqual(["computer", "computer again"]);
-
-    const available = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: "blob:screen", missed: false }));
-    expect(available).toContain("<img");
-    expect(available).toContain(t("remoteSession.screen"));
-    const unavailable = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: null, missed: true }));
-    expect(unavailable.replaceAll("&#x27;", "'")).toContain(t("remoteSession.screenUnavailable"));
-    expect(unavailable).not.toContain("<img");
-    expect(`${available} ${unavailable}`).not.toMatch(/vnc|mouse|keyboard/i);
+    expect(focused).toEqual([view.id, `remote:${view.id}`]);
+    expect(opened).toEqual(["window"]);
 
     expect(remoteClosePhase(null, view.id)).toBe("ask");
     expect(remoteClosePhase(view.id, view.id)).toBe("commit");

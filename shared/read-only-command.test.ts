@@ -90,3 +90,40 @@ describe("runCommandOf", () => {
     expect(runCommandOf("not json")).toBeUndefined();
   });
 });
+
+describe("isReadOnlyCommand: security review of #965", () => {
+  it("knows a secret path written with backslashes, even unquoted", () => {
+    for (const line of [
+      "cat C:\\Users\\bob\\.ssh\\id_rsa",
+      "cat 'C:\\Users\\bob\\.ssh\\id_rsa'",
+      "type C:\\Users\\bob\\.aws\\credentials",
+      "cat C:\\repo\\.env",
+      "cat C:\\Users\\bob\\.config\\gh\\hosts.yml",
+    ]) expect(isReadOnlyCommand(line)).toBe(false);
+  });
+
+  it("refuses PowerShell drives, provider paths and network paths anywhere", () => {
+    for (const line of [
+      "ls env:",
+      "cat env:PATH",
+      "ls HKLM:\\Software",
+      "cat Microsoft.PowerShell.Core\\FileSystem::\\\\host\\share\\x",
+      "ls \\\\host\\share",
+      "cat x \\\\host\\share",
+    ]) expect(isReadOnlyCommand(line)).toBe(false);
+  });
+
+  it("refuses a carriage return and Unicode quote or space lookalikes", () => {
+    for (const line of [
+      "ls\rrm -rf x",
+      "echo \u201ca\u201d; ls",
+      "echo \u2018a\u2019",
+      "ls\u00a0-la",
+      "ls\u2028rm x",
+      "echo \uff02a\uff02",
+      "ls\u200b",
+    ]) expect(isReadOnlyCommand(line)).toBe(false);
+    expect(isReadOnlyCommand("ls -la ~/Desktop")).toBe(true);
+    expect(isReadOnlyCommand("echo https://example.test")).toBe(true);
+  });
+});

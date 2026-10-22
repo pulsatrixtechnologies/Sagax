@@ -112,6 +112,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("routines:propose.action", "own", "propose_routine_action"),
   p("terminal:offer", "own", "offer_shell_terminal"),
   p("remote:publish", "own", "publish_remote_session"),
+  // the person's own connected Tailcat session (owner and bot checked by the service)
+  p("remote:snapshot", "own", "remote_session_snapshot"),
+  p("remote:exec", "own", "remote_session_exec"),
   p("meetings:join", "own", "join_meeting"),
   // 2026-10-19 (member admin audit, docs/member-admin-audit.md): the
   // person's own data or destinations, never an admin's.

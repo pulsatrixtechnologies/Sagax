@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot as BotIcon, Loader2, Menu, Plus } from "lucide-react";
 import { useAdvancedMode } from "@/lib/interface-mode";
-import { endRemoteControl, useRemoteControlBot } from "@/lib/remote-session-focus";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOrgMemoryAuto } from "@/lib/org-memory";
 import { openBot, openNotificationTarget, StoreProvider, useStore, type AppSettingsSection } from "@/state/store";
@@ -202,20 +201,11 @@ function Shell() {
   // Simple (JC, 2026-10-16): its pill is in every sidebar, and a person who
   // chose Simple must still reach it. What they may change inside is the
   // server's call.
-  // Prendre le contrôle on a remote session is the one exception: its
-  // Computer tab opens in every mode (src/lib/remote-session-focus.ts).
-  const remoteControl = useRemoteControlBot();
   useEffect(() => {
     if (advanced) return;
     if (state.inspectorOpen) dispatch({ type: "toggleInspector", open: false });
-    if (state.computerOpen && !remoteControl) dispatch({ type: "toggleComputer", open: false });
-  }, [advanced, state.inspectorOpen, state.computerOpen, remoteControl, dispatch]);
-  // The remote control ends when its Computer tab closes, however it closes.
-  const computerWasOpen = useRef(state.computerOpen);
-  useEffect(() => {
-    if (computerWasOpen.current && !state.computerOpen) endRemoteControl();
-    computerWasOpen.current = state.computerOpen;
-  }, [state.computerOpen]);
+    if (state.computerOpen) dispatch({ type: "toggleComputer", open: false });
+  }, [advanced, state.inspectorOpen, state.computerOpen, dispatch]);
 
   // Nothing on this machine can run a bot. On an organization server the
   // person's own engines decide instead (OrgEngineNotice and the first-run

@@ -56,7 +56,9 @@ export function controlHelperCommand(os: RemoteSessionOs, options: ControlHelper
   // (the program) from stdin and runs it. Delivering the program on stdin
   // avoids any cmd.exe argument-length limit on the remote side.
   const bootstrap = "$ErrorActionPreference='Stop';$b=[Console]::In.ReadLine();Invoke-Expression ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b)))";
-  const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${bootstrap}"`;
+  // Encoded, never in a double-quoted -Command: the session shell on Windows
+  // is PowerShell, which would expand $b before the inner one runs.
+  const command = `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${Buffer.from(bootstrap, "utf16le").toString("base64")}`;
   return { command, script, preamble: `${scriptB64}\n` };
 }
 
