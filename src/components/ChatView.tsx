@@ -1252,6 +1252,7 @@ const MessagesList = memo(function MessagesList({
                 <ActivityRun
                   messages={shown}
                   elapsedMs={item.elapsedMs}
+                  bare={!showToolCalls}
                   focusedId={focusedId}
                   nameOf={botNames(bots)}
                   renderStep={(step) => (
