@@ -3741,6 +3741,42 @@ these rules, each covered by `server/harness-connectors.test.ts` or
   call those servers with no prompt. Gateway tools stay off. A tool
   selection turns the connectors off too.
 
+## Mail, Teams, calendar and SharePoint through the engines' connectors (parité R9 + R11, 2026-10-21)
+
+JC: prioritize the connectors the engines already bring (claude.ai
+connectors, the xAI account's cloud connectors on grok.com) over any
+Microsoft 365 enterprise app or Entra app registration of our own. Sagax
+builds no Graph client, no Teams bot registration and no mailbox for this.
+
+- What each engine brings is one pure table, `shared/engine-connectors.ts`:
+  capabilities `mail`, `calendar`, `teams`, `sharepoint` (and `files`), by
+  claude.ai connector name (Microsoft 365, Gmail, Google Calendar, ...) and
+  by Grok cloud connector id (`shared/grok-cloud-connectors.ts`). Codex and
+  Gemini bring none. Connect apps > Manage > Providers and the engine cards
+  (Settings > Engines) show it; the names stay read-only ("Manage on ...").
+- A turn is told what its own engine reaches (`engineConnectorsPrompt` in
+  `server/harness-connectors.ts`, the "claude-ai" prompt section). A turn
+  whose engine has none of them says which engine does and offers to ask a
+  teammate bot on that engine (`ask_bot`). Sagax does not switch a turn to
+  another engine on its own (a JC decision, see the PR).
+- Grok rules of #918 are unchanged: the cloud connectors load only on an
+  organization turn (host tools withheld) with no tool selection;
+  `GROK_MANAGED_MCPS_ENABLED=false` on every other turn.
+- Every outward call through a connector waits for the approval card
+  (`isOutboundTool` in `shared/outbound.ts` via `connectorWriteKind`):
+  sending, forwarding or replying to mail, an automatic reply, posting or
+  replying in Teams, creating a Teams chat, creating, changing or cancelling
+  a calendar event (it mails the attendees), answering an invitation, and
+  every SharePoint or OneDrive write (upload, update, create folder, move,
+  rename, copy, delete). Drafts and reads do not ask. The card reads the
+  call in plain words (`approval.connector.*`: "send a calendar invitation
+  in Microsoft 365", the subject, the time and the attendees). Full access
+  and the primary bot rule are unchanged: no new exception.
+- Needs its own infrastructure, so not built here (flagged for JC): a
+  dedicated inbound address per bot (B21, iOS CO5), a Teams app per bot
+  (B20, needs a Bot Framework registration), a free message in a Meet or
+  Zoom meeting chat (G10).
+
 ## Engine slash commands in the chat
 
 Typing "/" in a conversation or a group lists Sagax's own commands and
