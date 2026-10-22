@@ -33,6 +33,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CLAUDE_AI_CONNECTORS_URL } from "../shared/connector-setup.ts";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "../shared/grok-cloud-connectors.ts";
 import type { TurnSpeaker } from "./engine-access.ts";
 import { resolveCli } from "./procs.ts";
@@ -42,7 +43,7 @@ import { PASS, type RouteHandler } from "./routes/table.ts";
 /** How Claude Code names a claude.ai connector's server. */
 export const CLAUDE_AI_SERVER_PREFIX = "claude.ai ";
 /** Where a person adds, signs in to and removes their connectors. */
-export const CLAUDE_AI_CONNECTORS_URL = "https://claude.ai/customize/connectors";
+export { CLAUDE_AI_CONNECTORS_URL };
 
 export const HARNESS_CONNECTORS_PATH = "/api/me/harness-connectors";
 export const HARNESS_CONNECTORS_SETTINGS_PATH = "/api/harness-connectors/settings";
@@ -122,7 +123,7 @@ export function grokCloudConnectorsForTurn(input: ClaudeAiTurnInput): boolean {
 /** The system note for a turn that keeps them: what they are and whose. */
 export function claudeAiConnectorsPrompt(enabled: boolean): string {
   if (!enabled) return "";
-  return "\nThis turn runs on the speaker's own Claude account, so its claude.ai connectors (for example Microsoft 365 for Outlook mail and calendar, or GitHub) may be mounted as MCP servers named \"claude.ai <Service>\", with tools prefixed mcp__claude_ai_. They act as that person, with that person's access: use them for that person's own mail, calendar, repositories and files when asked, never for anyone else. If one is missing or answers that it needs authentication, tell the person to connect it at https://claude.ai/customize/connectors.";
+  return "\nThis turn runs on the speaker's own Claude account, so its claude.ai connectors (for example Microsoft 365 for Outlook mail and calendar, or GitHub) may be mounted as MCP servers named \"claude.ai <Service>\", with tools prefixed mcp__claude_ai_. They act as that person, with that person's access: use them for that person's own mail, calendar, repositories and files when asked, never for anyone else. If one is missing or answers that it needs authentication, or the person asks to connect one, call open_connector_setup once (it posts the sign-in card) and answer in one short sentence.";
 }
 
 const OUTWARD_RULE = " Sending, forwarding or replying to mail, an automatic reply, posting or replying in Teams, starting a Teams chat, creating, changing or cancelling a calendar event (it mails the attendees), answering an invitation, and any SharePoint or OneDrive write wait for the person's approval card unless this bot runs in Full access: make the call with the exact recipients, subject, time and attendees, and say it is done only once the call succeeded. Reads, drafts and reply drafts do not ask.";
@@ -144,9 +145,9 @@ export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolea
     return "\nThis turn runs on an engine account that is not the speaker's own (the bot owner's or another person's sign-in), so its mail, calendar, Microsoft Teams and SharePoint connectors are not used for this person: they belong to someone else. If asked for one of those, say so plainly, do not read or send anything through them, and do not claim anything was sent. The person can connect their own account to use their own.";
   }
   if (input.grokCloud && GROK_DRIVERS.has(input.driver)) {
-    return `\nThis turn runs on the xAI account of this Grok engine, so its cloud connectors (${GROK_CLOUD_CONNECTORS.map((connector) => connector.name).join(", ")}) may be reachable through use_tool when the account connected them. They act with that account's access. If one is missing or needs sign-in, tell the person to connect it at ${GROK_CONNECTORS_URL}.${OUTWARD_RULE}`;
+    return `\nThis turn runs on the xAI account of this Grok engine, so its cloud connectors (${GROK_CLOUD_CONNECTORS.map((connector) => connector.name).join(", ")}) may be reachable through use_tool when the account connected them. They act with that account's access. If one is missing or needs sign-in, or the person asks to connect one, call use_tool with tool_name agents__open_connector_setup right away (no search_tool first): it posts the card that opens ${GROK_CONNECTORS_URL} for them; then answer in one short sentence.${OUTWARD_RULE}`;
   }
-  return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint, on an organization server), and you can offer to ask a teammate bot on that engine with ask_bot.";
+  return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint, on an organization server), and you can offer to ask a teammate bot on that engine with ask_bot. When the person asks to connect one, call the Sagax tool open_connector_setup (agents__open_connector_setup) once: it posts the right card, or says why there is none.";
 }
 
 // ── what the person has ──────────────────────────────────────────────────

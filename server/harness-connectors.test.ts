@@ -127,6 +127,21 @@ describe("what a turn is told about mail, Teams, calendar and SharePoint (parit�
       expect(text).not.toContain("mcp__claude_ai_");
     }
   });
+  it("to connect a connector: open_connector_setup, one call, never a tour of the settings (JC 2026-10-22)", () => {
+    for (const input of [
+      { driver: "claudeAgent", claudeAi: true, grokCloud: false },
+      { driver: "grokAgent", claudeAi: false, grokCloud: true },
+      { driver: "codex", claudeAi: false, grokCloud: false },
+      { driver: "grokAgent", claudeAi: false, grokCloud: false },
+    ]) {
+      const text = engineConnectorsPrompt(input);
+      expect(text).toContain("open_connector_setup");
+      expect(text).not.toMatch(/tell the person to connect it at/);
+    }
+    // Grok calls it straight away, no search_tool round first
+    expect(engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: true })).toContain("use_tool with tool_name agents__open_connector_setup");
+    expect(engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: true, foreign: true })).not.toContain("open_connector_setup");
+  });
   it("never a dash a person would read as an em dash", () => {
     for (const grokCloud of [true, false]) {
       for (const claudeAi of [true, false]) expect(engineConnectorsPrompt({ driver: grokCloud ? "grokAgent" : "claudeAgent", claudeAi, grokCloud })).not.toMatch(/[–—]/);

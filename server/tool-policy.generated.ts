@@ -477,6 +477,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/code\\/runs\\/([A-Za-z0-9_-]{1,80})(?:\\/(events|stream|read|followup|approve|stop|archive|diff|commits|files))?$","tier":"write","readOnly":false,"scope":"code:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/computers\\/boxes\\/([\\w-]+)\\/(sleep|delete)$","tier":"write","readOnly":false,"scope":"computers:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/computers\\/vps\\/([\\w-]+)\\/remove$","tier":"admin","readOnly":false,"scope":"computers:admin","defaultEnabled":false,"destructive":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/connector-setup\\/(cs_[a-f0-9]{18})\\/check$","tier":"write","readOnly":false,"scope":"connector-setup:write","defaultEnabled":true},
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/connectors\\/([\\w-]+)\\/accounts\\/([A-Za-z0-9][A-Za-z0-9_-]{0,127})$","tier":"admin","readOnly":false,"scope":"connectors:admin","defaultEnabled":false,"destructive":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/connectors\\/([\\w-]+)\\/authorize$","tier":"write","readOnly":false,"scope":"connectors:write","defaultEnabled":true},
   {"method":"PUT","kind":"pattern","route":"^\\/api\\/connectors\\/([\\w-]+)\\/tools$","tier":"write","readOnly":false,"scope":"connectors:write","defaultEnabled":true},

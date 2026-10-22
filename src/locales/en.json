@@ -9937,5 +9937,13 @@
   "engines.connectors.claude": "Email, calendar, Teams and SharePoint through your claude.ai connectors (Microsoft 365, Gmail, Google Calendar). Each send or write asks first, except in Full access.",
   "engines.connectors.grok": "Email, calendar, Teams and SharePoint through the cloud connectors of your own xAI account, on an organization server. Each send or write asks first, except in Full access.",
   "chat.connectorSwitch": "Switched to {engine} for {connector}",
-  "approval.held.connectorNoDetails": "Grok did not share this call's details. Allow it only if you asked for it."
+  "approval.held.connectorNoDetails": "Grok did not share this call's details. Allow it only if you asked for it.",
+  "connectorSetup.connect": "Connect {name}",
+  "connectorSetup.where": "You sign in on {host} with your own account. Sagax will detect the connection.",
+  "connectorSetup.waiting": "Waiting for your sign-in",
+  "connectorSetup.done": "I'm done",
+  "connectorSetup.checking": "Checking…",
+  "connectorSetup.pending": "Not confirmed yet. Ask the bot to use it, then choose I'm done.",
+  "connectorSetup.connected": "Connected",
+  "connectorSetup.blocked": "This link cannot be opened from here."
 }

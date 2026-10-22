@@ -224,6 +224,22 @@ describe("Plugins panel views", () => {
     expect(detail).not.toContain('data-plugin-status="connected"');
   });
 
+  it("Manage on Grok opens grok.com/connectors: the desktop bridge, or the window's link path when the bridge refuses", async () => {
+    const action = grokRowAction(buildPluginItems({ grok: { connectors: GROK_CLOUD_CONNECTORS, description: "" } }).find((item) => item.key === "grok:microsoft-teams")!);
+    const desktop = vi.fn(async () => true);
+    const open = vi.fn();
+    vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop, ogb: { openExternal: desktop }, open });
+    // the row action is the component; its button holds the click
+    const rendered = (action as unknown as { type: () => { props: { onClick: () => void } } }).type();
+    rendered.props.onClick();
+    await vi.waitFor(() => expect(desktop).toHaveBeenCalledWith("https://grok.com/connectors"));
+    expect(open).not.toHaveBeenCalled();
+    const refused = vi.fn(async () => { throw new Error("not this window"); });
+    vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop, ogb: { openExternal: refused }, open });
+    rendered.props.onClick();
+    await vi.waitFor(() => expect(open).toHaveBeenCalledWith("https://grok.com/connectors", "_blank", "noopener,noreferrer"));
+  });
+
   it("lists the xAI connector names only under a Grok engine that is set up", () => {
     const providers = renderToStaticMarkup(createElement(ProvidersSection, { instances: [
       { instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", snapshot: { state: "unavailable" } },

@@ -1,7 +1,7 @@
 {
   "direct": {
-    "bytes": 80572,
-    "sha256": "c22741ec534625860f64ab12fb92f2b7b162e15c29deb7b81af3e33acfec5f5f",
+    "bytes": 81425,
+    "sha256": "816f2430ac75795093f3cf8fa0c7e69637b1259ffa8a2475c46e25083271cbc5",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -39,6 +39,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -77,8 +78,8 @@
     ]
   },
   "direct+voice": {
-    "bytes": 81313,
-    "sha256": "96950d65d9c46891ce406f89c75bd44fbcd2f5517fcc7b8392a2bdb5c362e30e",
+    "bytes": 82166,
+    "sha256": "2e9be3fbedfab2efcc34ce517d82308b8e23a19f8dd335b887edcb9db0a91d8b",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -116,6 +117,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -155,8 +157,8 @@
     ]
   },
   "direct+shared": {
-    "bytes": 82317,
-    "sha256": "0f1bf39b9eecea53e600ff9112dae37b14e7afbc83414ec0a6ca3a0318b2be3b",
+    "bytes": 83170,
+    "sha256": "5dc42192b14667163c37dd76bbd53a48c18b3b42e4b506cc10a16fc6a3e4de9a",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -196,6 +198,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -234,8 +237,8 @@
     ]
   },
   "direct+shared+voice": {
-    "bytes": 83058,
-    "sha256": "3fb36a9fee9c07e8f3147a3fe768c338a770e91e98187db1e380f00c3d2cb5b3",
+    "bytes": 83911,
+    "sha256": "e3f7c534e2733d596f6dd376a360ce6712aaf0b32e12c88409b11a8f0f16ca8c",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -275,6 +278,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -314,8 +318,8 @@
     ]
   },
   "direct+skills": {
-    "bytes": 82625,
-    "sha256": "edf5f2a26a01b3e38465ea9f210686c4a6ada54b868f01c4c38b87c3b712c727",
+    "bytes": 83478,
+    "sha256": "52473e91fa5ec59a8b68a2aba57c72fda3fb0fdd1cf6a6ba5d2673e84184ba57",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -353,6 +357,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -393,8 +398,8 @@
     ]
   },
   "direct+skills+voice": {
-    "bytes": 83366,
-    "sha256": "70c24d5f67ac99ec7ac5840170d3654c0a956fe19c6a976b0bcd0651840dde59",
+    "bytes": 84219,
+    "sha256": "833dc0244044e48b649fd62a6b5e2c5c103c35114ff50457c5b7ad5f5dc7643a",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -432,6 +437,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -473,8 +479,8 @@
     ]
   },
   "direct+skills+shared": {
-    "bytes": 84370,
-    "sha256": "efa2b9ae9c52ee52ee63303f3cd83323d910fca69f6775b89ddf2738b98c4807",
+    "bytes": 85223,
+    "sha256": "b2a52259f904fc392a05747c373ffd3a0e3bc7424201a390d0549083a9023351",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -514,6 +520,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -554,8 +561,8 @@
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 85111,
-    "sha256": "6e96dd880a50d1631ac208b58151dfc8e57af9f3a1965b683affeffc950ecb9d",
+    "bytes": 85964,
+    "sha256": "eff15d31b4305aa643e9680ed9aae38217e430171fc76bff1f58a842d48f685e",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -595,6 +602,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -636,8 +644,8 @@
     ]
   },
   "room": {
-    "bytes": 77561,
-    "sha256": "c7bfe1b56e7a8779c35331f418a73659b0f28bf446cea48ca212025cb2ae431e",
+    "bytes": 78414,
+    "sha256": "2c1f1b91f7527cbef36c4e5253dc16bf85fdb47bbfba5791711cc948c4d90b15",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -672,6 +680,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -710,8 +719,8 @@
     ]
   },
   "room+voice": {
-    "bytes": 78302,
-    "sha256": "1e855c43c456f9396bc9c94f2712d5d4a5d8d3a077af7347144a4048b27082f8",
+    "bytes": 79155,
+    "sha256": "06be4d6f3abb6d8c942f8a1cb82fc14202756bff6a9d391ecb980bcac925e753",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -746,6 +755,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -785,8 +795,8 @@
     ]
   },
   "room+shared": {
-    "bytes": 79306,
-    "sha256": "3db95ddceaa1cf6b054445e797f71f06c9881d289793e7be907678cba182abc1",
+    "bytes": 80159,
+    "sha256": "07167254f3c6e84c026034a3abe5e72060a1d0deadfcd8839df4531be6d17553",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -823,6 +833,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -861,8 +872,8 @@
     ]
   },
   "room+shared+voice": {
-    "bytes": 80047,
-    "sha256": "cc90fc3e05ea27b852542eb6815d41511fc6141a9e3612c98a9fd67619a03ed9",
+    "bytes": 80900,
+    "sha256": "aaec78f0ef3f96a6d4bd497ee2cb158a2bc7460c31bd6e224839fd3c704269b0",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -899,6 +910,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -938,8 +950,8 @@
     ]
   },
   "room+skills": {
-    "bytes": 79614,
-    "sha256": "ddd45b5f9a23e8b8ca38fac024a76ec77767a41c49156fd4cf0ded00971be688",
+    "bytes": 80467,
+    "sha256": "d5f22774cbde2d39554d66f9799ac96cd674208d0d706b8e2717f031414c1b8d",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -974,6 +986,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1014,8 +1027,8 @@
     ]
   },
   "room+skills+voice": {
-    "bytes": 80355,
-    "sha256": "0677a143bb0ef937b13fc8cdcc0c925085e847d12e29cbf1b575c0b4baedf67d",
+    "bytes": 81208,
+    "sha256": "2fcfb726f7dd3b38d61d72cb090362d885b6b0909e1609ea54386458e9aff43a",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1050,6 +1063,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -1091,8 +1105,8 @@
     ]
   },
   "room+skills+shared": {
-    "bytes": 81359,
-    "sha256": "8ea5ca2cda53212694185d9b475a9209db370fe4f2f4c1802acdb4ca4d9a24e7",
+    "bytes": 82212,
+    "sha256": "c6a8e280aebd862e4b5ff98e08e8940d7d4f1340774e4376f7af2b2553338dda",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1129,6 +1143,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1169,8 +1184,8 @@
     ]
   },
   "room+skills+shared+voice": {
-    "bytes": 82100,
-    "sha256": "42013335aa25b5d10eb2db1f95995dbecc13ac24a79af29baa974205963232de",
+    "bytes": 82953,
+    "sha256": "aabe048768de40882177f7d71ab1698384cbe992051dd3153452fa267a51da0e",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1207,6 +1222,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -1248,8 +1264,8 @@
     ]
   },
   "room+own-thread": {
-    "bytes": 79694,
-    "sha256": "3bb47cb7b1aae71ab57d76b1016fffa12df8a0abe2fd30a760007d1814067677",
+    "bytes": 80547,
+    "sha256": "cce3d73fca7a0fd41523fcf2782f776c593b5fd7c1bc0f83fe358d1d64ce29f0",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1285,6 +1301,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1323,8 +1340,8 @@
     ]
   },
   "room+own-thread+voice": {
-    "bytes": 80435,
-    "sha256": "0f5903c3445183523977e358127b2c6c5e6601d039a3f2b8e94cbf68a21689c3",
+    "bytes": 81288,
+    "sha256": "a7c6ec309b2460945f08bc6cf454b961a611ba304e11bdfbfff9e9de2e5cc55a",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1360,6 +1377,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -1399,8 +1417,8 @@
     ]
   },
   "room+own-thread+shared": {
-    "bytes": 81439,
-    "sha256": "5349127befa37a055a552e58cc5fe36fc4d09d4e1526a5865c5cf6be92e971cb",
+    "bytes": 82292,
+    "sha256": "d4c0e627bf548df1e6618a56f300da8cdb9c323248509e32e72bd02579bd0aa5",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1438,6 +1456,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1476,8 +1495,8 @@
     ]
   },
   "room+own-thread+shared+voice": {
-    "bytes": 82180,
-    "sha256": "298337abdb34eb2becc200b6f5252c685f0ecb08e5064f1aef72a449c65ce744",
+    "bytes": 83033,
+    "sha256": "68b9208e80962a90105e107397e34021d4607a2b54edc0871b8b098d364fa4a3",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1515,6 +1534,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -1554,8 +1574,8 @@
     ]
   },
   "room+own-thread+skills": {
-    "bytes": 81747,
-    "sha256": "e2ddd67b56a9b4a16e92c9e1d4fe2c42fce478ab7ff83d7e1ec9088474bb2e8d",
+    "bytes": 82600,
+    "sha256": "3b9068adf91df7a0893f36b7626930b81a2242ef6c9d39a74d747af8d89def49",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1591,6 +1611,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1631,8 +1652,8 @@
     ]
   },
   "room+own-thread+skills+voice": {
-    "bytes": 82488,
-    "sha256": "7a4f12281196259579db23d86bcfbcc969e3fab506edb4963469019283c7bcdf",
+    "bytes": 83341,
+    "sha256": "fb3165e88f88fdbc014e9ab12f5a2f5d45f29a608a0c60e2cbc0475e929ea2ce",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -1668,6 +1689,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -1709,8 +1731,8 @@
     ]
   },
   "room+own-thread+skills+shared": {
-    "bytes": 83492,
-    "sha256": "d5fb4f74121e792baf8045de3a3560e75b0635fc6585f1c4628bb56a2ff9c96e",
+    "bytes": 84345,
+    "sha256": "d1db21b57c00736ee64109d63a0dbbc3161123b280e9c9331dfac790128be717",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1748,6 +1770,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1788,8 +1811,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice": {
-    "bytes": 84233,
-    "sha256": "9e241319540b52d5c2848afedab194835df6d8c91d00c0e6f12b6be0fe5dc46d",
+    "bytes": 85086,
+    "sha256": "365129252011325730391ce67dc5c4e3408d1eecd5875a72a17807488864fb71",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -1827,6 +1850,7 @@
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -1868,8 +1892,8 @@
     ]
   },
   "direct+non-chief": {
-    "bytes": 69396,
-    "sha256": "26a3c9b4cdf6b964795243cd65df7e8226a51eacf5724032c7532b0fdc94f1c3",
+    "bytes": 70249,
+    "sha256": "51824b7ec3024e297ab2167bb8ec18fb17fedc41b17efc5749c425b6ca96705f",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1899,6 +1923,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -1936,8 +1961,8 @@
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 70137,
-    "sha256": "1486466d5a13d66d7bc135237ed5720f8cdc2cd642a72b74aedeed05620d1508",
+    "bytes": 70990,
+    "sha256": "30068b6dc52ffaa6060c0122369125abf64928ac4ba105912ea1ac7d24723e59",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -1967,6 +1992,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2005,8 +2031,8 @@
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 71141,
-    "sha256": "d2b3dacde185ff904314e5e6f2a5310090a4d0256468c43e719727b0a68d0ba4",
+    "bytes": 71994,
+    "sha256": "e4108fd7bc506866b896febc3d4953fc728e1716bc469c1be4476ef16198ca2d",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2038,6 +2064,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2075,8 +2102,8 @@
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 71882,
-    "sha256": "51e9e509b301e868f9969de845d4c697985c26ae2acfdb9db745c012b182322a",
+    "bytes": 72735,
+    "sha256": "70cb3399b33985b54b919b7f53bbc1a9a11c7acc06dbeb52ab15797fd9216ff9",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2108,6 +2135,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2146,8 +2174,8 @@
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 71449,
-    "sha256": "872b9b77e474733e8d859f76653d82ffe951314af4de9e35d33884fe5217ed92",
+    "bytes": 72302,
+    "sha256": "2c8b3b8d37da9988216e14bfc173b54be59f9b265db89800a045621260f8c638",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -2177,6 +2205,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2216,8 +2245,8 @@
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 72190,
-    "sha256": "88387aa31370dd070f55b72d6d5544093fbdfff8b870d0654c8252bfdf79f1af",
+    "bytes": 73043,
+    "sha256": "56423ea6abf5ee3de341fba59e3980a58aec6c3f56cc556fc48d96c7eeaed6a6",
     "tools": [
       "tool_result_read",
       "list_bots",
@@ -2247,6 +2276,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2287,8 +2317,8 @@
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 73194,
-    "sha256": "f08e2515cc967fcc15df5efc2067f9411355cf3d18b7acf15ad8d587692aeaa5",
+    "bytes": 74047,
+    "sha256": "f35bc9f43d33e5374a9c806eac36cb0bcae41806068915e7180381d502b2249d",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2320,6 +2350,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2359,8 +2390,8 @@
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 73935,
-    "sha256": "3ddde0155bbea1a6377a0722c7c26e3960b53a783fd588451296f29d2a385d8a",
+    "bytes": 74788,
+    "sha256": "eb67b9f27abb1fd1d5a8dd60333f16baff461944ad6893127485895e842ca7cb",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2392,6 +2423,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2432,8 +2464,8 @@
     ]
   },
   "room+non-chief": {
-    "bytes": 66385,
-    "sha256": "7bb35e87f50350fc5ac8a15fc40b70c246033bdc0034a08a1fb40c5b6965a6d7",
+    "bytes": 67238,
+    "sha256": "1383bb43ce2b80391282fb4bc088e8f470cdb79b03a57037a58a551084d50701",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2460,6 +2492,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2497,8 +2530,8 @@
     ]
   },
   "room+voice+non-chief": {
-    "bytes": 67126,
-    "sha256": "6a3c0bc6de382fd9a0b09a0db069f4c2c21247cac06c8d35c7dc26a9ac77b9ba",
+    "bytes": 67979,
+    "sha256": "bf1a62e25c7298c63a8ee95891385629d999fa0ade916af06fb2790717bd91be",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2525,6 +2558,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2563,8 +2597,8 @@
     ]
   },
   "room+shared+non-chief": {
-    "bytes": 68130,
-    "sha256": "77d23a1598b8523f185361990d82b569664128a091aa11f686ee56199f04dfc2",
+    "bytes": 68983,
+    "sha256": "6fe249449620a1bdffc97d47fa9945271257b4e9a659004911dcb228cd787a3e",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2593,6 +2627,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2630,8 +2665,8 @@
     ]
   },
   "room+shared+voice+non-chief": {
-    "bytes": 68871,
-    "sha256": "370c1f2405efab334d41276cc6af5dc84dfbb71a9fd8c657b3e4f849f1404c47",
+    "bytes": 69724,
+    "sha256": "328da718c008117922bfdc98de44ef2c544a6deb0599096d39f71eccf780c94c",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2660,6 +2695,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2698,8 +2734,8 @@
     ]
   },
   "room+skills+non-chief": {
-    "bytes": 68438,
-    "sha256": "c10ef732db169a3e22e1475408bf3cd0615b7fc5ea79212db2c33a274736bb40",
+    "bytes": 69291,
+    "sha256": "41086a513795347f0c182abe6e2f3d9fc87f8d34c07c2f3b24b8ee7d5891b6ed",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2726,6 +2762,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2765,8 +2802,8 @@
     ]
   },
   "room+skills+voice+non-chief": {
-    "bytes": 69179,
-    "sha256": "f14a3835f8bfb48c79b091e51b75479f52d255e8deccecf6266339a380be0714",
+    "bytes": 70032,
+    "sha256": "106d1a01d7fddc921a25e3a96cddb96aec9145288ca8d3ac5091de1362e9a80a",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -2793,6 +2830,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2833,8 +2871,8 @@
     ]
   },
   "room+skills+shared+non-chief": {
-    "bytes": 70183,
-    "sha256": "82ed3664ed00a463a24b577fd5e6c76a0e8852d3f981788216385666e22970ac",
+    "bytes": 71036,
+    "sha256": "fb07d6fbf281938e6c88c485b23eedc1378bfd07ef03aa189e2248053bd70da8",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2863,6 +2901,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -2902,8 +2941,8 @@
     ]
   },
   "room+skills+shared+voice+non-chief": {
-    "bytes": 70924,
-    "sha256": "076fe353da8a161bcad6850e4e6cd692df221abffdef9b97a86b75bf6598946d",
+    "bytes": 71777,
+    "sha256": "a18dad5a7b60a67ebd8adb7a8b3dbb4b33b937828af2e93c0a5626eb6613ce50",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -2932,6 +2971,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -2972,8 +3012,8 @@
     ]
   },
   "room+own-thread+non-chief": {
-    "bytes": 68518,
-    "sha256": "42a057eee89724160cc4e71bdc0c7c53e9ea7e4f38920feab9a0c78a66677a56",
+    "bytes": 69371,
+    "sha256": "3eb47f88c0f40bce314308f79c0d963f5c82c0924c4307e318843edde3ecfc7d",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -3001,6 +3041,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -3038,8 +3079,8 @@
     ]
   },
   "room+own-thread+voice+non-chief": {
-    "bytes": 69259,
-    "sha256": "96d8ec568563c14bf102588843f06a09f7e3388a565baaaab80c6d599838ea1c",
+    "bytes": 70112,
+    "sha256": "f4a972e9fb7b4673070b282332d9a2d2cccd92a9c916aefff859346b7c5c19fa",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -3067,6 +3108,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -3105,8 +3147,8 @@
     ]
   },
   "room+own-thread+shared+non-chief": {
-    "bytes": 70263,
-    "sha256": "753609257091a5742a5c8a042f06426765298916358a4e5c9dc3ef20a954804b",
+    "bytes": 71116,
+    "sha256": "01ac4e498b39faf0f986534eda3daf7c87734fb9a77a737e0d0ec01937c71825",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3136,6 +3178,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -3173,8 +3216,8 @@
     ]
   },
   "room+own-thread+shared+voice+non-chief": {
-    "bytes": 71004,
-    "sha256": "e3452011b81b244345e04955a78eb9159b556170678c902222c69a9ba02b90cf",
+    "bytes": 71857,
+    "sha256": "eab0a19ccea4886def97901632d67f971fe8f480e64413a17ebdd32e2ad6517c",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3204,6 +3247,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -3242,8 +3286,8 @@
     ]
   },
   "room+own-thread+skills+non-chief": {
-    "bytes": 70571,
-    "sha256": "9e64edefda4acc3b7ee4aebc7f5491c3bbc019c98611d2db1bd3977499f90bee",
+    "bytes": 71424,
+    "sha256": "bd1138ae5ab3f95e891d526bc87c60b7c863e7f21ce20aabec95520fbfe5f34f",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -3271,6 +3315,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -3310,8 +3355,8 @@
     ]
   },
   "room+own-thread+skills+voice+non-chief": {
-    "bytes": 71312,
-    "sha256": "b7ef8e947d4145f331c67a1c80a782160b60bbe5c0f8cd46ff085d8707a82f47",
+    "bytes": 72165,
+    "sha256": "0db7917baffe91f3bcb26caaa9e807cb8c6c03affcec1d2e0ead02bd65467016",
     "tools": [
       "tool_result_read",
       "list_room_targets",
@@ -3339,6 +3384,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",
@@ -3379,8 +3425,8 @@
     ]
   },
   "room+own-thread+skills+shared+non-chief": {
-    "bytes": 72316,
-    "sha256": "1b7893ee752585c4923e4c477ababad9f7a5899a33b342b10c046941f21da75d",
+    "bytes": 73169,
+    "sha256": "7ed48541ebbe149d0278448ecbb4b3c2374e2c65b8328eb1a9a32e1b32e5532e",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3410,6 +3456,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",
@@ -3449,8 +3496,8 @@
     ]
   },
   "room+own-thread+skills+shared+voice+non-chief": {
-    "bytes": 73057,
-    "sha256": "605fbb9e24f980305fe5922e163297c6ef14361d686338aedd8f46442bf0c62e",
+    "bytes": 73910,
+    "sha256": "2560f6e4087c1f8392aa51b25e0fe25ed64adf3737e5981cabd2e9d42a845531",
     "tools": [
       "tool_result_read",
       "list_shared_computers",
@@ -3480,6 +3527,7 @@
       "remove_reaction",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "send_voice_note",
       "list_terminal_resources",
       "offer_shell_terminal",

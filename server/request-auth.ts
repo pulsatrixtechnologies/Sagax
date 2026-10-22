@@ -430,6 +430,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // The usage card the person asked for (server/routes/resource-usage.ts): the
   // handler answers the person who asked only.
   { methods: ["GET", "POST"], path: /^\/api\/resource-usage\/ru_[a-f0-9]{18}(?:\/(?:live|resume|pause))?$/ },
+  // "Connect Microsoft Teams" card (server/routes/connector-setup.ts): the
+  // handler answers the person the card is for only.
+  { methods: ["POST"], path: /^\/api\/connector-setup\/cs_[a-f0-9]{18}\/check$/ },
   // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
   // one changes the server's MCP servers: the handler lets through an admin
   // or this computer's own person (clientSessionIsComputerOwner), nobody else.
