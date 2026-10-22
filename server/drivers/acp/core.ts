@@ -495,7 +495,7 @@ export interface AcpSupport {
   mcpToolNames?: "grok";
   /** A context section added to the volatile half each turn. The section
    * split (prompt-split.ts) re-sends it only when its text changes. */
-  volatileSection?(input: { botId?: string; serverNames: string[]; sessionId?: string; threadId?: string }): { id: string; text: string } | null;
+  volatileSection?(input: { botId?: string; serverNames: string[]; sessionId?: string; threadId?: string; accountConnectors?: boolean }): { id: string; text: string } | null;
   /** A tool call finished successfully, with the input it was started with. */
   onToolCompleted?(input: { botId?: string; rawInput: unknown }): void;
   /** Ask once more when the agent sends nothing at all (no text, thought or
@@ -2646,7 +2646,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // a change re-sends that section alone.
             let volatileSections = turn.systemVolatileSections;
             const extraSection = halves.stable !== null
-              ? support.volatileSection?.({ botId: turn.botId, serverNames: mcpServers.map((server) => server.name), sessionId, threadId }) ?? null
+              ? support.volatileSection?.({ botId: turn.botId, serverNames: mcpServers.map((server) => server.name), sessionId, threadId, accountConnectors: turn.grokCloudConnectors === true }) ?? null
               : null;
             if (extraSection && extraSection.text.trim()) {
               halves = { ...halves, volatile: halves.volatile ? `${halves.volatile}\n\n${extraSection.text}` : extraSection.text };
