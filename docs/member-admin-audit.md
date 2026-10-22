@@ -42,7 +42,7 @@ server host; **org** = organization data, settings or secrets;
 | `agents` `manage_pairing` | own | admin card | unchanged in this pass | The route itself is open to members; to reclassify with the tool scope list. |
 | MCP servers acting through the owner's identity (their remote servers, personal connections, claude.ai connectors on their own subscription) | own | owner card | unchanged | Already the owner's. |
 | Other MCP servers (`browser`, `computer`, `files`, `shell`, `terminal`, a server's own MCP server) | host | admin card | unchanged; delegable through `host.commands` | Run on the shared host. |
-| Always allow, session allow, remembered command on a member's bot | rights | stripped or refused for every card | session allow and the installation's saved command list unchanged (refused). Always allow (an owner rule) offered on every card since 2026-10-19, an admin's card included (`from: admin`). **Decided 2026-10-21 (JC): it remembers.** On an admin's card (or the owner's card under `host.commands`) the engine's shell line is kept as its one program in its folder (`git`, `npm`; a chain or a `cd` keeps the exact line), for that bot only, never workspace-wide; another program asks again. The bot's owner and an admin (or a holder of `host.shell`) see it in the bot's Approval rules, with who saved it, and may remove it (never edit someone else's). | A standing grant on one bot, removable by its owner and the admins. |
+| Always allow, session allow, remembered command on a member's bot | rights | stripped or refused for every card | session allow and the installation's saved command list unchanged (refused). Always allow (an owner rule) offered on every card since 2026-10-19, an admin's card included (`from: admin`). **Decided 2026-10-21 (JC): it remembers.** On an admin's card (or the owner's card under `host.commands`) the engine's shell line is kept as its one program in its folder (`git`, `npm`; a chain or a `cd` keeps the exact line), for that bot only, never workspace-wide; another program asks again. The bot's owner and a workspace admin see it in the bot's Approval rules, with who saved it (by name, never an id or the real folder), and may remove it (never edit someone else's); a holder of `host.shell` who is neither sees and removes only their own. A held card (safety hold, sandbox widening, Codex additional permissions or network) keeps the whole request; a call with no readable arguments offers no rule (see Accepted risks). | A standing grant on one bot, removable by its owner and the admins. |
 | Custom approval level (`config.toml`) | host | runs as Ask, cannot be set | unchanged | The file lives on the shared server. |
 | Full access on a member's bot | own | `bots.fullAccess` + the organization's Full policy + consent | unchanged | Already delegable. |
 | Auto levels while the admin turned `memberAutoApproval` off | org | Ask | unchanged | An organization policy. |
@@ -114,6 +114,26 @@ pages. A few installation screens also stay admin scope for now: a bot's
 own installation computer (`/api/bots/:id/computer*`,
 `/api/bots/:id/local-computer*`) and the desktop viewer of the server's own
 Local VM or VPS.
+
+## Accepted risks
+
+1. **2026-10-21, decision JC (told the risk): Always allow on a member's
+   server command keeps the program, as on a solo bot ("Programme comme en
+   solo").** Finding 1 of the review of #938: on the organization's shared
+   server, a rule kept for `npm` (or `git`, `python`) on an admin's card lets
+   that bot run any other line of that one program in that folder with no
+   card (`npm run deploy` after `npm test`, a script the bot wrote and runs
+   with `node`), with the server's rights, until the bot's owner or an admin
+   removes it. Accepted as is, not narrowed. What still holds: it is for
+   that one bot (never workspace-wide, never another bot of the member), in
+   that one folder; a chain, a substitution or a redirect keeps the exact
+   line; a held card (safety hold, `dangerouslyDisableSandbox`, Codex
+   `additionalPermissions` or network, `requiresExplicitApproval`) keeps the
+   whole request; the saver's right (admin, `host.shell`, or the owner's
+   `host.commands`) is checked again at each use, and a security key of
+   theirs still asks; an engine that reports its shell line beside no input
+   (Codex, the ACP engines) is read by that line, and a card with no
+   readable arguments offers no rule, so a rule never covers every command.
 
 ## Open points
 

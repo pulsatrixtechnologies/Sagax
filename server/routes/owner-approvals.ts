@@ -113,9 +113,12 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       const own = owned ? deps.store.rulesOf(me, botId) : deps.store.rulesOf(me).filter((row) => row.botId === botId);
       return json(res, 200, { rules: [
         ...named([...own, ...(owned ? legacyRules(me, botId) : [])]),
-        ...named(shared).map((row) => {
-          const savedBy = deps.personName?.(row.ownerId);
-          return { ...row, byOther: true as const, ...(savedBy ? { savedBy } : {}) };
+        ...named(shared).map(({ ownerId, scope, ...row }) => {
+          // review of #938: the saver by name only, never their id, and
+          // never the real folder (the card's words already say what it is)
+          const savedBy = deps.personName?.(ownerId);
+          const { cwd: _folder, ...visible } = scope;
+          return { ...row, scope: visible, byOther: true as const, ...(savedBy ? { savedBy } : {}) };
         }),
       ] });
     }

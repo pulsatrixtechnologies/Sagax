@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  cardRuleCandidate,
   destructiveKindOf,
   matchOwnerRule,
   normalizeRuleTool,
@@ -11,8 +12,10 @@ import {
   ruleCandidateFor,
   ruleCoversExactScope,
   WHOLE_CALL_KEY,
+  ruleInputFor,
   ruleScopeFor,
   scopeKeepable,
+  scopeRemembers,
   type OwnerRule,
   type RuleCall,
 } from "./owner-approval.ts";
@@ -393,5 +396,82 @@ describe("Always allow keeps a command's one program (JC 2026-10-20)", () => {
     const candidate = ruleCandidateFor({ tool: RUN, input: JSON.stringify({ command: "npm test" }) }, undefined, { wholeCall: true });
     expect(candidate.scope.program).toBeUndefined();
     expect(candidate.scope[WHOLE_CALL_KEY]).toBeDefined();
+  });
+});
+
+// 2026-10-21 (review of #938): Codex and the ACP engines (Grok, Cursor,
+// Qwen, Kimi, OpenCode, Hermes, Droid) report a shell line as `command`
+// beside no `input`. The rule must read that line, at creation and at each
+// use, and never keep an empty scope (which would cover every command).
+describe("a shell line reported beside no input (Codex, ACP)", () => {
+  const SHELL = "shell";
+  const CWD = "/srv/acme/app";
+  const engineCall = (command: string | undefined, input?: string): RuleCall => ({
+    ownerId: ALICE, botId: "bot-a", tool: SHELL, ...(ruleInputFor(input, command) !== undefined ? { input: ruleInputFor(input, command)! } : {}), cwd: CWD,
+  });
+  const saved = (candidate: NonNullable<ReturnType<typeof cardRuleCandidate>>): OwnerRule => ({
+    id: "s1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description,
+    ...(candidate.from ? { from: candidate.from } : {}), createdAt: 1, updatedAt: 1,
+  });
+
+  it("reads the line as the call's command, keeping the other arguments", () => {
+    expect(JSON.parse(ruleInputFor(undefined, "npm test")!)).toEqual({ command: "npm test" });
+    expect(JSON.parse(ruleInputFor(JSON.stringify({ reason: "tests" }), "npm test")!)).toEqual({ reason: "tests", command: "npm test" });
+    // a call that names its command already keeps it as is
+    expect(ruleInputFor(JSON.stringify({ command: "ls" }), "npm test")).toBe(JSON.stringify({ command: "ls" }));
+    expect(ruleInputFor(undefined, undefined)).toBeUndefined();
+    expect(ruleInputFor(undefined, "   ")).toBeUndefined();
+  });
+
+  it("Codex: an admin's Always allow keeps the program in its folder, never every command", () => {
+    const candidate = cardRuleCandidate({ tool: SHELL, command: "npm test", cwd: CWD }, { from: "admin" });
+    expect(candidate).toMatchObject({ scope: { program: "npm", cwd: CWD }, from: "admin" });
+    const rule = saved(candidate!);
+    expect(matchOwnerRule([rule], engineCall("npm run build"))?.id).toBe("s1");
+    expect(matchOwnerRule([rule], engineCall("uname -a"))).toBeUndefined();
+    expect(matchOwnerRule([rule], engineCall("npm test; rm -rf ~"))).toBeUndefined();
+    // a call with no line at all is never covered
+    expect(matchOwnerRule([rule], engineCall(undefined))).toBeUndefined();
+  });
+
+  it("ACP: the same with other arguments beside the line", () => {
+    const candidate = cardRuleCandidate({ tool: SHELL, input: JSON.stringify({ title: "Run tests" }), command: "git status", cwd: CWD }, { from: "admin" });
+    expect(candidate).toMatchObject({ scope: { program: "git", cwd: CWD }, from: "admin" });
+    const rule = saved(candidate!);
+    expect(matchOwnerRule([rule], engineCall("git log -1", JSON.stringify({ title: "Last commit" })))?.id).toBe("s1");
+    expect(matchOwnerRule([rule], engineCall("hostname", JSON.stringify({ title: "Host" })))).toBeUndefined();
+  });
+
+  it("an ordinary owner card of such an engine keeps the program too", () => {
+    expect(cardRuleCandidate({ tool: SHELL, command: "npm test", cwd: CWD }, {})?.scope).toEqual({ program: "npm", cwd: CWD });
+  });
+
+  it("never offers a rule for a call with no readable arguments", () => {
+    expect(cardRuleCandidate({ tool: SHELL, cwd: CWD }, { from: "admin" })).toBeUndefined();
+    expect(cardRuleCandidate({ tool: SHELL }, { from: "hold", held: true })).toBeUndefined();
+    expect(cardRuleCandidate({ tool: SHELL, input: "{}" }, {})).toBeUndefined();
+    expect(cardRuleCandidate({ tool: SHELL, input: "  " }, { from: "origin" })).toBeUndefined();
+  });
+
+  it("an empty scope, or the fingerprint of no arguments, is never remembered", () => {
+    expect(scopeRemembers({})).toBe(false);
+    expect(scopeRemembers({ [WHOLE_CALL_KEY]: ruleCandidateFor({ tool: SHELL }, undefined, { wholeCall: true }).scope[WHOLE_CALL_KEY]! })).toBe(false);
+    expect(scopeRemembers({ [WHOLE_CALL_KEY]: ruleCandidateFor({ tool: SHELL, input: "{}" }, undefined, { wholeCall: true }).scope[WHOLE_CALL_KEY]! })).toBe(false);
+    expect(scopeRemembers({ program: "npm" })).toBe(true);
+  });
+
+  // review of #938, finding 3: a held admin card (safety hold,
+  // dangerouslyDisableSandbox, Codex additionalPermissions or network,
+  // requiresExplicitApproval) keeps the whole request, never the program
+  it("a held admin card keeps the whole request: npm install kept, npm run deploy asks", () => {
+    const candidate = cardRuleCandidate({ tool: "Bash", input: JSON.stringify({ command: "npm install", dangerouslyDisableSandbox: true }), command: "npm install", cwd: CWD }, { from: "admin", held: true });
+    expect(candidate?.scope.program).toBeUndefined();
+    expect(candidate?.scope).toMatchObject({ command: "npm install", cwd: CWD });
+    expect(candidate?.scope[WHOLE_CALL_KEY]).toBeDefined();
+    const rule = { ...saved(candidate!), tool: candidate!.tool };
+    const bash = (command: string, extra: Record<string, unknown> = {}): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool: "Bash", input: JSON.stringify({ command, ...extra }), cwd: CWD });
+    expect(matchOwnerRule([rule], bash("npm run deploy"))).toBeUndefined();
+    expect(matchOwnerRule([rule], bash("npm install"))).toBeUndefined();
+    expect(matchOwnerRule([rule], bash("npm install", { dangerouslyDisableSandbox: true }))?.id).toBe("s1");
   });
 });

@@ -235,8 +235,10 @@ posixOnly("organization server: a member's own destinations", () => {
       const escapeCard = await turn.cardOf(escape.id);
       expect(escapeCard.adminApproval).not.toBe(true);
       expect(escape.answer()).toBeUndefined();
-      // a command on his own computer: his card at his level, never an admin's
-      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "echo ok; whoami", timeout_seconds: 20 });
+      // a command on his own computer: his card at his level, never an
+      // admin's (a read-only one runs with no card since #875, so the
+      // command here writes)
+      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "npm install", timeout_seconds: 20 });
       const commandCard = await turn.cardOf(command.id);
       expect(commandCard.adminApproval).not.toBe(true);
       const allowed = await turn.respond(bob, command.id, "allow");
@@ -245,7 +247,7 @@ posixOnly("organization server: a member's own destinations", () => {
       // security review: his own permission mode (Automatic) never answers
       // a command on his real computer; the card shows
       expect((await api("PUT", `/api/bots/${pickle.id}/permission-mode`, bob, { mode: "auto" })).status).toBe(200);
-      const underAuto = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
+      const underAuto = await turn.ask("mcp__sagax-desktop__run_command", { command: "npm install" });
       expect((await turn.cardOf(underAuto.id)).adminApproval).not.toBe(true);
       await sleep(300);
       expect(underAuto.answer()).toBeUndefined();
@@ -323,18 +325,19 @@ posixOnly("organization server: a member's own destinations", () => {
       await prefer("computer");
     }
     // his real computer (2026-10-19, JC: "Toujours permettre" on every
-    // card): offered, bound to the exact command, and his own; another
-    // command keeps its card; revoked, the card comes back
+    // card): offered, bound to the command's one program (2026-10-20, JC,
+    // #875), and his own; a chain keeps its card; revoked, the card comes
+    // back
     turn = await heldTurn(bob, sage, "sur mon pc");
     try {
       const desktopCall = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
       const card = await turn.cardOf(desktopCall.id);
       expect(card.adminApproval).not.toBe(true);
-      expect(card.ownerRule).toMatchObject({ scope: { command: "dir" }, from: "origin" });
+      expect(card.ownerRule).toMatchObject({ scope: { program: "dir" }, from: "origin" });
       expect((await turn.respond(bob, desktopCall.id, "allow", "allow")).status).toBe(200);
       await waitFor(async () => desktopCall.answer()?.behavior === "allow");
       const rule = ((await api("GET", "/api/approval-rules", bob)).body.rules as Array<{ id: string; botId: string | null; scope: Record<string, string>; from?: string }>)
-        .find((row) => row.botId === sage.id && row.scope.command === "dir");
+        .find((row) => row.botId === sage.id && row.scope.program === "dir");
       expect(rule?.from).toBe("origin");
       const again = await turn.ask("mcp__sagax-desktop__run_command", { command: "dir" });
       await waitFor(async () => again.answer()?.behavior === "allow");
@@ -368,7 +371,8 @@ posixOnly("organization server: a member's own destinations", () => {
     const turn = await heldTurn(bob, atlas, "ouvre mon pc");
     try {
       expect(turn.mcpServers).toContain("sagax-desktop");
-      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "whoami" });
+      // a command that writes (a read-only one runs with no card, #875)
+      const command = await turn.ask("mcp__sagax-desktop__run_command", { command: "npm install" });
       const card = await turn.cardOf(command.id);
       expect(card.adminApproval).not.toBe(true);
       expect(card.destinationAnswerer).toBe(bobId);
@@ -438,6 +442,8 @@ posixOnly("organization server: a member's own destinations", () => {
     // Bob (the owner) sees the admin's rule in Fern's rules and may remove it
     const bobSees = (await rulesOfBot(bob, fern.id)).find((row) => row.from === "admin");
     expect(bobSees).toMatchObject({ botId: fern.id, scope: { program: "npm" }, byOther: true, savedBy: "Alice" });
+    // by her name only, never her id (review of #938)
+    expect(bobSees).not.toHaveProperty("ownerId");
     expect((await rulesOfBot(bob, birch.id)).some((row) => row.from === "admin")).toBe(false);
     // he may not edit it (it is Alice's), only remove it
     expect((await api("PATCH", `/api/approval-rules/${bobSees!.id}`, bob, { description: "x" })).status).toBe(404);
@@ -482,6 +488,29 @@ posixOnly("organization server: a member's own destinations", () => {
     idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
     await waitFor(async () => !(await listed()).some((row) => (row.scope ?? "server") === "server"), 30_000);
   }, 240_000);
+
+  // Review of #938 (finding 3): a held admin card (here Claude's
+  // dangerouslyDisableSandbox, the same as a safety hold or Codex's
+  // additional permissions) keeps the whole request: the admin's Always
+  // allow on `npm install` never lets `npm run deploy` through.
+  it("a held admin card keeps the whole request: npm install kept, npm run deploy still asks", async () => {
+    const hazel = await bobBot("Hazel");
+    const turn = await heldTurn(bob, hazel, "installe");
+    try {
+      const held = await turn.ask("Bash", { command: "npm install", dangerouslyDisableSandbox: true, description: "Install" });
+      const card = await turn.cardOf(held.id);
+      expect(card.adminApproval).toBe(true);
+      expect(card.ownerRule?.scope?.program).toBeUndefined();
+      expect(card.ownerRule).toMatchObject({ scope: { command: "npm install" }, from: "admin" });
+      expect((await turn.respond(alice, held.id, "allow", "allow")).status).toBe(200);
+      await waitFor(async () => held.answer()?.behavior === "allow");
+      const deploy = await turn.ask("Bash", { command: "npm run deploy", description: "Deploy" });
+      expect((await turn.cardOf(deploy.id)).adminApproval).toBe(true);
+      expect(deploy.answer()).toBeUndefined();
+    } finally {
+      await turn.end();
+    }
+  }, 120_000);
 
   it("the organization's server: an admin's, until an admin gives the permission in Perspicax; an admin is unchanged", async () => {
     const otto = await bobBot("Otto");

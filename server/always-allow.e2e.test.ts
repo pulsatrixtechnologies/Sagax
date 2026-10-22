@@ -61,7 +61,7 @@ function decisions(dataDir: string): any[] {
   return readdirSync(dir).flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
 }
 
-it("an engine's card: Always allow keeps the exact command, a security key still asks, bulk keeps each card's rule, revoking brings the card back", async () => {
+it("an engine's card: Always allow keeps the command's program, a security key still asks, bulk keeps each card's rule, revoking brings the card back", async () => {
   const owner = randomBytes(32).toString("base64url");
   const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang", SAGAX_TEST_DESKTOP_OWNER_TOKEN: owner });
   const { url, dataDir } = fixture.info;
@@ -104,16 +104,17 @@ it("an engine's card: Always allow keeps the exact command, a security key still
     await expect.poll(() => existsSync(dump), { timeout: 15_000 }).toBe(true);
     socketPath = JSON.parse(readFileSync(dump, "utf8")).mcpConfig.mcpServers.ogb.args.at(-1) as string;
 
-    // ── the card offers Always allow with its exact scope ───────────────
+    // ── the card offers Always allow with its scope: since 2026-10-20 (JC,
+    // #875) a plain command line is kept as its one program in its folder
     const first = await ask("printf always-a");
     await shown(first.id);
     const offered = (await card(first.id)).ownerRule;
-    expect(offered).toMatchObject({ tool: "Bash", scope: { command: "printf always-a" } });
-    expect(offered.description).toContain("printf always-a");
+    expect(offered).toMatchObject({ tool: "Bash", scope: { program: "printf" } });
+    expect(offered.description).toContain("printf");
     expect((await api("POST", `/api/threads/${threadId}/respond`, { requestId: first.id, behavior: "allow", rule: "allow" })).outcome).toBe("allowed-once");
     await expect.poll(() => first.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     const rules = (await api("GET", "/api/approval-rules")).rules as any[];
-    const saved = rules.find((row) => row.botId === bot.id && row.scope?.command === "printf always-a");
+    const saved = rules.find((row) => row.botId === bot.id && row.scope?.program === "printf");
     expect(saved).toMatchObject({ behavior: "allow", tool: "Bash", botName: "Katarina" });
 
     // the same command: no card, and the journal names the rule
@@ -123,8 +124,8 @@ it("an engine's card: Always allow keeps the exact command, a security key still
     await expect.poll(() => decisions(dataDir).find((row) => row.requestId === again.id), { timeout: 5_000 })
       .toMatchObject({ decision: "auto-approved", source: "owner-rule", rule: saved.id });
 
-    // another command keeps its card
-    const other = await ask("printf always-a; printf b");
+    // a chain with another program keeps its card
+    const other = await ask("printf always-a; date");
     await shown(other.id);
     expect(other.answer()).toBeUndefined();
     await api("POST", `/api/threads/${threadId}/respond`, { requestId: other.id, behavior: "deny" });
@@ -138,17 +139,17 @@ it("an engine's card: Always allow keeps the exact command, a security key still
 
     // ── in bulk: each card keeps its own rule ───────────────────────────
     const bulkA = await ask("printf bulk-a");
-    const bulkB = await ask("printf bulk-b");
+    const bulkB = await ask("touch /tmp/sagax-bulk-b");
     await shown(bulkA.id);
     await shown(bulkB.id);
     const inbox = (await api("GET", "/api/approvals")).pending as any[];
-    expect(inbox.find((row) => row.requestId === bulkA.id)?.alwaysRule).toContain("printf bulk-a");
+    expect(inbox.find((row) => row.requestId === bulkA.id)?.alwaysRule).toContain("printf");
     const bulk = await api("POST", "/api/approvals/bulk", { decision: "allow", rule: "allow", items: [{ threadId, requestId: bulkA.id }, { threadId, requestId: bulkB.id }] });
     expect(bulk.answered).toBe(2);
     await expect.poll(() => [bulkA.answer()?.behavior, bulkB.answer()?.behavior], { timeout: 10_000 }).toEqual(["allow", "allow"]);
     const afterBulk = (await api("GET", "/api/approval-rules")).rules as any[];
-    expect(afterBulk.filter((row) => row.botId === bot.id && (row.scope?.command ?? "").startsWith("printf bulk-")).map((row) => row.scope.command).sort()).toEqual(["printf bulk-a", "printf bulk-b"]);
-    const bulkAgain = await ask("printf bulk-b");
+    expect(afterBulk.filter((row) => row.botId === bot.id && ["printf", "touch"].includes(row.scope?.program)).map((row) => row.scope.program).sort()).toEqual(["printf", "touch"]);
+    const bulkAgain = await ask("touch /tmp/sagax-bulk-b");
     await expect.poll(() => bulkAgain.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     expect(await card(bulkAgain.id)).toBeUndefined();
     // a bulk Always allow with a Deny is refused whole
@@ -167,7 +168,7 @@ it("an engine's card: Always allow keeps the exact command, a security key still
     await ceremony(signed);
     await api("POST", `/api/threads/${threadId}/respond`, { requestId: guarded.id, behavior: "allow", rule: "allow", stepUp: signed.ceremonyId });
     await expect.poll(() => guarded.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
-    expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.scope?.command === "rm /tmp/sagax-always-allow-fixture")).toBe(true);
+    expect(((await api("GET", "/api/approval-rules")).rules as any[]).some((row) => row.scope?.program === "rm")).toBe(true);
     // the rule is kept, and the key is still asked
     const guardedAgain = await ask("rm /tmp/sagax-always-allow-fixture");
     await shown(guardedAgain.id);
