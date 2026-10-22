@@ -79,38 +79,3 @@ export function botSuggestions(input: BotSuggestionInput): BotSuggestion[] {
   }
   return out.slice(0, MAX);
 }
-
-/** The rows still shown once the person hid some: Hide remembers the ids it
- * hid, so a new suggestion brings the card back. */
-export function visibleSuggestions(all: readonly BotSuggestion[], hidden: ReadonlySet<string>): BotSuggestion[] {
-  return all.filter((item) => !hidden.has(item.id));
-}
-
-const KEY = "sagax.botSuggestions.hidden.v1";
-
-type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
-
-function storage(): Storage | null {
-  try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
-}
-
-function readAll(store: Storage | null): Record<string, string[]> {
-  try {
-    const parsed: unknown = JSON.parse(store?.getItem(KEY) ?? "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, string[]> : {};
-  } catch { return {}; }
-}
-
-export function hiddenSuggestions(botId: string, store: Storage | null = storage()): Set<string> {
-  const list = readAll(store)[botId];
-  return new Set(Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : []);
-}
-
-/** Hide every suggestion shown now, for this bot, on this computer. */
-export function hideSuggestions(botId: string, ids: readonly string[], store: Storage | null = storage()): Set<string> {
-  const all = readAll(store);
-  const next = [...new Set([...(Array.isArray(all[botId]) ? all[botId]! : []), ...ids])].slice(-50);
-  all[botId] = next;
-  try { store?.setItem(KEY, JSON.stringify(all)); } catch { /* storage full or off: hidden for this view only */ }
-  return new Set(next);
-}

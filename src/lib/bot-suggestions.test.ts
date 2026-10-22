@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { botSuggestions, hiddenSuggestions, hideSuggestions, visibleSuggestions } from "./bot-suggestions";
-
-function memory() {
-  const map = new Map<string, string>();
-  return { getItem: (key: string) => map.get(key) ?? null, setItem: (key: string, value: string) => void map.set(key, value) };
-}
+import { botSuggestions } from "./bot-suggestions";
 
 describe("botSuggestions", () => {
   it("is empty with nothing to suggest", () => {
@@ -39,23 +34,5 @@ describe("botSuggestions", () => {
     expect(items).toHaveLength(4);
     expect(items.some((item) => item.id === "approval:h")).toBe(false);
     expect(items[0]!.action).toEqual({ kind: "openSection", section: "overview" });
-  });
-});
-
-describe("hiding", () => {
-  it("remembers the ids per bot, and a new suggestion shows again", () => {
-    const store = memory();
-    const all = botSuggestions({ setup: [{ id: "soul", label: "", done: false }] });
-    hideSuggestions("b1", all.map((item) => item.id), store);
-    expect(visibleSuggestions(all, hiddenSuggestions("b1", store))).toEqual([]);
-    expect(visibleSuggestions(all, hiddenSuggestions("b2", store))).toHaveLength(1);
-    const more = botSuggestions({ setup: [{ id: "soul", label: "", done: false }, { id: "schedule", label: "", done: false }] });
-    expect(visibleSuggestions(more, hiddenSuggestions("b1", store)).map((item) => item.id)).toEqual(["setup:schedule"]);
-  });
-
-  it("reads a broken value as nothing hidden", () => {
-    const store = memory();
-    store.setItem("sagax.botSuggestions.hidden.v1", "not json");
-    expect(hiddenSuggestions("b1", store).size).toBe(0);
   });
 });

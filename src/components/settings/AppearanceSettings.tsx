@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { canEditConfig } from "@/lib/viewer";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
+import { setShowAllHistory, setShowSuggestions, useShowAllHistory, useShowSuggestions } from "@/lib/panel-visibility";
 import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
 import { FRESH_TOPIC_AFTER_CHOICES, useFreshTopicAfter, writeFreshTopicAfter, type FreshTopicAfterHours } from "@/lib/fresh-topic";
 import { setShowUnreadyProviders, useShowUnreadyProviders } from "@/lib/unready-providers-preference";
@@ -372,6 +373,8 @@ export function AppearanceSettings() {
   const unready = useShowUnreadyProviders();
   const logo = useShowSidebarLogo();
   const routinesBadge = useShowRoutinesBadge();
+  const suggestions = useShowSuggestions();
+  const allHistory = useShowAllHistory();
   return (
     <>
       <SettingsGroup title={t("settings.group.interface")} groupId="interface">
@@ -404,6 +407,8 @@ export function AppearanceSettings() {
         <SidebarDensityRow />
         {advanced && <SwitchLine label={t("settings.sidebarLogo.title")} ariaLabel={t("settings.sidebarLogo.show")} checked={logo} onChange={setShowSidebarLogo} rowId="sidebarLogo" />}
         {advanced && <SwitchLine label={t("settings.routinesBadge.title")} ariaLabel={t("settings.routinesBadge.show")} checked={routinesBadge} onChange={setShowRoutinesBadge} rowId="routinesBadge" />}
+        <SwitchLine label={t("settings.showSuggestions.title")} ariaLabel={t("settings.showSuggestions.show")} checked={suggestions} onChange={setShowSuggestions} rowId="showSuggestions" />
+        <SwitchLine label={t("settings.allHistory.title")} ariaLabel={t("settings.allHistory.show")} checked={allHistory} onChange={setShowAllHistory} rowId="allHistory" />
         {/* Simple: the sidebar's own "Hidden (N)" row brings entries back. */}
         {advanced && <SidebarHiddenSettings />}
       </SettingsGroup>

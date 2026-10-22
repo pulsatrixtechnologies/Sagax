@@ -1,14 +1,15 @@
 // Details > Suggestions (reference design): next steps for this bot, from
 // its setup checklist (GET /api/bots/:id/overview) and the conversations
-// waiting on the person. Hide remembers what it hid, per bot, on this
-// computer; a new suggestion brings the card back. Nothing to suggest: no
-// card at all.
+// waiting on the person. Hide turns the card off for every bot (one
+// preference per person, Settings > Appearance brings it back). Nothing to
+// suggest: no card at all.
 import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, openBotThread, useStore, type Bot } from "@/state/store";
 import type { BotOverview } from "@/lib/bot-overview-types";
-import { botSuggestions, hiddenSuggestions, hideSuggestions, visibleSuggestions, type BotSuggestion } from "@/lib/bot-suggestions";
+import { botSuggestions, type BotSuggestion } from "@/lib/bot-suggestions";
 import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
+import { setShowSuggestions, useShowSuggestions } from "@/lib/panel-visibility";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
 
@@ -16,8 +17,7 @@ export function SuggestionsSection({ bot, routineCount }: { bot: Bot; routineCou
   const { dispatch } = useStore();
   const threadsShown = useShowThreads();
   const [setup, setSetup] = useState<BotOverview["setup"] | null>(null);
-  const [hidden, setHidden] = useState<Set<string>>(() => hiddenSuggestions(bot.id));
-  useEffect(() => setHidden(hiddenSuggestions(bot.id)), [bot.id]);
+  const shown = useShowSuggestions();
 
   // The checklist follows what it reads: the name, title, instructions,
   // folder and schedules. Older servers without `setup` suggest no step.
@@ -31,10 +31,10 @@ export function SuggestionsSection({ bot, routineCount }: { bot: Bot; routineCou
   }, [bot.id, bot.name, bot.title, soulFilled, routineCount]);
 
   const items = useMemo(
-    () => visibleSuggestions(botSuggestions({ setup, tasks: bot.tasks, waitingApprovals: bot.waitingApprovals }), hidden),
-    [setup, bot.tasks, bot.waitingApprovals, hidden],
+    () => botSuggestions({ setup, tasks: bot.tasks, waitingApprovals: bot.waitingApprovals }),
+    [setup, bot.tasks, bot.waitingApprovals],
   );
-  if (!items.length) return null;
+  if (!shown || !items.length) return null;
 
   const run = (item: BotSuggestion) => {
     if (item.action.kind === "openThread") openBotThread(dispatch, bot, item.action.threadId, threadsShown);
@@ -48,7 +48,7 @@ export function SuggestionsSection({ bot, routineCount }: { bot: Bot; routineCou
         <button
           type="button"
           data-suggestions-hide
-          onClick={() => setHidden(hideSuggestions(bot.id, items.map((item) => item.id)))}
+          onClick={() => setShowSuggestions(false)}
           className="rounded px-1 text-[12.5px] text-ink-secondary hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
         >
           {t("botPanel.suggestions.hide")}
