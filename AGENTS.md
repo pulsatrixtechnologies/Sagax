@@ -5074,6 +5074,12 @@ it after an upstream merge instead of renaming by hand.
   signature, Windows install id), the package.json `name` and the
   `openmausbot` command (`server/openmausbot.ts`, `dist-server/openmausbot.js`,
   named by installed service units).
+- Not kept: the npm package. It is `@pulsatrix/sagax` and installs one
+  command, `sagax` (`scripts/build-npm-package.mjs`, `server/npm-package.ts`,
+  `docs/releasing.md`). The unscoped names belong to others; nothing
+  installs, suggests or publishes them, and `fleet upgrade` installs an
+  exact `@pulsatrix/sagax@X.Y.Z`, never a floating tag. Until the first
+  publish, the checkout (`pnpm omb`) is the way to run the CLI.
 - Links: both schemes `sagax://` and `openmausbot://`, both
   `/.well-known/sagax/` and `/.well-known/openmausbot/`, and the health body's
   `app: "openmausbot"` beside `product: "sagax"`.

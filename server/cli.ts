@@ -110,6 +110,8 @@ export interface CliOptions {
   dryRun?: boolean;
   yes?: boolean;
   keepData?: boolean;
+  /** fleet upgrade --to: the exact release to install. */
+  fleetVersion?: string;
   fleetUserAction?: "add" | "remove";
   withDeps?: boolean;
   json: boolean;
@@ -204,6 +206,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       else if (options.command === "fleet" && arg === "--dry-run") options.dryRun = true;
       else if (options.command === "fleet" && arg === "--yes") options.yes = true;
       else if (options.command === "fleet" && arg === "--keep-data") options.keepData = true;
+      else if (options.command === "fleet" && options.fleetAction === "upgrade" && arg === "--to") options.fleetVersion = value();
       else if (options.command === "fleet" && arg === "--chat-only") options.chatOnly = true;
       else return { error: `unknown argument "${arg}"` };
     } catch (error) {
@@ -246,7 +249,7 @@ export const USAGE = `openmausbot — your team of AI bots, ready in a few steps
   openmausbot fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
                     [--anthropic-key-file FILE] [--cap USD] [--license-key KEY] [--memory 1G]
                   | list | users NAME add|remove EMAIL [--chat-only] | suspend NAME | resume NAME
-                  | delete NAME --yes [--keep-data] | upgrade   (all take --dry-run)
+                  | delete NAME --yes [--keep-data] | upgrade [--to X.Y.Z]   (all take --dry-run)
                   | agent [--socket PATH] [--group USER]   (root; installed by init --operator)
 
 setup   choose AI access and optional phone access; keep existing bots and chats
@@ -278,6 +281,9 @@ fleet   many client workspaces on one Linux server, each its own account,
         init --operator USER also installs the fleet agent, a root service
         on a Unix socket only USER may open, so the workspace running as
         USER manages the others from Settings → Installations.
+        upgrade installs one exact release of @pulsatrix/sagax (--to
+        X.Y.Z, default this CLI's own), points the workspaces at it and
+        restarts them; never a floating tag.
 
 --tailscale  serve over your tailnet: Tailscale terminates HTTPS and the
              link uses this machine's MagicDNS name (needs Tailscale signed in
@@ -1256,6 +1262,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         dryRun: options.dryRun ?? false,
         yes: options.yes ?? false,
         keepData: options.keepData ?? false,
+        ...(options.fleetVersion ? { version: options.fleetVersion } : {}),
         userAction: options.fleetUserAction,
         email: options.email,
         chatOnly: options.chatOnly,
