@@ -4645,6 +4645,7 @@
   "sidebar.bot.deleteCheckingTitle": "Suppression de ce bot et de tout ordinateur qui lui appartient",
   "sidebar.bot.deletingAria": "{name}, suppression du bot et de tout ordinateur qui lui appartient",
   "sidebar.bot.deletingRow": "Suppression du bot et de tout ordinateur qui lui appartient…",
+  "sidebar.bot.sharedBy": "Partagé par {name}",
   "sidebar.bot.duplicate": "Dupliquer",
   "sidebar.bot.editProfile": "Modifier le profil",
   "sidebar.bot.makePrimary": "Définir comme bot principal",

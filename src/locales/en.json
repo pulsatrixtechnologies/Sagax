@@ -6156,6 +6156,7 @@
   "sidebar.bot.deleteCheckingTitle": "Deleting this bot and any computer it owns",
   "sidebar.bot.deletingAria": "{name}, deleting bot and any owned computer",
   "sidebar.bot.deletingRow": "Deleting bot and any owned computer…",
+  "sidebar.bot.sharedBy": "Shared by {name}",
   "sidebar.bot.duplicate": "Duplicate",
   "sidebar.bot.editProfile": "Edit Profile",
   "sidebar.bot.makePrimary": "Make primary bot",

@@ -75,6 +75,9 @@ import { ChevronsRight, Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
+import { SidebarSharerBadge } from "./SidebarSharerBadge";
+import { botSharer } from "@/lib/bot-sharer";
+import { presenceLabel, usePresence } from "@/lib/presence";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
 import {
   EMPTY_PERSONAL_SECTIONS,
@@ -432,6 +435,8 @@ export function GroupListItem({
   const orgPeople = useOrgPeople();
   const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
   const rowName = peer?.name ?? group.name;
+  // The person's presence, also in the rail's accessible name (no text there).
+  const peerPresence = usePresence(peer?.id);
   // No achievement title or points here: they live in the person panel.
   const previewShown = !expanded && (!quiet || groupStatus);
   return (
@@ -466,7 +471,7 @@ export function GroupListItem({
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? rowName : undefined}
-      aria-label={density === "icons" ? [rowName, groupStatus ? t("chat.activity.working") : null, group.unread ? t("task.unread") : null].filter(Boolean).join(" · ") : undefined}
+      aria-label={density === "icons" ? [rowName, peerPresence ? presenceLabel(peerPresence) : null, groupStatus ? t("chat.activity.working") : null, group.unread ? t("task.unread") : null].filter(Boolean).join(" · ") : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
       {peer
@@ -2003,7 +2008,10 @@ export function BotListItem({
   // The viewer's own Primary Bot wears the orange star at the avatar's
   // bottom-right corner; a status dot then sits at the top-right instead.
   const primary = isViewersPrimaryBot(bot, orgViewerId(state));
-  const dotCorner = primary ? "-top-0.5" : "-bottom-0.5";
+  // A bot shared with the viewer wears its sharer's face at the bottom-right
+  // (as in Browse Bots), so the status dot moves up, like beside the star.
+  const sharer = botSharer(bot, orgViewerId(state), useOrgPeople());
+  const dotCorner = primary || sharer ? "-top-0.5" : "-bottom-0.5";
   // Grok Bot marks an unread bot with a blue dot at the row's end, the name
   // keeps its weight.
   const trailingDot = !iconOnly && unread && !renaming && !deleting && !selection?.active;
@@ -2031,6 +2039,7 @@ export function BotListItem({
             signal in icons-only density, where the text is hidden. */}
         {working && <StatusDot tone="success" testId="working-dot" className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
         {waiting && <StatusDot tone="warning" testId="waiting-dot" role="status" label={t("sidebar.preview.waiting")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
+        {sharer && !primary && <SidebarSharerBadge sharer={sharer} avatarSize={avatarSize} />}
         {teammateWait && <StatusDot tone="accent" testId="teammate-wait-dot" role="status" label={t("sidebar.preview.waitingOnTeammate")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
         {!teammateWait && !waiting && !working && queued && <StatusDot tone="queued" testId="queued-dot" role="status" label={t("task.queued")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
       </span>
