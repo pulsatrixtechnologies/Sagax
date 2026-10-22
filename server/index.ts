@@ -7506,6 +7506,7 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
   },
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   viewer: marketplaceViewer,
+  mayShareOrgWide: mayShareMarketplaceOrgWide,
   managedByAdmin: integrationsLocked,
   mayManageMarketplaces: (auth) => mayManageMarketplaces(auth),
   policy: pluginMarketplacePolicy,

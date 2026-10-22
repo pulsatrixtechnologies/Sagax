@@ -39,6 +39,9 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   /** Who is asking: a private marketplace is listed to its author only.
    * Absent: unfiltered (a solo server, or a test fixture). */
   viewer?: (auth: RequestAuth) => MarketplaceViewer;
+  /** May this caller share a marketplace with the whole organization? Org-wide
+   * is admins only (mirror of routes/marketplaces.ts); absent: allowed. */
+  mayShareOrgWide?: (auth: RequestAuth) => boolean;
   /** An admin manages this person's plugins (never an organization admin). */
   managedByAdmin?: (auth: RequestAuth) => boolean;
   /** May remove a marketplace from the one list (the workspace's managers). */
@@ -106,6 +109,9 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
         const token = tokenField(body?.token);
         if (token === null) return json(res, 400, { error: "The token must be one line of printable characters.", code: "invalid_token" });
         const visibility = body?.visibility === "private" || body?.visibility === "org" ? body.visibility as MarketplaceVisibility : undefined;
+        if (visibility === "org" && deps.mayShareOrgWide && !deps.mayShareOrgWide(auth)) {
+          return json(res, 403, { error: "Only an administrator can share a marketplace with the whole organization.", code: "marketplace_org_admin_only" });
+        }
         const added = await deps.plugins.addMarketplace(bot.id, { source, ...(ref ? { ref } : {}), ...(token ? { token } : {}), ...(visibility ? { visibility } : {}) }, actor);
         deps.changed?.(bot, "plugin.marketplace_add", { marketplace: added.name, source: added.source }, auth);
         return json(res, 201, { marketplace: added, ...listing() });
