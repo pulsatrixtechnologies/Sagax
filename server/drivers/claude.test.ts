@@ -30,6 +30,7 @@ import {
   createPermissionBroker,
   hookTokenFile,
   instanceClaudeAllowRules,
+  remoteSupportDenyRules,
   parseClaudeCliVersion,
   permissionSocketPath,
   readClaudeAuthSettings,
@@ -1098,7 +1099,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await instance.adapter.sendTurn({ threadId: "t-allow", text: "hi" });
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
-      expect(seen.settings.permissions).toEqual({ allow: ["Bash(claude plugin marketplace add acme/marketplace)"] });
+      expect(seen.settings.permissions).toEqual({ allow: ["Bash(claude plugin marketplace add acme/marketplace)"], deny: remoteSupportDenyRules() });
       expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
     } finally {
       delete process.env.SAGAX_CLAUDE_ALLOW;
@@ -1135,7 +1136,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toBe(["Bash", "Read", "Write", "Edit", ...CLAUDE_UNUSED_TOOLS].join(","));
-      expect(Object.keys(seen.settings.permissions)).toEqual(["allow"]);
+      expect(Object.keys(seen.settings.permissions)).toEqual(["allow", "deny"]);
+      expect(seen.settings.permissions.deny).toEqual(remoteSupportDenyRules());
       expect(seen.settings.permissions.allow).toEqual(["Bash(claude plugin marketplace add acme/marketplace)", "Read", "Edit"]);
     } finally {
       delete process.env.SAGAX_CLAUDE_ALLOW;
@@ -2309,7 +2311,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await instance.adapter.sendTurn({ threadId: "t-auth-settings", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], apiKeyHelper: settings.apiKeyHelper, env: { ANTHROPIC_BASE_URL: settings.env.ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN: "synthetic-token" } });
+    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], apiKeyHelper: settings.apiKeyHelper, env: { ANTHROPIC_BASE_URL: settings.env.ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN: "synthetic-token" }, permissions: { deny: remoteSupportDenyRules() } });
     expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
     expect(JSON.stringify(seen.argv)).not.toContain("synthetic");
     const settingsPath = seen.argv[seen.argv.indexOf("--settings") + 1];
@@ -2348,7 +2350,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await instance.adapter.sendTurn({ threadId: "t-auth-explicit", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")] });
+    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], permissions: { deny: remoteSupportDenyRules() } });
     expect(seen.env.ANTHROPIC_API_KEY).toBe("workspace-key");
     expect(seen.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(readClaudeAuthSettings({ HOME: scratch, CLAUDE_CONFIG_DIR: join(scratch, "other-account") })).toEqual({});

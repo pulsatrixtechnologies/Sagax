@@ -339,6 +339,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/(?:([\\w-]+)\\/export\\.zip|import\\/(upload|[0-9a-f-]{36})(?:\\/(preview))?)$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,128})\\/team-bot-draft$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,80})\\/remote-sessions\\/([a-f0-9]{12})(?:\\/(close|focus|shell|upload|download|screen))?$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,80})\\/remote-sessions\\/([a-f0-9]{12})\\/control$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,80})\\/remote-sessions$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)(?:\\/(always-allow|model))?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)(?:\\/|$)","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},

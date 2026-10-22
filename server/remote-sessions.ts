@@ -24,12 +24,16 @@ import type { TerminalResourceRegistry } from "./terminal-resources/registry.ts"
 import type { createTerminalSessionManager } from "./terminal-sessions.ts";
 import { createTailcatAdapter } from "./terminal-resources/adapters/tailcat.ts";
 import { resolveTailcatBinary } from "./tailcat-bin.ts";
-import { forgetAddress } from "./remote-support-local.ts";
+import { markSessionClosed } from "./remote-support-local.ts";
+import { createRemoteControlSessions, type ControlAuditEvent, type ControlHandle, type OpenControl, type SpawnControl } from "./remote-control-session.ts";
+import { createRemoteControlAudit } from "./remote-control-audit.ts";
 import {
+  bindFlowOwner,
   deleteRemoteCommand,
   flowHome as defaultFlowHome,
   inventoryCommand,
   normPrincipal,
+  pruneSupportSessions,
   readTunnel,
   runCommand,
   screenshotPlan,
@@ -170,11 +174,20 @@ export function createRemoteSessionService(deps: {
   /** remote_support_close at Perspicax for a session Sagax opened, as the
    * person closing it (their own credentials). Best effort. */
   closeRemote?(input: { principalId: string; botId: string; threadId: string; code: string }): Promise<unknown>;
+  /** The live-control audit sink (default: a JSONL file in dataDir). */
+  controlAudit?: { write(event: ControlAuditEvent): void };
+  /** How the control helper is spawned (default: tailcat ssh over the tunnel). Tests inject a fake. */
+  controlSpawn?: SpawnControl;
 }) {
   const now = deps.now ?? (() => Date.now());
   const run = deps.run ?? runCommand;
   const home = deps.home ?? defaultFlowHome;
   const supportDir = deps.supportDir;
+  const controls = createRemoteControlSessions({
+    audit: deps.controlAudit ?? createRemoteControlAudit(deps.dataDir),
+    now,
+    ...(deps.controlSpawn ? { spawn: deps.controlSpawn } : {}),
+  });
   // The tunnel of a row: its Flow folder, or the support folder of its code
   // when that folder names the row's person and bot as the opener.
   const tunnelOf = (row: Pick<StoredSession, "id" | "code" | "principalId" | "botId">) => readTunnel(home(), row, supportDir?.());
@@ -192,6 +205,23 @@ export function createRemoteSessionService(deps: {
   } catch {
     rows = [];
   }
+  // An ended row older than 48 hours, and a support folder untouched that long,
+  // are dropped so neither grows without bound.
+  const PRUNE_MS = 48 * 60 * 60 * 1000;
+  let lastSweep = 0;
+  const prune = (): boolean => {
+    const cutoff = now() - PRUNE_MS;
+    const kept = rows.filter((row) => !(row.state === "ended" && row.createdAt < cutoff));
+    const changed = kept.length !== rows.length;
+    rows = kept;
+    if (now() - lastSweep > 60_000) {
+      lastSweep = now();
+      const dir = supportDir?.();
+      if (dir) pruneSupportSessions(dir, now(), PRUNE_MS);
+    }
+    return changed;
+  };
+  prune();
   let chain: Promise<unknown> = Promise.resolve();
   const persist = () => {
     mkdirSync(deps.dataDir, { recursive: true });
@@ -286,6 +316,7 @@ export function createRemoteSessionService(deps: {
     async publish(input: PublishRemoteSession): Promise<PublishedRemoteSession> {
       const principalId = normPrincipal(input.principalId);
       const session = await exclusive(() => {
+        prune();
         // The id is on the chat card: it never gives a session to someone
         // other than the person (and bot) who opened it.
         const theirs = rows.find((row) => row.id === input.id && (row.principalId !== principalId || row.botId !== input.botId));
@@ -294,6 +325,11 @@ export function createRemoteSessionService(deps: {
           ? supportOwnersOfId(dir, input.id).some((owner) => owner.principalId !== principalId || owner.botId !== input.botId)
           : false;
         if (theirs || foreign) {
+          throw Object.assign(new Error("That remote session belongs to someone else."), { status: 403 });
+        }
+        // A Flow session folder has no owner until its first publish: bind it
+        // to this person and bot now, and refuse a later publish by anyone else.
+        if (bindFlowOwner(home(), input.id, { principalId, botId: input.botId }) === "other") {
           throw Object.assign(new Error("That remote session belongs to someone else."), { status: 403 });
         }
         let row = rows.find((candidate) => candidate.id === input.id && candidate.botId === input.botId);
@@ -369,6 +405,7 @@ export function createRemoteSessionService(deps: {
     },
     async close(principalId: string, botId: string, id: string): Promise<RemoteSessionView | null> {
       const closing = await exclusive(() => {
+        prune();
         const session = owned(principalId, botId, id);
         if (!session) return null;
         const wasConnected = session.state === "connected";
@@ -380,16 +417,19 @@ export function createRemoteSessionService(deps: {
       });
       if (!closing) return null;
       const { session, wasConnected } = closing;
+      controls.closeSession(session.id);
       if (wasConnected) {
         const ours = sagaxOpened(session);
         try { await ssh(session, stopCommand(session.id), 8_000); } catch { /* the screen still closes */ }
         if (ours) {
+          // Delete the address and leave a `closed` marker first, so even if
+          // Perspicax cannot be reached the tunnel no longer resolves here and
+          // a late "connected" status cannot write the address back.
+          const dir = supportDir?.();
+          if (dir) await markSessionClosed(dir, session.code).catch(() => {});
           try {
             await deps.closeRemote?.({ principalId: session.principalId, botId: session.botId, threadId: session.threadId, code: session.code });
-          } catch { /* Perspicax ends it at its end time */ }
-          // the tunnel no longer resolves from this host
-          const dir = supportDir?.();
-          if (dir) await forgetAddress(dir, session.code).catch(() => {});
+          } catch { /* Perspicax ends it at its end time; the address is already gone */ }
         }
       }
       return viewOf(session);
@@ -402,9 +442,38 @@ export function createRemoteSessionService(deps: {
         if (!session) return null;
         session.state = "ended";
         session.focused = false;
+        controls.closeSession(session.id);
         writeCard(session);
         persist();
         return viewOf(session);
+      });
+    },
+    /** Open live control (screen + mouse + keyboard) for a session this
+     * person owns and that is connected and reachable. Windows only for now;
+     * the control manager answers an error otherwise. */
+    openControl(input: {
+      principalId: string;
+      botId: string;
+      id: string;
+      technician?: string;
+      onMeta: OpenControl["onMeta"];
+      onFrame: OpenControl["onFrame"];
+      onClosed: OpenControl["onClosed"];
+    }): ControlHandle | { error: string } {
+      const session = owned(input.principalId, input.botId, input.id);
+      if (!session || session.state !== "connected") return { error: "That remote session is not open." };
+      const tunnel = tunnelOf(session);
+      if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
+      return controls.open({
+        session: { id: session.id, os: session.os, endAt: session.endAt },
+        tunnel,
+        bin: tailcatBin(),
+        principalId: input.principalId,
+        botId: input.botId,
+        ...(input.technician ? { technician: input.technician } : {}),
+        onMeta: input.onMeta,
+        onFrame: input.onFrame,
+        onClosed: input.onClosed,
       });
     },
     focus(principalId: string, botId: string, id: string): RemoteSessionView | null {
