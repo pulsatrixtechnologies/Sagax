@@ -1,6 +1,6 @@
-// Scale a WebP down and hand it back as a PNG (2026-10-21), the same
-// contract as model-image.ts's resvgScale, for the one format resvg cannot
-// draw. Box filter (average of the source pixels under each target pixel):
+// Scale a WebP down and encode a PNG (2026-10-21), for the one format resvg
+// cannot draw. These functions are synchronous and heavy: they run in the
+// worker thread (webp-scale-worker.ts), never on the server's main thread. Box filter (average of the source pixels under each target pixel):
 // good for the large reductions a phone photo needs, no native module.
 import { deflateSync } from "node:zlib";
 
@@ -102,13 +102,8 @@ export function encodePng(image: { width: number; height: number; data: Uint8Arr
   ]);
 }
 
-/** A renderer for one WebP: it decodes the file on the first call and keeps
- * the pixels for the next (fitImageForModel retries smaller until the copy
- * fits). Make one per picture so the full RGBA frame is freed with it. */
-export function makeWebpScale(): (bytes: Buffer, mime: string, size: Size) => Promise<Buffer> {
-  let decoded: DecodedWebp | null = null;
-  return async (bytes, _mime, size) => {
-    decoded ??= await decodeWebp(bytes);
-    return encodePng(boxScale(decoded, size));
-  };
+/** Decode, scale and encode on the calling thread. Only the worker runs this
+ * (webp-scale.worker.ts): a 16 Mpx picture holds the thread for seconds. */
+export async function scaleWebpInline(bytes: Uint8Array, size: Size): Promise<Buffer> {
+  return encodePng(boxScale(await decodeWebp(bytes), size));
 }

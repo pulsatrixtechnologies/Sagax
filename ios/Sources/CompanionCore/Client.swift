@@ -602,6 +602,10 @@ private struct InstanceCapabilityResponse: Decodable {
 
 public struct CompanionClient: Sendable {
     public static let maximumImageUploadBytes = AttachmentPolicy.maximumImageBytes
+    /// A bot's picture: the server keeps its own 10 MB cap for avatars
+    /// (BOT_AVATAR_MAX_BYTES in server/org-admin-look.ts, #945), apart from the
+    /// 32 MiB a chat image may weigh.
+    public static let maximumAvatarUploadBytes = 10 * 1_024 * 1_024
     public static let maximumFileUploadBytes = AttachmentPolicy.maximumFileBytes
     public static let maximumFileDownloadBytes = AttachmentPolicy.maximumFileBytes
 
@@ -1296,12 +1300,24 @@ public struct CompanionClient: Sendable {
         mime: String,
         uploadId: String? = nil
     ) async throws -> String {
+        try await uploadImage(
+            data: data, mime: mime, uploadId: uploadId,
+            maximumBytes: Self.maximumImageUploadBytes
+        )
+    }
+
+    private func uploadImage(
+        data: Data,
+        mime: String,
+        uploadId: String?,
+        maximumBytes: Int
+    ) async throws -> String {
         let normalizedMime = mime.lowercased()
         guard Self.validUploadID(uploadId) else { throw APIError.badURL }
         guard AttachmentPolicy.imageMIMETypes.contains(normalizedMime),
-              data.count <= Self.maximumImageUploadBytes
+              data.count <= maximumBytes
         else {
-            throw APIError.transport(String(localized: "Choose a PNG, JPEG, GIF, or WebP image up to \(AttachmentPolicy.maximumImageMegabytes) MB."))
+            throw APIError.transport(String(localized: "Choose a PNG, JPEG, GIF, or WebP image up to \(maximumBytes / (1_024 * 1_024)) MB."))
         }
         var request = try makeRequest(
             "POST",
@@ -1318,7 +1334,10 @@ public struct CompanionClient: Sendable {
     }
 
     public func uploadAvatar(data: Data, mime: String) async throws -> String {
-        let path = try await uploadImage(data: data, mime: mime)
+        let path = try await uploadImage(
+            data: data, mime: mime, uploadId: nil,
+            maximumBytes: Self.maximumAvatarUploadBytes
+        )
         let name = URL(fileURLWithPath: path).lastPathComponent
         guard !name.isEmpty, !name.contains("/") else { throw APIError.transport("The uploaded image could not be used.") }
         return "/api/attachments/\(name)"
