@@ -13,6 +13,7 @@ import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
+import type { ProactiveMode } from "./proactive-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { CustomRuleCandidate, CustomRuleNotice } from "./custom-rules.ts";
@@ -394,6 +395,10 @@ export interface WireBot {
    * (server/org-full-access.ts). Later grants by that person skip it. */
   fullAccessConsent?: { principalId: string; at: number };
   approvalMode?: ApprovalMode;
+  /** How autonomously this bot may act on its own (shared/proactive-mode.ts):
+   * absent/"off" = never; "propose", "read-auto" and "follow-rules" each gate
+   * a proactive step through our approval model. Never a Chief orchestrator. */
+  proactiveMode?: ProactiveMode;
   /** Tools this bot may always use without asking. */
   alwaysAllow?: string[];
   /** Speak this bot's replies aloud as they settle, without being asked. */

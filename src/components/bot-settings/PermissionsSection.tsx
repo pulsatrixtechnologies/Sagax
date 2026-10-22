@@ -22,6 +22,7 @@ import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
 import type { ApprovalMode } from "../../../shared/approval-mode";
+import { PROACTIVE_MODES, type ProactiveMode } from "../../../shared/proactive-mode";
 import { DEFAULT_OUTBOUND_POLICY, type OutboundPolicy } from "../../../shared/outbound";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
 import { AllowedRecipientsRow } from "./AllowedRecipientsRow";
@@ -108,6 +109,14 @@ export function PermissionsSection({
     }
     patch({ approvalMode: mode });
   };
+  // How autonomously this bot may act on its own. A level next to the approval
+  // level, not a Chief orchestrator: the server enforces it per bot
+  // (shared/proactive-mode.ts, server/proactive.ts).
+  const proactiveMode: ProactiveMode = bot.proactiveMode ?? "off";
+  const setProactiveMode = (mode: ProactiveMode) => {
+    if (bot.busy || mode === proactiveMode) return;
+    patch({ proactiveMode: mode });
+  };
   const showPrimary = canStepPrimary(state.config, bot, { draft });
   const showApproval = canEditBotField(state.config, bot, "approvalMode", { draft });
   const showContact = canEditBotField(state.config, bot, "approvePeerComms", { draft });
@@ -161,6 +170,22 @@ export function PermissionsSection({
         >
           <ProposalStatus bot={bot} />
           {advanced && approvalSelector}
+        </DescribedRow>
+      )}
+      {showApproval && advanced && (
+        <DescribedRow
+          label={t("botPanel.permissions.proactive")}
+          help={t("botPanel.permissions.proactiveHelp")}
+          description={t(`botPanel.permissions.proactive.${proactiveMode}.hint`)}
+          rowId="proactiveMode"
+        >
+          <PillSelect<ProactiveMode>
+            value={proactiveMode}
+            ariaLabel={t("botPanel.permissions.proactive")}
+            disabled={Boolean(bot.busy)}
+            onChange={setProactiveMode}
+            options={PROACTIVE_MODES.map((mode) => ({ value: mode, label: t(`botPanel.permissions.proactive.${mode}`) }))}
+          />
         </DescribedRow>
       )}
       {showContactUi && (
