@@ -762,6 +762,12 @@ export function createRemoteSessionService(deps: {
       if (session.osGuessed) return { error: "The OS of that computer is not known yet, so Sagax does not guess its commands. Ask the person which OS it is, or try again in a moment." };
       return this.exec({ ...input, id: session.id, command: snapshotCommand(session.os), timeoutMs: 45_000 });
     },
+    /** The connected session a turn would reach, for the turn's reach line
+     * (server/remote-session-reach.ts): its name and OS, never the address. */
+    reachFor(input: { principalId: string; botId: string; threadId: string }): { host: string; os: RemoteSessionOs; known: boolean } | null {
+      const session = this.target(input);
+      return session ? { host: publicText(hostLabel(session)) ?? session.code, os: session.os, known: !session.osGuessed } : null;
+    },
     /** The OS of the session a bot tool means, for the approval rule
      * (server/remote-session-exec.ts); `known` false while it is guessed. */
     osFor(input: { principalId: string; botId: string; threadId: string; id?: string }): { os: RemoteSessionOs; known: boolean } | null {

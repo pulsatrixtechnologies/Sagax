@@ -844,7 +844,8 @@ import * as grokVoice from "./tts/grok.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
-import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt } from "./turn-reach.ts";
+import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt, registerReachProvider } from "./turn-reach.ts";
+import { remoteSessionReach } from "./remote-session-reach.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope, TurnImageInput } from "./contracts.ts";
@@ -10501,6 +10502,9 @@ const resourceUsage = installResourceUsage({
 process.once("exit", () => resourceUsage.close());
 // A session the bot opened with remote_support_open becomes a panel row and a
 // chat card once remote_support_status says connected (PerspicaxMcp.relay).
+// While a Tailcat session is open, the owner's turn names the two tools
+// (Grok offers them directly instead of behind search_tool).
+registerReachProvider("tailcat-remote-session", remoteSessionReach((input) => remoteSessions.reachFor(input)));
 const remoteSessionRegistrar = createRemoteSessionRegistrar({
   // principalId: the speaker whose token made the call (PerspicaxMcp.relay)
   publish: async ({ principalId, botId, threadId, open }) => {
