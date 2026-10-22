@@ -2282,8 +2282,10 @@ body {
 :root[data-reduced-motion="true"] .bot-activity-wave > span { animation: none; }
 :root[data-reduced-motion="true"] .bot-activity .thinking-shimmer { animation: none; background: none; color: var(--color-ink-secondary); }
 @media (prefers-reduced-motion: reduce) {
-  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .bot-activity-wave > span { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .ultracode-shimmer { background: none; color: var(--color-ultracode-ink); }
