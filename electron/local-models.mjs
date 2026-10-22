@@ -85,10 +85,11 @@ export function modelDetailsFromPayload(payload) {
   return details;
 }
 
-/** Probe one loopback base. Returns model ids, or null when it does not answer. */
+/** Probe one loopback base. Returns model ids, or null when it did not answer
+ * /v1/models with a readable body (down, timed out, or refused for a key). */
 export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch) {
   const probed = await probeLoopbackCatalog(base, fetchImpl);
-  return probed ? probed.models : null;
+  return probed && (probed.status === "answered" || probed.status === "empty") ? probed.models : null;
 }
 
 const ANTHROPIC_FRESH_MS = 5000;
@@ -152,7 +153,19 @@ export function resetAnthropicProbeCache() {
   anthropicCache.clear();
 }
 
-/** Probe one loopback base. Returns ids and display details, or null when it does not answer. */
+/**
+ * Probe one loopback base. Returns null only for a base that is not a valid
+ * loopback /v1 URL. Otherwise it always returns `{ models, details, anthropic,
+ * status }` so the caller can tell the outcomes apart for the Settings panel:
+ * - "answered": 200 with at least one usable model (the only case that becomes
+ *   a picker row);
+ * - "empty": 200 but no usable model;
+ * - "needs_key": reachable but refused without credentials (401/403) — the
+ *   server is up and speaks /v1, it just wants an API key;
+ * - "offline": not reachable, timed out, or any other non-2xx (down/5xx).
+ * The probe sends no real key, so a server that requires one reads as
+ * "needs_key" rather than being silently dropped as "not responding".
+ */
 export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
   const normalized = normalizeLoopbackBase(base);
   if (!normalized) return null;
@@ -163,13 +176,22 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
       headers: { Authorization: "Bearer local" },
       signal: AbortSignal.timeout(1200),
     });
-    if (!response.ok) { forgetAnthropic(normalized); return null; }
+    if (!response.ok) {
+      forgetAnthropic(normalized);
+      const status = response.status === 401 || response.status === 403 ? "needs_key" : "offline";
+      return { models: [], details: [], anthropic: false, status };
+    }
     const payload = await response.json();
     const models = modelIdsFromPayload(payload);
-    return { models, details: modelDetailsFromPayload(payload), anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl) : false };
+    return {
+      models,
+      details: modelDetailsFromPayload(payload),
+      anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl) : false,
+      status: models.length ? "answered" : "empty",
+    };
   } catch {
     forgetAnthropic(normalized);
-    return null;
+    return { models: [], details: [], anthropic: false, status: "offline" };
   }
 }
 

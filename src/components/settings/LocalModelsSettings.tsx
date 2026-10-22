@@ -16,6 +16,28 @@ export function endpointName(endpoint: Endpoint): string {
   try { return new URL(endpoint.baseUrl).host; } catch { return endpoint.baseUrl; }
 }
 
+/**
+ * The last probe outcome shown under one loopback server, so the owner can
+ * tell a listed server ("N models") from one that is running but empty,
+ * reachable but asking for an API key, or not responding at all. A server
+ * that has not been probed yet (an older desktop, or none connected) shows
+ * nothing. Only "N models" servers also reach the model picker.
+ */
+export function endpointStatus(
+  endpoint: Endpoint,
+  published: LocalModelSettings["published"],
+  probes: LocalModelSettings["probes"],
+): { tone: "ok" | "muted" | "warn"; text: string } | null {
+  const models = published.find((row) => row.id === endpoint.id)?.models.length ?? 0;
+  if (models > 0) return { tone: "ok", text: cardCount("models", models) };
+  const status = probes.find((row) => row.id === endpoint.id)?.status;
+  if (!status) return null;
+  if (status === "needs_key") return { tone: "warn", text: t("localModels.probe.needsKey") };
+  if (status === "empty") return { tone: "muted", text: t("localModels.probe.empty") };
+  if (status === "offline") return { tone: "muted", text: t("localModels.probe.offline") };
+  return null;
+}
+
 /** The one-line summary of the folded list: "8 local servers · DwarfStar, Ollama, …". */
 export function endpointsSummary(endpoints: Endpoint[]): string {
   const count = cardCount("servers", endpoints.length);
@@ -24,7 +46,7 @@ export function endpointsSummary(endpoints: Endpoint[]): string {
   return `${count} · ${names}${endpoints.length > 3 ? ", …" : ""}`;
 }
 
-const OFF: LocalModelSettings = { expose: false, share: false, endpoints: [], published: [], connected: false };
+const OFF: LocalModelSettings = { expose: false, share: false, endpoints: [], published: [], probes: [], connected: false };
 
 export function LocalModelsSettings() {
   const [settings, setSettings] = useState<LocalModelSettings>(OFF);
@@ -80,13 +102,19 @@ export function LocalModelsSettings() {
               <ul className="flex flex-col">
                 {settings.endpoints.map((endpoint) => {
                   const name = endpointName(endpoint);
+                  const status = settings.expose && settings.connected ? endpointStatus(endpoint, settings.published, settings.probes) : null;
                   return (
-                    <li key={endpoint.id || endpoint.baseUrl} className="group flex min-h-[44px] items-center gap-3 py-1" data-loopback-server={endpoint.baseUrl}>
+                    <li key={endpoint.id || endpoint.baseUrl} className="group flex min-h-[44px] items-center gap-3 py-1" data-loopback-server={endpoint.baseUrl} data-loopback-status={status?.tone ?? ""}>
                       <Server size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] leading-[18px] text-ink">{name}</span>
                         <span className="block truncate font-mono text-[12px] leading-4 text-ink-secondary">{endpoint.baseUrl}</span>
                       </span>
+                      {status && (
+                        <span className={cn("shrink-0 text-[12px] leading-4", status.tone === "ok" ? "text-success" : status.tone === "warn" ? "text-warning" : "text-ink-secondary")}>
+                          {status.text}
+                        </span>
+                      )}
                       <button type="button"
                         className="flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-secondary opacity-0 transition-opacity hover:bg-control hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none md:size-7"
                         aria-label={t("localModels.remove", { label: name })} title={t("localModels.remove", { label: name })}

@@ -298,6 +298,43 @@ describe("desktop local models", () => {
     expect(() => service.assertAvailable(owner, "claude-sonnet-5", "claudeAgent")).not.toThrow();
   });
 
+  it("surfaces per-endpoint probe status for the panel, without adding a non-answering server to the picker", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    expect(service.update(owner, { expose: true, endpoints: [
+      { id: "desk8002", label: "DwarfStar", baseUrl: "http://127.0.0.1:8002/v1" },
+      { id: "desk8000", label: "oMLX", baseUrl: "http://127.0.0.1:8000/v1" },
+      { id: "desk9337", label: "llama-server", baseUrl: "http://127.0.0.1:9337/v1" },
+    ] }).ok).toBe(true);
+    expect(service.publish(owner, {
+      endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }],
+      probes: [
+        { id: "desk8002", status: "answered" },
+        { id: "desk8000", status: "needs_key" },
+        { id: "desk9337", status: "offline" },
+      ],
+    }).ok).toBe(true);
+    const view = service.read(owner);
+    expect(view.probes).toEqual([
+      { id: "desk8002", status: "answered" },
+      { id: "desk8000", status: "needs_key" },
+      { id: "desk9337", status: "offline" },
+    ]);
+    // Only the server that answered with models reaches the picker.
+    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    // An unknown status, or an id for an endpoint the person removed, is refused or dropped.
+    expect(service.publish(owner, { endpoints: [], probes: [{ id: "desk8002", status: "maybe" }] }).ok).toBe(false);
+    expect(service.publish(owner, { endpoints: [], probes: [{ id: "deskgone", status: "offline" }] }).ok).toBe(true);
+    expect(service.read(owner).probes).toEqual([]);
+    // An older desktop that publishes no probes leaves the picker row standing.
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
+    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    // Turning expose off clears the probes with the catalog.
+    service.update(owner, { expose: false });
+    expect(service.read(owner).probes).toEqual([]);
+  });
+
   it("hides an offline desktop and fails the turn as unavailable", async () => {
     const { service, bridge } = await start();
     const owner = "pr_owner";
