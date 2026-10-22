@@ -2549,6 +2549,28 @@
         }
       }
     },
+    "Copy cron expression": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copy cron expression"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier l'expression"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar expressão"
+          }
+        }
+      }
+    },
     "Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in Sagax on your computer to keep using voice.": {
       "localizations": {
         "en": {
