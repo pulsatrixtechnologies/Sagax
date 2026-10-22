@@ -808,7 +808,8 @@ const webhookSchema = z.object({
  * source), and not the user name or connector account either, which belong
  * to this server's people. */
 function exportedSource(source: TriggerSourceConfig): Record<string, unknown> {
-  const out: Record<string, unknown> = { type: source.type, events: source.events, filters: source.filters };
+  const out: Record<string, unknown> = { type: source.type, events: source.events, filters: source.filters, catalog: source.catalog ?? 1 };
+  if (source.includeBotComments) out.includeBotComments = true;
   if (source.rateLimitPerMinute !== undefined) out.rateLimitPerMinute = source.rateLimitPerMinute;
   if (source.tenantId) out.tenantId = source.tenantId;
   if (source.graph) out.graph = { connector: source.graph.connector, ...(source.graph.resource ? { resource: source.graph.resource } : {}) };
@@ -1109,7 +1110,8 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       const list = z.array(webhookSchema).max(100).safeParse(reader.json("webhooks.json"));
       for (const hook of list.success ? list.data : []) {
         try {
-          const created = webhookManager.create({ ...hook, botId: id, enabled: false });
+          // An export without a catalog predates it: keep its “every event” as it was.
+          const created = webhookManager.create({ ...hook, ...(hook.source ? { source: { catalog: 1, ...hook.source } } : {}), botId: id, enabled: false });
           createdWebhooks.push(created.webhook.id);
           const source = created.webhook.source;
           if (source) {
