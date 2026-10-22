@@ -3,7 +3,7 @@
  * or points under the name) and off (the account row alone, title and
  * points under the name). Not shipped in the app.
  * The capture script answers /api itself (an empty roster).
- * ?view=grok shows Grok Bot's foot instead (the avatar, Connect apps and
+ * ?view=foot shows the reference design's foot instead (the avatar, Connect apps and
  * the update button), with a stand-in updater bridge:
  * &update=none|ready|downloading (percent 40)|preparing; &pill=0 leaves the
  * update button out (the foot as it was before it); &width=<px> (280) and
@@ -59,9 +59,9 @@ resetAchievementsForTests({
   },
 });
 
-// ?view=grok: the profile carries a long name (&name=<text>); every other
+// ?view=foot: the profile carries a long name (&name=<text>); every other
 // /api call is left to the capture script.
-if (params.get("view") === "grok") {
+if (params.get("view") === "foot") {
   const realFetch = window.fetch.bind(window);
   const profileName = params.get("name") ?? "Jean Exemple-Martin";
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -91,12 +91,12 @@ function Foot({ on }: { on: boolean }) {
   );
 }
 
-/** Grok Bot's foot, as Sidebar.tsx lays it out, at the sidebar's width
+/** The reference design's foot, as Sidebar.tsx lays it out, at the sidebar's width
  * (&width=<px>, 280 by default like the app) for a person with a long name. */
-function GrokFoot() {
+function ReferenceFoot() {
   const width = Math.min(400, Math.max(240, Number(params.get("width")) || 280));
   return (
-    <div className="flex flex-col rounded-xl border-[0.5px] border-hairline-weak bg-sidebar" style={{ width }} data-gallery="grok">
+    <div className="flex flex-col rounded-xl border-[0.5px] border-hairline-weak bg-sidebar" style={{ width }} data-gallery="foot">
       <div className="h-24" />
       <div className="px-4 pb-4">
         <div data-sidebar-account-row className="flex items-center gap-2">
@@ -110,11 +110,11 @@ function GrokFoot() {
 }
 
 function Gallery() {
-  if (params.get("view") === "grok") {
+  if (params.get("view") === "foot") {
     return (
       <StoreProvider>
         <div className="flex min-h-screen items-end bg-app p-8 text-ink">
-          <GrokFoot />
+          <ReferenceFoot />
         </div>
       </StoreProvider>
     );
