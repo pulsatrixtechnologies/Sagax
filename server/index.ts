@@ -29003,6 +29003,32 @@ ROUTES.push(createBotCodeBranchRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   credentials: codeBranchCredentials,
   archive: codeBranchArchive,
+  // A branch whose repository is on the bot's own working computer runs its
+  // actions there, over that computer's connected session (the same Tailcat
+  // transport as the bot's remote_session shell, reused not duplicated). The
+  // principal is the person acting, else the bot's own session owner; only
+  // this bot's own sessions are ever reached (per-bot scope).
+  remote: {
+    reach: (botId, threadId, viewerId) => {
+      const person = (viewerId ?? "").trim().toLowerCase() || remoteSessions.principalFor(botId, threadId);
+      if (!person) return null;
+      const here = remoteSessions.reachFor({ principalId: person, botId, threadId });
+      if (here) return { computer: true, online: true, ...(here.host ? { host: here.host } : {}), osKnown: here.known, ...(here.os === "windows" ? { windows: true } : {}) };
+      // A session of this bot's in another conversation still means the bot
+      // has a computer (reachFor only looks at this conversation's).
+      const any = remoteSessions.list(person, botId);
+      const session = any[0];
+      if (!session) return null;
+      return { computer: true, online: true, ...(session.hostname ? { host: session.hostname } : {}), osKnown: session.osKnown !== false, ...(session.os === "windows" ? { windows: true } : {}) };
+    },
+    exec: (botId, threadId, viewerId) => async (command, timeoutMs) => {
+      const person = (viewerId ?? "").trim().toLowerCase() || remoteSessions.principalFor(botId, threadId);
+      if (!person) return { error: "no person" };
+      const result = await remoteSessions.exec({ principalId: person, botId, threadId, command, ...(timeoutMs ? { timeoutMs } : {}) });
+      if ("error" in result) return { error: result.error };
+      return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut };
+    },
+  },
   audit: (auth, action, target, after) => appendAdminAction(DATA_DIR, {
     category: "bot",
     action,

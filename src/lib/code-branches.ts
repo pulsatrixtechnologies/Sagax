@@ -78,10 +78,12 @@ export interface BranchActions {
   remove: boolean;
 }
 
-/** Which actions the card offers, from the branch read now. */
+/** Which actions the card offers, from the branch read now. A branch on the
+ * bot's own computer (place "remote") acts just like one on this server when
+ * it can be reached; when it cannot, its state is absent and nothing applies. */
 export function branchActions(info: BotBranchInfo | undefined, pull: BotBranchPull | null | undefined, branch: CodingBranch): BranchActions {
   const state = info?.state;
-  const here = info?.place === "server" && state?.exists === true;
+  const here = (info?.place === "server" || info?.place === "remote") && state?.exists === true;
   const prUrl = pull?.url ?? branch.pull?.url;
   const prOpenOrMerged = pull ? pull.state !== "closed" : Boolean(branch.pull && branch.pull.action !== "closed");
   return {
@@ -92,6 +94,27 @@ export function branchActions(info: BotBranchInfo | undefined, pull: BotBranchPu
     diff: here,
     remove: here && !state!.isDefault,
   };
+}
+
+/** Why the branch cannot be acted on at all (every action disabled), as a
+ * locale key, or null when it can. Keeps the menu from showing five
+ * identical disabled rows: one plain reason instead. */
+export function branchUnavailable(info: BotBranchInfo | undefined, branch: CodingBranch): LocaleKey | null {
+  if (!branch.threadId) return "botPanel.branch.hint.noThread";
+  if (info?.place === "elsewhere") return "botPanel.branch.hint.elsewhere";
+  if (info?.place === "remote") {
+    if (info.offline) return "botPanel.branch.hint.offline";
+    if (info.noPath) return "botPanel.branch.hint.noPath";
+    if (info.publishBlocked === "unknown_os") return "botPanel.branch.hint.unknownOs";
+  }
+  if (info?.state && !info.state.exists) return "botPanel.branch.gone";
+  return null;
+}
+
+/** Push, open a pull request and delete a branch on the bot's own computer
+ * run on a client's machine, so they ask the person to confirm first. */
+export function remoteActionNeedsConfirm(info: BotBranchInfo | undefined, action: "push" | "pr"): boolean {
+  return info?.place === "remote" && (action === "push" || action === "pr");
 }
 
 /** A commit message's first line is short; the rest stays. */
