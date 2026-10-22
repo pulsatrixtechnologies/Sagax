@@ -79,7 +79,7 @@ function LogsPanel({ row, onClose }: { row: RemoteSessionAdminRow; onClose: () =
   );
 }
 
-function UnattendedCell({ row, admin, onRevoke }: { row: RemoteSessionAdminRow; admin: boolean; onRevoke: (row: RemoteSessionAdminRow) => void }) {
+function UnattendedCell({ row, admin, enabled, onRevoke }: { row: RemoteSessionAdminRow; admin: boolean; enabled: boolean; onRevoke: (row: RemoteSessionAdminRow) => void }) {
   if (!row.unattended) return <span className="text-ink-secondary">{t("remoteSessionsAdmin.unattended.no")}</span>;
   return (
     <div data-remote-admin-unattended="" className="flex flex-col gap-0.5">
@@ -88,7 +88,7 @@ function UnattendedCell({ row, admin, onRevoke }: { row: RemoteSessionAdminRow; 
       {row.unattendedExpiresAt && <span className="text-[12px] text-ink-secondary">{t("remoteSessionsAdmin.unattended.expires", { date: startedLabel(row.unattendedExpiresAt) })}</span>}
       <span className="text-[12px] text-ink-secondary">{row.bannerVisible === false ? t("remoteSessionsAdmin.unattended.bannerOff") : t("remoteSessionsAdmin.unattended.bannerOn")}</span>
       {row.signed === false && <span className="text-[12px] text-warning">{t("remoteSessionsAdmin.unattended.unsigned")}</span>}
-      {admin && <button type="button" data-remote-admin-revoke="" onClick={() => onRevoke(row)} className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg border border-danger/50 px-2 py-0.5 text-[12px] text-danger hover:bg-raised"><ShieldOff size={12} /> {t("remoteSessionsAdmin.unattended.revoke")}</button>}
+      {admin && enabled && <button type="button" data-remote-admin-revoke="" onClick={() => onRevoke(row)} className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg border border-danger/50 px-2 py-0.5 text-[12px] text-danger hover:bg-raised"><ShieldOff size={12} /> {t("remoteSessionsAdmin.unattended.revoke")}</button>}
     </div>
   );
 }
@@ -98,7 +98,7 @@ const COLS = ["computer", "user", "os", "started", "ends", "status", "rights", "
 export function RemoteSessionsAdminPage() {
   const [filters, setFilters] = useState<AdminRowFilters>({});
   const [search, setSearch] = useState("");
-  const { rows, admin, loading, reload } = useRemoteSessionsAdmin({ ...filters, ...(search.trim() ? { search: search.trim() } : {}) });
+  const { rows, admin, unattendedEnabled, loading, reload } = useRemoteSessionsAdmin({ ...filters, ...(search.trim() ? { search: search.trim() } : {}) });
   const [logsFor, setLogsFor] = useState<RemoteSessionAdminRow | null>(null);
   const [controlling, setControlling] = useState<RemoteSessionAdminRow | null>(null);
   const [confirmEnd, setConfirmEnd] = useState<string | null>(null);
@@ -138,6 +138,9 @@ export function RemoteSessionsAdminPage() {
         </div>
       </header>
 
+      {!unattendedEnabled && !loading && (
+        <p data-remote-admin-unattended-note="" className="border-b border-hairline/40 bg-raised/40 px-5 py-2 text-[12.5px] text-ink-secondary">{t("remoteSessionsAdmin.unattended.notReady")}</p>
+      )}
       <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
         {rows.length === 0 && <p data-remote-admin-empty="" data-loading={loading ? "" : undefined} className="text-[13px] text-ink-secondary">{t("remoteSessionsAdmin.empty")}</p>}
         {rows.length > 0 && (
@@ -164,7 +167,7 @@ export function RemoteSessionsAdminPage() {
                       <td className="px-2 py-2 text-ink-secondary">{row.elevated ? t("remoteSessionsAdmin.rights.elevated") : t("remoteSessionsAdmin.rights.standard")}</td>
                       <td className="px-2 py-2 text-ink" title={row.botId}>{row.botLabel}</td>
                       <td className="px-2 py-2 text-ink-secondary">{row.openedBy ?? "-"}</td>
-                      <td className="px-2 py-2"><UnattendedCell row={row} admin={admin} onRevoke={revoke} /></td>
+                      <td className="px-2 py-2"><UnattendedCell row={row} admin={admin} enabled={unattendedEnabled} onRevoke={revoke} /></td>
                       <td className="px-2 py-2">
                         <div className="flex flex-wrap gap-1.5">
                           {canControl && <button type="button" data-remote-admin-control="" onClick={() => setControlling(row)} className="inline-flex items-center gap-1 rounded-lg border border-hairline/50 bg-panel px-2 py-1 text-[12px] text-ink hover:bg-raised"><Monitor size={12} /> {t("remoteSessionsAdmin.action.control")}</button>}

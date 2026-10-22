@@ -29,6 +29,7 @@ function make(rows: AdminSessionInput[], closeById = vi.fn(async () => true)) {
     consent,
     log: () => [{ at: "2026-10-22T12:00:00Z", kind: "exec", command: "whoami", readOnly: true }],
     closeById,
+    unattendedEnabled: () => true,
     now: () => NOW,
   });
   return { admin, consent, closeById };
@@ -63,7 +64,7 @@ describe("unattended grant and revoke", () => {
     const { admin } = make(rows);
     expect(admin.grantUnattended({ principalId: "p", orgAdmin: false }, { hostKey: "sn-a", org: "GOX", installedBy: "p" })).toBe("forbidden");
     const granted = admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX", installedBy: "admin@gox", bannerVisible: false });
-    expect(granted && granted !== "forbidden" && granted.hostKey).toBe("sn-a");
+    expect(granted && granted !== "forbidden" && granted !== "disabled" && granted.hostKey).toBe("sn-a");
     const row = admin.list({ principalId: "p", orgAdmin: true })[0]!;
     expect(row.unattended).toBe(true);
     expect(row.bannerVisible).toBe(false);
@@ -75,7 +76,7 @@ describe("unattended grant and revoke", () => {
     const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
     consent.grant({ hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" });
     const onRevoke = vi.fn(async () => {});
-    const admin = createRemoteSessionsAdmin({ rows: () => rows, botLabel: () => "Atlas", consent, log: () => [], closeById, onRevoke, now: () => NOW });
+    const admin = createRemoteSessionsAdmin({ rows: () => rows, botLabel: () => "Atlas", consent, log: () => [], closeById, onRevoke, unattendedEnabled: () => true, now: () => NOW });
     expect((await admin.revokeUnattended({ principalId: "p", orgAdmin: false }, "sn-a"))).toEqual({ ok: false, error: "forbidden" });
     const out = await admin.revokeUnattended({ principalId: "p", orgAdmin: true }, "sn-a");
     expect(out.ok).toBe(true);
@@ -83,5 +84,14 @@ describe("unattended grant and revoke", () => {
     expect(onRevoke).toHaveBeenCalled();
     expect(consent.get("sn-a")?.revokedAt).toBeTruthy();
     expect((await admin.revokeUnattended({ principalId: "p", orgAdmin: true }, "missing"))).toEqual({ ok: false, error: "not_found" });
+  });
+
+  it("is gated off by default: grant and revoke are disabled until the path is wired", async () => {
+    const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
+    const admin = createRemoteSessionsAdmin({ rows: () => [input()], botLabel: () => "Atlas", consent, log: () => [], closeById: vi.fn(async () => true), now: () => NOW });
+    expect(admin.unattendedEnabled()).toBe(false);
+    expect(admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" })).toBe("disabled");
+    expect(await admin.revokeUnattended({ principalId: "p", orgAdmin: true }, "sn-a")).toEqual({ ok: false, error: "disabled" });
+    expect(consent.get("sn-a")).toBeNull();
   });
 });

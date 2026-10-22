@@ -57,7 +57,7 @@ export function createRemoteSessionsAdminRoutes(deps: {
         ...(query.get("host") ? { host: query.get("host")! } : {}),
         ...(query.get("q") ? { search: query.get("q")! } : {}),
       });
-      return json(res, 200, { sessions, admin: viewer.orgAdmin });
+      return json(res, 200, { sessions, admin: viewer.orgAdmin, unattendedEnabled: deps.admin.unattendedEnabled() });
     }
 
     if (UNATTENDED.test(path)) {
@@ -76,6 +76,7 @@ export function createRemoteSessionsAdminRoutes(deps: {
         signed: parsed.data.signed,
         keyBound: parsed.data.key_bound,
       });
+      if (granted === "disabled") return json(res, 501, { error: "Unattended access is not available yet (not enabled on this server)." });
       if (granted === "forbidden") return json(res, 403, { error: "Only a workspace admin records unattended consent." });
       if (!granted) return json(res, 400, { error: "That consent is incomplete (host, org or installer missing)." });
       return json(res, 200, { consent: granted });
@@ -86,6 +87,7 @@ export function createRemoteSessionsAdminRoutes(deps: {
       const parsed = revokeBody.safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "Send host_key." });
       const out = await deps.admin.revokeUnattended(viewer, parsed.data.host_key.trim().toLowerCase());
+      if (!out.ok && out.error === "disabled") return json(res, 501, { error: "Unattended access is not available yet (not enabled on this server)." });
       if (!out.ok && out.error === "forbidden") return json(res, 403, { error: "Only a workspace admin revokes unattended access." });
       if (!out.ok) return json(res, 404, { error: "No unattended access is recorded for that host." });
       return json(res, 200, { consent: out.consent });

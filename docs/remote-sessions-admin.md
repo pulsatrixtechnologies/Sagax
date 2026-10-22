@@ -6,6 +6,27 @@ signing requirements, and exactly what must be tested on a real machine. The
 per OS persistence mechanics live in the Pulsatrix Assist helper repo, in
 `docs/remote-control-service.md`; this note is the Sagax and Perspicax side.
 
+## Status: what works today vs designed but not wired
+
+Works today (this PR, safe to use):
+- The Remote Sessions page: listing (active and history), filters, search, the
+  redacted log view, End session, and the live-session revoke path that cuts
+  the tunnel (End on a connected session).
+- Org isolation and the admin vs owner visibility rules on the page and routes.
+
+Designed but NOT wired yet (gated OFF, do not rely on in prod):
+- The persistent host service install ("Sagax Remote Control") and its CLI.
+- Revoke uninstalling the host service and invalidating the Perspicax `--allow`
+  (today revoke only marks consent, cuts any live tunnel, and writes an audit
+  line; it does not uninstall the remote service).
+- Expiry and consent enforcement at (re)connect time.
+
+Because of this, unattended access is gated behind a server flag
+`unattendedEnabled` that is FALSE by default (env `SAGAX_UNATTENDED_ACCESS=1`).
+While it is off: the grant and revoke routes return 501 "not available", the
+page shows the Unattended column read only with a "not enabled" note, and no
+one can turn the dangerous path on by mistake. See the TODO at the bottom.
+
 ## What shipped in Sagax (this PR)
 
 - A "Remote Sessions" page under the account menu, next to Automations
@@ -128,3 +149,22 @@ window there is no console user session, so screen and input control wait until
 someone logs in (the daemon keeps running). Linux limit: Wayland needs a portal
 and may block headless capture; a headless server is shell only (shell, files
 and facts, no screen or control).
+
+## TODO before enabling unattended (gate stays OFF until all done)
+
+From the security review of PR #981:
+
+1. Route the helper CLI: wire `cmd/pulsatrix-assist/main.go` to
+   `service.Dispatch` (install / status / uninstall are implemented and tested
+   in `internal/service` but not reachable from the binary yet).
+2. Enforce `Expired()` at runtime: a host whose consent lapsed must not accept
+   an unattended (re)connect.
+3. `onRevoke` must actually uninstall the host service and invalidate the
+   Perspicax `--allow` binding, not only write an audit line.
+4. `publish()` must refuse a session from a host without active consent
+   (revoked or expired), so unattended cannot be used past its window.
+5. Decide signed consent attestation (org signed token) vs free text
+   `--consent-recorded-by`, and enforce the chosen form.
+
+Only after 1 to 5 land should `unattendedEnabled` (env `SAGAX_UNATTENDED_ACCESS`)
+be turned on, and only on a server with signed and notarized helper builds.

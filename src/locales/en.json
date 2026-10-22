@@ -9772,6 +9772,7 @@
   "remoteSessionsAdmin.unattended.bannerOff": "On-screen banner off",
   "remoteSessionsAdmin.unattended.unsigned": "Agent not code-signed",
   "remoteSessionsAdmin.unattended.revoke": "Revoke",
+  "remoteSessionsAdmin.unattended.notReady": "Unattended access (a persistent host service) is designed but not enabled on this server yet.",
   "remoteSessionsAdmin.logs.title": "Log of {host}",
   "remoteSessionsAdmin.logs.retention": "Audited actions, kept 90 days. No keystrokes, no secrets, no tunnel address. Visible to a workspace admin or the session owner.",
   "remoteSessionsAdmin.logs.loading": "Loading...",

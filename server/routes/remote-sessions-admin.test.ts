@@ -36,11 +36,11 @@ function row(over: Partial<AdminSessionInput> = {}): AdminSessionInput {
   };
 }
 
-async function serve(rows: AdminSessionInput[], orgAdmin: boolean) {
+async function serve(rows: AdminSessionInput[], orgAdmin: boolean, enabled = true) {
   const dir = mkdtempSync(path.join(tmpdir(), "rsadmin-route-")); dirs.push(dir);
   const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
   const closeById = vi.fn(async () => true);
-  const admin = createRemoteSessionsAdmin({ rows: () => rows, botLabel: () => "Atlas", consent, log: () => [{ at: "2026-10-22T12:00:00Z", kind: "exec", command: "whoami", readOnly: true }], closeById, now: () => NOW });
+  const admin = createRemoteSessionsAdmin({ rows: () => rows, botLabel: () => "Atlas", consent, log: () => [{ at: "2026-10-22T12:00:00Z", kind: "exec", command: "whoami", readOnly: true }], closeById, unattendedEnabled: () => enabled, now: () => NOW });
   const routes = [createRemoteSessionsAdminRoutes({ admin, principalId: (auth) => (auth.kind === "session" ? (auth.session as { principalId?: string }).principalId : undefined), orgAdmin: () => orgAdmin })];
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -90,6 +90,16 @@ describe("admin remote-sessions routes", () => {
     const revoke = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a" }) });
     expect(revoke.status).toBe(200);
     expect(consent.get("sn-a")?.revokedAt).toBeTruthy();
+  });
+
+  it("gates unattended off by default: list says disabled, grant and revoke return 501", async () => {
+    const { base } = await serve([row({ id: "ffffffffffff", serial: "SN-A" })], true, false);
+    const list = await (await fetch(`${base}/api/admin/remote-sessions`)).json() as { unattendedEnabled: boolean };
+    expect(list.unattendedEnabled).toBe(false);
+    const grant = await fetch(`${base}/api/admin/remote-sessions/unattended`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a", org: "GOX", installed_by: "admin@gox" }) });
+    expect(grant.status).toBe(501);
+    const revoke = await fetch(`${base}/api/admin/remote-sessions/unattended/revoke`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ host_key: "sn-a" }) });
+    expect(revoke.status).toBe(501);
   });
 
   it("a non-admin cannot see another person's session or grant consent", async () => {

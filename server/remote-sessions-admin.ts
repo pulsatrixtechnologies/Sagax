@@ -25,7 +25,7 @@ export interface AdminViewer {
 
 export type RevokeOutcome =
   | { ok: true; consent: UnattendedConsent }
-  | { ok: false; error: "forbidden" | "not_found" };
+  | { ok: false; error: "forbidden" | "not_found" | "disabled" };
 
 export function createRemoteSessionsAdmin(deps: {
   /** Every stored session on this server, mapped to the admin input. */
@@ -38,9 +38,15 @@ export function createRemoteSessionsAdmin(deps: {
   /** Propagate a revoke to the host service and Perspicax --allow binding.
    * Best effort; the consent is already marked revoked when this runs. */
   onRevoke?(consent: UnattendedConsent): Promise<void>;
+  /** The unattended (Access) path is only usable when this is true. It is
+   * false by default: the host service install, the revoke that uninstalls it,
+   * and the expiry enforcement are designed but not wired yet, so the grant
+   * and revoke actions are gated off until they are. */
+  unattendedEnabled?(): boolean;
   now?: () => number;
 }) {
   const now = deps.now ?? (() => Date.now());
+  const unattendedEnabled = () => deps.unattendedEnabled?.() === true;
 
   const visible = (viewer: AdminViewer, input: AdminSessionInput) =>
     viewer.orgAdmin || input.ownerId === viewer.principalId;
@@ -74,8 +80,12 @@ export function createRemoteSessionsAdmin(deps: {
       if (!this.canSee(viewer, id)) return "forbidden";
       return deps.closeById(id);
     },
-    /** Record install-time unattended consent. Admin only. */
-    grantUnattended(viewer: AdminViewer, input: UnattendedConsentInput): UnattendedConsent | null | "forbidden" {
+    /** Whether the unattended (Access) path is usable (feature flag). */
+    unattendedEnabled,
+    /** Record install-time unattended consent. Admin only. Gated off until the
+     * host-service install, revoke-uninstall and expiry enforcement are wired. */
+    grantUnattended(viewer: AdminViewer, input: UnattendedConsentInput): UnattendedConsent | null | "forbidden" | "disabled" {
+      if (!unattendedEnabled()) return "disabled";
       if (!viewer.orgAdmin) return "forbidden";
       return deps.consent.grant(input);
     },
@@ -83,6 +93,7 @@ export function createRemoteSessionsAdmin(deps: {
      * consent revoked, end any live session on that host (cuts the tunnel), and
      * propagate to the host service and Perspicax. */
     async revokeUnattended(viewer: AdminViewer, hostKey: string): Promise<RevokeOutcome> {
+      if (!unattendedEnabled()) return { ok: false, error: "disabled" };
       if (!viewer.orgAdmin) return { ok: false, error: "forbidden" };
       const consent = deps.consent.revoke(hostKey);
       if (!consent) return { ok: false, error: "not_found" };

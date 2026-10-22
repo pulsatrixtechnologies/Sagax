@@ -10525,6 +10525,12 @@ const remoteSessionsAdmin = createRemoteSessionsAdmin({
   consent: unattendedConsent,
   log: (sessionId) => readRemoteSessionLog(DATA_DIR, sessionId),
   closeById: (id) => remoteSessions.adminClose(id),
+  // Unattended (Access) is gated OFF by default: the host-service install, the
+  // revoke that uninstalls it, and the expiry enforcement are designed but not
+  // wired yet (see docs/remote-sessions-admin.md). Set SAGAX_UNATTENDED_ACCESS=1
+  // only once that wiring lands. The page, listing, logs, End and the live
+  // tunnel cut do not depend on this flag.
+  unattendedEnabled: () => process.env.SAGAX_UNATTENDED_ACCESS === "1",
   // Revoke propagates to the host service (the Pulsatrix Assist "Sagax Remote
   // Control" service uninstalls) and to Perspicax (the --allow binding drops);
   // the consent is already marked revoked and any live tunnel is cut here.

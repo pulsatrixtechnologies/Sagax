@@ -9772,6 +9772,7 @@
   "remoteSessionsAdmin.unattended.bannerOff": "Bannière à l'écran désactivée",
   "remoteSessionsAdmin.unattended.unsigned": "Agent non signé",
   "remoteSessionsAdmin.unattended.revoke": "Révoquer",
+  "remoteSessionsAdmin.unattended.notReady": "L'accès sans surveillance (un service hôte persistant) est conçu mais pas encore activé sur ce serveur.",
   "remoteSessionsAdmin.logs.title": "Journal de {host}",
   "remoteSessionsAdmin.logs.retention": "Actions auditées, conservées 90 jours. Aucune frappe, aucun secret, aucune adresse de tunnel. Visible par un administrateur de l'espace ou le propriétaire de la session.",
   "remoteSessionsAdmin.logs.loading": "Chargement...",
