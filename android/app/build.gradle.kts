@@ -31,9 +31,15 @@ private val keystoreProperties = Properties().apply {
     if (file.isFile) file.inputStream().use(::load)
 }
 
+// An empty or blank value counts as unset at every step, so a CI that maps a
+// missing SAGAX_* secret to "" still reaches the OPENMAUSBOT_* one and then
+// keystore.properties.
+private fun nonBlank(value: String?): String? = value?.takeIf(String::isNotBlank)
+
 private fun signingMaterial(property: String, environment: String, legacyEnvironment: String): String? =
-    (System.getenv(environment) ?: System.getenv(legacyEnvironment) ?: keystoreProperties.getProperty(property))
-        ?.takeIf(String::isNotBlank)
+    nonBlank(System.getenv(environment))
+        ?: nonBlank(System.getenv(legacyEnvironment))
+        ?: nonBlank(keystoreProperties.getProperty(property))
 
 private val storeFilePath = signingMaterial("storeFile", "SAGAX_KEYSTORE_FILE", "OPENMAUSBOT_KEYSTORE_FILE")
 private val storePasswordValue = signingMaterial("storePassword", "SAGAX_KEYSTORE_PASSWORD", "OPENMAUSBOT_KEYSTORE_PASSWORD")
@@ -60,7 +66,7 @@ private val releaseKeystore: java.io.File? = when {
             prefix = "Release signing is half-configured. Missing: ",
             separator = ", ",
             postfix = ". Supply all of it, or none of it for an unsigned build. " +
-                "The older OPENMAUSBOT_* variables are still read when the SAGAX_* ones are unset.",
+                "The older OPENMAUSBOT_* variables are still read when the SAGAX_* ones are unset or empty.",
         )
     )
     else -> rootProject.file(storeFilePath!!).also {
