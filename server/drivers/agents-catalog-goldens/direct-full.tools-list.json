@@ -315,11 +315,11 @@
           },
           "read_only": {
             "type": "boolean",
-            "description": "On yourself: run it read-only (Ask, whatever your level)."
+            "description": "On yourself: read-only (starts in Ask)."
           },
           "thread_id": {
             "type": "string",
-            "description": "On yourself: resume a thread you opened earlier, by id; message is the follow-up."
+            "description": "On yourself: resume your earlier thread by id."
           }
         },
         "required": [
