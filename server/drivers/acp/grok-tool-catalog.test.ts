@@ -85,6 +85,62 @@ describe("grokCatalogSection", () => {
     expect(grokCatalogSection({ catalog: [] })).toBeNull();
   });
 
+  it("names connectable-but-not-connected xAI cloud connectors and offers the connect card instead of a dead end", () => {
+    // Outlook/Teams are on the Connect-apps card (static catalog) but the
+    // person never connected them on grok.com, so they are absent from the
+    // live _x.ai/mcp/list. The summary must say so and point at the card,
+    // and must NOT claim the live list is complete.
+    const section = grokCatalogSection({
+      catalog: readGrokCatalog(LIST),
+      connectable: [{ id: "outlook", label: "Outlook (Exchange)" }, { id: "microsoft-teams", label: "Microsoft Teams" }],
+    })!;
+    expect(section.text).toContain("- perspicax: api_list, cw_psa_get_ticket");
+    expect(section.text).toContain("Connectable but not connected yet");
+    expect(section.text).toContain("Outlook (Exchange)");
+    expect(section.text).toContain("Microsoft Teams");
+    expect(section.text).toContain("agents__open_connector_setup");
+    // the live list is NOT complete when the person can still connect more
+    expect(section.text).not.toContain("This list is complete");
+    // still answered from context, no blind search for a connector
+    expect(section.text).toContain("without calling a tool");
+  });
+
+  it("drops a connectable connector that is already present in the live catalog", () => {
+    const catalog = readGrokCatalog({
+      servers: [{ name: "outlook", session: { enabled: true, status: "ready", tools: [{ name: "read_mail", enabled: true }] } }],
+    });
+    const section = grokCatalogSection({
+      catalog,
+      connectable: [{ id: "outlook", label: "Outlook (Exchange)" }, { id: "microsoft-teams", label: "Microsoft Teams" }],
+    })!;
+    // outlook is live/ready, so it is not re-offered as connectable
+    expect(section.text).toContain("- outlook: read_mail");
+    expect(section.text).toContain("Connectable but not connected yet");
+    expect(section.text).toContain("Microsoft Teams");
+    expect(section.text).not.toMatch(/Connectable but not connected yet[^\n]*Outlook/);
+  });
+
+  it("drops a connectable connector that is in the catalog but still needs sign-in", () => {
+    const catalog = readGrokCatalog({
+      servers: [{ name: "microsoft-teams", session: { enabled: true, status: "unavailable", authRequired: true } }],
+    });
+    const section = grokCatalogSection({
+      catalog,
+      connectable: [{ id: "microsoft-teams", label: "Microsoft Teams" }, { id: "gmail", label: "Gmail" }],
+    })!;
+    // teams is already added (needs sign-in) -> it is not in the connectable line
+    expect(section.text).toContain("Not connected now: microsoft-teams (needs sign-in)");
+    expect(section.text).toContain("Connectable but not connected yet");
+    expect(section.text).toContain("Gmail");
+    expect(section.text).not.toMatch(/Connectable but not connected yet[^\n]*Microsoft Teams/);
+  });
+
+  it("keeps the complete-list claim when nothing is connectable (back-compat)", () => {
+    const section = grokCatalogSection({ catalog: readGrokCatalog(LIST), connectable: [] })!;
+    expect(section.text).toContain("This list is complete");
+    expect(section.text).not.toContain("Connectable but not connected yet");
+  });
+
   it("stays under its budget with many servers", () => {
     const servers = Array.from({ length: 40 }, (_, s) => ({ name: `server_${s}`, session: { enabled: true, status: "ready",
       tools: Array.from({ length: 30 }, (_, i) => ({ name: `a_rather_long_tool_name_${i}`, enabled: true })) } }));

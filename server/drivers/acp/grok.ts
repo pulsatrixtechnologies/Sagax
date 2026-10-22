@@ -23,6 +23,7 @@ import { grokReadOnlyAllowRules } from "./grok-read-only-tools.ts";
 import { gateReadOnlyTools, grokApprovalGateEnabled } from "./grok-approval-gate.ts";
 import { knownGrokTools, knownGrokToolsSection, recordGrokToolUse, useToolName } from "./grok-tool-usage.ts";
 import { grokCatalogFor, grokCatalogSection, rememberGrokCatalog } from "./grok-tool-catalog.ts";
+import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors.ts";
 import { turnReachFor } from "../../turn-reach.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { grokAliasBase, grokToolNameProblem } from "../../mcp-tool-names.ts";
@@ -129,6 +130,19 @@ export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: bo
     return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
   }
   return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
+}
+
+/** The xAI cloud connectors this turn could reach through use_tool, named
+ * for the capability summary (grok-tool-catalog.ts) so a connector on the
+ * Connect-apps card that the person never connected on grok.com is surfaced
+ * as connectable (a one-step open_connector_setup) instead of a dead end.
+ * Only an own-account organization turn loads managed MCP at all
+ * (grokCloudConnectorsForTurn -> turn.grokCloudConnectors); on any other
+ * turn there is nothing to connect here, so the list is empty. The summary
+ * drops any of these the live catalog already carries. */
+export function grokConnectableConnectors(accountConnectors: boolean): { id: string; label: string }[] {
+  if (!accountConnectors) return [];
+  return GROK_CLOUD_CONNECTORS.map((connector) => ({ id: connector.id, label: connector.name }));
 }
 
 /** Whether Grok may load MCP servers Sagax did not mount: a config override
@@ -1029,13 +1043,16 @@ const support: AcpSupport = {
   // grok-tool-catalog.ts), the section names every ready tool instead, plus
   // what a feature opened for this conversation (turn-reach.ts): a question
   // about connectors needs no call, and a listed tool no search.
-  volatileSection: ({ botId, serverNames, sessionId, threadId }) => {
+  volatileSection: ({ botId, serverNames, sessionId, threadId, accountConnectors }) => {
     const known = knownGrokTools(botId, serverNames);
     const catalog = grokCatalogFor(sessionId);
     // computed by the server with the speaker and payer (turn-reach.ts)
     const reach = turnReachFor(threadId) ?? { lines: [], tools: [] };
-    if (!catalog && !reach.tools.length && !reach.lines.length) return knownGrokToolsSection(known);
-    return grokCatalogSection({ catalog, known, pinned: reach.tools, lines: reach.lines });
+    // the xAI cloud connectors an own-account org turn can connect (#966),
+    // so a card connector not yet connected on grok.com is actionable
+    const connectable = grokConnectableConnectors(accountConnectors === true);
+    if (!catalog && !reach.tools.length && !reach.lines.length && !connectable.length) return knownGrokToolsSection(known);
+    return grokCatalogSection({ catalog, known, pinned: reach.tools, lines: reach.lines, connectable });
   },
   onToolCompleted: ({ botId, rawInput }) => recordGrokToolUse(botId, useToolName(rawInput)),
 

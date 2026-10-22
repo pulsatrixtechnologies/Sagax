@@ -21,7 +21,7 @@ import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
-import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp } from "./grok.ts";
+import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp, grokConnectableConnectors } from "./grok.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
@@ -1783,6 +1783,59 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(JSON.stringify(seenB)).not.toContain(homeA);
   });
 
+  it("surfaces the connect card for an unconnected cloud connector on an own-account org turn, instead of a dead end", async () => {
+    // The fake CLI answers _x.ai/mcp/list with no servers (like a grok.com
+    // account that never connected Outlook): the Connect-apps card still
+    // shows the connector, so the turn must point the model at the one-step
+    // connect card rather than let it say it has no tool.
+    const dump = join(scratch, "grok-connectable.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    await create(GrokAgentDriver);
+    // A unique stable half so the fake CLI's shared session id never dedups
+    // this turn's first delivery (the volatile catalog section rides it).
+    const rules = "Standing rules. " + randomUUID();
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-connectable-" + randomUUID(),
+      text: "peux-tu lire mes courriels?",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+      withholdHostTools: true,
+      grokCloudConnectors: true,
+      access: { via: "subscription", identity: "subscription:a", engineHome: join(scratch, "person-connectable") },
+      integrations: { agents: { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).toContain("Connectable but not connected yet");
+    expect(prompt).toContain("Outlook (Exchange)");
+    expect(prompt).toContain("agents__open_connector_setup");
+    expect(prompt).not.toContain("This list is complete");
+  });
+
+  it("offers no connectable connectors on a solo turn (cloud connectors never load there)", async () => {
+    const dump = join(scratch, "grok-solo-no-connectable.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    await create(GrokAgentDriver);
+    const rules = "Standing rules. " + randomUUID();
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-solo-no-connectable-" + randomUUID(),
+      text: "peux-tu lire mes courriels?",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).not.toContain("Connectable but not connected yet");
+  });
+
   // Gemini and Kimi withhold their tools since 2026-10-08 (verified with
   // their real CLIs, org-host-tools.test.ts); Droid and Cursor still cannot.
   it("does not claim Droid or Cursor withhold their own tools", async () => {
@@ -3431,6 +3484,21 @@ describe("grokCloudConnectorEnv", () => {
       GROK_MANAGED_MCPS_ENABLED: "false",
       GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
     });
+  });
+});
+
+describe("grokConnectableConnectors", () => {
+  it("names the xAI cloud connectors on an own-account organization turn so an unconnected one is actionable", () => {
+    const connectable = grokConnectableConnectors(true);
+    const ids = connectable.map((connector) => connector.id);
+    expect(ids).toContain("outlook");
+    expect(ids).toContain("microsoft-teams");
+    expect(ids).toContain("gmail");
+    expect(connectable.find((connector) => connector.id === "outlook")?.label).toBe("Outlook (Exchange)");
+  });
+
+  it("offers nothing on any turn that does not load the account connectors (solo, foreign, member on another's bot)", () => {
+    expect(grokConnectableConnectors(false)).toEqual([]);
   });
 });
 
