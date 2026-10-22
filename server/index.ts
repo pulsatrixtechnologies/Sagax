@@ -1000,7 +1000,9 @@ import { PLUGIN_CATALOG } from "../shared/plugin-catalog.ts";
 import { diskSpace, folderBytes } from "./disk-usage.ts";
 import { autoReviewThreadMode, createBotSettingsStore, defaultOrgTimeZone, hostTimeZone } from "./bot-settings.ts";
 import { turnClockEnabled, turnTimeZone, withTurnClock } from "./turn-clock.ts";
-import { createComputerInputRoutes, createVmScreenshotRoute } from "./routes/computer-input.ts";
+import { createComputerInputRoutes, createVmScreenshotRoute, type ComputerShell } from "./routes/computer-input.ts";
+import { createComputerTeachRoutes } from "./routes/computer-teach.ts";
+import { ComputerTeachRecordings } from "./computer-teach.ts";
 import { createLocalComputerAutoRoutes } from "./routes/local-computer-auto.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { createUserPreferenceStore, preferencesFrameAllowed, type PersonPreferences } from "./user-preferences.ts";
@@ -21381,6 +21383,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           calendarCalls!.removeBot(bot.id);
           browserLive.closeForBot(bot.id);
           browserNetworkDebug.clearBot(bot.id);
+          computerTeach.discardBot(bot.id);
           await forgetTemporaryBrowser(bot.id);
           // The bot's database and sheet go with the bot; a failure here
           // must not undo a deletion the store already made durable.
@@ -27430,39 +27433,50 @@ ROUTES.push(createLocalComputerAutoRoutes({
   },
   sharedPayload: (auth) => localVmPayload(SHARED_LOCAL_VM_TARGET, auth),
 }));
+// The desktop a person drives from the phone (computer input) and teaches a
+// task on (computer teach, parity R7): one backend per bot.
+function botComputerShell(bot: BotRecord): ComputerShell | null {
+  // Organization server: the phone does not drive a shared computer.
+  // The person's environment is their own, opened from the Computer tab.
+  if (IDENTITY.kind === "perspicax") return null;
+  const team = inheritedTeamComputer(bot);
+  if (team) {
+    const key = teamComputerOwner(team.id);
+    return { kind: "team", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, key, script) };
+  }
+  if (bot.computer === "vm") {
+    // An organization server never drives a desktop on itself.
+    if (hostComputerRefusal()) return null;
+    const target = localVmTargetForStatus(bot.id, bot.threadId);
+    return {
+      kind: "vm", maxScript: 15_000,
+      run: async (script) => {
+        const out = await containerExec(target, script, { timeoutSeconds: 20 });
+        return { ok: out.exitCode === 0, stdout: out.stdout, stderr: out.stderr };
+      },
+    };
+  }
+  if (bot.computer !== "cloud" && bot.computer !== undefined) return null;
+  if (bot.cloudBackend === "vps") {
+    if (!vpsSshAlias(cfg)) return null;
+    return { kind: "vps", maxScript: 15_000, run: (script) => vps.vpsDesktopScript(cfg, bot.id, script) };
+  }
+  if (!boat.boatConfigured(cfg)) return null;
+  return { kind: "cloud", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, bot.id, script) };
+}
+const computerTeach = new ComputerTeachRecordings();
+ROUTES.push(createComputerTeachRoutes<BotRecord>({
+  bot: (id) => store.bot(id) ?? undefined,
+  mayDrive: ownerOrAdminOf,
+  control: (bot, controlLeaseId) => computerControl.leaseState(botComputerControlKey(bot), controlLeaseId),
+  shell: botComputerShell,
+  recordings: computerTeach,
+}));
 ROUTES.push(createComputerInputRoutes<BotRecord>({
   bot: (id) => store.bot(id) ?? undefined,
   mayDrive: ownerOrAdminOf,
   control: (bot, controlLeaseId) => computerControl.leaseState(botComputerControlKey(bot), controlLeaseId),
-  shell: (bot) => {
-    // Organization server: the phone does not drive a shared computer.
-    // The person's environment is their own, opened from the Computer tab.
-    if (IDENTITY.kind === "perspicax") return null;
-    const team = inheritedTeamComputer(bot);
-    if (team) {
-      const key = teamComputerOwner(team.id);
-      return { kind: "team", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, key, script) };
-    }
-    if (bot.computer === "vm") {
-      // An organization server never drives a desktop on itself.
-      if (hostComputerRefusal()) return null;
-      const target = localVmTargetForStatus(bot.id, bot.threadId);
-      return {
-        kind: "vm", maxScript: 15_000,
-        run: async (script) => {
-          const out = await containerExec(target, script, { timeoutSeconds: 20 });
-          return { ok: out.exitCode === 0, stdout: out.stdout, stderr: out.stderr };
-        },
-      };
-    }
-    if (bot.computer !== "cloud" && bot.computer !== undefined) return null;
-    if (bot.cloudBackend === "vps") {
-      if (!vpsSshAlias(cfg)) return null;
-      return { kind: "vps", maxScript: 15_000, run: (script) => vps.vpsDesktopScript(cfg, bot.id, script) };
-    }
-    if (!boat.boatConfigured(cfg)) return null;
-    return { kind: "cloud", maxScript: 3_500, run: (script) => boat.runDesktopScript(cfg, bot.id, script) };
-  },
+  shell: botComputerShell,
   audit: (auth, req, bot, action, detail) => {
     // Input arrives many times a second: one row per person and bot a minute.
     const actor = adminActorFor(auth, req);
@@ -27733,6 +27747,12 @@ ROUTES.push(createComputerStatusRoutes({
   sandbox: () => userSandbox,
   local: { status: localComputerSummary, update: () => localComputerLifecycle("update"), reset: () => localComputerLifecycle("reset") },
   mayManageLocal: (auth) => auth.kind === "loopback" ? auth.trust !== "service" : auth.scopes.includes("admin") || adminOrDelegate(auth, "host.shell"),
+  // never two updates at once, never under a working bot (parity R7)
+  updateGuard: {
+    claim: (key) => computerCareScheduler.claim(key),
+    release: (key) => computerCareScheduler.release(key),
+    busy: (key) => computerCareScheduler.busy(key),
+  },
 }));
 // Settings > Computer: scheduled update in a maintenance window and the disk
 // saver (server/computer-care.ts, server/routes/computer-care.ts), for the

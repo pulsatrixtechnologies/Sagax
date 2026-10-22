@@ -410,6 +410,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // which the handler keeps to the owner).
   { methods: ["GET"], path: /^\/api\/computer\/status$/ },
   { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
+  // Its scheduled update, read and set from the phone (parity R7, O2). The
+  // handler (routes/computer-care.ts) keys it to the person's own computer.
+  // The disk saver stays admin.
+  { methods: ["GET", "PUT"], path: /^\/api\/computer\/maintenance$/ },
   // In-chat terminal: list shell-capable resources and manage the person's own sessions.
   { methods: ["GET"], path: /^\/api\/terminal\/resources$/ },
   { methods: ["GET", "POST"], path: /^\/api\/terminal\/sessions\/[\w-]+(?:\/(?:bot-input|close))?$/ },

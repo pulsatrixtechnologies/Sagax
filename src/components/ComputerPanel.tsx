@@ -68,6 +68,7 @@ import { BrowserScreen, OrgComputerTab, ScreenPicker } from "./computer/OrgCompu
 import { BrowserPanel } from "./BrowserPanel";
 import { browserAvailable, builtInBrowserEnabled } from "@/lib/feature-flags";
 import { browserTeachPending, onBrowserTeachRequest } from "@/lib/teach-request";
+import { withTeachBot } from "@/lib/computer-teach-client";
 
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
@@ -988,7 +989,8 @@ export function ComputerPanel({
       if (!viewerUrl) throw new LocalizedPanelError("computer.err.noDesktopLink");
 
       if (window.ogb?.desktopViewer) {
-        const opened = await window.ogb.desktopViewer.open(viewerUrl, t("computer.viewerTitle", { name: bot.name }), bot.id);
+        // the app's own viewer offers Teach on this bot's computer (parity R7)
+        const opened = await window.ogb.desktopViewer.open(withTeachBot(viewerUrl, bot), t("computer.viewerTitle", { name: bot.name }), bot.id);
         if (!opened) throw new LocalizedPanelError("computer.err.openDesktop");
       } else if (fallbackTab) {
         fallbackTab.location.replace(viewerUrl);

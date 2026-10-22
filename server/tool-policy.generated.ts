@@ -360,6 +360,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/computer\\/(provision|join|sleep|exec|screenshot|remove)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/computer\\/control$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/computer\\/screenshot$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/computer\\/teach$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/computer\\/viewer-close$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/computer$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/connector-cards\\/([\\w-]+)\\/(authorize|status|resume|dismiss)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},

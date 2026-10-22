@@ -398,6 +398,8 @@ const __BASE_VERSION__: string;
       setTrayRoster?(roster: Array<{ id: string; name: string; color: string; working: boolean; unread: number }>, labels?: Record<string, string>): void;
       /** A bot chosen in the menu bar list or by its global shortcut. */
       onOpenBot?(cb: (botId: string) => void): () => void;
+      /** A picture of the screen from the bots' chord with 0 (base64 PNG), or why there is none. */
+      onScreenCapture?(cb: (capture: { png: string } | { error: "permission" | "unavailable"; platform: "darwin" | "win32" | "other" }) => void): () => void;
       /** Presence: the computer's idle state and seconds since the last
        * input (Electron powerMonitor). Null outside the main window. */
       systemIdle?(): Promise<{ state: "active" | "idle" | "locked" | "unknown"; idleSeconds: number } | null>;

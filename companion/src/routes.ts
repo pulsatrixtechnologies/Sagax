@@ -251,6 +251,9 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // Bot Computer: this computer's local container (status, update, reset).
   { method: "GET", path: /^\/api\/computer\/status$/ },
   { method: "POST", path: /^\/api\/computer\/(?:update|reset)$/ },
+  // Its scheduled update (parity R7, O2): read and set, never the disk saver.
+  { method: "GET", path: /^\/api\/computer\/maintenance$/ },
+  { method: "PUT", path: /^\/api\/computer\/maintenance$/ },
   // Plugins: the catalog, what is installed, adding one and its sign-in.
   { method: "GET", path: /^\/api\/plugins\/(?:search|installed)$/ },
   { method: "POST", path: /^\/api\/plugins\/install$/ },

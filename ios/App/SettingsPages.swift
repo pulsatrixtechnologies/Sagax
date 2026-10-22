@@ -245,6 +245,7 @@ struct BotComputerSettingsView: View {
             SettingsCard {
                 SettingsRow(title: "Disk space", accessory: .value(diskText), height: 45, identifier: "computer-disk")
             }
+            ComputerMaintenanceSection()
             OtherComputersSection()
             // What the computer says is wrong ("Start docker first") comes
             // with the refusal when an action is tried; the status row

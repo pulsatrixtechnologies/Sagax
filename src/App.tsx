@@ -64,6 +64,7 @@ import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
 import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 import { navigate } from "@/lib/view-transitions";
+import { useScreenCaptureToBot } from "@/hooks/use-screen-capture-to-bot";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { useBotAccent } from "@/lib/bot-accent";
 
@@ -329,6 +330,9 @@ function Shell() {
   }, [trayKey]);
   const botsRef = useRef(state.bots);
   botsRef.current = state.bots;
+  // The capture key (bots' chord with 0): a picture of the screen in the
+  // open bot's composer (parity R7, system 12).
+  useScreenCaptureToBot(showThreads);
   useEffect(() => {
     return window.ogb?.onOpenBot?.((botId) => {
       const target = botsRef.current.find((bot) => bot.id === botId);
