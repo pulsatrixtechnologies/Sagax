@@ -272,6 +272,8 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
   remoteSession?: import("../../shared/remote-session").RemoteSessionView;
   /** Live usage card (shared/resource-usage.ts), shown only when asked. */
   resourceUsage?: import("../../shared/resource-usage").ResourceUsageView;
+  /** "Connect Microsoft Teams" card (shared/connector-setup.ts). */
+  connectorSetup?: import("../../shared/connector-setup").ConnectorSetupView;
   connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** Lifecycle mirror for a routine whose real work lives in a fresh task. */

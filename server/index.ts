@@ -795,6 +795,8 @@ import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
 import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
 import { installResourceUsage } from "./resource-usage/install.ts";
+import { createConnectorSetupInternalRoutes, createConnectorSetupProofs, createConnectorSetupRoutes, type ConnectorSetupContext } from "./routes/connector-setup.ts";
+import type { ConnectorSetupView } from "../shared/connector-setup.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
 import { streamTerminalAttachment } from "./terminal-resources/adapters/personal.ts";
@@ -1899,6 +1901,8 @@ const turnTriggers = new Map<string, UsageTrigger>();
  * access), and that speaker's principal ("" for an unknown person): what a
  * continuation of that turn, or a bot hop it starts, speaks for too. */
 const turnSpeakers = new Map<string, TurnSpeaker>();
+/** Settled tool calls by conversation, for "Connect ..." cards (server/routes/connector-setup.ts). */
+const connectorSetupProofs = createConnectorSetupProofs();
 const turnSpeakerPrincipals = new Map<string, string>();
 /** Who ran each thread's current turn, for a key the provider refuses. */
 const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; payer: AccessPayer; payerPrincipalId?: string; routine?: true; payerSub?: string; provider?: ModelProvider }>();
@@ -14315,6 +14319,8 @@ bus.subscribe((event: RuntimeEvent) => {
             tool: { ...existing, name: toolName, ok: event.ok, output, ...(durationMs !== undefined ? { durationMs } : {}), ...(widget ? { widget } : {}) },
           });
           toolMessageByItem.delete(itemKey);
+          // a "Connect Microsoft Teams" card's proof: whose turn made this call, on which bot
+          connectorSetupProofs.record({ threadId: event.threadId, botId: bot?.id, principalId: connectorSetupSpeaker(event.threadId), name: toolName, input: existing?.input, ok: event.ok === true, at: Date.now() });
         }
         for (const videoMsg of event.output ? videoMessagesFromTool(toolName, event.output, event.threadId, latestPersonText(event.threadId)) : []) {
           pushMessage(videoMsg);
@@ -27383,6 +27389,17 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
   // resource_usage (server/routes/resource-usage.ts)
   resourceUsage.internalRoute,
+  // open_connector_setup (server/routes/connector-setup.ts)
+  createConnectorSetupInternalRoutes({
+    ...connectorSetupStore(),
+    ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    principal: (_botId, threadId) => connectorSetupSpeaker(threadId),
+    context: connectorSetupContext,
+    post: ({ botId, threadId, view, text }) => {
+      const bot = store.bot(botId);
+      store.appendMessage(threadId, { role: "bot", kind: "text", text, ...(bot ? { from: { botId: bot.id, name: bot.name, color: bot.color } } : {}), connectorSetup: view });
+    },
+  }),
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
   createArtifactInternalRoutes({
     artifacts: () => artifactStore,
@@ -33260,6 +33277,52 @@ function claudeAccountForPrincipal(principalId: string): { cli: string; env: Nod
     }
   }
   return { cli, env, key: `instance:${instanceId}` };
+}
+
+// "Connect Microsoft Teams" cards (server/routes/connector-setup.ts): the
+// person who asked checks theirs; Claude's inventory is read again.
+ROUTES.push(createConnectorSetupRoutes({
+  ...connectorSetupStore(),
+  principalId: (auth) => {
+    if (auth.kind === "loopback" && auth.trust === "service") return undefined;
+    return actorPrincipalId(auth) || (IDENTITY.kind === "solo" ? localPrincipalId() : undefined);
+  },
+  claudeConnectors: async (principalId) => {
+    if (IDENTITY.kind === "solo" && principalId !== localPrincipalId().trim().toLowerCase()) return null;
+    const account = claudeAccountForPrincipal(principalId);
+    if ("unavailable" in account) return null;
+    const inventory = await claudeAiInventory.read(account.key, { cli: account.cli, env: account.env }, true);
+    return inventory.auth === "subscription" ? inventory.connectors : null;
+  },
+}));
+/** The setup cards of a conversation and the calls that prove one (server/routes/connector-setup.ts). */
+function connectorSetupStore() {
+  return {
+    cards: (threadId: string) => store.messagesFor(threadId).flatMap((message) => message.connectorSetup ? [{ messageId: message.id, view: message.connectorSetup }] : []),
+    proofs: () => connectorSetupProofs,
+    botOf: (threadId: string) => store.botByThread(threadId)?.id,
+    patch: (threadId: string, messageId: string, view: ConnectorSetupView) => { store.patchMessage(threadId, messageId, { connectorSetup: view }); },
+  };
+}
+/** The person a sign-in card is for: the one speaking, never a routine or a peer. */
+function connectorSetupSpeaker(threadId: string): string | undefined {
+  const speaker = turnSpeakers.get(threadId);
+  if (!speaker || (speaker.origin !== "person" && speaker.origin !== "operator")) return undefined;
+  const bot = store.bots.find((candidate) => candidate.threadId === threadId) ?? store.bots.find((candidate) => store.taskByThread(candidate.id, threadId));
+  return connectorPrincipalFor({ identity: IDENTITY.kind, speaker, ownerPrincipalId: bot ? effectiveBotOwner(bot) : "", localPrincipalId: localPrincipalId() }) || undefined;
+}
+/** The bot's engine and whose account it runs on for this turn (#943). */
+function connectorSetupContext(botId: string, threadId: string): ConnectorSetupContext | null {
+  const bot = store.bot(botId);
+  const instance = bot ? registry.get(bot.modelSelection.instanceId) : undefined;
+  const speaker = turnSpeakers.get(threadId);
+  if (!bot || !instance || !speaker) return null;
+  const driver = instance.driverKind;
+  return {
+    engine: driver === "claudeAgent" ? "claude" : driver === "grokAgent" || driver === "grok" ? "grok" : "other",
+    account: accountConnectorsForTurn(accountConnectorInput(bot, instance, speaker, turnAccessByThread.get(threadId)?.via)),
+    composio: composio.configured(cfg) && bot.composio !== false,
+  };
 }
 
 ROUTES.push(createHarnessConnectorRoutes({

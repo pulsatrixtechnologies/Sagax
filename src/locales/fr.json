@@ -9937,5 +9937,13 @@
   "engines.connectors.claude": "Courriel, calendrier, Teams et SharePoint par vos connecteurs claude.ai (Microsoft 365, Gmail, Google Calendar). Chaque envoi ou écriture demande d'abord, sauf en Full.",
   "engines.connectors.grok": "Courriel, calendrier, Teams et SharePoint par les connecteurs cloud de votre propre compte xAI, sur un serveur d'organisation. Chaque envoi ou écriture demande d'abord, sauf en Full.",
   "chat.connectorSwitch": "Passé à {engine} pour {connector}",
-  "approval.held.connectorNoDetails": "Grok n'a pas transmis le détail de cet appel. Ne l'autorisez que si vous l'avez demandé."
+  "approval.held.connectorNoDetails": "Grok n'a pas transmis le détail de cet appel. Ne l'autorisez que si vous l'avez demandé.",
+  "connectorSetup.connect": "Connecter {name}",
+  "connectorSetup.where": "La connexion se fait sur {host}, avec votre propre compte. Sagax détectera la connexion.",
+  "connectorSetup.waiting": "En attente de votre connexion",
+  "connectorSetup.done": "J'ai terminé",
+  "connectorSetup.checking": "Vérification…",
+  "connectorSetup.pending": "Pas encore confirmé. Demandez au bot de l'utiliser, puis choisissez J'ai terminé.",
+  "connectorSetup.connected": "Connecté",
+  "connectorSetup.blocked": "Ce lien ne peut pas être ouvert d'ici."
 }

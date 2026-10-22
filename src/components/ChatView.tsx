@@ -41,6 +41,7 @@ import { WorkingDots } from "@/components/WorkingIndicator";
 import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
 import { RemoteSessionCard } from "@/components/remote-session/RemoteSessionCard";
 import { ResourceUsageCard } from "@/components/resource-usage/ResourceUsageCard";
+import { ConnectorSetupCard } from "@/components/connector-setup/ConnectorSetupCard";
 import { MessageBar, MessageMenuItem } from "./MessageBar";
 import { HOVER_ICON } from "./MessageHoverActions";
 import { messageActionClass } from "@/components/MessageActions";
@@ -579,7 +580,8 @@ const Bubble = memo(function Bubble({
   const speaking = speech.messageId === message.id && speech.status !== "idle";
   // a quiet model/effort line once the pointer rests on a bot reply
   const dwell = useHoverDwell(!user && !peer && Boolean(message.turnRun));
-  const rawText = peer ? peer.body : (message.text ?? "");
+  // a sign-in card's text is only the fallback for clients without the card
+  const rawText = peer ? peer.body : message.connectorSetup && message.role !== "user" ? "" : (message.text ?? "");
   // a bot's leaked internal system lines never reach the reader
   const text = user ? rawText : stripLeakedSystemHarnessMessages(rawText);
   const wideBubble = useMemo(() => !user && Boolean(text) && prefersWideBubble(text), [user, text]);
@@ -606,7 +608,7 @@ const Bubble = memo(function Bubble({
   // A message that is only attachments is just the files: no bubble around them.
   const attachmentsOnly = !webhookView && !replyTarget && !visibleText.trim() &&
     (user ? hasAttachments : generatedPaths.length + linkedFiles.length > 0);
-  const remoteCard = !user && Boolean(message.remoteSession || message.resourceUsage);
+  const remoteCard = !user && Boolean(message.remoteSession || message.resourceUsage || message.connectorSetup);
   const collapsible =
     user && !webhookView && !expanded && (visibleText.length > USER_COLLAPSE_CHARS || visibleText.split("\n").length > USER_COLLAPSE_LINES);
   useEffect(() => {
@@ -779,6 +781,7 @@ const Bubble = memo(function Bubble({
               )}
               {message.remoteSession && <RemoteSessionCard botId={botId} threadId={threadId} view={message.remoteSession} />}
               {!user && message.resourceUsage && <ResourceUsageCard view={message.resourceUsage} />}
+              {!user && message.connectorSetup && <ConnectorSetupCard threadId={threadId} view={message.connectorSetup} />}
               {message.terminalEmbed && <TerminalChatEmbed embed={message.terminalEmbed} />}
               {!group && <AttachmentGallery images={generatedPaths} files={linkedFiles} message={{ threadId, messageId: message.id }} className={text ? undefined : "mb-0"} eager={eagerAttachments} />}
               {viewRaw && text ? (

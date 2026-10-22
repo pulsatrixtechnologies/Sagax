@@ -301,6 +301,8 @@ const __BASE_VERSION__: string;
       copyText?(text: string): Promise<boolean>;
       /** Opens an http(s) link in the user's default browser. */
       openExternal?(url: string): Promise<boolean>;
+      /** A Connect card's sign-in page; main allows grok.com and claude.ai only. */
+      openConnectorSetup?(url: string): Promise<boolean>;
       /** Recolor the native window chrome for a skin; absent on older builds. */
       applySkin?(skin: string): Promise<boolean>;
       /** Settings > Appearance > App icon (electron/app-icon.mjs). */

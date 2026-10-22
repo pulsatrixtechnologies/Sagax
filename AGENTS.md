@@ -3807,6 +3807,51 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   (B20, needs a Bot Framework registration), a free message in a Meet or
   Zoom meeting chat (G10).
 
+## Connect a connector from the chat: open_connector_setup (2026-10-22)
+
+JC (Sagax 0.7.2, a Grok bot): « peux tu le connecter » (Microsoft Teams)
+took 13 tool calls and ended in "I can't". Now one call posts a card.
+
+- Agents tool `open_connector_setup` (`server/drivers/agents-connector-setup.ts`,
+  loaded directly, never deferred; Grok is told to call
+  `agents__open_connector_setup` with use_tool without search_tool):
+  connector by name, optional `via` (grok, claude, composio) and `language`.
+- Where (`shared/connector-setup.ts` `chooseConnectorSetupRoute`): engine
+  connectors first. A Grok bot on the person's own xAI account:
+  https://grok.com/connectors (xAI documents no per-connector link). A Claude
+  bot on the person's own subscription: https://claude.ai/customize/connectors.
+  Else Sagax's Connect apps card (Composio, the existing
+  `/api/internal/connectors/request`). An engine account that is someone
+  else's (#943 `accountConnectorsForTurn` "foreign") is refused. Only a
+  person's own turn (`connectorSetupSpeaker`: person or operator, never a
+  routine or a peer).
+- Card (`connectorSetup` on the message, `src/components/connector-setup/`):
+  one primary button "Connecter Microsoft Teams" that opens the page through
+  `openExternalLink` (Electron open-external, else a new tab); nothing opens
+  without the click. Hosts allowed: grok.com and claude.ai over https
+  (`isConnectorSetupUrl`, checked by server and card). The row's text is the
+  fallback with the link, for iOS and Android until they draw the card.
+- "Connecté" only on evidence (`POST /api/connector-setup/:id/check`, the
+  person the card is for only: an owner digest on the card, never their id).
+  Claude: that person's own claude.ai inventory read again (cache
+  refreshed), never a call. Grok (no API says which connectors are
+  connected): a successful call to that connector after the card, recorded
+  as it settles with whose turn and which bot (`ConnectorSetupProofs`, in
+  memory, bounded) and matching the card's person and bot; `use_tool` input
+  is read only for exactly that meta tool; any tool with "auth" in its name
+  is no proof. Until then "Pas encore confirmé". Checked on "J'ai terminé"
+  and when the window regains focus after the click.
+- Desktop: the button goes through its own IPC `desktop:open-connector-setup`
+  (desktopUiOnly, `connectorSetupUrl` allows grok.com and claude.ai only),
+  else `openExternalLink`. That one logs a bridge refusal and falls back to
+  `window.open` (a silent rejection made "Manage on Grok" do nothing); when
+  neither opens, the caller shows "Ce lien ne peut pas être ouvert d'ici."
+- Tests: `shared/connector-setup.test.ts`, `server/routes/connector-setup.test.ts`,
+  `server/drivers/agents-connector-setup.test.ts`,
+  `src/components/connector-setup/ConnectorSetupCard.test.ts`,
+  `src/lib/app-links.test.ts`. Not yet: a native iOS card, the card in rooms
+  (GroupView), Grok rows in iOS Connect apps.
+
 ## Engine slash commands in the chat
 
 Typing "/" in a conversation or a group lists Sagax's own commands and

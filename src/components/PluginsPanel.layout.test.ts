@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildPluginItems } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
-import { grokConnectorDetail, grokRowAction } from "./PluginsPanel";
+import { grokConnectorDetail, grokRowAction, openGrokConnectors } from "./PluginsPanel";
 import { ConnectAppsView } from "./plugins/ConnectAppsView";
 import { ManageView } from "./plugins/ManageView";
 import { ProvidersSection } from "./plugins/ProvidersSection";
@@ -222,6 +222,22 @@ describe("Plugins panel views", () => {
     expect(detail).not.toContain("No account needed");
     expect(detail).not.toContain("Composio");
     expect(detail).not.toContain('data-plugin-status="connected"');
+  });
+
+  it("Manage on Grok opens grok.com/connectors: the desktop bridge, the window's link path when the bridge refuses, an error to show when neither opens", async () => {
+    const desktop = vi.fn(async () => true);
+    const open = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop, ogb: { openExternal: desktop }, open });
+    expect(await openGrokConnectors()).toBeNull();
+    expect(desktop).toHaveBeenCalledWith("https://grok.com/connectors");
+    expect(open).not.toHaveBeenCalled();
+    vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop, ogb: { openExternal: vi.fn(async () => { throw new Error("not this window"); }) }, open });
+    expect(await openGrokConnectors()).toBeNull();
+    expect(open).toHaveBeenCalledWith("https://grok.com/connectors", "_blank", "noopener,noreferrer");
+    vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop, open: vi.fn(() => { throw new Error("blocked"); }) });
+    expect(await openGrokConnectors()).toBe("This link cannot be opened from here.");
+    warn.mockRestore();
   });
 
   it("lists the xAI connector names only under a Grok engine that is set up", () => {

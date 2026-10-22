@@ -57,6 +57,8 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("computers:list", "read", "list_shared_computers"),
   p("terminal:list", "read", "list_terminal_resources"),
   p("resources:usage", "read", "resource_usage"),
+  // a sign-in card for the speaker's own connector (shared/connector-setup.ts)
+  p("connectors:setup", "read", "open_connector_setup"),
   p("delegation:check", "read", "check_delegation"),
   p("delegation:wait", "read", "wait_delegation"),
   p("sessions:search", "read", "session_search"),

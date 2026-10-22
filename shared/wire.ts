@@ -30,6 +30,7 @@ import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { RemoteSessionView } from "./remote-session.ts";
 import type { ResourceUsageView } from "./resource-usage.ts";
+import type { ConnectorSetupView } from "./connector-setup.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { VaultLoginTarget, VaultRequestCardData } from "./credential-vault.ts";
@@ -850,6 +851,9 @@ export interface WireMessage {
   remoteSession?: RemoteSessionView;
   /** A live usage card (shared/resource-usage.ts), shown only when asked. Labels only. */
   resourceUsage?: ResourceUsageView;
+  /** "Connect Microsoft Teams" (shared/connector-setup.ts): a sign-in page on
+   * grok.com or claude.ai, opened by the person. The row's text is its fallback. */
+  connectorSetup?: ConnectorSetupView;
 }
 
 export interface OptionCardData {

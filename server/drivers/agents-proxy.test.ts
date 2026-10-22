@@ -726,6 +726,7 @@ describe("agents-proxy MCP surface", () => {
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
       "resource_usage",

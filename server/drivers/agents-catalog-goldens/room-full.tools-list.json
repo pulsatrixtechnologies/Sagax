@@ -1176,6 +1176,41 @@
       }
     },
     {
+      "name": "open_connector_setup",
+      "description": "When the person asks to connect a connector (Microsoft Teams, Outlook, Gmail, Google Drive, OneDrive, SharePoint, Salesforce, X, ...): one call posts a card whose button opens the right sign-in page in their browser (grok.com or claude.ai for this engine's own connectors, else Sagax's Connect apps). Sagax detects the connection. Then answer in one short sentence in their language; no steps, no settings tour.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connector": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The app, as the person named it."
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "grok",
+              "claude",
+              "composio"
+            ],
+            "description": "Only when the person named where."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en"
+            ],
+            "description": "The person's language."
+          }
+        },
+        "required": [
+          "connector"
+        ]
+      }
+    },
+    {
       "name": "send_voice_note",
       "description": "Send the user a voice note: a short spoken message synthesized with your configured voice, stored as audio, and attached to your reply when the turn ends. Write the note as speakable words, exactly as it should be said — no lists, links or markdown meant for screens. The same text becomes the note's visible caption and transcript, so the person can read or listen. Use it for warmth, tone or emphasis a written line cannot carry; use ordinary text otherwise.",
       "inputSchema": {

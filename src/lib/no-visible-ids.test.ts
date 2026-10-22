@@ -30,6 +30,8 @@ const { runAsOptionLabel } = await import("@/components/routines/RunAsField");
 const { ownerLabel } = await import("@/components/settings/OrgSharing");
 const { recipientLabel } = await import("@/components/bot-settings/AllowedRecipientsRow");
 const { ResourceUsageBody } = await import("@/components/resource-usage/ResourceUsageCard");
+const { ConnectorSetupBody } = await import("@/components/connector-setup/ConnectorSetupCard");
+const { resolveConnectorSetupTarget } = await import("../../shared/connector-setup");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -136,6 +138,17 @@ describe("no UUID on screen", () => {
     }));
     expectNoUuid(text);
     expect(text).not.toContain("ru_0123456789abcdef01");
+  });
+
+  it("the Connect card names the connector, never its card id, its owner digest or a UUID", () => {
+    const view = { id: "cs_0123456789abcdef01", connector: "microsoft-teams", label: "Microsoft Teams", provider: "grok" as const, url: "https://grok.com/connectors", status: "pending" as const, owner: "0123456789abcdef", createdAt: 1 };
+    const text = visibleText(createElement(ConnectorSetupBody, { view, checking: false, opened: true, onConnect: () => undefined, onDone: () => undefined }));
+    expectNoUuid(text);
+    expect(text).toContain("Microsoft Teams");
+    expect(text).not.toContain("cs_0123456789abcdef01");
+    expect(text).not.toContain("0123456789abcdef");
+    // a bot that passes an id as the connector's name gets no card at all
+    expect(resolveConnectorSetupTarget(BOT_ID)).toBeNull();
   });
 
   it("allowed recipients name a bot, never its id (parité 1C)", () => {
