@@ -199,8 +199,8 @@ describe("plans", () => {
       expect(() => deletePlan({ registry: incomplete, slug: "acme", keepData: false, layout })).toThrow("operator recovery");
     }
     const two = createPlan({ registry: created.registry, slug: "globex", seed: { admins: ["g@x.test"], members: [] }, now, layout }).registry;
-    expect(argvOf(upgradePlan({ registry: suspendPlan({ registry: two, slug: "globex", layout }).registry, version: "0.7.1", node: "/usr/bin/node", script: "/usr/lib/node_modules/@pulsatrix/sagax/cli.js", layout }))).toEqual([
-      "npm install -g @pulsatrix/sagax@0.7.1",
+    expect(argvOf(upgradePlan({ registry: suspendPlan({ registry: two, slug: "globex", layout }).registry, version: "0.7.1", node: "/usr/bin/node", script: "/usr/lib/node_modules/@pulsatrixtechnologies/sagax/cli.js", layout }))).toEqual([
+      "npm install -g @pulsatrixtechnologies/sagax@0.7.1",
       "systemctl daemon-reload",
       "systemctl restart openmausbot@acme.service",
     ]);
@@ -213,9 +213,9 @@ describe("plans", () => {
     // moved onto the scoped package: same node_modules, new entry.
     const legacyEntry = "/usr/lib/node_modules/some-cli/cli.js";
     const steps = upgradePlan({ registry: running, version: "0.7.1", node: "/usr/bin/node", script: legacyEntry, layout });
-    expect(argvOf(steps)[0]).toBe("npm install -g @pulsatrix/sagax@0.7.1");
+    expect(argvOf(steps)[0]).toBe("npm install -g @pulsatrixtechnologies/sagax@0.7.1");
     const unit = steps.find((step) => step.kind === "write" && step.path === layout.unitFile);
-    expect(unit).toMatchObject({ mode: 0o644, content: expect.stringContaining("ExecStart=/usr/bin/node /usr/lib/node_modules/@pulsatrix/sagax/cli.js serve ") });
+    expect(unit).toMatchObject({ mode: 0o644, content: expect.stringContaining("ExecStart=/usr/bin/node /usr/lib/node_modules/@pulsatrixtechnologies/sagax/cli.js serve ") });
     expect(unit && unit.kind === "write" ? unit.content : "").not.toContain(legacyEntry);
     // The units are rewritten before anything restarts on them.
     const order = steps.map((step) => (step.kind === "run" ? step.argv.join(" ") : step.kind === "write" ? `write ${step.path}` : step.kind));
@@ -224,9 +224,9 @@ describe("plans", () => {
     expect(steps.some((step) => step.kind === "write" && step.path === layout.agentUnitFile)).toBe(false);
 
     // With an operator, the agent unit follows; the agent is not restarted under its own feet.
-    const operated = upgradePlan({ registry: { ...running, operator: "ops" }, version: "1.2.3-rc.1", node: "/usr/bin/node", script: "/opt/node/lib/node_modules/@pulsatrix/sagax/cli.js", layout });
-    expect(argvOf(operated)[0]).toBe("npm install -g @pulsatrix/sagax@1.2.3-rc.1");
-    expect(operated.find((step) => step.kind === "write" && step.path === layout.agentUnitFile)).toMatchObject({ content: expect.stringContaining("ExecStart=/usr/bin/node /opt/node/lib/node_modules/@pulsatrix/sagax/cli.js fleet agent ") });
+    const operated = upgradePlan({ registry: { ...running, operator: "ops" }, version: "1.2.3-rc.1", node: "/usr/bin/node", script: "/opt/node/lib/node_modules/@pulsatrixtechnologies/sagax/cli.js", layout });
+    expect(argvOf(operated)[0]).toBe("npm install -g @pulsatrixtechnologies/sagax@1.2.3-rc.1");
+    expect(operated.find((step) => step.kind === "write" && step.path === layout.agentUnitFile)).toMatchObject({ content: expect.stringContaining("ExecStart=/usr/bin/node /opt/node/lib/node_modules/@pulsatrixtechnologies/sagax/cli.js fleet agent ") });
     expect(argvOf(operated).some((argv) => argv.includes("fleet.service"))).toBe(false);
     expect(operated.at(-1)).toMatchObject({ kind: "note", text: expect.stringContaining("restart the fleet agent") });
 

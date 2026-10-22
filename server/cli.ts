@@ -281,7 +281,7 @@ fleet   many client workspaces on one Linux server, each its own account,
         init --operator USER also installs the fleet agent, a root service
         on a Unix socket only USER may open, so the workspace running as
         USER manages the others from Settings → Installations.
-        upgrade installs one exact release of @pulsatrix/sagax (--to
+        upgrade installs one exact release of @pulsatrixtechnologies/sagax (--to
         X.Y.Z, default this CLI's own), points the workspaces at it and
         restarts them; never a floating tag.
 

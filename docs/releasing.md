@@ -187,16 +187,16 @@ The npm package is published separately (below). It is not a desktop
 updater artifact and is not attached to the GitHub release: releases are
 immutable once published, and their body is the desktop update notes.
 
-## npm package: `@pulsatrix/sagax`
+## npm package: `@pulsatrixtechnologies/sagax`
 
-The CLI and server are published to npm as `@pulsatrix/sagax` (command
+The CLI and server are published to npm as `@pulsatrixtechnologies/sagax` (command
 `sagax`), at the release's own version: tag `pulsa-vX.Y.Z` publishes
-`@pulsatrix/sagax@X.Y.Z`, built from `package.json` `forkVersion`. This is
+`@pulsatrixtechnologies/sagax@X.Y.Z`, built from `package.json` `forkVersion`. This is
 the only npm package of this project. The unscoped names are not ours: one
 is the upstream author's package and `sagax` is an unrelated one, so never
 publish, install or document them. Until the first version is on npm, the
 checkout (`pnpm install && pnpm build`, then `pnpm omb <command>`) remains
-the way to run the CLI, and docs that show `npm install -g @pulsatrix/sagax`
+the way to run the CLI, and docs that show `npm install -g @pulsatrixtechnologies/sagax`
 say so.
 
 - `.github/workflows/npm-package.yml` runs on every pushed `pulsa-v*` tag
@@ -220,7 +220,7 @@ say so.
   proven tarball. Then add the trusted publisher, delete `NPM_TOKEN`, revoke
   the token, and set the package to require two-factor authentication and
   disallow tokens.
-- `fleet upgrade` installs exactly `@pulsatrix/sagax@<version>`, never a
+- `fleet upgrade` installs exactly `@pulsatrixtechnologies/sagax@<version>`, never a
   floating tag, so a fleet moves only when its operator names a release.
 
 ## Why the gates exist

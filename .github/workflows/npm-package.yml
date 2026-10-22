@@ -1,6 +1,6 @@
 name: npm package
 
-# Publishes @pulsatrix/sagax. Releases are tagged pulsa-vX.Y.Z (docs/releasing.md);
+# Publishes @pulsatrixtechnologies/sagax. Releases are tagged pulsa-vX.Y.Z (docs/releasing.md);
 # pushing that tag publishes the package at X.Y.Z. A manual run on a branch
 # only builds and proves the tarball; a manual run on a pulsa-v tag publishes.
 on:
@@ -34,13 +34,13 @@ jobs:
         run: |
           set -euo pipefail
           cd release/npm && npm pack --silent && cd ../..
-          rm -rf /tmp/omb-pack && mkdir -p /tmp/omb-pack && tar -xzf release/npm/pulsatrix-sagax-*.tgz -C /tmp/omb-pack
+          rm -rf /tmp/omb-pack && mkdir -p /tmp/omb-pack && tar -xzf release/npm/pulsatrixtechnologies-sagax-*.tgz -C /tmp/omb-pack
           cd /tmp/omb-pack/package
           # Every check below is a silent grep/test; say which one failed, and what the server said.
           set -x
           trap 'echo "--- serve.log"; cat serve.log 2>/dev/null; echo "--- tunnel.log"; cat tunnel.log 2>/dev/null' ERR
           test ! -d node_modules
-          node -e 'const p = require("./package.json"); if (p.name !== "@pulsatrix/sagax" || p.bin?.sagax !== "cli.js" || Object.keys(p.bin).length !== 1) process.exit(1)'
+          node -e 'const p = require("./package.json"); if (p.name !== "@pulsatrixtechnologies/sagax" || p.bin?.sagax !== "cli.js" || Object.keys(p.bin).length !== 1) process.exit(1)'
           node cli.js --help | grep -q "openmausbot serve"
           HOME=/tmp/omb-pack/home node cli.js serve --no-pair --port 18799 --data-dir /tmp/omb-pack/data --label ci --public-url https://ci.example > serve.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://127.0.0.1:18799/api/health >/dev/null && break; sleep 1; done
@@ -72,13 +72,13 @@ jobs:
           echo "tag $tag_version, package $package_version, forkVersion $fork_version"
           test "$tag_version" = "$package_version"
           test "$tag_version" = "$fork_version"
-          test -f "release/npm/pulsatrix-sagax-$tag_version.tgz"
+          test -f "release/npm/pulsatrixtechnologies-sagax-$tag_version.tgz"
       - name: Save the proven tarball (release tags only)
         if: startsWith(github.ref, 'refs/tags/pulsa-v')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: npm-package
-          path: release/npm/pulsatrix-sagax-*.tgz
+          path: release/npm/pulsatrixtechnologies-sagax-*.tgz
           if-no-files-found: error
           retention-days: 1
 
@@ -105,7 +105,7 @@ jobs:
       # Trusted publishing (OIDC) is the normal path: npm trusts this
       # repository's npm-package.yml in the npm environment, so no registry
       # token is stored anywhere and none is asked for. One-time setup on
-      # npmjs.com: @pulsatrix/sagax → Settings → Trusted publishing → GitHub
+      # npmjs.com: @pulsatrixtechnologies/sagax → Settings → Trusted publishing → GitHub
       # Actions, organization pulsatrixtechnologies, repository Sagax,
       # workflow npm-package.yml, environment npm, allow npm publish.
       # Needs npm 11.5.1 or newer. With trusted publishing, npm also writes
@@ -132,4 +132,4 @@ jobs:
             echo "NPM_TOKEN is set: used only if trusted publishing is not configured"
             echo '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}' >> "$npmrc"
           fi
-          NPM_CONFIG_USERCONFIG="$npmrc" npm publish release/npm/pulsatrix-sagax-*.tgz --provenance --access public
+          NPM_CONFIG_USERCONFIG="$npmrc" npm publish release/npm/pulsatrixtechnologies-sagax-*.tgz --provenance --access public

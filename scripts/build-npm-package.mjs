@@ -1,7 +1,7 @@
-// Assemble the published npm package, @pulsatrix/sagax: the self-contained
+// Assemble the published npm package, @pulsatrixtechnologies/sagax: the self-contained
 // server bundle, the built UI, the bundled skills and the CLI, with a
-// package.json of its own. `npm install -g @pulsatrix/sagax` (or
-// `npx @pulsatrix/sagax`) then needs Node 24+ and nothing else, and installs
+// package.json of its own. `npm install -g @pulsatrixtechnologies/sagax` (or
+// `npx @pulsatrixtechnologies/sagax`) then needs Node 24+ and nothing else, and installs
 // one command, `sagax`. The unscoped names are not this project's: never
 // publish or document them. The version is the Sagax release (forkVersion),
 // the same X.Y.Z as the pulsa-vX.Y.Z tag that publishes it.
@@ -16,13 +16,17 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "release", "npm");
 const app = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 // server/npm-package.ts holds the same two names (npm-package.test.ts).
-const NAME = "@pulsatrix/sagax";
+const NAME = "@pulsatrixtechnologies/sagax";
 const BIN = "sagax";
 // Provenance and trusted publishing compare this with the publishing
 // repository, so it names the repository exactly as GitHub spells it.
 const REPOSITORY = "https://github.com/pulsatrixtechnologies/Sagax";
 const version = app.forkVersion;
-if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) {
+// SemVer as npm reads it (server/npm-package.ts EXACT_VERSION): no leading
+// zero in a number, nor in a numeric prerelease identifier.
+const PRERELEASE_ID = "(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)";
+const EXACT_VERSION = new RegExp(`^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-${PRERELEASE_ID}(?:\\.${PRERELEASE_ID})*)?$`);
+if (typeof version !== "string" || !EXACT_VERSION.test(version)) {
   console.error(`package.json forkVersion must be X.Y.Z (got ${JSON.stringify(version)})`);
   process.exit(1);
 }
@@ -76,16 +80,16 @@ writeFileSync(
 
 writeFileSync(
   join(out, "README.md"),
-  `# @pulsatrix/sagax
+  `# @pulsatrixtechnologies/sagax
 
 Your own team of AI bots, with guided terminal setup. Requires Node 24+.
 
 \`\`\`sh
-npm install -g @pulsatrix/sagax
+npm install -g @pulsatrixtechnologies/sagax
 sagax
 \`\`\`
 
-Or run \`npx @pulsatrix/sagax\` without a global install. Use the same command
+Or run \`npx @pulsatrixtechnologies/sagax\` without a global install. Use the same command
 next time; \`sagax start\` is an alias for the bare command. Some of the
 CLI's own messages still show the command's previous name: type \`sagax\`
 wherever they do. This is the only npm package of this project; the

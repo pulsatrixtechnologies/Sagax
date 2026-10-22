@@ -103,7 +103,7 @@ Caddy. The recipe for a disposable VPS (the same shape as the Hetzner launch
 record):
 
 1. Fresh Ubuntu 24.04 or newer, Caddy from apt, `npm install -g
-   @pulsatrix/sagax@<version>` (this project's only npm package; until its
+   @pulsatrixtechnologies/sagax@<version>` (this project's only npm package; until its
    first publish, a checkout built with `pnpm install && pnpm build` works,
    with `pnpm omb` in place of the command below), Claude Code installed once
    as root, a wildcard DNS record at the server.
@@ -120,7 +120,7 @@ record):
    address, confirm chat-only scope.
 6. `fleet suspend beta` shows the 503 page; `fleet resume beta` restores it.
 7. `fleet upgrade --to <version>` after a release installs exactly
-   `@pulsatrix/sagax@<version>` (without `--to`, the version of the CLI that
+   `@pulsatrixtechnologies/sagax@<version>` (without `--to`, the version of the CLI that
    runs it; never a floating tag), points the workspace units at that
    package and restarts both in turn; `fleet delete beta --yes` removes the
    account and site.

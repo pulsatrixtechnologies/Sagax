@@ -95,15 +95,15 @@ describe("openmausbot fleet", () => {
       const dry = io();
       expect(await runFleetCommand({ ...base, action: "upgrade", dryRun: true }, dry.io, machine({ root: true, files: withRegistry({ acme: workspace }) }).deps)).toBe(0);
       const plan = dry.out.join("\n");
-      expect(plan).toContain("npm install -g @pulsatrix/sagax@0.7.1");
-      expect(plan).toContain("/usr/lib/node_modules/@pulsatrix/sagax/cli.js serve ");
-      expect(plan).not.toMatch(/npm install -g (?!@pulsatrix\/sagax@\d)/);
+      expect(plan).toContain("npm install -g @pulsatrixtechnologies/sagax@0.7.1");
+      expect(plan).toContain("/usr/lib/node_modules/@pulsatrixtechnologies/sagax/cli.js serve ");
+      expect(plan).not.toMatch(/npm install -g (?!@pulsatrixtechnologies\/sagax@\d)/);
       expect(plan).not.toContain("@latest");
 
       const rooted = machine({ root: true, files: withRegistry({ acme: workspace }) });
       expect(await runFleetCommand({ ...base, action: "upgrade", version: "0.8.0" }, io().io, rooted.deps)).toBe(0);
       expect(rooted.calls.filter((call) => call.startsWith("run "))).toEqual([
-        "run npm install -g @pulsatrix/sagax@0.8.0",
+        "run npm install -g @pulsatrixtechnologies/sagax@0.8.0",
         "run systemctl daemon-reload",
         "run systemctl restart openmausbot@acme.service",
       ]);
