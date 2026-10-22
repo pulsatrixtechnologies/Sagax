@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { createDesktopBridge, validBridgeOperation } from "./desktop-bridge.mjs";
-import { executeLocalModel, modelDetailsFromPayload, modelIdsFromPayload, normalizeLoopbackBase, probeAnthropicMessages, probeLoopbackCatalog, probeLoopbackModels, resetAnthropicProbeCache } from "./local-models.mjs";
+import { executeLocalModel, modelDetailsFromPayload, modelIdsFromPayload, normalizeLoopbackBase, probeAnthropicMessages, probeLoopbackCatalog, probeLoopbackModels, resetAnthropicProbeCache, SEED_ENDPOINTS } from "./local-models.mjs";
 
 test("a non-allowlisted path and a non-loopback base are refused before any fetch", async () => {
   assert.equal(normalizeLoopbackBase("http://10.0.0.8:8002/v1"), null);
@@ -314,6 +314,111 @@ test("a server that stops answering /models forgets its Anthropic answer", async
   messages = 0;
   assert.equal((await probeLoopbackCatalog(base, server)).anthropic, false);
   resetAnthropicProbeCache();
+});
+
+test("the oMLX seed points at 127.0.0.1:8000", () => {
+  const omlx = SEED_ENDPOINTS.find((row) => row.label === "oMLX");
+  assert.equal(omlx.baseUrl, "http://127.0.0.1:8000/v1");
+  assert.equal(omlx.id, "desk8000");
+  assert.equal(SEED_ENDPOINTS.some((row) => row.baseUrl.includes(":8080")), false, "the stale :8080 seed is gone");
+});
+
+test("the probe uses the per-endpoint key, so a key-required server flips from needs_key to answered", async () => {
+  const base = "http://127.0.0.1:8000/v1";
+  const models = { data: [{ id: "ornith-122b" }] };
+  // oMLX/Ornith: 401 to the anonymous bearer, a catalog to the right key.
+  const serverFor = (right) => async (url, init) => {
+    const auth = init.headers?.Authorization ?? init.headers?.authorization;
+    if (auth !== `Bearer ${right}`) return new Response("API key required", { status: 401 });
+    return String(url).endsWith("/messages")
+      ? new Response("{}", { status: 400 })
+      : new Response(JSON.stringify(models), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  // No key: reachable but reads as needs_key, and nothing is selectable.
+  resetAnthropicProbeCache();
+  const anon = await probeLoopbackCatalog(base, serverFor("sk-ornith"));
+  assert.equal(anon.status, "needs_key");
+  assert.deepEqual(anon.models, []);
+  // A wrong key stays needs_key.
+  resetAnthropicProbeCache();
+  const wrong = await probeLoopbackCatalog(base, serverFor("sk-ornith"), "sk-wrong");
+  assert.equal(wrong.status, "needs_key");
+  assert.deepEqual(wrong.models, []);
+  // The right key: answered, the model becomes selectable, and the Anthropic
+  // probe went out with the key too.
+  resetAnthropicProbeCache();
+  const ok = await probeLoopbackCatalog(base, serverFor("sk-ornith"), "sk-ornith");
+  assert.equal(ok.status, "answered");
+  assert.deepEqual(ok.models, ["ornith-122b"]);
+  assert.equal(ok.anthropic, true);
+  resetAnthropicProbeCache();
+});
+
+test("executeLocalModel sends the per-endpoint key as the bearer; no key keeps the anonymous 'local' path", async () => {
+  const seen = [];
+  const fetchImpl = async (_url, init) => { seen.push(init.headers); return new Response("{}", { status: 200, headers: { "content-type": "application/json" } }); };
+  const op = { action: "local_model", endpoint: "desk8000", http_method: "POST", http_path: "/messages", json: "{}", timeout_seconds: 60 };
+  // With a key: Authorization and x-api-key both carry it.
+  await executeLocalModel(op, () => "http://127.0.0.1:8000/v1", fetchImpl, undefined, () => true, () => "sk-ornith");
+  assert.equal(seen[0].Authorization, "Bearer sk-ornith");
+  assert.equal(seen[0]["x-api-key"], "sk-ornith");
+  // No key resolver, or a null key: the anonymous path, unchanged ("local").
+  await executeLocalModel(op, () => "http://127.0.0.1:8000/v1", fetchImpl, undefined, () => true);
+  assert.equal(seen[1].Authorization, "Bearer local");
+  assert.equal(seen[1]["x-api-key"], "local");
+  await executeLocalModel(op, () => "http://127.0.0.1:8000/v1", fetchImpl, undefined, () => true, () => null);
+  assert.equal(seen[2].Authorization, "Bearer local");
+  // The real store is async: an async resolver is awaited.
+  await executeLocalModel({ ...op, http_path: "/chat/completions" }, () => "http://127.0.0.1:8000/v1", fetchImpl, undefined, () => true, async () => "sk-async");
+  assert.equal(seen[3].Authorization, "Bearer sk-async");
+});
+
+test("the bridge authenticates a key-required server with the desktop key, and never sends the key to the org", async () => {
+  const KEY = "sk-ornith-secret";
+  const modelServer = http.createServer((req, res) => {
+    if (req.headers.authorization !== `Bearer ${KEY}`) { res.statusCode = 401; return res.end("API key required"); }
+    if (req.url === "/v1/messages") { res.statusCode = 400; return res.end("{}"); }
+    if (req.url !== "/v1/models") { res.statusCode = 404; return res.end("no"); }
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ data: [{ id: "ornith-122b" }] }));
+  });
+  await new Promise((resolve) => modelServer.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${modelServer.address().port}/v1`;
+  const publishes = [];
+  const org = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const send = (value, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(value)); };
+    if (req.url === "/api/auth/session") return send({ kind: "session", identity: "perspicax" });
+    if (req.url === "/api/me/preferences") return send({ preferences: {} });
+    if (req.url === "/api/desktop-bridge/connect") return send({ ok: true });
+    if (req.url === "/api/me/local-models") return send({ expose: true, share: false, endpoints: [{ id: "desk8000", label: "oMLX", baseUrl: base }] });
+    if (req.url.endsWith("/local-models")) { publishes.push(JSON.parse(body)); return send({ ok: true }); }
+    if (req.url.endsWith("/poll")) { await new Promise((resolve) => setTimeout(resolve, 200)); return send({ job: null }); }
+    res.statusCode = 404; send({});
+  });
+  await new Promise((resolve) => org.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${org.address().port}`;
+  resetAnthropicProbeCache();
+  const bridge = createDesktopBridge({
+    environment: () => ({ id: "org", name: "Example", origin }), fetch: globalThis.fetch, cookieHeader: async () => "",
+    home: os.tmpdir(), attachmentsDir: path.join(os.tmpdir(), "omb-bridge-key"), activityFile: path.join(os.tmpdir(), `omb-bridge-key-${process.pid}.jsonl`),
+    WebSocketImpl: null, retryMs: 50, localModelFreshMs: 300,
+    localModelKeyFor: (candidate) => (candidate === base ? KEY : null),
+  });
+  try {
+    bridge.sync();
+    for (let tries = 0; tries < 200 && !publishes.some((row) => row.endpoints.length); tries++) await new Promise((resolve) => setTimeout(resolve, 20));
+    const answered = publishes.find((row) => row.endpoints.length);
+    assert.deepEqual(answered.endpoints[0].models, ["ornith-122b"]);
+    assert.deepEqual(answered.probes.find((row) => row.id === "desk8000"), { id: "desk8000", status: "answered" });
+    // The key never rides the org-bound payload.
+    assert.equal(JSON.stringify(publishes).includes(KEY), false, "the key must never reach the organization server");
+  } finally {
+    bridge.close();
+    org.close();
+    modelServer.close();
+  }
 });
 
 test("the catalog probe reports whether the server speaks the Anthropic protocol", async () => {

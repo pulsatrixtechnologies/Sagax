@@ -1,10 +1,10 @@
 // Settings > Computer > Local models. Both switches start off. Only the
 // signed-in person can change their own list. Other people never edit it.
 import { useEffect, useState } from "react";
-import { Server, Trash2 } from "lucide-react";
+import { Eye, EyeOff, Key, Server, Trash2 } from "lucide-react";
 
 import { t } from "@/lib/i18n";
-import { loadLocalModels, normalizeLoopbackBase, saveLocalModels, type LocalModelSettings } from "@/lib/desktop-local-models";
+import { loadLocalModels, localModelKeyBridge, normalizeLoopbackBase, saveLocalModels, type LocalModelSettings } from "@/lib/desktop-local-models";
 import { cn } from "@/lib/cn";
 import { DescribedRow, FIELD, FoldRow, PILL, SettingsGroup, SettingsTextRow, Switch, cardCount } from "../SettingsPrimitives";
 
@@ -46,6 +46,85 @@ export function endpointsSummary(endpoints: Endpoint[]): string {
   return `${count} · ${names}${endpoints.length > 3 ? ", …" : ""}`;
 }
 
+/**
+ * The per-endpoint API key editor, shown only on this person's own desktop
+ * app (where window.ogb.localModels exists). The key is kept encrypted on
+ * this computer and never crosses back over the bridge: this control only
+ * ever learns whether a key is set, and sends a new one or clears it. A key
+ * is optional: anonymous servers (Ollama, LM Studio) need none; a server that
+ * reads "needs an API key" becomes selectable once a valid key is set.
+ */
+export function EndpointKeyEditor({ endpoint, hasKey, onChange }: { endpoint: Endpoint; hasKey: boolean; onChange: () => void }) {
+  const bridge = localModelKeyBridge();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [reveal, setReveal] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  if (!bridge) return null;
+
+  const close = () => { setEditing(false); setDraft(""); setReveal(false); };
+
+  const commit = () => {
+    const key = draft.trim();
+    if (!key || busy) return;
+    setBusy(true);
+    void bridge.setKey(endpoint.baseUrl, key).then(() => { close(); onChange(); }).finally(() => setBusy(false));
+  };
+
+  const remove = () => {
+    if (busy) return;
+    setBusy(true);
+    void bridge.clearKey(endpoint.baseUrl).then(() => { close(); onChange(); }).finally(() => setBusy(false));
+  };
+
+  const paste = () => {
+    void navigator.clipboard?.readText?.().then((value) => { if (typeof value === "string") setDraft(value.trim()); }).catch(() => {});
+  };
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 pl-[26px]" data-loopback-key={hasKey ? "set" : "none"}>
+        <Key size={12} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+        <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-ink-secondary">
+          {hasKey ? t("localModels.key.saved") : t("localModels.key.none")}
+        </span>
+        <button type="button" className="shrink-0 text-[12px] leading-4 text-accent hover:underline" onClick={() => setEditing(true)}>
+          {hasKey ? t("localModels.key.change") : t("localModels.key.add")}
+        </button>
+        {hasKey && (
+          <button type="button" disabled={busy} className="shrink-0 text-[12px] leading-4 text-ink-secondary hover:text-danger disabled:opacity-50" onClick={remove}>
+            {t("localModels.key.remove")}
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5 pl-[26px]" data-loopback-key-editing="true">
+      <div className="flex items-center gap-2">
+        <input value={draft} type={reveal ? "text" : "password"} autoComplete="off" spellCheck={false}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); } if (event.key === "Escape") close(); }}
+          placeholder={t("localModels.key.placeholder")} aria-label={t("localModels.key.placeholder")}
+          className={cn(FIELD, "flex-1 font-mono text-[12px]")} />
+        <button type="button" aria-label={reveal ? t("localModels.key.hide") : t("localModels.key.show")}
+          title={reveal ? t("localModels.key.hide") : t("localModels.key.show")}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg text-ink-secondary hover:bg-control" onClick={() => setReveal((value) => !value)}>
+          {reveal ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <button type="button" disabled={busy || !draft.trim()} className={cn(PILL, "shrink-0")} onClick={commit}>{t("localModels.key.save")}</button>
+        <button type="button" className="shrink-0 text-[12px] leading-4 text-accent hover:underline" onClick={paste}>{t("localModels.key.paste")}</button>
+        <button type="button" className="shrink-0 text-[12px] leading-4 text-ink-secondary hover:underline" onClick={close}>{t("localModels.key.cancel")}</button>
+      </div>
+      <p className="text-[12px] leading-4 text-ink-secondary">{t("localModels.key.help")}</p>
+    </div>
+  );
+}
+
 const OFF: LocalModelSettings = { expose: false, share: false, endpoints: [], published: [], probes: [], connected: false };
 
 export function LocalModelsSettings() {
@@ -54,6 +133,15 @@ export function LocalModelsSettings() {
   const [draft, setDraft] = useState("");
   const [invalid, setInvalid] = useState(false);
   const [error, setError] = useState(false);
+  // The loopback bases that have an API key on THIS computer. Only the list of
+  // bases crosses the bridge, never a key value.
+  const [keyedBases, setKeyedBases] = useState<string[]>([]);
+
+  const refreshKeyBases = () => {
+    const bridge = localModelKeyBridge();
+    if (!bridge) return;
+    void bridge.keyBases().then((bases) => setKeyedBases(Array.isArray(bases) ? bases : [])).catch(() => {});
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +150,8 @@ export function LocalModelsSettings() {
       setSettings(value);
       setLoaded(true);
     }).catch(() => { if (!cancelled) setError(true); });
+    const bridge = localModelKeyBridge();
+    if (bridge) void bridge.keyBases().then((bases) => { if (!cancelled) setKeyedBases(Array.isArray(bases) ? bases : []); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -104,23 +194,26 @@ export function LocalModelsSettings() {
                   const name = endpointName(endpoint);
                   const status = settings.expose && settings.connected ? endpointStatus(endpoint, settings.published, settings.probes) : null;
                   return (
-                    <li key={endpoint.id || endpoint.baseUrl} className="group flex min-h-[44px] items-center gap-3 py-1" data-loopback-server={endpoint.baseUrl} data-loopback-status={status?.tone ?? ""}>
-                      <Server size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] leading-[18px] text-ink">{name}</span>
-                        <span className="block truncate font-mono text-[12px] leading-4 text-ink-secondary">{endpoint.baseUrl}</span>
-                      </span>
-                      {status && (
-                        <span className={cn("shrink-0 text-[12px] leading-4", status.tone === "ok" ? "text-success" : status.tone === "warn" ? "text-warning" : "text-ink-secondary")}>
-                          {status.text}
+                    <li key={endpoint.id || endpoint.baseUrl} className="group flex flex-col gap-1 py-1" data-loopback-server={endpoint.baseUrl} data-loopback-status={status?.tone ?? ""}>
+                      <div className="flex min-h-[44px] items-center gap-3">
+                        <Server size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] leading-[18px] text-ink">{name}</span>
+                          <span className="block truncate font-mono text-[12px] leading-4 text-ink-secondary">{endpoint.baseUrl}</span>
                         </span>
-                      )}
-                      <button type="button"
-                        className="flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-secondary opacity-0 transition-opacity hover:bg-control hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none md:size-7"
-                        aria-label={t("localModels.remove", { label: name })} title={t("localModels.remove", { label: name })}
-                        onClick={() => save({ endpoints: settings.endpoints.filter((row) => row.baseUrl !== endpoint.baseUrl) })}>
-                        <Trash2 size={14} aria-hidden="true" />
-                      </button>
+                        {status && (
+                          <span className={cn("shrink-0 text-[12px] leading-4", status.tone === "ok" ? "text-success" : status.tone === "warn" ? "text-warning" : "text-ink-secondary")}>
+                            {status.text}
+                          </span>
+                        )}
+                        <button type="button"
+                          className="flex size-11 shrink-0 items-center justify-center rounded-lg text-ink-secondary opacity-0 transition-opacity hover:bg-control hover:text-danger focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 group-hover:opacity-100 group-focus-within:opacity-100 touch:opacity-100 motion-reduce:transition-none md:size-7"
+                          aria-label={t("localModels.remove", { label: name })} title={t("localModels.remove", { label: name })}
+                          onClick={() => save({ endpoints: settings.endpoints.filter((row) => row.baseUrl !== endpoint.baseUrl) })}>
+                          <Trash2 size={14} aria-hidden="true" />
+                        </button>
+                      </div>
+                      <EndpointKeyEditor endpoint={endpoint} hasKey={keyedBases.includes(normalizeLoopbackBase(endpoint.baseUrl) ?? endpoint.baseUrl)} onChange={refreshKeyBases} />
                     </li>
                   );
                 })}
