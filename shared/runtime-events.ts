@@ -158,6 +158,11 @@ export type RuntimeEvent = RuntimeEventBase &
          * Used for exact-command grants; never reconstructed from a display
          * summary, tool title, or argv. Absent when either value is unknown. */
         command?: { command: string; cwd: string };
+        /** 2026-10-21 (parité R10, ligne 80): the app of this Mac a screen
+         * action acts on, as the SERVER read it (server/computer-app.ts),
+         * set only by the bus's publish gate; the bus drops any value an
+         * adapter put there. */
+        screenApp?: { label: string; bundleId: string; team: string };
         /** Absolute paths a file tool's permission request touches (Claude's
          * Read, Write, Edit, ...: file_path, notebook_path, or path, which
          * defaults to the working folder), resolved against the turn's

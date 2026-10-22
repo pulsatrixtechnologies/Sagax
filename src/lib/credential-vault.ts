@@ -87,7 +87,20 @@ export const importOnePasswordItem = (item: OnePasswordItem, domains?: string[])
   });
 
 const CARD = (botId: string, messageId: string) => `/api/bots/${encodeURIComponent(botId)}/vault-cards/${encodeURIComponent(messageId)}`;
-export const grantFromCard = (botId: string, messageId: string, threadId: string, mode: VaultGrantMode, choice: { itemId: string } | { item: VaultItemDraft }, addSite = false) =>
+/** 2026-10-21 (parité R10, ligne 82): a 1Password item a card offers for
+ * its site. Names, vault and sites only; the ids stay off the screen. */
+export interface CardOnePasswordItem {
+  vaultId: string;
+  itemId: string;
+  title: string;
+  vaultName: string;
+  domains: string[];
+}
+export const loadCardOnePassword = (botId: string, messageId: string, threadId: string) =>
+  api<{ available: boolean; onePassword: OnePasswordStatus; items: CardOnePasswordItem[] }>(`${CARD(botId, messageId)}/onepassword`, { method: "POST", body: JSON.stringify({ threadId }) });
+/** The key a card uses for a 1Password choice (never shown). */
+export const onePasswordChoiceKey = (item: Pick<CardOnePasswordItem, "vaultId" | "itemId">) => `op:${item.vaultId}:${item.itemId}`;
+export const grantFromCard = (botId: string, messageId: string, threadId: string, mode: VaultGrantMode, choice: { itemId: string } | { item: VaultItemDraft } | { onePassword: { vaultId: string; itemId: string } }, addSite = false) =>
   api<{ item: VaultItemListing }>(`${CARD(botId, messageId)}/grant`, { method: "POST", body: JSON.stringify({ threadId, mode, ...choice, ...(addSite ? { addSite: true } : {}) }) });
 /** The person signed in themselves in the bot's browser instead. */
 /** Arm the bot's browser before the person signs in there themselves. */

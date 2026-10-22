@@ -64,6 +64,12 @@ describe("VaultRequestCard", () => {
     expect(html).not.toContain("not shared");
   });
 
+  it("says a 1Password login was allowed for this one request (parité R10)", () => {
+    const html = view({ provided: true, resumed: true, vault: { principalId: "local", domain: "example.test", itemId: "abc", itemName: "Example work", mode: "once", onePassword: true } });
+    expect(html).toContain("Example work");
+    expect(html).toContain("1Password");
+  });
+
   it("offers to sign in yourself while pending", () => {
     expect(view()).toContain("sign in myself instead");
   });

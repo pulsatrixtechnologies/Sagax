@@ -29,6 +29,7 @@ import { approvalAction, describeApproval, parseArgs, parseToolId, type Approval
 import { sagaxFolder } from "../shared/human-id.ts";
 import { singleProgramOf } from "../shared/read-only-command.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
+import { screenAppTarget, type ScreenAppIdentity } from "../shared/computer-app.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
 
 export const BOT_PERMISSION_MODES = ["approval", "auto", "bypass"] as const;
@@ -84,6 +85,12 @@ export interface RuleCall {
    * reports it: an exact command is bound to it (`./deploy.sh` elsewhere is
    * another script). */
   cwd?: string;
+  /** 2026-10-21 (parité R10, ligne 80): the app a screen action of the
+   * person's own computer acts on, as the SERVER read it from the call's
+   * process id (server/computer-app.ts): its name, bundle id and signing
+   * team, never from the call's arguments.
+   * Set only for the person's own turn on their own computer. */
+  app?: ScreenAppIdentity;
 }
 
 /** `mcp__srv__tool` and `srv__tool` are one tool; a built-in keeps its name. */
@@ -205,9 +212,31 @@ export function wholeCallDigest(input: string | undefined): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 32);
 }
 
+/** The scope keys of an app rule: the name, bundle id and signing team the
+ * server read (review of #954: bound to the signature, not the folder). */
+export const APP_KEY = "app";
+export const APP_BUNDLE_KEY = "bundle";
+export const APP_TEAM_KEY = "team";
+const APP_KEYS = [APP_KEY, APP_BUNDLE_KEY, APP_TEAM_KEY] as const;
+/** The tool an app rule is kept under: it covers every screen action of
+ * that one app (see, click, type), never another app, never a call whose
+ * app the server did not read. */
+export const APP_RULE_TOOL = "computer_app";
+const MAX_APP_LABEL = 80;
+
 /** The call's scope, its shell folder included when the engine reports one. */
-export function callScopeFor(call: Pick<RuleCall, "input" | "cwd">): RuleScope {
+function appScope(app: ScreenAppIdentity): RuleScope | null {
+  const label = app.label.trim();
+  const bundle = app.bundleId.trim();
+  const team = app.team.trim();
+  if (!label || !bundle || !team || label.length > MAX_APP_LABEL || bundle.length > 255 || team.length > 40) return null;
+  return { [APP_KEY]: label, [APP_BUNDLE_KEY]: bundle, [APP_TEAM_KEY]: team };
+}
+
+export function callScopeFor(call: Pick<RuleCall, "input" | "cwd" | "app">): RuleScope {
   const scope = ruleScopeFor(call.input);
+  const app = call.app ? appScope(call.app) : null;
+  if (app) Object.assign(scope, app);
   const cwd = call.cwd?.trim();
   if (cwd && (scope.command !== undefined || scope.cmd !== undefined)) {
     // a folder Sagax made for this bot (a conversation's, a parallel task's,
@@ -263,7 +292,10 @@ function sameText(a: string, b: string): boolean {
 export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScope, destructive: DestructiveKind | undefined): boolean {
   if (!sameText(rule.ownerId, call.ownerId)) return false;
   if (rule.botId !== null && rule.botId !== call.botId) return false;
-  if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
+  if (rule.tool === APP_RULE_TOOL) {
+    // an app rule: a screen action whose app the server read, that same app
+    if (!APP_KEYS.every((key) => key in rule.scope) || !call.app || !screenAppTarget(call.tool, call.input)) return false;
+  } else if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
   if (rule.behavior === "allow" && Object.keys(rule.scope).length) {
     for (const key of Object.keys(callScope)) {
       if (STRICT_KEY_SET.has(key) && !(key in rule.scope) && !(PROGRAM_KEY in rule.scope && (key === "command" || key === "cmd"))) return false;
@@ -472,10 +504,19 @@ export function scopeRemembers(scope: RuleScope): boolean {
  *   additional permissions or network, requiresExplicitApproval) keeps the
  *   whole request even when it is an admin's card. */
 export function cardRuleCandidate(
-  call: { tool: string; input?: string; command?: string; cwd?: string },
+  call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
   situation: { from?: RuleSituation; held?: boolean },
   words: ApprovalWords = ENGLISH_WORDS,
 ): (RuleCandidate & { from?: RuleSituation }) | undefined {
+  // 2026-10-21 (parité R10, ligne 80): a screen action on the person's own
+  // computer whose app the server read keeps that app, never more: "Toujours
+  // permettre" then covers seeing, clicking and typing in that one app.
+  // Only an ordinary card: a held card, an admin's card and a turn that is
+  // not the person's own keep their own rule (review of R10).
+  const app = call.app && appScope(call.app) ? call.app : null;
+  if (app && situation.held !== true && situation.from === undefined && screenAppTarget(call.tool, call.input)) {
+    return appRuleCandidate(app, words);
+  }
   const input = ruleInputFor(call.input, call.command);
   if (input === undefined || !input.trim()) return undefined;
   const args = parseArgs(input);
@@ -488,6 +529,18 @@ export function cardRuleCandidate(
   });
   if (!scopeKeepable(candidate.scope) || !scopeRemembers(candidate.scope)) return undefined;
   return { ...candidate, ...(situation.from ? { from: situation.from } : {}) };
+}
+
+/** The rule "Toujours permettre" keeps for one app of this computer. */
+export function appRuleCandidate(identity: ScreenAppIdentity, words: ApprovalWords = ENGLISH_WORDS): RuleCandidate {
+  const key = "approval.rule.computerApp";
+  const app = identity.label.trim();
+  const worded = words.t(key, { app });
+  return {
+    tool: APP_RULE_TOOL,
+    scope: appScope(identity) ?? {},
+    description: (worded === key ? `Use ${app} on this computer (see it, click and type in it)` : worded).slice(0, 500),
+  };
 }
 
 export function isBotPermissionMode(value: unknown): value is BotPermissionMode {

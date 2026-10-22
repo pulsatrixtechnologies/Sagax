@@ -9818,5 +9818,16 @@
   "pages.readers.approved": "Shown under the page ({count})",
   "pages.readers.approve": "Approve this comment",
   "pages.admin.readerComments": "Reader comments",
-  "pages.admin.readerCommentsHint": "Lets people allow comments on their own pages (off on each page until they turn it on; every comment waits for their approval). Off: no page takes or shows reader comments."
+  "pages.admin.readerCommentsHint": "Lets people allow comments on their own pages (off on each page until they turn it on; every comment waits for their approval). Off: no page takes or shows reader comments.",
+  "vault.onePassword.stepsTitle": "To connect 1Password:",
+  "vault.onePassword.step1": "Install the 1Password app and the 1Password CLI (op).",
+  "vault.onePassword.step2": "In 1Password, open Settings > Developer and turn on \"Integrate with 1Password CLI\".",
+  "vault.onePassword.step3": "Unlock 1Password, then check again here.",
+  "vault.onePassword.recheck": "Check again",
+  "vault.onePassword.perRequest": "A bot's sign-in request shows your 1Password items for that site. Allow once covers that one request, and 1Password may ask you to approve when the bot fills it.",
+  "vault.onePassword.waiting": "Waiting for 1Password: approve the request in 1Password on your computer.",
+  "vault.card.inOnePassword": "In 1Password",
+  "vault.card.onePasswordPrivacy": "Read from 1Password only when the bot fills it, never added to chat. 1Password may ask you to approve.",
+  "approval.rule.computerApp": "Use {app} on this computer (see it, click and type in it)",
+  "approval.computerApp.line": "{name} can see {app}, click and type in it on this computer."
 }

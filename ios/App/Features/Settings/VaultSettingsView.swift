@@ -63,6 +63,13 @@ struct VaultSettingsView: View {
             }
             SettingsSectionLabel(text: "New card")
             SettingsCard {
+                // read on the phone from photos of the card (parité R10)
+                CardPhotoScanner { read in
+                    if let number = read.pan { pan = number }
+                    if let month = read.expMonth { expMonth = String(month) }
+                    if let year = read.expYear { expYear = String(year) }
+                    if let name = read.holder { holder = name }
+                }
                 VaultField(text: $cardName, prompt: "Name", identifier: "vault-card-name")
                 VaultField(text: $holder, prompt: "Name on the card", identifier: "vault-card-holder")
                 VaultField(text: $pan, prompt: "Card number", identifier: "vault-card-number", secure: true)

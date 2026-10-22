@@ -395,6 +395,18 @@ function OnePasswordCard({ data, onImported }: { data: CredentialVaultState; onI
       setBusy(false);
     }
   };
+  // 2026-10-21 (parité R10, ligne 41): check again after the person
+  // followed the steps (a fresh look, not the minute-old cached one).
+  const recheck = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await loadOnePasswordItems().catch(() => undefined);
+      await onImported();
+    } finally {
+      setBusy(false);
+    }
+  };
   const pick = async (item: OnePasswordItem) => {
     setBusy(true);
     setError(null);
@@ -411,6 +423,18 @@ function OnePasswordCard({ data, onImported }: { data: CredentialVaultState; onI
     <div data-settings-card="credentials.onePassword">
       <SettingsGroup title="1Password" groupId="credentials.onePassword">
         <SettingsTextRow>{subtitle}</SettingsTextRow>
+        {!status.available && (
+          <div className="flex flex-col gap-2 px-3.5 py-2.5 text-[13px]" data-onepassword-steps>
+            <span className="text-[12.5px] font-medium text-ink-secondary">{t("vault.onePassword.stepsTitle")}</span>
+            <ol className="ms-4 list-decimal text-[12.5px] leading-5 text-ink-secondary">
+              <li>{t("vault.onePassword.step1")}</li>
+              <li>{t("vault.onePassword.step2")}</li>
+              <li>{t("vault.onePassword.step3")}</li>
+            </ol>
+            <div className="flex justify-end"><button type="button" className={PILL} disabled={busy} onClick={() => void recheck()}>{t("vault.onePassword.recheck")}</button></div>
+          </div>
+        )}
+        {status.available && <SettingsTextRow>{t("vault.onePassword.perRequest")}</SettingsTextRow>}
         {status.available && (
           <div className="flex flex-col gap-2 px-3.5 py-2.5 text-[13px]">
             {items === null

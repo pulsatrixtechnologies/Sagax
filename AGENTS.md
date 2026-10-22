@@ -215,6 +215,66 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   (real computer, admin card), `server/cw-widgets.e2e.test.ts`,
   `server/owner-approval.test.ts`.
 
+## Advanced approvals: one app, 1Password per request, card photos (2026-10-21, parité R10)
+
+- **One app of this computer** (`shared/computer-app.ts`,
+  `server/computer-app.ts`, `server/owner-approval.ts` `APP_RULE_TOOL`): a
+  screen action of the host Mac ("this computer", server mount `computer`,
+  a desktop or a solo server on macOS, the person's own turn, the same bot
+  and live turn generation, never an admin's, a held or an origin card)
+  carries the app the SERVER read: `lsof -d txt` (the kernel's executable),
+  the outermost `.app` under /Applications, /System/Applications, the
+  Safari cryptex, CoreServices/Applications or ~/Applications, then the
+  RUNNING process's code signature (`codesign --verify <pid>`, Identifier
+  and team, cached 3 s; Apple's own apps are team `apple`). A gate that
+  throws publishes the event as it was (the card asks). The read is asynchronous: the bus holds that one
+  permission event (and the thread's later ones behind it) while it runs
+  (`EventBus.setPublishGate`, at most 3 s), and drops any `screenApp` an
+  adapter wrote. "Toujours permettre" keeps `{ app, bundle, team }` under
+  `computer_app`; a rule missing one of them matches nothing.
+- An app rule covers only input that lands in that app: background
+  delivery (never `delivery_mode: foreground`), no hotkey, no key with a
+  modifier other than shift, no argument outside the reviewed list (so
+  never `screenshot_out_file` or `debug_image_out`), a `window_id` only
+  when CoreGraphics says it is the pid's own window, and typing only into
+  the focused element once Accessibility says it is not a password field
+  (`FOCUS_SCRIPT`: attribute names as `$('AXRole')`, never bare JS strings;
+  with a `window_id`, that window must be the pid's frontmost), never into
+  an element picked by index or position, never a key combo written in
+  `key` ("cmd+q"). `launch_app` is
+  never covered. Unsigned apps, Sagax itself and the denied bundle ids and
+  names (`NO_APP_RULE_BUNDLES`, `NO_APP_RULE`: shells, editors, launchers
+  and automation, Finder and system tools, remote desktops, VMs and
+  containers, Tailscale, password managers, AI agents, Mail, Messages,
+  Slack, Teams) never get one. The card says "<bot> peut voir <app>, y
+  cliquer et y saisir du texte sur cet ordinateur". The desktop bridge of
+  an organization server, a Local VM and a cloud computer read no app.
+- **1Password per request**: the sign-in card (`VaultRequestCard`, iOS
+  `VaultLoginCardView`) lists the person's 1Password items of the card's
+  site (`POST /api/bots/:id/vault-cards/:msg/onepassword`, names, vault and
+  sites only, listing kept 30 s per person). A pick is checked again
+  against 1Password's own listing and saved once as a reference
+  (`findOnePassword`). A 1Password item is allowed ONCE only (card and
+  Settings refuse Always, `onepassword_once_only`; an Always saved before
+  is ignored by `activeGrants`), and once is one
+  sign-in: the grant ends `VAULT_SINGLE_USE_MS` (60 s) after its first
+  fill. The bot is never told the item's title ("a login from their
+  1Password"), in the note, the fill result or a refusal. The value is read from 1Password only at fill time; the
+  conversation shows "En attente de 1Password" (`ONE_PASSWORD_WAITING`).
+  iOS preselects only an item of the exact host. Never on an organization
+  server. Settings > Credentials guides the setup (CLI, integration, check
+  again).
+- **Card photos** (iOS, Settings > Vault > New card): one or two photos,
+  read on the phone (Vision); `CardScanReading` picks a Luhn-valid number
+  of ASCII digits, the latest expiry and the name. Nothing is uploaded,
+  kept or logged; the security code is typed. Desktop has no on-device
+  text reader yet.
+- Not done: a device tool on the phone (row 81): Sagax has no phone tools.
+- Tests: `shared/computer-app.test.ts`, `server/computer-app.test.ts`,
+  `server/harness/bus.test.ts` (publish gate), `server/owner-approval.test.ts`
+  (app rules), `server/routes/credential-vault.test.ts` (1Password per
+  request, once only, single use), `ios/Tests/CompanionCoreTests/VaultLoginCardTests.swift`.
+
 ## The Primary Bot answers the person's cards (2026-10-20)
 
 JC: "le bot principal doit pouvoir absolument tout faire" (Grok Bot

@@ -345,3 +345,12 @@ describe("groupTranscript", () => {
     ]);
   });
 });
+
+describe("1Password waiting row (parité R10)", () => {
+  it("is a notice in the reader's language", async () => {
+    const { ONE_PASSWORD_WAITING } = await import("../../shared/credential-vault");
+    const row = statusActivity({ id: "a", role: "bot", kind: "activity", at: 1, tool: { name: ONE_PASSWORD_WAITING, ok: true } } as Message);
+    expect(row?.kind).toBe("notice");
+    expect(row?.text).toContain("1Password");
+  });
+});

@@ -81,6 +81,12 @@ function isTerminalEvent(event: RuntimeEvent): boolean {
   return event.type === "runtime.error" && event.terminal === true;
 }
 
+/** Returns a promise of the event to publish (the same one, or a copy with
+ * a server-read field) to hold it, or null to publish it now. The promise
+ * must settle quickly; a rejection publishes the event as it was. */
+export const GATE_MAX_MS = 3_000;
+export type PublishGate = (event: RuntimeEvent) => Promise<RuntimeEvent> | null;
+
 export class EventBus {
   private listeners = new Set<RuntimeEventListener>();
   private unsubscribes = new Map<string, () => void>();
@@ -117,7 +123,55 @@ export class EventBus {
     }
   }
 
+  /** 2026-10-21 (parité R10, ligne 80): a gate that may hold one event while
+   * it reads something asynchronously (the app of a screen action), so no
+   * subscriber ever blocks on it. While an event of a thread is held, later
+   * events of that thread wait behind it, in order. */
+  private gate: PublishGate | null = null;
+  private held = new Map<string, RuntimeEvent[]>();
+
+  setPublishGate(gate: PublishGate | null): void {
+    this.gate = gate;
+  }
+
   publish(event: RuntimeEvent) {
+    // only the gate sets screenApp: whatever an adapter wrote there is dropped
+    if (event.type === "request.opened" && "screenApp" in event) {
+      const { screenApp: _dropped, ...clean } = event;
+      event = clean as RuntimeEvent;
+    }
+    const waiting = this.held.get(event.threadId);
+    if (waiting) {
+      waiting.push(event);
+      return;
+    }
+    // a gate that throws publishes the event as it was (review of #954):
+    // without the server's reading, the card simply asks
+    let hold: Promise<RuntimeEvent> | null = null;
+    try {
+      hold = this.gate?.(event) ?? null;
+    } catch {
+      hold = null;
+    }
+    if (hold) {
+      const queue: RuntimeEvent[] = [];
+      this.held.set(event.threadId, queue);
+      const release = (resolved: RuntimeEvent) => {
+        if (this.held.get(event.threadId) !== queue) return;
+        this.held.delete(event.threadId);
+        this.publishNow(resolved);
+        for (const next of queue) this.publish(next);
+      };
+      // never longer than GATE_MAX_MS: past it the event goes as it was
+      const timer = setTimeout(() => release(event), GATE_MAX_MS);
+      timer.unref?.();
+      hold.then((resolved) => { clearTimeout(timer); release(resolved); }, () => { clearTimeout(timer); release(event); });
+      return;
+    }
+    this.publishNow(event);
+  }
+
+  private publishNow(event: RuntimeEvent) {
     const pending = this.pendingText.get(event.threadId);
     if (event.type === "content.delta") {
       if (pending && sameStream(pending.event, event)) {

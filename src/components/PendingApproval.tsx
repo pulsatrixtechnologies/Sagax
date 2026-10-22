@@ -486,6 +486,16 @@ export function PendingApprovalActions({
       {t("approval.action.alwaysAllow")}
     </button>
   ) : null;
+  // 2026-10-21 (parité R10, ligne 80): a screen action on the person's own
+  // computer whose app the server read says which app, and what Always
+  // allow then covers ("Katarina peut voir Safari, y cliquer et y saisir du
+  // texte sur cet ordinateur").
+  const computerApp = ownerRule?.tool === "computer_app" && typeof ownerRule.scope?.app === "string" ? ownerRule.scope.app : null;
+  const appLine = computerApp ? (
+    <span className="min-w-0 text-[12.5px] leading-5 text-ink-secondary" data-computer-app="">
+      {t("approval.computerApp.line", { name: bot?.name ?? t("approval.someone"), app: computerApp })}
+    </span>
+  ) : null;
   if (variant === "inbox") {
     // Yes and No side by side, as large as the panel allows: green allows
     // exactly what the card shows, red declines it. The grants that last
@@ -493,6 +503,7 @@ export function PendingApprovalActions({
     const big = "flex min-h-14 flex-1 flex-col items-center justify-center rounded-2xl px-4 py-2.5 transition-[filter,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-40";
     return (
       <div className="flex flex-col gap-3 px-5 pb-5 pt-3" data-approval-actions="inbox">
+        {appLine}
         <div className="flex gap-3">
           <button
             type="button"
@@ -528,6 +539,7 @@ export function PendingApprovalActions({
   }
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-2">
+      {appLine}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"

@@ -317,6 +317,9 @@ public struct SecretRequestCardData: Codable, Hashable, Sendable {
     public var error: String?
     /// A newer request for the same key replaced this one.
     public var superseded: Bool? = nil
+    /// A bot's sign-in request (target "vaultLogin"): the site and, once
+    /// answered, the login chosen (VaultLoginCard.swift).
+    public var vault: VaultRequestPublic? = nil
 
     public var isPending: Bool { provided != true && dismissed != true && superseded != true }
 }

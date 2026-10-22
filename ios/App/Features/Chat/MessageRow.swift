@@ -230,7 +230,10 @@ struct MessageRow: View {
         case .secret:
             if let secret = message.secret {
                 // A decline that resumed leaves nothing to show (SecretRequestCard.tsx).
-                if !SecretCardRules.isHidden(secret) {
+                if VaultLoginCard.isVaultLogin(secret) {
+                    // a bot's sign-in request: saved logins and 1Password (parité R10)
+                    VaultLoginCardView(chat: chat, message: message, secret: secret)
+                } else if !SecretCardRules.isHidden(secret) {
                     CredentialRequestCardView(chat: chat, message: message, secret: secret)
                 }
             } else if let text = message.text, !text.isEmpty {

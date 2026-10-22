@@ -7,11 +7,15 @@
 // The person may also sign in themselves in the bot's browser and press
 // Done (port of OpenMausBot #2707 and #2929, on Sagax's vault card). Once
 // answered the card folds into one line.
+// 2026-10-21 (parité R10, ligne 82): the card also offers the person's
+// 1Password items for the site ("Dans 1Password", the item's name and vault,
+// never an id or a value). Allow once is that one request; 1Password may ask
+// for its own approval when the bot fills it.
 import { useEffect, useState, type FormEvent } from "react";
 import { Check, Globe, KeyRound, Loader2, LockKeyhole, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { createCredentialDraft, dismissCard, grantFromCard, loadCredentials, matchingItems, parseDomains, selfStartFromCard, selfStatusFromCard, signedInFromCard, type VaultItemListing } from "@/lib/credential-vault";
+import { createCredentialDraft, dismissCard, grantFromCard, loadCardOnePassword, loadCredentials, matchingItems, onePasswordChoiceKey, parseDomains, selfStartFromCard, selfStatusFromCard, signedInFromCard, type CardOnePasswordItem, type VaultItemListing } from "@/lib/credential-vault";
 import { t } from "@/lib/i18n";
 import { useStore, type Message } from "@/state/store";
 import { siteAddable, type VaultGrantMode } from "../../shared/credential-vault";
@@ -27,6 +31,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
   const botName = message.from?.name ?? state.bots.find((bot) => bot.id === botId)?.name ?? t("vault.card.thisBot");
   const settled = secret.provided === true || secret.dismissed === true || secret.superseded === true;
   const [items, setItems] = useState<VaultItemListing[] | null>(null);
+  const [onePasswordItems, setOnePasswordItems] = useState<CardOnePasswordItem[]>([]);
   const [choice, setChoice] = useState<string>("");
   // The site field starts empty: the bot chose the name it asked for, and a
   // look-alike must be typed by the person, not accepted with one click.
@@ -52,8 +57,13 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
         setChoice(matches[0]?.id ?? NEW);
       })
       .catch((failure) => { if (live) { setItems([]); setChoice(NEW); setError(failure instanceof Error ? failure.message : String(failure)); } });
+    // 1Password's own items for this site, when 1Password is on this
+    // computer. Silent when it is not: the card works without it.
+    loadCardOnePassword(botId, message.id, threadId)
+      .then((answer) => { if (live && answer.available) setOnePasswordItems(answer.items); })
+      .catch(() => {});
     return () => { live = false; };
-  }, [settled, request]);
+  }, [settled, request, botId, message.id, threadId]);
 
   useEffect(() => {
     if (!selfSignIn || settled) return;
@@ -97,6 +107,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
         detail={secret.error && <p role="alert" className="ms-[19px] mt-1 text-[12px] text-danger">{secret.error}</p>}
       >
         <span className="text-ink-secondary">{t("vault.card.allowed", { name: request.itemName ?? site })}</span>
+        {request.onePassword && <span> · 1Password</span>}
         <span> · {how}</span>
       </AskSettledLine>
     );
@@ -108,10 +119,13 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
     setBusy(true);
     setError(null);
     try {
-      const target = choice === NEW
-        ? { item: createCredentialDraft({ ...draft, domains: parseDomains(draft.domains) }) }
-        : { itemId: choice };
-      await grantFromCard(botId, message.id, threadId, mode, target, mode === "always" && choice !== NEW && addSite && canAddSite);
+      const fromOnePassword = onePasswordItems.find((item) => onePasswordChoiceKey(item) === choice);
+      const target = fromOnePassword
+        ? { onePassword: { vaultId: fromOnePassword.vaultId, itemId: fromOnePassword.itemId } }
+        : choice === NEW
+          ? { item: createCredentialDraft({ ...draft, domains: parseDomains(draft.domains) }) }
+          : { itemId: choice };
+      await grantFromCard(botId, message.id, threadId, mode, target, !fromOnePassword && mode === "always" && choice !== NEW && addSite && canAddSite);
       setDraft((current) => ({ ...current, password: "", totpSeed: "" }));
       returnFocusToComposer();
     } catch (failure) {
@@ -122,6 +136,11 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
   };
   const decline = () => { void dismissCard(botId, message.id, threadId).catch(() => {}); };
   const chosen = items?.find((item) => item.id === choice);
+  const onePasswordChosen = onePasswordItems.some((item) => onePasswordChoiceKey(item) === choice);
+  // a 1Password item already saved in the vault under the same name is
+  // shown once, as the saved login
+  const savedNames = new Set((items ?? []).filter((item) => item.source === "1password").map((item) => item.name.toLowerCase()));
+  const onePasswordShown = onePasswordItems.filter((item) => !savedNames.has(item.title.toLowerCase()));
   // Only another address of the chosen login's own site, never a look-alike
   // or a shared hosting name (the server checks the same: siteAddable).
   const canAddSite = Boolean(chosen && siteAddable(chosen.domains, request.domain));
@@ -203,7 +222,29 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
               {t("vault.card.newLogin")}
             </button>
           </div>
-          {choice !== NEW && request.domain && canAddSite && (
+          {onePasswordShown.length > 0 && (
+            <div className="flex flex-col gap-1.5" data-vault-onepassword>
+              <span className="text-[11.5px] font-medium text-ink-tertiary">{t("vault.card.inOnePassword")}</span>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t("vault.card.inOnePassword")}>
+                {onePasswordShown.map((item) => {
+                  const key = onePasswordChoiceKey(item);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="radio"
+                      aria-checked={choice === key}
+                      onClick={() => { setChoice(key); setAddSite(false); }}
+                      className={cn(ASK_CHIP, choice === key ? ASK_CHIP_PICKED : ASK_CHIP_IDLE)}
+                    >
+                      <span className="truncate">{item.title}{item.vaultName ? ` · ${item.vaultName}` : ""}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {choice !== NEW && !onePasswordChosen && request.domain && canAddSite && (
             <label className="flex items-start gap-2 text-[12px] leading-relaxed text-ink-secondary" data-vault-add-site>
               <input type="checkbox" checked={addSite} disabled={busy} onChange={(event) => setAddSite(event.target.checked)} className="mt-0.5" />
               <span>{t("vault.card.alsoFill", { site: request.domain, sites: chosen?.domains.join(", ") ?? "" })}</span>
@@ -232,12 +273,15 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
               {busy ? <Loader2 size={14} className="animate-spin" /> : <LockKeyhole size={14} />}
               {t("vault.card.allowOnce")}
             </button>
-            <button type="button" disabled={busy || !choice} onClick={() => void grant("always")} className={cn(ASK_CHIP, ASK_CHIP_IDLE)}>
-              {t("vault.card.allowAlways", { bot: botName })}
-            </button>
+            {/* a 1Password item: this request only (review of #954) */}
+            {!onePasswordChosen && chosen?.source !== "1password" && (
+              <button type="button" disabled={busy || !choice} onClick={() => void grant("always")} className={cn(ASK_CHIP, ASK_CHIP_IDLE)} data-vault-always>
+                {t("vault.card.allowAlways", { bot: botName })}
+              </button>
+            )}
           </div>
           <span className="flex items-center gap-1 text-[11.5px] text-ink-tertiary">
-            <LockKeyhole size={11} /> {t("vault.card.privacy")}
+            <LockKeyhole size={11} /> {t(onePasswordChosen || chosen?.source === "1password" ? "vault.card.onePasswordPrivacy" : "vault.card.privacy")}
           </span>
         </form>
       )}

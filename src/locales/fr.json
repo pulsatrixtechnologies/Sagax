@@ -9818,5 +9818,16 @@
   "pages.readers.approved": "Affichés sous la page ({count})",
   "pages.readers.approve": "Approuver ce commentaire",
   "pages.admin.readerComments": "Commentaires des lecteurs",
-  "pages.admin.readerCommentsHint": "Permet aux personnes d'accepter des commentaires sur leurs pages (désactivés sur chaque page tant qu'elles ne les activent pas; chaque commentaire attend leur approbation). Désactivé : aucune page ne reçoit ni n'affiche de commentaires de lecteurs."
+  "pages.admin.readerCommentsHint": "Permet aux personnes d'accepter des commentaires sur leurs pages (désactivés sur chaque page tant qu'elles ne les activent pas; chaque commentaire attend leur approbation). Désactivé : aucune page ne reçoit ni n'affiche de commentaires de lecteurs.",
+  "vault.onePassword.stepsTitle": "Pour connecter 1Password :",
+  "vault.onePassword.step1": "Installe l'app 1Password et la CLI 1Password (op).",
+  "vault.onePassword.step2": "Dans 1Password, ouvre Réglages > Développeur et active « Intégrer avec la CLI 1Password ».",
+  "vault.onePassword.step3": "Déverrouille 1Password, puis vérifie de nouveau ici.",
+  "vault.onePassword.recheck": "Vérifier de nouveau",
+  "vault.onePassword.perRequest": "Une demande de connexion d'un bot montre tes éléments 1Password pour ce site. Permettre une fois vaut pour cette demande seulement, et 1Password peut te demander d'approuver au moment du remplissage.",
+  "vault.onePassword.waiting": "En attente de 1Password : approuve la demande dans 1Password sur ton ordinateur.",
+  "vault.card.inOnePassword": "Dans 1Password",
+  "vault.card.onePasswordPrivacy": "Lu dans 1Password seulement au remplissage, jamais ajouté à la conversation. 1Password peut te demander d'approuver.",
+  "approval.rule.computerApp": "Utiliser {app} sur cet ordinateur (voir, cliquer et saisir du texte)",
+  "approval.computerApp.line": "{name} peut voir {app}, y cliquer et y saisir du texte sur cet ordinateur."
 }

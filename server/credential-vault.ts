@@ -28,6 +28,7 @@ import {
   VAULT_GRANT_MODES,
   VAULT_ITEM_KINDS,
   VAULT_ONCE_GRANT_MS,
+  VAULT_SINGLE_USE_MS,
   itemIdFromHandle,
   vaultHandle,
   normalizeVaultDomain,
@@ -72,6 +73,11 @@ const grantSchema = z.object({
   threadId: z.string().regex(THREAD_ID).optional(),
   grantedAt: z.number(),
   expiresAt: z.number().optional(),
+  /** 2026-10-21 (review of #954): a 1Password item allowed once is one
+   * sign-in, not 15 minutes: its first fill starts a short window
+   * (VAULT_SINGLE_USE_MS) for that sign-in's steps, then it is gone. */
+  singleUse: z.boolean().optional(),
+  usedAt: z.number().optional(),
 }).strict();
 
 const onePasswordRefSchema = z.object({
@@ -263,7 +269,16 @@ function domainsFrom(value: unknown): string[] {
 }
 
 function activeGrants(item: StoredVaultItem, now: number): StoredVaultItem["grants"] {
+  // a 1Password item is allowed once only (review of #954): an Always saved
+  // before that rule answers nothing and is dropped at the next write
+  if (item.source === "1password") return item.grants.filter((grant) => grant.mode === "once" && (grant.expiresAt ?? 0) > now);
   return item.grants.filter((grant) => grant.mode === "always" || (grant.expiresAt ?? 0) > now);
+}
+
+/** How the bot is told about an item: a 1Password item's own title never
+ * reaches it (review of #954), in a refusal or a result. */
+function botName(item: StoredVaultItem): string {
+  return item.source === "1password" ? "this 1Password login" : `"${item.name}"`;
 }
 
 export function listingOf(item: StoredVaultItem, now: number = Date.now()): VaultItemListing {
@@ -390,6 +405,14 @@ export class CredentialVault {
     return item ? listingOf(item, this.now()) : null;
   }
 
+  /** 2026-10-21 (parité R10, ligne 82): the reference already saved for this
+   * 1Password item, so a card that picks it again reuses it. */
+  findOnePassword(principalId: string, ref: OnePasswordRef): VaultItemListing | null {
+    const found = Object.values(this.load(principalId).items).find((item) => item.source === "1password"
+      && item.onePassword?.via === ref.via && item.onePassword.vaultId === ref.vaultId && item.onePassword.itemId === ref.itemId);
+    return found ? listingOf(found, this.now()) : null;
+  }
+
   /** The owner's own look at a note (Settings > Credentials, "Show"). */
   revealNotes(principalId: string, itemId: string): string {
     const item = this.load(principalId).items[itemId];
@@ -445,7 +468,7 @@ export class CredentialVault {
 
   /** once: this conversation for VAULT_ONCE_GRANT_MS. always: the bot,
    * anywhere, until revoked. A new grant replaces the bot's earlier one. */
-  grant(principalId: string, itemId: string, grant: { botId: string; mode: VaultGrantMode; threadId?: string }): VaultItemListing {
+  grant(principalId: string, itemId: string, grant: { botId: string; mode: VaultGrantMode; threadId?: string; singleUse?: boolean }): VaultItemListing {
     if (!BOT_ID.test(grant.botId)) throw new CredentialVaultError("invalid bot", "invalid_bot");
     if (grant.mode === "once" && !(grant.threadId && THREAD_ID.test(grant.threadId))) {
       throw new CredentialVaultError("A one-time grant needs its conversation", "invalid_thread");
@@ -457,7 +480,7 @@ export class CredentialVault {
       const kept = activeGrants(item, now).filter((row) => !(row.botId === grant.botId && (grant.mode === "always" || row.threadId === grant.threadId)));
       kept.push(grant.mode === "always"
         ? { botId: grant.botId, mode: "always", grantedAt: now }
-        : { botId: grant.botId, mode: "once", threadId: grant.threadId!, grantedAt: now, expiresAt: now + VAULT_ONCE_GRANT_MS });
+        : { botId: grant.botId, mode: "once", threadId: grant.threadId!, grantedAt: now, expiresAt: now + VAULT_ONCE_GRANT_MS, ...(grant.singleUse ? { singleUse: true } : {}) });
       item.grants = kept;
       return listingOf(item, now);
     });
@@ -522,14 +545,14 @@ export class CredentialVault {
     if (!item) return { ok: false, code: "unknown_item", message: "No saved credential has this handle. Call request_login to ask the person for one." };
     if (isPaymentFillField(request.field)) return this.resolvePayment(principalId, item, { ...request, field: request.field });
     if (!this.granted(principalId, item.id, request.botId, request.threadId)) {
-      return { ok: false, code: "not_granted", message: `You are not allowed to use "${item.name}" here. Call request_login so the person can allow it.` };
+      return { ok: false, code: "not_granted", message: `You are not allowed to use ${botName(item)} here. Call request_login so the person can allow it.` };
     }
     if (!item.domains.length || !vaultDomainMatches(item.domains, request.pageUrl)) {
       // The page's host, as the bot can name it to request_login: the person
       // then decides on the card whether this login also fills there.
       let host = "";
       try { host = new URL(request.pageUrl).host; } catch { host = ""; }
-      return { ok: false, code: "wrong_origin", message: `"${item.name}" is only filled on ${item.domains.join(", ") || "its own sites"} over https, and this page is not one of them. Nothing was filled.${host ? ` If this is where the same account signs in, call request_login with domain ${host} so the person can allow it there.` : ""}` };
+      return { ok: false, code: "wrong_origin", message: `${botName(item)} is only filled on ${item.domains.join(", ") || "its own sites"} over https, and this page is not one of them. Nothing was filled.${host ? ` If this is where the same account signs in, call request_login with domain ${host} so the person can allow it there.` : ""}` };
     }
     let value: string | null = null;
     if (item.source === "1password" && item.onePassword && request.field !== "totp") {
@@ -549,7 +572,7 @@ export class CredentialVault {
         try { value = await readOnePassword(item.onePassword, "totp"); } catch { value = null; }
       }
     }
-    if (!value) return { ok: false, code: "no_value", message: `"${item.name}" has no ${request.field === "totp" ? "one-time code" : request.field} saved. Nothing was filled.` };
+    if (!value) return { ok: false, code: "no_value", message: `${botName(item)} has no ${request.field === "totp" ? "one-time code" : request.field} saved. Nothing was filled.` };
     const now = this.now();
     try {
       this.mutate(principalId, (items) => {
@@ -558,6 +581,13 @@ export class CredentialVault {
           current.lastUsedAt = now;
           current.lastUsedBy = request.botId;
           current.grants = activeGrants(current, now);
+          // a single-use grant: this sign-in's window starts at its first fill
+          for (const row of current.grants) {
+            if (row.singleUse && row.usedAt === undefined && row.botId === request.botId && row.threadId === request.threadId) {
+              row.usedAt = now;
+              row.expiresAt = Math.min(row.expiresAt ?? now, now + VAULT_SINGLE_USE_MS);
+            }
+          }
         }
       });
     } catch {
@@ -933,7 +963,8 @@ export function fillResolverFor(
   return {
     async resolve(request) {
       const resolved = await vault.resolveForFill(context.principalId, { ...request, botId: context.botId, threadId: context.threadId }, readOnePassword);
-      return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.name } : { ok: false, message: resolved.message, code: resolved.code };
+      // a 1Password item's own title never reaches the bot (review of #954)
+      return resolved.ok ? { ok: true, value: resolved.value, label: resolved.item.source === "1password" ? "a 1Password login" : resolved.item.name } : { ok: false, message: resolved.message, code: resolved.code };
     },
     armed: () => vault.armed(context.principalId, context.botId, context.threadId),
     requestPurchase(input) {

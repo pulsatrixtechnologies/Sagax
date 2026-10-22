@@ -104,7 +104,7 @@ import {
   isCredentialTargetId,
   type CredentialTargetId,
 } from "../shared/credential-request.ts";
-import { VAULT_LOGIN_TARGET } from "../shared/credential-vault.ts";
+import { VAULT_LOGIN_TARGET, ONE_PASSWORD_WAITING } from "../shared/credential-vault.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import { OnePassword } from "./onepassword.ts";
 import { createCredentialVaultRoutes, vaultPrincipalFor } from "./routes/credential-vault.ts";
@@ -343,6 +343,8 @@ import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSI
 import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
+import { ComputerAppReader } from "./computer-app.ts";
+import { appRuleOffered } from "../shared/computer-app.ts";
 import { cardRuleCandidate, matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
@@ -6641,7 +6643,51 @@ const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
 // off on an organization server.
 const credentialVault = new CredentialVault(DATA_DIR, vaultKeySource);
 const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax" });
+/** 2026-10-21 (parité R10, ligne 80): the app a screen action of this Mac
+ * acts on (server/computer-app.ts), and the turns whose mounted computer is
+ * this Mac itself ("this computer"), the only place a process id is ours. */
+const computerApps = new ComputerAppReader();
+const hostScreenTurns = new Map<string, { botId: string; generation: string }>();
+/** Whether this turn of this bot mounted this Mac itself as its computer:
+ * the same bot, the same live turn generation (a late event of an earlier
+ * Local VM or cloud turn never reads a pid as ours). */
+function hostScreenTurn(botId: string, threadId: string): boolean {
+  const entry = hostScreenTurns.get(threadId);
+  return Boolean(entry && entry.botId === botId && directTurnGenerationByThread.get(threadId) === entry.generation);
+}
+/** Review of #954: the app is read asynchronously, before any subscriber
+ * sees the permission event (the bus holds that one event, and the thread's
+ * later ones behind it), and only for a call an app rule could cover, on
+ * this Mac, in the person's own turn, while Always allow is on. No child
+ * process ever runs inside the approval path. */
+bus.setPublishGate((event) => {
+  if (event.type !== "request.opened" || event.requestType !== "permission" || event.questions?.length || cfg.organization) return null;
+  const entry = hostScreenTurns.get(event.threadId);
+  if (!entry || !hostScreenTurn(entry.botId, event.threadId)) return null;
+  const tool = event.mcpTool ?? event.tool;
+  const input = typeof event.input === "string" ? event.input : undefined;
+  if (!/^(?:mcp__)?computer__/i.test(tool ?? "") || !computerApps.candidate(tool, input) || !standingGrantsAllowed()) return null;
+  const bot = store.bot(entry.botId);
+  if (!bot || ownEnvironmentOrigin(bot, event.threadId) !== "owner") return null;
+  return computerApps.identify(tool, input).then((app) => (app ? { ...event, screenApp: app } : event));
+});
 const readOnePasswordField = (ref: Parameters<OnePassword["readField"]>[0], field: Parameters<OnePassword["readField"]>[1]) => onePassword.readField(ref, field);
+/** 2026-10-21 (parité R10, ligne 82): a fill that reads 1Password says so in
+ * the conversation ("Waiting for 1Password"), since 1Password may ask the
+ * person to approve on their computer first. Once per fill (20 s), never
+ * the item's name, never a value. */
+const onePasswordWaitNoted = new Map<string, number>();
+function onePasswordReaderFor(threadId: string): typeof readOnePasswordField {
+  return (ref, field) => {
+    const now = Date.now();
+    if (now - (onePasswordWaitNoted.get(threadId) ?? 0) > 20_000) {
+      onePasswordWaitNoted.set(threadId, now);
+      if (onePasswordWaitNoted.size > 500) onePasswordWaitNoted.clear();
+      store.appendMessage(threadId, { role: "bot", kind: "activity", tool: { name: ONE_PASSWORD_WAITING, ok: true } });
+    }
+    return readOnePasswordField(ref, field);
+  };
+}
 /** Whose vault a turn on this conversation reads: the one local vault on a
  * desktop or a solo server; on an organization server the person the turn
  * speaks for, or a routine's owner. Null when there is nobody to ask. */
@@ -13812,6 +13858,7 @@ function releaseLocalVmThread(threadId: string): void {
   // here or through releaseTurnResources, so a turn that ends before its
   // first screen call leaves no claim slot behind.
   autoVmClaims.delete(threadId);
+  hostScreenTurns.delete(threadId);
   const target = localVmThreadTargets.get(threadId);
   if (!target) return;
   // Renew affinity at settlement so a turn that consumed part of the TTL
@@ -14553,8 +14600,20 @@ bus.subscribe((event: RuntimeEvent) => {
       // engine's shell line included when it reports one beside no input
       // (Codex, the ACP engines): never an empty scope
       const ruleInput = ruleInputFor(typeof event.input === "string" ? event.input : undefined, event.command?.command);
+      // 2026-10-21 (parité R10, ligne 80): a screen action of this Mac, from
+      // the person's own turn, names the app it acts on as the server reads
+      // it (never the model's words); "Toujours permettre" then keeps that
+      // app (owner-approval.ts appRuleCandidate). Never on an organization
+      // server, a guest's turn, someone else's environment or an admin's
+      // card, and never for a shell, the settings or a password manager.
+      const screenApp = permission && asker && event.requestId && !cfg.organization && !guestDriven && !foreignDestination && !strictCard
+        && hostScreenTurn(asker.id, event.threadId) && /^(?:mcp__)?computer__/i.test(ownerTool)
+        && ownEnvironmentOrigin(asker, event.threadId) === "owner"
+        ? event.screenApp
+        : undefined;
+      const offeredApp = screenApp && appRuleOffered(screenApp) ? screenApp : undefined;
       const ownerCall = ownerLayer && asker
-        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
+        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}), ...(offeredApp ? { app: offeredApp } : {}) }
         : null;
       // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
       // bypass) and Always allow rules never answer what Sagax itself would
@@ -14688,6 +14747,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           ...(event.command?.command ? { command: event.command.command } : {}),
           ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
+          ...(offeredApp && !strictCall ? { app: offeredApp } : {}),
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -19895,6 +19955,8 @@ async function startTurn(
       // computer; then the built-in browser stays unmounted and web work
       // happens in that computer's own browser, where the person can see it.
       const mountedComputer = surfaceOfComputerKind(computerKind);
+      if (computerKind === "local") hostScreenTurns.set(threadId, { botId: bot.id, generation: dispatchClaimId });
+      else hostScreenTurns.delete(threadId);
       if (
         liveBot &&
         plan.browser &&
@@ -36820,7 +36882,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // this bot and this conversation (server/credential-fill.ts).
         const vaultPrincipal = vaultPrincipalForThread(internalCapability.threadId);
         const credentials = vaultPrincipal
-          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, readOnePasswordField)
+          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, onePasswordReaderFor(internalCapability.threadId))
           : undefined;
         const beforeDispatch = () => {
           requireActiveInternalCapability();

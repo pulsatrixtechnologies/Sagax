@@ -11,7 +11,8 @@
 //   POST   /api/me/credentials/onepassword/import { via, vaultId, itemId, name?, domains? }
 //   POST   /api/me/credentials/import   { format, duplicates: merge|skip, items }  items the app read from a file
 //   POST   /api/me/credentials/export   { format, acknowledge: "plaintext", stepUp? } -> { items, onePassword }
-//   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item, mode, addSite? }
+//   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item | onePassword, mode, addSite? }
+//   POST   /api/bots/:botId/vault-cards/:messageId/onepassword { threadId } the 1Password items of the card's site
 //   POST   /api/bots/:botId/vault-cards/:messageId/dismiss { threadId }
 //   POST   /api/bots/:botId/vault-cards/:messageId/self-start { threadId } arm the bot's browser for the person
 //   POST   /api/bots/:botId/vault-cards/:messageId/self-status { threadId } { armed } for the card
@@ -116,7 +117,8 @@ function importItem(raw: unknown): VaultTransferItem | null {
 }
 
 const ITEM = /^\/api\/me\/credentials\/([a-z0-9]{8,40})(?:\/(notes|grants)(?:\/([\w-]{1,128}))?)?$/;
-const CARD = /^\/api\/bots\/([\w-]+)\/vault-cards\/([\w-]+)\/(grant|dismiss|self-start|self-status|signed-in)$/;
+const CARD = /^\/api\/bots\/([\w-]+)\/vault-cards\/([\w-]+)\/(grant|dismiss|self-start|self-status|signed-in|onepassword)$/;
+const OP_ID = /^[a-z0-9]{1,64}$/i;
 
 function refusal(error: unknown): { status: number; body: Record<string, unknown> } | null {
   if (error instanceof CredentialVaultError) return { status: error.status, body: { error: error.message, code: error.code } };
@@ -129,9 +131,15 @@ function refusal(error: unknown): { status: number; body: Record<string, unknown
  * sites and the fields; never a value. */
 export function grantedNote(item: VaultItemListing, mode: VaultGrantMode): string {
   const fields = [item.username ? "username" : "", item.hasPassword ? "password" : "", item.hasTotp ? "totp" : "", item.hasApiKey ? "apiKey" : ""].filter(Boolean);
-  return `Sagax credential update: the person allowed you to use the saved login "${item.name}", handle ${vaultHandle(item.id)}, on ${item.domains.join(", ")}` +
-    `${mode === "once" ? " in this conversation for the next 15 minutes" : ""}. Fields: ${fields.join(", ") || "none"}. ` +
-    "Continue the task: in the browser, call fill_credential with this handle and field login to sign in (or one field at a time). You never receive the value, and must not ask for it in chat.";
+  // a 1Password item: its own title never reaches the bot, and once is one
+  // sign-in (review of #954)
+  const onePassword = item.source === "1password";
+  const what = onePassword ? "a login from their 1Password" : `the saved login "${item.name}"`;
+  const when = mode !== "once" ? "" : onePassword ? " for one sign-in in this conversation (it ends a minute after your first fill)" : " in this conversation for the next 15 minutes";
+  return `Sagax credential update: the person allowed you to use ${what}, handle ${vaultHandle(item.id)}, on ${item.domains.join(", ")}` +
+    `${when}. Fields: ${fields.join(", ") || "none"}. ` +
+    "Continue the task: in the browser, call fill_credential with this handle and field login to sign in (or one field at a time). You never receive the value, and must not ask for it in chat." +
+    (item.source === "1password" ? " This login lives in 1Password: at the fill, 1Password may ask the person to approve on their computer; if the fill says 1Password did not answer, tell them and wait, never ask for the password." : "");
 }
 
 /** What the bot is told after the person signed in themselves in its
@@ -185,6 +193,23 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
           if (refused) return json(res, 409, { error: refused, code: "browser_not_clean" });
           return json(res, 200, { armed: true });
         }
+        // 2026-10-21 (parité R10, ligne 82): the person's 1Password items for
+        // the card's site (names, vaults and sites only), so a request is
+        // answered from 1Password itself: Allow once is that one request
+        // (this conversation, 15 minutes), and the value is read from
+        // 1Password only at fill time, where 1Password asks for its own
+        // approval. Never on an organization server (status "organization").
+        if (action === "onepassword") {
+          const status = await deps.onePassword.status();
+          if (!status.available || !status.via) return json(res, 200, { available: false, onePassword: status, items: [] });
+          const site = secret.vault.domain;
+          const items = site ? await deps.onePassword.itemsForSite(site, principalId) : [];
+          return json(res, 200, {
+            available: true,
+            onePassword: status,
+            items: items.map((item) => ({ vaultId: item.vaultId, itemId: item.id, title: item.title, vaultName: item.vaultName, domains: item.domains, category: item.category })),
+          });
+        }
         if (action === "self-status") {
           // Whether the browser is still armed for the person (a restart of
           // Sagax, 30 minutes, a replaced card end it): the card says so.
@@ -211,7 +236,30 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         if (input.addSite === true && mode !== "always") return json(res, 400, { error: "A site is added to a login only with Always: a one-time grant changes nothing for good.", code: "add_site_once" });
         if (input.addSite === true && typeof input.itemId !== "string") return json(res, 400, { error: "Type the sites of a new login yourself.", code: "invalid_domains" });
         let item: VaultItemListing | null;
-        if (typeof input.itemId === "string") item = deps.vault.item(principalId, input.itemId);
+        const fromOnePassword = input.onePassword && typeof input.onePassword === "object" && !Array.isArray(input.onePassword) ? input.onePassword as Record<string, unknown> : null;
+        if (fromOnePassword) {
+          // A 1Password item picked on the card: checked against 1Password's
+          // own listing for this site, saved once as a reference (no value),
+          // then granted like any login.
+          if (input.addSite === true) return json(res, 400, { error: "A 1Password item keeps the sites saved in 1Password.", code: "invalid_domains" });
+          const vaultId = typeof fromOnePassword.vaultId === "string" && OP_ID.test(fromOnePassword.vaultId) ? fromOnePassword.vaultId : "";
+          const itemId = typeof fromOnePassword.itemId === "string" && OP_ID.test(fromOnePassword.itemId) ? fromOnePassword.itemId : "";
+          const status = await deps.onePassword.status();
+          if (!status.available || !status.via) return json(res, 409, { error: "1Password is not available on this computer.", code: "onepassword_unavailable" });
+          const site = secret.vault.domain;
+          const listed = site && vaultId && itemId ? (await deps.onePassword.itemsForSite(site, principalId)).find((row) => row.id === itemId && row.vaultId === vaultId) : undefined;
+          if (!listed) return json(res, 404, { error: "This 1Password item is not one of this site's.", code: "unknown_item" });
+          const ref = { via: status.via, vaultId, itemId };
+          item = deps.vault.findOnePassword(principalId, ref);
+          if (!item) {
+            item = deps.vault.create(principalId, {
+              kind: listed.category === "API_CREDENTIAL" ? "apiKey" : "login",
+              name: listed.title || "1Password item",
+              domains: listed.domains,
+            }, { source: "1password", onePassword: ref });
+            deps.audit?.("credentials.create", auth, { id: item.id, kind: item.kind, via: "1password-card" });
+          }
+        } else if (typeof input.itemId === "string") item = deps.vault.item(principalId, input.itemId);
         else if (input.item && typeof input.item === "object") {
           item = deps.vault.create(principalId, input.item as VaultItemInput);
           deps.audit?.("credentials.create", auth, { id: item.id, kind: item.kind, via: "card" });
@@ -236,11 +284,13 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
           }
         }
         if (!item.domains.length) return json(res, 400, { error: "This item has no site it may be filled on. Add one first.", code: "invalid_domains" });
-        const granted = deps.vault.grant(principalId, item.id, { botId: botId!, mode, threadId });
+        // a 1Password item is allowed once only, for one sign-in (review of #954)
+        if (item.source === "1password" && mode !== "once") return json(res, 400, { error: "A 1Password item is allowed for this request only.", code: "onepassword_once_only" });
+        const granted = deps.vault.grant(principalId, item.id, { botId: botId!, mode, threadId, ...(item.source === "1password" ? { singleUse: true } : {}) });
         // A login chosen after "I'll sign in myself": that sign-in ends.
         await deps.browser?.endForPerson(botId!, threadId);
         deps.audit?.("credentials.grant", auth, { id: item.id, botId, mode, via: "card", ...(addedSite ? { addedSite: true } : {}) });
-        deps.cards.patch(botId!, threadId, messageId!, { ...secret, vault: { ...secret.vault, itemId: item.id, itemName: item.name, mode } });
+        deps.cards.patch(botId!, threadId, messageId!, { ...secret, vault: { ...secret.vault, itemId: item.id, itemName: item.name, mode, ...(item.source === "1password" ? { onePassword: true } : {}) } });
         if (!deps.cards.resume(botId!, threadId, messageId!, "provided", grantedNote(granted, mode))) {
           return json(res, 409, { error: "this login request is no longer available" });
         }
@@ -357,6 +407,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
           const input = await body();
           if (typeof input.botId !== "string" || !deps.botExists(input.botId)) return json(res, 404, { error: "no such bot" });
           if (input.mode !== "always") return json(res, 400, { error: "From Settings a bot is allowed always; a one-time grant comes from a request card." });
+          if (deps.vault.item(principalId, id!)?.source === "1password") return json(res, 400, { error: "A 1Password item is allowed for one request at a time, from its card.", code: "onepassword_once_only" });
           const item = deps.vault.grant(principalId, id!, { botId: input.botId, mode: "always" });
           deps.audit?.("credentials.grant", auth, { id, botId: input.botId, mode: "always" });
           return json(res, 200, { item });
