@@ -840,6 +840,7 @@ import * as grokVoice from "./tts/grok.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
+import { forgetTurnReach, noteTurnReach, reachContributions, reachSummaryPrompt } from "./turn-reach.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope, TurnImageInput } from "./contracts.ts";
@@ -20180,6 +20181,8 @@ async function startTurn(
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
         { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker) },
+        // what this turn reaches, in one line: "what connectors do you have" needs no tool call (server/turn-reach.ts)
+        { id: "reach", label: "Reach", text: turnReachPrompt(liveBot ?? bot, instance, speaker, threadId, integrations, Boolean(mountedComputer)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
         { id: "data", label: "Data", text: integrations.data ? BUILT_IN_DATA_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
@@ -23256,6 +23259,8 @@ async function runGroupMemberTurn(
       });
     }
   }
+  // a room turn carries no reach contributions (owner-only, turn-reach.ts)
+  forgetTurnReach(threadId);
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(botUserProfile(bot)) },
     { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) : "" },
@@ -26531,6 +26536,47 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
  * runs on: the speaker's own subscription only (server/harness-connectors.ts).
  * `via` is the turn's access; without it (the prompt is built before the
  * access is materialized) the planned access stands in. */
+/** The reach section of a direct turn (server/turn-reach.ts): the servers,
+ * built-in places and provider lines this turn mounted, names only. */
+function turnReachPrompt(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker, threadId: string,
+  integrations: NonNullable<SendTurnInput["integrations"]>, computer: boolean): string {
+  // the same payer-is-speaker rule as the connectors section (engineConnectorsPromptFor)
+  const account = accountConnectorInput(bot, instance, speaker);
+  const builtins = [
+    ...(integrations.browser ? ["the built-in browser"] : []),
+    ...(computer ? ["a computer"] : []),
+    ...(integrations.data ? ["Data"] : []),
+    ...(integrations.phone ? ["the phone"] : []),
+    ...(integrations.messages ? ["messages"] : []),
+    ...(integrations.composio ? ["the person's connected apps (composio)"] : []),
+  ];
+  // Solo server: the operator at this computer owns its bots and pays (the
+  // machine's own logins). Organization server: the speaker and the payer
+  // as the turn resolves them (turnPayer); an operator turn has no person.
+  const ownerPrincipalId = effectiveBotOwner(bot).trim().toLowerCase();
+  const solo = IDENTITY.kind !== "perspicax";
+  const speakerPrincipalId = speaker.origin === "operator"
+    ? (solo ? ownerPrincipalId : undefined)
+    : speaker.principalId?.trim().toLowerCase() || undefined;
+  const payerPrincipalId = solo ? ownerPrincipalId : autoPayerKey(bot, speaker);
+  const reach = reachContributions({
+    botId: bot.id,
+    threadId,
+    ownerPrincipalId,
+    ...(speakerPrincipalId ? { speakerPrincipalId } : {}),
+    ...(payerPrincipalId && payerPrincipalId !== "unknown" ? { payerPrincipalId } : {}),
+    room: false,
+  });
+  noteTurnReach(threadId, reach);
+  return reachSummaryPrompt({
+    servers: Object.keys(integrations.custom ?? {}),
+    builtins,
+    claudeAi: claudeAiConnectorsForTurn(account),
+    grokCloud: grokCloudConnectorsForTurn(account) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+    lines: reach.lines,
+  });
+}
+
 function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
   return claudeAiConnectorsForTurn(accountConnectorInput(bot, instance, speaker, via));
 }

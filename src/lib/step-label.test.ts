@@ -154,6 +154,18 @@ describe("an MCP call names its server and tool", () => {
     expect(stepLabel({ name: "mcp", ok: false })).toBe("Could not reach the MCP servers");
   });
 
+  it("reads Grok's search_tool and use_tool rows as what they did, never 'Used use tool'", () => {
+    // rows stored before the driver named the tool (grok 1.0.62 titles them use_tool, search_tool)
+    const use = (ok?: boolean) => ({ name: "use_tool", ok, input: JSON.stringify({ tool_name: "perspicax__cw_psa__query", tool_input: { resource: "service.tickets" } }) });
+    expect(stepLabel(use(true))).toBe("Viewed tickets in ConnectWise PSA");
+    expect(stepLabel(use())).toBe("Viewing tickets in ConnectWise PSA");
+    expect(stepLabel({ name: "Use Tool", ok: true, input: JSON.stringify({ tool_name: "remote__status", tool_input: {} }) })).not.toMatch(/use tool/i);
+    expect(readStep({ name: "search_tool", ok: true, input: JSON.stringify({ query: "remote session health", limit: 20 }) })).toEqual({ label: "Looked for a tool", target: "remote session health" });
+    expect(stepLabel({ name: "Search Tool", ok: undefined })).toBe("Looking for a tool");
+    // a use_tool whose target is unreadable still reads as a tool, not "use tool"
+    expect(stepLabel({ name: "use_tool", ok: true })).toBe("Used a tool");
+  });
+
   it("speaks French when the interface is in French", () => {
     setLocale("fr");
     expect(stepLabel(gateway(tickets, true))).toBe("A consulté les billets dans ConnectWise PSA");
