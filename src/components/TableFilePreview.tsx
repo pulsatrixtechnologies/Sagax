@@ -4,6 +4,7 @@ import { requestMessageFile, type MessageAttachmentContext } from "./AttachmentP
 import { RichTable, TableDialog } from "./RichTable";
 import { TABLE_FILE_MAX_BYTES, tableDelimiter, type TextTable } from "@/lib/table-data";
 import { t } from "@/lib/i18n";
+import { scrollTabsWithWheel } from "@/lib/tab-wheel-scroll";
 import { isXlsxName, type SheetTable } from "@/lib/xlsx-data";
 import { readBoundedBytes } from "@/lib/pdf-view";
 import { isJsonName } from "@/lib/json-tree";
@@ -126,7 +127,7 @@ function XlsxFileContent({ path, name, message }: { path: string; name: string; 
   };
   return <div className="flex min-w-0 flex-col gap-2">
     {sheets.length > 1 && (
-      <div ref={tabs} role="tablist" aria-label={t("table.sheets")} onKeyDown={onTabKey} className="flex min-w-0 gap-1 overflow-x-auto border-b border-hairline/40 pb-1">
+      <div ref={tabs} role="tablist" aria-label={t("table.sheets")} onKeyDown={onTabKey} onWheel={scrollTabsWithWheel} className="flex min-w-0 gap-1 overflow-x-auto border-b border-hairline/40 pb-1">
         {sheets.map((entry, index) => (
           <button key={index} type="button" role="tab" aria-selected={index === selected} tabIndex={index === selected ? 0 : -1} onClick={() => setSelected(index)}
             className={index === selected
