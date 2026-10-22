@@ -226,7 +226,7 @@ describe("the wide foot's account pill (reference design)", () => {
     const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
     expect(pill).toContain("rounded-full");
     expect(pill).toContain("h-9");
-    expect(pill).toContain("[button:focus-visible&gt;&amp;]:ring-2");
+    expect(pill).toContain("[button:focus-visible:not([data-pointer-focus])&gt;&amp;]:ring-2");
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toMatch(/data-account-pill-name=""[^>]*>[^<]+<\/span>/);
     expect(html).toContain("width:28px");
