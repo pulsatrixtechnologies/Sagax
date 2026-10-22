@@ -16,7 +16,8 @@
 // It never touches the legal files, vendored third-party code, lockfiles or
 // binary files, nor the compatibility code that must keep reading the old
 // names (SKIP_EXACT). Some old spellings are protected on
-// purpose (PROTECT): live endpoints and wire contracts of services this
+// purpose (PROTECT): the upstream credit in every language (About, README,
+// CONTRIBUTING) and the upstream pull requests a port names, live endpoints and wire contracts of services this
 // project does not run, store identities of shipped apps, and identifiers
 // written into files people already have. A few narrow rules (the deploy
 // image, the native apps' copy files, the Android signing variables) also
@@ -81,6 +82,8 @@ const SKIP_EXACT = new Set([
   "compose.yaml",
   "compose.mail-test.yaml",
   ".env.example",
+  // generated from the docs and AGENTS.md: regenerate it (pnpm gen:self-knowledge)
+  "server/self-knowledge/knowledge.generated.json",
 ]);
 /** Vendored code, deployed configuration and the native apps (renamed with a
  * store release of their own). */
@@ -119,6 +122,7 @@ const PROTECT = [
   // copies share, the runtime name that names the keychain secret, the
   // health word. The URL scheme is not protected: it becomes sagax://.
   re(`sagax\\|${OLD}`),
+  re(`Sagax\\|OpenMausBot`),
   re(`${OLD}-server\\.lease`),
   re(`\\.${OLD}-server-child`),
   re(`"name": "${OLD}"`),
@@ -135,6 +139,16 @@ const PROTECT = [
   re(`(?:starts from|[Ff]ork of|forked from|[Bb]ased on) OpenMausBot`),
   re(`OpenMausBot(?: project| contributors| releases?\\b| version| Enterprise License|\\. The original)`),
   re(`Milind Soni and OpenMausBot`),
+  // the credit in every language (About's about.basedOn in each locale, the
+  // README's license section, CONTRIBUTING's licensing note)
+  re(`(?:[Bb]as(?:é|ée|ado|eado|iert)|[Ff]ond(?:é|ée)|[Bb]asato) (?:sur|en|em|auf|su) OpenMausBot`),
+  re(`(?:基于|基於|基づく|기반) ?OpenMausBot|OpenMausBot ?(?:をベースに|に基づ|기반|ベース)`),
+  re(`unchanged from\\s+OpenMausBot`),
+  re(`OpenMausBot and MausBot`),
+  // upstream pull requests and releases named as the source of a port or sync
+  re(`OpenMausBot(?:\\s|\\/\\/|\\*)+#\\d+`),
+  re(`\\(from OpenMausBot\\b`),
+  re(`OpenMausBot v?\\d+\\.\\d+(?:\\.\\d+)?`),
   re(`base stays OpenMausBot`),
   re(`settings \\(OMB_\\*\\)`),
   re(`existing \`~/\\.${OLD}\``),
@@ -171,10 +185,11 @@ const RULES = [
 /** Narrow rules that also reach the paths the general pass skips (deploy/,
  * ios/, android/), each limited to the thing it re-applies. */
 
-// The deploy stack runs this project's image, never the upstream author's.
-// Applied before PROTECT (which keeps the upstream repositories), so it wins
-// over it for the image reference alone; other upstream repositories stay.
-const IMAGE_RULE = [re(`ghcr\\.io/milind-soni/${OLD}(?![A-Za-z0-9_-])`), "ghcr.io/pulsatrixtechnologies/sagax"];
+// The deploy stack builds its image from the checkout (sagax:local), never
+// the upstream author's prebuilt one. Applied before PROTECT (which keeps the
+// upstream repositories), so it wins over it for the image reference alone,
+// tag included; other upstream repositories stay.
+const IMAGE_RULE = [re(`ghcr\\.io/milind-soni/${OLD}(?![A-Za-z0-9_-])(?::[A-Za-z0-9_.-]+)?`), "sagax:local"];
 
 // The product name in the native apps' user-visible copy files only (string
 // values, App Store text); code and resource names keep their own pace.
