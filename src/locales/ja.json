@@ -3918,5 +3918,13 @@
   "chat.inputRequest.answered": "回答を送信しました。作業を続けます。",
   "approval.tool.runCommandCloud": "クラウドコンピューターでコマンドを実行",
   "approval.tool.runCommandComputer": "あなたのコンピューターでコマンドを実行",
-  "approval.details.more": "詳細"
+  "approval.details.more": "詳細",
+  "chat.presence.phrase.thinkingItOver": "じっくり考えています",
+  "chat.presence.phrase.workingItOut": "整理しています",
+  "chat.presence.phrase.pullingItTogether": "まとめています",
+  "chat.presence.phrase.checkingTheDetails": "細部を確認しています",
+  "chat.presence.typing": "入力中…",
+  "chat.presence.thinkingLabel": "{name}が考えています",
+  "chat.presence.typingLabel": "{name}が入力中です",
+  "chat.presence.someone": "ボット"
 }

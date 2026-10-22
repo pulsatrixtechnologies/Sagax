@@ -19300,7 +19300,15 @@
       "chat.inputRequest.answered": "aeabdd5b56316ee19803efbf0ce6cb2e527d3f817178c9c9c9e3676039c99120",
       "approval.tool.runCommandCloud": "95e6026051beb75f25c2e72d5c85ca38f95489c5d50a44cdda30a7be4ae1d400",
       "approval.tool.runCommandComputer": "1aff3145399783a21a8aea6f30b6fe544c4e671081d200d624da939c13abbf47",
-      "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
+      "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df",
+      "chat.presence.phrase.thinkingItOver": "c06fa641a72929455af6f58655569d4baa55aa758ed40d72555dabeaa12f5b2f",
+      "chat.presence.phrase.workingItOut": "1a031c38e204a7da2e0b8215670c448c9af8507c00623338e0c7a9b35098a4db",
+      "chat.presence.phrase.pullingItTogether": "44415cef8976caf96fb04f03987664401432fdb6de53f21a882843afa512004d",
+      "chat.presence.phrase.checkingTheDetails": "e0565b556d16b2d4c1c162542fa1483a5db37f11beec2a2b6b1c614496e69686",
+      "chat.presence.typing": "d7fee5b783947f061f2673d5d56f508874f221afa1e177adab9147b69c81ee17",
+      "chat.presence.thinkingLabel": "ec67b914fea13a404e211083ee3b8b48889475e3d8efbf80d41fdfc44781aba5",
+      "chat.presence.typingLabel": "edb99d203ad1f1ede8c223756c0f027f0bb27688e4fb0f6c60a51083f397a581",
+      "chat.presence.someone": "ede4fcf9ae34dceac304de725b9e9f34e8aeff4cec3064e6e64fe2fc78090b85"
     },
     "pt-br": {
       "access.routineDelegation.reason.no_right": "ac5fc48626b20107ca2c65df67b3c5abe42acd2044cdb994e0c73821b3cbb71b",
