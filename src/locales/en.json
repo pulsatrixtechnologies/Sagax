@@ -6248,6 +6248,7 @@
   "sidebar.preview.botWorking": "{name} is working…",
   "sidebar.preview.noMessages": "No messages yet",
   "sidebar.preview.screenFrame": "Screen frame",
+  "sidebar.preview.richBlock": "Interactive view",
   "sidebar.preview.signedOut": "{name} isn't signed in",
   "sidebar.preview.teamWorking": "The team is working…",
   "sidebar.preview.waiting": "Waiting for you…",

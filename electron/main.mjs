@@ -104,7 +104,7 @@ import localOriginModule from "./local-origin.cjs";
 import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { createDesktopBridge } from "./desktop-bridge.mjs";
-import { applyAppIcon, createAppIconStore, parseAppIconRequest, windowIconPath } from "./app-icon.mjs";
+import { applyAppIcon, createAppIconStore, parseAppIconRequest, windowIconImage } from "./app-icon.mjs";
 import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
@@ -171,7 +171,7 @@ function savedAppIcon() {
 /** The icon a new window opens with: the person's custom one on Windows
  * and Linux (the taskbar shows the window's icon), else the app's. */
 function currentWindowIcon() {
-  return process.platform === "darwin" ? APP_ICON : windowIconPath(savedAppIcon(), process.platform, APP_ICON);
+  return process.platform === "darwin" ? APP_ICON : windowIconImage(savedAppIcon(), process.platform, nativeImage, APP_ICON);
 }
 function showAppIcon(saved) {
   return applyAppIcon(saved, {
@@ -180,6 +180,7 @@ function showAppIcon(saved) {
     windows: BrowserWindow.getAllWindows(),
     nativeImage,
     defaultIconPath: APP_ICON,
+    tray: desktopTray,
     // A runtime Dock image drops the Liquid Glass rendering of the bundle
     // icon, so the default is the bundle's own (null), except in an
     // unpackaged run without a compiled icon, which shows the flat PNG.
