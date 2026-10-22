@@ -1586,7 +1586,7 @@ export function GroupView({ group: stored }: { group: Group }) {
             <TurnPresence
               // the speaker's colour and mascot, as in ChatView
               bot={presenceSpeaker ?? { color: "green" }}
-              // a member awaited elsewhere is not typing here
+              // a bot the room waits on (busy elsewhere) is not typing here
               streamThreadId={speaker ? group.threadId : null}
               visible={presenceVisible}
               phrases={activity.phrases}
