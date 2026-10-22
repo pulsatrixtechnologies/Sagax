@@ -885,7 +885,7 @@ export function ruleCoversCall(compiled: CompiledRule, facts: CallFacts, behavio
       }
     }
   }
-  // a tool is named whole, its server included (`perspicax_gox__cw_psa__query`)
+  // a tool is named whole, its server included (`perspicax_quasar__cw_psa__query`)
   if (compiled.tools.length && !compiled.tools.includes(facts.tool)) return false;
   if (compiled.products.length && !compiled.products.some((product) => facts.products.includes(product))) return false;
   return true;

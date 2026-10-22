@@ -1,5 +1,5 @@
 // The Primary Bot's scope, its archive and the models threads follow
-// (prod 2026-10-20, Sagax 0.6.4, Melonie), through a real isolated server and
+// (2026-10-20, Sagax 0.6.4), through a real isolated server and
 // fake engines only:
 //
 //   scope     a new Primary Bot with no managed team sees and lists the
@@ -68,26 +68,26 @@ it("the Primary Bot sees every bot of its person, archives idempotently, and thr
     const instances = (await api("GET", "/api/instances")).instances;
     const claude = { instanceId: "claude", model: instances.find((item: any) => item.instanceId === "claude").models.default };
     const codex = { instanceId: "codex", model: instances.find((item: any) => item.instanceId === "codex").models.default };
-    const melonie = (await api("POST", "/api/bots", { name: "Melonie", modelSelection: claude }, 201)).bot;
-    await api("POST", `/api/bots/${melonie.id}/primary`, {});
-    await api("PATCH", `/api/bots/${melonie.id}`, { approvalMode: "ask" });
-    await api("PATCH", `/api/bots/${melonie.id}/tasks/${melonie.threadId}`, { approvalMode: "ask" });
+    const quasar = (await api("POST", "/api/bots", { name: "Quasar", modelSelection: claude }, 201)).bot;
+    await api("POST", `/api/bots/${quasar.id}/primary`, {});
+    await api("PATCH", `/api/bots/${quasar.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${quasar.id}/tasks/${quasar.threadId}`, { approvalMode: "ask" });
     const builtIn: any[] = [];
     for (const name of ["SWAT", "DOGE", "Bot Designer", "Disk Saver"]) {
       builtIn.push((await api("POST", "/api/bots", { name, section: "Built-in", modelSelection: claude }, 201)).bot);
     }
-    expect((await bots()).find((bot) => bot.id === melonie.id).managedSections ?? []).toEqual([]);
+    expect((await bots()).find((bot) => bot.id === quasar.id).managedSections ?? []).toEqual([]);
 
     // ── scope: every bot of the person, no managed team needed ─────────
-    let comms = await turn(melonie.id, melonie.threadId, "Montre-moi mes bots.");
+    let comms = await turn(quasar.id, quasar.threadId, "Montre-moi mes bots.");
     const listed = async () => ((await call("GET", "/api/internal/agents", undefined, comms)).body.bots as any[]).map((bot) => bot.name);
     const catalog = async () => (await call("GET", "/api/internal/team-setup-catalog", undefined, comms)).body;
     expect(await listed()).toEqual(expect.arrayContaining(["SWAT", "DOGE", "Bot Designer", "Disk Saver"]));
     const setup = await catalog();
-    expect(setup.bots.map((bot: any) => bot.name), JSON.stringify(setup)).toEqual(expect.arrayContaining(["Melonie", "SWAT", "DOGE", "Bot Designer", "Disk Saver"]));
+    expect(setup.bots.map((bot: any) => bot.name), JSON.stringify(setup)).toEqual(expect.arrayContaining(["Quasar", "SWAT", "DOGE", "Bot Designer", "Disk Saver"]));
     expect(setup.teams).toContain("Built-in");
     // a teammate's turn reaches the Built-in bot too (same rule as the list)
-    const asked = await call("POST", "/api/internal/delegate-bot", { fromBotId: melonie.id, fromThreadId: melonie.threadId, toBotId: builtIn[2].id, message: "ping" }, comms);
+    const asked = await call("POST", "/api/internal/delegate-bot", { fromBotId: quasar.id, fromThreadId: quasar.threadId, toBotId: builtIn[2].id, message: "ping" }, comms);
     expect(JSON.stringify(asked.body)).not.toMatch(/different section/);
 
     // ── archive: a temporary agent ─────────────────────────────────────
@@ -114,10 +114,10 @@ it("the Primary Bot sees every bot of its person, archives idempotently, and thr
     expect(archivedTemp.status, JSON.stringify(archivedTemp.body)).toBe(200);
     expect(archivedTemp.body.text).toMatch(/^Done/);
     expect(await listed()).not.toContain("perf-test-062");
-    await stop(melonie.id, melonie.threadId);
+    await stop(quasar.id, quasar.threadId);
 
     // ── archive: an ordinary bot, twice ────────────────────────────────
-    comms = await turn(melonie.id, melonie.threadId, "Archive Disk Saver.");
+    comms = await turn(quasar.id, quasar.threadId, "Archive Disk Saver.");
     const first = await settings({ action: "set", key: "bot.hidden", target: builtIn[3].id, value: true, quote: "Archive Disk Saver" });
     expect(first.body.text, JSON.stringify(first.body)).toMatch(/^Done/);
     const second = await settings({ action: "set", key: "bot.hidden", target: builtIn[3].id, value: true, quote: "Archive Disk Saver" });
@@ -126,7 +126,7 @@ it("the Primary Bot sees every bot of its person, archives idempotently, and thr
     expect(JSON.parse((await settings({ action: "get", key: "bot.hidden", target: builtIn[3].id })).body.text).value).toBe(true);
     expect(await listed()).not.toContain("Disk Saver");
     expect((await catalog()).bots.map((bot: any) => bot.name)).not.toContain("Disk Saver");
-    await stop(melonie.id, melonie.threadId);
+    await stop(quasar.id, quasar.threadId);
 
     // ── models: threads follow the bot's new default ───────────────────
     const swat = builtIn[0];
@@ -142,13 +142,13 @@ it("the Primary Bot sees every bot of its person, archives idempotently, and thr
     expect(thread(copy.threadId)).toMatchObject({ modelSelection: claude, followsBotModel: true });
 
     // ── primary: on the person's words ─────────────────────────────────
-    comms = await turn(melonie.id, melonie.threadId, "Fais de DOGE mon bot principal.");
+    comms = await turn(quasar.id, quasar.threadId, "Fais de DOGE mon bot principal.");
     const primary = await settings({ action: "set", key: "bot.primary", target: builtIn[1].id, value: true, quote: "Fais de DOGE mon bot principal" });
     expect(primary.status, JSON.stringify(primary.body)).toBe(200);
     expect(primary.body.text, JSON.stringify(primary.body)).toMatch(/^Done/);
     const after = await bots();
     expect(after.find((bot) => bot.id === builtIn[1].id).chiefOfStaff).toBe(true);
-    expect(after.find((bot) => bot.id === melonie.id).chiefOfStaff ?? false).toBe(false);
+    expect(after.find((bot) => bot.id === quasar.id).chiefOfStaff ?? false).toBe(false);
     void journal;
     void openCards;
   } finally {

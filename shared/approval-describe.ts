@@ -163,7 +163,7 @@ export interface ApprovalDescription {
 }
 
 /** `mcp__<server>__<tool>` (Claude, Codex) or the engine's own
- * `<server>__<tool>` (Grok: perspicax_dispatch_agent__flow_action): the
+ * `<server>__<tool>` (Grok: perspicax_quasar_agent__flow_action): the
  * server id may itself hold single underscores (perspicax_example_flow)
  * and the tool may hold double ones (cw_psa__query), so split on the first
  * `__` after the optional prefix. A name with spaces, or a built-in such as

@@ -141,7 +141,7 @@ const grokPage = (name: string) => readFileSync(join(import.meta.dirname, "fixtu
 const html = (body: string, status = 200, headers: Record<string, string> = {}) =>
   new Response(body, { status, headers: { "content-type": "text/html", ...headers } });
 
-describe("x.ai bot share cards", () => {
+describe("Grok Bot share cards", () => {
   it("reads the page's embedded record: name, creator, full description and colour", async () => {
     const fetcher = vi.fn(async () => html(grokPage("grok-share-page.html"))) as unknown as typeof fetch;
     const card = await fetchGrokTemplateCard(`https://www.x.ai/bot/${GROK_ID}/?ref=share`, fetcher);
@@ -192,7 +192,7 @@ describe("x.ai bot share cards", () => {
       url: `https://x.ai/bot/${GROK_ID}`,
     });
     expect(grokCardFromHtml('<meta property="og:title" content="Tom &amp; Jerry&#39;s bot"/>', GROK_ID)).toMatchObject({ name: "Tom & Jerry's bot" });
-    expect(() => grokCardFromHtml("<html><title>Grok</title></html>", GROK_ID)).toThrow("did not show a bot");
+    expect(() => grokCardFromHtml("<html><title>Grok</title></html>", GROK_ID)).toThrow("did not show a Grok Bot");
   });
 
   it("never fetches anything but an x.ai share page", async () => {
@@ -225,7 +225,7 @@ describe("x.ai bot share cards", () => {
     }
 
     const loop = vi.fn(async () => html("", 301, { location: `https://x.ai/bot/${GROK_ID}` })) as unknown as typeof fetch;
-    await expect(fetchGrokTemplateCard(`https://x.ai/bot/${GROK_ID}`, loop)).rejects.toThrow("did not show the x.ai bot page");
+    await expect(fetchGrokTemplateCard(`https://x.ai/bot/${GROK_ID}`, loop)).rejects.toThrow("did not show the Grok Bot page");
     expect(loop).toHaveBeenCalledTimes(4);
   });
 

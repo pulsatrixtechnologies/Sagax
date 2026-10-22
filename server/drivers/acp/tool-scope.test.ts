@@ -304,11 +304,11 @@ it("shows the unknown-model notice once per conversation, even when the process 
 it("mounts every Grok MCP server through the gate so cw_psa__query is registered, never skipped", async () => {
   const f = await fixture(GrokAgentDriver, { FAKE_ACP_GROK_VERSION: "1.0.41" });
   await f.instance.adapter.sendTurn({ threadId: "grok-names", text: "Fixture", integrations: {
-    custom: { perspicax_profil_jean_christophe_limited: { command: "node", args: ["bridge.js"], env: {} } },
+    custom: { perspicax_profil_ottoline_limited: { command: "node", args: ["bridge.js"], env: {} } },
   } });
   await f.recorder.until((event) => event.type === "turn.completed");
   const servers = JSON.parse(readFileSync(`${f.dump}.mcp.json`, "utf8"));
-  const server = servers.find((entry: { name: string }) => entry.name === "perspicax_profil_jean_christophe_limited");
+  const server = servers.find((entry: { name: string }) => entry.name === "perspicax_profil_ottoline_limited");
   const env = Object.fromEntries(server.env.map((entry: { name: string; value: string }) => [entry.name, entry.value]));
   expect(server.args.join(" ")).toContain("mcp-gate");
   expect(env.SAGAX_GATE_TOOL_NAMES).toBe("grok");

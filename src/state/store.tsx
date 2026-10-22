@@ -1236,7 +1236,7 @@ export type AppSettingsSection =
   | "mail"
   | "activity"
   | "backups"
-  /** Bring a bot shared on x.ai in (port of OpenMausBot #3073). */
+  /** Bring a shared Grok Bot in (port of OpenMausBot #3073). */
   | "import"
   | "workspaces"
   /** This app's updates and the pre-release channel (0.5.6; were in General). */

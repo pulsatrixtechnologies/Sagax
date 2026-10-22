@@ -83,7 +83,7 @@ parties hors tableau du script.
   temporaire (`create_agent`), l'archivage est la marque de l'agent,
   relisible par `get bot.hidden` (`temporaryAgent: true`) ; un agent
   temporaire archivé ne se restaure pas (en créer un autre).
-- Devenir bot principal : `bot.primary` (« fais de Melonie mon bot
+- Devenir bot principal : `bot.primary` (« fais de Quasar mon bot
   principal ») passe tout de suite sur les mots de la personne au bot
   principal actuel ; sinon une carte.
 - Changement de modèle ou d'instance d'un bot : chaque fil qui suit le bot

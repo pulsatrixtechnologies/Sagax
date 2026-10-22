@@ -18,12 +18,12 @@ import { pendingApprovals, PendingApprovalActions } from "./PendingApproval";
 import { approvalPill } from "./ApprovalCard";
 
 const bot = { id: "bot-1", name: "Cora" } as Bot;
-const ownerRule = { tool: "perspicax_gox__cw_psa__write", scope: { resource: "service/tickets", operation: "update" }, description: "Update tickets in ConnectWise PSA (service/tickets, update)" };
+const ownerRule = { tool: "perspicax_quasar__cw_psa__write", scope: { resource: "service/tickets", operation: "update" }, description: "Update tickets in ConnectWise PSA (service/tickets, update)" };
 function message(extra: Partial<NonNullable<Message["card"]>> = {}): Message {
   return {
     id: "approval-1", at: 1, role: "bot", kind: "options",
-    card: { title: "Approval needed", subtitle: "{}", options: ["Allow", "Deny"], tool: "mcp__perspicax_gox__cw_psa__write",
-      requestId: "request-1", allowKey: "mcp:perspicax_gox__cw_psa__write", ownerRule, ...extra },
+    card: { title: "Approval needed", subtitle: "{}", options: ["Allow", "Deny"], tool: "mcp__perspicax_quasar__cw_psa__write",
+      requestId: "request-1", allowKey: "mcp:perspicax_quasar__cw_psa__write", ownerRule, ...extra },
   };
 }
 type Node = ReactElement<{ children?: ReactNode; onClick?: () => void }>;

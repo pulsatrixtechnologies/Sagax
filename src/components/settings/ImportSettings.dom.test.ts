@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Settings > Import (port of OpenMausBot #3073): a bot shared on x.ai's export
+// Settings > Import (port of OpenMausBot #3073): a shared Grok Bot's export
 // file (shared/fixtures/grok-import/) becomes the usual team preview, the
 // event routine is listed under Left out, and Add sends a package to the
 // teams import route. A link is read through the server's x.ai-only route.
@@ -18,7 +18,7 @@ vi.mock("@/lib/analytics", () => ({ track: () => {} }));
 
 import { ImportSettings } from "./ImportSettings";
 
-const EXPORT = readFileSync(join(import.meta.dirname, "..", "..", "..", "shared", "fixtures", "grok-import", "shared-xai-bot.json"), "utf8");
+const EXPORT = readFileSync(join(import.meta.dirname, "..", "..", "..", "shared", "fixtures", "grok-import", "shared-grok-bot.json"), "utf8");
 
 let root: Root;
 let container: HTMLDivElement;
@@ -34,8 +34,8 @@ afterEach(() => {
 });
 const flush = async () => { await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); }); };
 
-describe("Settings > Import a bot from x.ai", () => {
-  it("turns a bot shared on x.ai's file into the team preview, lists what was left out, and adds it", async () => {
+describe("Settings > Import a Grok Bot", () => {
+  it("turns a shared Grok Bot's file into the team preview, lists what was left out, and adds it", async () => {
     fixture.api.mockResolvedValue({ bots: [{ id: "b1", name: "Inbox Triage" }], routines: [] });
     act(() => root.render(createElement(ImportSettings)));
     const input = container.querySelector('input[type="file"]') as HTMLInputElement;
@@ -79,7 +79,7 @@ describe("Settings > Import a bot from x.ai", () => {
     expect(container.querySelector("[data-grok-import-preview]")?.textContent).toContain("DOGE");
   });
 
-  it("refuses a link that is not an x.ai bot's without calling the server", async () => {
+  it("refuses a link that is not Grok Bot's without calling the server", async () => {
     act(() => root.render(createElement(ImportSettings)));
     const link = container.querySelector("#grok-import-link") as HTMLInputElement;
     await act(async () => {
@@ -88,6 +88,6 @@ describe("Settings > Import a bot from x.ai", () => {
     });
     await act(async () => { (link.form as HTMLFormElement).requestSubmit(); });
     expect(fixture.api).not.toHaveBeenCalled();
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Paste an x.ai bot link");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Paste a Grok Bot link");
   });
 });

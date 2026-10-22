@@ -364,7 +364,7 @@ routines at once, no card, several bots in one order (one call per bot):
   `archive_bot` go through `sagax_settings` (`bot.delete`, `bot.hidden`).
 - A Primary Bot targets every bot of its person (`chiefPeerTargetRule`,
   routine `for_bot_id`): managed teams no longer refuse.
-- Scope (prod 2026-10-20, 0.6.4, Melonie): a Primary Bot SEES and reaches
+- Scope (2026-10-20, 0.6.4): a Primary Bot SEES and reaches
   every bot its person owns (on an organization server also the ones the
   person may manage), whatever the team: `canAccessBot` / `primaryCovers`
   (`server/peer-roster.ts`, cover set by index.ts `setPrimaryCover`) feed
@@ -377,7 +377,7 @@ routines at once, no card, several bots in one order (one call per bot):
   a temporary agent (create_agent, never in `GET /api/bots`) is archived
   with its own mark, read back by `get bot.hidden`, never restored.
 - `bot.primary` changes at once on the person's words to the current
-  Primary Bot ("fais de Melonie mon bot principal").
+  Primary Bot ("fais de Quasar mon bot principal").
 - A new default model (`withDefaultModel`, store.ts) also moves a thread
   whose own model was only a copy of the old default; a person's different
   pick stays. Routine threads and the main thread follow the bot. Test:
@@ -5656,15 +5656,15 @@ real tool path: cards for delete, payment and send, refusals, Stop.
 Port of OpenMausBot #3073, without its optional Cursor sign-in (a third-party
 account token Sagax does not keep). Settings > Import
 (`src/components/settings/ImportSettings.tsx`, section `import`, hidden like
-Backups for whoever cannot manage backups, and in Simple mode), and an x.ai
-bot export dropped on Bot templates > Import (`TemplateTools` readFile).
+Backups for whoever cannot manage backups, and in Simple mode), and the export of
+a bot shared on x.ai dropped on Bot templates > Import (`TemplateTools` readFile).
 `src/components/GrokImportBox.tsx` reads an `https://x.ai/bot/<id>` link or a
 marketplace page through `POST /api/team-library/grok`
 (`server/routes/team-library-grok.ts`, admin scope; `server/team-library.ts`
 `fetchGrokTemplateCard` fetches only x.ai, redirects must stay there, 20 s,
 2 MB) and shows the public card (name, creator, description) with Start
 from the description (`grokStarterPackage`). The full setup comes from the
-person's own x.ai bot: Copy export prompt (`GROK_EXPORT_PROMPT`), then paste
+person's own bot on x.ai: Copy export prompt (`GROK_EXPORT_PROMPT`), then paste
 its JSON reply or choose it saved as a `.json` file (`openmaus.grok/1`, or
 pi-grokbot-import's `grokbot-bundle/v1`; the format ids stay upstream's).
 `shared/grok-import.ts` turns it into an `openmaus.package` v2 with one bot:
@@ -5678,7 +5678,7 @@ original text. The preview and Add are the templates' own
 `server/fixtures/grok-share-page*.html`),
 `server/routes/team-library-grok.test.ts`,
 `src/components/settings/ImportSettings.dom.test.ts` (the export fixture
-`shared/fixtures/grok-import/shared-xai-bot.json`).
+`shared/fixtures/grok-import/shared-grok-bot.json`).
 
 ## Declarative chat widgets (show_widget, ported from upstream 2026-10-14)
 

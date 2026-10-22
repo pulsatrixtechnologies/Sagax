@@ -1,4 +1,4 @@
-// Settings > Import (port of OpenMausBot #3073): bring a bot shared on x.ai in.
+// Settings > Import (port of OpenMausBot #3073): bring a shared Grok Bot in.
 // The preview and Add are the bot templates' own (TeamImportPreview), so the
 // same rules hold: skills off, routines paused, no model, no keys.
 import { useState } from "react";

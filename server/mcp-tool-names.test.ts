@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { GROK_MAX_QUALIFIED, grokToolNameProblem, planToolNames, ToolNameAliases, toolNameParity } from "./mcp-tool-names.ts";
 
-const PERSPICAX = "perspicax_profil_jean_christophe_limited";
+const PERSPICAX = "perspicax_profil_ottoline_limited";
 
 /** Grok's admission rule, written from its documentation, independently of
  * the module under test. */
@@ -26,7 +26,7 @@ describe("grokToolNameProblem", () => {
 });
 
 describe("planToolNames", () => {
-  it("registers cw_psa__query from perspicax_profil_jean_christophe_limited (regression 2026-10-11)", () => {
+  it("registers cw_psa__query from perspicax_profil_ottoline_limited (regression 2026-10-11)", () => {
     const names = ["memory_search", "api_search", "cw_psa__query", "cw_psa__write", "cw_psa__action"];
     const plan = planToolNames(PERSPICAX, names);
     expect(plan.unregistrable).toEqual([]);

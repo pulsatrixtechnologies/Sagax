@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
-const SERVER = "perspicax_profil_jean_christophe_limited";
+const SERVER = "perspicax_profil_ottoline_limited";
 const ADVERTISED = ["memory_search", "api_search", "cw_psa__query", "cw_psa__write", "cw_psa__action",
   "files.read", "ns:do", "_private", "with-dash", `${"long".repeat(60)}__end`, "cw_psa_query"];
 const candidates = [process.env.SMOKE_GATE, "/app/dist-server/mcp-gate.js", join(process.cwd(), "dist-server/mcp-gate.js"), join(process.cwd(), "server/mcp-gate.ts")].filter(Boolean);

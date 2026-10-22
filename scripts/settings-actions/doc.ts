@@ -40,7 +40,7 @@ function tool(spec: SettingSpec): string {
 
 const HEAD = `# Tout est modifiable par les bots (sagax_settings)
 
-Exigence de JC (2026-10-19) : « Tout doit être modifiable via les bots.
+Exigence du responsable (2026-10-19) : « Tout doit être modifiable via les bots.
 Absolument tout. » Chaque réglage de Sagax est une action : un bot le lit et
 le change pour la personne qui lui parle, avec les droits de cette personne,
 par la même route que l'écran. Fichier généré par \`pnpm gen:settings-doc\`
@@ -123,7 +123,7 @@ parties hors tableau du script.
   temporaire (\`create_agent\`), l'archivage est la marque de l'agent,
   relisible par \`get bot.hidden\` (\`temporaryAgent: true\`) ; un agent
   temporaire archivé ne se restaure pas (en créer un autre).
-- Devenir bot principal : \`bot.primary\` (« fais de Melonie mon bot
+- Devenir bot principal : \`bot.primary\` (« fais de Quasar mon bot
   principal ») passe tout de suite sur les mots de la personne au bot
   principal actuel ; sinon une carte.
 - Changement de modèle ou d'instance d'un bot : chaque fil qui suit le bot

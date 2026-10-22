@@ -2,7 +2,7 @@
 // cannot qualify. This is the CI parity check: every tool the server
 // advertises must come out under exactly one name Grok admits, and calling
 // that name must run the server's own tool. A mismatch fails the build.
-// Regression: 2026-10-11, Perspicax profile perspicax_profil_jean_christophe_limited
+// Regression: 2026-10-11, Perspicax profile perspicax_profil_ottoline_limited
 // lost cw_psa__query, cw_psa__write and cw_psa__action on every bot on Grok.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ import { gateServer } from "./mcp-gate-config.ts";
 import { removeTempDir } from "./testing/cleanup.ts";
 
 const GATE = join(dirname(fileURLToPath(import.meta.url)), "mcp-gate.ts");
-const SERVER = "perspicax_profil_jean_christophe_limited";
+const SERVER = "perspicax_profil_ottoline_limited";
 
 /** The catalog a hostile-but-legal MCP server may advertise. */
 const ADVERTISED = [
@@ -86,7 +86,7 @@ describe("mcp-gate tool names for Grok", () => {
     });
   };
 
-  it("registers cw_psa__query from perspicax_profil_jean_christophe_limited and calls it through the map", async () => {
+  it("registers cw_psa__query from perspicax_profil_ottoline_limited and calls it through the map", async () => {
     const rpc = startGate(["memory_search", "cw_psa__query"]);
     const listed = await rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(listed.result.tools.map((tool: { name: string }) => tool.name)).toEqual(["memory_search", "cw_psa_query"]);

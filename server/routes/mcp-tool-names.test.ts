@@ -11,10 +11,10 @@ describe("GET /api/mcp/tool-names", () => {
   };
 
   it("serves the gates' reports and passes other paths", async () => {
-    const route = createMcpToolNameRoutes(() => [{ server: "perspicax_profil_jean_christophe_limited", status: "renamed" }]);
+    const route = createMcpToolNameRoutes(() => [{ server: "perspicax_profil_ottoline_limited", status: "renamed" }]);
     const ok = ctx("/api/mcp/tool-names");
     await route(ok.ctx);
-    expect(ok.sent).toEqual([{ status: 200, body: { reports: [{ server: "perspicax_profil_jean_christophe_limited", status: "renamed" }] } }]);
+    expect(ok.sent).toEqual([{ status: 200, body: { reports: [{ server: "perspicax_profil_ottoline_limited", status: "renamed" }] } }]);
     expect(await route(ctx("/api/mcp/servers").ctx)).toBe(PASS);
     const post = ctx("/api/mcp/tool-names", "POST");
     await route(post.ctx);
