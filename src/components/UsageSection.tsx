@@ -32,6 +32,7 @@ import {
   type PersonalUsageSummary,
 } from "@/lib/usage-personal";
 import { PlanUsage } from "./PlanUsage";
+import { UsageTraces } from "./usage/UsageTraces";
 import { perspicaxConsoleUrl } from "./PerspicaxOrgSettings";
 import { CompactRow, ConfirmPill, DescribedRow, FIELD, FoldRow, PILL, PillSelect, PRIMARY_PILL, SettingsGroup } from "./SettingsPrimitives";
 
@@ -178,7 +179,7 @@ export function UsageSection() {
         </div>
       )}
       plan={<PlanUsage enabled={planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) })} />}
-      rest={null}
+      rest={canViewUsage(state.config) ? <UsageTraces /> : null}
     />
   );
 }
