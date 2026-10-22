@@ -225,7 +225,7 @@ describe("the wide foot's account pill (reference design)", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true, withName: true }));
     const pill = /<span[^>]*data-sidebar-account-pill=""[^>]*>/.exec(html)?.[0] ?? "";
     expect(pill).toContain("rounded-full");
-    expect(pill).toContain("h-9");
+    expect(pill).toContain("h-[var(--foot-tile-h,2.25rem)]");
     expect(pill).toContain("[button:focus-visible:not([data-pointer-focus])&gt;&amp;]:ring-2");
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toMatch(/data-account-pill-name=""[^>]*>[^<]+<\/span>/);
@@ -302,3 +302,63 @@ describe("the routines badge in Grok Bot's foot (JC, 2026-10-16)", () => {
     expect(source.indexOf("<SidebarRoutinesBadge />", pill)).toBeGreaterThan(pill);
   });
 });
+
+// The wide foot's account pill (avatarOnly + withName) beside the Connect apps
+// pill: the second line (title and points) lives in the pill, and both tiles
+// take their height from the same custom property so they never differ.
+describe("sidebar foot account pill: title and points line", () => {
+  const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const pill = (props: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true, withName: true, ...props }));
+  const withSettings = (patch: Partial<AchievementSnapshot["settings"]>, extra: Partial<AchievementSnapshot> = {}) => {
+    const base = points();
+    resetAchievementsForTests({ status: "ready", snapshot: { ...base, ...extra, settings: { ...base.settings, ...patch } } });
+  };
+
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ])("shows points %s and title %s as the toggles say", (showPoints, showTitle) => {
+    withSettings({ showPoints, showTitle });
+    const html = pill();
+    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html.includes("data-member-line")).toBe(showPoints || showTitle);
+    expect(html.includes(">Commander<")).toBe(showTitle);
+    expect(html.includes("data-gamertag")).toBe(showPoints);
+    expect(html.includes(">195<")).toBe(showPoints);
+    expect(html.includes("data-account-pill-line")).toBe(showPoints || showTitle);
+    // the name stays on top
+    if (showPoints || showTitle) expect(html.indexOf("data-member-line")).toBeGreaterThan(html.indexOf(">Jean-Christophe Proulx</span>"));
+  });
+
+  it("takes the points from the achievements state, never a fixed number", () => {
+    withSettings({}, { points: 1240 });
+    const html = pill();
+    expect(html).toContain(">1,240<");
+    expect(html).not.toContain(">195<");
+  });
+
+  it("shows nothing while the achievements are not loaded, like today", () => {
+    resetAchievementsForTests();
+    const html = pill();
+    expect(html).not.toContain("data-member-line");
+    expect(html).not.toContain("data-account-pill-line");
+  });
+
+  it("never prints an id: the title is its human name", () => {
+    withSettings({});
+    expect(pill()).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+  });
+
+  it("gives the account pill and the Connect apps pill one height, from one property", () => {
+    const tile = "h-[var(--foot-tile-h,2.25rem)]";
+    withSettings({});
+    expect(pill()).toContain(tile);
+    const connect = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+    expect(connect).toContain(tile);
+    expect(css).toMatch(/\[data-sidebar-account-row\]\s*\{[^}]*--foot-tile-h:\s*2\.25rem/);
+    expect(css).toMatch(/\[data-sidebar-account-row\]:has\(\[data-account-pill-line\]\)\s*\{[^}]*--foot-tile-h:\s*2\.75rem/);
+  });
+});
+
