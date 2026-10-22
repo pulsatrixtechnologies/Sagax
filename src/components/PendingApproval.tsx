@@ -20,7 +20,7 @@ import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { useOrgApprovalPolicy } from "@/lib/org-approval-policy";
-import { CustomRuleNoticeLine } from "./CustomRuleNotice";
+import { CustomRuleNoticeLine, riskList } from "./CustomRuleNotice";
 import { customRuleError } from "./bot-settings/CustomRulesCard";
 import { recipientKeysForSendCard } from "../../shared/send-card-recipients";
 import { parseRecipientEntry } from "../../shared/allowed-recipients";
@@ -496,6 +496,17 @@ export function PendingApprovalActions({
       {t("approval.computerApp.line", { name: bot?.name ?? t("approval.someone"), app: computerApp })}
     </span>
   ) : null;
+  // 2026-10-22: why a card still shows although the bot is on auto mode and
+  // has rules — a risky action (a deletion, an external send, a payment) no
+  // rule covers. Name the risk type in human terms; "Toujours permettre"
+  // (the candidate button below) authors a correctly scoped rule that covers
+  // it. Not shown when a rule notice already explains (card.customRule), nor
+  // on the owner-rule path.
+  const riskHint = candidate && candidate.risks.length > 0 && !ownerRule && !pending.message.card?.customRule ? (
+    <span className="basis-full min-w-0 text-[12.5px] leading-5 text-ink-secondary" data-approval-risk-hint="">
+      {t("approval.whyRisk", { kinds: riskList(candidate.risks) })}
+    </span>
+  ) : null;
   if (variant === "inbox") {
     // Yes and No side by side, as large as the panel allows: green allows
     // exactly what the card shows, red declines it. The grants that last
@@ -504,6 +515,7 @@ export function PendingApprovalActions({
     return (
       <div className="flex flex-col gap-3 px-5 pb-5 pt-3" data-approval-actions="inbox">
         {appLine}
+        {riskHint}
         <div className="flex gap-3">
           <button
             type="button"
@@ -540,6 +552,7 @@ export function PendingApprovalActions({
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-2">
       {appLine}
+      {riskHint}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"

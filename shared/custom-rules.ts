@@ -359,6 +359,22 @@ export function compileRule(when: string, home?: string, resolve?: (absolute: st
   return { actions, objects, paths, realPaths, tools, products, commands, shellFamily, recognized };
 }
 
+/** The risk classes a rule's own words imply, so the editor can set an allow
+ * rule's `riskScope` to exactly what it names: an external send ("envoyer un
+ * courriel"), a payment, a deletion. The engine still reads the risk class
+ * from the call, never from the rule (the A9 fail-closed guard is unchanged):
+ * this only helps the UI tick the right boxes and refuse an allow rule that
+ * names a risky action but would cover none of its classes. "irreversible" is
+ * never inferred from free words; it comes from a shell line on a card, whose
+ * exact risk classes travel with the candidate. Pure. */
+export function impliedRiskScope(compiled: CompiledRule): RiskClass[] {
+  const risks: RiskClass[] = [];
+  if (compiled.actions.includes("send") || compiled.objects.includes("mail")) risks.push("external-send");
+  if (compiled.actions.includes("payment")) risks.push("money");
+  if (compiled.actions.includes("delete")) risks.push("destructive");
+  return risks;
+}
+
 // ── calls ────────────────────────────────────────────────────────────────
 
 const FILE_READ_TOOLS = new Set(["read", "glob", "grep", "ls", "read_file", "list_files", "list_directory", "read_text_file", "read_multiple_files", "search_files", "get_file_info", "view"]);

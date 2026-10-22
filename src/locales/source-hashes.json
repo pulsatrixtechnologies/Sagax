@@ -13908,7 +13908,9 @@
       "remoteFolder.choose": "0f3b2318287c5ccd63e867c847a8fc7326408130401a912f0d59a10e383fa22d",
       "settings.group.mascots": "cee1a434e9f6122d1717621f5b884bb0247793d9b45bb1da86727ffbe78cce38",
       "settings.hdMascots.title": "ed014121147b76d51212966cf9281f0187d84ff92df5e36e1cb16840b76e5577",
-      "settings.hdMascots.subtitle": "e797d87584643b266f2171f240454af44d2dcbec4289100a6918941148c1d7ae"
+      "settings.hdMascots.subtitle": "e797d87584643b266f2171f240454af44d2dcbec4289100a6918941148c1d7ae",
+      "customRules.form.riskMissing": "7b235a1538e6cb19d4b74fa53a71afc3a3a39213cd52bee2b8124d7802978496",
+      "approval.whyRisk": "a5a5c617485efbfcb253eb161ae57ffa60dcd5cef8d44794549b784cc86729ef"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

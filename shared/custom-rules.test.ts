@@ -8,6 +8,7 @@ import {
   customRulesReviewPrompt,
   customRulesJudgePrompt,
   evaluateCustomRules,
+  impliedRiskScope,
   modelCustomDecision,
   modelReviewCardEligible,
   modelReviewRules,
@@ -286,6 +287,25 @@ describe("candidateWhen", () => {
     }
     expect(candidateWhen(readDoc, "fr")).toBe("la lecture de fichiers dans ~/Documents");
     expect(candidateWhen(readDoc, "en")).toBe("reading files in ~/Documents");
+  });
+});
+
+describe("a rule's words imply the risk scope the editor must set (authoring)", () => {
+  it("names external-send for an email/send rule, money for a payment, destructive for a delete, nothing for a read", () => {
+    expect(impliedRiskScope(compileRule("l'envoi de courriels"))).toEqual(["external-send"]);
+    expect(impliedRiskScope(compileRule("envoyer un message"))).toEqual(["external-send"]);
+    expect(impliedRiskScope(compileRule("payer les factures"))).toEqual(["money"]);
+    expect(impliedRiskScope(compileRule("supprimer des fichiers"))).toEqual(["destructive"]);
+    expect(impliedRiskScope(compileRule("la lecture de fichiers dans ~/Documents", HOME))).toEqual([]);
+  });
+
+  it("a card-authored rule that carries the card's exact scope suppresses the identical card; an empty scope covers nothing (fail-closed guard intact)", () => {
+    // candidate.risks is facts.risks; the card button posts it as riskScope
+    expect(sendMail.risks).toContain("external-send");
+    const fromCard = rule(candidateWhen(sendMail, "fr"), "allow", { riskScope: [...sendMail.risks] });
+    expect(evaluateCustomRules([fromCard], sendMail)).toMatchObject({ kind: "allow", rule: { id: fromCard.id } });
+    const emptyScope = rule(candidateWhen(sendMail, "fr"), "allow", { riskScope: [] });
+    expect(evaluateCustomRules([emptyScope], sendMail)).toMatchObject({ kind: "none", riskBlocked: { missing: ["external-send"] } });
   });
 });
 
