@@ -74,6 +74,26 @@ export function parseRemoteSessionCode(value: unknown): string | null {
   return REMOTE_SESSION_CODE.test(code) ? code : null;
 }
 
+/** The longest Tailcat address both sides accept (the support folder and the tunnel reader). */
+export const TAILCAT_ADDRESS_MAX = 8000;
+
+/** `tc` then at least 8 characters, TAILCAT_ADDRESS_MAX in all, no space, no control character. */
+export function isTailcatAddress(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("tc") && value.length >= 10 && value.length <= TAILCAT_ADDRESS_MAX && !/\s/.test(value)
+    // oxlint-disable-next-line no-control-regex -- a tunnel address never contains control characters
+    && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+/** A session's end: at most 15 minutes past and 26 hours ahead (Perspicax caps
+ * an open at 24 hours). The same bound for publish_remote_session and for an
+ * open the bot made through a Perspicax profile. Null when outside it. */
+export function parseRemoteSessionEnd(value: unknown, now: number): number | null {
+  if (typeof value !== "string") return null;
+  const end = Date.parse(value);
+  if (!Number.isFinite(end) || end < now - 15 * 60_000 || end > now + 26 * 60 * 60_000) return null;
+  return end;
+}
+
 export function parseRemoteSessionOs(value: unknown): RemoteSessionOs | null {
   return value === "windows" || value === "macos" || value === "linux" ? value : null;
 }

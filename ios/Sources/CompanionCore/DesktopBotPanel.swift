@@ -378,6 +378,66 @@ public enum WebhookPublicURL {
         }
     }
 
+    /// English label of each typed trigger event kind, the desktop's
+    /// `triggers.event.*` words and the app catalog's keys. A kind this
+    /// build does not know is shown as sent.
+    public static let eventLabels: [String: String] = [
+        "pr.opened": "Pull request opened",
+        "pr.updated": "Pull request updated (new commits)",
+        "pr.merged": "Pull request merged",
+        "pr.closed": "Pull request closed without merge",
+        "pr.review_requested": "Review requested",
+        "pr.review_submitted": "Any review submitted",
+        "pr.review_approved": "Review approves",
+        "pr.review_changes_requested": "Review requests changes",
+        "pr.review_commented": "Review comments only",
+        "pr.comment": "PR comment posted",
+        "pr.review_comment": "Inline review comment",
+        "pr.thread_resolved": "Review thread resolved",
+        "pr.thread_reopened": "Review thread reopened",
+        "ci.failed": "CI failed",
+        "ci.succeeded": "CI succeeded",
+        "issue.opened": "Issue opened",
+        "push": "Push",
+        "release.published": "Release published",
+        "mr.opened": "Merge request opened",
+        "mr.merged": "Merge request merged",
+        "mr.closed": "Merge request closed",
+        "pipeline.failed": "Pipeline failed",
+        "pipeline.succeeded": "Pipeline succeeded",
+        "mention": "@mention of the app",
+        "reaction": "Reaction added",
+        "message": "Message in a channel",
+        "message.created": "New message",
+        "message.updated": "Message edited",
+        "email.received": "Email received",
+        "event.created": "Event created",
+        "event.updated": "Event updated",
+        "event.cancelled": "Event cancelled",
+        "event.starting": "Event starting (connector)",
+        "issue.created": "Issue created",
+        "issue.resolved": "Issue resolved",
+        "issue.assigned": "Issue assigned",
+        "issue.archived": "Issue archived",
+        "issue.unresolved": "Issue unresolved again",
+        "alert.triggered": "Alert triggered",
+        "error.created": "Error captured",
+        "incident.triggered": "Incident triggered",
+        "incident.acknowledged": "Incident acknowledged",
+        "incident.escalated": "Incident escalated",
+        "incident.reassigned": "Incident reassigned",
+        "incident.resolved": "Incident resolved",
+        "issue.updated": "Issue updated",
+        "issue.status_changed": "Issue status changed",
+        "issue.removed": "Issue removed",
+        "comment.created": "Comment added",
+        "cycle.completed": "Cycle completed",
+    ]
+
+    public static func eventLabel(_ kind: String) -> String? {
+        eventLabels[kind]
+    }
+
     public static func filtersLine(_ filters: [String: [String]]) -> String {
         filters.keys.sorted().compactMap { key in
             let values = (filters[key] ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }

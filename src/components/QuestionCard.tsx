@@ -148,6 +148,8 @@ export function QuestionCard({
   // The server settles the card, but only after a round trip. Holding the
   // sent answer here closes the window where the buttons are still live.
   const [sent, setSent] = useState<string | null>(null);
+  // the last answer did not reach the bot: said on the card until the next try
+  const [failed, setFailed] = useState(false);
 
   const answered = useMemo(
     () => questions.map((question, index) => answersOf(drafts[index] ?? initialDraft(question)).length > 0),
@@ -189,6 +191,7 @@ export function QuestionCard({
   };
 
   const choose = (label: string) => {
+    setFailed(false);
     if (label === OTHER_ROW) { toggleOther(); return; }
     if (current.multiSelect) {
       const picked = draft.picked.includes(label)
@@ -232,6 +235,7 @@ export function QuestionCard({
     const answer = formatQuestionAnswers(questions, answers);
     if (!answer) return;
     setSent(answer);
+    setFailed(false);
     returnFocusToComposer();
     onAnswered?.();
     dispatch({
@@ -242,7 +246,7 @@ export function QuestionCard({
       message: answer,
       // The answer never reached the bot, so the card must go back to
       // being answerable rather than sitting there looking settled.
-      onError: () => { setSent(null); onAnswerFailed?.(); },
+      onError: () => { setSent(null); setFailed(true); onAnswerFailed?.(); },
     });
   }
 
@@ -318,6 +322,9 @@ export function QuestionCard({
           className={cn(current.options.length > 0 && "mt-2")}
           fieldId={message.id}
         />
+      )}
+      {failed && (
+        <div role="alert" className="mt-2 text-[12.5px] leading-snug text-danger">{t("question.answerFailed")}</div>
       )}
       {showSend && (
         <SheetSend label={single ? t("question.submit") : t("question.submitAll")} disabled={!complete} onClick={submit} />

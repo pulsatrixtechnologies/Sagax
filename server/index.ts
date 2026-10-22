@@ -338,7 +338,7 @@ import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSI
 import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
-import { matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, scopeKeepable, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { cardRuleCandidate, matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -694,6 +694,7 @@ import { BOT_PACKAGE_MAX_SKILLS, isBotPackage, packageSummary, parsePackageDocum
 import { createTeamManifest, parseTeamManifest } from "./team-manifest.ts";
 import { readThreadEvents } from "./thread-events.ts";
 import { TeamMemory, TEAM_MEMORY_KINDS, type TeamMemoryKind } from "./team-memory.ts";
+import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { describeTool, readBotActivity } from "./activity.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
 import { OutboundRequestService } from "./outbound-requests.ts";
@@ -780,6 +781,9 @@ import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, org
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
+import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
+import { recallSupportSession } from "./remote-support-local.ts";
+import { supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
@@ -1127,7 +1131,7 @@ import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
-import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED } from "./org-full-access.ts";
+import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
 import { createLinkedSubjectsRoute, createOrgExportRoute } from "./org-export.ts";
 import { createOrgBotForceRoutes } from "./org-bot-force.ts";
@@ -2488,9 +2492,16 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
       ? "A local service can only decline this request. Approve or answer it in Sagax while signed in."
       : null;
   }
-  if (!auth.scopes.includes("admin") && store.messagesFor(threadId).some(message =>
-    message.card?.requestId === requestId && message.card.teamMemoryRequest)) {
-    return "Only a workspace admin can review shared team memory.";
+  const teamMemoryCard = store.messagesFor(threadId).find((message) =>
+    message.card?.requestId === requestId && message.card.teamMemoryRequest);
+  if (teamMemoryCard?.card?.teamMemoryRequest) {
+    // A Cloud home stays its owner's alone, whatever the card.
+    if (CLOUD_HOME) return cloudCardRefusal(auth);
+    return teamMemoryReviewRefusal({
+      admin: auth.scopes.includes("admin"),
+      shared: teamMemoryShared(),
+      memberOfSection: personMayUseTeamSection(auth, teamMemoryCard.card.teamMemoryRequest.section),
+    });
   }
   // A Cloud home is one person's: a device paired with chat-only access (a
   // guest) may read along but never answer, or its words would reach the
@@ -2500,6 +2511,39 @@ function cardAnswerRefusal(auth: RequestAuth, threadId: string, requestId: strin
   const known = [threadStarters.get(threadId), cardRequesterKey(threadId, requestId)].filter((person): person is string => Boolean(person));
   if (!known.length || known.includes(personKey(auth.session)) || known.includes(legacyPersonKey(auth.session))) return null;
   return "Only the person who started this conversation or sent this request, or a workspace admin, can answer this card.";
+}
+
+/** A signed-in person can use at least one bot that sits in this section
+ * now. The proposing bot counts only while it is still in that section: a
+ * bot moved since its proposal no longer vouches for the old team. */
+function personMayUseTeamSection(auth: RequestAuth, section: string): boolean {
+  if (auth.kind !== "session") return false;
+  return viewerUsesTeamSection(authzViewerFor(auth), section);
+}
+
+/** Several people share team memory: an organization server (Perspicax,
+ * which keeps no sign-in list of its own, so sharedMembership is false
+ * there) or a workspace with members. */
+function teamMemoryShared(): boolean {
+  return IDENTITY.kind === "perspicax" || sharedMembership();
+}
+
+function viewerUsesTeamSection(viewer: AuthzViewer | undefined, section: string): boolean {
+  if (!viewer || viewer.disabled) return false;
+  const key = sectionContextKey(section);
+  return store.bots.some((bot) =>
+    sectionContextKey(bot.section) === key && canOnBot(viewer, "bot.use", botFacts(bot)));
+}
+
+/** The team-memory dialog is an admin page (the route needs admin scope,
+ * server/request-auth.ts). A local service (a bot's own shell) proposes
+ * through the internal route and waits for a card; it never writes the
+ * shared file itself. A member reviews only through the card. */
+function teamMemoryWriteRefusal(auth: RequestAuth, method: string): string | null {
+  if (method === "GET") return null;
+  return auth.kind === "loopback" && auth.trust === "service"
+    ? "A local service cannot change shared team memory. Propose it and let a person confirm the card."
+    : null;
 }
 
 /** Settings > Bot > Auto-review (server/bot-settings.ts): when the caller
@@ -3952,6 +3996,8 @@ function agentsIntegration(
       // Technician key for remote support: this computer only (desktop PC or
       // the bot's cloud computer). The private file never goes in the env.
       SAGAX_REMOTE_SUPPORT_DIR: join(DATA_DIR, "remote-support"),
+      // the opener written into open.json when the server answer does not name one
+      SAGAX_REMOTE_SUPPORT_PRINCIPAL: safetyPrincipal(threadId).principalId?.trim().toLowerCase() ?? "",
       ...(() => {
         const speakerId = safetyPrincipal(threadId).principalId;
         const speaker = speakerId ? principals.byId(speakerId) : undefined;
@@ -10213,8 +10259,10 @@ const terminalFeature = installTerminalFeature({
     },
   },
 });
+const REMOTE_SUPPORT_DIR = join(DATA_DIR, "remote-support");
 const remoteSessions = createRemoteSessionService({
   dataDir: DATA_DIR,
+  supportDir: () => REMOTE_SUPPORT_DIR,
   store,
   registry: terminalFeature.registry,
   sessions: terminalFeature.sessions,
@@ -10225,12 +10273,47 @@ const remoteSessions = createRemoteSessionService({
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot).trim().toLowerCase() : "";
   },
+  // Close from the panel: remote_support_close at Perspicax as the person
+  // closing (their own session, the same relay as a turn), then the tokens end.
+  closeRemote: async ({ principalId, botId, code }) => {
+    const mcp = perspicaxMcp;
+    const live = store.bot(botId);
+    if (!mcp || !live?.perspicax?.profiles.length) return;
+    const threadId = `remote-close-${randomUUID()}`;
+    const generation = randomUUID();
+    try {
+      const plan = await mcp.prepareTurn({ threadId, generation, bot: { id: live.id, perspicax: live.perspicax }, speakerPrincipalId: principalId, speakerOrigin: "person" });
+      if (!plan.mounted.length) return;
+      await mcp.callTool({ threadId, generation, botId: live.id, name: "remote_support_close", args: { code, outcome: "ended" } });
+    } finally {
+      await mcp.endGeneration(threadId, generation).catch(() => {});
+    }
+  },
 });
+/** The person speaking in this turn: whose Perspicax credentials a
+ * remote_support_* call used. A remote session is theirs, never the
+ * conversation owner's. */
+function remoteSessionSpeaker(threadId: string): string | undefined {
+  return safetyPrincipal(threadId).principalId?.trim().toLowerCase() || undefined;
+}
 openRemoteShell = (args) => {
-  const principalId = remoteSessions.principalFor(args.botId, args.threadId);
+  const principalId = remoteSessionSpeaker(args.threadId);
   if (!principalId) return Promise.resolve(null);
   return remoteSessions.openShell({ principalId, botId: args.botId, threadId: args.threadId });
 };
+// A session the bot opened with remote_support_open becomes a panel row and a
+// chat card once remote_support_status says connected (PerspicaxMcp.relay).
+const remoteSessionRegistrar = createRemoteSessionRegistrar({
+  // principalId: the speaker whose token made the call (PerspicaxMcp.relay)
+  publish: async ({ principalId, botId, threadId, open }) => {
+    await remoteSessions.publish({ ...open, botId, threadId, principalId });
+  },
+  end: async ({ principalId, botId, code }) => {
+    await remoteSessions.endByCode(principalId, botId, code);
+  },
+  recall: (code) => recallSupportSession(REMOTE_SUPPORT_DIR, code),
+  idOwners: (id) => supportOwnersOfId(REMOTE_SUPPORT_DIR, id),
+});
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
   browserNetworkDebug.clearOwner(sessionId);
@@ -10690,6 +10773,10 @@ function approvalAnswerRefusal(auth: RequestAuth, threadId: string, requestId: s
   const question = Boolean(message.card && typeof message.card === "object" && (message.card.questionRequest || isPersistentQuestionCard(message.card)));
   if (question) return null;
   if (message.card && typeof message.card === "object" && message.card.terminalRequest) return null;
+  // A team-memory card is the team's to confirm, not only the bot owner's:
+  // cardAnswerRefusal (always asked next) decides it by section membership.
+  // Every other approval stays with the owner.
+  if (message.card && typeof message.card === "object" && message.card.teamMemoryRequest) return null;
   if (!isApprovalCardMessage(message)) return refusal;
   const bot = botForApproval(threadId, message);
   const audience = bot ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, message.card), host: approvalHostOf(bot) }) : null;
@@ -11189,6 +11276,12 @@ function scopeApprovalMessage<T>(threadId: string, message: T, viewer: ApprovalV
     return accessCardForViewer(row, { principalId: viewer.userId, admin: person?.local === true || person?.orgRole === "admin" }) as T;
   }
   if (!isApprovalCardMessage(row)) return message;
+  // A team-memory card is the team's (cardAnswerRefusal): a person who can
+  // use a bot of that section gets the card itself, not "waiting on owner".
+  const teamMemory = (row.card as { teamMemoryRequest?: { section?: unknown } } | undefined)?.teamMemoryRequest;
+  if (teamMemory && typeof teamMemory.section === "string" && viewer.userId &&
+    teamMemoryShared() &&
+    viewerUsesTeamSection(authzViewerFromId(viewer.userId), teamMemory.section)) return message;
   const bot = botForApproval(threadId, row);
   const audience = bot
     ? approvalAudience({ ownerUserId: cardAnswererId(bot, threadId, row.card as { destinationAnswerer?: unknown } | undefined), host: approvalHostOf(bot) })
@@ -11615,8 +11708,11 @@ async function answerRequest(
   always?: boolean,
   rememberCommand?: boolean,
 ): Promise<RequestOutcome> {
-  // A member's bot on an organization server is approved one action at a
-  // time: no session allow and no saved command, whatever the answer asks.
+  // A member's bot on an organization server takes no session allow (the
+  // engine's own suggestion could reach past the bot) and no entry in the
+  // installation's saved command list. Its Always allow is an owner rule
+  // for this bot (saveOwnerRuleFromCard, 2026-10-21: the program on an
+  // admin's card), which the bot's owner or an admin may remove.
   const decidingBot = decidedFor ? store.bot(decidedFor.id) : undefined;
   if (decidingBot && memberOwnedInOrg(decidingBot)) {
     always = false;
@@ -14419,8 +14515,12 @@ bus.subscribe((event: RuntimeEvent) => {
       const ownerTool = event.mcpTool ?? event.tool;
       const ownerLayer = Boolean(permission && asker && event.requestId && !baseVerdict?.approve && !strictCard && !guestDriven
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool) && memberOwnScopeTool(ownerTool) !== "conversation");
+      // 2026-10-21 (review of #938): what a rule reads of this call, the
+      // engine's shell line included when it reports one beside no input
+      // (Codex, the ACP engines): never an empty scope
+      const ruleInput = ruleInputFor(typeof event.input === "string" ? event.input : undefined, event.command?.command);
       const ownerCall = ownerLayer && asker
-        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
+        ? { ownerId: cardAnswerer, botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
         : null;
       // 2026-10-17 (re-review of #690): the owner's permission mode (auto,
       // bypass) and Always allow rules never answer what Sagax itself would
@@ -14481,7 +14581,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // call. Never a guest's turn or someone else's environment.
       const strictCall = strictCard && permission && asker && event.requestId && !guestDriven && !foreignDestination
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool)
-        ? { botId: asker.id, tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
+        ? { botId: asker.id, tool: ownerTool, ...(ruleInput !== undefined ? { input: ruleInput } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }
         : null;
       // 2026-10-20 (security review): never on a turn that is not the
       // person's own (a routine, a webhook, another bot)
@@ -14538,22 +14638,23 @@ bus.subscribe((event: RuntimeEvent) => {
       // card shows (this bot, this tool, this target or exact command), never
       // for someone else's environment or a guest's turn. A security key the
       // person chose still asks at each use (ownerDecision step-up).
+      // Review of #938: a held card stays held, an admin's card included
+      // (it keeps the whole request, never the program)
+      const heldCard = safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true;
       const ruleFrom: OwnerRule["from"] = strictCall ? "admin"
-        : safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true ? "hold"
+        : heldCard ? "hold"
           : ownerOriginRefused ? "origin" : undefined;
+      // owner-approval.ts cardRuleCandidate: a card that never had a rule
+      // keeps the whole request; an engine's own shell line on an admin's
+      // card that is not held keeps its program for this bot (2026-10-21,
+      // JC); a call with no readable arguments offers nothing
       const ownerRuleCandidate = (owner?.kind === "card" && owner.reason !== "admin" && owner.reason !== "cross-person") || (strictCall && !baseVerdict?.approve)
-        ? (() => {
-          // 2026-10-20 (security review): a card that never had a rule (an
-          // admin's, a held one, a turn not the person's own) keeps the
-          // whole request, every argument, never only its target
-          const candidate = ruleCandidateFor({ tool: ownerTool, ...(typeof event.input === "string" ? { input: event.input } : {}), ...(event.command?.cwd ? { cwd: event.command.cwd } : {}) }, serverApprovalWords(cfg.language), {
-            wholeCall: ruleFrom !== undefined,
-            // 2026-10-20 (JC): a command is kept as its one program, except
-            // on an admin's card or a held one, which keep the very request
-            programScope: ruleFrom !== "admin" && ruleFrom !== "hold",
-          });
-          return scopeKeepable(candidate.scope) ? { ...candidate, ...(ruleFrom ? { from: ruleFrom } : {}) } : undefined;
-        })()
+        ? cardRuleCandidate({
+          tool: ownerTool,
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+          ...(event.command?.command ? { command: event.command.command } : {}),
+          ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
+        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
       // auto` for any model and starts in Manual without a word when auto is
@@ -26879,7 +26980,17 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
       return { organization, role, perspicaxTools: organization && Boolean(speaker) };
     },
   }),
-  createPerspicaxToolInternalRoutes({ tools: PERSPICAX_TOOL_NAMES, perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview, confidential: confidentialPerspicaxRefusal }),
+  createPerspicaxToolInternalRoutes({
+    tools: PERSPICAX_TOOL_NAMES,
+    perspicaxMcp: () => perspicaxMcp,
+    review: perspicaxNativeReview,
+    confidential: confidentialPerspicaxRefusal,
+    // remote_support_*: who opened it, written into the support folder
+    owner: (capability) => {
+      const principalId = perspicaxMcp?.turnPrincipal(capability.threadId, capability.generation, capability.botId) || remoteSessionSpeaker(capability.threadId);
+      return principalId ? { principalId: principalId.trim().toLowerCase(), botId: capability.botId } : null;
+    },
+  }),
   createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }), confidential: (threadId) => store.isConfidentialThread(threadId) }),
   createRoutineRunInternalRoutes<Routine, RoutineRun>({
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
@@ -26897,6 +27008,7 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   createRemoteSessionInternalRoutes({
     sessions: remoteSessions,
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    speaker: remoteSessionSpeaker,
   }),
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
   createArtifactInternalRoutes({
@@ -27365,6 +27477,26 @@ ROUTES.push(createOwnerApprovalRoutes({
   manager: ruleManager,
   ownedBots: botsOwnedBy,
   botName: (botId) => store.bot(botId)?.name,
+  // 2026-10-21 (JC): an Always allow kept on an admin's card of a member's
+  // bot is the bot's: its owner and a workspace admin see everyone's and may
+  // remove them. Review of #938: a holder of host.shell who is neither
+  // answers and saves such cards (strictRuleQualifies) and sees and removes
+  // their own rules for the bot (managesBot below), never someone else's.
+  sharedBotRules: (personId, botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return [];
+    const me = personId.trim().toLowerCase();
+    const owner = effectiveBotOwner(bot).trim().toLowerCase() === me;
+    return owner || workspaceAdminPrincipal(me) ? ownerApprovals.adminRulesForBot(botId) : [];
+  },
+  managesBot: (personId, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot && IDENTITY.kind === "perspicax" && strictRuleQualifies(personId.trim().toLowerCase(), bot, "admin"));
+  },
+  personName: (personId) => {
+    const person = principals.byId(personId.trim().toLowerCase());
+    return person?.name?.trim() || person?.email?.trim() || undefined;
+  },
   ownerOf: (botId) => {
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot) : null;
@@ -30333,6 +30465,15 @@ function strictRuleQualifies(personId: string, bot: BotRecord, kind: "admin" | "
   return person.local === true || person.orgRole === "admin" || principalCan(id, "host.shell");
 }
 
+/** Review of #938: an organization admin (or the local operator), signed
+ * in and not disabled, by their principal id. */
+function workspaceAdminPrincipal(personId: string): boolean {
+  const id = personId.trim().toLowerCase();
+  if (!id || !isPrincipalId(id)) return false;
+  const person = principals.byId(id);
+  return Boolean(person && person.disabledAt === undefined && (person.local === true || person.orgRole === "admin"));
+}
+
 /** The allow rule saved on an admin's card of this bot that answers this
  * call now: its person still holds the right and protects none of the
  * call's classes with a security key. */
@@ -30343,7 +30484,11 @@ function strictCardRule(
   kind: "admin" | "holder",
   stepUpCall: Parameters<typeof callStepUpClasses>[0],
 ): OwnerRule | undefined {
-  const rules = ownerApprovals.adminRulesForBot(bot.id).filter((rule) => strictRuleQualifies(rule.ownerId, bot, kind));
+  // review of #938: a rule kept before main fixed it with the fingerprint
+  // of no arguments (an engine's shell line reported beside no input)
+  // covered every command of the bot: it answers nothing. An empty scope is
+  // only ever its person's explicit "any target" (PATCH anyTarget).
+  const rules = ownerApprovals.adminRulesForBot(bot.id).filter((rule) => (!Object.keys(rule.scope).length || scopeRemembers(rule.scope)) && strictRuleQualifies(rule.ownerId, bot, kind));
   if (!rules.length) return undefined;
   const classes = callStepUpClasses(stepUpCall, threadActionClassContext(bot.id, threadId));
   for (const rule of rules) {
@@ -30474,6 +30619,10 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   const ownerId = strict ? caller! : cardAnswererId(bot, threadId, card);
   if (!caller || caller.toLowerCase() !== ownerId.toLowerCase()) return { status: 403, error: "Only the bot owner can save a rule." };
   const candidate = card.ownerRule;
+  // 2026-10-21 (review of #938): an empty scope is the whole tool, and the
+  // fingerprint of no arguments every such call: never saved from a card
+  // ("any target" stays an explicit edit of one's own rule)
+  if (!scopeRemembers(candidate.scope)) return { status: 409, error: "This approval cannot be remembered as a rule." };
   let saved: OwnerRule;
   try {
     saved = ownerApprovals.add({
@@ -32980,6 +33129,13 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     writeOnceScope: ({ threadId }) => activeRoutineRunForThread(threadId) || internalTurnThreads.has(threadId) ? "unattended" : null,
     // a live call keeps its Perspicax tools mounted from turn to turn
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
+    // remote_support_open / status / close: the session shows in Sagax (server/remote-session-register.ts)
+    onRemoteSupport: (call) => {
+      const principalId = call.principalId || remoteSessionSpeaker(call.threadId);
+      void remoteSessionRegistrar.observe({ ...call, ...(principalId ? { principalId } : {}) }).catch((error) => {
+        console.warn(`remote session: the card could not be posted (${error instanceof Error ? error.name : "error"})`);
+      });
+    },
     subjectOf: (principalId) => {
       const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
       return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;
@@ -42649,27 +42805,43 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (IDENTITY.kind === "perspicax" && body.approvalMode === "full") {
         const target = store.bot(m[1]);
         if (!target) return json(res, 404, { error: "no such bot" });
-        if (Object.keys(body).some((key) => key !== "approvalMode" && key !== "confirmFullAccess") ||
-          (body.confirmFullAccess !== undefined && typeof body.confirmFullAccess !== "boolean")) {
-          return json(res, 400, { error: "send { approvalMode: \"full\", confirmFullAccess } alone" });
-        }
+        const parsedFull = parseOrgFullAccessBody(body as Record<string, unknown>);
+        if ("error" in parsedFull) return json(res, 400, { error: parsedFull.error });
         // use may talk and rename a thread, not raise the bot. This branch
         // returns before the member field check, so the cap is applied here.
         if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
-        const refusal = orgFullAccessRefusalFor(auth, target, body.confirmFullAccess === true);
+        const refusal = orgFullAccessRefusalFor(auth, target, parsedFull.confirm);
         if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
         if (target.busy && !primaryAskedReplay()) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
-        const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: target.id, op: "bot", thread: "*", froms: [approvalModeFor(target)], to: "full", stepUp: patchStepUp });
+        // The settings control shows the open conversation. The grant has to
+        // land on that thread too, or the menu snaps back to the thread's
+        // previous level while only the bot default changed. Only a thread
+        // this caller is shown: never another member's conversation.
+        const followTask = parsedFull.threadId ? store.taskByThread(target.id, parsedFull.threadId) : undefined;
+        const followViewer = scopedThreadViewer() ?? sessionPrincipal(auth) ?? undefined;
+        const follow = threadFollowsFullGrant({
+          threadId: parsedFull.threadId,
+          knownThread: Boolean(followTask) && threadsShownTo(target, [followTask!], followViewer).length === 1,
+          threadBusy: Boolean(parsedFull.threadId && threadBusy(target.id, parsedFull.threadId)),
+        });
+        const threadBefore = follow ? approvalModeFor(store.projectBotForTask(target.id, follow) ?? target) : undefined;
+        // The key is asked against every level this grant loosens: the bot's
+        // default and, when it follows, the thread's own.
+        const fullStepUp = approvalModeStepUpGate({ person: ruleManager(auth), botId: target.id, op: "bot", thread: "*", froms: [approvalModeFor(target), ...(threadBefore ? [threadBefore] : [])], to: "full", stepUp: patchStepUp });
         if (fullStepUp) return json(res, fullStepUp.status, fullStepUp.body);
         const before = approvalModeFor(target);
         const updated = store.patchBot(target.id, {
           approvalMode: "full", autoApprove: false, alwaysAllow: [],
           fullAccessConsent: { principalId: sessionPrincipal(auth)!, at: Date.now() },
         })!;
+        if (follow) {
+          store.patchTask(updated.id, follow, { approvalMode: "full", autoApprove: false, alwaysAllow: [] });
+          auditApprovalModeChange(auth, target.id, threadBefore!, "full", follow);
+        }
         auditApprovalModeChange(auth, target.id, before, "full");
-        const visible = wireBot(updated);
+        const visible = wireBot(store.bot(updated.id)!);
         broadcast({ kind: "bot", bot: visible });
         return json(res, 200, { bot: visible });
       }
@@ -43606,6 +43778,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!url.searchParams.has("section")) return json(res, 400, { error: "section is required" });
       const section = sectionContextKey(url.searchParams.get("section") ?? "");
       if (section.length > 60) return json(res, 400, { error: "section must be at most 60 characters" });
+      const teamMemoryRefusal = teamMemoryWriteRefusal(auth, method);
+      if (teamMemoryRefusal) return json(res, 403, { error: teamMemoryRefusal });
       if (method === "GET") {
         return json(res, 200, { section, label: sectionContextLabel(section), entries: teamMemory.list(section) });
       }
@@ -43630,6 +43804,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && (method === "PATCH" || method === "DELETE")) {
       if (!url.searchParams.has("section")) return json(res, 400, { error: "section is required" });
       const section = sectionContextKey(url.searchParams.get("section") ?? "");
+      const teamMemoryRefusal = teamMemoryWriteRefusal(auth, method);
+      if (teamMemoryRefusal) return json(res, 403, { error: teamMemoryRefusal });
       if (method === "DELETE") {
         if (!teamMemory.remove(section, m[1])) return json(res, 404, { error: "no such entry" });
         return json(res, 200, { entries: teamMemory.list(section) });
@@ -44526,7 +44702,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const adminCheck = adminApprovalCheck(auth, bot.threadId, String(body.requestId));
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "On this card, Always allow keeps a rule for this bot; a session allow or a saved command is not offered." });
       const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, bot.threadId, String(body.requestId));
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, bot.threadId, String(body.requestId), behavior);
@@ -44649,7 +44825,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const adminCheck = adminApprovalCheck(auth, threadId, requestId);
       if (adminCheck === "refused") return json(res, 403, ADMIN_APPROVAL_REQUIRED);
-      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "a server command of a member's bot is approved once, never remembered" });
+      if (adminCheck && (body.always === true || body.rememberCommand === true)) return json(res, 400, { error: "On this card, Always allow keeps a rule for this bot; a session allow or a saved command is not offered." });
       const ownerRefusal = adminCheck ? null : approvalAnswerRefusal(auth, threadId, requestId);
       if (ownerRefusal) return json(res, 403, { error: ownerRefusal });
       const refusal = cardAnswerRefusal(auth, threadId, requestId, behavior);

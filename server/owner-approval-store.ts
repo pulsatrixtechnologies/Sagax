@@ -127,6 +127,13 @@ export class OwnerApprovalStore {
     return this.data.rules.filter((rule) => rule.botId === botId && rule.from === "admin" && rule.behavior === "allow").map((rule) => ({ ...rule }));
   }
 
+  /** 2026-10-21: one rule saved on an admin's card, by its id, whoever
+   * saved it (the bot's owner and an admin may remove it). */
+  adminRuleById(id: string): OwnerRule | undefined {
+    const rule = this.data.rules.find((row) => row.id === id && row.from === "admin" && row.botId !== null);
+    return rule ? { ...rule } : undefined;
+  }
+
   /** Save a rule for this person. The same tool, scope, kind and bot
    * replaces its behavior instead of adding a second row. */
   add(input: NewRule): OwnerRule {

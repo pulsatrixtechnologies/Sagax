@@ -27,13 +27,13 @@ describe("publish body", () => {
       os: "windows",
       rights: "elevated",
       end_at: "2026-10-21T21:15:00.000Z",
-      hostname: `GOXP103 ${ADDRESS}`,
-      user: "gox\\zsellam",
+      hostname: `POSTE-02 ${ADDRESS}`,
+      user: "exemple\\technicien",
     }, now);
     expect("error" in parsed).toBe(false);
     if ("error" in parsed) return;
     expect(parsed.value.code).toBe("UD6HFH");
-    expect(parsed.value.facts?.hostname).toBe("GOXP103");
+    expect(parsed.value.facts?.hostname).toBe("POSTE-02");
     expect(JSON.stringify(parsed.value)).not.toContain(ADDRESS);
     expect("error" in parsePublishBody({
       flow_session_id: ID, code: "UD6HFH", os: "windows", rights: "standard", end_at: "2026-10-21T21:15:00.000Z",
@@ -76,8 +76,8 @@ describe("remote session service", () => {
         return {
           code: 0,
           stdout: [
-            "hostname=GOXP103",
-            "user=gox\\zsellam",
+            "hostname=POSTE-02",
+            "user=exemple\\technicien",
             "model=OptiPlex",
             "serial=SN1",
             "cpu=Intel Core i5",
@@ -143,17 +143,17 @@ describe("remote session service", () => {
     tunnel();
     const published = await service.publish(input);
     expect(published.reachable).toBe(true);
-    expect(published.view.hostname).toBe("GOXP103");
-    expect(published.view.user).toBe("gox\\zsellam");
+    expect(published.view.hostname).toBe("POSTE-02");
+    expect(published.view.user).toBe("exemple\\technicien");
     expect(published.view.serial).toBe("SN1");
     expect(published.view.disk).toContain("libres sur");
     expect(published.view.elevated).toBe(true);
     expect(published.view.suggestions.map((hint) => hint.id)).toEqual(["disk-low", "cpu", "errors", "startup"]);
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.remoteSession?.hostname).toBe("GOXP103");
+    expect(messages[0]?.remoteSession?.hostname).toBe("POSTE-02");
     const again = await service.publish({ ...input, facts: { cpu: "kept until probe" } });
     expect(messages).toHaveLength(1);
-    expect(again.view.hostname).toBe("GOXP103");
+    expect(again.view.hostname).toBe("POSTE-02");
     const saved = readFileSync(path.join(dataDir, "remote-sessions.json"), "utf8");
     expect(saved).not.toContain(ADDRESS);
     expect(JSON.stringify(messages)).not.toContain(ADDRESS);
@@ -224,14 +224,14 @@ describe("remote session service", () => {
     tunnel();
     await service.publish(input);
     const opened = await service.openShell({ principalId: PERSON, botId: BOT, threadId: THREAD });
-    expect(opened).toMatchObject({ hostLabel: "GOXP103" });
-    expect(messages.some((message) => message.terminalEmbed?.provider === "tailcat" && message.terminalEmbed.hostLabel === "GOXP103")).toBe(true);
+    expect(opened).toMatchObject({ hostLabel: "POSTE-02" });
+    expect(messages.some((message) => message.terminalEmbed?.provider === "tailcat" && message.terminalEmbed.hostLabel === "POSTE-02")).toBe(true);
     expect(JSON.stringify(messages)).not.toContain(ADDRESS);
     expect(await service.openShell({ principalId: OTHER, botId: BOT, threadId: THREAD })).toBeNull();
     const sent = await service.upload(PERSON, BOT, ID, "notes.txt", Buffer.from("hello"));
     expect(sent).toEqual({ name: "notes.txt" });
     expect(calls.some((argv) => argv[1] === "cp" && argv.at(-1)?.endsWith("notes.txt"))).toBe(true);
-    const pulled = await service.download(PERSON, BOT, ID, "C:/Users/zsellam/Desktop/notes.txt");
+    const pulled = await service.download(PERSON, BOT, ID, "C:/Users/usager/Desktop/notes.txt");
     expect("bytes" in pulled && pulled.name).toBe("notes.txt");
     expect(await service.download(PERSON, BOT, ID, "C:/Users/../secret.txt")).toEqual({ error: "That path cannot be downloaded." });
     expect(await service.download(PERSON, BOT, ID, ADDRESS)).toEqual({ error: "That path cannot be downloaded." });

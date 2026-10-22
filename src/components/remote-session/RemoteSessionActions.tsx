@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, Terminal, Upload } from "lucide-react";
+import { Download, Monitor, Terminal, Upload } from "lucide-react";
 
 import type { RemoteSessionView } from "../../../shared/remote-session";
 import { t } from "@/lib/i18n";
@@ -12,8 +12,9 @@ export function remoteFileNotice(kind: "sent" | "downloaded", name: string): str
   return t("remoteSession.downloaded", { name: base });
 }
 
-/** Shell, upload and download for one connected session. */
-export function RemoteSessionActions({ botId, view }: { botId: string; view: RemoteSessionView }) {
+/** Shell, upload and download for one connected session. The chat card adds
+ * Prendre le contrôle (onTakeControl), which opens the Computer tab. */
+export function RemoteSessionActions({ botId, view, onTakeControl }: { botId: string; view: RemoteSessionView; onTakeControl?: () => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -58,6 +59,11 @@ export function RemoteSessionActions({ botId, view }: { botId: string; view: Rem
   return (
     <div className="flex flex-col gap-2 px-3 py-3">
       <div className="flex flex-wrap gap-2">
+        {onTakeControl && (
+          <button type="button" data-remote-take-control="" onClick={onTakeControl} className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-raised">
+            <Monitor size={14} /> {t("remoteSession.takeControl")}
+          </button>
+        )}
         <button type="button" disabled={pending !== null} onClick={() => void shell()} className="inline-flex items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-raised disabled:opacity-50">
           <Terminal size={14} /> {t("remoteSession.shell")}
         </button>

@@ -132,7 +132,19 @@ export interface PluginSources {
    * nor managed service): an app that also exists as an MCP server is then
    * offered as the server */
   composioUsable?: boolean;
+  /** Cloud connectors of the xAI account (shared/grok-cloud-connectors.ts),
+   * only when a Grok provider is set up. A catalog of names managed on
+   * grok.com: never connected, never a Composio app, never merged with one. */
+  grok?: { connectors: readonly { id: string; name: string; tag: string }[]; description: string } | null;
 }
+
+/** Grok connector rows live in their own namespace: their key and id start
+ * with this, so no Composio slug, status or action ever reaches them. */
+export const GROK_CONNECTOR_PREFIX = "grok:";
+
+/** A row of the xAI connector catalog (managed on grok.com, not here). */
+export const isGrokConnector = (item: Pick<PluginItem, "source" | "key">) =>
+  item.source === "grok" && item.key.startsWith(GROK_CONNECTOR_PREFIX);
 
 export const WHOP_KEY = "whop:whop";
 
@@ -177,6 +189,24 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       status: state?.pending ? "pending" : failed && !accounts.length ? "needs_auth" : connected ? "connected" : "available",
       action: connected ? null : card.noAuth ? "add" : "connect",
       source: "composio",
+    });
+  }
+  for (const connector of sources.grok?.connectors ?? []) {
+    const id = connector.id.trim();
+    const name = connector.name.trim();
+    if (!id || !name) continue;
+    items.push({
+      key: `${GROK_CONNECTOR_PREFIX}${id}`,
+      kind: "app",
+      id: `${GROK_CONNECTOR_PREFIX}${id}`,
+      name,
+      description: sources.grok!.description,
+      domain: "grok.com",
+      category: categoryFromTags([connector.tag]),
+      installed: false,
+      status: "available",
+      action: null,
+      source: "grok",
     });
   }
   if (sources.whop) {
@@ -285,7 +315,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
 
 /** Kinds that stand for an app someone connects: the same app from two
  * sources (a Composio app and a catalog MCP server) is one row. */
-const mergeable = (item: PluginItem) => !item.parent && (item.kind === "app" || item.kind === "featured" || item.kind === "mcp");
+const mergeable = (item: PluginItem) => !item.parent && !isGrokConnector(item) && (item.kind === "app" || item.kind === "featured" || item.kind === "mcp");
 
 /** One row per app. What is installed always shows; otherwise the row
  * offers the best way to connect it: the connected app (Composio) when it

@@ -429,6 +429,67 @@ export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints"
   };
 }
 
+/** 2026-10-21 (review of #938): the arguments a rule reads for a call.
+ * Codex and the ACP engines (Grok, Cursor, Qwen, Kimi, OpenCode, Hermes,
+ * Droid) report a shell line as the event's `command` beside no `input`: the
+ * line is read as the call's `command` argument, at a rule's creation and at
+ * each use, so its program (or exact text) is kept, never an empty scope that
+ * would cover every command of the bot. A call that names its command
+ * already, or whose input is not a JSON object, is kept as is. */
+export function ruleInputFor(input: string | undefined, command: string | undefined): string | undefined {
+  const line = typeof command === "string" && command.trim() ? command : undefined;
+  if (!line) return input;
+  if (input === undefined || !input.trim()) return JSON.stringify({ command: line });
+  const args = parseArgs(input);
+  if (!args || "command" in args || "cmd" in args) return input;
+  return JSON.stringify({ ...args, command: line });
+}
+
+const NO_ARGUMENT_DIGESTS: ReadonlySet<string> = new Set([wholeCallDigest(undefined), wholeCallDigest("{}")]);
+
+/** 2026-10-21 (review of #938): whether a scope may be kept from a card. An
+ * empty scope is the whole tool, and the fingerprint of a call with no
+ * arguments covers every such call (on main, every input-less shell line of
+ * Codex or an ACP engine): neither is ever saved from a card. "Any target"
+ * stays the person's explicit choice on their own rule (PATCH anyTarget). */
+export function scopeRemembers(scope: RuleScope): boolean {
+  const keys = Object.keys(scope);
+  if (!keys.length) return false;
+  return !(keys.length === 1 && keys[0] === WHOLE_CALL_KEY && NO_ARGUMENT_DIGESTS.has(scope[WHOLE_CALL_KEY]!));
+}
+
+/** What "Always allow" or "Always deny" on a permission card would keep, or
+ * undefined when nothing safe can be kept.
+ * - an ordinary card (no `from`): the target, a command as its one program;
+ * - a card that never had a rule (`from`: an admin's, a held one, a turn
+ *   that is not the person's own) keeps the whole request, every argument;
+ * - 2026-10-21 (JC: "Toujours permettre" on a member's bot must stick): on
+ *   an admin's card (or a holder's), the engine's own shell line is kept like
+ *   on a solo bot, as its one program in its folder (else its exact text),
+ *   for that bot only; the engine writes a new `description` beside each
+ *   command, so the whole request never matched again;
+ * - review of #938: a held card (a safety hold, a sandbox widening, Codex
+ *   additional permissions or network, requiresExplicitApproval) keeps the
+ *   whole request even when it is an admin's card. */
+export function cardRuleCandidate(
+  call: { tool: string; input?: string; command?: string; cwd?: string },
+  situation: { from?: RuleSituation; held?: boolean },
+  words: ApprovalWords = ENGLISH_WORDS,
+): (RuleCandidate & { from?: RuleSituation }) | undefined {
+  const input = ruleInputFor(call.input, call.command);
+  if (input === undefined || !input.trim()) return undefined;
+  const args = parseArgs(input);
+  if (args && Object.keys(args).length === 0) return undefined;
+  const held = situation.held === true || situation.from === "hold";
+  const nativeShell = situation.from === "admin" && !held && typeof call.command === "string" && call.command.trim().length > 0;
+  const candidate = ruleCandidateFor({ tool: call.tool, input, ...(call.cwd ? { cwd: call.cwd } : {}) }, words, {
+    wholeCall: situation.from !== undefined && !nativeShell,
+    programScope: !held && (situation.from !== "admin" || nativeShell),
+  });
+  if (!scopeKeepable(candidate.scope) || !scopeRemembers(candidate.scope)) return undefined;
+  return { ...candidate, ...(situation.from ? { from: situation.from } : {}) };
+}
+
 export function isBotPermissionMode(value: unknown): value is BotPermissionMode {
   return typeof value === "string" && (BOT_PERMISSION_MODES as readonly string[]).includes(value);
 }

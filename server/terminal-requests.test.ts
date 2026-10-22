@@ -108,7 +108,7 @@ describe("terminal destination rights", () => {
     expect(defaultTerminalDestination(rows, null)?.provider).toBe("sandbox");
     expect(defaultTerminalDestination(rows.slice(0, 1), "sandbox")?.provider).toBe("ssh");
     expect(defaultTerminalDestination([], "sandbox")).toBeNull();
-    const withRemote = [...rows, { id: "0123456789ab", provider: "tailcat" as const, label: "Session à distance", hostLabel: "GOXP103", status: "online" as const, scope: "personal" as const }];
+    const withRemote = [...rows, { id: "0123456789ab", provider: "tailcat" as const, label: "Session à distance", hostLabel: "POSTE-02", status: "online" as const, scope: "personal" as const }];
     expect(defaultTerminalDestination(withRemote, null)?.provider).toBe("sandbox");
     expect(defaultTerminalDestination(withRemote.slice(-1), null)).toBeNull();
   });

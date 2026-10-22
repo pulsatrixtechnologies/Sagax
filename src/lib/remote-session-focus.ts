@@ -31,3 +31,40 @@ export function useFocusedRemoteSession(botId: string): string | null {
     () => null,
   );
 }
+
+// Prendre le contrôle opens the Computer tab in every mode. Simple hides that
+// tab otherwise, so the bot whose remote session is being controlled is kept
+// here until the Computer tab closes.
+let controlling: string | null = null;
+const controlListeners = new Set<() => void>();
+
+function emitControl() {
+  for (const listener of controlListeners) listener();
+}
+
+export function startRemoteControl(botId: string) {
+  if (controlling === botId) return;
+  controlling = botId;
+  emitControl();
+}
+
+export function endRemoteControl() {
+  if (controlling === null) return;
+  controlling = null;
+  emitControl();
+}
+
+export function remoteControlBot(): string | null {
+  return controlling;
+}
+
+export function useRemoteControlBot(): string | null {
+  return useSyncExternalStore(
+    (listener) => {
+      controlListeners.add(listener);
+      return () => controlListeners.delete(listener);
+    },
+    () => controlling,
+    () => null,
+  );
+}

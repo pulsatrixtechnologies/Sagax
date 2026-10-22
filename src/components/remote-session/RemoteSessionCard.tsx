@@ -4,6 +4,7 @@ import type { LocaleKey } from "@/locales";
 import { useStore } from "@/state/store";
 import { RemoteSessionActions } from "./RemoteSessionActions";
 import { RemoteSessionFacts } from "./RemoteSessionFacts";
+import { takeRemoteControl } from "./RemoteSessionsSection";
 
 const SUGGESTION_LABEL: Record<string, LocaleKey> = {
   "disk-critical": "remoteSession.suggest.disk-critical",
@@ -62,7 +63,11 @@ export function RemoteSessionCard({ botId, threadId, view }: { botId: string; th
         </div>
       )}
       <div className="border-t border-hairline/40">
-        <RemoteSessionActions botId={botId} view={view} />
+        <RemoteSessionActions
+          botId={botId}
+          view={view}
+          onTakeControl={() => takeRemoteControl(botId, view.id, () => dispatch({ type: "toggleComputer", open: true }))}
+        />
       </div>
     </div>
   );
