@@ -10,7 +10,7 @@
 import "./dev-pods.css";
 import "./all-pods";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type Dispatch, type ReactNode } from "react";
-import { PanelRight } from "lucide-react";
+import { CodeXml } from "lucide-react";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -337,7 +337,7 @@ export function DevPodsToggle({ bot }: { bot: Pick<Bot, "id" | "threadId"> }) {
       onClick={toggle}
       className={cn(CIRCLE_BUTTON, shown && "bg-elevated-hover")}
     >
-      <PanelRight size={18} strokeWidth={1.75} />
+      <CodeXml size={18} strokeWidth={1.75} />
     </button>
   );
 }
