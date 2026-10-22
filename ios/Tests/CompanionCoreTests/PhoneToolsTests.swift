@@ -121,4 +121,27 @@ final class PhoneToolsTests: XCTestCase {
         XCTAssertEqual(PhoneToolRules.transport(protectedTransport: false), "local")
         XCTAssertEqual(PhoneToolRules.transport(protectedTransport: true), "protected")
     }
+
+    func testCreateCardsShowEveryFieldAndShortcutsTheirWholeInput() throws {
+        let reminder = try wire(tool: "reminders", args: #"{"action":"create","title":"Pain","due":"2026-10-22T09:00:00Z","list":"Épicerie","notes":"blé entier"}"#)
+        XCTAssertEqual(PhoneToolDetails.fields(reminder).map(\.key), ["title", "due", "list", "notes"])
+        let event = try wire(tool: "calendar", args: #"{"action":"create","title":"Dentiste","start":"2026-10-22T09:00:00Z","end":"2026-10-22T10:00:00Z","location":"Laval","notes":"carte"}"#)
+        XCTAssertEqual(PhoneToolDetails.fields(event).map(\.key), ["title", "start", "end", "location", "notes"])
+        let long = String(repeating: "x", count: 900)
+        let shortcut = try wire(tool: "shortcut", args: #"{"name":"Payer","input":"\#(long)"}"#)
+        let rows = PhoneToolDetails.fields(shortcut)
+        XCTAssertEqual(rows.map(\.key), ["name", "input"])
+        XCTAssertEqual(rows.last?.value, long)
+        XCTAssertTrue(PhoneToolDetails.warnsOfSideEffects(shortcut))
+        XCTAssertFalse(PhoneToolDetails.warnsOfSideEffects(try wire(tool: "status")))
+        XCTAssertTrue(PhoneToolDetails.fields(try wire(tool: "status")).isEmpty)
+    }
+
+    func testTheClipboardIsReadFirstAndShownBeforeItGoes() {
+        XCTAssertEqual(PhoneToolDetails.clipboardPreview(nil), nil)
+        XCTAssertEqual(PhoneToolDetails.clipboardPreview("court"), "court")
+        let preview = PhoneToolDetails.clipboardPreview(String(repeating: "a", count: 500))
+        XCTAssertEqual(preview?.count, 201)
+        XCTAssertEqual(preview?.last, "…")
+    }
 }

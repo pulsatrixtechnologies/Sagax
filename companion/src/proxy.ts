@@ -12,6 +12,7 @@
 // harness as itself, from the machine the harness is already willing to
 // serve. Packaged harnesses also require a private per-launch relay capability,
 // attached only after authenticating the phone and authorizing its route.
+import { COMPANION_TRANSPORT_HEADER, companionTransport } from "./transport.ts";
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 
@@ -247,6 +248,8 @@ const forwardHeaders = (req: IncomingMessage, authenticatedDeviceId?: string, mu
   const out: Record<string, string> = {
     accept: String(req.headers.accept ?? "*/*"),
     ...companionIdentityHeaders(authenticatedDeviceId, mutationToken),
+    // the phone's own connection, never a header it sent (phone tools, transport.ts)
+    [COMPANION_TRANSPORT_HEADER]: companionTransport(req),
   };
   const contentType = req.headers["content-type"];
   if (contentType) out["content-type"] = String(contentType);

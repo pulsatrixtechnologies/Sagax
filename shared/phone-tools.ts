@@ -110,12 +110,29 @@ export function phoneToolAccess(tool: PhoneToolId, args: Record<string, unknown>
   return "read";
 }
 
-/** The key a "Toujours permettre" is saved under, or null when the tool
- * never offers one. */
+/** The key a "Toujours permettre" is saved under, or null when the card
+ * never offers one (review of #960): exactly what was allowed, nothing
+ * wider. Status; the approximate position (never precise); contacts with
+ * that very set of fields; reading reminders or the calendar. Anything
+ * that changes the phone (creating a reminder or an event), a precise
+ * position, a shortcut, the clipboard and photos are asked each time. */
 export function phoneToolGrantKey(tool: PhoneToolId, args: Record<string, unknown>): string | null {
-  if (PHONE_TOOLS_ONCE_ONLY.has(tool)) return null;
-  return `${tool}:${phoneToolAccess(tool, args)}`;
+  if (PHONE_TOOLS_ONCE_ONLY.has(tool) || phoneToolAccess(tool, args) === "write") return null;
+  if (tool === "location") return args.precise === true ? null : "location:read:approximate";
+  if (tool === "contacts") {
+    const fields = [...new Set((args.fields as string[] | undefined) ?? ["phone", "email"])].sort();
+    return `contacts:read:${fields.join("+")}`;
+  }
+  return `${tool}:read`;
 }
+
+/** phone_tool as an engine names it (mcp__agents__phone_tool, agents_phone_tool). */
+export function isPhoneToolCallName(name: string | undefined): boolean {
+  return typeof name === "string" && /(?:^|[_.])phone_tool$/.test(name);
+}
+
+/** What the transcript keeps of a phone_tool answer: never the data. */
+export const PHONE_TOOL_OUTPUT_NOT_KEPT = "Phone data not kept in the conversation.";
 
 const text = (max: number) => z.string().max(max);
 const short = text(200);

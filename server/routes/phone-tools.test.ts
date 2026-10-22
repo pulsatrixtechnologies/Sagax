@@ -28,10 +28,12 @@ describe("phone tool routes", () => {
       broker: () => broker,
       // a phone says who it is with x-who and x-device (the harness reads the
       // session or the companion's vouched device instead)
+      // x-transport stands for the connection (the harness reads the socket)
       phone: (req) => {
         const who = req.headers["x-who"];
         const device = req.headers["x-device"];
-        return typeof who === "string" && typeof device === "string" ? { person: who, deviceId: device } : null;
+        const transport = req.headers["x-transport"] === "local" ? "local" as const : "protected" as const;
+        return typeof who === "string" && typeof device === "string" ? { person: who, deviceId: device, transport } : null;
       },
       botName: (id) => (id === "bot1" ? "Wren" : undefined),
     })];
@@ -69,7 +71,9 @@ describe("phone tool routes", () => {
 
   it("a phone on plain local Wi-Fi registers, but offers nothing", async () => {
     const { call } = await serve();
-    expect((await call("POST", "/api/me/phone-tools/device", { tools: ["location"], transport: "local" }, ann)).body).toEqual({ ok: true, tools: [] });
+    expect((await call("POST", "/api/me/phone-tools/device", { tools: ["location"], transport: "local" }, { ...ann, "x-transport": "local" })).body).toEqual({ ok: true, tools: [] });
+    // the body cannot claim a protected route the connection is not
+    expect((await call("POST", "/api/me/phone-tools/device", { tools: ["location"], transport: "protected" }, { ...ann, "x-transport": "local" })).body).toEqual({ ok: true, tools: [] });
     expect((await call("POST", "/api/internal/phone-tools", { tool: "location" })).body.error).toMatch(/HTTPS or Tailscale/);
   });
 

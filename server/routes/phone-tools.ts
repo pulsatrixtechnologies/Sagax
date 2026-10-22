@@ -16,6 +16,7 @@ import { z } from "zod";
 import { parsePhoneToolArgs, phoneAnswerSchema, phoneDeviceSchema, PHONE_TOOL_CALL_WAIT_MS } from "../../shared/phone-tools.ts";
 import { PhoneToolUnavailable, type PhoneToolBroker } from "../phone-tools.ts";
 import type { RequestAuth } from "../request-auth.ts";
+import type { PhoneTransport } from "../../shared/phone-transport.ts";
 import type { InternalCapabilityView, InternalRouteHandler } from "./internal-route.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -32,16 +33,19 @@ const internalBody = z.union([
 
 export interface PhoneToolRouteDeps {
   broker(): PhoneToolBroker;
-  /** The paired phone behind this request: its person and a stable id for
-   * the device (the companion's vouched device, or the session). Null for a
-   * bot, a browser, a service, or anyone who is not a person. */
-  phone(req: IncomingMessage, auth: RequestAuth): { person: string; deviceId: string } | null;
+  /** The paired phone behind this request: its person, a stable id for the
+   * device (the companion's vouched device, or the native app's bearer
+   * session) and how it reached the server, read from the connection
+   * (shared/phone-transport.ts), never from the body. Null for a bot, a
+   * browser, a service, or anyone who is not a person. */
+  phone(req: IncomingMessage, auth: RequestAuth): { person: string; deviceId: string; transport: PhoneTransport } | null;
   botName(botId: string): string | undefined;
 }
 
 export function createPhoneToolRoutes(deps: PhoneToolRouteDeps): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
-    if (path !== `${PREFIX}/device` && path !== `${PREFIX}/requests` && path !== `${PREFIX}/grants` && !REQUEST_PATH.test(path)) return PASS;
+    // literal paths, so scripts/tool-policy reads them (admin rows: never a bot's)
+    if (!(path === "/api/me/phone-tools/device" || path === "/api/me/phone-tools/requests" || path === "/api/me/phone-tools/grants") && !REQUEST_PATH.test(path)) return PASS;
     res.setHeader("cache-control", "no-store");
     const phone = deps.phone(req, auth);
     if (!phone) return json(res, 403, { error: "Only your paired phone uses phone tools.", code: "phone_required" });
@@ -51,7 +55,8 @@ export function createPhoneToolRoutes(deps: PhoneToolRouteDeps): RouteHandler {
       if (method !== "POST") return json(res, 405, { error: "POST" });
       const parsed = phoneDeviceSchema.safeParse(await readBody(req));
       if (!parsed.success) return json(res, 400, { error: "send { deviceName?, tools: [location, contacts, reminders, calendar, photos, shortcut, clipboard, status] }" });
-      broker.registerDevice(phone.person, phone.deviceId, parsed.data);
+      // the transport is the connection's, whatever the body says (review of #960)
+      broker.registerDevice(phone.person, phone.deviceId, { deviceName: parsed.data.deviceName, tools: parsed.data.tools, transport: phone.transport });
       return json(res, 200, { ok: true, tools: broker.availableTools(phone.person) });
     }
 

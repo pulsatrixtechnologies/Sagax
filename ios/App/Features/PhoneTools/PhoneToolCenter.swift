@@ -12,6 +12,7 @@
 import CompanionCore
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @MainActor
 final class PhoneToolCenter: ObservableObject {
@@ -48,6 +49,7 @@ final class PhoneToolCenter: ObservableObject {
         self.session = session
         Task { await register() }
         Task { await refresh() }
+        Task { await showIntroOnce() }
         heartbeat?.cancel()
         // while the app is open, the server keeps offering the tools
         heartbeat = Task { [weak self] in
@@ -94,13 +96,53 @@ final class PhoneToolCenter: ObservableObject {
             return
         }
         if PhoneToolRules.runsWithoutCard(request, appActive: UIApplication.shared.applicationState == .active, offered: offeredSet, protectedTransport: protected) {
-            // "Toujours permettre" given earlier, the app open: run it now
+            // "Toujours permettre" given earlier, the app open: run it now,
+            // and say so every time (review of #960)
             await run(request, decision: .always)
+            announceSilentRun(request)
             await next()
             return
         }
+        // the clipboard is read first and shown on the card; only what the
+        // person saw goes, after their yes (review of #960)
+        if request.tool == .clipboard {
+            clipboardText = UIPasteboard.general.hasStrings ? UIPasteboard.general.string : nil
+        } else {
+            clipboardText = nil
+        }
         current = request
-        present(request)
+        present(request, clipboardPreview: PhoneToolDetails.clipboardPreview(clipboardText))
+    }
+
+    /// The first time this phone offers tools, a sheet lists them and where
+    /// to turn each off (on by default, each request still asks; review of #960).
+    static let introSeenKey = "phoneTools.introSeen"
+
+    private func showIntroOnce() async {
+        guard !UserDefaults.standard.bool(forKey: Self.introSeenKey), let session, session.phoneCredentialTransportIsProtected else { return }
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        guard current == nil, UIApplication.shared.applicationState == .active, let top = Self.topViewController() else { return }
+        UserDefaults.standard.set(true, forKey: Self.introSeenKey)
+        let host = UIHostingController(rootView: PhoneToolsIntro(tools: offered) { [weak self] in self?.introHost?.dismiss(animated: true) }.themeOverlay())
+        if let sheet = host.sheetPresentationController { sheet.detents = [.medium(), .large()] }
+        introHost = host
+        top.present(host, animated: true)
+    }
+
+    private weak var introHost: UIViewController?
+
+    /// What the clipboard held when its card showed: sent as seen, never re-read.
+    private var clipboardText: String?
+
+    /// A request "Toujours permettre" covered ran without a card: a banner
+    /// says which bot used which tool.
+    private func announceSilentRun(_ request: PhoneToolRequest) {
+        guard let tool = request.tool else { return }
+        let content = UNMutableNotificationContent()
+        content.title = request.botName.isEmpty ? String(localized: "A bot") : request.botName
+        content.body = String(localized: "Used \(PhoneToolWords.name(tool)) on this phone (always allowed).")
+        content.userInfo = ["kind": "phone-tool", "threadId": request.threadId, "botId": request.botId]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "sagax.phone-tool.\(request.id)", content: content, trigger: nil))
     }
 
     /// The person's choice on the card. Photos pass the picked images.
@@ -108,17 +150,21 @@ final class PhoneToolCenter: ObservableObject {
         guard let request = current else { return }
         close()
         if choice == .deny || request.tool == nil || !offered.contains(request.tool!) {
+            clipboardText = nil
             await send(request, PhoneToolAnswer.denied)
         } else {
-            await run(request, decision: PhoneToolRules.decision(choice), photos: photos)
+            let prepared: WidgetJSON? = request.tool == .clipboard ? PhoneToolShaping.clipboard(clipboardText) : nil
+            await run(request, decision: PhoneToolRules.decision(choice), photos: photos, prepared: prepared)
         }
         await next()
     }
 
-    private func run(_ request: PhoneToolRequest, decision: PhoneToolDecision, photos: [Data]? = nil) async {
+    private func run(_ request: PhoneToolRequest, decision: PhoneToolDecision, photos: [Data]? = nil, prepared: WidgetJSON? = nil) async {
+        clipboardText = nil
         let answer: PhoneToolAnswer
         do {
-            let result = try await PhoneToolRunner.run(request, photos: photos)
+            let result: WidgetJSON
+            if let prepared { result = prepared } else { result = try await PhoneToolRunner.run(request, photos: photos) }
             answer = PhoneToolAnswer(decision: decision, result: result)
         } catch {
             answer = PhoneToolAnswer(decision: decision, error: error.localizedDescription)
@@ -136,9 +182,9 @@ final class PhoneToolCenter: ObservableObject {
 
     // MARK: - The card
 
-    private func present(_ request: PhoneToolRequest) {
+    private func present(_ request: PhoneToolRequest, clipboardPreview: String? = nil) {
         guard let top = Self.topViewController() else { return }
-        let host = UIHostingController(rootView: PhoneToolCard(request: request).themeOverlay())
+        let host = UIHostingController(rootView: PhoneToolCard(request: request, clipboardPreview: clipboardPreview).themeOverlay())
         // a question stays until answered: no swipe away, Refuser is the way out
         host.isModalInPresentation = true
         if let sheet = host.sheetPresentationController {

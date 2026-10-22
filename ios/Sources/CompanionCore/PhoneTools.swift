@@ -386,3 +386,35 @@ public extension CompanionClient {
         try await send(makeRequest("DELETE", "/api/me/phone-tools/grants", body: ["botId": botId, "key": key]))
     }
 }
+
+/// What a card shows besides its one-line summary (review of #960): every
+/// field of a reminder or an event the bot wants to create, a shortcut's
+/// whole input, and what the clipboard holds before it goes.
+public enum PhoneToolDetails {
+    public struct Field: Equatable, Sendable {
+        public var key: String
+        public var value: String
+    }
+
+    public static func fields(_ request: PhoneToolRequest) -> [Field] {
+        let keys: [String]
+        switch request.tool {
+        case .reminders where request.action == "create": keys = ["title", "due", "list", "notes"]
+        case .calendar where request.action == "create": keys = ["title", "start", "end", "location", "notes"]
+        case .shortcut: keys = ["name", "input"]
+        default: keys = []
+        }
+        return keys.compactMap { key in request.string(key).map { Field(key: key, value: $0) } }
+    }
+
+    /// A shortcut can send a message, pay or change things: the card says so.
+    public static func warnsOfSideEffects(_ request: PhoneToolRequest) -> Bool {
+        request.tool == .shortcut
+    }
+
+    /// The start of what the clipboard holds, read before the card shows.
+    public static func clipboardPreview(_ text: String?) -> String? {
+        guard let text, !text.isEmpty else { return nil }
+        return text.count > 200 ? String(text.prefix(200)) + "…" : text
+    }
+}

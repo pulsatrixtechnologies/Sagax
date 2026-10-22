@@ -1,6 +1,182 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Used %@ on this phone (always allowed).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Used %@ on this phone (always allowed)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A utilisé %@ sur ce téléphone (toujours permis)."
+          }
+        }
+      }
+    },
+    "This shortcut can send messages, pay or change things on your behalf.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This shortcut can send messages, pay or change things on your behalf."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce raccourci peut envoyer des messages, payer ou modifier des choses en votre nom."
+          }
+        }
+      }
+    },
+    "What would be sent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What would be sent"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce qui serait envoyé"
+          }
+        }
+      }
+    },
+    "The clipboard holds no text.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The clipboard holds no text."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le presse-papiers ne contient aucun texte."
+          }
+        }
+      }
+    },
+    "Due": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Due"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échéance"
+          }
+        }
+      }
+    },
+    "Notes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Notes"
+          }
+        }
+      }
+    },
+    "Place": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Place"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lieu"
+          }
+        }
+      }
+    },
+    "Shortcut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Raccourci"
+          }
+        }
+      }
+    },
+    "Text sent to the shortcut": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text sent to the shortcut"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Texte envoyé au raccourci"
+          }
+        }
+      }
+    },
+    "Your own bots may ask this iPhone for these. Each request shows a card here first; nothing runs in the background, and only over a secure connection (HTTPS or Tailscale).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your own bots may ask this iPhone for these. Each request shows a card here first; nothing runs in the background, and only over a secure connection (HTTPS or Tailscale)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos propres bots peuvent demander ces outils à cet iPhone. Chaque demande affiche d'abord une carte ici ; rien ne s'exécute en arrière-plan, et seulement sur une connexion sécurisée (HTTPS ou Tailscale)."
+          }
+        }
+      }
+    },
+    "Turn any of them off in Settings > Approval rules.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn any of them off in Settings > Approval rules."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivez-en un dans Réglages > Règles d'approbation."
+          }
+        }
+      }
+    },
     "Off on this connection: phone tools need a secure connection (HTTPS or Tailscale). On plain local Wi-Fi your answers would cross the network in clear.": {
       "localizations": {
         "en": {

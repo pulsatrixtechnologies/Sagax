@@ -54,6 +54,7 @@ import { redactSecretsInText } from "../redact.ts";
 import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
+import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT } from "../../shared/phone-tools.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { codexDeveloperInstructions, forgetCodexVolatile, syncCodexInstructions } from "./codex-instructions.ts";
 import { sectionFingerprints, volatileContextNote, volatileSectionsUpdate, withContextNote } from "./prompt-split.ts";
@@ -1720,12 +1721,16 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 itemType: "tool",
                 itemId: item.id,
                 ok: item.status !== "failed" && item.status !== "declined",
-                output: toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action),
+                // a phone's answer reaches the model, never the event log or the chat (phone_tool)
+                output: item.type === "mcpToolCall" && isPhoneToolCallName(typeof item.tool === "string" ? item.tool : undefined)
+                  ? PHONE_TOOL_OUTPUT_NOT_KEPT
+                  : toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action),
                 ...(item.type === "mcpToolCall" && !item.error && typeof item.tool === "string"
                   ? cwToolResult(typeof item.server === "string" ? `${item.server}__${item.tool}` : item.tool, item.result)
                   : {}),
               });
-              if (item.type === "mcpToolCall") {
+              // photos a phone sent go to the model only, never into the chat (phone_tool)
+              if (item.type === "mcpToolCall" && !isPhoneToolCallName(typeof item.tool === "string" ? item.tool : undefined)) {
                 for (const img of extractMcpImages(item.result)) {
                   emit({ ...base(threadId, turnId), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }

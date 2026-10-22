@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkPhoneToolResult, parsePhoneToolArgs, phoneToolGrantKey, phoneToolsFrameAllowed } from "./phone-tools.ts";
+import { checkPhoneToolResult, isPhoneToolCallName, parsePhoneToolArgs, phoneToolGrantKey, phoneToolsFrameAllowed } from "./phone-tools.ts";
 
 describe("parsePhoneToolArgs", () => {
   it("refuses an unknown tool and names the known ones", () => {
@@ -32,10 +32,24 @@ describe("phoneToolGrantKey", () => {
     expect(phoneToolGrantKey("photos", {})).toBeNull();
   });
 
-  it("keeps reading and writing apart", () => {
+  it("covers exactly what was allowed, nothing wider (review of #960)", () => {
     expect(phoneToolGrantKey("reminders", { action: "list" })).toBe("reminders:read");
-    expect(phoneToolGrantKey("reminders", { action: "create", title: "x" })).toBe("reminders:write");
-    expect(phoneToolGrantKey("location", {})).toBe("location:read");
+    expect(phoneToolGrantKey("reminders", { action: "create", title: "x" })).toBeNull();
+    expect(phoneToolGrantKey("calendar", { action: "create", title: "x", start: "a", end: "b" })).toBeNull();
+    expect(phoneToolGrantKey("location", {})).toBe("location:read:approximate");
+    expect(phoneToolGrantKey("location", { precise: true })).toBeNull();
+    expect(phoneToolGrantKey("contacts", { query: "a", fields: ["phone"] })).toBe("contacts:read:phone");
+    expect(phoneToolGrantKey("contacts", { query: "a", fields: ["phone", "address"] })).toBe("contacts:read:address+phone");
+    expect(phoneToolGrantKey("contacts", { query: "a" })).toBe("contacts:read:email+phone");
+    expect(phoneToolGrantKey("status", {})).toBe("status:read");
+  });
+
+  it("names phone_tool as every engine calls it", () => {
+    expect(isPhoneToolCallName("mcp__agents__phone_tool")).toBe(true);
+    expect(isPhoneToolCallName("agents_phone_tool")).toBe(true);
+    expect(isPhoneToolCallName("phone_tool")).toBe(true);
+    expect(isPhoneToolCallName("microphone_tool_x")).toBe(false);
+    expect(isPhoneToolCallName(undefined)).toBe(false);
   });
 });
 

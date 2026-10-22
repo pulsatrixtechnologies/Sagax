@@ -158,7 +158,7 @@ describe("phone tool broker", () => {
 });
 
 describe("phoneToolTurn", () => {
-  const base = { ownsThread: true, inRoom: false, depth: 0, speakerOrigin: "person" as const, speakerPrincipal: "Ann", ownerPrincipal: "ann" };
+  const base = { ownsThread: true, inRoom: false, depth: 0, speakerOrigin: "person" as const, speakerPrincipal: "Ann", ownerPrincipal: "ann", ownTurn: true, tainted: false };
   it("is the owner's own 1:1 turn", () => {
     expect(phoneToolTurn(base)).toEqual({ person: "ann" });
     expect(phoneToolTurn({ ...base, speakerOrigin: "operator" })).toEqual({ person: "ann" });
@@ -171,6 +171,12 @@ describe("phoneToolTurn", () => {
     expect(phoneToolTurn({ ...base, speakerPrincipal: "bob" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, speakerPrincipal: "" })).toHaveProperty("error");
     expect(phoneToolTurn({ ...base, ownsThread: false })).toHaveProperty("error");
+  });
+  it("refuses a turn another bot's words joined, or one that is not the owner's own (review of #960)", () => {
+    // an aside from another bot (a webhook-fed routine, say) folded into the owner's live turn
+    expect(phoneToolTurn({ ...base, tainted: true })).toHaveProperty("error");
+    // ownEnvironmentOrigin: an internal turn, a routine lineage, an automation, an unattended run
+    expect(phoneToolTurn({ ...base, ownTurn: false })).toHaveProperty("error");
   });
 });
 
@@ -199,6 +205,32 @@ describe("a phone that refuses with a reason", () => {
       const request = broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "status", args: {} });
       expect(broker.answer("ann", "phone-a", request.id, { decision: "deny", error: "The phone is on plain local Wi-Fi." })).toEqual({ ok: true });
       await expect(broker.wait(request.id, { botId: "b", threadId: "t" }, 10)).resolves.toEqual({ status: "failed", error: "The phone is on plain local Wi-Fi." });
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("housekeeping (review of #960)", () => {
+  it("drops an answer nobody came back for, and waits a moment after a refusal before a new card", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "sagax-phone-sweep-"));
+    let clock = 1_000;
+    try {
+      const broker = createPhoneToolBroker({ dataDir, now: () => clock, notify: () => {} });
+      broker.registerDevice("ann", "phone-a", { deviceName: "", tools: ["status", "location"], transport: "protected" });
+      const unread = broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "status", args: {} });
+      broker.answer("ann", "phone-a", unread.id, { decision: "once", result: { lowPowerMode: false } });
+      clock += 5 * 60_000 + 1;
+      broker.sweep();
+      await expect(broker.wait(unread.id, { botId: "b", threadId: "t" }, 5)).resolves.toEqual({ status: "unknown" });
+
+      const refused = broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "location", args: {} });
+      broker.answer("ann", "phone-a", refused.id, { decision: "deny" });
+      expect(() => broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "location", args: {} })).toThrow(/refused/);
+      // another tool is not held back
+      expect(broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "status", args: {} }).tool).toBe("status");
+      clock += 60_001;
+      expect(broker.request({ person: "ann", botId: "b", botName: "B", threadId: "t", tool: "location", args: {} }).tool).toBe("location");
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }

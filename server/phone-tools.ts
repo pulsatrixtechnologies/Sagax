@@ -39,6 +39,11 @@ export const PHONE_ONLINE_MS = 15 * 60_000;
 export const PHONE_PUSHABLE_MS = 24 * 60 * 60_000;
 /** Requests one person may have waiting at once. */
 export const MAX_PENDING_PER_PERSON = 5;
+/** After a refusal, the same bot does not show the same tool's card again
+ * this soon (card fatigue, review of #960). */
+export const REFUSAL_COOLDOWN_MS = 60_000;
+/** How often unread answers and expired requests are dropped. */
+const SWEEP_EVERY_MS = 60_000;
 
 export interface PhoneToolAuditRow {
   person: string;
@@ -107,6 +112,8 @@ export interface PhoneToolBroker {
   pendingFor(person: string): PhoneToolRequestWire[];
   answer(person: string, deviceId: string, requestId: string, answer: PhoneAnswer): PhoneAnswerOutcome;
   grants(person: string): Array<{ botId: string; key: string }>;
+  /** Drop expired requests and answers nobody came back for (also on a timer). */
+  sweep(): void;
   revokeGrant(person: string, botId: string, key: string): boolean;
 }
 
@@ -129,6 +136,10 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
   const dir = join(deps.dataDir, "phone-tools");
   const file = join(dir, "grants.json");
   let grantsByPerson: Map<string, Map<string, Set<string>>> | null = null;
+  /** person, bot and tool refused lately: when the cooldown ends */
+  const refusedUntil = new Map<string, number>();
+  const refusalKey = (person: string, botId: string, tool: string) => `${person}\0${botId}\0${tool}`;
+  let sweeper: ReturnType<typeof setInterval> | null = null;
 
   const loadGrants = () => {
     if (grantsByPerson) return grantsByPerson;
@@ -190,6 +201,20 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
     }
   };
 
+  /** A timer only while something waits; it never keeps the process alive. */
+  const armSweeper = () => {
+    if (sweeper || !requests.size) return;
+    sweeper = setInterval(() => {
+      sweep();
+      for (const [key, until] of refusedUntil) if (until <= now()) refusedUntil.delete(key);
+      if (!requests.size && sweeper) {
+        clearInterval(sweeper);
+        sweeper = null;
+      }
+    }, SWEEP_EVERY_MS);
+    sweeper.unref?.();
+  };
+
   const reachable = (person: string, device: Device) => {
     const age = now() - device.seenAt;
     if (age <= PHONE_ONLINE_MS) return true;
@@ -231,6 +256,9 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
         if (local) throw new PhoneToolUnavailable(PHONE_TOOLS_NEED_PROTECTED_TRANSPORT);
         throw new PhoneToolUnavailable("No phone of this person can do that right now. Ask them to open Sagax on their iPhone, then try again.");
       }
+      if ((refusedUntil.get(refusalKey(person, input.botId, input.tool)) ?? 0) > now()) {
+        throw new PhoneToolUnavailable("The person refused this on their phone a moment ago. Do not ask again right away; ask them in the chat if it is still needed.", 429);
+      }
       const waiting = [...requests.values()].filter((row) => row.person === person && !row.outcome).length;
       if (waiting >= MAX_PENDING_PER_PERSON) {
         throw new PhoneToolUnavailable("Too many requests are already waiting on this person's phone. Wait for them to answer first.", 429);
@@ -252,6 +280,7 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       };
       const pending: PendingRequest = { wire, person, grantKey, waiters: [] };
       requests.set(wire.id, pending);
+      armSweeper();
       audit(pending, "requested");
       deps.notify(person);
       try {
@@ -319,6 +348,7 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       }
       if (answer.decision === "deny") {
         audit(request, "deny");
+        if (!answer.error) refusedUntil.set(refusalKey(who, request.wire.botId, request.wire.tool), now() + REFUSAL_COOLDOWN_MS);
         // a refusal the phone made itself (plain local Wi-Fi) says why
         settle(request, answer.error ? { status: "failed", error: answer.error } : { status: "denied" });
         deps.notify(who);
@@ -345,6 +375,10 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
       }
       settle(request, { status: "done", tool: request.wire.tool, result: checked.result });
       return { ok: true };
+    },
+
+    sweep() {
+      sweep();
     },
 
     grants(person) {
@@ -378,8 +412,16 @@ export function phoneToolTurn(input: {
   speakerOrigin?: "person" | "operator" | "owner-routine" | "peer";
   speakerPrincipal?: string;
   ownerPrincipal: string;
+  /** ownEnvironmentOrigin in index.ts says "owner": not an internal turn, a
+   * routine lineage, an automation or an unattended run. */
+  ownTurn: boolean;
+  /** Another bot's words were folded into this live turn (an aside): the
+   * turn no longer speaks only for its person (review of #960). */
+  tainted: boolean;
 }): { person: string } | { error: string } {
   if (!input.ownsThread) return { error: "source conversation does not belong to sender" };
+  if (input.tainted) return { error: "Another bot's message joined this turn: the phone is used only in a turn the person alone started. Ask the person to ask again." };
+  if (!input.ownTurn) return { error: "Only the person's own message can use their phone: not a routine, a webhook, an automation or an unattended run." };
   if (input.inRoom) return { error: "A phone tool is used in a direct conversation with the bot's owner, not in a room." };
   if (input.depth > 0 || (input.speakerOrigin !== "person" && input.speakerOrigin !== "operator")) {
     return { error: "Only the person's own message can use their phone: not a routine, a webhook or another bot." };

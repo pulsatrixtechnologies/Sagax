@@ -11,6 +11,8 @@ import UIKit
 
 struct PhoneToolCard: View {
     let request: PhoneToolRequest
+    /// The clipboard's text, read before the card showed (only this goes).
+    var clipboardPreview: String?
     @State private var picking = false
     @State private var picked: [PhotosPickerItem] = []
     @State private var working = false
@@ -39,6 +41,34 @@ struct PhoneToolCard: View {
                     .italic()
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            // every field of what would be created, a shortcut's whole input
+            let details = PhoneToolDetails.fields(request)
+            if !details.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(details, id: \.key) { field in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(PhoneToolWords.fieldLabel(field.key)).font(.caption).foregroundStyle(.secondary)
+                            Text(verbatim: PhoneToolWords.fieldValue(field))
+                                .font(.callout)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+            if PhoneToolDetails.warnsOfSideEffects(request) {
+                Label("This shortcut can send messages, pay or change things on your behalf.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.danger)
+            }
+            if request.tool == .clipboard {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What would be sent").font(.caption).foregroundStyle(.secondary)
+                    Text(verbatim: clipboardPreview ?? String(localized: "The clipboard holds no text."))
+                        .font(.callout.monospaced())
+                        .lineLimit(6)
+                }
             }
             if request.writes {
                 Label("This changes something on your phone.", systemImage: "square.and.pencil")
@@ -158,6 +188,28 @@ enum PhoneToolWords {
         case nil:
             return String(localized: "This version of Sagax does not know this tool. Update the app to use it.")
         }
+    }
+
+    static func fieldLabel(_ key: String) -> String {
+        switch key {
+        case "title": String(localized: "Title")
+        case "due": String(localized: "Due")
+        case "list": String(localized: "List")
+        case "notes": String(localized: "Notes")
+        case "start": String(localized: "Starts")
+        case "end": String(localized: "Ends")
+        case "location": String(localized: "Place")
+        case "name": String(localized: "Shortcut")
+        default: String(localized: "Text sent to the shortcut")
+        }
+    }
+
+    /// Dates in the phone's own words; the rest as the bot wrote it.
+    static func fieldValue(_ field: PhoneToolDetails.Field) -> String {
+        if ["due", "start", "end"].contains(field.key), let date = PhoneToolShaping.date(field.value) {
+            return date.formatted(date: .abbreviated, time: .shortened)
+        }
+        return field.value
     }
 
     private static func field(_ name: String) -> String {
