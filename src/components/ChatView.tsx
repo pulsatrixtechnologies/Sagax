@@ -117,6 +117,7 @@ import { ThreadRefText } from "./ThreadRefs";
 import { optionsCardRow } from "./OptionsCardRow";
 import { MessageBoundary, UnknownMessageCard, isUnknownMessageKind } from "./MessageBoundary";
 import { WidgetMessage } from "./widget/WidgetMessage";
+import { AppMessage } from "./AppMessage";
 import { PagePublishCard } from "./PublishedPages";
 import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
@@ -1326,6 +1327,9 @@ const MessagesList = memo(function MessagesList({
             case "widget":
               // bot-authored and persisted: one that throws while drawing falls back to its text
               return <MessageBoundary fallbackText={m.text ?? ""}><WidgetMessage botId={botId} threadId={threadId} message={m} /></MessageBoundary>;
+            case "app":
+              // a bot-authored live HTML surface, drawn in the sandboxed app frame
+              return <MessageBoundary fallbackText={m.text ?? ""}><AppMessage message={m} /></MessageBoundary>;
             case "routine.run":
               return <RoutineRunRow message={m} botId={botId} />;
             case "routines":

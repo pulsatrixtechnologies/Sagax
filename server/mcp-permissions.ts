@@ -92,6 +92,8 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("help:read", "read", "sagax_help"),
   p("widgets:show", "own", "show_widget"),
   p("widgets:update", "own", "update_widget"),
+  p("apps:show", "own", "show_html"),
+  p("apps:update", "own", "update_html"),
   p("artifacts:save", "own", "save_artifact"),
   p("artifacts:update", "own", "update_artifact"),
   p("artifacts:list", "read", "list_artifacts"),

@@ -706,6 +706,8 @@ describe("agents-proxy MCP surface", () => {
       "check_widget",
       "show_widget",
       "update_widget",
+      "show_html",
+      "update_html",
       "save_artifact",
       "update_artifact",
       "list_artifacts",
