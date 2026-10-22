@@ -101,6 +101,10 @@ export interface PerspicaxMcpOptions {
    * bots) of one person that send the same write with the same arguments
    * at the same time make one call, the other gets its answer. */
   writeOnceScope?(turn: { threadId: string; botId: string; principalId: string }): string | null;
+  /** Every remote_support_* answer of a turn (server/remote-session-register.ts):
+   * a session the bot opened becomes a Sagax session row and chat card. It
+   * never changes the answer and its failures are its own. */
+  onRemoteSupport?(call: { threadId: string; botId: string; name: string; args: unknown; result: unknown }): void;
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: string) => void;
@@ -397,6 +401,27 @@ export class PerspicaxMcp {
    * the call comes from callTool, whose native tool the agents proxy already
    * put through the permission check, so it is not judged (nor audited) twice. */
   async relay(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown; judged?: boolean }): Promise<PerspicaxRelayAnswer> {
+    const answer = await this.relayKept(input);
+    this.noteRemoteSupport(input, answer);
+    return answer;
+  }
+
+  /** Hand a remote_support_* answer to onRemoteSupport, without waiting for it. */
+  private noteRemoteSupport(input: { threadId: string; botId: string; frame: unknown }, answer: PerspicaxRelayAnswer) {
+    const hook = this.options.onRemoteSupport;
+    if (!hook || !isObject(input.frame) || input.frame.method !== "tools/call") return;
+    const params = isObject(input.frame.params) ? input.frame.params : {};
+    const name = typeof params.name === "string" ? params.name : "";
+    if (!name.startsWith("remote_support_")) return;
+    if (answer.status !== 200 || !isObject(answer.body) || !isObject(answer.body.result)) return;
+    try {
+      hook({ threadId: input.threadId, botId: input.botId, name, args: params.arguments ?? {}, result: answer.body.result });
+    } catch {
+      /* the answer goes back unchanged */
+    }
+  }
+
+  private async relayKept(input: { threadId: string; generation: string; botId: string; profileId: string; frame: unknown; judged?: boolean }): Promise<PerspicaxRelayAnswer> {
     const once = this.writeOnceKey(input);
     if (!once) return this.relayFrame(input);
     const kept = (answer: PerspicaxRelayAnswer) => answer.status === 200 && isObject(answer.body) && isObject(answer.body.result) && answer.body.result.isError !== true;

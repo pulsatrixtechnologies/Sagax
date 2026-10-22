@@ -65,6 +65,8 @@ interface StoredSession {
   ramGb?: number;
   messageId?: string;
   focused?: boolean;
+  /** The OS was not given: ask the computer once the tunnel is here. */
+  osGuessed?: boolean;
   createdAt: number;
 }
 
@@ -80,10 +82,20 @@ export interface PublishRemoteSession {
   threadId: string;
   principalId: string;
   code: string;
-  os: RemoteSessionOs;
+  /** Absent when nobody named it (the support page detected it): Sagax asks
+   * the computer through the tunnel, and says Windows when it cannot. */
+  os?: RemoteSessionOs;
   elevated: boolean;
   endAt: string;
   facts?: RemoteSessionFacts;
+}
+
+/** `uname -s` answers Darwin or Linux; Windows has no uname. */
+export function osFromUname(stdout: string | undefined): RemoteSessionOs {
+  const text = (stdout ?? "").toLowerCase();
+  if (text.includes("darwin")) return "macos";
+  if (text.includes("linux")) return "linux";
+  return "windows";
 }
 
 function viewOf(session: StoredSession): RemoteSessionView {
@@ -147,10 +159,14 @@ export function createRemoteSessionService(deps: {
   now?: () => number;
   run?: RunCommand;
   home?: () => string;
+  /** The folder where remote_support_open keeps the sessions Sagax opened. */
+  supportDir?: () => string;
 }) {
   const now = deps.now ?? (() => Date.now());
   const run = deps.run ?? runCommand;
   const home = deps.home ?? defaultFlowHome;
+  const supportDir = deps.supportDir;
+  const tunnelOf = (id: string) => readTunnel(home(), id, supportDir?.());
   const file = path.join(deps.dataDir, FILE);
   let rows: StoredSession[] = [];
   try {
@@ -179,7 +195,7 @@ export function createRemoteSessionService(deps: {
   const tailcatBin = () => resolveTailcatBinary() ?? "tailcat";
 
   async function ssh(session: StoredSession, command: string, timeoutMs: number) {
-    const tunnel = readTunnel(home(), session.id);
+    const tunnel = tunnelOf(session.id);
     if (!tunnel) return null;
     return run(tailcatSshArgv(tailcatBin(), tunnel.keyPath, tunnel.address, command), timeoutMs);
   }
@@ -225,10 +241,11 @@ export function createRemoteSessionService(deps: {
 
   deps.registry.register(createTailcatAdapter({
     home,
+    ...(supportDir ? { supportDir } : {}),
     targets(principalId, botId) {
       return rows
         .filter((row) => row.state === "connected" && row.principalId === principalId && (!botId || row.botId === botId))
-        .filter((row) => readTunnel(home(), row.id))
+        .filter((row) => tunnelOf(row.id))
         .map((row) => ({ id: row.id, hostLabel: hostLabel(row), label: "Session à distance" }));
     },
   }));
@@ -260,7 +277,8 @@ export function createRemoteSessionService(deps: {
             threadId: input.threadId,
             principalId: input.principalId,
             code: input.code,
-            os: input.os,
+            os: input.os ?? "windows",
+            ...(input.os ? {} : { osGuessed: true }),
             elevated: input.elevated,
             endAt: input.endAt,
             state: "connected",
@@ -271,7 +289,10 @@ export function createRemoteSessionService(deps: {
         } else {
           session.threadId = input.threadId;
           session.code = input.code;
-          session.os = input.os;
+          if (input.os) {
+            session.os = input.os;
+            delete session.osGuessed;
+          }
           session.elevated = input.elevated;
           session.endAt = input.endAt;
           session.state = "connected";
@@ -280,7 +301,16 @@ export function createRemoteSessionService(deps: {
           if (row.threadId === input.threadId) row.focused = row.id === session!.id;
         }
         applyFacts(session, input.facts);
-        const reachable = Boolean(readTunnel(home(), session.id));
+        const reachable = Boolean(tunnelOf(session.id));
+        if (reachable && session.osGuessed) {
+          try {
+            const uname = await ssh(session, "uname -s", 10_000);
+            if (uname) {
+              session.os = uname.code === 0 ? osFromUname(uname.stdout) : "windows";
+              delete session.osGuessed;
+            }
+          } catch { /* keep Windows */ }
+        }
         if (reachable) {
           try { await probe(session); } catch { /* the card still shows what we were given */ }
         }
@@ -303,6 +333,19 @@ export function createRemoteSessionService(deps: {
         return viewOf(session);
       });
     },
+    /** The session behind a support code was closed elsewhere (remote_support_close):
+     * mark its card closed. The end user's script already stops by itself. */
+    async endByCode(principalId: string, botId: string, code: string): Promise<RemoteSessionView | null> {
+      return exclusive(async () => {
+        const session = rows.find((row) => row.code === code && row.botId === botId && row.principalId === principalId && row.state === "connected");
+        if (!session) return null;
+        session.state = "ended";
+        session.focused = false;
+        writeCard(session);
+        persist();
+        return viewOf(session);
+      });
+    },
     focus(principalId: string, botId: string, id: string): RemoteSessionView | null {
       const session = owned(principalId, botId, id);
       if (!session || session.state !== "connected") return null;
@@ -317,7 +360,7 @@ export function createRemoteSessionService(deps: {
         ? owned(args.principalId, args.botId, args.id)
         : this.active(args.principalId, args.botId, args.threadId);
       if (!session || session.state !== "connected") return null;
-      if (!readTunnel(home(), session.id)) return { error: "The tunnel for this remote computer is not on this server yet." };
+      if (!tunnelOf(session.id)) return { error: "The tunnel for this remote computer is not on this server yet." };
       const access: TerminalAccess = {
         ...deps.access(args.principalId, args.botId),
         ownsConversation: deps.owner(args.botId, args.threadId).trim().toLowerCase() === args.principalId || session.principalId === args.principalId,
@@ -362,7 +405,7 @@ export function createRemoteSessionService(deps: {
       if (!session || session.state !== "connected") return { error: "That remote session is not open." };
       if (!safeName) return { error: "Choose a simple file name." };
       if (bytes.length === 0 || bytes.length > UPLOAD_MAX) return { error: "The file must be under 8 MB." };
-      if (!readTunnel(home(), session.id)) return { error: "The tunnel for this remote computer is not on this server yet." };
+      if (!tunnelOf(session.id)) return { error: "The tunnel for this remote computer is not on this server yet." };
       const listed = await ssh(session, transferDirCommand(session.os), 15_000);
       const remoteDir = safeRemotePath(listed?.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() ?? "");
       if (!listed || listed.code !== 0 || !remoteDir) return { error: "The remote computer did not accept a folder for the file." };
@@ -372,7 +415,7 @@ export function createRemoteSessionService(deps: {
       const local = path.join(localDir, `${randomBytes(8).toString("hex")}-${safeName.replaceAll(" ", "_")}`);
       writeFileSync(local, bytes, { mode: 0o600 });
       try {
-        const tunnel = readTunnel(home(), session.id);
+        const tunnel = tunnelOf(session.id);
         if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
         const copied = await run(tailcatCopyArgv(tailcatBin(), tunnel.keyPath, local, `${tunnel.address}:${remotePath}`), 60_000);
         if (copied.code !== 0) return { error: "The file did not arrive on the remote computer." };
@@ -386,7 +429,7 @@ export function createRemoteSessionService(deps: {
       const session = owned(principalId, botId, id);
       if (!session || session.state !== "connected") return { error: "That remote session is not open." };
       if (!safe) return { error: "That path cannot be downloaded." };
-      const tunnel = readTunnel(home(), session.id);
+      const tunnel = tunnelOf(session.id);
       if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
       const localDir = path.join(deps.dataDir, "remote-session-transfers");
       mkdirSync(localDir, { recursive: true, mode: 0o700 });

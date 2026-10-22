@@ -9516,6 +9516,7 @@
   "json.keysOne": "1 clé",
   "json.itemsOne": "1 élément",
   "remoteSession.section": "Sessions à distance",
+  "remoteSession.empty": "Aucune session à distance ouverte. Quand un bot se connecte à un ordinateur, la session s'affiche ici.",
   "remoteSession.terminal": "Session à distance",
   "remoteSession.close": "Fermer la session",
   "remoteSession.confirmClose": "Confirmer la fermeture",

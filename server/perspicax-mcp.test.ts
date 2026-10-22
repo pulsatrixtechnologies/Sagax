@@ -15,7 +15,7 @@ const CATALOG = [
   { id: "P2", slug: "billing", name: "Billing", description: "" },
 ];
 
-function harness(options: { held?: Record<string, string[]>; mcp?: (request: { headers: Record<string, string>; body: any; method: string }) => Response | Promise<Response>; onCall?: Set<string>; guard?: PerspicaxMcpOptions["permissionGuard"] } = {}) {
+function harness(options: { held?: Record<string, string[]>; mcp?: (request: { headers: Record<string, string>; body: any; method: string }) => Response | Promise<Response>; onCall?: Set<string>; guard?: PerspicaxMcpOptions["permissionGuard"]; remoteSupport?: PerspicaxMcpOptions["onRemoteSupport"] } = {}) {
   let clock = 1_000_000;
   const held = options.held ?? { A: ["P1", "P2"], B: ["P1"], C: [] };
   const subjects: Record<string, { iss: string; sub: string; disabled: boolean }> = {
@@ -89,6 +89,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     ...(options.onCall ? { keepWarm: (threadId: string) => options.onCall!.has(threadId) } : {}),
     version: "0.1.89",
     ...(options.guard ? { permissionGuard: options.guard } : {}),
+    ...(options.remoteSupport ? { onRemoteSupport: options.remoteSupport } : {}),
     fetch: fetcher,
     now: () => clock,
     log: (line) => logs.push(line),
@@ -581,5 +582,35 @@ describe("PerspicaxMcp permissions and callTool", () => {
     const rpcFail = harness({ mcp: ({ body }) => body.method === "tools/call" ? new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message: "nope" } }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) : new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {} }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) });
     await rpcFail.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
     expect(await rpcFail.mcp.callTool({ ...turn, botId: "x", name: "api_search", args: {} })).toEqual({ ok: false, code: "rpc_error", error: "nope" });
+  });
+});
+
+describe("PerspicaxMcp remote support answers", () => {
+  it("hands every remote_support_* answer to onRemoteSupport, unchanged, and nothing else", async () => {
+    const seen: Array<{ threadId: string; botId: string; name: string; args: unknown; result: unknown }> = [];
+    const h = harness({
+      remoteSupport: (call) => {
+        seen.push(call);
+        throw new Error("a failing hook never changes the answer");
+      },
+      mcp: ({ body }) => {
+        if (body.id === undefined) return new Response(null, { status: 202 });
+        const result = body.method === "tools/call" ? { content: [{ type: "text", text: JSON.stringify({ state: "connected", fetch_ip_count: 1 }) }] } : { tools: [] };
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "sess-1" } });
+      },
+    });
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "api_search", arguments: {} } } });
+    const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "remote_support_status", arguments: { code: "BQDHS7" } } } });
+    expect(answer.status).toBe(200);
+    expect(answer.body).toMatchObject({ id: 3, result: { content: [{ type: "text" }] } });
+    expect(seen).toEqual([{
+      threadId: "t1",
+      botId: "x",
+      name: "remote_support_status",
+      args: { code: "BQDHS7" },
+      result: { content: [{ type: "text", text: JSON.stringify({ state: "connected", fetch_ip_count: 1 }) }] },
+    }]);
   });
 });

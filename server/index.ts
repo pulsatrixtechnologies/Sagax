@@ -781,6 +781,8 @@ import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, org
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
+import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
+import { recallSupportSession } from "./remote-support-local.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
@@ -10254,8 +10256,10 @@ const terminalFeature = installTerminalFeature({
     },
   },
 });
+const REMOTE_SUPPORT_DIR = join(DATA_DIR, "remote-support");
 const remoteSessions = createRemoteSessionService({
   dataDir: DATA_DIR,
+  supportDir: () => REMOTE_SUPPORT_DIR,
   store,
   registry: terminalFeature.registry,
   sessions: terminalFeature.sessions,
@@ -10272,6 +10276,20 @@ openRemoteShell = (args) => {
   if (!principalId) return Promise.resolve(null);
   return remoteSessions.openShell({ principalId, botId: args.botId, threadId: args.threadId });
 };
+// A session the bot opened with remote_support_open becomes a panel row and a
+// chat card once remote_support_status says connected (PerspicaxMcp.relay).
+const remoteSessionRegistrar = createRemoteSessionRegistrar({
+  publish: async ({ botId, threadId, open }) => {
+    const principalId = remoteSessions.principalFor(botId, threadId);
+    if (!principalId) return;
+    await remoteSessions.publish({ ...open, botId, threadId, principalId });
+  },
+  end: async ({ botId, threadId, code }) => {
+    const principalId = remoteSessions.principalFor(botId, threadId);
+    if (principalId) await remoteSessions.endByCode(principalId, botId, code);
+  },
+  recall: (code) => recallSupportSession(REMOTE_SUPPORT_DIR, code),
+});
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
   browserNetworkDebug.clearOwner(sessionId);
@@ -33076,6 +33094,12 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     writeOnceScope: ({ threadId }) => activeRoutineRunForThread(threadId) || internalTurnThreads.has(threadId) ? "unattended" : null,
     // a live call keeps its Perspicax tools mounted from turn to turn
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
+    // remote_support_open / status / close: the session shows in Sagax (server/remote-session-register.ts)
+    onRemoteSupport: (call) => {
+      void remoteSessionRegistrar.observe(call).catch((error) => {
+        console.warn(`remote session: the card could not be posted (${error instanceof Error ? error.name : "error"})`);
+      });
+    },
     subjectOf: (principalId) => {
       const person = isPrincipalId(principalId) ? principals.byId(principalId) : null;
       return person?.subject ? { iss: person.subject.iss, sub: person.subject.sub, disabled: person.disabledAt !== undefined } : null;

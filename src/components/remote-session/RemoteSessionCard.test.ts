@@ -73,22 +73,35 @@ const NODEKEY = `nodekey:${"ab".repeat(32)}`;
 describe("remote session surfaces", () => {
   afterEach(() => setLocale("en"));
 
-  it("shows the French sidebar and the card facts, and hides an empty list", () => {
+  it("shows the French sidebar and the card facts, and an empty list says so", () => {
     setLocale("fr");
     const empty = renderToStaticMarkup(createElement(
       StoreProvider,
       null,
       createElement(RemoteSessionsSection, { bot: { id: "melonie" } as Bot }),
     ));
-    expect(empty).not.toContain("data-remote-sessions");
-    expect(empty).not.toContain("Sessions à distance");
+    expect(empty).toContain("data-remote-sessions");
+    expect(empty).toContain("Sessions à distance");
+    expect(empty).toContain("data-remote-sessions-empty");
+    expect(empty.replaceAll("&#x27;", "'")).toContain(t("remoteSession.empty"));
+    const emptyPanel = renderToStaticMarkup(createElement(RemoteSessionsPanel, {
+      rows: [],
+      confirmId: null,
+      error: null,
+      onTakeControl: () => undefined,
+      onClose: () => undefined,
+    }));
+    expect(emptyPanel).toContain(t("remoteSession.section"));
+    expect(emptyPanel).not.toContain(t("remoteSession.takeControl"));
+    setLocale("en");
     expect(renderToStaticMarkup(createElement(RemoteSessionsPanel, {
       rows: [],
       confirmId: null,
       error: null,
       onTakeControl: () => undefined,
       onClose: () => undefined,
-    }))).toBe("");
+    }))).toContain("No remote session is open.");
+    setLocale("fr");
 
     const shown: RemoteSessionView = {
       ...view,
@@ -157,7 +170,6 @@ describe("remote session surfaces", () => {
     beginRemoteControl({
       botId: "melonie",
       sessionId: view.id,
-      advanced: true,
       focusLocal: (_bot, id) => focused.push(id),
       focusRemote: (_bot, id) => focused.push(`remote:${id}`),
       openComputer: () => opened.push("computer"),
@@ -165,13 +177,13 @@ describe("remote session surfaces", () => {
     beginRemoteControl({
       botId: "melonie",
       sessionId: view.id,
-      advanced: false,
       focusLocal: () => focused.push("again"),
       focusRemote: () => undefined,
-      openComputer: () => opened.push("nope"),
+      openComputer: () => opened.push("computer again"),
     });
     expect(focused).toEqual([view.id, `remote:${view.id}`, "again"]);
-    expect(opened).toEqual(["computer"]);
+    // every mode opens the Computer tab, Simple included
+    expect(opened).toEqual(["computer", "computer again"]);
 
     const available = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: "blob:screen", missed: false }));
     expect(available).toContain("<img");

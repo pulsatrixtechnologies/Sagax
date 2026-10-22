@@ -1,7 +1,7 @@
 // Fixed read-only probes for a Tailcat session. The command text is ours:
 // nothing the person or the model typed is interpolated into it.
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -26,10 +26,61 @@ export function sessionDir(home: string, id: string): string {
   return path.join(home, "tailcat", id);
 }
 
-/** The on-disk tunnel, or null when this host does not have it. The address
- * stays in the file; callers pass it only as an argv element and never log it. */
-export function readTunnel(home: string, id: string): { keyPath: string; address: string } | null {
+function validAddress(address: string): boolean {
+  // oxlint-disable-next-line no-control-regex -- a tunnel address never contains control characters
+  return address.startsWith("tc") && address.length <= 512 && !/[\s\u0000-\u001f]/.test(address);
+}
+
+/** A session Sagax opened itself (server/remote-support-local.ts): the
+ * technician key is `<dir>/technician.private.json` and the address is in
+ * `<dir>/sessions/<CODE>/address`, next to a `session` file holding the id. */
+export function readSupportTunnel(dir: string, id: string): { keyPath: string; address: string } | null {
   if (!REMOTE_SESSION_ID.test(id)) return null;
+  const root = path.resolve(dir);
+  const keyPath = path.join(root, "technician.private.json");
+  try {
+    readFileSync(keyPath);
+  } catch {
+    return null;
+  }
+  let codes: string[] = [];
+  try {
+    codes = readdirSync(path.join(root, "sessions"));
+  } catch {
+    return null;
+  }
+  for (const code of codes) {
+    if (!/^[A-Z0-9]{6}$/.test(code)) continue;
+    const folder = path.join(root, "sessions", code);
+    let session = "";
+    try {
+      session = readFileSync(path.join(folder, "session"), "utf8").trim();
+    } catch {
+      continue;
+    }
+    if (session !== id) continue;
+    let address = "";
+    try {
+      address = readFileSync(path.join(folder, "address"), "utf8").trim();
+    } catch {
+      return null;
+    }
+    return validAddress(address) ? { keyPath, address } : null;
+  }
+  return null;
+}
+
+/** The on-disk tunnel, or null when this host does not have it. The address
+ * stays in the file; callers pass it only as an argv element and never log it.
+ * The Flow session folder first, then the folder of a session Sagax opened. */
+export function readTunnel(home: string, id: string, supportDir?: string): { keyPath: string; address: string } | null {
+  if (!REMOTE_SESSION_ID.test(id)) return null;
+  const flow = readFlowTunnel(home, id);
+  if (flow) return flow;
+  return supportDir ? readSupportTunnel(supportDir, id) : null;
+}
+
+function readFlowTunnel(home: string, id: string): { keyPath: string; address: string } | null {
   const dir = sessionDir(home, id);
   const keyPath = path.join(dir, "client.private.json");
   const addressPath = path.join(dir, "address");
@@ -39,8 +90,7 @@ export function readTunnel(home: string, id: string): { keyPath: string; address
   } catch {
     return null;
   }
-  // oxlint-disable-next-line no-control-regex -- a tunnel address never contains control characters
-  if (!address.startsWith("tc") || address.length > 512 || /[\s\u0000-\u001f]/.test(address)) return null;
+  if (!validAddress(address)) return null;
   try {
     readFileSync(keyPath);
   } catch {

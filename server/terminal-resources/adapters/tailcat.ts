@@ -15,6 +15,8 @@ export interface TailcatTerminalTarget {
 
 export function createTailcatAdapter(deps: {
   home(): string;
+  /** The folder of sessions Sagax opened itself (remote-support-local.ts). */
+  supportDir?(): string;
   /** Connected sessions this person may open for this bot. */
   targets(principalId: string, botId: string | undefined): TailcatTerminalTarget[];
 }): TerminalResourceAdapter {
@@ -33,17 +35,17 @@ export function createTailcatAdapter(deps: {
     kind: "tailcat",
     async list(ctx) {
       return deps.targets(ctx.principalId, ctx.botId)
-        .filter((target) => readTunnel(deps.home(), target.id))
+        .filter((target) => readTunnel(deps.home(), target.id, deps.supportDir?.()))
         .map(row);
     },
     async resolve(resourceId, ctx) {
       const target = find(resourceId, ctx);
-      if (!target || !readTunnel(deps.home(), target.id)) return null;
+      if (!target || !readTunnel(deps.home(), target.id, deps.supportDir?.())) return null;
       return row(target);
     },
     async open(resourceId, ctx: TerminalOpenContext): Promise<TerminalAttachment> {
       const target = find(resourceId, ctx);
-      const tunnel = target ? readTunnel(deps.home(), target.id) : null;
+      const tunnel = target ? readTunnel(deps.home(), target.id, deps.supportDir?.()) : null;
       if (!tunnel) throw new Error("This remote computer is not connected from here.");
       try {
         const bin = resolveTailcatBinary() ?? "tailcat";
