@@ -33,6 +33,9 @@ const { ResourceUsageBody } = await import("@/components/resource-usage/Resource
 const { ConnectorSetupBody } = await import("@/components/connector-setup/ConnectorSetupCard");
 const { resolveConnectorSetupTarget } = await import("../../shared/connector-setup");
 const { OutboundCard } = await import("@/components/OutboundCard");
+const { WidgetBody } = await import("@/components/widget/WidgetBody");
+const { netCheckWidget } = await import("../../shared/net-tools/widget");
+const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -173,6 +176,17 @@ describe("no UUID on screen", () => {
     expect(recipientLabel(`bot:${BOT_ID}`, bots)).toEqual({ text: "Cryptic", title: BOT_ID });
     expectNoUuid(recipientLabel(`bot:${THREAD_ID}`, bots).text);
     expect(recipientLabel("email:ana@example.com", bots).text).toBe("ana@example.com");
+  });
+
+  it("an IT tools card names the check and the target, never an id", () => {
+    for (const result of Object.values(NET_FIXTURES)) {
+      const root = netCheckWidget(result, "en");
+      const text = visibleText(createElement(WidgetBody, { root, headed: false }));
+      expectNoUuid(text);
+      expect(text).toContain("Explain");
+      expectNoUuid(String(root.title));
+      expectNoUuid(String(root.caption));
+    }
   });
 
   it("people, bots, engines and accounts read by name or a plain word", () => {

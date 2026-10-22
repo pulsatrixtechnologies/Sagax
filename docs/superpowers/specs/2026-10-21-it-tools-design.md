@@ -167,7 +167,8 @@ native renderers (desktop, iOS, Android). The chat-widgets spec was written to s
 shared/net-tools/                  (browser-safe, pure)
   types.ts        NetCheckName, NetCheckInput (per check), NetCheckResult, Finding, Verdict
   target.ts       syntax-only target parsing shared by the panel form and the server
-                  (IDN -> ASCII via node:url domainToASCII on the server; light regex on the client)
+                  (IDN -> ASCII through the WHATWG URL parser, the same IDNA mapping as
+                  node:url domainToASCII, so the server and the client agree)
   findings.ts     finding codes -> { en, fr, "pt-BR" } title + explanation + fix hint, with {placeholders}
   widget.ts       netCheckWidget(result, lang): WidgetRoot  (Card: Title, Badge verdict, findings list,
                   details Table, raw Markdown fence, Explain / Suggest a fix buttons)
@@ -199,14 +200,20 @@ it with `by: "person"`. This is the same split as Data's `connection: "bot" | "p
 { check: NetCheckName; target: string; at: number; durationMs: number;
   verdict: "pass" | "warn" | "fail" | "info" | "unknown";
   findings: Array<{ code: string; severity: "pass" | "warn" | "fail" | "info" | "unknown"; params?: Record<string, string | number> }>;
-  details: Array<{ label: string; rows: string[][] }>;   // tables: records, hops, chain, lists
+  details: Array<{ label: string; columns?: string[]; rows: string[][] }>;  // tables: records, hops, chain, lists
   raw: string;                                           // capped at 16 KB; widget shows the first ~5,500 chars
   vantage: "server";                                     // shown as "Checked from this Sagax server"
+  links?: Array<{ label: string; url: string }>;         // https only, at most 6 (delisting pages)
 }
 ```
 
+Table `label` and `columns` are keys (`NET_DETAIL_LABELS` in `findings.ts`) when one exists, so the stored result
+stays language-neutral; anything else (a record type such as `TXT`) is shown as it is.
+
 The overall verdict is the worst finding severity. `unknown` (timeout, refused query, blocked egress) never counts
-as `fail`.
+as `fail`: a `fail` or `warn` finding wins, then any `pass`, and `unknown` stands only when nothing was conclusive
+(`info` alone stays `info`; no finding at all is `unknown`). Findings are listed worst first: fail, warn, unknown,
+info, pass.
 
 ### 3.2 Bot tools: a separate built-in MCP server `nettools`
 
@@ -241,7 +248,8 @@ feature, because the server is not mounted for them.
 Target rules (`guard.ts`), applied to every check that touches the network:
 
 - **Accepted input:**
-  - a hostname: labels `[a-z0-9-]`, IDN converted to ASCII, at most 253 chars, at least one dot;
+  - a hostname: labels `[a-z0-9-]`, IDN converted to ASCII, at most 253 chars, at least one dot (`dns_lookup` also
+    accepts service labels such as `_dmarc` or `selector._domainkey`);
   - an IPv4 or IPv6 literal;
   - for `http_headers`, an `http(s)` URL without credentials;
   - for `tls_check` and `tcp_ping`, an optional `:port` from the port policy.
@@ -419,7 +427,8 @@ table 60×8):
   "Copy raw" button for the full 16 KB.
 - **Buttons** (non-settling):
   - "Explain" sends action `{ type: "nettools.explain", payload: { check, target } }`;
-  - "Suggest a fix" sends `{ type: "nettools.fix", payload: { check, target } }`.
+  - "Suggest a fix" sends `{ type: "nettools.fix", payload: { check, target } }`. It is shown only when a finding
+    is `warn` or `fail`, so a clean result never invites an invented fix.
 
   The press reaches the bot as a reply with the widget fenced, so it already has the verdicts, and `payload`
   stays under 2 KB. The fix answer is guidance and corrected record text only. The bot has no DNS write tools,
