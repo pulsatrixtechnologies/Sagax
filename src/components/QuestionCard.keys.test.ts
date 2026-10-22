@@ -83,8 +83,8 @@ describe("QuestionCard keys", () => {
     expect(host.textContent).toContain("0 of 2 answered");
   });
 
-  it("offers Ignore on a waiting question, which is sent as a plain answer (the server refuses a dismissal before one)", () => {
+  it("offers no X on a waiting question, since the server only takes an answer", () => {
     mount([plan]);
-    expect(host.querySelector('button[aria-label="Ignore"]')).not.toBeNull();
+    expect(host.querySelector('button[aria-label]')).toBeNull();
   });
 });

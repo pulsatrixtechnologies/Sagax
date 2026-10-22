@@ -70,9 +70,6 @@ function Preview() {
         <Row id="ask-answered" label="AskUserQuestion, répondue">
           <QuestionCard threadId="t" bot={bot} message={ask("b", [WEBHOOKS], { answered: "answer", answeredText: "Oui, mets-les en pause" })} />
         </Row>
-        <Row id="ask-countdown" label="Se ferme automatiquement (compte à rebours)">
-          <QuestionCard threadId="t" bot={bot} message={ask("h", [WEBHOOKS], { questionRequest: { version: 1, questions: [WEBHOOKS], autoDismissAt: Date.now() + 45_000 } })} />
-        </Row>
         <Row id="ask-multi" label="Choix multiples">
           <QuestionCard threadId="t" bot={bot} message={ask("c", [{ question: "Quels webhooks je mets en pause ?", multiSelect: true, options: [{ label: "Billets entrants" }, { label: "Facturation" }, { label: "Alertes RMM" }] }])} />
         </Row>

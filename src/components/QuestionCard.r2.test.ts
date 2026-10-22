@@ -1,12 +1,12 @@
 // @vitest-environment happy-dom
-// Dismissing a question, its optional countdown, and the error shown when an
-// answer does not reach the bot.
+// No way to skip a waiting question (JC #885, 2026-10-21), and the error
+// shown when an answer does not reach the bot.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BotEditorStore, type Message, type useStore } from "@/state/store";
-import { QUESTION_SKIP_MESSAGE, type AskQuestion } from "../../shared/ask-question";
+import type { AskQuestion } from "../../shared/ask-question";
 import { QuestionCard } from "./QuestionCard";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -18,10 +18,10 @@ let host: HTMLDivElement;
 let root: Root;
 const dispatch = vi.fn();
 
-function mount(questions: AskQuestion[], extra: Record<string, unknown> = {}) {
+function mount(questions: AskQuestion[]) {
   const message = {
     id: "m1", role: "bot", kind: "options", at: 1,
-    card: { title: "q", subtitle: questions[0]!.question, options: [], requestId: "req-1", questionRequest: { version: 1, questions, ...extra } },
+    card: { title: "q", subtitle: questions[0]!.question, options: [], requestId: "req-1", questionRequest: { version: 1, questions } },
   } as unknown as Message;
   const store = { state: {}, dispatch } as unknown as ReturnType<typeof useStore>;
   act(() => root.render(createElement(BotEditorStore, { value: store, children: createElement(QuestionCard, { threadId: "t1", bot: { name: "Dev" }, message }) })));
@@ -42,41 +42,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const dismissButton = () => host.querySelector<HTMLButtonElement>("[data-question-dismiss]");
-
-describe("QuestionCard dismiss", () => {
-  it("has an Ignore button that closes the question without answering it", () => {
+describe("QuestionCard has no skip", () => {
+  it("offers no X, Ignore or countdown, and never answers by itself", () => {
     mount([plan]);
-    expect(dismissButton()?.getAttribute("aria-label")).toBe("Ignore");
-    act(() => dismissButton()!.click());
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch.mock.calls[0]![0]).toMatchObject({ type: "decideRequest", threadId: "t1", requestId: "req-1", behavior: "answer", message: QUESTION_SKIP_MESSAGE });
-    expect(host.querySelector('[data-ask-card="settled"]')?.textContent).toContain("Closed without an answer");
-    expect(host.textContent).not.toContain("skipped this question");
-  });
-
-  it("counts down to closing by itself when the question has a deadline", () => {
-    mount([plan], { autoDismissAt: 1_000_000 + 30_000 });
-    expect(dismissButton()?.getAttribute("aria-label")).toBe("Ignore, closes automatically in 30 s");
-    act(() => { vi.advanceTimersByTime(10_000); });
-    expect(dismissButton()?.getAttribute("aria-label")).toBe("Ignore, closes automatically in 20 s");
+    expect(host.querySelector("button[aria-label]")).toBeNull();
+    expect(host.textContent).not.toMatch(/Ignore|closes automatically/);
+    act(() => { vi.advanceTimersByTime(600_000); });
     expect(dispatch).not.toHaveBeenCalled();
-    act(() => { vi.advanceTimersByTime(20_000); });
-    expect(dispatch).toHaveBeenCalledTimes(1);
-    expect(dispatch.mock.calls[0]![0].message).toBe(QUESTION_SKIP_MESSAGE);
+    expect(host.querySelector('[data-ask-card="pending"]')).not.toBeNull();
   });
 
-  it("does not close under a half typed answer", () => {
-    mount([name], { autoDismissAt: 1_000_000 + 5_000 });
+  it("stays open under a half typed answer", () => {
+    mount([name]);
     const field = host.querySelector("textarea")!;
     const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
     act(() => { setter.call(field, "my-repo"); field.dispatchEvent(new Event("input", { bubbles: true })); });
-    act(() => { vi.advanceTimersByTime(20_000); });
-    expect(dispatch).not.toHaveBeenCalled();
-  });
-
-  it("has no countdown, and nothing closes by itself, without a deadline", () => {
-    mount([plan]);
     act(() => { vi.advanceTimersByTime(600_000); });
     expect(dispatch).not.toHaveBeenCalled();
   });

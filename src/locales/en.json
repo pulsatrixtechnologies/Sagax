@@ -9618,11 +9618,8 @@
   "orgSecrets.remove": "Remove",
   "orgSecrets.empty": "No team secret yet.",
   "chat.reply.link": "[link] {host}",
-  "composer.placeholder.question": "Answer above, or write about something else",
-  "question.dismiss": "Ignore",
-  "question.dismissAuto": "Ignore, closes automatically in {seconds} s",
+  "composer.placeholder.question": "Answer the question above, or write something else: it stays open",
   "question.answerFailed": "Your answer didn't go through. Check your connection and try again.",
   "notifications.invite.title": "Let your bots notify you when something needs your attention",
-  "notifications.invite.enable": "Turn on notifications",
-  "notifications.invite.later": "Not now"
+  "notifications.invite.enable": "Enable"
 }

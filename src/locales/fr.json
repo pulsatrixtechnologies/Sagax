@@ -9618,11 +9618,8 @@
   "orgSecrets.remove": "Retirer",
   "orgSecrets.empty": "Aucun secret d'équipe pour l'instant.",
   "chat.reply.link": "[lien] {host}",
-  "composer.placeholder.question": "Répondez ci-dessus, ou parlez d'autre chose",
-  "question.dismiss": "Ignorer",
-  "question.dismissAuto": "Ignorer, se ferme automatiquement dans {seconds} s",
+  "composer.placeholder.question": "Répondez à la question ci-dessus, ou écrivez autre chose : elle restera ouverte",
   "question.answerFailed": "Votre réponse n'est pas passée. Vérifiez votre connexion et réessayez.",
   "notifications.invite.title": "Laissez vos Bots vous prévenir lorsqu'un élément requiert votre attention",
-  "notifications.invite.enable": "Activer les notifications",
-  "notifications.invite.later": "Plus tard"
+  "notifications.invite.enable": "Activer"
 }

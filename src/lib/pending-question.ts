@@ -16,9 +16,3 @@ export function pendingQuestions(messages: readonly Message[]): Message[] {
   );
 }
 
-/** Whole seconds left before a question closes by itself, or null when it
- * has no countdown. Never negative. */
-export function autoDismissSecondsLeft(at: number | undefined, now: number): number | null {
-  if (typeof at !== "number" || !Number.isFinite(at)) return null;
-  return Math.max(0, Math.ceil((at - now) / 1000));
-}

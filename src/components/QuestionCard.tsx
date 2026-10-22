@@ -10,9 +10,8 @@
 // shortcut, with an "Other" row that opens a field for a reply the model did
 // not think of. A set of questions gets one tab each and a single send. Once
 // answered the card stays, showing what was chosen.
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
-import { autoDismissSecondsLeft } from "@/lib/pending-question";
 import { useStore, type Bot, type Message } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -20,13 +19,11 @@ import {
   answerWithoutPreamble,
   formatQuestionAnswers,
   MAX_CUSTOM_ANSWER,
-  QUESTION_SKIP_MESSAGE,
   questionAnswersByQuestion,
   type AskQuestion,
 } from "../../shared/ask-question";
 import { ASK_SMALL_PILL, returnFocusToComposer } from "./AskCard";
 import { ExpandableText } from "./ExpandableText";
-import { NotificationInvite } from "./NotificationInvite";
 import {
   picksInAnswer,
   QuestionSheet,
@@ -153,43 +150,11 @@ export function QuestionCard({
   const [sent, setSent] = useState<string | null>(null);
   // the last answer did not reach the bot: said on the card until the next try
   const [failed, setFailed] = useState(false);
-  const deadline = card?.questionRequest?.autoDismissAt;
-  const [now, setNow] = useState(() => Date.now());
-  // Anything typed or picked holds the countdown: it must never close a
-  // question under a half written answer.
-  const touched = Object.values(drafts).some((entry) => entry.picked.length > 0 || entry.custom.trim().length > 0);
-  const secondsLeft = touched ? null : autoDismissSecondsLeft(deadline, now);
-  const live = !card?.answered && sent === null;
 
   const answered = useMemo(
     () => questions.map((question, index) => answersOf(drafts[index] ?? initialDraft(question)).length > 0),
     [questions, drafts],
   );
-
-  const dismissQuestion = () => {
-    if (!card?.requestId || sent !== null || card.answered) return;
-    setSent(QUESTION_SKIP_MESSAGE);
-    onAnswered?.();
-    dispatch({
-      type: "decideRequest",
-      threadId,
-      requestId: card.requestId,
-      behavior: "answer",
-      message: QUESTION_SKIP_MESSAGE,
-      onError: () => { setSent(null); setFailed(true); onAnswerFailed?.(); },
-    });
-  };
-
-  useEffect(() => {
-    if (!live || typeof deadline !== "number" || touched) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [live, deadline, touched]);
-  useEffect(() => {
-    if (live && secondsLeft === 0) dismissQuestion();
-    // dismissQuestion reads current props; the countdown reaching zero is the trigger
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, secondsLeft]);
 
   if (!card || !questions.length) return null;
   const settled = Boolean(card.answered) || sent !== null;
@@ -199,9 +164,8 @@ export function QuestionCard({
     const answer = card.answeredText ?? sent;
     // A question nobody answered (the run ended, or it was closed) is not
     // "answered": say so, the rows dimmed.
-    const skipped = answer === QUESTION_SKIP_MESSAGE;
-    const closed = skipped || (!answer && Boolean(card.answered) && card.answered !== "answer");
-    return <SettledQuestion questions={questions} answer={skipped ? null : answer} closed={closed} title={bot ? t("question.card.named", { name: bot.name }) : t("question.card.title")} />;
+    const closed = !answer && Boolean(card.answered) && card.answered !== "answer";
+    return <SettledQuestion questions={questions} answer={answer} closed={closed} title={bot ? t("question.card.named", { name: bot.name }) : t("question.card.title")} />;
   }
 
   const currentIndex = Math.min(active, questions.length - 1);
@@ -305,13 +269,10 @@ export function QuestionCard({
   const showSend = !oneTap && (multi || !single);
 
   return (
-    <>
     <QuestionSheet
       ariaLabel={t("question.aria.card")}
       title={title}
       meta={meta}
-      onDismiss={dismissQuestion}
-      dismissLabel={secondsLeft !== null ? t("question.dismissAuto", { seconds: secondsLeft }) : t("question.dismiss")}
       onKeyDown={sheetKeyHandler(choices.length, (index) => choose(choices[index]!.id ?? choices[index]!.label))}
     >
       {card.questionRequest?.origin === "output" && (
@@ -369,8 +330,6 @@ export function QuestionCard({
         <SheetSend label={single ? t("question.submit") : t("question.submitAll")} disabled={!complete} onClick={submit} />
       )}
     </QuestionSheet>
-    <NotificationInvite />
-    </>
   );
 }
 

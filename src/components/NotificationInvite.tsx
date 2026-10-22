@@ -1,52 +1,41 @@
-// "Let your bots notify you": a quiet line under a card that is waiting on
-// the person, offered once while notifications were never asked for. It is
-// the in-thread door to the same permission the settings screen asks for.
+// Settings > Notifications: "Let your bots notify you", one line with an
+// Enable button, shown only while this browser was never asked. JC
+// (2026-10-21, #876): never in the chat, only here.
 import { useState } from "react";
-import { Bell } from "lucide-react";
 import { requestNotificationPermission } from "@/lib/notify";
 import { t } from "@/lib/i18n";
-import { cn } from "@/lib/cn";
-import { QUESTION_SHEET_WIDTH } from "./QuestionSheet";
+import { CompactRow, PILL } from "./SettingsPrimitives";
 
-const SNOOZE_KEY = "sagax.notificationInvite.snoozed";
-
-/** True while the browser has never been asked and the person did not say
- * "not now" here. Storage can throw (private window): then it just shows. */
+/** True while the browser has never been asked for notifications. */
 export function shouldInviteNotifications(): boolean {
-  if (typeof Notification === "undefined" || Notification.permission !== "default") return false;
-  try {
-    return localStorage.getItem(SNOOZE_KEY) !== "1";
-  } catch {
-    return true;
-  }
+  return typeof Notification !== "undefined" && Notification.permission === "default";
 }
 
 export function NotificationInvite() {
   const [shown, setShown] = useState(shouldInviteNotifications);
+  const [asking, setAsking] = useState(false);
   if (!shown) return null;
-  const hide = () => setShown(false);
-  const later = () => {
-    try { localStorage.setItem(SNOOZE_KEY, "1"); } catch { /* stays for this session */ }
-    hide();
+  // Whatever happens (granted, denied, closed, no prompt at all, or a
+  // rejection), the row follows the permission the browser now reports.
+  const settle = () => { setAsking(false); setShown(shouldInviteNotifications()); };
+  const enable = () => {
+    let request: Promise<NotificationPermission> | null;
+    try {
+      request = requestNotificationPermission();
+    } catch {
+      request = null;
+    }
+    if (!request) { settle(); return; }
+    setAsking(true);
+    request.then(settle, settle);
   };
   return (
-    <div data-notification-invite="" className={cn(QUESTION_SHEET_WIDTH, "mt-2 flex min-w-0 items-center gap-2 rounded-2xl bg-ink/[0.04] px-3 py-2 text-[12.5px] leading-snug text-ink-secondary")}>
-      <Bell size={14} strokeWidth={1.5} aria-hidden="true" className="shrink-0" />
-      <span className="min-w-0 flex-1">{t("notifications.invite.title")}</span>
-      <button
-        type="button"
-        onClick={() => { void requestNotificationPermission()?.finally(hide); }}
-        className="shrink-0 rounded-full px-2.5 py-1 font-medium text-ink hover:bg-ink/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-      >
-        {t("notifications.invite.enable")}
-      </button>
-      <button
-        type="button"
-        onClick={later}
-        className="shrink-0 rounded-full px-2 py-1 text-ink-tertiary hover:bg-ink/[0.07] hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-      >
-        {t("notifications.invite.later")}
-      </button>
+    <div data-notification-invite="">
+      <CompactRow label={t("notifications.invite.title")} rowId="notificationInvite">
+        <button type="button" className={PILL} disabled={asking} onClick={enable}>
+          {t("notifications.invite.enable")}
+        </button>
+      </CompactRow>
     </div>
   );
 }
