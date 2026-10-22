@@ -95,7 +95,7 @@ import {
   toLocalTimeInput,
   type RoutineCalendarItem,
 } from "@/lib/routine-calendar";
-import { DAY_NAMES, durationLabel, intervalLabel, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
+import { DAY_NAMES, durationLabel, intervalLabel, niceDate, niceTime, scheduleLabel, scheduleRawCron } from "@/lib/schedule-label";
 import { Switch } from "./SettingsPrimitives";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import {
@@ -1620,7 +1620,7 @@ export function EventDetails({
             <div className="text-[12.5px] text-ink-secondary">
               {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` - ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
             </div>
-            {(routine || call) && <div className="mt-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>}
+            {(routine || call) && <div data-schedule-label title={scheduleRawCron((routine ?? call)!.schedule) ?? undefined} className="mt-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>}
             {routine?.schedule.type === "cron" && <div className="mt-3"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
           </div>
           <div className="flex items-start gap-3">
