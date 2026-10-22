@@ -80,6 +80,6 @@
     "term": "grok-bot",
     "files": "^dist-server/self-knowledge/knowledge\\.generated\\.json$",
     "context": "shared/fixtures/grok-import/shared-grok-bot\\.json",
-    "reason": "Path of the importer's test fixture (a sample export of a shared x.ai bot), cited in the agent notes."
+    "reason": "Path of the importer's test fixture (a sample export of a bot shared on x.ai), cited in the agent notes."
   }
 ]
