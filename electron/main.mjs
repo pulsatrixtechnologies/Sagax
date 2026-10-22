@@ -106,6 +106,7 @@ import { createComputerSharing, validateSharedFolders } from "./computer-sharing
 import { createDesktopBridge } from "./desktop-bridge.mjs";
 import { applyAppIcon, createAppIconStore, parseAppIconRequest, windowIconPath } from "./app-icon.mjs";
 import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
+import { createLocalModelKeyStore } from "./local-model-keys.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
 import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
@@ -2600,6 +2601,22 @@ function desktopBridgeProxyCredentials() {
   return bridgeProxyCredentials;
 }
 
+let bridgeLocalModelKeys = null;
+/** The per-loopback-server API keys the person set on this computer, kept
+ * encrypted by the OS and never sent to the organization server. */
+function desktopBridgeLocalModelKeys() {
+  bridgeLocalModelKeys ??= createLocalModelKeyStore({
+    file: path.join(app.getPath("userData"), "local-model-keys.bin"), fs, log: (message) => slog(message),
+    encryption: {
+      available: async () => (await safeStorage.isAsyncEncryptionAvailable()) &&
+        (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"),
+      encrypt: (value) => safeStorage.encryptStringAsync(value),
+      decrypt: (buffer) => safeStorage.decryptStringAsync(buffer),
+    },
+  });
+  return bridgeLocalModelKeys;
+}
+
 function desktopBridge() {
   desktopBridgeConnector ??= createDesktopBridge({
     environment: () => serverModeEnvironment(environmentsState),
@@ -2618,6 +2635,10 @@ function desktopBridge() {
     // the person typed once here (kept encrypted by the OS).
     resolveProxy: (url) => session.defaultSession.resolveProxy(url),
     proxyCredentials: desktopBridgeProxyCredentials(),
+    // The per-loopback-server API key for a key-protected local server
+    // (oMLX/Ornith), by base URL. Desktop-side only; used to authenticate the
+    // probe and the model-serving calls to 127.0.0.1.
+    localModelKeyFor: (base) => desktopBridgeLocalModelKeys().get(base),
     browse: bridgeBrowse,
     cuaConnection: async () => {
       const connection = await cuaReady.catch(() => null);
@@ -3784,6 +3805,23 @@ ipcMain.handle("engine:open-terminal", localOnly("engine:open-terminal", async (
 // Fallback for the renderer's copy button when the web Clipboard API rejects
 // (unfocused page, denied permission). Plain text only; resolves false on failure.
 ipcMain.handle("clipboard:write-text", localOnly("clipboard:write-text", (_event, text) => writeClipboardText(clipboard, text)));
+
+// Per-loopback-server API keys for local models (Settings > Computer). These
+// run through the local shell only: a key is kept encrypted on THIS computer
+// and never leaves it. The renderer only ever learns WHICH bases have a key,
+// never the key value. Setting or clearing a key re-probes at once, so a
+// server that was "needs an API key" turns into a listed one without waiting.
+ipcMain.handle("local-models:key-bases", localOnly("local-models:key-bases", () => desktopBridgeLocalModelKeys().bases()));
+ipcMain.handle("local-models:set-key", localOnly("local-models:set-key", async (_event, base, key) => {
+  const ok = await desktopBridgeLocalModelKeys().set(base, key);
+  if (ok) await desktopBridge().refreshLocalModels({ force: true }).catch(() => {});
+  return ok;
+}));
+ipcMain.handle("local-models:clear-key", localOnly("local-models:clear-key", async (_event, base) => {
+  await desktopBridgeLocalModelKeys().clear(base);
+  await desktopBridge().refreshLocalModels({ force: true }).catch(() => {});
+  return true;
+}));
 
 // OAuth/connect links are returned asynchronously, after Chromium's direct
 // click gesture has ended. Opening them through window.open can therefore be

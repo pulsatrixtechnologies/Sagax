@@ -81,6 +81,21 @@ describe("desktop local models", () => {
     if (!refused.ok) expect(refused.error).not.toContain("10.1.2.3");
   });
 
+  it("never accepts or stores a per-endpoint API key: the key stays desktop-side only", async () => {
+    const { service, bridge } = await start();
+    bridge.online.add("pr_owner");
+    // The API key lives on the owner's desktop (electron/local-model-keys.mjs).
+    // The organization store refuses any `key` field, on the settings body...
+    expect(service.update("pr_owner", { expose: true, key: "sk-ornith" } as never).ok).toBe(false);
+    // ...on an endpoint...
+    expect(service.update("pr_owner", { endpoints: [{ id: "desk8000", label: "oMLX", baseUrl: "http://127.0.0.1:8000/v1", key: "sk-ornith" }] } as never).ok).toBe(false);
+    // ...and on a published catalog row.
+    expect(service.publish("pr_owner", { endpoints: [{ id: "desk8000", label: "oMLX", models: ["ornith"], key: "sk-ornith" }] } as never).ok).toBe(false);
+    // A clean publish still works, and no key is anywhere in the stored view.
+    expect(service.publish("pr_owner", { endpoints: [{ id: "desk8000", label: "oMLX", models: ["ornith"] }] }).ok).toBe(true);
+    expect(JSON.stringify(service.read("pr_owner"))).not.toContain("sk-ornith");
+  });
+
   it("rejects another person when sharing is off and allows them when sharing is on", async () => {
     const { service, bridge } = await start();
     const owner = "pr_owner";

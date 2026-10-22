@@ -8,7 +8,7 @@ export const SEED_ENDPOINTS = [
   { id: "desk8002", label: "DwarfStar", baseUrl: "http://127.0.0.1:8002/v1" },
   { id: "desk9337", label: "llama-server", baseUrl: "http://127.0.0.1:9337/v1" },
   { id: "desk9338", label: "Bonsai", baseUrl: "http://127.0.0.1:9338/v1" },
-  { id: "desk8080", label: "oMLX", baseUrl: "http://127.0.0.1:8080/v1" },
+  { id: "desk8000", label: "oMLX", baseUrl: "http://127.0.0.1:8000/v1" },
   { id: "desk11434", label: "Ollama", baseUrl: "http://127.0.0.1:11434/v1" },
   { id: "desk52415", label: "EXO", baseUrl: "http://127.0.0.1:52415/v1" },
   { id: "desk1234", label: "LM Studio", baseUrl: "http://127.0.0.1:1234/v1" },
@@ -21,6 +21,16 @@ const METHODS = new Set(["GET", "POST"]);
 const MODEL_ID = /^[\w][\w./:+-]*$/;
 const RESPONSE_CAP = 1_500_000;
 const REQUEST_CAP = 1_000_000;
+
+// The bearer this process sends to a loopback server. A per-endpoint API key
+// the person set on this computer (desktop-side only) when there is one, else
+// the anonymous "local" token that Ollama/LM Studio ignore and a key-required
+// server (oMLX) refuses with 401. The key stays on this computer: it is only
+// ever an Authorization header on a request to 127.0.0.1, never logged, never
+// sent to the organization server, never put in a request body.
+function bearerToken(apiKey) {
+  return typeof apiKey === "string" && apiKey.length > 0 ? apiKey : "local";
+}
 
 export function normalizeLoopbackBase(input) {
   if (typeof input !== "string" || input.length === 0 || input.length > 200) return null;
@@ -87,8 +97,8 @@ export function modelDetailsFromPayload(payload) {
 
 /** Probe one loopback base. Returns model ids, or null when it did not answer
  * /v1/models with a readable body (down, timed out, or refused for a key). */
-export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch) {
-  const probed = await probeLoopbackCatalog(base, fetchImpl);
+export async function probeLoopbackModels(base, fetchImpl = globalThis.fetch, apiKey) {
+  const probed = await probeLoopbackCatalog(base, fetchImpl, apiKey);
   return probed && (probed.status === "answered" || probed.status === "empty") ? probed.models : null;
 }
 
@@ -109,16 +119,17 @@ const anthropicCache = new Map();
  * is not an answer: it keeps the last definite one, so a busy server is not
  * reported as one that does not speak the protocol (2026-10-18).
  */
-export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch, now = Date.now) {
+export async function probeAnthropicMessages(base, fetchImpl = globalThis.fetch, now = Date.now, apiKey) {
   const normalized = normalizeLoopbackBase(base);
   if (!normalized) return false;
   const hit = anthropicCache.get(normalized);
   if (hit && now() - hit.at < (hit.ok ? ANTHROPIC_YES_FRESH_MS : ANTHROPIC_FRESH_MS)) return hit.ok;
+  const token = bearerToken(apiKey);
   try {
     const response = await fetchImpl(`${normalized}/messages`, {
       method: "POST",
       redirect: "error",
-      headers: { Authorization: "Bearer local", "x-api-key": "local", "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      headers: { Authorization: `Bearer ${token}`, "x-api-key": token, "anthropic-version": "2023-06-01", "content-type": "application/json" },
       body: JSON.stringify({ model: "probe", max_tokens: 1, messages: [] }),
       // DwarfStar runs a one-token generation for it: 0.3 s idle, past 1.2 s
       // on a loaded Mac (2026-10-18), which read as "does not speak it".
@@ -163,17 +174,19 @@ export function resetAnthropicProbeCache() {
  * - "needs_key": reachable but refused without credentials (401/403) — the
  *   server is up and speaks /v1, it just wants an API key;
  * - "offline": not reachable, timed out, or any other non-2xx (down/5xx).
- * The probe sends no real key, so a server that requires one reads as
- * "needs_key" rather than being silently dropped as "not responding".
+ * `apiKey` is the per-endpoint key the person set on this computer, if any.
+ * With no key the probe sends the anonymous "local" bearer, so a server that
+ * requires a key reads as "needs_key" rather than being silently dropped as
+ * "not responding"; with the right key that same server answers "answered".
  */
-export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
+export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch, apiKey) {
   const normalized = normalizeLoopbackBase(base);
   if (!normalized) return null;
   try {
     const response = await fetchImpl(`${normalized}/models`, {
       method: "GET",
       redirect: "error",
-      headers: { Authorization: "Bearer local" },
+      headers: { Authorization: `Bearer ${bearerToken(apiKey)}` },
       signal: AbortSignal.timeout(1200),
     });
     if (!response.ok) {
@@ -186,7 +199,7 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
     return {
       models,
       details: modelDetailsFromPayload(payload),
-      anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl) : false,
+      anthropic: models.length ? await probeAnthropicMessages(normalized, fetchImpl, undefined, apiKey) : false,
       status: models.length ? "answered" : "empty",
     };
   } catch {
@@ -200,7 +213,7 @@ export async function probeLoopbackCatalog(base, fetchImpl = globalThis.fetch) {
  * The bridge returns one result, so the body is buffered up to the cap.
  * There is no second channel.
  */
-export async function executeLocalModel(operation, resolveBase, fetchImpl = globalThis.fetch, signal, allowMessages) {
+export async function executeLocalModel(operation, resolveBase, fetchImpl = globalThis.fetch, signal, allowMessages, resolveKey) {
   if (!operation || typeof operation !== "object") throw new Error("This local model request was refused.");
   if (operation.url !== undefined) throw new Error("This local model request was refused.");
   if (!METHODS.has(operation.http_method) || !PATHS.has(operation.http_path)) throw new Error("This local model request was refused.");
@@ -220,12 +233,16 @@ export async function executeLocalModel(operation, resolveBase, fetchImpl = glob
   if (json.length > REQUEST_CAP) throw new Error("This local model request was refused.");
   const seconds = Math.min(600, Math.max(1, Number(operation.timeout_seconds) || 120));
   const timeout = AbortSignal.timeout(seconds * 1000);
+  // The per-endpoint key the person set on this computer, if any. It only
+  // ever rides this Authorization header to 127.0.0.1; it is never logged or
+  // returned to the organization server.
+  const token = bearerToken(typeof resolveKey === "function" ? await resolveKey(operation.endpoint) : null);
   const response = await fetchImpl(target.href, {
     method: operation.http_method,
     redirect: "error",
     headers: {
-      Authorization: "Bearer local",
-      ...(operation.http_path === "/messages" ? { "x-api-key": "local", "anthropic-version": "2023-06-01" } : {}),
+      Authorization: `Bearer ${token}`,
+      ...(operation.http_path === "/messages" ? { "x-api-key": token, "anthropic-version": "2023-06-01" } : {}),
       ...(operation.http_method === "POST" ? { "content-type": "application/json" } : {}),
     },
     ...(operation.http_method === "POST" ? { body: json } : {}),
