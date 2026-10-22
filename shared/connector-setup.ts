@@ -12,11 +12,11 @@
 // Sagax never holds a token for these and never signs anyone in. An engine
 // account that belongs to someone else (the payer is not the speaker,
 // review of #943) is refused: the person would connect an account the turn
-// is not theirs to use. The card says "Connecté" only on evidence: the
-// claude.ai inventory read again, or a successful call to that connector in
-// the conversation after the card. Grok has no API that says which
-// connectors an account connected, so a Grok card stays "pending" until a
-// call succeeds.
+// is not theirs to use. The card says "Connecté" only on evidence: for
+// Claude, the card's person's own claude.ai inventory read again; for Grok
+// (no API says which connectors an account connected), a successful call to
+// that connector after the card, in a turn of the card's person on the
+// card's bot, never a sign-in tool. Until then a Grok card stays "pending".
 import { claudeAiConnectorCapabilities, grokConnectorCapabilities, type ConnectorCapability } from "./engine-connectors.ts";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "./grok-cloud-connectors.ts";
 import { composioSlugFor } from "./grok-import.ts";
@@ -151,35 +151,49 @@ export function isConnectorSetupUrl(raw: string): boolean {
   return url.protocol === "https:" && SETUP_HOSTS.has(url.hostname) && !url.username && !url.password && !url.port;
 }
 
-interface ActivityLike {
-  kind?: string;
-  at?: number;
-  tool?: { name?: string; ok?: boolean; input?: string };
+/** A tool call a turn finished, as the server recorded it when it settled
+ * (server/routes/connector-setup.ts ConnectorSetupProofs): the driver's
+ * normalized name, whose turn it was and on which bot. */
+export interface ConnectorSetupProof {
+  /** the driver's name (`mcp__microsoft_teams__list_chats`), or the meta tool `use_tool` */
+  name: string;
+  input?: string;
+  ok: boolean;
+  at: number;
+  /** the owner digest of the turn's speaker, "" when no person spoke */
+  owner: string;
+  botId: string;
 }
 
-const claudeServerOf = (name: string) => /^mcp__claude_ai_([A-Za-z0-9_.-]+?)__/.exec(name)?.[1]?.replace(/_/g, " ");
+/** The meta tool whose input names the tool it runs. */
+const META_TOOL = "use_tool";
+/** A sign-in step says nothing about whether the connector works. */
+const AUTH_TOOL = /auth/i;
 
-/** A successful call to this connector in the conversation after the card. */
-export function connectorSetupEvidence(messages: readonly ActivityLike[], view: Pick<ConnectorSetupView, "provider" | "connector" | "label" | "createdAt">): boolean {
+function provenToolName(proof: Pick<ConnectorSetupProof, "name" | "input">): string | null {
+  if (proof.name !== META_TOOL) return proof.name;
+  try {
+    const parsed = JSON.parse(proof.input ?? "") as { tool_name?: unknown };
+    return typeof parsed?.tool_name === "string" ? parsed.tool_name : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Proof that a Grok card's connector works: a successful call to it after
+ * the card, in a turn of the card's own person on the card's bot. A sign-in
+ * tool is not proof. A Claude card takes no call as proof: only its
+ * person's claude.ai inventory (claudeInventoryShowsConnected). */
+export function connectorProofMatches(view: Pick<ConnectorSetupView, "provider" | "connector" | "label" | "createdAt" | "owner">, proof: ConnectorSetupProof, cardBotId: string): boolean {
+  if (view.provider !== "grok") return false;
+  if (!proof.ok || proof.at <= view.createdAt || !proof.owner || proof.owner !== view.owner || !cardBotId || proof.botId !== cardBotId) return false;
   const target = resolveConnectorSetupTarget(view.label) ?? resolveConnectorSetupTarget(view.connector);
-  if (!target) return false;
-  const grokPrefix = target.grok ? `${target.grok.replace(/-/g, "_")}__` : null;
-  return messages.some((message) => {
-    const tool = message.tool;
-    if (message.kind !== "activity" || !tool || tool.ok !== true || (message.at ?? 0) <= view.createdAt) return false;
-    const names = [tool.name ?? ""];
-    try {
-      const parsed = JSON.parse(tool.input ?? "") as { tool_name?: unknown };
-      if (typeof parsed?.tool_name === "string") names.push(parsed.tool_name);
-    } catch {
-      // not JSON: only the name counts
-    }
-    return names.some((name) => {
-      if (view.provider === "grok") return Boolean(grokPrefix) && name.toLowerCase().replace(/^mcp__/, "").startsWith(grokPrefix!);
-      const server = claudeServerOf(name);
-      return Boolean(server) && claudeServiceMatches(server!, target);
-    });
-  });
+  if (!target?.grok) return false;
+  const name = provenToolName(proof)?.toLowerCase().replace(/^mcp__/, "");
+  if (!name) return false;
+  const server = `${target.grok.replace(/-/g, "_")}__`;
+  if (!name.startsWith(server)) return false;
+  return !AUTH_TOOL.test(name.slice(server.length));
 }
 
 function claudeServiceMatches(service: string, target: ConnectorSetupTarget): boolean {

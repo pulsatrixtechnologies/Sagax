@@ -163,13 +163,27 @@ export function pluginSourceLabel(source: string): string {
   return source;
 }
 
+/** Opens grok.com/connectors; the sentence to show when no path opens it. */
+export async function openGrokConnectors(): Promise<string | null> {
+  try {
+    await openExternalLink(GROK_CONNECTORS_URL);
+    return null;
+  } catch {
+    return t("connectorSetup.blocked");
+  }
+}
+
 /** "Manage on Grok": the only thing a Grok connector row offers. Sagax
  * neither connects it nor reads its account state. */
 export function GrokConnectorAction() {
+  const [error, setError] = useState<string | null>(null);
   return (
-    <button type="button" data-grok-manage onClick={() => void openExternalLink(GROK_CONNECTORS_URL)} className={cn(cardActionClass("quiet"), "inline-flex items-center gap-1")}>
-      <ExternalLink size={12} /> {t("connectApps.providers.manage", { provider: "Grok" })}
-    </button>
+    <span className="inline-flex flex-col items-end gap-1">
+      <button type="button" data-grok-manage onClick={() => void openGrokConnectors().then(setError)} className={cn(cardActionClass("quiet"), "inline-flex items-center gap-1")}>
+        <ExternalLink size={12} /> {t("connectApps.providers.manage", { provider: "Grok" })}
+      </button>
+      {error && <span role="alert" className="text-[11.5px] text-danger">{error}</span>}
+    </span>
   );
 }
 

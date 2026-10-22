@@ -16,6 +16,15 @@ import { ASK_PRIMARY_BUTTON, ASK_QUIET_BUTTON, AskCard, AskSettledLine } from ".
 /** Opens the card's page, only on an allowed host. */
 export async function openConnectorSetup(view: Pick<ConnectorSetupView, "url">): Promise<boolean> {
   if (!isConnectorSetupUrl(view.url)) return false;
+  // desktop: the card's own channel, where main checks the host again
+  if (window.ogb?.openConnectorSetup) {
+    try {
+      await window.ogb.openConnectorSetup(view.url);
+      return true;
+    } catch (error) {
+      console.warn("desktop:open-connector-setup refused the link; trying the app's link path", error);
+    }
+  }
   await openExternalLink(view.url);
   return true;
 }

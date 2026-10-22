@@ -3832,14 +3832,20 @@ took 13 tool calls and ended in "I can't". Now one call posts a card.
   (`isConnectorSetupUrl`, checked by server and card). The row's text is the
   fallback with the link, for iOS and Android until they draw the card.
 - "Connecté" only on evidence (`POST /api/connector-setup/:id/check`, the
-  person the card is for only: an owner digest on the card, never their id):
-  a successful call to that connector in the conversation after the card, or,
-  for Claude, the claude.ai inventory read again (cache refreshed). Grok has
-  no API that says which connectors are connected: the card stays "Pas encore
-  confirmé" until a call succeeds. Checked on "J'ai terminé" and when the
-  window regains focus after the click.
-- `openExternalLink` falls back to `window.open` when the desktop bridge
-  refuses (a silent rejection made "Manage on Grok" do nothing).
+  person the card is for only: an owner digest on the card, never their id).
+  Claude: that person's own claude.ai inventory read again (cache
+  refreshed), never a call. Grok (no API says which connectors are
+  connected): a successful call to that connector after the card, recorded
+  as it settles with whose turn and which bot (`ConnectorSetupProofs`, in
+  memory, bounded) and matching the card's person and bot; `use_tool` input
+  is read only for exactly that meta tool; any tool with "auth" in its name
+  is no proof. Until then "Pas encore confirmé". Checked on "J'ai terminé"
+  and when the window regains focus after the click.
+- Desktop: the button goes through its own IPC `desktop:open-connector-setup`
+  (desktopUiOnly, `connectorSetupUrl` allows grok.com and claude.ai only),
+  else `openExternalLink`. That one logs a bridge refusal and falls back to
+  `window.open` (a silent rejection made "Manage on Grok" do nothing); when
+  neither opens, the caller shows "Ce lien ne peut pas être ouvert d'ici."
 - Tests: `shared/connector-setup.test.ts`, `server/routes/connector-setup.test.ts`,
   `server/drivers/agents-connector-setup.test.ts`,
   `src/components/connector-setup/ConnectorSetupCard.test.ts`,

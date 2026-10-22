@@ -15,10 +15,11 @@ import { z } from "zod";
 import {
   chooseConnectorSetupRoute,
   claudeInventoryShowsConnected,
-  connectorSetupEvidence,
+  connectorProofMatches,
   connectorSetupText,
   isConnectorSetupUrl,
   resolveConnectorSetupTarget,
+  type ConnectorSetupProof,
   type ConnectorSetupView,
 } from "../../shared/connector-setup.ts";
 import type { RequestAuth } from "../request-auth.ts";
@@ -41,11 +42,40 @@ export interface ConnectorSetupContext {
   composio: boolean;
 }
 
+/** The tool calls that settled in each conversation, with whose turn and
+ * which bot they were (review of #966): a Grok card is proven only by a
+ * call of its own person on its own bot. In memory, bounded; after a
+ * restart a card waits for the next call (it never claims, it waits). */
+export interface ConnectorSetupProofs {
+  record(input: { threadId: string; botId: string | undefined; principalId: string | undefined; name: string; input?: string; ok: boolean; at: number }): void;
+  list(threadId: string): readonly ConnectorSetupProof[];
+}
+
+export function createConnectorSetupProofs(options: { perThread?: number; threads?: number } = {}): ConnectorSetupProofs {
+  const perThread = options.perThread ?? 64;
+  const maxThreads = options.threads ?? 500;
+  const byThread = new Map<string, ConnectorSetupProof[]>();
+  return {
+    record({ threadId, botId, principalId, name, input, ok, at }) {
+      // a failed call proves nothing; a turn with no person is nobody's proof
+      if (!ok || !botId || !principalId?.trim() || !name) return;
+      const list = byThread.get(threadId) ?? [];
+      byThread.delete(threadId);
+      list.push({ name: name.slice(0, 200), ...(input ? { input: input.slice(0, 2_000) } : {}), ok, at, owner: connectorSetupOwner(principalId), botId });
+      if (list.length > perThread) list.splice(0, list.length - perThread);
+      byThread.set(threadId, list);
+      if (byThread.size > maxThreads) byThread.delete(byThread.keys().next().value!);
+    },
+    list: (threadId) => byThread.get(threadId) ?? [],
+  };
+}
+
 interface Shared {
   /** The setup cards of a conversation. */
   cards(threadId: string): Array<{ messageId: string; view: ConnectorSetupView }>;
-  /** The conversation's rows, for evidence (tool calls after the card). */
-  messages(threadId: string): ReadonlyArray<{ kind?: string; at?: number; tool?: { name?: string; ok?: boolean; input?: string } }>;
+  proofs(): ConnectorSetupProofs;
+  /** The bot whose conversation this is. */
+  botOf(threadId: string): string | undefined;
   patch(threadId: string, messageId: string, view: ConnectorSetupView): void;
   now?(): number;
 }
@@ -62,10 +92,12 @@ const REFUSALS = {
   no_route: "This bot's engine brings no connectors of the person's own account, and Sagax's Connect apps cannot connect that app here. Say so in one sentence; a bot on Claude or Grok (organization server) can connect it.",
 } as const;
 
-function check(view: ConnectorSetupView, messages: ReturnType<Shared["messages"]>, claude: Array<{ name: string; status: string }> | null, now: number): ConnectorSetupView {
+function check(view: ConnectorSetupView, proofs: readonly ConnectorSetupProof[], botId: string | undefined, claude: Array<{ name: string; status: string }> | null, now: number): ConnectorSetupView {
   const target = resolveConnectorSetupTarget(view.label);
-  const evidence = connectorSetupEvidence(messages, view)
-    || (view.provider === "claude" && Boolean(claude) && Boolean(target) && claudeInventoryShowsConnected(claude!, target!));
+  // Grok: a call of the card's own person on the card's bot; Claude: that person's inventory only
+  const evidence = view.provider === "grok"
+    ? Boolean(botId) && proofs.some((proof) => connectorProofMatches(view, proof, botId!))
+    : Boolean(claude) && Boolean(target) && claudeInventoryShowsConnected(claude!, target!);
   return { ...view, status: evidence ? "connected" : "pending", checkedAt: now };
 }
 
@@ -101,7 +133,7 @@ export function createConnectorSetupInternalRoutes(deps: Shared & {
     const owner = connectorSetupOwner(principalId);
     const existing = deps.cards(capability.threadId).find(({ view }) => view.owner === owner && view.provider === route.route && view.connector === target.id);
     if (existing) {
-      const view = existing.view.status === "connected" ? existing.view : check(existing.view, deps.messages(capability.threadId), null, now());
+      const view = existing.view.status === "connected" ? existing.view : check(existing.view, deps.proofs().list(capability.threadId), deps.botOf(capability.threadId), null, now());
       if (view !== existing.view && view.status !== existing.view.status) deps.patch(capability.threadId, existing.messageId, view);
       return json(res, 200, { ok: true, route: route.route, label: target.label, status: view.status, card: "existing" });
     }
@@ -139,7 +171,7 @@ export function createConnectorSetupRoutes(deps: Shared & {
     if (!card || card.view.owner !== connectorSetupOwner(principalId)) return json(res, 404, { error: "gone" });
     if (card.view.status === "connected") return json(res, 200, { view: card.view });
     const claude = card.view.provider === "claude" ? await deps.claudeConnectors(principalId).catch(() => null) : null;
-    const view = check(card.view, deps.messages(threadId), claude, now());
+    const view = check(card.view, deps.proofs().list(threadId), deps.botOf(threadId), claude, now());
     deps.patch(threadId, card.messageId, view);
     return json(res, 200, { view });
   };

@@ -26,7 +26,18 @@ describe("openExternalLink (Manage on Grok, Connect cards)", () => {
     const openExternal = vi.fn(async () => { throw new Error("desktop:open-external is only available in this app's own window"); });
     const open = vi.fn();
     vi.stubGlobal("window", { ogb: { openExternal }, open });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await openExternalLink(GROK_CONNECTORS_URL);
     expect(open).toHaveBeenCalledWith(GROK_CONNECTORS_URL, "_blank", "noopener,noreferrer");
+    // the refusal is logged, never swallowed
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("open-external"), expect.any(Error));
+    warn.mockRestore();
+  });
+
+  it("neither path opens it: the caller gets an error it can show", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("window", { ogb: { openExternal: vi.fn(async () => { throw new Error("refused"); }) }, open: vi.fn(() => { throw new Error("blocked"); }) });
+    await expect(openExternalLink(GROK_CONNECTORS_URL)).rejects.toThrow(/could not be opened/);
+    warn.mockRestore();
   });
 });

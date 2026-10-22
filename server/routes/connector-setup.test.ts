@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ConnectorSetupView } from "../../shared/connector-setup.ts";
 import { json, readBody } from "../harness/http.ts";
 import type { RequestAuth } from "../request-auth.ts";
-import { connectorSetupOwner, createConnectorSetupInternalRoutes, createConnectorSetupRoutes, type ConnectorSetupContext } from "./connector-setup.ts";
+import { connectorSetupOwner, createConnectorSetupInternalRoutes, createConnectorSetupProofs, createConnectorSetupRoutes, type ConnectorSetupContext, type ConnectorSetupProofs } from "./connector-setup.ts";
 import { PASS } from "./table.ts";
 
 interface Row { id: string; kind: string; at: number; text?: string; connectorSetup?: ConnectorSetupView; tool?: { name: string; ok?: boolean; input?: string } }
@@ -19,6 +19,7 @@ let context: ConnectorSetupContext | null;
 let claudeInventory: Array<{ name: string; status: string }> | null = null;
 let claudeReads = 0;
 let clock = 1_000;
+let proofs: ConnectorSetupProofs;
 
 beforeEach(async () => {
   rows = [];
@@ -28,12 +29,14 @@ beforeEach(async () => {
   claudeInventory = null;
   claudeReads = 0;
   clock = 1_000;
+  proofs = createConnectorSetupProofs();
   let seq = 0;
   const shared = {
     cards: (threadId: string) => threadId === "t1"
       ? rows.filter((row) => row.connectorSetup).map((row) => ({ messageId: row.id, view: row.connectorSetup! }))
       : [],
-    messages: () => rows,
+    proofs: () => proofs,
+    botOf: (threadId: string) => threadId === "t1" ? "b1" : undefined,
     patch: (_threadId: string, messageId: string, view: ConnectorSetupView) => {
       const row = rows.find((candidate) => candidate.id === messageId);
       if (row) row.connectorSetup = view;
@@ -132,6 +135,19 @@ describe("open_connector_setup (bot route)", () => {
   });
 });
 
+describe("proofs recorded as calls settle", () => {
+  it("keeps only successful calls of a person's turn, bounded per conversation, with the person as a digest", () => {
+    const ledger = createConnectorSetupProofs({ perThread: 3 });
+    ledger.record({ threadId: "t1", botId: "b1", principalId: undefined, name: "mcp__x__y", ok: true, at: 1 });
+    ledger.record({ threadId: "t1", botId: "b1", principalId: "pr_a", name: "mcp__x__y", ok: false, at: 1 });
+    expect(ledger.list("t1")).toEqual([]);
+    for (let at = 1; at <= 5; at += 1) ledger.record({ threadId: "t1", botId: "b1", principalId: "PR_A ", name: "mcp__x__y", ok: true, at });
+    expect(ledger.list("t1").map((proof) => proof.at)).toEqual([3, 4, 5]);
+    expect(ledger.list("t1")[0]!.owner).toBe(connectorSetupOwner("pr_a"));
+    expect(JSON.stringify(ledger.list("t1"))).not.toContain("pr_a");
+  });
+});
+
 describe("the card's check (person route)", () => {
   it("Grok: pending until a call to that connector succeeds, then connected", async () => {
     await open({ connector: "Teams" });
@@ -140,7 +156,13 @@ describe("the card's check (person route)", () => {
     const first = await check(id);
     expect(first.status).toBe(200);
     expect(first.body.view).toMatchObject({ status: "pending", checkedAt: 2_000 });
-    rows.push({ id: "a1", kind: "activity", at: 3_000, tool: { name: "use_tool", ok: true, input: JSON.stringify({ tool_name: "microsoft_teams__list_chats" }) } });
+    // another person's successful call in the same conversation proves nothing for this card
+    proofs.record({ threadId: "t1", botId: "b1", principalId: "pr_b", name: "mcp__microsoft_teams__list_chats", ok: true, at: 2_500 });
+    // nor a sign-in step of the card's person
+    proofs.record({ threadId: "t1", botId: "b1", principalId: "pr_a", name: "mcp__microsoft_teams__authenticate", ok: true, at: 2_600 });
+    clock = 2_700;
+    expect((await check(id)).body.view?.status).toBe("pending");
+    proofs.record({ threadId: "t1", botId: "b1", principalId: "pr_a", name: "use_tool", input: JSON.stringify({ tool_name: "microsoft_teams__list_chats" }), ok: true, at: 3_000 });
     clock = 4_000;
     expect((await check(id)).body.view?.status).toBe("connected");
     expect(rows[0]!.connectorSetup?.status).toBe("connected");
@@ -150,6 +172,8 @@ describe("the card's check (person route)", () => {
     context = { engine: "claude", account: "own", composio: false };
     await open({ connector: "Teams" });
     const id = rows[0]!.connectorSetup!.id;
+    // a call is never proof for a Claude card, even the person's own
+    proofs.record({ threadId: "t1", botId: "b1", principalId: "pr_a", name: "mcp__claude_ai_Microsoft_365__teams_list_chats", ok: true, at: 5_000 });
     claudeInventory = [{ name: "Microsoft 365", status: "needs_auth" }];
     expect((await check(id)).body.view?.status).toBe("pending");
     claudeInventory = [{ name: "Microsoft 365", status: "connected" }];

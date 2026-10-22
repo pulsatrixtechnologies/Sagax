@@ -795,7 +795,7 @@ import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
 import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
 import { installResourceUsage } from "./resource-usage/install.ts";
-import { createConnectorSetupInternalRoutes, createConnectorSetupRoutes, type ConnectorSetupContext } from "./routes/connector-setup.ts";
+import { createConnectorSetupInternalRoutes, createConnectorSetupProofs, createConnectorSetupRoutes, type ConnectorSetupContext } from "./routes/connector-setup.ts";
 import type { ConnectorSetupView } from "../shared/connector-setup.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
@@ -1901,6 +1901,8 @@ const turnTriggers = new Map<string, UsageTrigger>();
  * access), and that speaker's principal ("" for an unknown person): what a
  * continuation of that turn, or a bot hop it starts, speaks for too. */
 const turnSpeakers = new Map<string, TurnSpeaker>();
+/** Settled tool calls by conversation, for "Connect ..." cards (server/routes/connector-setup.ts). */
+const connectorSetupProofs = createConnectorSetupProofs();
 const turnSpeakerPrincipals = new Map<string, string>();
 /** Who ran each thread's current turn, for a key the provider refuses. */
 const turnAccessByThread = new Map<string, { via: TurnAccess["via"]; payer: AccessPayer; payerPrincipalId?: string; routine?: true; payerSub?: string; provider?: ModelProvider }>();
@@ -14317,6 +14319,8 @@ bus.subscribe((event: RuntimeEvent) => {
             tool: { ...existing, name: toolName, ok: event.ok, output, ...(durationMs !== undefined ? { durationMs } : {}), ...(widget ? { widget } : {}) },
           });
           toolMessageByItem.delete(itemKey);
+          // a "Connect Microsoft Teams" card's proof: whose turn made this call, on which bot
+          connectorSetupProofs.record({ threadId: event.threadId, botId: bot?.id, principalId: connectorSetupSpeaker(event.threadId), name: toolName, input: existing?.input, ok: event.ok === true, at: Date.now() });
         }
         for (const videoMsg of event.output ? videoMessagesFromTool(toolName, event.output, event.threadId, latestPersonText(event.threadId)) : []) {
           pushMessage(videoMsg);
@@ -33291,11 +33295,12 @@ ROUTES.push(createConnectorSetupRoutes({
     return inventory.auth === "subscription" ? inventory.connectors : null;
   },
 }));
-/** The setup cards and rows of a conversation (server/routes/connector-setup.ts). */
+/** The setup cards of a conversation and the calls that prove one (server/routes/connector-setup.ts). */
 function connectorSetupStore() {
   return {
     cards: (threadId: string) => store.messagesFor(threadId).flatMap((message) => message.connectorSetup ? [{ messageId: message.id, view: message.connectorSetup }] : []),
-    messages: (threadId: string) => store.messagesFor(threadId),
+    proofs: () => connectorSetupProofs,
+    botOf: (threadId: string) => store.botByThread(threadId)?.id,
     patch: (threadId: string, messageId: string, view: ConnectorSetupView) => { store.patchMessage(threadId, messageId, { connectorSetup: view }); },
   };
 }

@@ -4,10 +4,11 @@ import {
   CLAUDE_AI_CONNECTORS_URL,
   chooseConnectorSetupRoute,
   claudeInventoryShowsConnected,
-  connectorSetupEvidence,
+  connectorProofMatches,
   connectorSetupText,
   isConnectorSetupUrl,
   resolveConnectorSetupTarget,
+  type ConnectorSetupProof,
   type ConnectorSetupView,
 } from "./connector-setup.ts";
 import { GROK_CONNECTORS_URL } from "./grok-cloud-connectors.ts";
@@ -109,25 +110,43 @@ const view = (over: Partial<ConnectorSetupView> = {}): ConnectorSetupView => ({
   ...over,
 });
 
-describe("evidence that the connector works", () => {
-  const call = (name: string, ok: boolean | undefined, at: number, input?: string) => ({ kind: "activity", at, tool: { name, ok, ...(input ? { input } : {}) } });
-
-  it("a successful Grok call to that connector after the card is evidence", () => {
-    expect(connectorSetupEvidence([call("microsoft_teams__list_chats", true, 2_000)], view())).toBe(true);
-    expect(connectorSetupEvidence([call("use_tool", true, 2_000, JSON.stringify({ tool_name: "microsoft_teams__list_chats" }))], view())).toBe(true);
+describe("evidence that the connector works (review of #966)", () => {
+  const proof = (over: Partial<ConnectorSetupProof> = {}): ConnectorSetupProof => ({
+    name: "mcp__microsoft_teams__list_chats", ok: true, at: 2_000, owner: "0123456789abcdef", botId: "b1", ...over,
   });
 
-  it("a failed call, an older call, or another connector is not", () => {
-    expect(connectorSetupEvidence([call("microsoft_teams__list_chats", false, 2_000)], view())).toBe(false);
-    expect(connectorSetupEvidence([call("microsoft_teams__list_chats", true, 500)], view())).toBe(false);
-    expect(connectorSetupEvidence([call("outlook__list_mail", true, 2_000)], view())).toBe(false);
-    expect(connectorSetupEvidence([], view())).toBe(false);
+  it("a successful Grok call to that connector, in a turn of the card's person and bot, after the card", () => {
+    expect(connectorProofMatches(view(), proof(), "b1")).toBe(true);
+    // the meta tool: its tool_name is read, only for exactly use_tool
+    expect(connectorProofMatches(view(), proof({ name: "use_tool", input: JSON.stringify({ tool_name: "microsoft_teams__list_chats" }) }), "b1")).toBe(true);
   });
 
-  it("a Claude connector call reaching Teams is evidence for a Claude card", () => {
+  it("anyone else's turn, another bot, a failed or older call, or another connector is not", () => {
+    expect(connectorProofMatches(view(), proof({ owner: "ffffffffffffffff" }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ owner: "" }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ botId: "b2" }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ ok: false }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ at: 500 }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ name: "mcp__outlook__list_mail" }), "b1")).toBe(false);
+  });
+
+  it("an input's tool_name counts only for the meta tool itself, never for another name", () => {
+    const input = JSON.stringify({ tool_name: "microsoft_teams__list_chats" });
+    expect(connectorProofMatches(view(), proof({ name: "agents__sagax_help", input }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ name: "use_tool_x", input }), "b1")).toBe(false);
+    expect(connectorProofMatches(view(), proof({ name: "use_tool", input: "not json" }), "b1")).toBe(false);
+  });
+
+  it("a sign-in tool is no proof the connector works", () => {
+    for (const name of ["mcp__microsoft_teams__authenticate", "mcp__microsoft_teams__complete_authentication", "mcp__microsoft_teams__oauth_start", "mcp__microsoft_teams__get_auth_url"]) {
+      expect(connectorProofMatches(view(), proof({ name }), "b1")).toBe(false);
+    }
+    expect(connectorProofMatches(view(), proof({ name: "use_tool", input: JSON.stringify({ tool_name: "microsoft_teams__authenticate" }) }), "b1")).toBe(false);
+  });
+
+  it("a Claude card never takes a call as proof: only the owner's claude.ai inventory", () => {
     const claude = view({ provider: "claude", url: CLAUDE_AI_CONNECTORS_URL });
-    expect(connectorSetupEvidence([call("mcp__claude_ai_Microsoft_365__teams_list_chats", true, 2_000)], claude)).toBe(true);
-    expect(connectorSetupEvidence([call("mcp__claude_ai_Gmail__search", true, 2_000)], claude)).toBe(false);
+    expect(connectorProofMatches(claude, proof({ name: "mcp__claude_ai_Microsoft_365__teams_list_chats" }), "b1")).toBe(false);
   });
 
   it("reads the claude.ai inventory: connected only, by the service it reaches", () => {

@@ -66,10 +66,27 @@ describe("Connect card", () => {
     expect(text).not.toContain("Connect Microsoft Teams");
   });
 
+  it("desktop: the card's own channel, which main checks again; refused there, the app's link path", async () => {
+    const openConnectorSetup2 = vi.fn(async () => true);
+    vi.stubGlobal("window", { ogb: { openConnectorSetup: openConnectorSetup2 } });
+    expect(await openConnectorSetup(view())).toBe(true);
+    expect(openConnectorSetup2).toHaveBeenCalledWith("https://grok.com/connectors");
+    expect(opened).toEqual([]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("window", { ogb: { openConnectorSetup: vi.fn(async () => { throw new Error("not this window"); }) } });
+    expect(await openConnectorSetup(view())).toBe(true);
+    expect(opened).toEqual(["https://grok.com/connectors"]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
   it("the button opens the page through the app's own link path, only for grok.com or claude.ai", async () => {
+    vi.stubGlobal("window", {});
     expect(await openConnectorSetup(view())).toBe(true);
     expect(opened).toEqual(["https://grok.com/connectors"]);
     expect(await openConnectorSetup(view({ url: "https://evil.example/connectors" }))).toBe(false);
     expect(opened).toHaveLength(1);
+    vi.unstubAllGlobals();
   });
 });

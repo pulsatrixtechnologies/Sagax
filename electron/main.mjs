@@ -50,7 +50,7 @@ let desktopTray = null;
 import { collisionFreeDownloadPath, defaultSaveName, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
 import { openPdfInDefaultApp } from "./open-pdf.mjs";
 import { desktopViewerPermissionAllowed } from "./desktop-viewer-permissions.mjs";
-import { appPermissionHandlers, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
+import { appPermissionHandlers, connectorSetupUrl, externalOpenUrl, externalWebUrl } from "./app-permissions.mjs";
 import { writeClipboardText } from "./clipboard-write.mjs";
 import {
   ensureManagedComposioCredentials,
@@ -4311,6 +4311,11 @@ ipcMain.handle("window:state", (event) => {
 
 ipcMain.handle("desktop:open-external", desktopUiOnly("desktop:open-external", async (_event, rawUrl) => {
   await shell.openExternal(externalWebUrl(rawUrl));
+  return true;
+}));
+// A Connect card's button: grok.com or claude.ai only (app-permissions.mjs).
+ipcMain.handle("desktop:open-connector-setup", desktopUiOnly("desktop:open-connector-setup", async (_event, rawUrl) => {
+  await shell.openExternal(connectorSetupUrl(rawUrl));
   return true;
 }));
 
