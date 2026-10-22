@@ -22,6 +22,7 @@ export type BotUpdatePatch = Partial<
     | "avatarFocusY"
     | "autoApprove"
     | "approvalMode"
+    | "proactiveMode"
     | "outbound"
     | "fallback"
     | "speakReplies"

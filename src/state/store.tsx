@@ -36,6 +36,7 @@ import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
+import type { ProactiveMode } from "../../shared/proactive-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
 import { onNudgeReceived, onNudgeSent, onNudgeSentEcho } from "@/lib/desktop-nudge";
 import { sameModelSelection } from "../../shared/thread-model";
@@ -638,6 +639,8 @@ export interface Bot {
   autoApprove?: boolean;
   /** Explicit approval level; absent records use the legacy autoApprove bit. */
   approvalMode?: ApprovalMode;
+  /** how autonomously this bot may act on its own (shared/proactive-mode.ts); absent/"off" = never */
+  proactiveMode?: ProactiveMode;
   /** tools this bot may always use without asking */
   alwaysAllow?: string[];
   /** speak this bot's replies aloud as they settle */

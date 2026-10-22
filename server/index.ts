@@ -88,6 +88,7 @@ import {
   isApprovalMode,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
+import { isProactiveMode } from "../shared/proactive-mode.ts";
 import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActResult, type BotActService, type PerformActor } from "./bot-act.ts";
 import { askedBotChange, createSettingsActions } from "./settings-actions.ts";
@@ -43289,6 +43290,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (body.emailDrafts !== undefined) {
         if (typeof body.emailDrafts !== "boolean") return json(res, 400, { error: "emailDrafts must be true or false" });
         patch.emailDrafts = body.emailDrafts;
+      }
+      // Per-bot proactive mode: whether and how this bot acts on its own
+      // (shared/proactive-mode.ts). Validated here, server-side, so the stored
+      // value is always a known level; the enforcement reads it from the store.
+      if (body.proactiveMode !== undefined) {
+        if (!isProactiveMode(body.proactiveMode)) return json(res, 400, { error: "proactiveMode must be off, propose, read-auto or follow-rules" });
+        patch.proactiveMode = body.proactiveMode === "off" ? undefined : body.proactiveMode;
       }
       if (body.teamMemorySharing !== undefined) {
         if (!isTeamMemorySharing(body.teamMemorySharing)) return json(res, 400, { error: "teamMemorySharing must be \"shared\" or \"private\"" });

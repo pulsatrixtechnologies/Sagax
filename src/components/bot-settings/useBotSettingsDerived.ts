@@ -37,6 +37,7 @@ export type BotPatch = Partial<
     | "alwaysAllow"
     | "autoApprove"
     | "approvalMode"
+    | "proactiveMode"
     | "outbound"
     | "fallback"
     | "speakReplies"

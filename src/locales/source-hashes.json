@@ -13945,7 +13945,17 @@
       "botActivity.outcome.running": "f4ccae29e1bb0c20a124570a1b43f4347ea94bba9f84ffdfddd9c7445b126128",
       "botActivity.outcome.allowed": "1bb201d188352e9b4633f85e4fb8a31ea93fd14dec702443fd3e2713d657fd2d",
       "botActivity.outcome.denied": "da404deb110f7cc92a5b2c85c8e8ab103bd48837cf300f8387d13d54f3adea65",
-      "botActivity.outcome.needsYou": "74b6abdf59690fdffec2059089487cd63658249da5301cbf065e9977518fbd8f"
+      "botActivity.outcome.needsYou": "74b6abdf59690fdffec2059089487cd63658249da5301cbf065e9977518fbd8f",
+      "botPanel.permissions.proactive": "bc82f7f1ebd8d379e0bbc87fa1616e81080d79fe402f5c8cde7b5bb5dbf61a00",
+      "botPanel.permissions.proactiveHelp": "4606666ba88d12538893e75e744a39796bf8ffccb5282772fd83362286520152",
+      "botPanel.permissions.proactive.off": "ca7981b46ecf2c1787b6d76d81d9fd7fa0ca95842e2fcc2a452869891a9334d1",
+      "botPanel.permissions.proactive.propose": "c8edb92bf5556d1d415e727ee286bfe808775b76ddb06b3484e393be499767d0",
+      "botPanel.permissions.proactive.read-auto": "bd98a3e6370cb81862f179597b2028923d07be8c55871ec441a61a8cf1d1f827",
+      "botPanel.permissions.proactive.follow-rules": "12314acabed7d1138db1268587a3d418d9ee9730e210d46c094934e967233aae",
+      "botPanel.permissions.proactive.off.hint": "6ee25cd8e72f27d26a1721081e71e34b3d1aad7ee6adf18e7717c80f1ad2a0a1",
+      "botPanel.permissions.proactive.propose.hint": "3de45a97019f97f18d3e03f3b838161772240b2db8601f233c856ebb47352383",
+      "botPanel.permissions.proactive.read-auto.hint": "ae4d741bf4a03bb9e491de802cd1c7e65ce0965fe34e82e5ee9738440b6ec46e",
+      "botPanel.permissions.proactive.follow-rules.hint": "30ff2e3076bd4649e02fb2067ba129e2d1be6acd9256a7d5aa8e35e285f1cdb1"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
