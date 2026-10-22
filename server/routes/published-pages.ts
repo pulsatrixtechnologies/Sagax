@@ -32,9 +32,21 @@
 //   POST   /api/pages/:id/publish           { version, access, expiresAt|null }
 //          the person's approval: the only way a version is published
 //   POST   /api/pages/:id/decline           { version }
-//   PATCH  /api/pages/:id                   { access?, expiresAt? } while published
+//   PATCH  /api/pages/:id                   { title? } any time; { access?, expiresAt? } while published
 //   POST   /api/pages/:id/revoke            stop serving now; the link is gone
 //   DELETE /api/pages/:id
+// Lot R8 (Grok Bot parity: edit, comments, annotation, Presentation):
+//   GET    /api/pages/:id/versions/:n/source   { version, content } the person's editor
+//   POST   /api/pages/:id/versions          { kind, content, title? } the person's
+//          own edit: a new proposed version, published only by Publish
+//   GET    /api/pages/:id/comments          { comments }
+//   POST   /api/pages/:id/comments          { text, version?, anchor? }
+//   DELETE /api/pages/:id/comments/:cid
+//   GET    /pages/preview/<id>/<n>?annotate=1  the preview in annotation mode:
+//          its frame (?a=1) runs ANNOTATE_SOURCE, which only posts to the app
+//   GET    /api/pages/policy                { linkSharing } any person
+//   PUT    /api/admin/pages/policy          { linkSharing } organization admins (audited)
+import { randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
@@ -43,12 +55,18 @@ import type { RequestAuth } from "../request-auth.ts";
 import {
   PAGE_ACCESS,
   PAGE_FRAME_PREFIX,
+  PAGE_KINDS,
+  PAGE_LIMITS,
   PAGE_PREVIEW_FRAME_PREFIX,
   PAGE_PREVIEW_PREFIX,
   PAGE_VIEW_PREFIX,
   pageCsp,
+  parsePageAnchor,
+  parsePageTitle,
   validExpiry,
   type PageAccess,
+  type PageKind,
+  type PagesPolicy,
 } from "../../shared/published-pages.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -57,11 +75,12 @@ import { PASS, type RouteHandler } from "./table.ts";
  * server (its other paired sessions are not). */
 export type PageViewer = { principalId?: string; computerOwner: boolean } | null;
 
-/** Whether this reader may read this page. Pure. */
-export function pageReadable(page: Pick<PageRecord, "access" | "ownerId">, viewer: PageViewer): boolean {
-  if (page.access === "link") return true;
+/** Whether this reader may read this page. While the organization's switch
+ * for public links is off, a page shared by link reads as "org". Pure. */
+export function pageReadable(page: Pick<PageRecord, "access" | "ownerId">, viewer: PageViewer, policy?: PagesPolicy): boolean {
+  if (page.access === "link" && policy?.linkSharing !== false) return true;
   if (!viewer) return false;
-  if (page.access === "org") return true;
+  if (page.access === "org" || page.access === "link") return true;
   if (page.ownerId === undefined) return viewer.computerOwner;
   return (viewer.principalId ?? "").toLowerCase() === page.ownerId.toLowerCase();
 }
@@ -164,7 +183,7 @@ function previewTarget(options: PublicPageOptions, rest: string): { page: PageRe
 /** The wrapper: banner, then the page in its sandboxed frame. `preview` is
  * the app's own preview of a version (its person only; framed by the app). */
 function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, method: string,
-  input: { page: PageRecord; version: PageVersionRecord; framePath: string; ticket: string; preview: boolean }): true {
+  input: { page: PageRecord; version: PageVersionRecord; framePath: string; ticket: string; preview: boolean; annotate?: boolean }): true {
   const separate = options.separate ?? null;
   const host = hostOf(req);
   // A host-source with a path: the frame may load this page's frame path and
@@ -188,13 +207,14 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
   res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": csp, "x-frame-options": input.preview ? "SAMEORIGIN" : "DENY" });
   const names = options.names(input.page);
   res.end(method === "HEAD" ? undefined : wrapperDocument({
-    title: input.version.title,
+    title: input.page.title ?? input.version.title,
     kind: input.version.kind,
     botName: names.botName,
     personName: names.personName,
-    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}`,
+    frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}${input.annotate ? "&a=1" : ""}`,
     lang: language(req),
     preview: input.preview,
+    annotate: input.annotate === true,
   }));
   return true;
 }
@@ -203,7 +223,7 @@ function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: Ser
   const token = tokenAfter(path, PAGE_VIEW_PREFIX);
   const opened = token && options.pages ? options.pages.open(token) : null;
   const viewer = options.viewer(req);
-  if (!opened || !ownerActive(options, opened.page) || !pageReadable(opened.page, viewer)) return notFound(req, res, method);
+  if (!opened || !ownerActive(options, opened.page) || !pageReadable(opened.page, viewer, options.pages!.policy())) return notFound(req, res, method);
   const subject = `link:${opened.page.linkId!}`;
   return sendWrapper(options, req, res, method, { ...opened, framePath: `${PAGE_FRAME_PREFIX}${token}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: false });
 }
@@ -214,7 +234,9 @@ function servePreviewWrapper(options: PublicPageOptions, req: IncomingMessage, r
   const viewer = options.viewer(req);
   if (!target || !ownerActive(options, target.page) || !pageOwnedBy(target.page, viewer)) return notFound(req, res, method);
   const subject = `preview:${target.page.id}:${target.version.n}`;
-  return sendWrapper(options, req, res, method, { ...target, framePath: `${PAGE_PREVIEW_FRAME_PREFIX}${rest}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: true });
+  // annotation mode: the page's person only, on their preview, never a reader's link
+  const annotate = query(req, "annotate") === "1";
+  return sendWrapper(options, req, res, method, { ...target, framePath: `${PAGE_PREVIEW_FRAME_PREFIX}${rest}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: true, annotate });
 }
 
 /** The page itself. Never the main entry; the ticket the wrapper minted for
@@ -240,12 +262,14 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
   if (!target || bound === null || !ownerActive(options, target.page)) return notFound(req, res, method);
   const reader = options.separate ? viewerFromKey(bound) : options.viewer(req);
   if (options.separate && reader && options.viewerActive && !options.viewerActive(reader)) return notFound(req, res, method);
-  const allowed = preview ? pageOwnedBy(target.page, reader) : pageReadable(target.page, reader);
+  const allowed = preview ? pageOwnedBy(target.page, reader) : pageReadable(target.page, reader, pages.policy());
   const content = allowed ? pages.content(target.page.id, target.version.n) : null;
   if (content === null) return notFound(req, res, method);
   const ancestors = options.separate ? options.separate.appOrigin.origin : "'self'";
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors }) });
-  res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.version.title, content, lang: language(req) }));
+  // the annotation script: the preview only (its person), never a reading link
+  const annotateNonce = preview && query(req, "a") === "1" ? randomBytes(16).toString("base64url") : undefined;
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, ...(annotateNonce ? { annotateNonce } : {}) }) });
+  res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.page.title ?? target.version.title, content, lang: language(req) }, annotateNonce ? { annotateNonce } : {}));
   return true;
 }
 
@@ -305,8 +329,13 @@ export interface PublishedPageRouteDeps {
   mayActOn?(auth: RequestAuth, ownerPrincipalId: string): boolean;
   /** Write an admin activity row (category security) for an admin's act. */
   audit?(auth: RequestAuth, req: IncomingMessage, row: { action: string; target: { kind: string; id: string; name?: string } }): void;
+  /** Secret-shaped text out of a person's edit before storage (as for a
+   * bot's proposal). Absent: kept as typed. */
+  redact?(text: string): string;
   now?(): number;
 }
+
+const LINK_SHARING_OFF = { error: "Your organization turned off public links for pages. Choose Only me or My organization.", code: "link_sharing_off" };
 
 function failed(result: unknown): result is PageError {
   return Boolean(result) && typeof result === "object" && (result as { ok?: unknown }).ok === false;
@@ -333,6 +362,18 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     if (path === "/api/admin/pages" || path.startsWith("/api/admin/pages/")) {
       res.setHeader("cache-control", "no-store");
       if (!deps.isAdmin?.(auth)) return json(res, 403, { error: "Only an organization admin manages every page.", code: "admin_only" });
+      if (path === "/api/admin/pages/policy") {
+        if (method === "GET") return json(res, 200, deps.pages.policy());
+        if (method !== "PUT") return PASS;
+        const body = await readBody(req) as Record<string, unknown> | null;
+        if (!body || typeof body.linkSharing !== "boolean") return json(res, 400, { error: "Send { linkSharing: true | false }.", code: "bad_body" });
+        const before = deps.pages.policy();
+        const after = deps.pages.setPolicy({ linkSharing: body.linkSharing });
+        if (before.linkSharing !== after.linkSharing) {
+          deps.audit?.(auth, req, { action: "page.policy", target: { kind: "pages", id: "linkSharing", name: after.linkSharing ? "on" : "off" } });
+        }
+        return json(res, 200, after);
+      }
       if (path === "/api/admin/pages" && method === "GET") {
         return json(res, 200, { pages: deps.pages.list(undefined).map((page) => adminWire(page, req)) });
       }
@@ -355,6 +396,9 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     if (path === "/api/pages" && method === "GET") {
       return json(res, 200, { pages: deps.pages.list(deps.owner(auth)).map((page) => wire(page, req)) });
     }
+    if (path === "/api/pages/policy") return method === "GET" ? json(res, 200, deps.pages.policy()) : PASS;
+    const extra = /^\/api\/pages\/([\w-]+)\/(?:versions\/(\d+)\/source|(versions)|comments(?:\/([\w-]+))?)$/.exec(path);
+    if (extra) return pageExtras(deps, { req, res, method, auth, json, readBody }, extra);
     const match = /^\/api\/pages\/([\w-]+)(?:\/(publish|decline|revoke)|\/versions\/(\d+))?$/.exec(path);
     if (!match) return PASS;
     const page = deps.pages.get(match[1]!);
@@ -381,16 +425,27 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     const by = deps.owner(auth);
     if (!action && method === "PATCH") {
       const body = await readBody(req) as Record<string, unknown> | null;
-      if (!body || typeof body !== "object") return json(res, 400, { error: "Send { access?, expiresAt? }.", code: "bad_body" });
+      if (!body || typeof body !== "object") return json(res, 400, { error: "Send { title?, access?, expiresAt? }.", code: "bad_body" });
+      let renamed: PageRecord | null = null;
+      if ("title" in body) {
+        const title = parsePageTitle(body.title);
+        if (title === null) return json(res, 400, { error: `title: one line, 1 to ${PAGE_LIMITS.title} characters.`, code: "bad_title" });
+        const result = deps.pages.rename(page.id, deps.redact ? deps.redact(title) : title, by);
+        if (failed(result)) return answer(result);
+        renamed = result;
+        if (!("access" in body) && !("expiresAt" in body)) return answer(result);
+      }
       const access = body.access;
       if (access !== undefined && !PAGE_ACCESS.includes(access as PageAccess)) return json(res, 400, { error: "access: private, org or link.", code: "bad_access" });
+      if (access === "link" && !deps.pages.policy().linkSharing) return json(res, 403, LINK_SHARING_OFF);
       let expiresAt: number | null | undefined;
       if ("expiresAt" in body) {
         const checked = validExpiry(body.expiresAt, now());
         if (!checked.ok) return json(res, 400, { error: "expiresAt: a future time within a year, or null.", code: "bad_expiry" });
         expiresAt = checked.value;
       }
-      return answer(deps.pages.update(page.id, { ...(access !== undefined ? { access: access as PageAccess } : {}), ...(expiresAt !== undefined ? { expiresAt } : {}), ...(by ? { by } : {}) }));
+      const updated = deps.pages.update(page.id, { ...(access !== undefined ? { access: access as PageAccess } : {}), ...(expiresAt !== undefined ? { expiresAt } : {}), ...(by ? { by } : {}) });
+      return answer(failed(updated) && renamed ? renamed : updated);
     }
     if (method !== "POST") return PASS;
     if (action === "revoke") return answer(deps.pages.revoke(page.id, by));
@@ -401,8 +456,74 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     // publish: who may see it is the person's choice, never a default the bot set
     const access = body!.access;
     if (!PAGE_ACCESS.includes(access as PageAccess)) return json(res, 400, { error: "access: choose private, org or link.", code: "bad_access" });
+    if (access === "link" && !deps.pages.policy().linkSharing) return json(res, 403, LINK_SHARING_OFF);
     const expiry = validExpiry(body!.expiresAt, now());
     if (!expiry.ok) return json(res, 400, { error: "expiresAt: a future time within a year, or null.", code: "bad_expiry" });
     return answer(deps.pages.publish(page.id, { version, access: access as PageAccess, expiresAt: expiry.value, ...(by ? { by } : {}) }));
   };
+}
+
+type ExtrasContext = Pick<Parameters<RouteHandler>[0], "req" | "res" | "method" | "auth" | "json" | "readBody">;
+
+/** Lot R8: the person's editor (source and own edit) and comments. The same
+ * rules as the routes above: a person only, their own pages only, another
+ * person's page reads exactly like a missing one. Comments never reach a
+ * reader (they are not in the summary, the wrapper or the frame). */
+async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, match: RegExpExecArray) {
+  const { req, res, method, auth, json, readBody } = ctx;
+  const page = deps.pages.get(match[1]!);
+  const owner = deps.owner(auth);
+  if (!page || (owner !== undefined && (page.ownerId ?? "").toLowerCase() !== owner.toLowerCase())) {
+    return json(res, 404, { error: "This page does not exist.", code: "not_found" });
+  }
+  const by = owner;
+  const clean = (text: string) => (deps.redact ? deps.redact(text) : text);
+  if (match[2] !== undefined) {
+    if (method !== "GET") return PASS;
+    const version = page.versions.find((entry) => entry.n === Number(match[2]));
+    const content = version ? deps.pages.content(page.id, version.n) : null;
+    if (!version || content === null) return json(res, 404, { error: "This version does not exist.", code: "no_version" });
+    return json(res, 200, { version: { n: version.n, kind: version.kind, title: version.title }, content });
+  }
+  if (match[3] !== undefined) {
+    if (method !== "POST") return PASS;
+    const body = await readBody(req) as Record<string, unknown> | null;
+    const kind = body?.kind;
+    if (!PAGE_KINDS.includes(kind as PageKind)) return json(res, 400, { error: "kind: html, markdown or presentation.", code: "bad_kind" });
+    const content = body!.content;
+    if (typeof content !== "string" || !content.trim()) return json(res, 400, { error: "content: the page's full text is required.", code: "bad_content" });
+    if (Buffer.byteLength(content) > PAGE_LIMITS.contentBytes) return json(res, 400, { error: `content: at most ${PAGE_LIMITS.contentBytes / 1024} KB.`, code: "too_large" });
+    let title: string | undefined;
+    if (body!.title !== undefined) {
+      const parsed = parsePageTitle(body!.title);
+      if (parsed === null) return json(res, 400, { error: `title: one line, 1 to ${PAGE_LIMITS.title} characters.`, code: "bad_title" });
+      title = clean(parsed);
+    }
+    const result = deps.pages.edit(page.id, { kind: kind as PageKind, content: clean(content), ...(title ? { title } : {}), ...(by ? { by } : {}) });
+    if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+    const origin = deps.origin(req);
+    return json(res, 201, { page: deps.pages.summary(result.page, origin, deps.reachable(origin)), version: result.version.n });
+  }
+  const commentId = match[4];
+  if (commentId !== undefined) {
+    if (method !== "DELETE") return PASS;
+    const result = deps.pages.removeComment(page.id, commentId);
+    return failed(result) ? json(res, result.status, { error: result.error, code: result.code }) : json(res, 200, { ok: true });
+  }
+  if (method === "GET") return json(res, 200, { comments: deps.pages.comments(page.id) });
+  if (method !== "POST") return PASS;
+  const body = await readBody(req) as Record<string, unknown> | null;
+  const text = typeof body?.text === "string" ? body.text.trim() : "";
+  if (!text || text.length > PAGE_LIMITS.commentChars) return json(res, 400, { error: `text: 1 to ${PAGE_LIMITS.commentChars} characters.`, code: "bad_text" });
+  const version = body!.version;
+  if (version !== undefined && (typeof version !== "number" || !Number.isSafeInteger(version))) return json(res, 400, { error: "version: a version number, or leave it out.", code: "bad_version" });
+  const anchor = body!.anchor === undefined ? undefined : parsePageAnchor(body!.anchor);
+  if (anchor === null) return json(res, 400, { error: "anchor: { tag, text, path }, or leave it out.", code: "bad_anchor" });
+  const result = deps.pages.addComment(page.id, {
+    text: clean(text),
+    ...(version !== undefined ? { version: version as number } : {}),
+    ...(anchor ? { anchor: { ...anchor, text: clean(anchor.text) } } : {}),
+    ...(by ? { by } : {}),
+  });
+  return result.ok ? json(res, 201, { comment: result.comment }) : json(res, result.status, { error: result.error, code: result.code });
 }

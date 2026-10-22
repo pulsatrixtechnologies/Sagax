@@ -617,6 +617,13 @@ org("org.confidentialByDefault", "confidentialThreadsByDefault", "boolean", "New
 org("org.allowVaultExport", "allowVaultExport", "boolean", "Allow vault export", "Settings > Organization > Credentials");
 org("org.interimAttachDays", "interimAttachDays", "number", "People from before: days", "Settings > Organization > People");
 org("org.pluginMarketplaces", "pluginMarketplaces", "any", "Plugin marketplaces", "Connect apps > Sources");
+// published pages (lot R8): the admins' switch for public links, a card at every level
+add({
+  key: "org.pagesLinkSharing", family: "organization", target: "none", value: "boolean", label: "Public links for published pages", where: "Settings > Pages > Organization pages",
+  read: () => ({ path: "/api/admin/pages/policy", field: "linkSharing" }),
+  write: (_ids, v) => typeof v === "boolean" ? { method: "PUT", path: "/api/admin/pages/policy", body: { linkSharing: v } } : "value is true or false.",
+  classes: always("org"),
+});
 
 // ── connections (the person's own) ─────────────────────────────────────
 add({

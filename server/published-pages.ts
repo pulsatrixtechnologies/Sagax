@@ -31,14 +31,18 @@ import { join } from "node:path";
 import { writeFileAtomic } from "./atomic.ts";
 import { threadOwner } from "./thread-privacy.ts";
 import {
+  DEFAULT_PAGES_POLICY,
   PAGE_FRAME_TICKET_MS,
   PAGE_LIMITS,
   PAGE_VIEW_PREFIX,
   type PageAccess,
+  type PageAnchor,
+  type PageComment,
   type PageKind,
   type PageStatus,
   type PageVersionState,
   type PageVersionSummary,
+  type PagesPolicy,
   type PublishedPageSummary,
 } from "../shared/published-pages.ts";
 
@@ -60,11 +64,13 @@ export interface PageVersionRecord {
   createdAt: number;
   state: PageVersionState;
   botId: string;
+  /** "person": the page's person wrote this version (their edit). */
+  author?: "person";
 }
 
 export interface PageHistoryEntry {
   at: number;
-  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke";
+  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit";
   version?: number;
   by?: string;
 }
@@ -86,6 +92,10 @@ export interface PageRecord {
   linkId?: string;
   versions: PageVersionRecord[];
   history: PageHistoryEntry[];
+  /** The person's own name for the page (Rename); else the version's title. */
+  title?: string;
+  /** The person's review notes. Never served to readers. */
+  comments?: PageComment[];
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -107,7 +117,7 @@ export class PublishedPages {
   private readonly contentDir: string;
   private readonly key: Buffer;
   private readonly clock: () => number;
-  private cached: { mtimeMs: number; size: number; pages: PageRecord[] } | null = null;
+  private cached: { mtimeMs: number; size: number; pages: PageRecord[]; policy: PagesPolicy } | null = null;
   private readonly contents = new Map<string, string>();
   private contentBytes = 0;
 
@@ -174,16 +184,30 @@ export class PublishedPages {
     }
     if (this.cached && this.cached.mtimeMs === stat.mtimeMs && this.cached.size === stat.size) return this.cached.pages;
     let pages: PageRecord[] = [];
+    let policy: PagesPolicy = { ...DEFAULT_PAGES_POLICY };
     try {
-      const raw = JSON.parse(readFileSync(this.file, "utf8")) as { version?: unknown; pages?: unknown };
+      const raw = JSON.parse(readFileSync(this.file, "utf8")) as { version?: unknown; pages?: unknown; policy?: unknown };
       if (raw.version === 2 && Array.isArray(raw.pages)) {
         pages = raw.pages.filter((page): page is PageRecord => isRecord(page) && typeof page.id === "string" && PAGE_ID.test(page.id) && Array.isArray(page.versions));
       }
+      if (isRecord(raw.policy) && typeof raw.policy.linkSharing === "boolean") policy = { linkSharing: raw.policy.linkSharing };
     } catch {
       pages = [];
     }
-    this.cached = { mtimeMs: stat.mtimeMs, size: stat.size, pages };
+    this.cached = { mtimeMs: stat.mtimeMs, size: stat.size, pages, policy };
     return pages;
+  }
+
+  /** The organization's switch for public links (on by default). */
+  policy(): PagesPolicy {
+    this.load();
+    return { ...(this.cached?.policy ?? DEFAULT_PAGES_POLICY) };
+  }
+
+  setPolicy(policy: PagesPolicy): PagesPolicy {
+    const pages = this.snapshot();
+    this.save(pages, { linkSharing: policy.linkSharing === true });
+    return this.policy();
   }
 
   /** Callers get copies: the cached index is never changed in place. */
@@ -191,8 +215,10 @@ export class PublishedPages {
     return structuredClone(this.load());
   }
 
-  private save(pages: PageRecord[]): void {
-    writeFileAtomic(this.file, JSON.stringify({ version: 2, pages }, null, 2), { mode: 0o600 });
+  private save(pages: PageRecord[], policy: PagesPolicy = this.policy()): void {
+    // the default policy is not written: an index without one reads as on
+    const kept = policy.linkSharing === DEFAULT_PAGES_POLICY.linkSharing ? {} : { policy };
+    writeFileAtomic(this.file, JSON.stringify({ version: 2, pages, ...kept }, null, 2), { mode: 0o600 });
     this.cached = null;
   }
 
@@ -275,7 +301,7 @@ export class PublishedPages {
 
   /** A bot's proposal: a new page, or a new version of one of this
    * conversation's pages. Never published here. */
-  propose(input: { pageId?: string; ownerId?: string; botId: string; threadId: string; title: string; kind: PageKind; content: string }):
+  propose(input: { pageId?: string; ownerId?: string; botId: string; threadId: string; title: string; kind: PageKind; content: string; author?: "person"; by?: string }):
     { ok: true; page: PageRecord; version: PageVersionRecord } | PageError {
     const pages = this.snapshot();
     const now = this.clock();
@@ -318,7 +344,7 @@ export class PublishedPages {
       pages.push(page);
     }
     const n = (page.versions.at(-1)?.n ?? 0) + 1;
-    const version: PageVersionRecord = { n, kind: input.kind, title: input.title, bytes, createdAt: now, state: "proposed", botId: input.botId };
+    const version: PageVersionRecord = { n, kind: input.kind, title: input.title, bytes, createdAt: now, state: "proposed", botId: input.botId, ...(input.author ? { author: input.author } : {}) };
     this.writeContent(page.id, n, input.content);
     page.versions.push(version);
     // Old versions that were never published go first; a published one stays.
@@ -328,10 +354,72 @@ export class PublishedPages {
       const [gone] = page.versions.splice(drop, 1);
       this.dropContent(page.id, gone!.n);
     }
-    page.history.push({ at: now, action: "propose", version: n });
+    page.history.push(input.author ? { at: now, action: "edit", version: n, ...(input.by ? { by: input.by } : {}) } : { at: now, action: "propose", version: n });
     page.updatedAt = now;
     this.save(pages);
     return { ok: true, page, version };
+  }
+
+  /** The person's own edit: a new version they wrote, stored as proposed
+   * (it waits for their Publish like any other), under the same caps. */
+  edit(id: string, input: { kind: PageKind; content: string; title?: string; by?: string }): { ok: true; page: PageRecord; version: PageVersionRecord } | PageError {
+    const page = this.get(id);
+    if (!page) return refuse(404, "not_found", "This page does not exist.");
+    const last = page.versions.at(-1);
+    return this.propose({
+      pageId: page.id,
+      ...(page.ownerId ? { ownerId: page.ownerId } : {}),
+      botId: page.botId,
+      threadId: page.threadId,
+      title: input.title ?? last?.title ?? page.title ?? "",
+      kind: input.kind,
+      content: input.content,
+      author: "person",
+      ...(input.by ? { by: input.by } : {}),
+    });
+  }
+
+  /** The person's name for the page, in any state. */
+  rename(id: string, title: string, by?: string): PageRecord | PageError {
+    return this.mutate(id, (page, now) => {
+      page.title = title;
+      page.history.push({ at: now, action: "rename", ...(by ? { by } : {}) });
+      return page;
+    });
+  }
+
+  comments(id: string): PageComment[] {
+    return this.get(id)?.comments ?? [];
+  }
+
+  addComment(id: string, input: { text: string; version?: number; anchor?: PageAnchor; by?: string }): { ok: true; comment: PageComment } | PageError {
+    let made: PageComment | null = null;
+    const result = this.mutate(id, (page, now) => {
+      const comments = page.comments ?? [];
+      if (comments.length >= PAGE_LIMITS.comments) return refuse(409, "too_many_comments", `A page keeps at most ${PAGE_LIMITS.comments} comments; delete some first.`);
+      if (input.version !== undefined && !page.versions.some((entry) => entry.n === input.version)) return refuse(404, "no_version", "This version does not exist.");
+      made = {
+        id: randomBytes(9).toString("base64url"),
+        at: now,
+        text: input.text,
+        ...(input.version !== undefined ? { version: input.version } : {}),
+        ...(input.anchor ? { anchor: input.anchor } : {}),
+        ...(input.by ? { by: input.by } : {}),
+      };
+      page.comments = [...comments, made];
+      return page;
+    });
+    if ("ok" in result) return result;
+    return { ok: true, comment: made! };
+  }
+
+  removeComment(id: string, commentId: string): PageRecord | PageError {
+    return this.mutate(id, (page) => {
+      const comments = page.comments ?? [];
+      if (!comments.some((entry) => entry.id === commentId)) return refuse(404, "no_comment", "This comment does not exist.");
+      page.comments = comments.filter((entry) => entry.id !== commentId);
+      return page;
+    });
   }
 
   /** The person's Publish: make `version` the one readers get, with who can
@@ -423,13 +511,14 @@ export class PublishedPages {
       state: entry.state,
       bytes: entry.bytes,
       botId: entry.botId,
+      ...(entry.author ? { author: entry.author } : {}),
     }));
     const current = page.versions.find((entry) => entry.n === page.currentVersion) ?? page.versions.at(-1);
     const live = page.status === "published" && page.linkId;
     const path = live ? this.path(page.linkId!) : undefined;
     return {
       id: page.id,
-      title: current?.title ?? "",
+      title: page.title ?? current?.title ?? "",
       status: page.status,
       access: page.access,
       expiresAt: page.expiresAt,
@@ -440,6 +529,7 @@ export class PublishedPages {
       updatedAt: page.updatedAt,
       expired: page.expiresAt !== null && page.expiresAt <= this.clock(),
       versions,
+      ...(page.comments?.length ? { comments: page.comments.length } : {}),
       ...(path ? { path, url: `${origin.replace(/\/+$/, "")}${path}`, reachable } : {}),
     };
   }
