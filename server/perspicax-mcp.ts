@@ -104,7 +104,7 @@ export interface PerspicaxMcpOptions {
   /** Every remote_support_* answer of a turn (server/remote-session-register.ts):
    * a session the bot opened becomes a Sagax session row and chat card. It
    * never changes the answer and its failures are its own. */
-  onRemoteSupport?(call: { threadId: string; botId: string; name: string; args: unknown; result: unknown }): void;
+  onRemoteSupport?(call: { threadId: string; botId: string; principalId?: string; name: string; args: unknown; result: unknown }): void;
   fetch?: typeof fetch;
   now?: () => number;
   log?: (line: string) => void;
@@ -407,7 +407,7 @@ export class PerspicaxMcp {
   }
 
   /** Hand a remote_support_* answer to onRemoteSupport, without waiting for it. */
-  private noteRemoteSupport(input: { threadId: string; botId: string; frame: unknown }, answer: PerspicaxRelayAnswer) {
+  private noteRemoteSupport(input: { threadId: string; generation: string; botId: string; frame: unknown }, answer: PerspicaxRelayAnswer) {
     const hook = this.options.onRemoteSupport;
     if (!hook || !isObject(input.frame) || input.frame.method !== "tools/call") return;
     const params = isObject(input.frame.params) ? input.frame.params : {};
@@ -415,7 +415,9 @@ export class PerspicaxMcp {
     if (!name.startsWith("remote_support_")) return;
     if (answer.status !== 200 || !isObject(answer.body) || !isObject(answer.body.result)) return;
     try {
-      hook({ threadId: input.threadId, botId: input.botId, name, args: params.arguments ?? {}, result: answer.body.result });
+      // the person whose token made the call: the session is theirs
+      const principalId = this.turnPrincipal(input.threadId, input.generation, input.botId);
+      hook({ threadId: input.threadId, botId: input.botId, ...(principalId ? { principalId } : {}), name, args: params.arguments ?? {}, result: answer.body.result });
     } catch {
       /* the answer goes back unchanged */
     }
@@ -539,6 +541,11 @@ export class PerspicaxMcp {
       if (at.startsWith(prefix) && entry.botId === botId && !entry.ended && listed.includes(entry.profileId)) return entry;
     }
     return undefined;
+  }
+
+  /** The person this turn's Perspicax tokens speak for, if a profile is mounted. */
+  turnPrincipal(threadId: string, generation: string, botId: string): string | undefined {
+    return this.turnEntry(threadId, generation, botId)?.principalId || undefined;
   }
 
   /** Whether this turn of the bot has a Perspicax profile mounted, so the

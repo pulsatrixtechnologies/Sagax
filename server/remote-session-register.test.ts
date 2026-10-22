@@ -56,8 +56,9 @@ describe("remote session registrar", () => {
     const registrar = createRemoteSessionRegistrar({
       publish: async (input) => { published.push(input); },
       end: async (input) => { ended.push(input); },
+      now: () => NOW.getTime(),
     });
-    const call = { threadId: THREAD, botId: BOT };
+    const call = { threadId: THREAD, botId: BOT, principalId: PERSON };
     expect(await registrar.observe({
       ...call,
       name: "remote_support_open",
@@ -68,11 +69,11 @@ describe("remote session registrar", () => {
     expect(published).toEqual([]);
     expect(await registrar.observe({ ...call, name: "remote_support_status", args: { code: "BQD-HS7", mark_connected: true }, result: text({ state: "connected", fetch_ip_count: 1 }) })).toBe("published");
     expect(await registrar.observe({ ...call, name: "remote_support_status", args: { code: CODE }, result: text({ state: "connected" }) })).toBeNull();
-    expect(published).toEqual([{ botId: BOT, threadId: THREAD, open: { id: ID, code: CODE, elevated: false, endAt: "2026-10-21T17:00:00.000Z" } }]);
+    expect(published).toEqual([{ principalId: PERSON, botId: BOT, threadId: THREAD, open: { id: ID, code: CODE, elevated: false, endAt: "2026-10-21T17:00:00.000Z" } }]);
     expect(JSON.stringify(published)).not.toContain(ADDRESS);
     expect(JSON.stringify(published)).not.toContain(PUBLIC);
     expect(await registrar.observe({ ...call, name: "remote_support_close", args: { code: CODE, outcome: "ended" }, result: text({ state: "ended" }) })).toBe("ended");
-    expect(ended).toEqual([{ botId: BOT, threadId: THREAD, code: CODE }]);
+    expect(ended).toEqual([{ principalId: PERSON, botId: BOT, threadId: THREAD, code: CODE }]);
   });
 
   it("keeps elevated rights and a named OS, and recalls a session opened before a restart", async () => {
@@ -80,15 +81,16 @@ describe("remote session registrar", () => {
     const registrar = createRemoteSessionRegistrar({
       publish: async (input) => { published.push(input); },
       end: async () => undefined,
-      recall: (code) => (code === "GVPZGU" ? { id: "aaaaaaaaaaaa", code, elevated: true, endAt: "2026-10-21T17:00:00.000Z" } : null),
+      recall: (code) => (code === "GVPZGU" ? { id: "aaaaaaaaaaaa", code, elevated: true, endAt: "2026-10-21T17:00:00.000Z", principalId: PERSON, botId: BOT } : null),
+      now: () => NOW.getTime(),
     });
     await registrar.observe({
-      threadId: THREAD, botId: BOT, name: "remote_support_open",
+      threadId: THREAD, botId: BOT, principalId: PERSON, name: "remote_support_open",
       args: { session: ID, rights: "elevated", os: "macos", end_at: "2026-10-21T17:00:00Z" },
       result: text({ code: CODE }),
     });
-    await registrar.observe({ threadId: THREAD, botId: BOT, name: "remote_support_status", args: { code: CODE }, result: text({ state: "connected" }) });
-    await registrar.observe({ threadId: THREAD, botId: BOT, name: "remote_support_status", args: { code: "GVPZGU" }, result: text({ state: "connected" }) });
+    await registrar.observe({ threadId: THREAD, botId: BOT, principalId: PERSON, name: "remote_support_status", args: { code: CODE }, result: text({ state: "connected" }) });
+    await registrar.observe({ threadId: THREAD, botId: BOT, principalId: PERSON, name: "remote_support_status", args: { code: "GVPZGU" }, result: text({ state: "connected" }) });
     expect(published.map((row) => row.open)).toEqual([
       { id: ID, code: CODE, elevated: true, endAt: "2026-10-21T17:00:00.000Z", os: "macos" },
       { id: "aaaaaaaaaaaa", code: "GVPZGU", elevated: true, endAt: "2026-10-21T17:00:00.000Z" },
@@ -97,10 +99,10 @@ describe("remote session registrar", () => {
 
   it("ignores an unknown code, a refused call and another tool", async () => {
     const published: unknown[] = [];
-    const registrar = createRemoteSessionRegistrar({ publish: async (input) => { published.push(input); }, end: async () => undefined });
-    expect(await registrar.observe({ threadId: THREAD, botId: BOT, name: "remote_support_status", args: { code: CODE }, result: text({ state: "connected" }) })).toBeNull();
-    expect(await registrar.observe({ threadId: THREAD, botId: BOT, name: "remote_support_open", args: { session: ID, end_at: "2026-10-21T17:00:00Z" }, result: { ...text({ code: CODE }), isError: true } })).toBeNull();
-    expect(await registrar.observe({ threadId: THREAD, botId: BOT, name: "api_search", args: {}, result: text({}) })).toBeNull();
+    const registrar = createRemoteSessionRegistrar({ publish: async (input) => { published.push(input); }, end: async () => undefined, now: () => NOW.getTime() });
+    expect(await registrar.observe({ threadId: THREAD, botId: BOT, principalId: PERSON, name: "remote_support_status", args: { code: CODE }, result: text({ state: "connected" }) })).toBeNull();
+    expect(await registrar.observe({ threadId: THREAD, botId: BOT, principalId: PERSON, name: "remote_support_open", args: { session: ID, end_at: "2026-10-21T17:00:00Z" }, result: { ...text({ code: CODE }), isError: true } })).toBeNull();
+    expect(await registrar.observe({ threadId: THREAD, botId: BOT, principalId: PERSON, name: "api_search", args: {}, result: text({}) })).toBeNull();
     expect(published).toEqual([]);
   });
 });
@@ -128,7 +130,7 @@ describe("a session the bot opened through the sagax tool path", () => {
       const command = argv.at(-1) ?? "";
       if (command === "uname -s") return { code: 1, stdout: "", stderr: "'uname' is not recognized" };
       if (command.includes("Win32_ComputerSystem")) {
-        return { code: 0, stdout: ["hostname=GOXSRV40", "user=gox\\jcproulx", "model=PowerEdge", "serial=SN40", "cpu=Xeon", "ramBytes=34359738368", "diskFreeKb=209715200", "diskTotalKb=524288000"].join("\n"), stderr: "" };
+        return { code: 0, stdout: ["hostname=POSTE-01", "user=exemple\\usager", "model=PowerEdge", "serial=SN40", "cpu=Xeon", "ramBytes=34359738368", "diskFreeKb=209715200", "diskTotalKb=524288000"].join("\n"), stderr: "" };
       }
       return { code: 0, stdout: "", stderr: "" };
     };
@@ -157,13 +159,14 @@ describe("a session the bot opened through the sagax tool path", () => {
       home: () => flowHome,
     });
     const registrar = createRemoteSessionRegistrar({
-      publish: async ({ botId, threadId, open }) => { await service.publish({ ...open, botId, threadId, principalId: service.principalFor(botId, threadId) }); },
-      end: async ({ botId, threadId, code }) => { await service.endByCode(service.principalFor(botId, threadId), botId, code); },
+      publish: async ({ principalId, botId, threadId, open }) => { await service.publish({ ...open, botId, threadId, principalId }); },
+      end: async ({ principalId, botId, code }) => { await service.endByCode(principalId, botId, code); },
       recall: (code) => recallSupportSession(supportDir, code),
+      now: () => NOW.getTime(),
     });
 
     // The relay sees every call the tool path makes (PerspicaxMcp.relay -> onRemoteSupport).
-    const local = { dir: supportDir, technicianName: "JC", orgName: "GOX", now: () => NOW, run: fakeTailcat(), sessionId: () => ID };
+    const local = { dir: supportDir, technicianName: "Ada", orgName: "Exemple", now: () => NOW, run: fakeTailcat(), sessionId: () => ID, principalId: PERSON, botId: BOT };
     let fetches = 0;
     const post = async (tool: string, args: Record<string, unknown>) => {
       let body: Record<string, unknown> = {};
@@ -172,8 +175,8 @@ describe("a session the bot opened through the sagax tool path", () => {
         fetches += 1;
         body = args.mark_connected === true ? { state: "connected", fetch_ip_count: 1, address: null } : { state: "started", fetch_ip_count: 1, address: ADDRESS };
       }
-      await registrar.observe({ threadId: THREAD, botId: BOT, name: tool, args, result: text(body) });
-      return { status: 200, body: { text: JSON.stringify(body) } };
+      await registrar.observe({ threadId: THREAD, botId: BOT, principalId: PERSON, name: tool, args, result: text(body) });
+      return { status: 200, body: { text: JSON.stringify(body), owner: { principalId: PERSON, botId: BOT } } };
     };
 
     const opened = await handleRemoteSupportCall({ name: "remote_support_open", args: {}, local, post });
@@ -187,14 +190,15 @@ describe("a session the bot opened through the sagax tool path", () => {
     // the panel row
     const rows = service.list(PERSON, BOT);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: ID, code: CODE, state: "connected", elevated: false, os: "windows", hostname: "GOXSRV40", user: "gox\\jcproulx", serial: "SN40", model: "PowerEdge", cpu: "Xeon" });
+    expect(rows[0]).toMatchObject({ id: ID, code: CODE, state: "connected", elevated: false, os: "windows", hostname: "POSTE-01", user: "exemple\\usager", serial: "SN40", model: "PowerEdge", cpu: "Xeon" });
     // the chat card
     expect(messages).toHaveLength(1);
-    expect(messages[0]?.remoteSession).toMatchObject({ id: ID, code: CODE, hostname: "GOXSRV40", state: "connected" });
+    expect(messages[0]?.remoteSession).toMatchObject({ id: ID, code: CODE, hostname: "POSTE-01", state: "connected" });
     // the tunnel came from the support folder, never from an API field
-    expect(readTunnel(flowHome, ID, supportDir)).toEqual({ keyPath: path.join(supportDir, "technician.private.json"), address: ADDRESS });
-    expect(readTunnel(flowHome, ID)).toBeNull();
-    expect(readSupportTunnel(supportDir, "ffffffffffff")).toBeNull();
+    const row = { id: ID, code: CODE, principalId: PERSON, botId: BOT };
+    expect(readTunnel(flowHome, row, supportDir)).toEqual({ keyPath: path.join(supportDir, "technician.private.json"), address: ADDRESS });
+    expect(readTunnel(flowHome, row)).toBeNull();
+    expect(readSupportTunnel(supportDir, { ...row, id: "ffffffffffff" })).toBeNull();
     expect(ssh[0]).toBe("uname -s");
     expect(JSON.stringify(messages)).not.toContain(ADDRESS);
     expect(JSON.stringify(rows)).not.toContain(ADDRESS);
@@ -212,6 +216,6 @@ describe("a session the bot opened through the sagax tool path", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, "address"), `${ADDRESS}\n`);
     writeFileSync(path.join(dir, "client.private.json"), "{}\n");
-    expect(readTunnel(home, ID, temp("sagax-support-"))?.keyPath).toBe(path.join(dir, "client.private.json"));
+    expect(readTunnel(home, { id: ID }, temp("sagax-support-"))?.keyPath).toBe(path.join(dir, "client.private.json"));
   });
 });

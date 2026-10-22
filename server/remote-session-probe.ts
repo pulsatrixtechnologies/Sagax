@@ -5,7 +5,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
-import { REMOTE_SESSION_ID, type RemoteSessionOs } from "../shared/remote-session.ts";
+import { isTailcatAddress, parseRemoteSessionCode, REMOTE_SESSION_ID, type RemoteSessionOs } from "../shared/remote-session.ts";
 
 export interface CommandResult {
   code: number;
@@ -27,15 +27,70 @@ export function sessionDir(home: string, id: string): string {
 }
 
 function validAddress(address: string): boolean {
-  // oxlint-disable-next-line no-control-regex -- a tunnel address never contains control characters
-  return address.startsWith("tc") && address.length <= 512 && !/[\s\u0000-\u001f]/.test(address);
+  return isTailcatAddress(address);
+}
+
+/** The row a tunnel is resolved for: its id, its support code and who owns it. */
+export interface TunnelOwner {
+  id: string;
+  code?: string;
+  principalId?: string;
+  botId?: string;
+}
+
+/** Who remote_support_open recorded as the opener of `sessions/<CODE>/`, or null. */
+export function supportFolderOwner(dir: string, code: string): { id: string; principalId?: string; botId?: string } | null {
+  const compact = parseRemoteSessionCode(code);
+  if (!compact) return null;
+  const folder = path.join(path.resolve(dir), "sessions", compact);
+  let id = "";
+  try {
+    id = readFileSync(path.join(folder, "session"), "utf8").trim();
+  } catch {
+    return null;
+  }
+  if (!REMOTE_SESSION_ID.test(id)) return null;
+  let meta: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(folder, "open.json"), "utf8")) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) meta = parsed as Record<string, unknown>;
+  } catch {
+    /* an owner-less folder */
+  }
+  const principalId = typeof meta.principalId === "string" && meta.principalId.trim() ? normPrincipal(meta.principalId) : undefined;
+  const botId = typeof meta.botId === "string" && meta.botId.trim() ? meta.botId.trim() : undefined;
+  return { id, ...(principalId ? { principalId } : {}), ...(botId ? { botId } : {}) };
+}
+
+/** Every support folder that holds this session id, with its recorded owner. */
+export function supportOwnersOfId(dir: string, id: string): Array<{ code: string; principalId?: string; botId?: string }> {
+  if (!REMOTE_SESSION_ID.test(id)) return [];
+  let codes: string[] = [];
+  try {
+    codes = readdirSync(path.join(path.resolve(dir), "sessions"));
+  } catch {
+    return [];
+  }
+  const owners: Array<{ code: string; principalId?: string; botId?: string }> = [];
+  for (const code of codes) {
+    const owner = supportFolderOwner(dir, code);
+    if (!owner || owner.id !== id) continue;
+    owners.push({ code, ...(owner.principalId ? { principalId: owner.principalId } : {}), ...(owner.botId ? { botId: owner.botId } : {}) });
+  }
+  return owners;
+}
+
+export function normPrincipal(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 /** A session Sagax opened itself (server/remote-support-local.ts): the
  * technician key is `<dir>/technician.private.json` and the address is in
- * `<dir>/sessions/<CODE>/address`, next to a `session` file holding the id. */
-export function readSupportTunnel(dir: string, id: string): { keyPath: string; address: string } | null {
-  if (!REMOTE_SESSION_ID.test(id)) return null;
+ * `<dir>/sessions/<row.code>/address`. The folder must hold this very id and
+ * name this row's person and bot as its opener: the id alone (it is on the
+ * chat card) never resolves a tunnel, and a folder without an owner never does. */
+export function readSupportTunnel(dir: string, row: TunnelOwner): { keyPath: string; address: string } | null {
+  if (!REMOTE_SESSION_ID.test(row.id) || !row.code || !row.principalId || !row.botId) return null;
   const root = path.resolve(dir);
   const keyPath = path.join(root, "technician.private.json");
   try {
@@ -43,41 +98,27 @@ export function readSupportTunnel(dir: string, id: string): { keyPath: string; a
   } catch {
     return null;
   }
-  let codes: string[] = [];
+  const owner = supportFolderOwner(root, row.code);
+  if (!owner || owner.id !== row.id) return null;
+  if (!owner.principalId || owner.principalId !== normPrincipal(row.principalId)) return null;
+  if (!owner.botId || owner.botId !== row.botId) return null;
+  let address = "";
   try {
-    codes = readdirSync(path.join(root, "sessions"));
+    address = readFileSync(path.join(root, "sessions", parseRemoteSessionCode(row.code)!, "address"), "utf8").trim();
   } catch {
     return null;
   }
-  for (const code of codes) {
-    if (!/^[A-Z0-9]{6}$/.test(code)) continue;
-    const folder = path.join(root, "sessions", code);
-    let session = "";
-    try {
-      session = readFileSync(path.join(folder, "session"), "utf8").trim();
-    } catch {
-      continue;
-    }
-    if (session !== id) continue;
-    let address = "";
-    try {
-      address = readFileSync(path.join(folder, "address"), "utf8").trim();
-    } catch {
-      return null;
-    }
-    return validAddress(address) ? { keyPath, address } : null;
-  }
-  return null;
+  return validAddress(address) ? { keyPath, address } : null;
 }
 
 /** The on-disk tunnel, or null when this host does not have it. The address
  * stays in the file; callers pass it only as an argv element and never log it.
  * The Flow session folder first, then the folder of a session Sagax opened. */
-export function readTunnel(home: string, id: string, supportDir?: string): { keyPath: string; address: string } | null {
-  if (!REMOTE_SESSION_ID.test(id)) return null;
-  const flow = readFlowTunnel(home, id);
+export function readTunnel(home: string, row: TunnelOwner, supportDir?: string): { keyPath: string; address: string } | null {
+  if (!REMOTE_SESSION_ID.test(row.id)) return null;
+  const flow = readFlowTunnel(home, row.id);
   if (flow) return flow;
-  return supportDir ? readSupportTunnel(supportDir, id) : null;
+  return supportDir ? readSupportTunnel(supportDir, row) : null;
 }
 
 function readFlowTunnel(home: string, id: string): { keyPath: string; address: string } | null {

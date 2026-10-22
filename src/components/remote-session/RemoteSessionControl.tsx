@@ -13,11 +13,14 @@ export function RemoteSessionScreen({ shot, missed }: { shot: string | null; mis
   return (
     <div data-remote-session-screen="" data-remote-input="none">
       <div className="px-3 py-2 text-[12px] text-ink-secondary">{t("remoteSession.screen")}</div>
-      <div className="flex aspect-[16/10] items-center justify-center bg-inset">
-        {shot
-          ? <img src={shot} alt="" className="h-full w-full object-contain" />
-          : <span className="text-[12px] text-ink-secondary">{missed ? t("remoteSession.screenUnavailable") : t("remoteSession.screen")}</span>}
-      </div>
+      {shot
+        // the picture keeps its own proportions: no fixed box, so no band under it
+        ? <img data-remote-session-shot="" src={shot} alt="" className="block h-auto w-full" />
+        : (
+          <div className="flex aspect-[16/10] items-center justify-center bg-inset">
+            <span className="text-[12px] text-ink-secondary">{missed ? t("remoteSession.screenUnavailable") : t("remoteSession.screen")}</span>
+          </div>
+        )}
     </div>
   );
 }

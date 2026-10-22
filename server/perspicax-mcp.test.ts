@@ -608,6 +608,8 @@ describe("PerspicaxMcp remote support answers", () => {
     expect(seen).toEqual([{
       threadId: "t1",
       botId: "x",
+      // the person whose token made the call: the session becomes theirs
+      principalId: "pr_bob",
       name: "remote_support_status",
       args: { code: "BQDHS7" },
       result: { content: [{ type: "text", text: JSON.stringify({ state: "connected", fetch_ip_count: 1 }) }] },

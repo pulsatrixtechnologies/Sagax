@@ -23,9 +23,9 @@ const view: RemoteSessionView = {
   os: "windows",
   elevated: false,
   endAt: "2026-10-22T00:33:00.000Z",
-  hostname: "GOXSRV40",
+  hostname: "POSTE-01",
   osName: "Windows Server 2022",
-  user: "gox\\jcproulx",
+  user: "exemple\\usager",
   model: "PowerEdge R650",
   serial: "SN40",
   cpu: "Intel Xeon Silver",
@@ -66,7 +66,7 @@ describe("tailcat stage 1", () => {
     setLocale("fr");
     const props = { rows: [view], error: null, onTakeControl: () => undefined, onClose: () => undefined };
     const first = renderToStaticMarkup(createElement(RemoteSessionsPanel, { ...props, confirmId: null }));
-    for (const part of ["GOXSRV40", "gox\\jcproulx", "BQDHS7", formatEndLabel(view.endAt), "Prendre le contrôle", "Fermer la session"]) {
+    for (const part of ["POSTE-01", "exemple\\usager", "BQDHS7", formatEndLabel(view.endAt), "Prendre le contrôle", "Fermer la session"]) {
       expect(first).toContain(part);
     }
     expect(first).toContain('data-remote-close="ask"');
@@ -83,12 +83,12 @@ describe("tailcat stage 1", () => {
     const card = renderToStaticMarkup(createElement(
       StoreProvider,
       null,
-      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: { ...view, hostname: `GOXSRV40 ${ADDRESS}` } }),
+      createElement(RemoteSessionCard, { botId: "melonie", threadId: "thread-1", view: { ...view, hostname: `POSTE-01 ${ADDRESS}` } }),
     ));
     for (const field of ["poste", "user", "rights", "session", "serial", "model", "cpu", "ram", "disk"]) {
       expect(card).toContain(`data-remote-field="${field}"`);
     }
-    for (const value of ["GOXSRV40", "gox\\jcproulx", t("remoteSession.rights.standard"), "BQDHS7", "SN40", "PowerEdge R650", "Intel Xeon Silver", "32 Go", "200 Go libres sur 500 Go"]) {
+    for (const value of ["POSTE-01", "exemple\\usager", t("remoteSession.rights.standard"), "BQDHS7", "SN40", "PowerEdge R650", "Intel Xeon Silver", "32 Go", "200 Go libres sur 500 Go"]) {
       expect(card).toContain(value);
     }
     expect(card).toContain("data-remote-take-control");
@@ -111,6 +111,9 @@ describe("tailcat stage 1", () => {
     const screen = renderToStaticMarkup(createElement(RemoteSessionScreen, { shot: "blob:screen", missed: false }));
     expect(screen).toContain('data-remote-input="none"');
     expect(screen).not.toMatch(/onmouse|tabindex|contenteditable/i);
+    // the picture keeps its own proportions: no fixed 16:10 box leaving a dark band under it
+    expect(screen).toContain("data-remote-session-shot");
+    expect(screen).not.toContain("aspect-[16/10]");
     const empty = renderToStaticMarkup(createElement(StoreProvider, null, createElement(RemoteSessionControl, { botId: "melonie", showEmpty: true })));
     expect(empty).toContain("data-remote-session-control-empty");
     expect(empty).toContain("No remote session is open.");

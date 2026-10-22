@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import {
   parseRemoteSessionCode,
+  parseRemoteSessionEnd,
   parseRemoteSessionId,
   parseRemoteSessionOs,
   publicText,
@@ -44,10 +45,8 @@ export function parsePublishBody(body: unknown, now: number): { error: string } 
   const code = parseRemoteSessionCode(parsed.data.code);
   const os = parseRemoteSessionOs(parsed.data.os);
   if (!id || !code || !os) return { error: "flow_session_id must be 12 hex, code a 6-character support code, and os windows, macos or linux." };
-  const end = Date.parse(parsed.data.end_at);
-  if (!Number.isFinite(end) || end < now - 15 * 60_000 || end > now + 26 * 60 * 60_000) {
-    return { error: "end_at must be an ISO-8601 time within the next day." };
-  }
+  const end = parseRemoteSessionEnd(parsed.data.end_at, now);
+  if (end === null) return { error: "end_at must be an ISO-8601 time within the next day." };
   const fact = (value: string | undefined) => publicText(value);
   return {
     value: {
@@ -156,6 +155,9 @@ export function createRemoteSessionRoutes(deps: {
 export function createRemoteSessionInternalRoutes(deps: {
   sessions: RemoteSessionService;
   ownsThread(botId: string, threadId: string): boolean;
+  /** The person speaking in this turn (the Perspicax credentials' owner).
+   * The session row goes to them, never to the conversation's owner. */
+  speaker?(threadId: string): string | undefined;
   now?: () => number;
 }): InternalRouteHandler {
   const now = deps.now ?? (() => Date.now());
@@ -165,8 +167,10 @@ export function createRemoteSessionInternalRoutes(deps: {
     if (!deps.ownsThread(capability.botId, capability.threadId)) {
       return json(res, 403, { error: "source conversation does not belong to sender" });
     }
-    const principalId = deps.sessions.principalFor(capability.botId, capability.threadId);
-    if (!principalId) return json(res, 403, { error: "This conversation has no owner." });
+    const principalId = deps.speaker
+      ? deps.speaker(capability.threadId)?.trim().toLowerCase()
+      : deps.sessions.principalFor(capability.botId, capability.threadId);
+    if (!principalId) return json(res, 403, { error: "No person speaks in this turn, so the remote session has no owner." });
     const parsed = parsePublishBody(await readJson(), now());
     if ("error" in parsed) return json(res, 400, { error: parsed.error });
     try {
@@ -186,6 +190,7 @@ export function createRemoteSessionInternalRoutes(deps: {
     } catch (error) {
       const status = (error as { status?: number }).status;
       if (status === 403) return json(res, 403, { error: "That remote session belongs to someone else." });
+      if (status === 409) return json(res, 409, { error: "That remote session was closed. Open a new one with remote_support_open." });
       return json(res, 500, { error: "The remote session card could not be posted." });
     }
   };

@@ -24,15 +24,18 @@ import type { TerminalResourceRegistry } from "./terminal-resources/registry.ts"
 import type { createTerminalSessionManager } from "./terminal-sessions.ts";
 import { createTailcatAdapter } from "./terminal-resources/adapters/tailcat.ts";
 import { resolveTailcatBinary } from "./tailcat-bin.ts";
+import { forgetAddress } from "./remote-support-local.ts";
 import {
   deleteRemoteCommand,
   flowHome as defaultFlowHome,
   inventoryCommand,
+  normPrincipal,
   readTunnel,
   runCommand,
   screenshotPlan,
   sessionDir,
   stopCommand,
+  supportOwnersOfId,
   tailcatCopyArgv,
   tailcatSshArgv,
   transferDirCommand,
@@ -89,6 +92,9 @@ export interface PublishRemoteSession {
   endAt: string;
   facts?: RemoteSessionFacts;
 }
+
+/** `ssh` exits 255 when the tunnel itself failed, so the computer never answered. */
+const TRANSPORT_FAILED = 255;
 
 /** `uname -s` answers Darwin or Linux; Windows has no uname. */
 export function osFromUname(stdout: string | undefined): RemoteSessionOs {
@@ -161,12 +167,23 @@ export function createRemoteSessionService(deps: {
   home?: () => string;
   /** The folder where remote_support_open keeps the sessions Sagax opened. */
   supportDir?: () => string;
+  /** remote_support_close at Perspicax for a session Sagax opened, as the
+   * person closing it (their own credentials). Best effort. */
+  closeRemote?(input: { principalId: string; botId: string; threadId: string; code: string }): Promise<unknown>;
 }) {
   const now = deps.now ?? (() => Date.now());
   const run = deps.run ?? runCommand;
   const home = deps.home ?? defaultFlowHome;
   const supportDir = deps.supportDir;
-  const tunnelOf = (id: string) => readTunnel(home(), id, supportDir?.());
+  // The tunnel of a row: its Flow folder, or the support folder of its code
+  // when that folder names the row's person and bot as the opener.
+  const tunnelOf = (row: Pick<StoredSession, "id" | "code" | "principalId" | "botId">) => readTunnel(home(), row, supportDir?.());
+  /** Sagax opened it (its support folder names this row's owner). */
+  const sagaxOpened = (row: StoredSession) => {
+    const dir = supportDir?.();
+    if (!dir) return false;
+    return supportOwnersOfId(dir, row.id).some((owner) => owner.code === row.code && owner.principalId === row.principalId && owner.botId === row.botId);
+  };
   const file = path.join(deps.dataDir, FILE);
   let rows: StoredSession[] = [];
   try {
@@ -195,7 +212,7 @@ export function createRemoteSessionService(deps: {
   const tailcatBin = () => resolveTailcatBinary() ?? "tailcat";
 
   async function ssh(session: StoredSession, command: string, timeoutMs: number) {
-    const tunnel = tunnelOf(session.id);
+    const tunnel = tunnelOf(session);
     if (!tunnel) return null;
     return run(tailcatSshArgv(tailcatBin(), tunnel.keyPath, tunnel.address, command), timeoutMs);
   }
@@ -240,13 +257,15 @@ export function createRemoteSessionService(deps: {
   }
 
   deps.registry.register(createTailcatAdapter({
-    home,
-    ...(supportDir ? { supportDir } : {}),
     targets(principalId, botId) {
       return rows
         .filter((row) => row.state === "connected" && row.principalId === principalId && (!botId || row.botId === botId))
-        .filter((row) => tunnelOf(row.id))
+        .filter((row) => tunnelOf(row))
         .map((row) => ({ id: row.id, hostLabel: hostLabel(row), label: "Session à distance" }));
+    },
+    tunnel(principalId, botId, id) {
+      const row = rows.find((candidate) => candidate.id === id && candidate.state === "connected" && candidate.principalId === principalId && (!botId || candidate.botId === botId));
+      return row ? tunnelOf(row) : null;
     },
   }));
 
@@ -265,17 +284,30 @@ export function createRemoteSessionService(deps: {
       return mine.find((row) => row.focused) ?? mine[mine.length - 1] ?? null;
     },
     async publish(input: PublishRemoteSession): Promise<PublishedRemoteSession> {
-      return exclusive(async () => {
-        let session = rows.find((row) => row.id === input.id && row.botId === input.botId);
-        if (session && session.principalId !== input.principalId) {
+      const principalId = normPrincipal(input.principalId);
+      const session = await exclusive(() => {
+        // The id is on the chat card: it never gives a session to someone
+        // other than the person (and bot) who opened it.
+        const theirs = rows.find((row) => row.id === input.id && (row.principalId !== principalId || row.botId !== input.botId));
+        const dir = supportDir?.();
+        const foreign = dir
+          ? supportOwnersOfId(dir, input.id).some((owner) => owner.principalId !== principalId || owner.botId !== input.botId)
+          : false;
+        if (theirs || foreign) {
           throw Object.assign(new Error("That remote session belongs to someone else."), { status: 403 });
         }
-        if (!session) {
-          session = {
+        let row = rows.find((candidate) => candidate.id === input.id && candidate.botId === input.botId);
+        if (row && row.state === "ended") {
+          // closed from the panel or by remote_support_close: a late or
+          // repeated "connected" never re-opens the card
+          throw Object.assign(new Error("That remote session was closed."), { status: 409 });
+        }
+        if (!row) {
+          row = {
             id: input.id,
             botId: input.botId,
             threadId: input.threadId,
-            principalId: input.principalId,
+            principalId,
             code: input.code,
             os: input.os ?? "windows",
             ...(input.os ? {} : { osGuessed: true }),
@@ -285,53 +317,82 @@ export function createRemoteSessionService(deps: {
             createdAt: now(),
             focused: false,
           };
-          rows.push(session);
+          rows.push(row);
         } else {
-          session.threadId = input.threadId;
-          session.code = input.code;
+          row.threadId = input.threadId;
+          row.code = input.code;
           if (input.os) {
-            session.os = input.os;
-            delete session.osGuessed;
+            row.os = input.os;
+            delete row.osGuessed;
           }
-          session.elevated = input.elevated;
-          session.endAt = input.endAt;
-          session.state = "connected";
+          row.elevated = input.elevated;
+          row.endAt = input.endAt;
+          row.state = "connected";
         }
-        for (const row of rows) {
-          if (row.threadId === input.threadId) row.focused = row.id === session!.id;
+        for (const other of rows) {
+          if (other.threadId === input.threadId) other.focused = other.id === row.id;
         }
-        applyFacts(session, input.facts);
-        const reachable = Boolean(tunnelOf(session.id));
-        if (reachable && session.osGuessed) {
-          try {
-            const uname = await ssh(session, "uname -s", 10_000);
-            if (uname) {
-              session.os = uname.code === 0 ? osFromUname(uname.stdout) : "windows";
-              delete session.osGuessed;
-            }
-          } catch { /* keep Windows */ }
-        }
-        if (reachable) {
-          try { await probe(session); } catch { /* the card still shows what we were given */ }
-        }
-        writeCard(session);
+        applyFacts(row, input.facts);
+        writeCard(row);
         persist();
+        return row;
+      });
+      const reachable = Boolean(tunnelOf(session));
+      if (!reachable) return { view: viewOf(session), reachable };
+      // Asking the remote computer happens outside the critical section, so a
+      // slow or dead tunnel never holds another publish or a close.
+      const work: StoredSession = { ...session };
+      if (work.osGuessed) {
+        try {
+          const uname = await ssh(work, "uname -s", 10_000);
+          // 255: the tunnel failed, the computer did not answer: ask again next time
+          if (uname && uname.code !== TRANSPORT_FAILED) {
+            work.os = uname.code === 0 ? osFromUname(uname.stdout) : "windows";
+            delete work.osGuessed;
+          }
+        } catch { /* ask again next time */ }
+      }
+      if (!work.osGuessed) {
+        try { await probe(work); } catch { /* the card still shows what we were given */ }
+      }
+      return exclusive(() => {
+        if (session.state === "connected") {
+          for (const field of ["os", "hostname", "user", "model", "serial", "cpu", "osName", "ramGb", "ram", "disk", "diskFreePercent"] as const) {
+            if (work[field] !== undefined) (session as unknown as Record<string, unknown>)[field] = work[field];
+          }
+          if (!work.osGuessed) delete session.osGuessed;
+          writeCard(session);
+          persist();
+        }
         return { view: viewOf(session), reachable };
       });
     },
     async close(principalId: string, botId: string, id: string): Promise<RemoteSessionView | null> {
-      return exclusive(async () => {
+      const closing = await exclusive(() => {
         const session = owned(principalId, botId, id);
         if (!session) return null;
-        if (session.state === "connected") {
-          try { await ssh(session, stopCommand(session.id), 8_000); } catch { /* the screen still closes */ }
-        }
+        const wasConnected = session.state === "connected";
         session.state = "ended";
         session.focused = false;
         writeCard(session);
         persist();
-        return viewOf(session);
+        return { session, wasConnected };
       });
+      if (!closing) return null;
+      const { session, wasConnected } = closing;
+      if (wasConnected) {
+        const ours = sagaxOpened(session);
+        try { await ssh(session, stopCommand(session.id), 8_000); } catch { /* the screen still closes */ }
+        if (ours) {
+          try {
+            await deps.closeRemote?.({ principalId: session.principalId, botId: session.botId, threadId: session.threadId, code: session.code });
+          } catch { /* Perspicax ends it at its end time */ }
+          // the tunnel no longer resolves from this host
+          const dir = supportDir?.();
+          if (dir) await forgetAddress(dir, session.code).catch(() => {});
+        }
+      }
+      return viewOf(session);
     },
     /** The session behind a support code was closed elsewhere (remote_support_close):
      * mark its card closed. The end user's script already stops by itself. */
@@ -360,7 +421,7 @@ export function createRemoteSessionService(deps: {
         ? owned(args.principalId, args.botId, args.id)
         : this.active(args.principalId, args.botId, args.threadId);
       if (!session || session.state !== "connected") return null;
-      if (!tunnelOf(session.id)) return { error: "The tunnel for this remote computer is not on this server yet." };
+      if (!tunnelOf(session)) return { error: "The tunnel for this remote computer is not on this server yet." };
       const access: TerminalAccess = {
         ...deps.access(args.principalId, args.botId),
         ownsConversation: deps.owner(args.botId, args.threadId).trim().toLowerCase() === args.principalId || session.principalId === args.principalId,
@@ -405,7 +466,7 @@ export function createRemoteSessionService(deps: {
       if (!session || session.state !== "connected") return { error: "That remote session is not open." };
       if (!safeName) return { error: "Choose a simple file name." };
       if (bytes.length === 0 || bytes.length > UPLOAD_MAX) return { error: "The file must be under 8 MB." };
-      if (!tunnelOf(session.id)) return { error: "The tunnel for this remote computer is not on this server yet." };
+      if (!tunnelOf(session)) return { error: "The tunnel for this remote computer is not on this server yet." };
       const listed = await ssh(session, transferDirCommand(session.os), 15_000);
       const remoteDir = safeRemotePath(listed?.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).pop() ?? "");
       if (!listed || listed.code !== 0 || !remoteDir) return { error: "The remote computer did not accept a folder for the file." };
@@ -415,7 +476,7 @@ export function createRemoteSessionService(deps: {
       const local = path.join(localDir, `${randomBytes(8).toString("hex")}-${safeName.replaceAll(" ", "_")}`);
       writeFileSync(local, bytes, { mode: 0o600 });
       try {
-        const tunnel = tunnelOf(session.id);
+        const tunnel = tunnelOf(session);
         if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
         const copied = await run(tailcatCopyArgv(tailcatBin(), tunnel.keyPath, local, `${tunnel.address}:${remotePath}`), 60_000);
         if (copied.code !== 0) return { error: "The file did not arrive on the remote computer." };
@@ -429,7 +490,7 @@ export function createRemoteSessionService(deps: {
       const session = owned(principalId, botId, id);
       if (!session || session.state !== "connected") return { error: "That remote session is not open." };
       if (!safe) return { error: "That path cannot be downloaded." };
-      const tunnel = tunnelOf(session.id);
+      const tunnel = tunnelOf(session);
       if (!tunnel) return { error: "The tunnel for this remote computer is not on this server yet." };
       const localDir = path.join(deps.dataDir, "remote-session-transfers");
       mkdirSync(localDir, { recursive: true, mode: 0o700 });

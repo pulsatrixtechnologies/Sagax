@@ -783,6 +783,7 @@ import { installTerminalFeature } from "./terminal-install.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
 import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
 import { recallSupportSession } from "./remote-support-local.ts";
+import { supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import type { TerminalWorkPlace } from "./terminal-requests.ts";
 import type { TerminalAccess } from "./terminal-resources/types.ts";
@@ -3995,6 +3996,8 @@ function agentsIntegration(
       // Technician key for remote support: this computer only (desktop PC or
       // the bot's cloud computer). The private file never goes in the env.
       SAGAX_REMOTE_SUPPORT_DIR: join(DATA_DIR, "remote-support"),
+      // the opener written into open.json when the server answer does not name one
+      SAGAX_REMOTE_SUPPORT_PRINCIPAL: safetyPrincipal(threadId).principalId?.trim().toLowerCase() ?? "",
       ...(() => {
         const speakerId = safetyPrincipal(threadId).principalId;
         const speaker = speakerId ? principals.byId(speakerId) : undefined;
@@ -10270,25 +10273,46 @@ const remoteSessions = createRemoteSessionService({
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot).trim().toLowerCase() : "";
   },
+  // Close from the panel: remote_support_close at Perspicax as the person
+  // closing (their own session, the same relay as a turn), then the tokens end.
+  closeRemote: async ({ principalId, botId, code }) => {
+    const mcp = perspicaxMcp;
+    const live = store.bot(botId);
+    if (!mcp || !live?.perspicax?.profiles.length) return;
+    const threadId = `remote-close-${randomUUID()}`;
+    const generation = randomUUID();
+    try {
+      const plan = await mcp.prepareTurn({ threadId, generation, bot: { id: live.id, perspicax: live.perspicax }, speakerPrincipalId: principalId, speakerOrigin: "person" });
+      if (!plan.mounted.length) return;
+      await mcp.callTool({ threadId, generation, botId: live.id, name: "remote_support_close", args: { code, outcome: "ended" } });
+    } finally {
+      await mcp.endGeneration(threadId, generation).catch(() => {});
+    }
+  },
 });
+/** The person speaking in this turn: whose Perspicax credentials a
+ * remote_support_* call used. A remote session is theirs, never the
+ * conversation owner's. */
+function remoteSessionSpeaker(threadId: string): string | undefined {
+  return safetyPrincipal(threadId).principalId?.trim().toLowerCase() || undefined;
+}
 openRemoteShell = (args) => {
-  const principalId = remoteSessions.principalFor(args.botId, args.threadId);
+  const principalId = remoteSessionSpeaker(args.threadId);
   if (!principalId) return Promise.resolve(null);
   return remoteSessions.openShell({ principalId, botId: args.botId, threadId: args.threadId });
 };
 // A session the bot opened with remote_support_open becomes a panel row and a
 // chat card once remote_support_status says connected (PerspicaxMcp.relay).
 const remoteSessionRegistrar = createRemoteSessionRegistrar({
-  publish: async ({ botId, threadId, open }) => {
-    const principalId = remoteSessions.principalFor(botId, threadId);
-    if (!principalId) return;
+  // principalId: the speaker whose token made the call (PerspicaxMcp.relay)
+  publish: async ({ principalId, botId, threadId, open }) => {
     await remoteSessions.publish({ ...open, botId, threadId, principalId });
   },
-  end: async ({ botId, threadId, code }) => {
-    const principalId = remoteSessions.principalFor(botId, threadId);
-    if (principalId) await remoteSessions.endByCode(principalId, botId, code);
+  end: async ({ principalId, botId, code }) => {
+    await remoteSessions.endByCode(principalId, botId, code);
   },
   recall: (code) => recallSupportSession(REMOTE_SUPPORT_DIR, code),
+  idOwners: (id) => supportOwnersOfId(REMOTE_SUPPORT_DIR, id),
 });
 function closeSessionStreams(sessionId: string): void {
   browserLive.closeForOwner(sessionId);
@@ -26956,7 +26980,17 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
       return { organization, role, perspicaxTools: organization && Boolean(speaker) };
     },
   }),
-  createPerspicaxToolInternalRoutes({ tools: PERSPICAX_TOOL_NAMES, perspicaxMcp: () => perspicaxMcp, review: perspicaxNativeReview, confidential: confidentialPerspicaxRefusal }),
+  createPerspicaxToolInternalRoutes({
+    tools: PERSPICAX_TOOL_NAMES,
+    perspicaxMcp: () => perspicaxMcp,
+    review: perspicaxNativeReview,
+    confidential: confidentialPerspicaxRefusal,
+    // remote_support_*: who opened it, written into the support folder
+    owner: (capability) => {
+      const principalId = perspicaxMcp?.turnPrincipal(capability.threadId, capability.generation, capability.botId) || remoteSessionSpeaker(capability.threadId);
+      return principalId ? { principalId: principalId.trim().toLowerCase(), botId: capability.botId } : null;
+    },
+  }),
   createMcpAuditInternalRoutes({ append: (row) => appendAdminAction(DATA_DIR, { ...row, actor: { kind: "loopback" } }), confidential: (threadId) => store.isConfidentialThread(threadId) }),
   createRoutineRunInternalRoutes<Routine, RoutineRun>({
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
@@ -26974,6 +27008,7 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   createRemoteSessionInternalRoutes({
     sessions: remoteSessions,
     ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
+    speaker: remoteSessionSpeaker,
   }),
   // save_artifact, update_artifact, list_artifacts, delete_artifact (server/routes/artifacts.ts)
   createArtifactInternalRoutes({
@@ -33096,7 +33131,8 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
     // remote_support_open / status / close: the session shows in Sagax (server/remote-session-register.ts)
     onRemoteSupport: (call) => {
-      void remoteSessionRegistrar.observe(call).catch((error) => {
+      const principalId = call.principalId || remoteSessionSpeaker(call.threadId);
+      void remoteSessionRegistrar.observe({ ...call, ...(principalId ? { principalId } : {}) }).catch((error) => {
         console.warn(`remote session: the card could not be posted (${error instanceof Error ? error.name : "error"})`);
       });
     },
