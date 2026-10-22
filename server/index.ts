@@ -20104,7 +20104,7 @@ async function startTurn(
       }
       if (!warmOnly) turnTrace(threadId, "send");
       // Each picture within the model's limits: a scaled copy for a large one.
-      const modelImages = await fitTurnImagesForModel(turnImages);
+      const modelImages = await fitTurnImagesForModel(turnImages, { language: cfg.language });
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -23235,7 +23235,7 @@ async function runGroupMemberTurn(
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
-        images: await fitTurnImagesForModel(turnImages),
+        images: await fitTurnImagesForModel(turnImages, { language: cfg.language }),
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
