@@ -22,6 +22,8 @@ import { grokHostToolArgs, grokOrgAgentProfile } from "../host-tools.ts";
 import { grokReadOnlyAllowRules } from "./grok-read-only-tools.ts";
 import { gateReadOnlyTools, grokApprovalGateEnabled } from "./grok-approval-gate.ts";
 import { knownGrokTools, knownGrokToolsSection, recordGrokToolUse, useToolName } from "./grok-tool-usage.ts";
+import { grokCatalogFor, grokCatalogSection, rememberGrokCatalog } from "./grok-tool-catalog.ts";
+import { reachContributions } from "../../turn-reach.ts";
 import { allowsTool, canUseMcpServer, narrowsNativeTools, parseToolScope } from "../../../shared/tool-scope.ts";
 import { grokAliasBase, grokToolNameProblem } from "../../mcp-tool-names.ts";
 
@@ -909,6 +911,7 @@ const support: AcpSupport = {
           }
         }
         if (catalog.sessionMcpResolved === true) {
+          rememberGrokCatalog(sessionId, catalog);
           if ([...available].some((name) => !catalog.servers.some((server: { name?: string; session?: { enabled?: boolean; status?: string } }) => server.name === name && server.session?.enabled === true && server.session.status === "ready"))) {
             throw new Error("Grok could not connect a selected MCP server. No prompt was sent.");
           }
@@ -924,7 +927,7 @@ const support: AcpSupport = {
       // the bot answered that ConnectWise was not reachable. Wait, bounded
       // and best effort, until Grok resolved its servers and none is still
       // pending; on a timeout or an unreadable list the prompt goes anyway.
-      await waitForGrokMcpSettled(request, sessionId, GROK_MCP_SETTLE_MS);
+      await waitForGrokMcpSettled(request, sessionId, GROK_MCP_SETTLE_MS, (catalog) => rememberGrokCatalog(sessionId, catalog));
     }
     if (!turn.model) return;
     if (grokPinsModelInProfile(turn)) {
@@ -1022,7 +1025,17 @@ const support: AcpSupport = {
   // The tools this bot already used successfully, named once per
   // conversation (and again only when the set changes), so a first use in a
   // new conversation skips the search_tool round too.
-  volatileSection: ({ botId, serverNames }) => knownGrokToolsSection(knownGrokTools(botId, serverNames)),
+  // With Grok's own catalog of this session (read in configureSession,
+  // grok-tool-catalog.ts), the section names every ready tool instead, plus
+  // what a feature opened for this conversation (turn-reach.ts): a question
+  // about connectors needs no call, and a listed tool no search.
+  volatileSection: ({ botId, serverNames, sessionId, threadId }) => {
+    const known = knownGrokTools(botId, serverNames);
+    const catalog = grokCatalogFor(sessionId);
+    const reach = reachContributions({ ...(botId ? { botId } : {}), ...(threadId ? { threadId } : {}) });
+    if (!catalog && !reach.tools.length && !reach.lines.length) return knownGrokToolsSection(known);
+    return grokCatalogSection({ catalog, known, pinned: reach.tools, lines: reach.lines });
+  },
   onToolCompleted: ({ botId, rawInput }) => recordGrokToolUse(botId, useToolName(rawInput)),
 
   // grok.com sometimes takes 30-90 s to its first token. Normal silent
@@ -1053,6 +1066,8 @@ export async function waitForGrokMcpSettled(
   request: (method: string, params: unknown, timeoutMs: number) => Promise<{ result?: unknown } | undefined>,
   sessionId: string,
   budgetMs: number,
+  /** the last catalog read, settled or not (grok-tool-catalog.ts) */
+  onCatalog?: (catalog: unknown) => void,
 ): Promise<boolean> {
   const deadline = Date.now() + budgetMs;
   for (;;) {
@@ -1060,6 +1075,9 @@ export async function waitForGrokMcpSettled(
     if (left <= 0) return false;
     try {
       const reply = await request("_x.ai/mcp/list", { sessionId, cache: true }, Math.min(10_000, left));
+      if (onCatalog && reply?.result) {
+        try { onCatalog(reply.result); } catch { /* bookkeeping only */ }
+      }
       if (grokMcpSettled(reply?.result)) return true;
     } catch {
       return false;

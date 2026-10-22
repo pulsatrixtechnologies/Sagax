@@ -13803,7 +13803,10 @@
       "vault.phoneScan.expired": "ad417952a8322edf5c43870788e5bc7de1b2877f91757a7db78915734cbf7b80",
       "vault.phoneScan.failed": "8d2fa8649bdce255b5ecd8c87799b69dcee6751aa72aafcb523c60349e94593e",
       "vault.phoneScan.code": "a1fce6fa2291cf31d5bff9f6734cad0dacf9554418d80fa002af58d73d8f768f",
-      "vault.phoneScan.doneNoExpiry": "ee2aba663ae016cc8755144f22e51062b9c2d40966f857b1b7f2bd9d826b3b7e"
+      "vault.phoneScan.doneNoExpiry": "ee2aba663ae016cc8755144f22e51062b9c2d40966f857b1b7f2bd9d826b3b7e",
+      "step.useTool.done": "05cc2beb47f055bbc203c57b0bb5c7abc9d6688dfb2740fc948b0e00ac5e3daa",
+      "step.useTool.failed": "b3d9b2da4f9550de7fece9e21de3cc8ed39d917e9915c0f372588f880a57b16f",
+      "step.useTool.running": "89ffaa8264389d9e837aa6a249efc4e1057bcdc86cad145dfe97a5dae89d0d8c"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

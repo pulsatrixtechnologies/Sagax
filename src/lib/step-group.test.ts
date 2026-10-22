@@ -45,6 +45,24 @@ describe("the steps of a group, opened", () => {
     ]);
   });
 
+  it("folds every finished tool search into one row, so the calls between them merge", () => {
+    // JC 2026-10-21: "Used search tool ×5, Used use tool, Used search tool ×4, Used use tool ×15"
+    const use = (tool: string) => step("use_tool", true, { tool_name: tool, tool_input: { resource: "service.tickets" } });
+    const entries = mergeSteps([
+      step("search_tool", true, { query: "perspicax" }), step("search_tool", true, { query: "remote" }),
+      use("perspicax__cw_psa__query"),
+      step("search_tool", true, { query: "tickets" }),
+      use("perspicax__cw_psa__query"), use("perspicax__cw_psa__query"),
+      step("ToolSearch", true, { query: "select:Read" }),
+      step("search_tool", undefined, { query: "still going" }),
+    ]);
+    expect(entries.map((entry) => entry.kind === "steps" ? [entry.label, entry.messages.length] : entry.kind)).toEqual([
+      ["Looked for a tool", 4],
+      ["Viewed tickets in ConnectWise PSA", 3],
+      ["Looking for a tool", 1],
+    ]);
+  });
+
   it("keeps a turn's narration in its place between the steps", () => {
     const words = said("Now the notes.");
     const entries = mergeSteps([step("Read", true), step("Read", true), words, step("Read", true)]);

@@ -20,6 +20,10 @@ export type StepEntry =
  * state) merged. A step still running is never merged into the ones before. */
 export function mergeSteps(messages: readonly Message[], nameOf?: StepNameOf): StepEntry[] {
   const entries: StepEntry[] = [];
+  // Finished tool searches (Grok's search_tool, Claude's ToolSearch) are
+  // housekeeping: all of them fold into the first one, so the calls they
+  // sat between merge too ("Viewed tickets ×3", not six alternating rows).
+  let searches: Extract<StepEntry, { kind: "steps" }> | undefined;
   for (const message of messages) {
     if (!isToolStep(message)) {
       entries.push({ kind: "message", id: message.id, message });
@@ -27,6 +31,13 @@ export function mergeSteps(messages: readonly Message[], nameOf?: StepNameOf): S
     }
     const reading = readStep(message.tool, nameOf);
     const phase = stepPhase(message.tool);
+    const search = phase === "done" && isToolSearch(message.tool.name);
+    if (search && searches) {
+      searches.messages.push(message);
+      if (searches.target !== reading.target) searches.target = undefined;
+      searches.durationMs = searches.durationMs !== undefined && message.tool.durationMs !== undefined ? searches.durationMs + message.tool.durationMs : undefined;
+      continue;
+    }
     const last = entries.at(-1);
     if (last?.kind === "steps" && last.label === reading.label && last.phase === phase && phase !== "running") {
       last.messages.push(message);
@@ -34,7 +45,7 @@ export function mergeSteps(messages: readonly Message[], nameOf?: StepNameOf): S
       last.durationMs = last.durationMs !== undefined && message.tool.durationMs !== undefined ? last.durationMs + message.tool.durationMs : undefined;
       continue;
     }
-    entries.push({
+    const entry: Extract<StepEntry, { kind: "steps" }> = {
       kind: "steps",
       id: message.id,
       messages: [message],
@@ -42,9 +53,17 @@ export function mergeSteps(messages: readonly Message[], nameOf?: StepNameOf): S
       target: reading.target,
       phase,
       durationMs: message.tool.durationMs,
-    });
+    };
+    if (search) searches = entry;
+    entries.push(entry);
   }
   return entries;
+}
+
+/** A tool search, by the engine's name for it. */
+export function isToolSearch(name: string): boolean {
+  const flat = name.trim().toLowerCase().replace(/\s+/g, "_");
+  return flat === "search_tool" || flat === "toolsearch" || flat === "tool_search";
 }
 
 export type StepGroupSummary = {

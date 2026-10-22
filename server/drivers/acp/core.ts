@@ -495,7 +495,7 @@ export interface AcpSupport {
   mcpToolNames?: "grok";
   /** A context section added to the volatile half each turn. The section
    * split (prompt-split.ts) re-sends it only when its text changes. */
-  volatileSection?(input: { botId?: string; serverNames: string[] }): { id: string; text: string } | null;
+  volatileSection?(input: { botId?: string; serverNames: string[]; sessionId?: string; threadId?: string }): { id: string; text: string } | null;
   /** A tool call finished successfully, with the input it was started with. */
   onToolCompleted?(input: { botId?: string; rawInput: unknown }): void;
   /** Ask once more when the agent sends nothing at all (no text, thought or
@@ -1769,7 +1769,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 (current.toolInputs ??= new Map()).set(u.toolCallId, u.rawInput);
               }
               // Grok's use_tool reads as the MCP tool it runs, not "Use Tool"
-              const useTool = readUseToolCall(u.rawInput);
+              const useTool = readUseToolCall(u.rawInput, { title: u.title, meta: u._meta });
               const toolTitle = useTool?.id ?? (typeof u.title === "string" ? u.title : undefined);
               if (typeof u.toolCallId === "string" && toolTitle && isCwTool(toolTitle)) {
                 (current.cwToolNames ??= new Map()).set(u.toolCallId, toolTitle);
@@ -2646,7 +2646,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // a change re-sends that section alone.
             let volatileSections = turn.systemVolatileSections;
             const extraSection = halves.stable !== null
-              ? support.volatileSection?.({ botId: turn.botId, serverNames: mcpServers.map((server) => server.name) }) ?? null
+              ? support.volatileSection?.({ botId: turn.botId, serverNames: mcpServers.map((server) => server.name), sessionId, threadId }) ?? null
               : null;
             if (extraSection && extraSection.text.trim()) {
               halves = { ...halves, volatile: halves.volatile ? `${halves.volatile}\n\n${extraSection.text}` : extraSection.text };

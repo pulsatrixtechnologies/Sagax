@@ -840,6 +840,7 @@ import * as grokVoice from "./tts/grok.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
+import { reachContributions, reachSummaryPrompt } from "./turn-reach.ts";
 import { commandListAccess, createHarnessCommandRoutes, HarnessCommandCatalog, harnessEngineFor, typedCommandForTurn, unavailableCommandError, type HarnessCommandSource } from "./harness-commands.ts";
 import { groupCommandTarget, resolveTypedCommand, type CommandResolution, type GroupCommandRoute } from "../shared/harness-commands.ts";
 import type { HarnessCommandScope, TurnImageInput } from "./contracts.ts";
@@ -20180,6 +20181,8 @@ async function startTurn(
         { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
         { id: "perspicax", label: "Perspicax", text: perspicaxPrompt },
         { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker) },
+        // what this turn reaches, in one line: "what connectors do you have" needs no tool call (server/turn-reach.ts)
+        { id: "reach", label: "Reach", text: turnReachPrompt(liveBot ?? bot, instance, speaker, threadId, integrations, Boolean(mountedComputer)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
         { id: "data", label: "Data", text: integrations.data ? BUILT_IN_DATA_SYSTEM_PROMPT : "" },
         { id: "coordination", label: "Team", text: coordinationPrompt ? ` ${coordinationPrompt}` : "" },
@@ -26531,6 +26534,29 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
  * runs on: the speaker's own subscription only (server/harness-connectors.ts).
  * `via` is the turn's access; without it (the prompt is built before the
  * access is materialized) the planned access stands in. */
+/** The reach section of a direct turn (server/turn-reach.ts): the servers,
+ * built-in places and provider lines this turn mounted, names only. */
+function turnReachPrompt(bot: BotRecord, instance: Parameters<typeof withholdHostToolsFor>[0] & { instanceId: string }, speaker: TurnSpeaker, threadId: string,
+  integrations: NonNullable<SendTurnInput["integrations"]>, computer: boolean): string {
+  // the same payer-is-speaker rule as the connectors section (engineConnectorsPromptFor)
+  const account = accountConnectorInput(bot, instance, speaker);
+  const builtins = [
+    ...(integrations.browser ? ["the built-in browser"] : []),
+    ...(computer ? ["a computer"] : []),
+    ...(integrations.data ? ["Data"] : []),
+    ...(integrations.phone ? ["the phone"] : []),
+    ...(integrations.messages ? ["messages"] : []),
+    ...(integrations.composio ? ["the person's connected apps (composio)"] : []),
+  ];
+  return reachSummaryPrompt({
+    servers: Object.keys(integrations.custom ?? {}),
+    builtins,
+    claudeAi: claudeAiConnectorsForTurn(account),
+    grokCloud: grokCloudConnectorsForTurn(account) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+    lines: reachContributions({ botId: bot.id, threadId }).lines,
+  });
+}
+
 function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
   return claudeAiConnectorsForTurn(accountConnectorInput(bot, instance, speaker, via));
 }

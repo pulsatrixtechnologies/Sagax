@@ -39,7 +39,9 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * turns of a voice call and the first written turn after it. The Auto
  * workspace rules (server/auto-computer.ts) come and go with the bot's
  * Workspace setting and with who speaks; volatile, so neither relaunches. */
-const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream", "workplace"]);
+// "reach" (server/turn-reach.ts) follows the speaker and what a feature
+// opened for the conversation: volatile, so neither relaunches.
+const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream", "workplace", "reach"]);
 /** Claude Code keeps its process across turns and tells a reused process
  * what changed in its volatile half: the surface paragraph changes when a
  * teammate's reply resumes a person's turn (no computer choice there), and
