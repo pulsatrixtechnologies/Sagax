@@ -431,11 +431,13 @@ describe("screen reader announcements", () => {
     expect(markup).toMatch(/role="log" aria-live="off" aria-label="Conversation with Pepper"/);
   });
 
-  it("does not make the working label a second live region", async () => {
+  it("announces the working line once, never its rotating phrase or ticking time", async () => {
     const { TurnPresence } = await import("./TurnPresence");
-    const markup = renderToStaticMarkup(createElement(TurnPresence, { avatar: null, visible: true, label: "Running a command", since: 1 }));
+    const markup = renderToStaticMarkup(createElement(TurnPresence, { bot: { name: "Pepper", color: "blue" }, visible: true, label: "Running a command", since: 1 }));
     expect(markup).toContain("Running a command");
+    expect(markup).toMatch(/role="status" aria-live="polite"[^>]*><span class="sr-only">Pepper is thinking<\/span>/);
     expect(markup).not.toMatch(/thinking-shimmer[^"]*" aria-live/);
+    expect(markup).toMatch(/<span aria-hidden="true" class="flex items-baseline gap-2"><span data-presence-phrase=""/);
   });
 
   it("renders one visually hidden status line for finished replies", () => {

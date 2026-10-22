@@ -2075,12 +2075,12 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     return cited.citations.length > 0 || attached.images.length > 0 || attached.files.length > 0;
   }, [lastUserMessage]);
 
-  // Mascot while the turn works. Streaming stays invisible — when the reply
-  // is finished, the whole bubble pops in above the mascot.
+  // The activity line while the turn works (TurnPresence): thinking, then
+  // typing once answer text streams. The text itself stays invisible — when
+  // the reply is finished, the whole bubble pops in where the line was.
   // The working line reads the last real message: a finished call's record
   // (and a turn's receipts) can trail a turn that is still working.
   const lastMessage = lastNonReceipt(messages);
-  const toolInFlight = lastMessage?.kind === "activity" && lastMessage.tool?.ok === undefined;
   const activity = liveActivityPhrases(lastMessage);
   const waiting = Boolean(
     bot.busy &&
@@ -2363,18 +2363,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           )}
           <TurnPresence
             ultracode={ultracodeFromSelection(bot.modelSelection)}
-            avatar={
-              // BotAvatar, not a bare MausAvatar: an uploaded profile image
-              // (and a chosen mascot body) must match the sidebar row.
-              <BotAvatar
-                bot={bot}
-                state={toolInFlight ? "working" : "thinking"}
-                size={36}
-                forward={false}
-                lookAround={1}
-                trackPointer={false}
-              />
-            }
+            bot={bot}
+            streamThreadId={bot.threadId}
             visible={presenceVisible}
             phrases={activity.phrases}
             phase={activity.phase}

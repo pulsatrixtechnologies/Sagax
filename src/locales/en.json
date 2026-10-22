@@ -7459,12 +7459,7 @@
   "attach.imageUnavailable": "Image unavailable",
   "attach.imageOutsideWorkspace": "This picture is outside this chat's working folder, so it can't be shown here",
   "attach.moreCount": "+{count} more",
-  "chat.activity.alt.mullingItOver": "Mulling it over",
-  "chat.activity.alt.piecingItTogether": "Piecing it together",
-  "chat.activity.alt.workingItOut": "Working it out",
-  "chat.activity.alt.weighingOptions": "Weighing options",
   "chat.activity.alt.chippingAway": "Chipping away",
-  "chat.activity.alt.diggingIn": "Digging in",
   "chat.activity.alt.liningThingsUp": "Lining things up",
   "chat.activity.alt.makingProgress": "Making progress",
   "chat.activity.alt.checkingTheOutput": "Checking the output",
@@ -9592,5 +9587,13 @@
   "orgSecrets.bot": "Team bot",
   "orgSecrets.add": "Add secret",
   "orgSecrets.remove": "Remove",
-  "orgSecrets.empty": "No team secret yet."
+  "orgSecrets.empty": "No team secret yet.",
+  "chat.presence.phrase.thinkingItOver": "Thinking it over",
+  "chat.presence.phrase.workingItOut": "Working it out",
+  "chat.presence.phrase.pullingItTogether": "Pulling it together",
+  "chat.presence.phrase.checkingTheDetails": "Checking the details",
+  "chat.presence.typing": "Typing…",
+  "chat.presence.thinkingLabel": "{name} is thinking",
+  "chat.presence.typingLabel": "{name} is typing",
+  "chat.presence.someone": "The bot"
 }
