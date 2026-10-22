@@ -344,6 +344,10 @@ describe("turn boundary", () => {
     ensureWorkspace(bot);
     const note = join(workspaceDir(bot), "MEMORY.md");
     writeFileSync(note, "aaaa\n");
+    // A whole-millisecond mtime: utimesSync takes a Date (ms), so restoring a
+    // sub-millisecond mtime read from APFS or ext4 would move it.
+    const whole = new Date(Math.floor(statSync(note).mtimeMs / 1000) * 1000);
+    utimesSync(note, whole, whole);
     const before = statSync(note);
     beginMemoryTurn(bot, "t1");
     endMemoryTurn("t1");

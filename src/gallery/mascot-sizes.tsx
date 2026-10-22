@@ -28,7 +28,7 @@ const rows: { id: string; look: MascotLook; color: string }[] = [
 
 function Gallery() {
   return (
-    <div className="min-h-screen bg-surface p-6 text-ink">
+    <div className="min-h-screen bg-app p-6 text-ink">
       <table>
         <thead>
           <tr>
