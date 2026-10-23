@@ -484,6 +484,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // the bot's own email address from the Perspicax relay (an address, no id, no secret)
   // and its owner's change of it (PUT: the handler checks the owner)
   { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/inbound-mail$/ },
+  // Watch and take over the bot's saved browser. The handler checks the
+  // viewer may use the bot. Install and restart stay admin.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/browser\/live$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/browser\/action$/ },
   { methods: ["GET"], path: /^\/api\/search$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/image$/ },
