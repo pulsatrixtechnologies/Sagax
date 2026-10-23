@@ -118,6 +118,9 @@ async function start() {
       SAGAX_ORG_NAME: "Acme",
       SAGAX_IMAGE: "sagax:test",
       SAGAX_IMAGE_COMMIT: "c0ffee",
+      // C1's broken engine answers 429. Limit failover would resend that
+      // message on a working engine, so the console would never see a failure.
+      SAGAX_LIMIT_FAILOVER: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -294,7 +297,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
 
     const page = await admin("GET", `people/${ids.bob}`, ALICE);
     expect(page.status, page.text).toBe(200);
-    expect(page.body).toMatchObject({ name: "Bob", bots: [{ id: bots.beacon!.id }], connections: { engines: expect.any(Array), mcpServers: [], composioApps: [] }, routinesAsRunner: [] });
+    expect(page.body).toMatchObject({ name: "Bob", bots: [{ id: bots.beacon!.id }], connections: { engines: expect.any(Array), mcpServers: [] }, routinesAsRunner: [] });
     expect((await admin("GET", `people/${ids.alice}`, ALICE)).body.routinesAsRunner).toEqual([{ id: routineId, name: "Daily digest", botId: bots.atlas!.id }]);
     // 2026-10-09: a person's effective permissions (no list from this fake
     // Perspicax: the member defaults); an admin holds every key
@@ -506,7 +509,6 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(connections.status, connections.text).toBe(200);
     expect(connections.body.engines.find((engine: { id: string }) => engine.id === "claude")).toMatchObject({ installed: true, orgKey: true, people: expect.any(Number) });
     expect(connections.body.people.map((entry: any) => entry.person.name)).toEqual(expect.arrayContaining(["Alice", "Bob", "Mona", "Zoe"]));
-    expect(connections.body.composio).toEqual({ configured: false, apps: [] });
     expect(connections.body).toMatchObject({ mcpServers: [], marketplaces: [], skills: [] });
     expect(connections.text).not.toContain("sk-ant-");
     expect((await admin("GET", "connections", MONA)).body.code).toBe("forbidden_role");
@@ -515,7 +517,6 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(test.status, test.text).toBe(200);
     expect(test.body).toEqual({ ok: true, latencyMs: expect.any(Number), reason: null, label: null });
     expect((await admin("POST", "connections/test", ALICE, { kind: "engine", id: "ghost" })).body).toMatchObject({ ok: false, reason: "engine_not_installed" });
-    expect((await admin("POST", "connections/test", ALICE, { kind: "composio", id: "any" })).body).toMatchObject({ ok: false, reason: "not_configured" });
 
     const logs = await admin("GET", "logs?limit=500", ALICE);
     expect(logs.status, logs.text).toBe(200);

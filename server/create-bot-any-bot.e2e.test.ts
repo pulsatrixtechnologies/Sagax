@@ -57,7 +57,7 @@ it("a bot that is not the Primary Bot creates a bot for its person, and a bot-ma
     const bots = (await api("GET", "/api/bots")).bots;
     expect(bots.length).toBe(before + 1);
     const made = bots.find((bot: any) => bot.id === createdId);
-    expect(made).toMatchObject({ name: "Reviewer", section: "Design", composio: false, approvePeerComms: false, soul: "Review the work you are given." });
+    expect(made).toMatchObject({ name: "Reviewer", section: "Design", approvePeerComms: false, soul: "Review the work you are given." });
     expect(made.chiefOfStaff ?? false).toBe(false);
     // the same owner as its maker, and the depth mark never leaves the server
     expect(made.ownerUserId).toBe(bots.find((bot: any) => bot.id === maker.id).ownerUserId);

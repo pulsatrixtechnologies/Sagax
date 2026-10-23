@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
 
 import { launchVerificationServer, runControlOmb } from "../scripts/control-omb.ts";
+import { splitLaunchNote } from "./testing/launch-note.ts";
 import { request } from "../scripts/mcp-server.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,7 +38,7 @@ it("lists the engine's commands and passes a typed one through verbatim", async 
     const bot = (await cli("new-bot", "--name", "Commander")).bot;
     const thread = bot.activeTaskId;
     const sent = () => jsonl(prompts).map((prompt) => {
-      const content = prompt?.message?.content;
+      const content = splitLaunchNote(prompt).prompt?.message?.content;
       return typeof content === "string" ? content : Array.isArray(content) ? content.map((part: any) => part.text ?? "").join("") : "";
     });
     const wait = async () => expect((await cli("wait", "--bot", bot.id, "--task", thread, "--timeout", "40")).status).toBe("settled");
