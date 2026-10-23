@@ -1492,6 +1492,76 @@ describe("Grok voice key migration (2026-10-14)", () => {
   });
 });
 
+describe("onboarding engine key migration", () => {
+  const path = join(DATA_DIR, "config.json");
+  const SECRET = "witness-plaintext-not-a-secret";
+  const readDisk = () => JSON.parse(readFileSync(path, "utf8"));
+
+  beforeEach(() => {
+    mkdirSync(DATA_DIR, { recursive: true });
+    rmSync(path, { force: true });
+    rmSync(join(DATA_DIR, "onboarding-engine-keys.enc"), { force: true });
+    rmSync(join(DATA_DIR, "mcp-oauth.key"), { force: true });
+    delete process.env.SAGAX_IDENTITY;
+  });
+  afterEach(() => {
+    for (const name of ["config.json", "onboarding-engine-keys.enc", "mcp-oauth.key"]) rmSync(join(DATA_DIR, name), { force: true });
+    delete process.env.SAGAX_IDENTITY;
+    vi.restoreAllMocks();
+  });
+
+  it("seals a plaintext API key out of config.json at startup, then the driver still reads it", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    writeFileSync(path, JSON.stringify({
+      instances: { "api-0a1b2c3d": { driver: "openai-compat", displayName: "Prov", config: { url: "https://x.test/v1", key: SECRET, model: "m" } } },
+      defaultModelSelection: { instanceId: "api-0a1b2c3d", model: "m" },
+    }), { mode: 0o600 });
+
+    ensureDirs();
+
+    // config.json no longer holds the key…
+    expect(readDisk().instances["api-0a1b2c3d"].config).toEqual({ url: "https://x.test/v1", model: "m" });
+    expect(readFileSync(path, "utf8")).not.toContain(SECRET);
+    // …the sealed store does, and the running driver gets it back…
+    expect(readFileSync(join(DATA_DIR, "onboarding-engine-keys.enc"), "utf8")).not.toContain(SECRET);
+    if (process.platform !== "win32") expect(statSync(join(DATA_DIR, "onboarding-engine-keys.enc")).mode & 0o777).toBe(0o600);
+    const live = instanceConfigs(loadConfig())["api-0a1b2c3d"]!.config as { key?: string };
+    expect(live.key).toBe(SECRET);
+    // …the log says what moved, never the value…
+    expect(log.mock.calls.map((call) => String(call[0])).join("\n")).not.toContain(SECRET);
+    // …and a second boot leaves the healed file untouched.
+    const written = readFileSync(path, "utf8");
+    ensureDirs();
+    expect(readFileSync(path, "utf8")).toBe(written);
+  });
+
+  it("leaves a built-in provider instance and a key-free config untouched", () => {
+    const disk = JSON.stringify({
+      instances: {
+        openai: { driver: "openai-compat", config: { apiKeyEnv: "SAGAX_OPENAI_API_KEY", url: "https://api.openai.com/v1" } },
+        codex: { driver: "codex" },
+      },
+    });
+    writeFileSync(path, disk, { mode: 0o600 });
+    ensureDirs();
+    expect(readFileSync(path, "utf8")).toBe(disk);
+    expect(instanceConfigs(loadConfig()).openai!.config).not.toHaveProperty("key");
+  });
+
+  it("does not run on an organization server", () => {
+    process.env.SAGAX_IDENTITY = "perspicax";
+    const disk = JSON.stringify({
+      instances: { "api-0a1b2c3d": { driver: "openai-compat", config: { url: "https://x.test/v1", key: SECRET } } },
+    });
+    writeFileSync(path, disk, { mode: 0o600 });
+    ensureDirs();
+    // The org server keeps its shared-key semantics: nothing moved, nothing injected.
+    expect(readFileSync(path, "utf8")).toBe(disk);
+    const live = instanceConfigs(loadConfig())["api-0a1b2c3d"]!.config as { key?: string };
+    expect(live.key).toBe(SECRET);
+  });
+});
+
 describe("legacy feature flag migration", () => {
   const path = join(DATA_DIR, "config.json");
   const readDisk = () => JSON.parse(readFileSync(path, "utf8"));

@@ -11,6 +11,7 @@ import { normalizeImageGenerationUrl, type ImageGenerationConfig } from "../shar
 
 import { writeFileAtomic } from "./atomic.ts";
 import { applyStoredEngineEnv } from "./engine-api-keys.ts";
+import { migrateConfigPlaintextKeys, readOnboardingEngineKey } from "./onboarding-engine-key.ts";
 import { withoutComputerEngine } from "./computer-engine-removal.ts";
 import { newBotDefaultsSchema, type NewBotDefaults } from "./new-bot-defaults.ts";
 import { loopDetectorConfigSchema, type LoopDetectorConfig } from "./loop-detector.ts";
@@ -1275,6 +1276,23 @@ export function ensureDirs() {
   migrateLegacyFeatureFlags();
   migrateLegacyNewBotEffort();
   migrateGrokVoiceKey();
+  migrateOnboardingEngineKeys();
+}
+
+/** Heal an install that was onboarded by an older CLI: a provider API key
+ * written in clear into config.json is moved into the encrypted engine-key
+ * store and stripped from the file, once, before the server's first
+ * loadConfig(). Fail-safe — a key that cannot be sealed stays exactly where
+ * it is, and the move is idempotent. Solo only: an organization server keeps
+ * its shared-key semantics. The key is never logged. */
+function migrateOnboardingEngineKeys(): void {
+  if (process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax") return;
+  try {
+    const moved = migrateConfigPlaintextKeys(DATA_DIR, [OPENAI_API_INSTANCE, OPENROUTER_API_INSTANCE]);
+    if (moved) console.log(`[config] sealed ${moved} onboarding API key(s): removed from config.json, kept in the encrypted store`);
+  } catch (error) {
+    console.error(`[config] could not seal onboarding API keys: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 /** What happens to a Grok voice key of an older build: it becomes the xAI
@@ -2272,6 +2290,26 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
           if (typeof merged[k] !== "string" || !(merged[k] as string).trim()) merged[k] = v;
         }
         entry.config = merged;
+      }
+    }
+    // A CLI onboarding key lives sealed in the encrypted engine-key store, no
+    // longer in clear in config.json. Put it back on this transient instance
+    // config so the driver resolves the key exactly as before. An inline key
+    // (not yet migrated) still wins; built-in provider instances carry no
+    // inline key; an organization server keeps its shared-key semantics.
+    if (
+      entry.driver === "openai-compat" &&
+      id !== OPENAI_API_INSTANCE &&
+      id !== OPENROUTER_API_INSTANCE &&
+      process.env.SAGAX_IDENTITY?.trim().toLowerCase() !== "perspicax"
+    ) {
+      const current =
+        typeof entry.config === "object" && entry.config !== null && !Array.isArray(entry.config)
+          ? (entry.config as Record<string, unknown>)
+          : {};
+      if (typeof current.key !== "string" || !current.key) {
+        const stored = readOnboardingEngineKey(DATA_DIR, id);
+        if (stored) entry.config = { ...current, key: stored };
       }
     }
   }
