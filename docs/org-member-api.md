@@ -42,9 +42,10 @@ Code: `server/org-member-routes.ts`, wired in `server/index.ts`
 
 | Key | Member default | What |
 |---|---|---|
-| `clients.botsRead` | on | list their bots, read their conversations |
+| `clients.botsRead` | on | list their bots, read their conversations, and read rules, documents, memory and connector names of bots they own |
 | `clients.botsMessage` | on | send a message and wait for the answer |
 | `clients.routinesRun` | off | run a routine now, read a run |
+| `clients.routinesRead` | off | list their own routines and read one routine's full instructions |
 | `clients.approvalsAnswer` | off (the bot's owner holds it for their own bots) | allow or deny a card |
 | `clients.peopleNudge` | off | nudge a person |
 | `clients.agentsCreate` | off | create a temporary agent with `agents/create_agent`, delete one with `agents/delete_agent` |
@@ -62,8 +63,14 @@ any other shape, so the plan's `clients.bots.read` is written
 | `POST bots/{id}/messages` | `clients.botsMessage` | send, optionally wait up to 120 s |
 | `GET threads/{id}?since&limit` | `clients.botsRead` | messages since a cursor, steps, pending cards |
 | `GET threads/{id}/stream?anchor&wait` | `clients.botsRead` | watch a running turn, streamed (lot C.3) |
+| `GET routines` | `clients.routinesRead` | the person's own routines |
+| `GET routines/{id}` | `clients.routinesRead` | one routine, full instructions |
 | `POST routines/{id}/run` | `clients.routinesRun` | run now |
 | `GET routines/runs/{id}` | `clients.routinesRun` | one run |
+| `GET bots/{id}/rules` | `clients.botsRead` | rules of a bot the person owns |
+| `GET bots/{id}/docs` | `clients.botsRead` | documents of a bot the person owns |
+| `GET bots/{id}/memory` | `clients.botsRead` | memory of a bot the person owns |
+| `GET bots/{id}/connectors` | `clients.botsRead` | connector names of a bot the person owns |
 | `GET approvals?status=pending` | `clients.botsRead` | the cards waiting on the person, across their conversations (2026-10-17) |
 | `GET approvals/{id}?threadId` | `clients.botsRead` | may the person answer this card (lot C.3) |
 | `POST approvals/{id}` | `clients.approvalsAnswer`, or owning the bot | allow, deny or pick an option |
@@ -217,6 +224,49 @@ most 50), the usage of the finished turns (`cost` null until a turn reported
 one, `costUsd` null when the engine reports no price), every card with its
 outcome (`allow`, `deny`, `answered`, `pending`, `dismissed`, `expired`) and
 who answered it, and the link that opens the thread in Sagax.
+
+### `GET routines`, `GET routines/{id}`
+
+The person sees only routines they own. A shared routine, a redacted routine
+and another person's routine (an admin's view included) are left out of the
+list and answer `404` on the detail route. Reads are not written to the
+activity log.
+
+The list is `{routines: [{id, name, botId, enabled, suspended, schedule,
+nextRunAt, lastRun}]}`. It never includes the instructions. `suspended` is
+`false` or `{reason, at}`. `lastRun` is the newest run of that routine as
+`{id, status, startedAt, endedAt}`, or `null`.
+
+The detail adds `instructions`: the routine's full text, with secret-shaped
+text replaced. There is no length cut. A schedule field whose name is a
+secret (`token`, `signingSecret`, `webhookKey` and the same family) is
+dropped, and a `whsec_` value in any kept text is masked.
+
+### `GET bots/{id}/rules`, `GET bots/{id}/docs`, `GET bots/{id}/memory`, `GET bots/{id}/connectors`
+
+These read a bot only when the catalogue says the caller owns it (`source`
+`mine` and the owner is the caller). A shared bot, a published bot and
+another person's bot are `404` before any file is opened, an admin's view
+included. Without `clients.botsRead` the answer is `403`. Reads are not
+audited.
+
+- `rules`: `{rules, sets}`. `rules` is the text of `RULES.md`. Each set is
+  `{id, name, enabled, text}`. Templates, hashes and file paths stay on the
+  server.
+- `docs`: `{docs: ["docs/<name>.md", ...]}`. `?path=docs/<name>.md` reads
+  that one document as `{path, text}`. Any other path, including `RULES.md`,
+  a memory path or a traversal such as `docs/../RULES.md`, is `400` and
+  opens nothing.
+- `memory`: `{text}` of `MEMORY.md`, empty when the bot has none.
+- `connectors`: `{connectors: [{name, kind, enabled, scope}]}`. `kind` is
+  `mcp` or `browser`. `scope` is `bot`. No address, token or credential is
+  returned, and the bot's soul and memories are not part of this answer.
+
+Text on every one of these routes is passed through the same secret mask as
+a routine's instructions.
+
+Follow-ups, not in this API yet: proposing a routine, routine actions other
+than run now, and an emergency pause.
 
 ### `POST routines/{id}/run`, `GET routines/runs/{id}`
 
