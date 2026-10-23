@@ -3,13 +3,13 @@
 // section is reached through the persona editor, so a deep link to one opens
 // the editor on that section's own page (store: toggleSettings).
 //
-// The editor's left column lists groups (JC 2026-10-14); each section of a
-// group is its own page (JC 2026-10-15: one long page with Appearance at the
+// The editor's left column lists groups (2026-10-14); each section of a
+// group is its own page (2026-10-15: one long page with Appearance at the
 // bottom was confusing). A group's first page is its home: Profile opens on
 // the bot's identity, and its other pages (Appearance, Shared with, What it
 // does) are listed under it. Permissions (with the Perspicax
 // profiles under it), Voice, Usage and Changes are entries of their own
-// (JC 2026-10-15). Memory and its files are one page, the Bot folder.
+// (2026-10-15). Memory and its files are one page, the Bot folder.
 import type { BotSettingsSection } from "@/state/store";
 
 /** Every page the editor can show, in the order they appear. */
@@ -36,7 +36,7 @@ export const PERSONA_CATEGORIES = [
 export type PersonaCategory = (typeof PERSONA_CATEGORIES)[number];
 
 /** The groups of the editor's left column, each with its pages (the first is
- * the group's home). 2026-10-16 (JC: the editor's rail follows Settings'):
+ * the group's home). 2026-10-16 (the editor's rail follows Settings'):
  * each group is a grey heading over its pages, every page an entry of its
  * own; the Bot folder joins Instructions, Voice joins Model and tools,
  * Usage and Changes are Activity. */
@@ -53,7 +53,7 @@ export type PersonaGroup = (typeof PERSONA_GROUPS)[number]["id"];
 const PANEL_SECTIONS: ReadonlySet<BotSettingsSection> = new Set(["details", "routines"]);
 
 /** Sections shown inside another page: the memory is managed in the Bot
- * folder (JC 2026-10-15). */
+ * folder (2026-10-15). */
 const FOLDED_INTO: Partial<Record<BotSettingsSection, PersonaCategory>> = {
   memory: "files",
 };

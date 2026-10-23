@@ -20,7 +20,7 @@ describe("Server environment card (Settings > Computer)", () => {
     expect(markup).toContain('data-server-environment="running"');
     expect(markup).toContain("1 CPU, 1024 MB memory, 2048 MB disk");
     expect(markup).toContain("Show the screen");
-    // Grok Bot's Reset row (0.5.6): a short grey line and a filled red pill;
+    // The reference design's Reset row (0.5.6): a short grey line and a filled red pill;
     // the confirmation still comes first. Nothing opens a browser window.
     expect(markup).toContain('data-settings-row="serverEnvironmentReset"');
     expect(markup).toContain("Reset server environment");

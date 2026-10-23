@@ -1,4 +1,4 @@
-// The quote chip above a bot's reply (2026-10-21, JC: "pour que je sache à
+// The quote chip above a bot's reply (2026-10-21: "pour que je sache à
 // quoi tu me réponds quand tu parles dans Sagax"). A plain single-message turn
 // needs none: the answer sits right under the one message it follows. But when
 // the person explicitly replied to a message, or sent several messages before

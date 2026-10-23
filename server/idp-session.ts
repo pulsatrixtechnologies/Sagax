@@ -8,7 +8,7 @@
 //     (idp-grants.enc, key from SAGAX_IDP_VAULT_KEY, SAGAX_IDP_VAULT_KEY_FILE or
 //     a 0600 idp-grants.key), never in sessions.json, never logged;
 //   - on use, at most every SAGAX_OIDC_REFRESH_AFTER_SECONDS, the grant is
-//     refreshed in the background (one flight per grant). 2026-10-20 (JC:
+//     refreshed in the background (one flight per grant). 2026-10-20 (
 //     no sign-out for a deploy, a restart or a failed refresh): a refusal
 //     (invalid_grant) is asked again once, with the newest token the vault
 //     holds, before it ends that one sign-in; the person is put out (every

@@ -96,7 +96,7 @@ describe("Settings > Experimental", () => {
     expect((toggle as { disabled?: boolean }).disabled).toBe(true);
   });
 
-  it("is laid out as Grok Bot's pages: one group, a label and a switch per feature, no help paragraphs", async () => {
+  it("is laid out as the reference design's pages: one group, a label and a switch per feature, no help paragraphs", async () => {
     fixture.section = "experimental";
     fixture.features = { dataWindow: false, decisionModel: true };
     const html = await render();

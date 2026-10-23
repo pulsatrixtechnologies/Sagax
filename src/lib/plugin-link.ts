@@ -1,4 +1,4 @@
-// "Copy link to this plugin" (2026-10-21, parity with Grok Bot): the page a
+// "Copy link to this plugin" (2026-10-21, parity with the reference design): the page a
 // person can send to someone else about a plugin. A marketplace plugin: its
 // marketplace's repository (owner/repo reads as GitHub). An MCP server: the
 // catalog's documentation page when it is a reviewed one, else its own

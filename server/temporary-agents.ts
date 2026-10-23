@@ -1,4 +1,4 @@
-// Temporary agents (Perspicax #321, JC's decisions of 2026-10-14): every bot
+// Temporary agents (Perspicax #321, the decisions of 2026-10-14): every bot
 // that create_agent makes, for a person's AI client or for a bot, is
 // temporary. This file is the rules only, with no store and no clock of its
 // own; server/index.ts applies them.

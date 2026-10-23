@@ -1,5 +1,5 @@
 // Whether a person on an organization server has at least one engine that
-// can answer them, and what they can do when they have none (2026-10-18, JC:
+// can answer them, and what they can do when they have none (2026-10-18: 
 // "Si aucun LLM/moteur fonctionnel n'est présent lors de la première
 // connexion en organisation, il faut que le setup de ton premier compte soit
 // dans le setup initial, comme on fait en mode sans serveur").
@@ -9,7 +9,7 @@
 // - "ready": an engine offered to pick, admitted on an organization server
 //   (it withholds its own host tools), installed, and paid for by something
 //   (the person's own subscription or key, or the organization's key given
-//   to them). The organization's xAI key alone does not count (JC,
+//   to them). The organization's xAI key alone does not count (the maintainer,
 //   2026-10-16: it pays for voice only), so a Grok engine served only by it
 //   is not a chat engine here. Nothing changes for this person.
 // - "connect": none of that, but the organization allows at least one

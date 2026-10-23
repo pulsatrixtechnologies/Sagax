@@ -2008,7 +2008,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
           </div>
           <div className="ml-auto flex items-center gap-2" style={windowNoDragStyle}>
             {/* Team map left the avatar menu's neighbourhood of Automations
-                (JC, 2026-10-16): it opens from here too */}
+                (2026-10-16): it opens from here too */}
             {!routinesOnly && (
               <button
                 type="button"

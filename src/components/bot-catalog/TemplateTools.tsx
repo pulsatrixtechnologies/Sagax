@@ -223,7 +223,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
     if (file.size > MAX_TEAM_BACKUP_BYTES) throw new Error("That file exceeds the 50 MB import limit.");
     const raw = await file.text();
     let manifest: unknown = raw;
-    // A shared Grok Bot's export (port of OpenMausBot #3073) becomes a package.
+    // A shared the reference design's export (port of OpenMausBot #3073) becomes a package.
     if (isGrokExport(raw)) {
       preview(grokPreviewFrom(raw).pending, "grok");
       return;

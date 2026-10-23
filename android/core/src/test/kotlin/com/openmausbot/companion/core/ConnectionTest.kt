@@ -119,7 +119,7 @@ class ConnectionTest {
         assertEquals(9910, connection?.port)
 
         val invite = PairingInvite.parse(
-            URI("openmausbot://pair?address=192.168.1.3%25en0%3A9910&code=004209"),
+            URI("sagax://pair?address=192.168.1.3%25en0%3A9910&code=004209"),
         )
         assertEquals("192.168.1.3", invite?.connection?.host)
         assertEquals(9910, invite?.connection?.port)
@@ -215,7 +215,7 @@ class ConnectionTest {
     fun parsesADesktopPairingInvite() {
         val token = "omb_pair_" + "a".repeat(43)
         val invite = PairingInvite.parse(
-            URI("openmausbot://pair?address=macbook.tail1234.ts.net%3A8810&token=$token&code=004209&name=Milind%27s%20Mac"),
+            URI("sagax://pair?address=macbook.tail1234.ts.net%3A8810&token=$token&code=004209&name=Milind%27s%20Mac"),
         )!!
         assertEquals("macbook.tail1234.ts.net", invite.connection.host)
         assertEquals(8810, invite.connection.port)
@@ -226,21 +226,21 @@ class ConnectionTest {
     @Test
     fun literalPlusInPairingInviteNameIsPreserved() {
         val invite = PairingInvite.parse(
-            URI("openmausbot://pair?address=mac.local&code=004209&name=Ada%27s+Mac"),
+            URI("sagax://pair?address=mac.local&code=004209&name=Ada%27s+Mac"),
         )
         assertEquals("Ada's+Mac", invite?.connection?.name)
     }
 
     @Test
     fun parsesAnOlderCodeOnlyPairingInvite() {
-        val invite = PairingInvite.parse(URI("openmausbot://pair?address=mac.local&code=004209"))
+        val invite = PairingInvite.parse(URI("sagax://pair?address=mac.local&code=004209"))
         assertEquals("004209", invite?.credential)
     }
 
     @Test
     fun pairingInviteKeepsOnlyFallbackHostsAllowedByItsSelectedRoute() {
         val invite = PairingInvite.parse(URI(
-            "openmausbot://pair?address=macbook.tail1234.ts.net%3A8810&code=004209" +
+            "sagax://pair?address=macbook.tail1234.ts.net%3A8810&code=004209" +
                 "&hosts=macbook.tail1234.ts.net,192.168.1.42,openmausbot-aa.local",
         ))!!
         assertEquals(
@@ -262,7 +262,7 @@ class ConnectionTest {
         """.trimIndent()
         val token = "omb_pair_" + "a".repeat(43)
         val invite = assertNotNull(PairingInvite.parse(URI(
-            "openmausbot://pair?address=192.168.1.42%3A8810&token=$token&endpoints=${base64Url(routes)}",
+            "sagax://pair?address=192.168.1.42%3A8810&token=$token&endpoints=${base64Url(routes)}",
         )))
 
         assertEquals("https://mac.example", invite.connection.baseUrl.toString())
@@ -289,29 +289,29 @@ class ConnectionTest {
         )
         invalidRoutes.forEach { routes ->
             val invite = PairingInvite.parse(URI(
-                "openmausbot://pair?address=192.168.1.42%3A8810&token=$token&endpoints=${base64Url(routes)}",
+                "sagax://pair?address=192.168.1.42%3A8810&token=$token&endpoints=${base64Url(routes)}",
             ))
             assertNull(invite, routes)
         }
         assertNull(PairingInvite.parse(URI(
-            "openmausbot://pair?address=192.168.1.42%3A8810&token=$token&endpoints=not-json",
+            "sagax://pair?address=192.168.1.42%3A8810&token=$token&endpoints=not-json",
         )))
         assertNull(PairingInvite.parse(URI(
-            "openmausbot://pair?address=192.168.1.42%3A8810&token=$token&endpoints=",
+            "sagax://pair?address=192.168.1.42%3A8810&token=$token&endpoints=",
         )))
         assertNull(PairingInvite.parse(URI(
-            "openmausbot://pair?address=192.168.1.42%3A8810&token=$token&endpoints=${"a".repeat(8_193)}",
+            "sagax://pair?address=192.168.1.42%3A8810&token=$token&endpoints=${"a".repeat(8_193)}",
         )))
     }
 
     @Test
     fun dropsUnusableFallbackHostsWithoutRefusingTheInvite() {
         val invite = PairingInvite.parse(URI(
-            "openmausbot://pair?address=mac.local&code=004209&hosts=%20192.168.1.42%20,,bad%2Fslash,has%20space",
+            "sagax://pair?address=mac.local&code=004209&hosts=%20192.168.1.42%20,,bad%2Fslash,has%20space",
         ))!!
         assertEquals(emptyList(), invite.connection.hosts)
         val empty = PairingInvite.parse(
-            URI("openmausbot://pair?address=mac.local&code=004209&hosts=bad%2Fslash"),
+            URI("sagax://pair?address=mac.local&code=004209&hosts=bad%2Fslash"),
         )
         assertNull(empty?.connection?.hosts)
     }
@@ -557,11 +557,11 @@ class ConnectionTest {
     fun rejectsUntrustedOrMalformedPairingInvites() {
         listOf(
             "https://example.com/pair?address=mac.local&code=123456",
-            "openmausbot://pair?address=mac.local&code=12345",
-            "openmausbot://pair?address=mac.local&token=weak",
-            "openmausbot://pair?address=mac.local&token=weak&code=123456",
-            "openmausbot://pair?address=host%2Fpath&code=123456",
-            "openmausbot://pair?address=one.local&address=two.local&code=123456",
+            "sagax://pair?address=mac.local&code=12345",
+            "sagax://pair?address=mac.local&token=weak",
+            "sagax://pair?address=mac.local&token=weak&code=123456",
+            "sagax://pair?address=host%2Fpath&code=123456",
+            "sagax://pair?address=one.local&address=two.local&code=123456",
         ).forEach { assertNull(PairingInvite.parse(URI(it)), it) }
     }
 

@@ -112,7 +112,7 @@ export function WelcomeFlow({
   const { capabilities } = useDesktopCapabilities();
   const beats = beatsFor({ dictation: dictation ?? capabilities.dictation.available, reel, hosted });
   const [beat, setBeat] = useState<BeatId>(() => (initialBeat && beats.includes(initialBeat) ? initialBeat : "hello"));
-  // the Pulsatrix mark replaced the guide mascot (JC 2026-10-14); beats still
+  // the Pulsatrix mark replaced the guide mascot (2026-10-14); beats still
   // drive these so their setMascot/bump calls stay valid
   const [, setMascot] = useState<MausState>(MASCOT_FOR_BEAT[beat]);
   const [, setMotion] = useState<{ kind: Motion; key: number }>({ kind: "blink", key: 0 });

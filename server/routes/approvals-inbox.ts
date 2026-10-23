@@ -59,7 +59,7 @@ export function inboxSpecialCard(card: OptionCardData): boolean {
 }
 
 /** Fields a single card's answer may carry and a bulk answer never does.
- * 2026-10-19 (JC): `rule: "allow"` is the one widening a bulk Allow takes:
+ * 2026-10-19: `rule: "allow"` is the one widening a bulk Allow takes:
  * each card keeps its own Always allow, its exact scope, never a wider one. */
 const WIDENING_FIELDS = ["always", "alwaysAllow", "rememberCommand", "stepUp", "message", "autoApprove", "refreshPermissions"] as const;
 const ID = /^[\w-]{1,120}$/;

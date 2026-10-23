@@ -1,4 +1,4 @@
-// R13 wiring (parité Grok Bot V4, 59, 83), kept out of server/index.ts: the
+// R13 wiring (parité the reference design V4, 59, 83), kept out of server/index.ts: the
 // phone call cards (server/outbound-calls.ts) and the purchase cards of the
 // payment vault (server/credential-vault.ts) in the conversation, the
 // person's answer routes, the Primary Bot's pending list, and the wake-up
@@ -66,7 +66,7 @@ export function purchaseCardFallback(listing: PurchaseListing): string {
 }
 
 /** What a Primary Bot's answer means on a phone call or a purchase card:
- * this once, or no. An Always allow is refused (JC 2026-10-22: every call
+ * this once, or no. An Always allow is refused (2026-10-22: every call
  * and every purchase its own card), never read as a yes. */
 export function primaryOutboundDecision(kind: "call" | "purchase", body: { behavior?: unknown; always?: unknown }): { decision: string } | { refused: string } {
   if (body.always === true) return { refused: "Always allow is not offered for a phone call or a purchase: each one needs its own approval. Answer allow (this once) or deny." };

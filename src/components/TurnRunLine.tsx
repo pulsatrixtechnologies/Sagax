@@ -20,7 +20,7 @@ export function turnRunText(
  * The caller decides when it shows (a pointer resting on the reply, or
  * keyboard focus inside the message row, a `group`); this only fades. It
  * is always laid out, so showing it never pushes the reply above it
- * (JC, 2026-10-15). */
+ * (2026-10-15). */
 export function TurnRunLine({ run, visible }: { run: NonNullable<Message["turnRun"]>; visible: boolean }) {
   const { state } = useStore();
   return (

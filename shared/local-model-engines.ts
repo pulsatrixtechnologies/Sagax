@@ -64,7 +64,7 @@ export interface LocalModelFacts {
 
 /** Picker labels for one local server's models: "DwarfStar: Qwen3.8 Flash
  * Next". Several ids under one name stay apart by what tells them apart,
- * not by the whole id (2026-10-13, JC: three rows read "DwarfStar: Qwen3.8
+ * not by the whole id (2026-10-13: three rows read "DwarfStar: Qwen3.8
  * Flash Next (qwen3.8-f..." once truncated). DwarfStar serves one model as
  * `qwen3.8-flash-next`, `-chat` and `-reasoner`: the shortest id keeps the
  * name, the others add their own end ("Chat", "Reasoner"). Ids that do not

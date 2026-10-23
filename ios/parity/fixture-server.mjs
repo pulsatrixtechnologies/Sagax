@@ -247,9 +247,9 @@ const BOTS = [
 const GROUP = { name: "Peer Managers", members: ["ara", "helios", "liora"] };
 
 // PARITY_HOME picks what the home's top shows, for the home parity captures
-// (Grok Bot iOS 1.14, 2026-10-18). Unset: the reference set above (two
+// (the reference design iOS 1.14, 2026-10-18). Unset: the reference set above (two
 // pinned bots and a pinned group). "primary": Ara is the Primary Bot with
-// no section and nothing else is pinned, the way Grok Bot shows its one
+// no section and nothing else is pinned, the way the reference design shows its one
 // primary bot centred; "Transformation Numérique" is named "My team", the
 // default team name an import gives. "none": nothing pinned, no Primary Bot.
 // "mixed": the reference pins (Helios and the group) plus Ara as the

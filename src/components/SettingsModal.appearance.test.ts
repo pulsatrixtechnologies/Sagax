@@ -161,7 +161,7 @@ describe("Settings → Appearance", () => {
     expect(html).not.toContain("Maximum turn length");
   });
 
-  it("is laid out as Grok Bot's pages: grey headings, compact rows, pill menus, no help text", () => {
+  it("is laid out as the reference design's pages: grey headings, compact rows, pill menus, no help text", () => {
     const html = render();
     const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
     expect(groups).toEqual(["interface", "skin", "backgroundEffects", "conversation", "sidebar", "mascots", "accessibility", "desktop"]);
@@ -466,7 +466,7 @@ describe("Settings → Notifications", () => {
     expect(html).toContain("On macOS, also choose Alerts in System Settings &gt; Notifications.");
   });
 
-  it("is laid out as Grok Bot's Notifications: grey headings, a switch per row, no intro paragraph", () => {
+  it("is laid out as the reference design's Notifications: grey headings, a switch per row, no intro paragraph", () => {
     fixture.section = "notifications";
     const html = render();
     const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);

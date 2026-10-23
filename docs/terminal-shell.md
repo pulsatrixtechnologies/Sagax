@@ -13,7 +13,7 @@ terminal on. Two kinds (`scope`):
 
 | Provider | Scope | What it is | Who may open it |
 |----------|-------|------------|-----------------|
-| `sandbox` | personal | The person's cloud computer (their server environment: Docker or, on GOX, Kubernetes through the provisioner) | The person, for their own bot (an admin: from any bot) |
+| `sandbox` | personal | The person's cloud computer (their server environment: Docker or, on a hosted organization server, Kubernetes through the provisioner) | The person, for their own bot (an admin: from any bot) |
 | `local-vm` | personal | Organization: the Local VM on the person's computer, through their Sagax app. Solo: this server's Local VM of the bot | Same |
 | `desktop` | personal | "Cet ordinateur". Organization: the person's computer through their Sagax app, when their Where bots work is their computer or the bot works there. Solo: this computer, only when the server is the Sagax app on it | Same |
 | `ssh`, `unraid` | server | A host of the server from `config.json` (`terminalShell.hosts[]`, `terminalShell.unraidSshAlias`, `SAGAX_UNRAID_SSH_ALIAS`, `vps.sshAlias`) | Organization admins (a solo server's operator) |

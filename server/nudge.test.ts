@@ -73,7 +73,7 @@ describe("nudge transcript line", () => {
     return { store, appended, unread, created };
   }
 
-  const line = { fromId: "pr_jean", fromName: "Jean-Christophe", toId: "pr_ada", toName: "Ada", at: 50 };
+  const line = { fromId: "pr_jean", fromName: "Alex", toId: "pr_ada", toName: "Ada", at: 50 };
 
   it("appends the line to the conversation the two people already share", () => {
     const fixture = harness({ id: "dm-1", threadId: "thread-1" });
@@ -88,7 +88,7 @@ describe("nudge transcript line", () => {
         role: "bot",
         kind: "nudge",
         at: 50,
-        nudge: { fromId: "pr_jean", fromName: "Jean-Christophe", toId: "pr_ada", toName: "Ada" },
+        nudge: { fromId: "pr_jean", fromName: "Alex", toId: "pr_ada", toName: "Ada" },
       },
     }]);
   });
@@ -96,7 +96,7 @@ describe("nudge transcript line", () => {
   it("opens the conversation when they do not share one yet", () => {
     const fixture = harness();
     recordNudgeLine(fixture.store, line);
-    expect(fixture.created).toEqual(["Jean-Christophe, Ada"]);
+    expect(fixture.created).toEqual(["Alex, Ada"]);
     expect(fixture.appended[0]?.threadId).toBe("thread-new");
     expect(fixture.unread).toEqual(["dm-new:pr_ada"]);
   });
@@ -113,7 +113,7 @@ describe("nudge transcript line", () => {
         role: "bot",
         kind: "nudge",
         at: 50,
-        nudge: { fromId: "pr_jean", fromName: "Jean-Christophe", toId: "room-1", toName: "Launch planning", groupId: "room-1" },
+        nudge: { fromId: "pr_jean", fromName: "Alex", toId: "room-1", toName: "Launch planning", groupId: "room-1" },
       },
     }]);
   });

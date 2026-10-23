@@ -55,7 +55,7 @@ describe("ConnectWise widget", () => {
 
   it("draws a valid ```cw fence however the bot lays it out", () => {
     const widget = { family: "ticket", view: "list", records: [
-      { id: 297048, summary: "RS&DE | suivi $1,200", status: "Nouveau", company: "GOX", actualHours: 1.5 },
+      { id: 297048, summary: "RS&DE | suivi $1,200", status: "Nouveau", company: "Acme", actualHours: 1.5 },
       { id: 297049, summary: "Imprimante", status: { name: "En analyse" }, company: { name: "Acme" } },
     ] };
     const layouts = [

@@ -1,5 +1,5 @@
-// The model reviewer of custom rules (examen automatique, 2026-10-21, Grok
-// Bot parity A1; JC: "OUI, comme Grok"). A card the deterministic matcher
+// The model reviewer of custom rules (examen automatique, 2026-10-21, reference
+// design parity A1; Decision: "OUI, comme Grok"). A card the deterministic matcher
 // left to the person (server/custom-rules-review.ts) is judged by a light,
 // isolated, tool-free model (the bot's own engine's reviewPermission: Haiku
 // on Claude) against the person's rules and the organization's. It answers

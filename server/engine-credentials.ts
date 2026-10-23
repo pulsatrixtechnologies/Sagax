@@ -34,7 +34,7 @@
 //      otherwise                                        -> no_access (server_engine_not_allowed)
 //   6. otherwise                                        -> no_access (no_credentials)
 //
-// JC, 2026-10-01, superseding the 2026-09-28 decision 7 ("the owner key
+// Decision of 2026-10-01, superseding the 2026-09-28 decision 7 ("the owner key
 // serves everyone") and the slice 3 rules: the owner's credentials never pay
 // for the people the bot is shared with; there is no organization switch
 // for the org key any more (it serves whenever an admin set one); and the
@@ -168,7 +168,7 @@ export interface EngineCredentialInput {
   /** The payer has a file-backed key on this server (engine-api-keys.ts).
    * Absent means none. It never names another person. */
   hasLocalKey?: (principalId: string, driver: string) => boolean;
-  /** 2026-10-16 (JC): whether this person may run this engine instance on
+  /** 2026-10-16: whether this person may run this engine instance on
    * the organization's key (an admin: always; a member: when Perspicax lists
    * it in their `sagax_server_engines`). Absent means allowed (solo, tests
    * written before). Their own subscription and keys never ask it. */

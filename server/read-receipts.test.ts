@@ -109,7 +109,7 @@ describe("read receipts: storage", () => {
 
   it("Store.markRead moves forward, emits thread.read and never writes the transcript", () => {
     const store = new Store(selection);
-    const bot = store.createBot({ name: "Cryptic" });
+    const bot = store.createBot({ name: "Quasar" });
     const first = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "one" });
     const second = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "two" });
     const changes: StoreChange[] = [];
@@ -135,7 +135,7 @@ describe("read receipts: storage", () => {
 
   it("stamps who read and when, per thread, for the Seen by tooltip", () => {
     const store = new Store(selection);
-    const bot = store.createBot({ name: "Cryptic" });
+    const bot = store.createBot({ name: "Quasar" });
     const other = store.createTask(bot.id, "Second thread", false)!;
     const here = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "here" });
     const there = store.appendMessage(other.threadId, { role: "user", kind: "text", text: "there" });

@@ -176,8 +176,8 @@ describe("Computer tab on an organization server", () => {
   });
 
   it("keeps the caption on one line, with the whole name in its tooltip", () => {
-    const markup = renderToStaticMarkup(createElement(ComputerScreen, { source: "local", state: "off", caption: "Assistant's screen · Jean-Christophes-Macbook-Pro.local", controls: {} }));
-    expect(markup).toMatch(/<figcaption class="truncate[^"]*" title="Assistant&#x27;s screen · Jean-Christophes-Macbook-Pro.local">/);
+    const markup = renderToStaticMarkup(createElement(ComputerScreen, { source: "local", state: "off", caption: "Assistant's screen · Alexs-MacBook-Pro.local", controls: {} }));
+    expect(markup).toMatch(/<figcaption class="truncate[^"]*" title="Assistant&#x27;s screen · Alexs-MacBook-Pro.local">/);
   });
 });
 

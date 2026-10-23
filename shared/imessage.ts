@@ -1,4 +1,4 @@
-// Messages on the Mac where this Sagax process runs (parity #28, JC
+// Messages on the Mac where this Sagax process runs (parity #28, the maintainer
 // 2026-10-21: desktop app only, allowed recipients, send cards).
 //
 // Not a desktop-bridge action. An organization server must not reach the

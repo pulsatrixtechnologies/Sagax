@@ -6,7 +6,7 @@
 //        and lines when the model cannot). Reading the conversation is the
 //        only right it needs.
 //   POST /api/bots/:id/team-bot-carry   410 private_memory_never, always.
-//        JC 2026-10-21: a Team Bot copied from a conversation takes the
+//        2026-10-21: a Team Bot copied from a conversation takes the
 //        persona, the rules, the plugins and the team's shared memory (it
 //        stays in the same team), never a conversation nor the bot's own
 //        memory, which is its owner's. The route that used to copy memory

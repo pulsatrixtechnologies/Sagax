@@ -1,4 +1,4 @@
-// Settings > Computer on an organization server, laid out as Grok Bot's
+// Settings > Computer on an organization server, laid out as the reference design's
 // Computer page (0.5.6, JC): "Your computer" with its name, rows with one
 // short grey line, the other computers behind a count pill, the activity
 // still hidden (#555), then "Bots' computer" with Reset as a red pill.
@@ -28,7 +28,7 @@ const render = (status: DesktopBridgeStatus) => renderToStaticMarkup(createEleme
 
 afterEach(() => setLocale("en"));
 
-describe("Settings > Computer, Grok Bot's layout", () => {
+describe("Settings > Computer, the reference design's layout", () => {
   it("groups Your computer (with its name) then Bots' computer, local models folded between them", () => {
     const html = render(bridge());
     const at = ['data-settings-group="yourComputer"', "data-computer-name", 'data-settings-group="botsComputer"'].map((text) => html.indexOf(text));

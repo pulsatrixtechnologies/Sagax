@@ -5,7 +5,7 @@ import { t } from "@/lib/i18n";
 import type { Action } from "@/state/store";
 
 /**
- * What a click on the chat header's bot pill dispatches (Grok Bot parity,
+ * What a click on the chat header's bot pill dispatches (the reference design parity,
  * 2026-10-18): it opens the bot panel when none is open and closes it when
  * it is open, whichever tab (Details, Library, Computer) is showing. The
  * Computer tab is the computer slot, so closing clears both, like the

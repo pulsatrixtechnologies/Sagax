@@ -1,4 +1,4 @@
-// The Automations page's scope control and filters (2026-10-09, JC): Mine,
+// The Automations page's scope control and filters (2026-10-09): Mine,
 // My teams and Everyone, then Team, Owner and Status. My teams needs
 // routines.viewTeam and Everyone routines.viewAll (an admin holds both);
 // without the key the choice stays visible, disabled, and its tooltip names

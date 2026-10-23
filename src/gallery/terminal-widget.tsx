@@ -73,7 +73,7 @@ window.fetch = async (input, init) => {
   return realFetch(input, init);
 };
 
-const EMBED: TerminalEmbed = { sessionId: "gallery", status: "live", label: "Cet ordinateur", hostLabel: "Jean-Christophes-Macbook-Pro.local", provider: "desktop", resourceId: "mine" };
+const EMBED: TerminalEmbed = { sessionId: "gallery", status: "live", label: "Cet ordinateur", hostLabel: "Alexs-MacBook-Pro.local", provider: "desktop", resourceId: "mine" };
 const EMBED_2: TerminalEmbed = { sessionId: "gallery-2", status: "live", label: "Ordinateur infonuagique", hostLabel: "Environnement serveur", provider: "sandbox", resourceId: "mine" };
 // each visit starts without remembered windows
 try {

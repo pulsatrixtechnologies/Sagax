@@ -1,5 +1,5 @@
-// Midnight is Grok Bot's own dark theme. JC, 2026-10-14: "Le thème Midnight
-// de Sagax doit être identique au thème de Grok Bot." Grok Bot (0.70.2) ships
+// Midnight is the reference design's own dark theme. JC, 2026-10-14: "Le thème Midnight
+// de Sagax doit être identique au thème de the reference design." the reference design (0.70.2) ships
 // "Sand Light" and "Sand Dark"; its dark window is Sand Dark, a neutral ramp
 // (window #121212, rail #0e0e0e, pane #161616, raised #1f1f1f) with
 // translucent whites over it. This pins those values, and that the key pairs
@@ -74,9 +74,9 @@ const SURFACES = [
   "--color-elevated",
 ];
 
-// Sand Dark, resolved: primitives neutral/0..5, base #f5f5f5 at Grok Bot's
+// Sand Dark, resolved: primitives neutral/0..5, base #f5f5f5 at the reference design's
 // dark opacities (text 66/54%, hover 6%, selected 10%, user bubble 18%).
-const GROK_BOT_SAND_DARK: Record<string, string> = {
+const REFERENCE_SAND_DARK: Record<string, string> = {
   "--color-app": "#121212",
   "--color-sidebar": "#0e0e0e",
   "--color-panel": "#161616",
@@ -94,7 +94,7 @@ const GROK_BOT_SAND_DARK: Record<string, string> = {
   "--color-sidebar-ink": "#f5f5f5",
   "--color-sidebar-ink-secondary": "#f5f5f5a8",
   "--color-sidebar-hover": "#f5f5f50f",
-  "--color-sidebar-selected": "#f5f5f514", // 8 % (#575, #202020 measured on Grok Bot)
+  "--color-sidebar-selected": "#f5f5f514", // 8 % (#575, #202020 measured on the reference design)
   "--color-accent": "#f5f5f5",
   "--color-accent-border": "#dbdbdb",
   "--color-accent-ink": "#121212",
@@ -105,23 +105,23 @@ const GROK_BOT_SAND_DARK: Record<string, string> = {
   "--color-warning": "#e28600",
 };
 
-describe("Midnight skin: Grok Bot's Sand Dark", () => {
+describe("Midnight skin: the reference design's Sand Dark", () => {
   it("resolves every surface it paints", () => {
     for (const surface of SURFACES) expect(tokens[surface], surface).toMatch(/^#[0-9a-f]{6}$/);
   });
 
-  it("takes Grok Bot's values", () => {
-    for (const [token, value] of Object.entries(GROK_BOT_SAND_DARK)) expect(tokens[token], token).toBe(value);
+  it("takes the reference design's values", () => {
+    for (const [token, value] of Object.entries(REFERENCE_SAND_DARK)) expect(tokens[token], token).toBe(value);
   });
 
-  it("paints neutral greys, as Grok Bot does", () => {
+  it("paints neutral greys, as the reference design does", () => {
     for (const surface of SURFACES) {
       const { r, g, b } = rgb(tokens[surface]!);
       expect(Math.max(r, g, b) - Math.min(r, g, b), surface).toBeLessThanOrEqual(2);
     }
   });
 
-  it("keeps Grok Bot's ladder: the rail under the window, each step lighter", () => {
+  it("keeps the reference design's ladder: the rail under the window, each step lighter", () => {
     const ladder = ["--color-sidebar", "--color-app", "--color-panel", "--color-inset", "--color-card", "--color-raised-hover", "--color-bubble-user"];
     const values = ladder.map((token) => luminance(rgb(tokens[token]!)));
     for (let i = 1; i < values.length; i++) expect(values[i], ladder[i]).toBeGreaterThan(values[i - 1]!);

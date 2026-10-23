@@ -10,7 +10,7 @@
 //   local_vm       the Local VM on their computer (sagax-desktop local_vm)
 //   browser        the built-in browser only, for pure web work
 //
-// Where an Auto turn starts (autoStartTarget, JC 2026-10-15): their own
+// Where an Auto turn starts (autoStartTarget, 2026-10-15): their own
 // computer when it is connected (a routine only when they allowed routines on
 // it), else the cloud; a thread opened with a workspace (start_thread,
 // create_agent) starts there when it is allowed, else falls back and says so.
@@ -184,7 +184,7 @@ export function autoComputerToolRefusal(
     : "Call computer_select with target this_computer or local_vm before using the tools on the person's computer.";
 }
 
-/** The standing rules of an Auto bot (JC 2026-10-15). They ride in the
+/** The standing rules of an Auto bot (2026-10-15). They ride in the
  * system prompt's volatile "workplace" section (server/system-prompt.ts):
  * a reused engine session gets them once, not appended to every message
  * (2026-10-20 perf parity, round 4: 2,300 characters per message, about
@@ -220,7 +220,7 @@ export interface AutoStart {
   fallback: WorkspaceFallbackReason | null;
 }
 
-/** Where an Auto turn starts (JC 2026-10-15). Pure: tested on its own.
+/** Where an Auto turn starts (2026-10-15). Pure: tested on its own.
  * - Default: the person's own computer when their Sagax app is connected
  *   and a person asked; a routine only when the owner allowed routines on
  *   their computer AND it is online, else the cloud.

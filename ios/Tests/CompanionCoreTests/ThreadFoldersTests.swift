@@ -85,9 +85,9 @@ final class ThreadFoldersTests: XCTestCase {
     // MARK: Link
 
     func testThreadLinkMatchesTheDesktopsThreadRefUrl() {
-        XCTAssertEqual(ThreadLink.url(ownerId: "bot-1", threadId: "t_9"), "openmausbot://thread/t_9?bot=bot-1")
+        XCTAssertEqual(ThreadLink.url(ownerId: "bot-1", threadId: "t_9"), "sagax://thread/t_9?bot=bot-1")
         // encodeURIComponent keeps !~*'() and escapes the rest
-        XCTAssertEqual(ThreadLink.url(ownerId: "a b", threadId: "x/y?z"), "openmausbot://thread/x%2Fy%3Fz?bot=a%20b")
+        XCTAssertEqual(ThreadLink.url(ownerId: "a b", threadId: "x/y?z"), "sagax://thread/x%2Fy%3Fz?bot=a%20b")
         XCTAssertEqual(ThreadLink.encodeURIComponent("it's(ok)!~*"), "it's(ok)!~*")
     }
 

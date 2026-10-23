@@ -6,9 +6,8 @@
 // activity contract lives here — and so every shape is unit-testable.
 import Foundation
 
-/// The app's only URL scheme. Servers and desktops from 0.4.0 emit
-/// `sagax://` for phone links; the upstream `openmausbot://` is not
-/// registered by this app and is ignored.
+/// The app's only URL scheme. Servers and desktops emit `sagax://` for
+/// every phone link; any other scheme is ignored.
 public enum CompanionURLScheme {
     public static let name = "sagax"
     public static let all: Set<String> = [name]

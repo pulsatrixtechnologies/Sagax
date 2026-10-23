@@ -34,7 +34,7 @@ Each of these was found while reading the code for this plan:
 
 ## Global Constraints
 
-- Work only in the worktree `~/Desktop/openmaus/OpenGrokBot-mailbox`, on branch `feat/delegation-mailbox`. Never touch `~/Desktop/openmaus/OpenGrokBot`.
+- Work only in the worktree `~/src/sagax-mailbox`, on branch `feat/delegation-mailbox`. Never touch `~/src/sagax`.
 - Commit locally after each task. **Never push. Never open a PR.** Omkar owns publishing.
 - End every commit message with: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
 - Server-only change. No edits under `src/`, `ios/`, `android/`.

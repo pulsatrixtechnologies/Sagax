@@ -1,5 +1,5 @@
 // Settings nav in headed groups (2026-10-16, JC): as Cursor Settings and
-// Grok Bot keep their rail short, Sagax groups its pages under Personal, AI,
+// the reference design keep their rail short, Sagax groups its pages under Personal, AI,
 // Installation and App. Every page stays reachable, the search keeps working,
 // and a heading with nothing under it is not drawn.
 import { createElement } from "react";

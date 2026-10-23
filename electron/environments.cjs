@@ -83,8 +83,7 @@ const SIGN_IN_CREDENTIAL = /^(?:sgx|omb)_pair_[A-Za-z0-9_-]{43}$/;
 const SIGN_IN_ERROR = /^[a-z_]{1,40}$/;
 
 /** "Sign in with Pulsatrix" in the system browser comes back as
- * `sagax://auth?origin=<saved server>#code=<pairing credential>` (or
- * openmausbot://auth, from a server that predates sagax://) or
+ * `sagax://auth?origin=<saved server>#code=<pairing credential>` or
  * `#error=<code>`. Returns {origin, code} or {origin, error} for a SAVED
  * server only, else null. The credential travels in the hash only, never
  * the query. */
@@ -96,7 +95,7 @@ function parseAuthReturnLink(input, state) {
   } catch {
     return null;
   }
-  if ((url.protocol !== "sagax:" && url.protocol !== "openmausbot:") || url.host !== "auth" || (url.pathname !== "" && url.pathname !== "/")) return null;
+  if (url.protocol !== "sagax:" || url.host !== "auth" || (url.pathname !== "" && url.pathname !== "/")) return null;
   if (url.username || url.password) return null;
   const keys = [...url.searchParams.keys()];
   if (keys.length !== 1 || keys[0] !== "origin") return null;

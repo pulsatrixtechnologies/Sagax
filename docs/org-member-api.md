@@ -291,7 +291,7 @@ read through the person's own read (a thread they cannot see stays out),
 confidential threads never listed, at most 50 waiting threads read.
 
 ```json
-{ "count": 1, "approvals": [{ "id": "req_4", "threadId": "a5fe...", "botId": "b_31...", "botName": "Cryptic",
+{ "count": 1, "approvals": [{ "id": "req_4", "threadId": "a5fe...", "botId": "b_31...", "botName": "Nova",
   "title": "Your bot has a question", "subtitle": "Where should I deliver?", "kind": "question", "answerWith": "option",
   "choices": [{ "id": "1", "label": "Deliver here" }, { "id": "2", "label": "Deliver here and by the relay" }, { "id": "3", "label": "No" }],
   "freeText": true, "createdAt": 1791500000000, "expiresAt": null, "canAnswer": true,

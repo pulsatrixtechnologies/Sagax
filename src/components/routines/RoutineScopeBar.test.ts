@@ -156,7 +156,7 @@ describe("someone else's routine in the list", () => {
   });
 
   it("an own routine that runs as its owner: neither chip", () => {
-    const markup = list({ ...base, owner: { id: "pr_me", name: "Jean-Christophe Proulx" }, runAs: { principalId: "pr_me", name: "Jean-Christophe Proulx" } });
+    const markup = list({ ...base, owner: { id: "pr_me", name: "Alex Martin" }, runAs: { principalId: "pr_me", name: "Alex Martin" } });
     expect(markup).not.toContain("data-routine-owner");
     expect(markup).not.toContain("data-routine-run-as");
     expect(markup).not.toContain("Runs as");

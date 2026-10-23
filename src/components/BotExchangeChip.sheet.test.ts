@@ -8,14 +8,14 @@ import { setLocale } from "@/lib/i18n";
 import type { Message } from "@/state/store";
 import { BotExchangeChip } from "./BotExchangeChip";
 
-const NOTE = "[Message from @Cryptic, another bot in this Sagax workspace. Reply to them.]\n\nWhich database?";
+const NOTE = "[Message from @Quasar, another bot in this Sagax workspace. Reply to them.]\n\nWhich database?";
 
 beforeAll(() => setLocale("en"));
 
 function run() {
   const now = Date.now();
   const messages = [
-    { id: "p", role: "user", kind: "text", text: NOTE, at: now, peerAsk: { botId: "cry", name: "Cryptic" } },
+    { id: "p", role: "user", kind: "text", text: NOTE, at: now, peerAsk: { botId: "cry", name: "Quasar" } },
     { id: "r", role: "bot", kind: "text", text: "on it", at: now + 1000, requestMessageId: "p" },
   ] as Message[];
   const items = collapseBotExchanges(messages, {

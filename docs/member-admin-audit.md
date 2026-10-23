@@ -2,7 +2,7 @@
 
 On an organization server (Perspicax sign-in), this is everything that can
 send a member, or a member's bot, to an organization admin. The rule it is
-measured against (JC, 2026-10-19):
+measured against (2026-10-19):
 
 - **Own destinations and own data: the person's normal level, never an
   admin.** Their cloud computer (server environment, `sagax-environment`),
@@ -42,7 +42,7 @@ server host; **org** = organization data, settings or secrets;
 | `agents` `manage_pairing` | own | admin card | unchanged in this pass | The route itself is open to members; to reclassify with the tool scope list. |
 | MCP servers acting through the owner's identity (their remote servers, personal connections, claude.ai connectors on their own subscription) | own | owner card | unchanged | Already the owner's. |
 | Other MCP servers (`browser`, `computer`, `files`, `shell`, `terminal`, a server's own MCP server) | host | admin card | unchanged; delegable through `host.commands` | Run on the shared host. |
-| Always allow, session allow, remembered command on a member's bot | rights | stripped or refused for every card | session allow and the installation's saved command list unchanged (refused). Always allow (an owner rule) offered on every card since 2026-10-19, an admin's card included (`from: admin`). **Decided 2026-10-21 (JC): it remembers.** On an admin's card (or the owner's card under `host.commands`) the engine's shell line is kept as its one program in its folder (`git`, `npm`; a chain or a `cd` keeps the exact line), for that bot only, never workspace-wide; another program asks again. The bot's owner and a workspace admin see it in the bot's Approval rules, with who saved it (by name, never an id or the real folder), and may remove it (never edit someone else's); a holder of `host.shell` who is neither sees and removes only their own. A held card (safety hold, sandbox widening, Codex additional permissions or network) keeps the whole request; a call with no readable arguments offers no rule (see Accepted risks). | A standing grant on one bot, removable by its owner and the admins. |
+| Always allow, session allow, remembered command on a member's bot | rights | stripped or refused for every card | session allow and the installation's saved command list unchanged (refused). Always allow (an owner rule) offered on every card since 2026-10-19, an admin's card included (`from: admin`). **Decided 2026-10-21: it remembers.** On an admin's card (or the owner's card under `host.commands`) the engine's shell line is kept as its one program in its folder (`git`, `npm`; a chain or a `cd` keeps the exact line), for that bot only, never workspace-wide; another program asks again. The bot's owner and a workspace admin see it in the bot's Approval rules, with who saved it (by name, never an id or the real folder), and may remove it (never edit someone else's); a holder of `host.shell` who is neither sees and removes only their own. A held card (safety hold, sandbox widening, Codex additional permissions or network) keeps the whole request; a call with no readable arguments offers no rule (see Accepted risks). | A standing grant on one bot, removable by its owner and the admins. |
 | Custom approval level (`config.toml`) | host | runs as Ask, cannot be set | unchanged | The file lives on the shared server. |
 | Full access on a member's bot | own | `bots.fullAccess` + the organization's Full policy + consent | unchanged | Already delegable. |
 | Auto levels while the admin turned `memberAutoApproval` off | org | Ask | unchanged | An organization policy. |
@@ -61,7 +61,7 @@ ask first (Grok and the other ACP engines, Codex).
 
 ## 3. MCP permission catalogue (`server/mcp-permissions.ts`)
 
-Mode on GOX: `shadow` (unset): a denial is audited (`mcp.shadow`), nothing is
+Mode in production: `shadow` (unset): a denial is audited (`mcp.shadow`), nothing is
 refused. The tiers matter once a server runs `SAGAX_MCP_PERMISSIONS=enforce`.
 
 A turn no person speaks in (a routine, a webhook: role `service`) never gets
@@ -98,7 +98,7 @@ under Full access, or would write lasting instructions from untrusted text.
 | `people.manage` | org (other people's accounts) | admin only | **given in Perspicax**: sessions, pairing codes, a person's connections, force stop or delete of a bot, published pages. Never on an organization admin (or the operator), and attaching an interim person stays admin. |
 | `server.link` | rights (who may sign in at all) | admin only | admin only, by rule |
 
-Note for JC: `host.shell` runs programs as the server (an engine's program
+Note for the maintainer: `host.shell` runs programs as the server (an engine's program
 path, the server's Local VM, command rules on any bot), so its holder can in
 practice make themselves admin on that machine; its label says to give it
 only to people you would trust as admins of the server. `server.settings`
@@ -117,7 +117,7 @@ Local VM or VPS.
 
 ## Accepted risks
 
-1. **2026-10-21, decision JC (told the risk): Always allow on a member's
+1. **2026-10-21, decision (told the risk): Always allow on a member's
    server command keeps the program, as on a solo bot ("Programme comme en
    solo").** Finding 1 of the review of #938: on the organization's shared
    server, a rule kept for `npm` (or `git`, `python`) on an admin's card lets

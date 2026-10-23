@@ -1300,8 +1300,8 @@ const nodeOffset = (node: unknown): number | undefined =>
   (node as { position?: { start?: { offset?: number } } } | undefined)?.position?.start?.offset;
 
 // A thread link only ever comes from a "#Title" run or a canonical
-// openmausbot://thread/ link, whatever case or escaping its scheme uses.
-const MAY_LINK_THREAD = /#|openmausbot|sagax/i;
+// sagax://thread/ link, whatever case or escaping its scheme uses.
+const MAY_LINK_THREAD = /#|sagax/i;
 const NO_THREAD_REFS: ThreadRefsValue = { threads: [] };
 
 /** Render message Markdown with math, protected code, scoped attachments, and mentions. */

@@ -1,4 +1,4 @@
-// Changes: the bot's version history (JC 2026-10-15). Every save of the
+// Changes: the bot's version history (2026-10-15). Every save of the
 // profile (name, label, description, Personality, working folder, alerts)
 // is a version, newest first, with when, who and what changed. Opening a
 // version compares it with the current one, and "Restore this version"

@@ -27,7 +27,7 @@ Those paths are covered by the computer-section and server Boat inventory tests.
 ## Mark all of a bot's conversations as read
 
 Since 0.5.7 (#586) a bot's menu no longer offers **Mark all conversations as
-read** (Grok Bot's lighter menu). The steps below stay for the read helper
+read** (the reference design's lighter menu). The steps below stay for the read helper
 (`src/lib/bot-read.test.ts`), which folders still use; the menu steps apply to
 0.5.6 and earlier.
 

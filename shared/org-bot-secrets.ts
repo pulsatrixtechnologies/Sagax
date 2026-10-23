@@ -1,4 +1,4 @@
-// Team secrets of a Perspicax organization (decision JC, 2026-10-21): an
+// Team secrets of a Perspicax organization (the maintainer's decision, 2026-10-21): an
 // admin assigns a named secret, or a service account, to a team bot. Members
 // never receive the list. The value is write-only. The bot's own shell does
 // not receive it (server/org-bot-secrets.ts): a connector process may.

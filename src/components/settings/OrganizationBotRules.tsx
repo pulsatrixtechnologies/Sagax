@@ -1,4 +1,4 @@
-// How the organization's bots work (0.5.6, JC: Grok Bot's rows): routines in
+// How the organization's bots work (0.5.6, Decision: the reference design's rows): routines in
 // the conversation, group turns and MCP calls, one row each, label and a
 // short grey line at the left, the control at the right. They came from
 // General > Advanced (2026-10-15) and set the installation, so they show to

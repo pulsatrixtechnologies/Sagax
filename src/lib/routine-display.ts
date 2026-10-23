@@ -85,7 +85,7 @@ export function routineRunsOn({ roomGoal, runOn, computer, cloudHome }: {
 }
 
 /** The calendar's "Upcoming" panel: the routines that will run, soonest
- * first (2026-10-18, JC). A paused, suspended or finished routine has no
+ * first (2026-10-18). A paused, suspended or finished routine has no
  * next run and is left to the list view. */
 export function upcomingRoutines(routines: readonly Routine[]): Routine[] {
   return routines

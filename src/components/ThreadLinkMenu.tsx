@@ -32,7 +32,7 @@ export function useThreadLinkMenu(href: string | undefined) {
       setAt({ left: Math.max(8, Math.min(event.clientX, window.innerWidth - 228)), top: Math.max(8, Math.min(event.clientY, window.innerHeight - 100)) });
     },
     // A menu like the thread menu's: Copy link first, then the thread's own
-    // link (JC, 2026-10-16), with the arrows moving between them.
+    // link (2026-10-16), with the arrows moving between them.
     menu: at && createPortal(<div ref={menuRef} role="menu" aria-label={url} style={at} data-thread-link-menu=""
       className="fixed z-50 w-[220px] rounded-lg border border-hairline/50 bg-card p-1 shadow-xl"
       onKeyDown={(event) => {

@@ -1,4 +1,4 @@
-// A plugin's configuration values (2026-10-21, parity with Grok Bot's
+// A plugin's configuration values (2026-10-21, parity with the reference design's
 // "Plugin configuration"): the fields a Claude Code plugin declares under
 // `userConfig` in .claude-plugin/plugin.json, filled per bot.
 //

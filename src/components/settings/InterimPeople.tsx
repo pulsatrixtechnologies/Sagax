@@ -81,7 +81,7 @@ export function InterimPeople({ until, onChanged }: { until: number; onChanged: 
 
   const date = new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium" }).format(new Date(until));
   const list = people ?? [];
-  // 0.5.6 (JC): one Grok-style row (its window in grey, the count pill
+  // 0.5.6: one Grok-style row (its window in grey, the count pill
   // that unfolds the people); attaching asks first, in a red pill.
   return (
     <div data-settings-card="organization.interimPeople" data-interim-people>

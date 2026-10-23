@@ -2,7 +2,7 @@ import XCTest
 @testable import CompanionCore
 
 /// Pin/unpin in the sidebar. Same storage as Electron: `PATCH /api/bots/:id`
-/// `{ pinned }`. A trailing swipe reveals Pin like Grok Bot.
+/// `{ pinned }`. A trailing swipe reveals Pin like the reference design.
 final class SidebarPinningTests: XCTestCase {
     func testPinActionIsNotDrawnAtRest() {
         XCTAssertFalse(SidebarBotPinning.actionVisible(offset: 0))

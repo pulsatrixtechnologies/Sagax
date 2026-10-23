@@ -1,4 +1,4 @@
-// A task's own conversation, live, inside its window (JC 2026-10-16: "I
+// A task's own conversation, live, inside its window (2026-10-16: "I
 // should also be able to dive into the current subagent's chat"): the real
 // thread (its messages, tool calls, approvals and composer) in the chat
 // view's compact form, the way the side thread column shows one. Same data

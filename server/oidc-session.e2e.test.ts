@@ -492,7 +492,7 @@ posixOnly("Sign in with Pulsatrix, slice 2: the session lives on the provider's 
 
   it("S2-7: the desktop return link redeems once into a person-bound cookie session", async () => {
     const { location } = await walk(ALICE, "desktop");
-    const match = /^openmausbot:\/\/auth\?origin=([^#]+)#code=(omb_pair_[A-Za-z0-9_-]{43})$/.exec(location);
+    const match = /^sagax:\/\/auth\?origin=([^#]+)#code=(omb_pair_[A-Za-z0-9_-]{43})$/.exec(location);
     expect(match, location).not.toBeNull();
     expect(decodeURIComponent(match![1]!)).toBe(BASE);
     const paired = await api("POST", "/api/auth/pair", undefined, { code: match![2], label: "My Mac", cookie: true, attemptId: "attempt-desktop-1" });

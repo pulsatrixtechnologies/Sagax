@@ -1,4 +1,4 @@
-// The model list (2026-10-12, JC: "like Cursor's model menu"): a search
+// The model list (2026-10-12: "like Cursor's model menu"): a search
 // field on top that filters as one types, the rows grouped under headings,
 // each row the model's name in primary ink and its effort or variant in
 // secondary ink, the current choice checked. The arrow keys move over the
@@ -6,7 +6,7 @@
 // list sits in the composer's model menu (`popover`) and, always open, in
 // the model window (`window`). The rules are src/lib/model-menu.ts.
 //
-// The composer's menu nests (JC, 2026-10-14: "too many models shown"):
+// The composer's menu nests (2026-10-14: "too many models shown"):
 // with an empty search its root is Auto, the bot's model, the current one,
 // the person's favorites (src/lib/model-favorites.ts) and one row per
 // provider whose models open in a submenu, on hover, on click, with the
@@ -15,8 +15,8 @@
 // lists every provider's matches flat, as before; clearing the search
 // brings the submenus back. Every model row carries a star.
 //
-// `groupProviders` (Simple since JC 2026-10-14, the composer's menu in
-// every mode since JC 2026-10-18): one "Provider ›" row under Auto, the
+// `groupProviders` (Simple since 2026-10-14, the composer's menu in
+// every mode since 2026-10-18): one "Provider ›" row under Auto, the
 // bot's model and the favorites. It lists the providers in place of the
 // root, with a Back row; each provider opens its submenu as above.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";

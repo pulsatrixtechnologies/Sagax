@@ -156,7 +156,7 @@ function settingsChanges(body: Record<string, unknown>): SettingsChanges | strin
 export function opsRoutes(deps: OpsDeps): ConsoleRoute[] {
   const approvals = () => deps.orgApprovals ?? registeredCustomRuleStore();
   return [
-    // 2026-10-21 (Grok Bot parity lot 1A): the organization's approvals.
+    // 2026-10-21 (the reference design parity lot 1A): the organization's approvals.
     // Rules ask first or refuse, for every person and bot, and members can
     // neither change nor remove them; alwaysAllow false keeps every approval
     // to one card at a time (server/custom-rules-org.ts).

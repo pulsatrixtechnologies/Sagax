@@ -1,4 +1,4 @@
-// Fresh topic on return (single stream, thread mode off; JC 2026-10-18).
+// Fresh topic on return (single stream, thread mode off; 2026-10-18).
 //
 // When a person comes back to a bot's conversation after a while, they land
 // on a new, empty topic ("New topic") instead of the whole history: less on

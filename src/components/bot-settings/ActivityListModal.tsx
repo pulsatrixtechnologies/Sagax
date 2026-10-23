@@ -4,7 +4,7 @@
 // sub-agents), newest first, narrowed by status (running, finished, failed)
 // and by words.
 //
-// One window of Settings' size (ActivityWindow, JC 2026-10-16), master and
+// One window of Settings' size (ActivityWindow, 2026-10-16), master and
 // detail: the list at the left (drawn like Settings' section column), the
 // chosen entry at the right (ActivityDetailPane: its summary, steps and live
 // conversation). Wide, the newest entry is chosen on opening. Narrow, the

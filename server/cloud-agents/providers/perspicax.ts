@@ -37,7 +37,7 @@ export function pickEnvironment(envs: PerspicaxEnvironment[], input: { envId?: s
     if (!named) throw new ProviderHttpError(404, "no_environment", `No Perspicax environment ${input.envId} is open to this person. List them again and use one of theirs; to the person, name an environment by its name, never by its env_id.`);
     return named;
   }
-  // The person reads environments by name (JC 2026-10-19: no GUID on
+  // The person reads environments by name (2026-10-19: no GUID on
   // screen); the env_id is for the relaunch call only.
   const list = (rows: PerspicaxEnvironment[]) => rows.map((env) => `- ${env.name} (env_id ${env.id})`).join("\n");
   const ask = "Ask the person which one by its name (never show an env_id to them), then launch again with its env_id";

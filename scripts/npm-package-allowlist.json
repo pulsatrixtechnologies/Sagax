@@ -1,0 +1,96 @@
+[
+  {
+    "term": "grok-bot",
+    "context": "grokbot://",
+    "reason": "x.ai's own button link scheme (grokbot://app/v1/bot-template?id=...), which the bot import reads (shared/grok-import.ts)."
+  },
+  {
+    "term": "grok-bot",
+    "context": "grokbot:[\"'`]",
+    "reason": "The same x.ai link scheme, checked as a URL protocol by the bot import."
+  },
+  {
+    "term": "grok-bot",
+    "context": "grokbot-bundle/v\\d",
+    "reason": "Export format id written by the third-party pi-grokbot-import tool; the bot import must recognise it."
+  },
+  {
+    "term": "grok-bot",
+    "context": "pi-grokbot-import",
+    "reason": "Name and URL of that third-party tool, credited where its format is read."
+  },
+  {
+    "term": "grok-bot",
+    "context": "[Oo]pen[Gg]rok[Bb]ot|opengrokbot",
+    "reason": "Data folders of an earlier upstream build (~/.opengrokbot, Application Support/OpenGrokBot), read once to migrate or clean up an old install."
+  },
+  {
+    "term": "initials",
+    "files": "^dist/assets/[^/]+\\.js$",
+    "context": "(?:[\\w$]\\(|[-+*/%<>^~,!=;{}:?&|(]|return |function |break |continue |case |=>)[A-Za-z]{2}(?:[-+*/%<>^~(=;,)\\]}:]| as |\\.[A-Za-z$])",
+    "reason": "A two-letter variable or label name the minifier picked in the built web bundle (for example `function XY(e,t)`, `i-XY(e)`, `.some(XY)`, `XY:{...break XY}`, `(0,$.jsx)(XY,{` or `XY as r`), not prose: comments are stripped there. Matched in any case, with any operator around it."
+  },
+  {
+    "term": "grok-bot",
+    "files": "^dist-server/(?:shared/grok-import|server/team-library|server/routes/team-library-grok)\\.js$",
+    "context": "Grok Bot|grok-bot",
+    "reason": "The bot importer and its x.ai share-card reader (shared/grok-import.ts, server/team-library.ts, server/routes/team-library-grok.ts): Grok Bot is the public name of the x.ai product whose shared bots they import, so their messages, defaults and the grok-bot id fallback name it. Only these compiled files."
+  },
+  {
+    "term": "grok-bot",
+    "files": "^(?:dist-server/index\\.js|dist/assets/TemplateTools-[^/]+\\.js)$",
+    "context": "JSON reply from Grok Bot|not a Grok Bot export|That Grok Bot export has no name|\\|\\|\\s*[\\\"'`]Grok Bot[\\\"'`]|\\|\\|\\s*[\\\"'`]grok-bot[\\\"'`]|\\} in Grok Bot\\.|Notes from Grok Bot|brought over from Grok Bot\\.|[\\\"'`(|]\\s*Grok Bot creator|This Grok Bot export could not|started from the Grok Bot \\\"|\\\"source\\\": \\\"Grok Bot\\\"",
+    "reason": "The same importer (shared/grok-import.ts) inlined into the server and web bundles: its own messages, the default name and author, and the grok-bot id fallback, phrase by phrase, so no other text in the bundle is covered."
+  },
+  {
+    "term": "grok-bot",
+    "files": "^dist-server/index\\.js$",
+    "context": "did not show a Grok Bot\\.|That Grok Bot link (?:tried to leave x\\.ai|was not found)|did not show the Grok Bot page|Paste a Grok Bot link, like|or a Grok Bot marketplace page|That Grok Bot marketplace page was not found|did not link to a Grok Bot to add|A Grok Bot share link is required|The Grok Bot could not be loaded",
+    "reason": "The x.ai share-card reader (server/team-library.ts, server/routes/team-library-grok.ts) inlined into the server bundle: its error messages, phrase by phrase."
+  },
+  {
+    "term": "grok-bot",
+    "files": "^(?:dist-server/index\\.js|dist-server/src/locales/(?:en|fr)\\.json|dist/assets/i18n-[^/]+\\.js)$",
+    "context": "Import a Grok Bot|Bring a shared Grok Bot into|[\\\"'`]Grok Bot link[\\\"'`]|Paste a Grok Bot link|or a Grok Bot marketplace page|your own Grok Bot\\.|[\\\"'`]Grok Bot's reply|Importer un Grok Bot|Faites entrer un Grok Bot|Lien du Grok Bot|Collez un lien de Grok Bot|marketplace Grok Bot\\.|votre propre Grok Bot\\.|ponse du Grok Bot",
+    "reason": "The grokImport.* strings (en, fr) of Settings > Import, which name the x.ai product the bot comes from, phrase by phrase."
+  },
+  {
+    "term": "bot-name",
+    "files": "^dist/assets/NewBotDialog-[^/]+\\.js$",
+    "context": "\\\"[A-Z][a-z]+\\\",\\\"[A-Z][a-z]+\\\",\\\"[A-Z][a-z]+\\\"",
+    "reason": "The public list of given names the new-bot dialog suggests from (src/data/given-names), which happens to contain common first names also used for bots: a quoted name between two other quoted names."
+  },
+  {
+    "term": "company",
+    "context": "(?=[A-Za-z0-9+/]*[+/])[A-Za-z0-9+/]{60,}",
+    "reason": "Three letters inside a long base64 run (embedded fonts or images in a bundle), which is random data, not a word."
+  },
+  {
+    "term": "initials",
+    "context": "(?=[A-Za-z0-9+/]*[+/])[A-Za-z0-9+/]{60,}",
+    "reason": "Two letters inside a long base64 run (embedded data in a bundle), which is random data, not a word."
+  },
+  {
+    "term": "grok-bot",
+    "files": "^(?:dist/assets/[^/]+\\.js|dist-server/self-knowledge/knowledge\\.generated\\.json)$",
+    "context": "grok[\"'`]?,?\\s*[\"'`]?grok bot[\"'`]?,?\\s*[\"'`]?x\\.ai",
+    "reason": "Search keywords of the Settings > Import section (src/components/SettingsModal.tsx, also listed in the self-knowledge), so a person who types the x.ai product's name finds the importer."
+  },
+  {
+    "term": "grok-bot",
+    "files": "^dist-server/self-knowledge/knowledge\\.generated\\.json$",
+    "context": "shared/fixtures/grok-import/shared-grok-bot\\.json",
+    "reason": "Path of the importer's test fixture (a sample export of a bot shared on x.ai), cited in the agent notes."
+  },
+  {
+    "term": "initials",
+    "files": "\\.(?:png|jpe?g|gif|webp|avif|ico|icns|bmp|tiff?|woff2?|ttf|otf|wasm|onnx|mp3|mp4|ogg|wav|webm)$",
+    "context": "[^A-Za-z0-9_\\s][A-Za-z]{2}[^A-Za-z0-9_\\s]",
+    "reason": "Two letters inside a printable run of a compressed binary, with a symbol on each side. A real word with a space or a letter beside it is still refused."
+  },
+  {
+    "term": "grok-bot",
+    "context": "[\"']grok[\"'],\\s*[\"']grok bot[\"']",
+    "reason": "The on-screen name in the list of apps that never get a standing one-app rule, kept as the quoted pair so that app stays on the denylist. A comment that merely says the product name does not match."
+  }
+]

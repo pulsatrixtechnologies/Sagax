@@ -1,4 +1,4 @@
-// Parallel conversations of this bot (JC 2026-10-15, formerly Settings >
+// Parallel conversations of this bot (2026-10-15, formerly Settings >
 // General > Advanced for every bot): how many of its conversations work at
 // once and how many parallel tasks one person may have running on it. What a
 // message sent while it works does is the bot's own call (2026-10-18,
@@ -17,7 +17,7 @@ export function BotParallelSettings({ bot }: { bot: Bot }) {
   const threads = botThreadLimit(shown, state.config);
   const perPerson = botParallelLimit(shown, state.config);
   const title = t("botPanel.parallel.title");
-  // 2026-10-16 (JC): drawn like Settings: compact rows with pill menus, the
+  // 2026-10-16 : drawn like Settings: compact rows with pill menus, the
   // explanations behind the info buttons.
   return (
     <div data-bot-parallel="">

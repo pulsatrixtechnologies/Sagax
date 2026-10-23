@@ -1,5 +1,5 @@
 // Frog's drawing, in a 0..100 box (src/components/FrogMascot.tsx): the smug
-// sad frog in direction C, "aplat net", approved by JC on 2026-10-09 with
+// sad frog in direction C, "aplat net", approved by the maintainer on 2026-10-09 with
 // the Shiba. Two flat tones (the skin and the pale belly) plus one shade tone
 // in a crescent, one uniform outline, geometric shapes. The head's outline
 // carries the two eye domes (one path, so no stroke ever cuts an eye); the

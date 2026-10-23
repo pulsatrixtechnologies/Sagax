@@ -202,7 +202,7 @@ function Meter({ provider, meter }: { provider: PlanRow; meter: PlanMeter }) {
 }
 
 /** Since 2026-10-16 every window shows at once: the 5-hour session and the
- * week each get their gauge (JC: "on doit aussi voir les limites de 5 h et
+ * week each get their gauge ("on doit aussi voir les limites de 5 h et
  * par semaine"). Only the per-model detail folds under Details. */
 function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
   const meters = planMeters(provider);
@@ -240,7 +240,7 @@ function planStatus({ report, loading, failed, unavailable }: Pick<PlanUsageView
 export function PlanUsageView({ report, loading, now, onRefresh, issuer, failed = false, unavailable = false }: PlanUsageViewProps) {
   const rows = unavailable ? [] : connectedPlanRows(report);
   const status = rows.length === 0 ? planStatus({ report, loading, failed, unavailable }) : null;
-  // 0.5.6: Grok Bot's usage meters, a grey heading outside one rounded card,
+  // 0.5.6: the reference design's usage meters, a grey heading outside one rounded card,
   // one block per plan (name, a 4 px gauge per window, its two lines).
   return (
     <div data-settings-card="usage.plan">

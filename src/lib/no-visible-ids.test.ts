@@ -181,8 +181,8 @@ describe("no UUID on screen", () => {
   });
 
   it("allowed recipients name a bot, never its id (parité 1C)", () => {
-    const bots = [{ id: BOT_ID, name: "Cryptic" }];
-    expect(recipientLabel(`bot:${BOT_ID}`, bots)).toEqual({ text: "Cryptic", title: BOT_ID });
+    const bots = [{ id: BOT_ID, name: "Quasar" }];
+    expect(recipientLabel(`bot:${BOT_ID}`, bots)).toEqual({ text: "Quasar", title: BOT_ID });
     expectNoUuid(recipientLabel(`bot:${THREAD_ID}`, bots).text);
     expect(recipientLabel("email:ana@example.com", bots).text).toBe("ana@example.com");
   });

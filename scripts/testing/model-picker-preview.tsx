@@ -17,9 +17,9 @@ setLocale(params.get("lang") ?? "fr");
 applySkin((params.get("skin") ?? "midnight") as Parameters<typeof applySkin>[0]);
 setAdvancedMode(true);
 
-const BOT_ID = "preview-cryptic";
+const BOT_ID = "preview-quasar";
 const initial: Bot = {
-  id: BOT_ID, threadId: "preview-thread", name: "Cryptic", title: "", description: "", notifications: true,
+  id: BOT_ID, threadId: "preview-thread", name: "Quasar", title: "", description: "", notifications: true,
   color: "green", unread: false, messages: [],
   modelSelection: {
     instanceId: params.get("instance") ?? "grok",
@@ -39,7 +39,7 @@ function Preview() {
     <main className="flex h-dvh flex-col bg-app text-ink">
       <div className="flex-1 p-8 text-[13px] text-ink-secondary">Isolated preview · recorded catalogs, no real account</div>
       <div className="mx-auto mb-6 flex w-[min(760px,calc(100vw-32px))] items-center justify-between gap-3 rounded-2xl border border-hairline/50 bg-card px-4 py-3">
-        <span className="text-[13px] text-ink-tertiary">Message Cryptic</span>
+        <span className="text-[13px] text-ink-tertiary">Message Quasar</span>
         {bot && state.instances.length > 0 && <ModelPicker bot={bot} inComposer />}
       </div>
     </main>

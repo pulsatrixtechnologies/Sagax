@@ -135,7 +135,7 @@ test("a click sends the notification id with the conversation it is about", () =
   const attention = createDesktopAttention({ platform: "darwin", app: fakeApp().app, Notification: FakeNotification, getWindow: () => win, onClick: (id, target) => clicked.push([id, target]) });
   attention.notify({
     id: "sagax-notification:3",
-    title: "Cryptic finished",
+    title: "Quasar finished",
     target: { botId: "bot-1", threadId: "thread-9", groupId: "room-1", junk: "x", routineRunId: 5 },
   });
   made[0].handlers.click();

@@ -13,7 +13,7 @@
 //   person approves its card. Declining, no answer, a closed channel or no
 //   running turn all mean the call never reaches the server.
 //
-// On by default since 2026-10-19 (engine parity, JC: whatever the
+// On by default since 2026-10-19 (engine parity, Decision: whatever the
 // provider, everything must work the same): Approve for me on Grok decides
 // through Sagax, like Claude since #797, so the owner's setup (#820), the
 // member rules (#776-#812) and the person's cards apply the same way on both

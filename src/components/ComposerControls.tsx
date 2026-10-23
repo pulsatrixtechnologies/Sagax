@@ -1,4 +1,4 @@
-// The composer's round controls, measured on Grok Bot's prompt bar (0.71):
+// The composer's round controls, measured on the reference design's prompt bar (0.71):
 // 28 px circles 8 px apart, a quiet "secondary" circle (+, mic) and a filled
 // call to action (Voice, or Send once something is typed) whose glyphs
 // cross-fade (opacity and scale .5 -> 1, 200 ms, ease-out-quint).
@@ -23,7 +23,7 @@ export const SECONDARY_CIRCLE = cn(
   "bg-ink/[0.06] text-ink-tertiary shadow-[inset_0_0_0_0.5px_var(--color-border)] hover:bg-ink/[0.1] hover:text-ink disabled:cursor-not-allowed disabled:opacity-40",
 );
 
-/** Grok Bot's glyph cross-fade. */
+/** The reference design's glyph cross-fade. */
 const GLYPH = "absolute inset-0 m-auto transition-[opacity,transform] duration-moderate ease-out-quint motion-reduce:transition-none";
 const glyphShown = (shown: boolean) => (shown ? "opacity-100 scale-100" : "opacity-0 scale-50");
 /** The seat's fade: no transform once shown, so the Voice button's popover is not trapped in a stacking context. */
@@ -53,7 +53,7 @@ export interface PlusMenuItem {
   hint?: string;
 }
 
-/** The + at the start of the composer and its menu, in groups (Grok Bot's
+/** The + at the start of the composer and its menu, in groups (the reference design's
  * composer actions, Cursor's grouped menus): add (Attach files, Teach a
  * task), modes (Goal, Setup), then the conversation's own settings as rows
  * that open beside it (`rows`, rendered by their owners: the model and the
@@ -199,7 +199,7 @@ export function ComposerPlusMenu({
   );
 }
 
-/** The + menu's Model row (JC, 2026-10-18): the model in use at its end,
+/** The + menu's Model row (2026-10-18): the model in use at its end,
  * the model menu (search, Auto, the bot's model, favorites, Provider ›,
  * Effort, Edit…) beside it. The composer has no model chip any more. */
 export function ComposerModelRow({ chip, onOpen }: {

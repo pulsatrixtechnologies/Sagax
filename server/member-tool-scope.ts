@@ -1,5 +1,5 @@
 // Which built-in Sagax tools a member's bot runs on an organization server
-// without an organization admin (JC, 2026-10-08).
+// without an organization admin (2026-10-08).
 //
 // The admin gate (memberBotAdminApproval in ./engine-access.ts) exists
 // because every bot shares one container, one user and one HOME: a shell
@@ -107,7 +107,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   sagax_settings: "own-setup",
   // the member's own cards, at their request (server/primary-approvals.ts)
   sagax_approvals: "own-setup",
-  // The in-chat terminal (2026-10-15, JC): the list is what THIS person may
+  // The in-chat terminal (2026-10-15): the list is what THIS person may
   // open (their own environments; the server's hosts for an admin only), and
   // the offer only stages a card the person approves; the server checks the
   // person's rights again when they open it (terminal-resources/registry.ts).

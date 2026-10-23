@@ -120,7 +120,7 @@ export function DecisionModelSettings() {
     }
   };
 
-  // 0.5.6: two groups as Grok Bot's settings pages draw them, grey heading
+  // 0.5.6: two groups as the reference design's settings pages draw them, grey heading
   // outside rounded cards, compact rows; what Jev is behind the info button.
   return (
     <div className="flex flex-col gap-6" data-settings-card="engines.decisionModel">

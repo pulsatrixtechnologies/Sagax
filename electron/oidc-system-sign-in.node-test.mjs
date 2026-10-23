@@ -1,6 +1,6 @@
 // "Sign in with Pulsatrix" in the desktop app: always the system browser
 // (electron/oidc-system-sign-in.cjs). The loopback listener, the fallback
-// decision, the openmausbot:// return and the /pair handoff.
+// decision, the sagax:// return and the /pair handoff.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -56,7 +56,7 @@ test("what the server says it supports", () => {
 });
 
 test("a server that lists sagax among its native returns can end on sagax://auth", () => {
-  const identity = { kind: "perspicax", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"] };
+  const identity = { kind: "perspicax", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax"] };
   assert.equal(signInSupport({ identity }).sagaxReturn, true);
   assert.equal(signInSupport({ identity: { ...identity, nativeReturn: false } }).sagaxReturn, false);
   const back = sagaxReturnLink(ORG);
@@ -67,7 +67,7 @@ test("a server that lists sagax among its native returns can end on sagax://auth
   assert.deepEqual(parseAuthReturnLink(`${back}#code=${next}`, state), { origin: ORG, code: next }, "sgx_pair_ is accepted too");
 });
 
-test("this app owns openmausbot:// only when the system's handler is this exact copy", () => {
+test("this app owns sagax:// only when the system's handler is this exact copy", () => {
   const dev = "/repo/node_modules/.cache/pulsa-dev/Sagax.app";
   assert.equal(appHandlerPath(`${dev}/Contents/MacOS/Sagax`, "darwin"), dev);
   assert.equal(appHandlerPath("/usr/bin/node", "darwin"), null);
@@ -186,11 +186,11 @@ test("it times out, and it can be cancelled, closing the listener either way", a
   cancelled.cancel(); // twice is harmless
 });
 
-// ── the openmausbot:// fallback and the /pair handoff ──
+// ── the sagax:// fallback and the /pair handoff ──
 
 const { parseAuthReturnLink } = require("./environments.cjs");
 const CREDENTIAL = `omb_pair_${"A1b2_C3d4-".repeat(4)}xyz`;
-const returnLink = (hash, origin = ORG) => `openmausbot://auth?origin=${encodeURIComponent(origin)}#${hash}`;
+const returnLink = (hash, origin = ORG) => `sagax://auth?origin=${encodeURIComponent(origin)}#${hash}`;
 
 test("the system browser starts the desktop flow, with the loopback return when there is one", () => {
   assert.equal(desktopStartUrl(ORG), `${ORG}/auth/oidc/start?client=desktop`);
@@ -211,14 +211,16 @@ test("a return link is honoured only for a saved server, with the credential in 
   // a server this app never saved
   assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}`, "https://evil.example"), state), null);
   // the credential in the query
-  assert.equal(parseAuthReturnLink(`openmausbot://auth?origin=${encodeURIComponent(ORG)}&code=${CREDENTIAL}`, state), null);
+  assert.equal(parseAuthReturnLink(`sagax://auth?origin=${encodeURIComponent(ORG)}&code=${CREDENTIAL}`, state), null);
   // bad shapes
   assert.equal(parseAuthReturnLink(returnLink("code=omb_pair_short"), state), null);
   assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}&error=role`), state), null);
   assert.equal(parseAuthReturnLink(returnLink("error=<script>"), state), null);
   assert.equal(parseAuthReturnLink(returnLink(`code=${CREDENTIAL}`, `${ORG}/path`), state), null);
-  assert.equal(parseAuthReturnLink(`openmausbot://auth?origin=${encodeURIComponent(ORG)}&origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
-  assert.equal(parseAuthReturnLink(`openmausbot://pair?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  assert.equal(parseAuthReturnLink(`sagax://auth?origin=${encodeURIComponent(ORG)}&origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  assert.equal(parseAuthReturnLink(`sagax://pair?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
+  const otherScheme = "otherapp";
+  assert.equal(parseAuthReturnLink(`${otherScheme}://auth?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
   assert.equal(parseAuthReturnLink(`https://bot.example.test/?origin=${encodeURIComponent(ORG)}#code=${CREDENTIAL}`, state), null);
   assert.equal(parseAuthReturnLink(42, state), null);
 });

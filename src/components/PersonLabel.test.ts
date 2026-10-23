@@ -44,7 +44,7 @@ describe("a person's label", () => {
     const botRow = inStore(createElement(BotListItem, { bot: bot("CTO"), density: "comfortable", onMenu: vi.fn() }));
     const personRow = inStore(createElement(GroupListItem, { group: dm, density: "comfortable", onMenu: vi.fn() }));
     expect(rowTag.exec(personRow)?.[0]).toBe(renderToStaticMarkup(createElement(LabelTag, { text: "CTO", className: "max-w-[46%] shrink" })));
-    // #575: a bot row draws its title as a role tag after the name, like Grok Bot
+    // #575: a bot row draws its title as a role tag after the name, like the reference design
     expect(rowTag.test(botRow)).toBe(false);
     expect(botRow).not.toContain('<span class="sr-only">, CTO</span>');
     expect(botRow.indexOf(">CTO<")).toBeGreaterThan(botRow.indexOf(">Atlas<"));

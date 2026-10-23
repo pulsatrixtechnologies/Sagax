@@ -103,7 +103,7 @@ import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswer
 import { createLocalModelKeyStore } from "./local-model-keys.mjs";
 import { createLocalVm } from "./local-vm.mjs";
 import { acquireDataDirLease } from "./data-dir-lease.mjs";
-import { defaultDataDir, fetchEnvironmentDescriptor, URL_SCHEMES } from "./legacy-names.mjs";
+import { defaultDataDir, fetchEnvironmentDescriptor, isAppLink, URL_SCHEME } from "./legacy-names.mjs";
 import { switchLocalEnvironment } from "./environment-switch.mjs";
 import { createManagedDesktopClient, createManagedDesktopRelay, createManagedDesktopStore } from "./managed-desktop.mjs";
 import { createOrgLibrary } from "./org-library.mjs";
@@ -336,15 +336,9 @@ function deliverPackageInstall(win = mainWindow) {
   if (pendingPackageInstallUrl && sendToLocalPage(win, "package:install", pendingPackageInstallUrl)) pendingPackageInstallUrl = null;
 }
 
-/** A chat link (electron/chat-link.mjs) under either of this app's schemes
- * (AGENTS.md "Legacy names"): a sagax:// link is handed to the page in the
- * openmausbot:// form its parser reads (src/lib/thread-refs.ts). */
-function chatLinkOf(value) {
-  return chatLinkFrom(typeof value === "string" ? value.trim().replace(/^sagax:\/\//i, "openmausbot://") : value);
-}
 function chatLinkInArgv(argv) {
   for (const value of Array.isArray(argv) ? argv : []) {
-    const link = chatLinkOf(value);
+    const link = chatLinkFrom(value);
     if (link) return link;
   }
   return null;
@@ -400,7 +394,7 @@ function queuePackageInstall(rawLink) {
 }
 
 function queueChatLink(rawLink) {
-  const link = chatLinkOf(rawLink);
+  const link = chatLinkFrom(rawLink);
   if (!link) return false;
   pendingChatLink = link;
   revealForLink();
@@ -411,8 +405,8 @@ function queueChatLink(rawLink) {
 // "Sign in with Pulsatrix" always runs in the system browser, never in a
 // window of this app: passkeys and password managers live there
 // (electron/oidc-system-sign-in.cjs). The browser comes back on a one-shot
-// 127.0.0.1 listener, or on openmausbot://auth when only that is possible.
-// The openmausbot:// sign-in this app is waiting for, if any:
+// 127.0.0.1 listener, or on sagax://auth when only that is possible.
+// The sagax:// sign-in this app is waiting for, if any:
 const pendingSystemSignIn = oidcSignInModule.createPendingSystemSignIn();
 // The credential just loaded into the main window's /pair from that return:
 // /pair redeems it without asking only when this confirms it.
@@ -485,7 +479,7 @@ async function serverSignInSupport(origin) {
   }
 }
 
-/** Whether `scheme`:// links (sagax or openmausbot) reach this exact running copy of the app. */
+/** Whether `scheme`:// links reach this exact running copy of the app. */
 async function thisAppOwnsAuthScheme(scheme) {
   const isDefault = app.isDefaultProtocolClient(scheme);
   let handlerPath = null;
@@ -550,7 +544,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
   signInLog(`starting on ${origin}`);
   const support = await serverSignInSupport(origin);
   if (attempt !== signInAttempt) return;
-  signInLog(support ? `${origin} supports loopback return: ${support.loopbackReturn}, openmausbot return: ${support.nativeReturn}` : `${origin} environment unreachable`);
+  signInLog(support ? `${origin} supports loopback return: ${support.loopbackReturn}, sagax return: ${support.nativeReturn}` : `${origin} environment unreachable`);
   if (!support) {
     setSignInState({ status: "error", origin, error: "unreachable" });
     return;
@@ -563,9 +557,10 @@ async function startPulsatrixSignIn(_win, loginStart) {
       signInLog(`could not listen on 127.0.0.1 (${error?.code ?? "error"})`);
     }
   }
-  // sagax:// first, when the server can end there; else openmausbot://.
-  const ownsSagax = support.sagaxReturn && !loopback ? await thisAppOwnsAuthScheme("sagax") : false;
-  const owns = ownsSagax || (support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme("openmausbot") : false);
+  // sagax://auth, when this copy of the app owns the scheme; the start names
+  // it as its return when the server takes one.
+  const owns = support.nativeReturn && !loopback ? await thisAppOwnsAuthScheme(URL_SCHEME) : false;
+  const ownsSagax = owns && support.sagaxReturn;
   if (attempt !== signInAttempt) {
     loopback?.cancel();
     return;
@@ -578,7 +573,7 @@ async function startPulsatrixSignIn(_win, loginStart) {
   });
   if (path === "unsupported") {
     loopback?.cancel();
-    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns sagax or openmausbot: ${owns})`);
+    signInLog(`${origin} cannot come back to this app (server loopback return: ${support.loopbackReturn}, this app owns sagax: ${owns})`);
     setSignInState({ status: "error", origin, error: "unsupported" });
     return;
   }
@@ -616,17 +611,17 @@ async function startPulsatrixSignIn(_win, loginStart) {
   }
 }
 
-/** Handle an openmausbot://auth link. Returns whether it was one. The
+/** Handle a sagax://auth link. Returns whether it was one. The
  * credential is never logged. */
 function takeAuthReturnLink(rawUrl) {
-  if (typeof rawUrl !== "string" || !/^(?:sagax|openmausbot):\/\/auth(?:[/?#]|$)/i.test(rawUrl)) return false;
+  if (typeof rawUrl !== "string" || !isAppLink(rawUrl, "auth")) return false;
   const parsed = environmentsModule.parseAuthReturnLink(rawUrl, environmentsState);
   if (!parsed) {
-    signInLog("ignored an openmausbot://auth link that does not name a saved server");
+    signInLog("ignored a sagax://auth link that does not name a saved server");
     return true;
   }
   if (!pendingSystemSignIn.take(parsed.origin)) {
-    signInLog(`ignored an openmausbot://auth return from ${parsed.origin} that this app did not start or that expired`);
+    signInLog(`ignored a sagax://auth return from ${parsed.origin} that this app did not start or that expired`);
     return true;
   }
   if (currentSignIn?.origin === parsed.origin) currentSignIn = null;
@@ -645,7 +640,7 @@ app.on("open-url", (event, url) => {
 });
 
 app.on("second-instance", (_event, commandLine) => {
-  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => typeof arg === "string" && /^(?:sagax|openmausbot):\/\/auth(?:[/?#]|$)/i.test(arg)) : undefined;
+  const authReturn = Array.isArray(commandLine) ? commandLine.find((arg) => isAppLink(arg, "auth")) : undefined;
   if (authReturn && takeAuthReturnLink(authReturn)) return;
   if (takeOrganizationDeepLink(commandLine)) {
     queueOrganizationEntry(ORGANIZATION_DEEP_LINK);
@@ -3364,7 +3359,7 @@ function createWindow({ deferNavigation = false } = {}) {
       contextIsolation: true,
       // Cache V8's compiled code from the very first load instead of after
       // a script has run hot a few times: the renderer bundle starts faster
-      // from the second launch on (Grok Bot does the same).
+      // from the second launch on (the reference design does the same).
       v8CacheOptions: "bypassHeatCheck",
       preload: path.join(__dirname, "preload.cjs"),
       // Settings > Appearance > Desktop: the spell checker (on by default);
@@ -5005,9 +5000,8 @@ app.whenReady().then(async () => {
     }
   }
   if (app.isPackaged) {
-    // sagax:// is primary; openmausbot:// stays for one release (legacy-names.mjs).
     // A packaged launch smoke must not take sagax:// away from the installed app.
-    if (process.env.SAGAX_SMOKE_TEST !== "1" && !PERF_BENCH) for (const scheme of URL_SCHEMES) app.setAsDefaultProtocolClient(scheme);
+    if (process.env.SAGAX_SMOKE_TEST !== "1" && !PERF_BENCH) app.setAsDefaultProtocolClient(URL_SCHEME);
   }
   // Chromium adds the mutation capability below JavaScript (packaged
   // builds), so renderer requests can mutate the local harness while a

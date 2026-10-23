@@ -14,7 +14,7 @@
  * - after: wait for the running turn, then run (the queue). */
 export type BusySendMode = "steer" | "parallel" | "after";
 
-/** What a send asks for. `auto` (the default since 2026-10-18, JC: the bot
+/** What a send asks for. `auto` (the default since 2026-10-18: the bot
  * orchestrates, the person is never asked) leaves it to the bot: a
  * correction of the running work joins it, an independent request runs as a
  * parallel task, one that depends on the running work or touches the same

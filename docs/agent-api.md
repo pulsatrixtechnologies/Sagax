@@ -1,7 +1,7 @@
 # The agent-to-agent API
 
 Twelve tools let one agent find, prompt and read another agent, with the same
-names, parameters and limits as Grok Bot's agent tools, plus `get_agent` and
+names, parameters and limits as the reference design's agent tools, plus `get_agent` and
 `delete_agent` (Perspicax #321). One core
 (`server/agent-api.ts`) serves two transports:
 
@@ -49,7 +49,7 @@ created. `temporary` is null for a lasting agent, else `created_at`,
 ## Temporary agents
 
 Every agent `create_agent` makes is temporary (`server/temporary-agents.ts`,
-JC's decisions of 2026-10-14). The mark (`BotRecord.temporary`) never goes on
+the decisions of 2026-10-14). The mark (`BotRecord.temporary`) never goes on
 the wire and is never exported.
 
 - **Owner**: the calling person; for a bot's call, the person its turn speaks

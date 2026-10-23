@@ -1,5 +1,5 @@
 // Routines turned on or off, as one line in the conversation (2026-10-15,
-// JC, after Grok Bot's "Disabled · 5 routines"). When a turn changes whether
+// The maintainer, after the reference design's "Disabled · 5 routines"). When a turn changes whether
 // routines are on (a routine card the person confirmed, a change the bot
 // applied to itself, its Undo, or the person's own switch in the app while
 // this conversation is open) the thread gets ONE compact line per action

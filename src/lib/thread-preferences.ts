@@ -6,7 +6,7 @@ export const SHOW_THREADS_KEY = "omb-show-threads";
 // here. Keep a session choice even if private/blocked storage rejects reads or
 // writes; another window's storage event can supersede that choice.
 //
-// Off by default since 2026-10-17 (JC: the single stream is the default
+// Off by default since 2026-10-17 (the single stream is the default
 // mode, docs/single-stream-orchestration.md): a person who never chose (no
 // stored value, or storage that cannot be read) sees one continuous
 // conversation per bot. "1" is a recorded on, so whoever turned threads on

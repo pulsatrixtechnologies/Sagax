@@ -88,7 +88,7 @@ export function OrgDirectory({
   const currentAddress = org.host?.kind === "server" ? org.host.url : "";
   const nextHost = orgHostFromInput(address);
 
-  // 0.5.6 (JC): Grok Bot's rows under a People heading. The server's address
+  // 0.5.6: the reference design's rows under a People heading. The server's address
   // (when it has one) with Edit, Invite with its field at the right, then
   // the people and the pending invitations folded behind a count. A solo
   // server's own invitations carry no organization name worth a row (it was

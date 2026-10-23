@@ -1,5 +1,5 @@
 // A bot's or a group's picture from anywhere a person has one (2026-10-21,
-// parity with Grok Bot's "Drag and drop or paste an image"): the file
+// parity with the reference design's "Drag and drop or paste an image"): the file
 // button, a drop on the avatar or the upload area, or a paste while it has
 // focus. One limit for all of them, 25 MB (attachments take up to 32 MB), and
 // an export of the current picture as a file.

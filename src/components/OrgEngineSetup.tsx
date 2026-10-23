@@ -1,5 +1,5 @@
 // The first-run step "connect your own engine" on an organization server
-// (2026-10-18, JC), and the chat's notice that leads back to it.
+// (2026-10-18), and the chat's notice that leads back to it.
 //
 // When nothing the organization offers answers this person
 // (shared/org-engine-readiness.ts: "connect" or "blocked"), the setup asks

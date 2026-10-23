@@ -1,4 +1,4 @@
-/** Overlay scrollbars that fade when unused (macOS and Grok Bot style, 2026-10-18).
+/** Overlay scrollbars that fade when unused (macOS and the reference design style, 2026-10-18).
  *
  * The native bars are hidden everywhere (`scrollbar-width: none` in
  * styles.css), so no scroller reserves a gutter and nothing shifts when a bar

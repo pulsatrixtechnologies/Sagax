@@ -581,8 +581,8 @@ describe("Copy link", () => {
     // a bot-owned row and a room-owned row: the owner id, not anything else,
     // is what the copied link must carry as ?bot=
     const rows = [
-      { task: { threadId: "qa-245", title: "QA PR 245" }, ownerId: "scout", link: "openmausbot://thread/qa-245?bot=scout" },
-      { task: { threadId: "monday-1", title: "Monday plan" }, ownerId: "standup", link: "openmausbot://thread/monday-1?bot=standup" },
+      { task: { threadId: "qa-245", title: "QA PR 245" }, ownerId: "scout", link: "sagax://thread/qa-245?bot=scout" },
+      { task: { threadId: "monday-1", title: "Monday plan" }, ownerId: "standup", link: "sagax://thread/monday-1?bot=standup" },
     ];
     for (const { task, ownerId, link } of rows) {
       threadMenu(renderRow(task, ownerId))!.actions.onCopyLink!();

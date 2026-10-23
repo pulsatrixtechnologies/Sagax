@@ -16,7 +16,7 @@ Method: PIL edge/subpixel scans. Font sizes come from the cap-height stem (SF ca
 | Sheet fill | **#141414** (opaque) |
 | Top corner radius | about **37** (circular fit 37.0; use 38 continuous) |
 | Bottom corner radius | about **50** (circular fit 50.7; concentric with the display corners, about device radius minus 8) |
-| Content clipping | content is clipped by the sheet shape (the Appearance row and "Grok Bot" are cut at the bottom edge) |
+| Content clipping | content is clipped by the sheet shape (the Appearance row and "the reference design" are cut at the bottom edge) |
 | Home behind | **not scaled, not offset, not blurred.** Pixel positions match 01-home exactly; edges stay sharp |
 | Dim over home | full screen, status bar area included (the status bar glyphs are drawn above it and stay #FFFFFF). Measured pairs home → dimmed: #FFFFFF→#858585, #333333→#151515, #141414→#0A0A0A, #3C82F7→#1B3D74. Best single fit: **black at 0.50 opacity** (20→10 exact; white gives 128 vs 133). Use `Color.black.opacity(0.5)` |
 | Top scroll-edge fade (14) | content scrolled under the header fades into the sheet colour over about **123.67 → 201** (about 78 pt, header height). Card colour #1F1F1F shows as #141414 at the top, about 0.82 overlay at +18, 0.64 at +45, 0.18 at +75, 0 at +78. Text under it is heavily dimmed (white reads ≤ 52/255 at +20..30), which matches the iOS 26 soft scroll-edge effect |
@@ -75,15 +75,15 @@ Screen y values (12-settings-top, scroll at rest):
   - Email: **11 Regular #9C9BA0**, x 88.67. Name and email are stacked and centred on the photo. Ink box 252 → 262.33.
   - Chevron centred on the row.
   - "Usage": baseline 306.67; value "35%" + chevron.
-- Card B "Plugins / Tools and skills for Grok Bot" 350.49 → 411.5 (61): title baseline 378, subtitle baseline 395.
+- Card B "Plugins / Tools and skills for the reference design" 350.49 → 411.5 (61): title baseline 378, subtitle baseline 395.
 - Label "Bot" baseline 449.67.
 - Card C 460.17 → 743.5: Auto-review (75, toggle) | Auto-review Rules (44.67, value "16" + chevron) | Set Time Zone Automatically (74, toggle) | Time Zone (44.67, value only, no chevron) | Bot Computer (43.33, chevron).
 - Card D 770.7 → (in 14: 197 → 384.33): Notifications (53.67, toggle) | Appearance "System · Black" | Language "System" | Haptics "On" (44.5 each, chevrons).
-- Card E 411.33 → 589 (in 14): Help Center | Privacy Policy | Terms of Service | Grok Bot Terms (4 x 44.4, chevrons).
+- Card E 411.33 → 589 (in 14): Help Center | Privacy Policy | Terms of Service | the reference design Terms (4 x 44.4, chevrons).
 - Card F Send Feedback 616 → 660.67 (chevron).
 - Card G Sign Out 687.33 → 732 (red text, no chevron).
 - **Footer mascot:** white circle **47.67 diameter**, centre x **201.17** (screen centre), top **792.67** (60.67 below the Sign Out card). Fill #FFFFFF. Two eye cut-outs in the sheet colour #141414, upper right: left eye about 6.3 x 8.3 at x 203 → 209.33, y 802.67 → 811; right eye x 213.33 → 218.67, y 800.67 → 809. Both slanted (top leaning right), the same mascot shape as home.
-- **App name "Grok Bot"**: cap top **860.67** (20.3 below the mascot), centred, white, ink width about 65 → **SF Pro 17 Regular/Medium** (CT 17 Regular 65.47, Medium 67.08). Clipped by the sheet bottom, so the baseline is about 872.7.
+- **App name "the reference design"**: cap top **860.67** (20.3 below the mascot), centred, white, ink width about 65 → **SF Pro 17 Regular/Medium** (CT 17 Regular 65.47, Medium 67.08). Clipped by the sheet bottom, so the baseline is about 872.7.
 
 ## 5. Plugins (15)
 

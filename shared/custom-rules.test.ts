@@ -156,7 +156,7 @@ describe("the model reviewer (examen automatique, lot A1)", () => {
   const free = rule("tout ce qui touche au projet Sagax", "allow");
   const freeDeny = rule("toucher aux factures du client Acme", "deny");
   const orgAsk = rule("modifier les ententes ConnectWise", "ask", { org: true, ownerId: "org" });
-  const cwWrite = callFacts({ tool: "mcp__perspicax_gox__cw_psa__write", input: JSON.stringify({ resource: "tickets", id: 12, summary: "Sagax" }), home: HOME });
+  const cwWrite = callFacts({ tool: "mcp__perspicax_quasar__cw_psa__write", input: JSON.stringify({ resource: "tickets", id: 12, summary: "Sagax" }), home: HOME });
   const reply = (decision: string, ruleLabel: string, reason = "La règle couvre ce billet.") => JSON.stringify({ decision, rule: ruleLabel, reason });
 
   it("orders the rules organization first and leaves exact commands to the matcher", () => {
@@ -281,7 +281,7 @@ describe("the model reviewer (examen automatique, lot A1)", () => {
 
 describe("candidateWhen", () => {
   it("makes a rule that covers the very call it came from", () => {
-    for (const facts of [readDoc, writeDoc, callFacts({ tool: "mcp__perspicax_gox__cw_psa__query", input: "{}" })]) {
+    for (const facts of [readDoc, writeDoc, callFacts({ tool: "mcp__perspicax_quasar__cw_psa__query", input: "{}" })]) {
       const when = candidateWhen(facts, "fr");
       expect(ruleCoversCall(compileRule(when, HOME), facts), when).toBe(true);
     }

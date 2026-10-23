@@ -71,7 +71,7 @@ export function botSectionLock(
       : id === "worksOn" ? !canEditBotField(config, bot, "computer")
         : id === "memory" ? !canEditBotField(config, bot, "memoryEnabled")
           // RULES.md, docs/ and the Files list: the Soul's gate (owner or
-          // admin; JC 2026-10-09, members manage their own bots)
+          // admin; 2026-10-09, members manage their own bots)
           : id === "rules" || id === "files" ? !canEditBotField(config, bot, "soul")
           : id === "soul" ? !canEditBotField(config, bot, "soul")
             : id === "history" ? viewerIsOrgMember(config)

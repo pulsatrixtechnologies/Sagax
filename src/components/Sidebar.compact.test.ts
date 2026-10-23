@@ -1,4 +1,4 @@
-// The compact sidebar (Grok Bot's "Activer ou désactiver la barre latérale
+// The compact sidebar (the reference design's "Activer ou désactiver la barre latérale
 // compacte"): the icons rail, its toggle in the rail's foot, Enter on the
 // edge, its arrow keys. The head keeps no collapse button (Sidebar.header).
 import { createElement } from "react";

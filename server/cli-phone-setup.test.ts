@@ -63,7 +63,7 @@ describe("phone origin validation", () => {
     "https://[::ffff:0.0.0.0]", "https://user:password@maus.example", "https://maus.example/pair",
     "https://maus.example/?token=secret", "https://maus.example/#code=ABCD-EFGH-JKLM",
     "https://maus.example/?", "https://maus.example/#", "https://maus.\nexample",
-    "https://maus.example\\private", "openmausbot://pair?token=secret",
+    "https://maus.example\\private", "sagax://pair?token=secret",
   ])("rejects a local, credential-bearing or non-origin input: %s", (input) => {
     expect(normalizePhoneOrigin(input)).toBeNull();
   });
@@ -238,7 +238,7 @@ describe("phone pairing instructions", () => {
 
   it("sends an Android phone to the app first, and still offers the browser", () => {
     const text = phonePairingInstructions("android", { origin: "https://maus.example", ready: true }).join("\n");
-    // The QR beside these lines is the openmausbot:// invite, so the app's
+    // The QR beside these lines is the sagax:// invite, so the app's
     // own scanner is now the primary route rather than a dead end.
     expect(text).toContain("open the Sagax app and scan the QR with its pairing scanner");
     // The QR beside these lines is the app-scheme invite, so telling people to

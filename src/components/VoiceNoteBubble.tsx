@@ -5,7 +5,7 @@
 // this window is on a Live call a note cannot be played at all: the call's
 // microphone would pick it up (starting the call already paused it).
 //
-// 2026-10-16 (Grok Bot parity): a speed button (1x, 1.5x, 2x) and, when the
+// 2026-10-16 (the reference design parity): a speed button (1x, 1.5x, 2x) and, when the
 // transcript carries word timings, the words as buttons that jump there.
 // A voice note the person recorded (lib/voice-note.ts) reuses this player
 // with its loaded clip (`src`), from AttachmentGallery.

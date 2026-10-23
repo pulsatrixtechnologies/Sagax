@@ -1,5 +1,5 @@
 /* ── Duo-tones (2026-10-19) ───────────────────────────────────────────────
-   JC: « des variantes plus complexes ». A duo-tone is a colour variant with
+   Decision: « des variantes plus complexes ». A duo-tone is a colour variant with
    two ends: --accent-from and --accent-to, the gradient between them
    (--accent-gradient) painted wherever the accent is filled, and a glow in
    both colours. Like the plain tints (styles.css, « Colour tints ») only the

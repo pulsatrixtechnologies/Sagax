@@ -35,7 +35,7 @@
 //   PATCH  /api/pages/:id                   { title? } any time; { access?, expiresAt? } while published
 //   POST   /api/pages/:id/revoke            stop serving now; the link is gone
 //   DELETE /api/pages/:id
-// Lot R8 (Grok Bot parity: edit, comments, annotation, Presentation):
+// Lot R8 (the reference design parity: edit, comments, annotation, Presentation):
 //   GET    /api/pages/:id/versions/:n/source   { version, content } the person's editor
 //   POST   /api/pages/:id/versions          { kind, content, title? } the person's
 //          own edit: a new proposed version, published only by Publish
@@ -275,7 +275,7 @@ function readForm(req: IncomingMessage): Promise<URLSearchParams | null> {
   });
 }
 
-/** A reader's comment (JC 2026-10-21): only on a published page its reader
+/** A reader's comment (2026-10-21): only on a published page its reader
  * may read, with reader comments on and allowed; from this host's own form
  * (an Origin, when sent, must be this host; Sec-Fetch-Site cross-site is refused); rate-limited per address; name
  * and text checked and capped, secret-shaped text removed; a filled honeypot

@@ -45,7 +45,7 @@ export class XaiVoiceNotGiven extends Error {
  * included with Cloud Pro. Settings' own-key flows read cfg.tts.key instead. */
 const elevenLabs = (cfg: AppConfig) => voiceCredential(cfg.tts?.key);
 
-/** Grok voice runs on the xAI key, the one Grok bots use (2026-10-14: one
+/** Grok voice runs on the xAI key, the one bots on Grok use (2026-10-14: one
  * key per provider in Settings > Models and voice). A Grok voice key saved
  * by an older build was folded into it by loadConfig(). */
 function grokVoiceKey(cfg: AppConfig, access?: VoiceKeyAccess): string | undefined {

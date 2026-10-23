@@ -131,7 +131,7 @@ final class PeoplePresenceTests: XCTestCase {
     // MARK: Unread dot
 
     func testTheUnreadDotIsNeverTheGreySkinsWhiteAccent() throws {
-        // Midnight is Grok Bot's Sand Dark since #491: its dot is Grok Bot's
+        // Midnight is the reference design's Sand Dark since #491: its dot is the reference design's
         // bright blue (src/lib/midnight-skin.test.ts), still never the white accent.
         let blues: [String: UInt32] = ["midnight": 0x1884FC, "graphite": 0x3C76F4, "linen": 0x3C76F4]
         for (id, blue) in blues {

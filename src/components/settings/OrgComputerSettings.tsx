@@ -1,5 +1,5 @@
-// Settings > Computer on an organization server (0.5.6: Grok Bot's
-// Computer page, JC). "Your computer" (its name after the heading): whether
+// Settings > Computer on an organization server (0.5.6: the reference design's
+// Computer page). "Your computer" (its name after the heading): whether
 // routines may use it, the network its bots reach through it, the person's
 // other computers, and the recent activity behind a link (#555). Local
 // models stay a folded card of their own (#555). "Bots' computer": the
@@ -166,7 +166,7 @@ function StateDot({ tone }: { tone: "ok" | "bad" | "idle" }) {
 
 /** The person's server environment, as two rows of "Bots' computer":
  * its state and resources with its screen on demand, then Reset (a red
- * pill, after a confirmation), as Grok Bot's Update and Reset rows. */
+ * pill, after a confirmation), as the reference design's Update and Reset rows. */
 export function ServerEnvironmentCard({ initial = null, confirm = (text: string) => window.confirm(text) }: { initial?: ServerEnvironmentStatus | null; confirm?: (text: string) => boolean }) {
   const [status, setStatus] = useState<ServerEnvironmentStatus | null>(initial);
   const [showScreen, setShowScreen] = useState(false);

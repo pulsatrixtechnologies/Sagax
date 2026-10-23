@@ -87,7 +87,7 @@ export function stepRow(rows: readonly Pick<ModelMenuRow, "key">[], from: string
   return rows[next]!.key;
 }
 
-// The composer's menu (JC, 2026-10-14: "too many models shown"): with an
+// The composer's menu (2026-10-14: "too many models shown"): with an
 // empty search the root is short, Auto and the bot's model, the current
 // model when neither of them is it, the person's favorites, then one row
 // per provider that opens its models in a submenu. A search lists every
@@ -144,8 +144,8 @@ export function modelMenuRootEntries(root: ModelMenuRoot): Array<{ key: string; 
   ];
 }
 
-// The providers sit behind one "Provider ›" row (Simple since JC
-// 2026-10-14, every mode since JC 2026-10-18) under Auto, the bot's model
+// The providers sit behind one "Provider ›" row (Simple since the maintainer
+// 2026-10-14, every mode since 2026-10-18) under Auto, the bot's model
 // and the favorites. Opening it lists the providers in place of the root,
 // each still opening its own submenu.
 

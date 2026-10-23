@@ -18,7 +18,7 @@ describe("routineRunCard", () => {
     expect(routineRunCard(run(), "main").summary).toBe(REPORT);
   });
 
-  // 2026-10-19 (GOX): routines in conversation wrote the full report under
+  // 2026-10-19 (production): routines in conversation wrote the full report under
   // the card, and the card repeated it.
   it("keeps only the state when the run joined the conversation it reports to", () => {
     const card = routineRunCard(run({ threadId: "main" }), "main");

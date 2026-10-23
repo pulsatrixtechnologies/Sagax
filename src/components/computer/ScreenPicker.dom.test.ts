@@ -15,7 +15,7 @@ import { ScreenPicker, type ScreenPickerItem } from "./OrgComputerTab";
 
 const ITEMS: ScreenPickerItem[] = [
   { key: "server", label: "Cloud", icon: Server, here: true },
-  { key: "desktop:d1", label: "Jean-Christophes-MBP", icon: Laptop },
+  { key: "desktop:d1", label: "Alexs-MBP", icon: Laptop },
   { key: "browser", label: "Browser", icon: Globe },
 ];
 

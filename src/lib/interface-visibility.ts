@@ -1,5 +1,5 @@
 // What Simple mode hides. Advanced shows the screen as it is. The composer
-// decides for itself (JC, 2026-10-14): two approval choices instead of five
+// decides for itself (2026-10-14): two approval choices instead of five
 // (ApprovalModeSelector), no place chip unless the conversation has one
 // pinned (Composer). The providers behind "Provider ›" (ModelMenu) are no
 // longer Simple's alone (2026-10-18). Hiding never changes a

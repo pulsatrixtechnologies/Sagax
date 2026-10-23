@@ -4,7 +4,7 @@
 // see or change it. It reads layout only and returns the defects it finds.
 // Kept apart from the renderer so its rules read on their own.
 //
-// Rules (JC, 2026-10-19: the bot checks its own widget before showing it):
+// Rules (2026-10-19: the bot checks its own widget before showing it):
 // - hscroll: the document is wider than the frame.
 // - overflow: an element sticks out of the frame or of the box it sits in.
 // - clipped: a box with overflow hidden cuts its own text (an ellipsis is fine).

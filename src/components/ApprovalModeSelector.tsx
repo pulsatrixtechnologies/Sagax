@@ -87,7 +87,7 @@ export function approvalModeSelectionRequiresLocalDesktop(
 /** How much this bot may do on its own. In the composer it is an icon
  * beside the message field that opens a menu: the five levels in Advanced,
  * the same two choices as the bot settings ("Ask me first", "Decide for
- * me") in Simple (JC, 2026-10-14). `wide` is the bot settings control: the
+ * me") in Simple (2026-10-14). `wide` is the bot settings control: the
  * full menu in Advanced, the two stacked choices in Simple. */
 export function ApprovalModeSelector({
   approvalMode,

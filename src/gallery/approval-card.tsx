@@ -40,7 +40,7 @@ const store = {
   flushBotPatches: async () => null,
 } as unknown as ReturnType<typeof useStore>;
 
-const bot = { id: "bot-katarina", name: "Katarina", color: "violet" } as unknown as Bot;
+const bot = { id: "bot-ottoline", name: "Ottoline", color: "violet" } as unknown as Bot;
 
 const COMMAND = "ls /workspace/sagax-plugins/ 2>/dev/null; echo CLAUDECODE=$CLAUDECODE; ls ~/.pulsatrix-flow | head";
 const cards: Record<string, { card: NonNullable<Message["card"]>; tool: string }> = {
@@ -105,17 +105,17 @@ const pending: Pending = {
   detail: chosen.card.subtitle,
   held: chosen.card.held,
   heldCode: chosen.card.heldCode,
-  threadId: "thread-cryptic-katarina",
-  askedBy: "Cryptic",
+  threadId: "thread-quasar-ottoline",
+  askedBy: "Quasar",
 };
 
 function Gallery() {
   return (
     <div className="min-h-screen bg-canvas p-6 text-ink">
       <div className="mx-auto max-w-[760px]">
-        <div className="mb-3 rounded-2xl bg-card px-4 py-3 text-[14px]">Katarina : je regarde ce qui est installé dans ton ordinateur cloud.</div>
+        <div className="mb-3 rounded-2xl bg-card px-4 py-3 text-[14px]">Ottoline : je regarde ce qui est installé dans ton ordinateur cloud.</div>
         <PendingApprovalBox approvals={[pending]} threadId="thread-main" botFor={() => bot} onCancelTurn={() => window.__decisions.push({ type: "cancelTurn" })} />
-        <div className="h-12 rounded-[22px] border-[0.5px] border-border bg-composer px-4 py-3 text-[14px] text-ink-secondary">Écris à Katarina</div>
+        <div className="h-12 rounded-[22px] border-[0.5px] border-border bg-composer px-4 py-3 text-[14px] text-ink-secondary">Écris à Ottoline</div>
       </div>
     </div>
   );

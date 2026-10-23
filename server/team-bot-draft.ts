@@ -1,5 +1,5 @@
-// "Create a Team Bot from this conversation" (2026-10-16, parity with Grok
-// Bot's "Start with this conversation and its memory"): what the dialog
+// "Create a Team Bot from this conversation" (2026-10-16, parity with the reference
+// design's "Start with this conversation and its memory"): what the dialog
 // starts from, and what may go into the new bot.
 //
 // - The draft (name, role, description, instructions) is written by the
@@ -9,7 +9,7 @@
 //   one-shot cannot run, the draft is drawn from the thread title and the
 //   excerpt (source "excerpt"); the person edits either before anything is
 //   created.
-// - Since 2026-10-21 (JC: a copy, never the private memory) nothing of the
+// - Since 2026-10-21 (a copy, never the private memory) nothing of the
 //   conversation and nothing of the bot's own memory is written into the new
 //   bot. POST /api/bots/:id/team-bot-carry answers 410 private_memory_never.
 //   carryOverPlan stays the pure description of that refusal (includeMemory

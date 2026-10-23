@@ -21,9 +21,9 @@ describe("bot-to-bot threads are never shown to the person", () => {
 
   it("an unread thread another bot opened never lights the bot's dot; the bot still finds it", () => {
     const store = new Store(selection);
-    const cryptic = store.createBot({}, { seedMessages: false });
+    const quasar = store.createBot({}, { seedMessages: false });
     const agreements = store.createBot({}, { seedMessages: false });
-    const task = store.createTask(agreements.id, "@Cryptic · work", false, undefined, { botId: cryptic.id, name: "Cryptic", at: 1, kind: "work" })!;
+    const task = store.createTask(agreements.id, "@Quasar · work", false, undefined, { botId: quasar.id, name: "Quasar", at: 1, kind: "work" })!;
     expect(isInterBotThread(agreements.id, task)).toBe(true);
     store.patchTask(agreements.id, task.threadId, { unread: true });
     expect(store.bot(agreements.id)!.unread).toBe(false);
@@ -129,9 +129,9 @@ describe("the second sweep (agent-threads-hidden.v2)", () => {
       [
         { id: "agreements", threadId: "own", tasks: [
           { threadId: "own" },
-          { threadId: "work", openedBy: { botId: "cryptic" } },
+          { threadId: "work", openedBy: { botId: "quasar" } },
           { threadId: "self", openedBy: { botId: "agreements" } },
-          { threadId: "done", hidden: true, openedBy: { botId: "cryptic" } },
+          { threadId: "done", hidden: true, openedBy: { botId: "quasar" } },
           { threadId: "grok" },
           { threadId: "person" },
         ] },

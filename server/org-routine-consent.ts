@@ -1,6 +1,6 @@
 // Routine delegations (slice 6, spec sections 4 "Délégation pour les
 // routines", 4 bis and 11): the routines that run as a person act in their
-// name while they are away. Since 2026-10-08 (JC) this is not a choice: the
+// name while they are away. Since 2026-10-08 this is not a choice: the
 // delegation is issued automatically from the person's live sign-in (at
 // sign-in, while they keep using Sagax, and at a run that finds none), with
 // no consent step and no switch, and a routine is never paused for lack of

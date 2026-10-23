@@ -453,13 +453,13 @@ describe("paths, tools and products", () => {
   });
 
   it("a tool is named with its server, and a product by whole tokens", () => {
-    const query = callFacts({ tool: "mcp__perspicax_gox__cw_psa__query", input: "{}" });
-    expect(ruleCoversCall(compileRule("la lecture avec `perspicax_gox__cw_psa__query`"), query)).toBe(true);
+    const query = callFacts({ tool: "mcp__perspicax_quasar__cw_psa__query", input: "{}" });
+    expect(ruleCoversCall(compileRule("la lecture avec `perspicax_quasar__cw_psa__query`"), query)).toBe(true);
     expect(ruleCoversCall(compileRule("la lecture avec `cw_psa__query`"), query)).toBe(false);
     expect(ruleCoversCall(compileRule("la lecture avec `query`"), query)).toBe(false);
     const lookalike = callFacts({ tool: "mcp__evilcw__newcw_dump", input: "{}" });
     expect(lookalike.products).not.toContain("connectwise");
-    expect(callFacts({ tool: "mcp__perspicax_gox__cw_psa__query", input: "{}" }).products).toContain("connectwise");
+    expect(callFacts({ tool: "mcp__perspicax_quasar__cw_psa__query", input: "{}" }).products).toContain("connectwise");
     expect(callFacts({ tool: "mcp__evil_perspicax__cw_dump", input: "{}" }).products).toEqual([]);
   });
 });

@@ -69,7 +69,7 @@ describe("SidebarSectionHeader", () => {
     expect(html).toContain("1 working");
   });
 
-  it("shows only the group's name, never a count, folded or open (Grok Bot's My Team)", () => {
+  it("shows only the group's name, never a count, folded or open (the reference design's My Team)", () => {
     const header = (collapsed: boolean) => renderToStaticMarkup(
       createElement(SidebarSectionHeader, { name: "Mon équipe", collapsed, onToggle: () => {}, reorderable: false, dragging: false }),
     );

@@ -2,10 +2,10 @@
 
 Status: the default mode since 2026-10-17. Server and data model in #719;
 desktop stream UI and the default flip in the follow-up PR. iOS keeps thread
-mode for now (see "Clients"). Requested by JC on 2026-10-17: with threads
-hidden, one conversation per bot like Grok Bot; the person never has to look
+mode for now (see "Clients"). Requested by the maintainer on 2026-10-17: with threads
+hidden, one conversation per bot like the reference design; the person never has to look
 for where a chat went; the bot runs each topic in a fresh context but still
-knows everything that happened before, cheaply. JC then set it as the default
+knows everything that happened before, cheaply. The maintainer then set it as the default
 mode.
 
 ## What exists today (investigation, 2026-10-17)
@@ -27,7 +27,7 @@ mode.
   person last wrote in) and, when a deep link or notification lands on
   another one, shows "Back to conversation" (`ThreadsOffReturnLink`,
   `src/components/thread-home.ts`). That is the "where did it go" problem.
-- **Grok Bot** keeps one continuous conversation per bot; sub-agent work
+- **the reference design** keeps one continuous conversation per bot; sub-agent work
   (Sagax: hidden AI-client conversations, #291; parallel tasks) stays out of
   the chat and reports back into it.
 - **Context today**: Sagax folds a long thread itself
@@ -181,7 +181,7 @@ step: port `shared/single-stream.ts` to `CompanionCore`, send
 
 ## Fresh topic on return (2026-10-18)
 
-JC's decision: coming back to a bot lands on a new, empty topic, with the
+the decision: coming back to a bot lands on a new, empty topic, with the
 earlier ones folded behind one "Earlier topics" line, and the bot keeps all
 of it (digest, `recall_topic`). The rule (`shared/fresh-topic.ts`, same
 cases on iOS): a fresh topic when the topic the bot opens to is quiet past

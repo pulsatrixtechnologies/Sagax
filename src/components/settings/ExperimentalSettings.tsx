@@ -1,5 +1,5 @@
-// Settings > Experimental, laid out as Grok Bot's settings pages (0.5.6,
-// JC): one group, each feature a row with its label and a switch. A feature
+// Settings > Experimental, laid out as the reference design's settings pages (0.5.6,
+//): one group, each feature a row with its label and a switch. A feature
 // this server cannot run keeps its row, greyed, with "Not available on this
 // server" (the Data window on a server older than 0.5.3, #539/#560; the
 // built-in browser with no engine) and the reason behind the help button.

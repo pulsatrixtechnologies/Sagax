@@ -470,7 +470,7 @@ describe("launched agents by kind of work", () => {
   it("Coding holds only coding agents; a dispatch or bot-to-bot run goes to Activity", () => {
     const list = {
       items: [], subagents: [],
-      launchedAgents: [agent("thread:d1", "Dispatch"), agent("thread:o1", "Orion: @Cryptic · work"), agent("thread:s1", "Scout: Split the lexer", true)],
+      launchedAgents: [agent("thread:d1", "Dispatch"), agent("thread:o1", "Orion: @Quasar · work"), agent("thread:s1", "Scout: Split the lexer", true)],
     };
     const sections = panelSections(list);
     expect(sections.launched.map((item) => item.id)).toEqual(["thread:s1"]);

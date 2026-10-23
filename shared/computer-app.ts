@@ -1,5 +1,5 @@
 // 2026-10-21 (parité R10, ligne 80): "Toujours permettre" for one app of the
-// person's own computer ("Cryptic peut voir Safari, y cliquer et y saisir du
+// person's own computer ("the bot peut voir Safari, y cliquer et y saisir du
 // texte sur cet ordinateur"). A screen action names the app it acts on by a
 // process id (cua-driver: click, type_text, scroll... take `pid`). This
 // module only reads WHICH target a call names and whether an app rule may

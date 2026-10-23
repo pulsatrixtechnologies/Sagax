@@ -359,7 +359,7 @@ export class SessionRegistry {
    * Pulsatrix" session is kept when no write was lost (no unsynced marker),
    * and only as "to recheck": the provider must refresh its grant before it
    * is served again, so a logout or a disabled account that the crash hid is
-   * still caught (2026-10-19, JC signed out after every pulsabot restart). */
+   * still caught (2026-10-19 signed out after every pulsabot restart). */
   private load(restoreAccounts: boolean, restoreProviderSessions = false): void {
     if (!existsSync(this.options.file)) return;
     let raw: unknown;

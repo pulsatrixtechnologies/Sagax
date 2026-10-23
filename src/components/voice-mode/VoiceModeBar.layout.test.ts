@@ -23,7 +23,7 @@ import { readFileSync } from "node:fs";
 import { VoiceModeBar, type VoiceModeBarProps } from "./VoiceModeBar";
 
 const bot = {
-  id: "cryptic", threadId: "cryptic-main", name: "Cryptic", title: "", description: "", notifications: true,
+  id: "quasar", threadId: "quasar-main", name: "Quasar", title: "", description: "", notifications: true,
   color: "green", unread: false, messages: [], modelSelection: { instanceId: "fake", model: "test" },
 } as unknown as Bot;
 const call = { analysers: { mic: null, bot: null }, enrolled: false, endpointMs: 850, modelsReady: true } as unknown as VoiceCall;
@@ -55,7 +55,7 @@ describe("the voice call pill", () => {
       // the state is spoken (live region) and in the avatar's tooltip, not printed
       expect(html).toMatch(new RegExp(`data-voice-status[^>]*>${label}<`));
       expect(classOf(html, "data-voice-status")).toContain("sr-only");
-      expect(html).toContain(`title="Cryptic · 0:00 · ${label}"`);
+      expect(html).toContain(`title="Quasar · 0:00 · ${label}"`);
       const order = ["data-voice-avatar", "data-voice-waveform", "data-voice-gear", "data-voice-transcript-toggle", "data-voice-mute", "data-voice-end"].map((a) => html.indexOf(`${a}="true"`));
       expect(order.every((index) => index > 0), `${phase} controls ${order}`).toBe(true);
       expect(order, `${phase} order`).toEqual([...order].sort((a, b) => a - b));

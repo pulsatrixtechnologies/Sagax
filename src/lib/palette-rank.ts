@@ -19,7 +19,7 @@ export function rankByName<T extends { name: string }>(items: readonly T[], quer
 }
 
 /** Lowercased, accents folded: "Réglages" and "reglages" are the same
- * word to someone typing fast (Cursor and Grok Bot both fold them). */
+ * word to someone typing fast (Cursor and the reference design both fold them). */
 export function foldForSearch(text: string): string {
   return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }

@@ -1,4 +1,4 @@
-// My Chrome and a bot's shell (JC, 2026-10-20, after #838).
+// My Chrome and a bot's shell (2026-10-20, after #838).
 //
 // A bot with a command tool (a shell) on the SAME computer as the person's
 // Chrome could connect to Chrome's DevTools itself and walk around the

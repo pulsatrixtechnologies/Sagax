@@ -51,7 +51,7 @@ export function RoomTurnTimeoutSettings() {
     }
   };
 
-  // 0.5.6 (JC): one Grok-style row, label and a short grey line at the
+  // 0.5.6: one Grok-style row, label and a short grey line at the
   // left, the minutes at the right; the range shows only when refused.
   return (
     <div data-settings-card="organization.roomTurns">

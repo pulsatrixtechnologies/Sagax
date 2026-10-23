@@ -24,7 +24,7 @@ The app is native Swift and uses XcodeGen; EAS commands do not apply.
 
 ## App Store Connect
 
-- Copy the localized text from `en-US/`. It still describes the old "OpenMausMobile" app and the hosted Cloudflare route: rewrite it before the first App Store (not TestFlight) submission.
+- Copy the localized text from `en-US/`. It still describes the hosted Cloudflare route: rewrite that part before the first App Store (not TestFlight) submission.
 - Use `privacy-answers.md` and verify it still matches the binary.
 - Use `review-notes.md`, adding a real review contact and the demo access in App Store Connect.
 - Support URL: `https://github.com/pulsatrixtechnologies/sagax/issues`

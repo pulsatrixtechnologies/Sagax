@@ -29,7 +29,7 @@ export interface CalendarSidebarProps {
   filteredOut?: boolean;
 }
 
-/** The calendar's right panel (2026-10-18, JC): the month, then what runs
+/** The calendar's right panel (2026-10-18): the month, then what runs
  * next. Bots are scheduled by dragging them from the left sidebar, which
  * already lists them, so this panel no longer repeats them. */
 export function CalendarSidebar({ anchor, onSelectDate, routines, runs, bots, viewerPrincipalId, loading, error, onOpenRoutine, onCollapse, filteredOut = false }: CalendarSidebarProps) {

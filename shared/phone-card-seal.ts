@@ -1,4 +1,4 @@
-// "Scanner avec l'iPhone" sealed end to end (JC 2026-10-21): the card read
+// "Scanner avec l'iPhone" sealed end to end (2026-10-21): the card read
 // on the iPhone is encrypted for the New card form that asked, and only that
 // form can open it. The server relays an opaque envelope and never holds the
 // number in clear, not even in memory.

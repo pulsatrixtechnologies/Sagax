@@ -1,6 +1,6 @@
 // Settings (iOS parity 12 and 14): the card sheet the account menu opens.
 //
-// The root groups its cards as Grok Bot iOS 1.14 does: the account card
+// The root groups its cards as the reference design iOS 1.14 does: the account card
 // (Pair devices: switch, add, sign out, delete) with Usage, Connect apps,
 // the bot's settings, the phone's own (Notifications, Appearance, Language,
 // Haptics), then Sagax's extra pages (General, Organization, Experimental),
@@ -169,7 +169,7 @@ private struct SettingsRootPage: View {
 
     // MARK: Cards
 
-    /// The root as Grok Bot iOS 1.14 groups it: the account with Usage,
+    /// The root as the reference design iOS 1.14 groups it: the account with Usage,
     /// Connect apps, the bot's settings, the phone's own (Notifications,
     /// Appearance, Language, Haptics), then Sagax's extra pages, the links,
     /// feedback and Sign Out. Which rows show still comes from
@@ -264,7 +264,7 @@ private struct SettingsRootPage: View {
 
     // MARK: Rows
 
-    /// The rows of the "more" card: the Sagax pages Grok Bot has no row for.
+    /// The rows of the "more" card: the Sagax pages the reference design has no row for.
     /// The other sections have their own cards above.
     @ViewBuilder
     private func row(_ section: PhoneSettingsSection) -> some View {

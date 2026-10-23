@@ -45,7 +45,7 @@ beforeAll(async () => {
   const route = createVoiceModeRoutes({
     organization: false,
     speaker: () => ({ principalId: "p-ada" }),
-    target: (_auth, botId, threadId) => ({ botId, botName: "Cryptic", threadId: threadId ?? "t-1" }),
+    target: (_auth, botId, threadId) => ({ botId, botName: "Quasar", threadId: threadId ?? "t-1" }),
     serverKey: () => KEY,
     hasOwnKey: () => false,
     resolveOwnKey: async () => ({ ok: false, error: "no_key" }),
@@ -109,7 +109,7 @@ async function until<T>(what: string, check: () => T | undefined | null | false,
 
 describe("voice mode live call (streaming)", () => {
   it("streams the person's audio to xAI and answers each finalized utterance, on one socket", async () => {
-    const { ws, frames } = await open("/api/bots/b-cryptic/voice/listen?language=fr&threadId=t-1");
+    const { ws, frames } = await open("/api/bots/b-quasar/voice/listen?language=fr&threadId=t-1");
     await until("ready", () => frames.find((f) => f.type === "ready"));
     const pcm = Buffer.alloc(3200); // 100 ms of 16 kHz 16-bit audio
     ws.send(pcm);
@@ -136,17 +136,17 @@ describe("voice mode live call (streaming)", () => {
   });
 
   it("refuses a WebSocket from another origin (no CORS for WebSockets)", async () => {
-    await expect(open("/api/bots/b-cryptic/voice/listen", { origin: "https://evil.example" })).rejects.toThrow(/403/);
+    await expect(open("/api/bots/b-quasar/voice/listen", { origin: "https://evil.example" })).rejects.toThrow(/403/);
   });
 
   it("refuses a plain GET without an upgrade", async () => {
-    const res = await fetch(`${origin}/api/bots/b-cryptic/voice/listen`);
+    const res = await fetch(`${origin}/api/bots/b-quasar/voice/listen`);
     expect(res.status).toBe(426);
   });
 
   it("streams one sentence's speech as raw PCM while xAI makes it", async () => {
     const started = Date.now();
-    const res = await fetch(`${origin}/api/bots/b-cryptic/voice/stream`, {
+    const res = await fetch(`${origin}/api/bots/b-quasar/voice/stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: "**Bonjour** Ada.", voice: "ara", speed: 1.25, language: "fr" }),
@@ -173,14 +173,14 @@ describe("voice mode live call (streaming)", () => {
   });
 
   it("answers silence for a sentence with nothing speakable", async () => {
-    const res = await fetch(`${origin}/api/bots/b-cryptic/voice/stream`, {
+    const res = await fetch(`${origin}/api/bots/b-quasar/voice/stream`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "```js\nx()\n```" }),
     });
     expect(res.status).toBe(204);
   });
 
   it("streaming voice: one xAI socket for the call, each clause's PCM between start and done", async () => {
-    const { ws, frames, audio } = await open("/api/bots/b-cryptic/voice/speech?language=fr&voice=ara&speed=1.25&threadId=t-1");
+    const { ws, frames, audio } = await open("/api/bots/b-quasar/voice/speech?language=fr&voice=ara&speed=1.25&threadId=t-1");
     await until("ready", () => frames.find((f) => f.type === "ready"));
     expect(frames[0]).toEqual({ type: "ready", sampleRate: 24_000 });
     const started = Date.now();
@@ -202,7 +202,7 @@ describe("voice mode live call (streaming)", () => {
   });
 
   it("streaming voice barge-in: the clause speaking is cleared at xAI (text.clear), the socket carries on", async () => {
-    const { ws, frames, audio } = await open("/api/bots/b-cryptic/voice/speech?language=en");
+    const { ws, frames, audio } = await open("/api/bots/b-quasar/voice/speech?language=en");
     await until("ready", () => frames.find((f) => f.type === "ready"));
     ws.send(JSON.stringify({ type: "say", id: "c1", text: "A long answer that the person cuts." }));
     ws.send(JSON.stringify({ type: "say", id: "c2", text: "Never said." }));
@@ -222,7 +222,7 @@ describe("voice mode live call (streaming)", () => {
   });
 
   it("streaming voice: a dropped xAI socket fails the clause, then reconnects for the next one", async () => {
-    const { ws, frames } = await open("/api/bots/b-cryptic/voice/speech?language=en");
+    const { ws, frames } = await open("/api/bots/b-quasar/voice/speech?language=en");
     await until("ready", () => frames.find((f) => f.type === "ready"));
     const before = xai.requests.filter((r) => r.websocket && r.path === "/v1/tts").length;
     xai.speech.dropAfter = 1;
@@ -238,11 +238,11 @@ describe("voice mode live call (streaming)", () => {
   it("streaming voice: an xAI socket that does not open is refused (502), so the page speaks over POST", async () => {
     xai.speech.refuse = true;
     try {
-      await expect(open("/api/bots/b-cryptic/voice/speech?language=en")).rejects.toThrow(/502/);
+      await expect(open("/api/bots/b-quasar/voice/speech?language=en")).rejects.toThrow(/502/);
     } finally {
       xai.speech.refuse = false;
     }
-    await expect(open("/api/bots/b-cryptic/voice/speech?language=en", { origin: "https://evil.example" })).rejects.toThrow(/403/);
+    await expect(open("/api/bots/b-quasar/voice/speech?language=en", { origin: "https://evil.example" })).rejects.toThrow(/403/);
     expect(speechLog).toEqual([]);
   });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { gatedMcpAsk } from "./gated-mcp-ask.ts";
 
-const MOUNTS = new Set(["agents", "perspicax_dispatch_agent", "sagax-environment"]);
+const MOUNTS = new Set(["agents", "perspicax_quasar_agent", "sagax-environment"]);
 // the exact shape grok 1.0.46 sent in production (2026-10-12T01:04:39Z)
 const useTool = (tool: string, title = tool) => ({
   toolCallId: "call-1-0", kind: "other", title,
@@ -12,7 +12,7 @@ const useTool = (tool: string, title = tool) => ({
 describe("gatedMcpAsk", () => {
   it("answers Grok's use_tool ask about a tool of a gated mount (production shape)", () => {
     expect(gatedMcpAsk(useTool("agents__list_bots"), MOUNTS)).toBe("agents__list_bots");
-    expect(gatedMcpAsk(useTool("perspicax_dispatch_agent__flow_action"), MOUNTS)).toBe("perspicax_dispatch_agent__flow_action");
+    expect(gatedMcpAsk(useTool("perspicax_quasar_agent__flow_action"), MOUNTS)).toBe("perspicax_quasar_agent__flow_action");
     expect(gatedMcpAsk(useTool("sagax-environment__write_file"), MOUNTS)).toBe("sagax-environment__write_file");
   });
 

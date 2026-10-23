@@ -61,7 +61,7 @@ afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("bot-first sidebar", () => {
   it.each([
-    // Grok Bot's comfortable row: a 36px portrait, 54px tall, 8px padding;
+    // The reference design's comfortable row: a 36px portrait, 54px tall, 8px padding;
     // its rail: a 54px square, 9px around the portrait
     { enabled: true, density: "comfortable", size: 36, spacing: ["h-[54px]", "gap-2", "py-2", "pl-2", "rounded-[10px]"] },
     { enabled: true, density: "compact", size: 28, spacing: ["gap-2", "py-1.5", "pl-2"] },
@@ -325,7 +325,7 @@ describe("group rows line up with bot rows", () => {
     expect(rowClass(groupMarkup, 'data-sidebar-group-row="group"').split(" ")).not.toContain("pl-6");
     expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).toContain("pl-2");
     expect(rowClass(botMarkup, 'data-sidebar-bot-row="pepper"').split(" ")).not.toContain("pl-6");
-    // same 36px avatar footprint as the bot row (Grok Bot's)
+    // same 36px avatar footprint as the bot row (the reference design's)
     expect(groupMarkup).toContain("relative shrink-0 size-9");
     expect(groupMarkup).not.toMatch(/ring-2 ring-panel/);
   });

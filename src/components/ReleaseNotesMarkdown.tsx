@@ -25,7 +25,7 @@ const components: Components = {
     );
   },
   img: ({ alt }) => (alt ? <span>{alt}</span> : null),
-  // 2026-10-16 (JC): drawn like Settings: each section's heading is a grey
+  // 2026-10-16 : drawn like Settings: each section's heading is a grey
   // heading, as Settings' groups have; the body reads at 13.5 px.
   h1: ({ children }) => <h4 data-release-section="" className="mb-1.5 mt-6 px-1 text-[13px] font-normal leading-[18px] text-ink-secondary first:mt-0">{children}</h4>,
   h2: ({ children }) => <h4 data-release-section="" className="mb-1.5 mt-6 px-1 text-[13px] font-normal leading-[18px] text-ink-secondary first:mt-0">{children}</h4>,

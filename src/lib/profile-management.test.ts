@@ -4,10 +4,10 @@ import { managedProfile, personAvatarSrc } from "./profile-management";
 describe("managedProfile", () => {
   it("reads the config's viewer block of an organization server", () => {
     const viewer = {
-      operator: false, principalId: "pr_1", email: "jc@example.test", name: "Jean-Christophe", role: "admin", canCreateBots: true,
+      operator: false, principalId: "pr_1", email: "jc@example.test", name: "Alex", role: "admin", canCreateBots: true,
       profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.example.test/console/me",
     };
-    expect(managedProfile(viewer)).toEqual({ by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Jean-Christophe", email: "jc@example.test" });
+    expect(managedProfile(viewer)).toEqual({ by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" });
   });
 
   it("keeps a solo server's and an older server's profile editable", () => {

@@ -25,7 +25,7 @@ const view = params.get("view") ?? "detail";
 const NOW = Date.now();
 const task: BotActivityItem = {
   id: "thread:t1", kind: "session", botId: "pepper", botName: "Pepper", title: "test",
-  status: "running", startedAt: NOW - 95_000, updatedAt: NOW, threadId: "t1", startedBy: { kind: "person", name: "JC" }, coding: true, childCount: 1,
+  status: "running", startedAt: NOW - 95_000, updatedAt: NOW, threadId: "t1", startedBy: { kind: "person", name: "Alex" }, coding: true, childCount: 1,
 };
 const done: BotActivityItem = { ...task, id: "thread:t2", threadId: "t2", title: "Corriger le lien de la facture", status: "finished", startedAt: NOW - 3_600_000, endedAt: NOW - 3_300_000, updatedAt: NOW - 3_300_000, childCount: undefined };
 const broke: BotActivityItem = { ...task, id: "thread:t3", threadId: "t3", title: "Mettre à jour les dépendances", status: "failed", startedAt: NOW - 7_200_000, endedAt: NOW - 7_000_000, updatedAt: NOW - 7_000_000, childCount: undefined };

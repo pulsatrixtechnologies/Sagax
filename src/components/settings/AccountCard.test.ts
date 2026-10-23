@@ -42,7 +42,7 @@ beforeEach(() => {
   resetPersonLabelsForTests();
   fixture.dispatch.mockReset();
   fixture.org = { org: { name: "Pulsatrix" } };
-  fixture.viewer = { principalId: "pr_jc", name: "Jean-Christophe Proulx", email: "jc@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
+  fixture.viewer = { principalId: "pr_jc", name: "Alex Martin", email: "jc@example.com", profileManagedBy: "perspicax", profileManageUrl: "https://px.example.test/console/me" };
   calls = [];
   vi.stubGlobal("fetch", vi.fn(async (path: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -68,7 +68,7 @@ describe("Settings > General account card", () => {
     const card = host.querySelector('[data-settings-card="general.account"]')!;
     expect(card).not.toBeNull();
     const text = card.textContent ?? "";
-    expect(text.indexOf("Jean-Christophe Proulx")).toBeLessThan(text.indexOf("Add a label"));
+    expect(text.indexOf("Alex Martin")).toBeLessThan(text.indexOf("Add a label"));
     expect(text.indexOf("Add a label")).toBeLessThan(text.indexOf("jc@example.com"));
     expect(text).toContain("Edit in Perspicax");
     expect(card.querySelector("[data-account-managed]")?.getAttribute("title")).toBe("Connected to bot.example.test · Organization: Pulsatrix");

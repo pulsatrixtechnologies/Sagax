@@ -17,7 +17,7 @@ vi.mock("@/state/store", async (importOriginal) => {
   return {
     ...original,
     useStore: () => ({
-      state: { ...original.initialState, config: { profile: { name: "Jean-Christophe Proulx" } } as AppState["config"] },
+      state: { ...original.initialState, config: { profile: { name: "Alex Martin" } } as AppState["config"] },
       dispatch: vi.fn(),
     }),
   };
@@ -57,7 +57,7 @@ describe("footer update button", () => {
     expect(tag).not.toContain("data-wide");
     expect(html).toContain("lucide-cloud-download");
     // the name stays while the button is round, and the row's badge gives way
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Alex Martin</span>");
     expect(html).toContain("max-w-[240px]");
     expect(html.match(/lucide-arrow-down-to-line/g)).toBeNull();
   });

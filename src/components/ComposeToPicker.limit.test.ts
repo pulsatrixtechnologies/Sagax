@@ -39,7 +39,7 @@ const people = [
   person("pr_francis", "Francis Beaulieu"),
   person("pr_gregory", "Gregory Jeanne"),
   person("pr_maxime", "Maxime Charbonneau"),
-  person("pr_zachary", "Zachary Sellam"),
+  person("pr_zachary", "Sam Taylor"),
   person("pr_marc", "Marc Roy"),
   person("pr_julie", "Julie Tremblay"),
 ];
@@ -74,7 +74,7 @@ describe("ComposeToPicker result limit", () => {
     fixture.people = new Map(people.map((p) => [p.principalId, p]));
     const html = renderToStaticMarkup(createElement(() => ComposeToPicker({ onClose: vi.fn() })));
     expect(html.match(/data-compose-(bot|person)=/g)).toHaveLength(6);
-    expect(html).toContain("Zachary Sellam");
+    expect(html).toContain("Sam Taylor");
     expect(html).not.toContain("Marc Roy");
     expect(html).not.toContain("Julie Tremblay");
     const keys = [...html.matchAll(/<kbd[^>]*>.*?<span>(\d)<\/span><\/kbd>/g)].map((m) => Number(m[1]));

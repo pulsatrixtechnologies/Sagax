@@ -1,6 +1,6 @@
 // /api/code/status asks Perspicax once whether it serves the cloud agents
 // API (#372). A Perspicax without it (404 on /api/v1/agents/environments,
-// as GOX 1.8.39) gives `not_available`: no error, no repeated calls.
+// as a 1.8.39 server) gives `not_available`: no error, no repeated calls.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";

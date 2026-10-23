@@ -85,7 +85,7 @@ setter(W.HTMLIFrameElement&&HTMLIFrameElement.prototype,"src",function(){return 
 
 export const FRAME_PRELUDE = `<meta http-equiv="x-dns-prefetch-control" content="off"><script>${PRELUDE_SOURCE}</script>`;
 
-/** The annotation mode of the app's preview (Grok Bot's « Annoter la page »;
+/** The annotation mode of the app's preview (the reference design's « Annoter la page »;
  * the page's person only, never a reader's link). A click on any element is
  * caught before the page sees it: the element gets a numbered badge and its
  * tag, a short piece of its text and a CSS-like path are posted to the app's

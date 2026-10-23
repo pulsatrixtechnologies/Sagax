@@ -2,11 +2,11 @@
 
 Backlog of requests not started yet. One entry per item: the request, who asked, the date, and what is known. An item leaves this file when its pull request is merged.
 
-## A desktop local model on an organization server needs no provider key (JC, 2026-10-08)
+## A desktop local model on an organization server needs no provider key (2026-10-08)
 
 Request: a bot or thread whose model points at a local engine that only exists on the person's desktop (pi on a desktop local model, `desk...::model`, #189) must not refuse the turn on the organization server. It should run there through the desktop bridge when the desktop is connected, and fall back to the person's connected cloud engine or the Auto pick (#153) with a notice when it cannot.
 
-Today (fix/routine-run-rpc-error): a thread whose own model has no credentials on the server for the payer gives way to its bot's model with a notice (`healOrgRefusedThreadModel` in `server/index.ts`), the way a model that is gone already did. On production this was Cryptic's "Team incidents" thread, pinned to `pi / desk8a1ada8002::qwen3.8-flash-next`, which refused every incident report with `no_access/no_credentials (pi)`.
+Today (fix/routine-run-rpc-error): a thread whose own model has no credentials on the server for the payer gives way to its bot's model with a notice (`healOrgRefusedThreadModel` in `server/index.ts`), the way a model that is gone already did. On production this was Nova's "Team incidents" thread, pinned to `pi / desk8a1ada8002::qwen3.8-flash-next`, which refused every incident report with `no_access/no_credentials (pi)`.
 
 Still open:
 
@@ -14,7 +14,7 @@ Still open:
 2. When the bot's own model is refused too, the turn is still refused with the access card. Falling back to the payer's connected cloud engine, or to the Auto pick for that payer, needs a rule for who pays and a notice in the thread.
 3. Incident reports (`reportIncident`) could skip a Primary Bot whose engine cannot run for its owner on the server, and notify the person instead.
 
-## Several accounts in the desktop app (JC, 2026-10-08)
+## Several accounts in the desktop app (2026-10-08)
 
 Request: add more than one account to the desktop app and switch between them in one click, like the account menu of Claude Desktop (Switch account, Add account, Log out, the current account checked, name and email on each row).
 
@@ -30,9 +30,9 @@ Design sketch (several days of work):
 
 Bots, threads and sidebar state need no extra isolation: each server draws its own UI on its own address, so browser storage is already separate per server.
 
-## Full ChatGPT Pets style mascot mode (JC, 2026-10-08)
+## Full ChatGPT Pets style mascot mode (2026-10-08)
 
-Request: make the desktop mascot a full ChatGPT Pets style companion, with a voice call that starts from the character, live captions and task chips beside it, and a virtual pointer that shows the person where to click on their screen. JC wants the whole experience (Pets + Voice + pointer), not one piece.
+Request: make the desktop mascot a full ChatGPT Pets style companion, with a voice call that starts from the character, live captions and task chips beside it, and a virtual pointer that shows the person where to click on their screen. The maintainer wants the whole experience (Pets + Voice + pointer), not one piece.
 
 Today: the mascot is a transparent always-on-top window per bot, and a mascot call runs the app's single voice call (`LiveCallEngine`). The call is a 36 px pill under the feet (timer, push-to-talk, mute, end); there is no caption or transcript beside the mascot, and no global hotkey in `electron/`. Computer use (CUA) can act on the screen but has no pointing or highlight tool, and the driver's agent cursor is not used for pointing.
 
@@ -41,7 +41,7 @@ Design sketch (about 18 days in total, in two slices after a small first step):
 1. Slice 2, about 7 days: a call rail beside the character (status chip, live captions, task chips with Allow / Stop, compact transcript), per-phase animations for each character, and a global hotkey for the call. Single call engine, no new server piece for voice.
 2. Slice 3, about 11 days: a click-through overlay per display (`electron/pointer-overlay.mjs`), tools `point_at`, `show_me` (guide or do), `clear_pointer`, consent to act from the rail, and an activity log entry for each point and act.
 
-Open questions for JC (full text in the plan):
+Open questions for the maintainer (full text in the plan):
 
 1. Must the pointer work over native fullscreen apps and games, or is "normal windows and fullscreen Spaces where macOS allows it" enough?
 2. Should the mascot call coexist with the main window's call bar, or replace it while the mascot is on screen?
@@ -54,21 +54,21 @@ Open questions for JC (full text in the plan):
 9. Captions on by default beside the mascot?
 10. Linux Wayland: acceptable to ship without the pointer there?
 
-Started first (easy, high value): mascot hover controls (quick chat, voice, activity), a global hotkey for the call, live captions beside the mascot during a call; the rest waits for JC's answers.
+Started first (easy, high value): mascot hover controls (quick chat, voice, activity), a global hotkey for the call, live captions beside the mascot during a call; the rest waits for the maintainer's answers.
 
-JC's answers (2026-10-08): a click on the idle mascot opens the call; the mascot call coexists with the main window's call bar (one engine, two surfaces); Control+Option+Space is the hotkey; captions on by default.
+The maintainer's answers (2026-10-08): a click on the idle mascot opens the call; the mascot call coexists with the main window's call bar (one engine, two surfaces); Control+Option+Space is the hotkey; captions on by default.
 
 Slice 2 (`feat/mascot-desktop-2`):
 
 - [x] Hover controls beside the character (quick chat, voice, activity tray with Allow / Stop), 150 ms in, 400 ms out (`hover-controls.ts`, `MascotControls.tsx`, `tray.ts`).
-- [x] Click = chat balloon on the idle mascot (JC, 2026-10-08: a click must not call; the hover call button and the hotkey do); a drag stays a drag, a click on a call ends nothing (`mascotClick`).
+- [x] Click = chat balloon on the idle mascot (2026-10-08: a click must not call; the hover call button and the hotkey do); a drag stays a drag, a click on a call ends nothing (`mascotClick`).
 - [x] Global hotkey Control+Option+Space: press to call, again to mute, hold to talk in push-to-talk mode (`electron/mascot-hotkey.mjs`, `hotkey.ts`, Settings > Appearance).
 - [x] Captions and the phase's status chip beside the mascot during a call, on by default (`captions.ts`, Settings > Appearance; stored with the call settings).
 - [ ] Still open from the design: the call rail's task chips inside the call, the compact transcript, per-phase clips for each character, the captions switch inside the call bar's settings panel (that panel is being reworked on `fix/call-bar-card-animation`), slice 3 (pointer).
 
 Plan: `docs/plans/2026-10-08-mascot-full-mode.md` (research on ChatGPT Pets and Voice, Clicky, the current code, and the full design).
 
-## Plugins: what the Connect apps redesign left out (JC, 2026-10-08)
+## Plugins: what the Connect apps redesign left out (2026-10-08)
 
 Request: the Plugins panel works like the "Connect Apps" screens of Claude Desktop (main view, Manage plugins and skills, plugin detail). These parts of the reference screens are not done yet:
 

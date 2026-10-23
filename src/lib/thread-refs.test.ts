@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseBotRefUrl,
   parseThreadRefUrl,
   remarkThreadRefs,
   resolveThreadRefAddress,
@@ -124,15 +125,20 @@ describe("canonical thread links", () => {
 
   it("copies and parses one spelling, and rejects near-misses", () => {
     const link = threadRefUrl({ botId: "scout", threadId: uuid });
-    expect(link).toBe(`openmausbot://thread/${uuid}?bot=scout`);
+    expect(link).toBe(`sagax://thread/${uuid}?bot=scout`);
     // the paste path accepts exactly what copy emits
     expect(parseThreadRefUrl(link)).toEqual({ threadId: uuid, botId: "scout" });
-    expect(parseThreadRefUrl(`openmausbot://thread/${uuid}`)).toEqual({ threadId: uuid });
+    expect(parseThreadRefUrl(`sagax://thread/${uuid}`)).toEqual({ threadId: uuid });
+    // the desktop hands an OS-opened link over as typed, scheme case included
+    expect(parseThreadRefUrl(`SAGAX://Thread/${uuid}?bot=scout`)).toEqual({ threadId: uuid, botId: "scout" });
+    expect(parseBotRefUrl("Sagax://BOT/scout")).toEqual({ botId: "scout" });
     for (const miss of [
-      `openmausbot://thread/${uuid}/extra?bot=scout`,
-      `openmausbot://thread/${uuid}?bot=scout&x=1`,
-      `openmausbot://thread/${uuid}?bot=`,
+      `sagax://thread/${uuid}/extra?bot=scout`,
+      `sagax://thread/${uuid}?bot=scout&x=1`,
+      `sagax://thread/${uuid}?bot=`,
       `omb://thread/${uuid}?bot=scout`,
+      // another app's scheme does not resolve
+      `otherapp://thread/${uuid}?bot=scout`,
       "https://thread/" + uuid,
     ]) {
       expect(parseThreadRefUrl(miss)).toBeNull();
@@ -146,7 +152,7 @@ describe("canonical thread links", () => {
     expect(threadTokenFromPaste(`[QA PR 245](${link})`, uuidThreads)?.token).toBe("#QA PR 245");
     expect(threadTokenFromPaste(uuid, uuidThreads)?.ref).toMatchObject({ threadId: uuid });
     // unknown or not-a-reference pastes stay ordinary text
-    expect(threadTokenFromPaste("openmausbot://thread/" + crypto.randomUUID(), uuidThreads)).toBeNull();
+    expect(threadTokenFromPaste("sagax://thread/" + crypto.randomUUID(), uuidThreads)).toBeNull();
     expect(threadTokenFromPaste("not a uuid", uuidThreads)).toBeNull();
     expect(threadTokenFromPaste("see " + uuid, uuidThreads)).toBeNull();
   });
@@ -156,11 +162,11 @@ describe("canonical thread links", () => {
     expect(serializeThreadRefs("Done in #Release notes today", threads)).toBe(`Done in [Release notes](${link}) today`);
     // an existing canonical link is kept verbatim, live or dead, and an
     // unknown title stays the plain text the person typed
-    const sent = `Already [Release notes](${link}) and [Gone](openmausbot://thread/dead?bot=ada)`;
+    const sent = `Already [Release notes](${link}) and [Gone](sagax://thread/dead?bot=ada)`;
     expect(serializeThreadRefs(sent + " plus #Nothing", threads)).toBe(sent + " plus #Nothing");
     // brackets in a title survive the round trip
     const bracketed = [scout("b", "QA [PR] 245")];
-    expect(serializeThreadRefs("see #QA [PR] 245", bracketed)).toBe("see [QA \\[PR\\] 245](openmausbot://thread/b?bot=scout)");
+    expect(serializeThreadRefs("see #QA [PR] 245", bracketed)).toBe("see [QA \\[PR\\] 245](sagax://thread/b?bot=scout)");
   });
 
   it("displays canonical links as title chips and dead links as raw text", () => {
@@ -171,8 +177,8 @@ describe("canonical thread links", () => {
       { text: " and " },
       { text: "#QA PR 245", ref: expect.objectContaining({ threadId: "qa" }) },
     ]);
-    expect(splitThreadRefsForDisplay("[Gone](openmausbot://thread/dead?bot=ada)", threads))
-      .toEqual([{ text: "[Gone](openmausbot://thread/dead?bot=ada)" }]);
+    expect(splitThreadRefsForDisplay("[Gone](sagax://thread/dead?bot=ada)", threads))
+      .toEqual([{ text: "[Gone](sagax://thread/dead?bot=ada)" }]);
   });
 
   it("resolves an address by its own bot first, then the mention preferences", () => {

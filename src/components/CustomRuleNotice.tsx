@@ -3,7 +3,7 @@
 // to edit it. Shown on the approval box, on a settled card's receipt and
 // under a step a rule answered with no card.
 //
-// 2026-10-21 (Grok Bot parity lot 1A): an organization admin's rule says so
+// 2026-10-21 (the reference design parity lot 1A): an organization admin's rule says so
 // ("Exigé par votre administrateur") and offers no edit; a rule whose words
 // change shows what changed, word by word (RuleTextDiff).
 //
@@ -29,7 +29,7 @@ export function riskList(risks: readonly RiskClass[]): string {
 
 /** The one line a notice reads as. */
 export function customRuleNoticeLine(notice: Notice): string {
-  // 2026-10-21 (Grok Bot parity A1): the model reviewer applied the rule
+  // 2026-10-21 (the reference design parity A1): the model reviewer applied the rule
   if (notice.reviewer === "model") {
     if (notice.org) return t(notice.outcome === "denied" ? "customRules.notice.modelOrgDenied" : "customRules.notice.modelOrgHeld");
     if (notice.outcome === "approved") return t("customRules.notice.modelApproved");

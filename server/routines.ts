@@ -158,7 +158,7 @@ export interface Routine {
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts).
    * Absent: runs whether they are there or not. */
   onlyWhenPresent?: boolean;
-  /** 2026-10-22 (JC): post this routine's completed results in the person's
+  /** 2026-10-22 post this routine's completed results in the person's
    * conversation (a visible report, never the prompt). Absent inherits the
    * installation default (features.routinesInConversation). Approvals,
    * questions and errors surface whichever this is; a quiet run stays silent. */
@@ -180,7 +180,7 @@ export interface Routine {
 /** Slice 6 (D9): why an organization routine is paused by the server. */
 export type RoutineSuspendReason = "person_out" | "no_right";
 export const ROUTINE_SUSPEND_REASONS: readonly RoutineSuspendReason[] = ["person_out", "no_right"];
-/** Pauses from before 2026-10-08 (JC: a routine always acts in its owner's
+/** Pauses from before 2026-10-08 (a routine always acts in its owner's
  * name): a routine loaded with one of these resumes from now. */
 export const RETIRED_SUSPEND_REASONS: readonly string[] = ["delegation_missing", "delegation_ended", "delegation_revoked"];
 export interface RoutineSuspension { reason: RoutineSuspendReason; at: number }
@@ -527,7 +527,7 @@ export interface RoutineManagerOptions {
    * card, its Undo, the person's switch while the conversation is open).
    * Changes made elsewhere (the console, a deleted bot) never call it. */
   onEnabledChanged?: (routine: Routine, change: RoutineEnabledChange) => void;
-  /** 2026-10-21 (JC): a bot created, updated or deleted a routine from a
+  /** 2026-10-21 a bot created, updated or deleted a routine from a
    * conversation; its named line goes there (server/routine-chat-events.ts).
    * `updated` is a definition edit, never a bare on/off flip (onEnabledChanged
    * carries those). Changes with no conversation (console, API) do not call it. */
@@ -1327,7 +1327,7 @@ export class RoutineManager {
         this.webhookRunReceipts.push({ webhookId: run.webhookId, deliveryId: run.deliveryId, runId: run.id, acceptedAt: run.createdAt });
         known.add(key);
       }
-      // 2026-10-22 (JC): before postResults a routine's completed runs always
+      // 2026-10-22 before postResults a routine's completed runs always
       // posted a card into its conversation. Pin every existing routine to
       // true once, so an upgrade never makes a person's visible routine go
       // silent; new routines created after this inherit the installation
@@ -2651,7 +2651,7 @@ export class RoutineManager {
     return cloneRun(run);
   }
 
-  /** Whether the completed run has anything for the person (JC 2026-10-22):
+  /** Whether the completed run has anything for the person (2026-10-22):
    * a quiet run keeps its note in the logs, without the marker. */
   private settleReport(run: RoutineRun) {
     const outcome = routineReportOutcome(run.output);

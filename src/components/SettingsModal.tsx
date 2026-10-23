@@ -68,10 +68,10 @@ export { GeneralAdvancedSettings, generalAdvancedShown, isSoloDesktop };
  * and General matches them there (sectionMatches `extra`). */
 export const ORGANIZATION_ADVANCED_KEYWORDS = ["routines", "conversation", "schedule", "mcp", "timeout", "group turns", "rooms"];
 
-/** The headings of the settings nav (2026-10-16, JC): Cursor Settings and
- * Grok Bot keep a short rail in a few groups; Sagax names its groups. A
+/** The headings of the settings nav (2026-10-16): Cursor Settings and
+ * the reference design keep a short rail in a few groups; Sagax names its groups. A
  * heading shows while one of its pages does. Automations lives in the
- * avatar menu, not here (JC, 2026-10-16). */
+ * avatar menu, not here (2026-10-16). */
 export type SettingsNavGroup = "you" | "ai" | "workspace" | "app";
 
 export const NAV_GROUPS: Array<{ id: SettingsNavGroup; labelKey: LocaleKey }> = [
@@ -91,7 +91,7 @@ export const SECTIONS: Array<{
 }> = [
   // 2026-10-16: in the order of their nav groups (NAV_GROUPS), as Cursor
   // Settings groups its rail: you, AI, the workspace, this app last.
-  // 0.5.6 (JC): General is laid out as Grok Bot's (Account, Appearance,
+  // 0.5.6: General is laid out as the reference design's (Account, Appearance,
   // System); Updates is a page of its own, as there.
   { id: "general", group: "you", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "thème", "variant", "variante", "light", "clair", "dark", "sombre", "auto", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "accessibility", "accessibilité", "reduce motion", "motion", "animations", "contrast", "contraste", "text size", "taille du texte", "zoom", "hardware acceleration", "accélération matérielle", "gpu", "spell check", "spellcheck", "orthographe", "correcteur", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
@@ -111,7 +111,7 @@ export const SECTIONS: Array<{
   { id: "usage", group: "workspace", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût", "usage", "spend", "this month", "ce mois-ci", "last 30 days", "30 derniers jours", "by bot", "par bot", "by model", "par modèle", "renews", "renouvelle", "sagax business"] },
   // 2026-10-15: People and Installations are hidden in the app, like Email,
   // Activity and Pair devices (settings-sections.ts HIDDEN).
-  // 2026-10-16: pages a bot proposed and the person published (Grok Bot's canvases).
+  // 2026-10-16: pages a bot proposed and the person published (the reference design's canvases).
   { id: "pages", group: "workspace", labelKey: "settings.section.pages", icon: FileText, keywords: ["pages", "published", "publiées", "canvas", "canevas", "share", "partager", "link", "lien", "revoke", "révoquer", "expiry", "expiration", "site", "html", "markdown"] },
   { id: "backups", group: "workspace", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
   // 2026-10-19: a shared Grok Bot comes in here (port of OpenMausBot #3073).
@@ -660,7 +660,7 @@ export function SettingsModal() {
               {t("settings.noMatch", { query: query.trim() })}
             </div>
           )}
-          {/* 2026-10-16 (JC): the rail in headed groups, as Cursor Settings
+          {/* 2026-10-16: the rail in headed groups, as Cursor Settings
               groups its own (you, AI, the workspace, this app last). A
               heading shows while one of its entries does, a search too. */}
           {NAV_GROUPS.map((group) => {
@@ -682,7 +682,7 @@ export function SettingsModal() {
                       section === id ? "bg-selected" : "hover:bg-hover",
                     )}
                   >
-                    {/* Grok Bot's nav item (198px rail, 7/9px padding, 9px gap,
+                    {/* The reference design's nav item (198px rail, 7/9px padding, 9px gap,
                         8px corners, 15px icon) with its thinner glyph stroke */}
                     <Icon size={15} strokeWidth={1.5} className="shrink-0" />
                     {t(labelKey)}
@@ -741,7 +741,7 @@ export function SettingsModal() {
             </h2>
             <div className="flex flex-col gap-3 px-4 pb-6 pt-4 sm:px-8">
             <LicenseExpiryBanner config={state.config} />
-            {/* 0.5.6 (JC): Grok Bot's layout (OrganizationSettings): grey
+            {/* 0.5.6: the reference design's layout (OrganizationSettings): grey
                 headings over cards of rows. Memory and, from General >
                 Advanced (2026-10-15), routines in the conversation, group
                 turns and MCP calls are rows of its groups. */}
@@ -756,7 +756,7 @@ export function SettingsModal() {
             )}
             {section === "general" && (
               <>
-                {/* 0.5.6 (JC): Grok Bot's General. Grey headings outside
+                {/* 0.5.6: the reference design's General. Grey headings outside
                     the cards, compact rows: label at the left, control at
                     the right, no help text. */}
                 <SettingsGroup title={t("settings.group.account")} groupId="account">

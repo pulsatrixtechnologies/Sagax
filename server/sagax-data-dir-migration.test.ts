@@ -22,7 +22,7 @@ let child: ChildProcess;
 let stderr = "";
 
 beforeAll(async () => {
-  home = mkdtempSync(join(tmpdir(), "sagax-openmausbot-migration-"));
+  home = mkdtempSync(join(tmpdir(), "sagax-data-dir-migration-"));
   const legacy = join(home, ".openmausbot");
   mkdirSync(legacy, { recursive: true });
   // A non-product shadow keeps startup deterministic: an empty map selects

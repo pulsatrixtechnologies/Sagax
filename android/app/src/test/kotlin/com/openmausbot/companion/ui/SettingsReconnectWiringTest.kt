@@ -92,7 +92,7 @@ class SettingsReconnectWiringTest {
             troubleshootingText(Session.Status.Live),
         )
         assertEquals(
-            "OpenMausBot is trying the saved connection automatically.",
+            "Sagax is trying the saved connection automatically.",
             troubleshootingText(Session.Status.Connecting),
         )
         assertEquals(

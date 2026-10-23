@@ -16,7 +16,7 @@ const svg = (body: string, defs = "") =>
  * soft white to light grey, lit from the top left with a shade underneath,
  * and its resting eyes (the neutral face the app draws, two dark capsules
  * leaning a little) on an anthracite plate that is lighter in the middle.
- * JC, 2026-10-14: the first version cropped a big sphere across the tile, so
+ * The maintainer, 2026-10-14: the first version cropped a big sphere across the tile, so
  * the icon read as a black and white diagonal cut, not as the mascot.
  * Fills the whole body (fit "cover"): the plate is part of the drawing.
  */

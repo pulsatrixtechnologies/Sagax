@@ -1,4 +1,4 @@
-// Why a server refused a session credential (2026-10-20, JC: "a person is
+// Why a server refused a session credential (2026-10-20: "a person is
 // signed out only when their session is revoked, their account disabled, or
 // after a long real inactivity"). The server puts one of these in the `code`
 // of every 401 it answers for a presented credential; clients sign out only

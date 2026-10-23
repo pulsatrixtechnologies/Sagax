@@ -2,7 +2,7 @@
 // list of providers or models reads, on the server (GET /api/instances,
 // GET /api/me/engines, the Primary Bot's team setup catalog) and in the app
 // (the composer's model menu and window, New bot, a bot's backups and
-// recovery, Settings > Models and voice, onboarding). 2026-10-18 (JC): a
+// recovery, Settings > Models and voice, onboarding). 2026-10-18 : a
 // provider the organization hid in Perspicax appears nowhere.
 //
 // - Solo server (no organization): every engine, nothing changes.

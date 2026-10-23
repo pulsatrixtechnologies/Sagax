@@ -1,4 +1,4 @@
-// Who sees which routines on the Automations page (2026-10-09, JC: "any
+// Who sees which routines on the Automations page (2026-10-09: "any
 // user may view the automation schedule at large; admins see all of them;
 // filter by global, team, bot").
 //

@@ -211,7 +211,7 @@ export type CallbackOutcome =
  * `unauthorized_client`, `invalid_target` and `unsupported_grant_type` name
  * this server's client registration, the same for every person, and come
  * from a provider being redeployed or reconfigured: they are transient
- * (2026-10-20, JC: no sign-out for a Perspicax deploy). */
+ * (2026-10-20: no sign-out for a Perspicax deploy). */
 const REJECTED_GRANT_ERRORS = new Set(["invalid_grant"]);
 /** Errors about this server's client registration: transient for a deploy's
  * length (IDP_CLIENT_REFUSED_GRACE_MS), a refusal after. */

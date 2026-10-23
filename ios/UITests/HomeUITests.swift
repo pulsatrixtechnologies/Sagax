@@ -89,7 +89,7 @@ final class HomeUITests: XCTestCase {
         XCTAssertTrue(row("Aurora", in: again).waitForExistence(timeout: 5))
     }
 
-    /// The full-screen search (Grok Bot reference search-ref.png): the
+    /// The full-screen search (the reference design reference search-ref.png): the
     /// field focused at once with the keyboard up, X closes it.
     @MainActor
     func testSearchOpensFocusedWithTheKeyboardAndXClosesIt() {

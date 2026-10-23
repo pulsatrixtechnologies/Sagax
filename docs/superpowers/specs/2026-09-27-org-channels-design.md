@@ -6,7 +6,7 @@
 
 ## Goal
 
-Jean-Christophe invite Zachary dans sa flotte. Zachary parle aux bots qu'on lui a ouverts, dans des canaux. Chacun possède ses bots et choisit où ils tournent. L'approbation reste au propriétaire du bot, sur la machine qui exécute le tour.
+Alex invite Zachary dans sa flotte. Zachary parle aux bots qu'on lui a ouverts, dans des canaux. Chacun possède ses bots et choisit où ils tournent. L'approbation reste au propriétaire du bot, sur la machine qui exécute le tour.
 
 Succès: Zachary accepte une invitation, voit seulement ses canaux et sa zone Direct, fait travailler un bot posé dans un canal, et ne peut ni approuver à la place du propriétaire, ni voir les bots qu'on ne lui a pas ouverts.
 

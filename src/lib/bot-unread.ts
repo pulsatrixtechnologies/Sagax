@@ -1,5 +1,5 @@
 /** A thread another bot opened on this one (pair, work or an agent ask): a
- * bot-to-bot conversation, never shown to the person (JC's rule): not in the
+ * bot-to-bot conversation, never shown to the person (the rule): not in the
  * sidebar, typing dots, unread counts or notifications. A bot's own thread
  * (opened by itself, e.g. its incidents thread) is not one. */
 export function isInterBotThread(ownerBotId: string | undefined, task: { openedBy?: { botId?: string } }): boolean {

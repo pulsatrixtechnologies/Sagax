@@ -527,9 +527,9 @@ describe("transcripts", () => {
   });
 
   it("turnLabel keeps the agent's name and the prompt's first words", () => {
-    expect(turnLabel("Cryptic", "  check   the\nbackups ")).toBe("Cryptic: check the backups");
-    const long = turnLabel("Cryptic", "word ".repeat(40));
-    expect(long.length).toBeLessThanOrEqual("Cryptic: ".length + 62);
+    expect(turnLabel("Quasar", "  check   the\nbackups ")).toBe("Quasar: check the backups");
+    const long = turnLabel("Quasar", "word ".repeat(40));
+    expect(long.length).toBeLessThanOrEqual("Quasar: ".length + 62);
     expect(long.endsWith("...")).toBe(true);
   });
 

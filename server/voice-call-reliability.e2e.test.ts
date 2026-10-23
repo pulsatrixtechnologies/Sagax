@@ -50,7 +50,7 @@ async function callFixture(env: Record<string, string> = {}, server: NodeJS.Proc
     `await import(${JSON.stringify(pathToFileURL(fileURLToPath(new URL("./testing/fake-claude-cli.ts", import.meta.url))).href)});`,
   ].join("\n"), { mode: 0o700 });
   await api("PATCH", "/api/instances/claude", { cli: wrapper });
-  const bot = (await api("POST", "/api/bots", { name: "Cryptic" }, 201)).bot;
+  const bot = (await api("POST", "/api/bots", { name: "Quasar" }, 201)).bot;
   const thread = bot.threadId as string;
   const messages = async () => (await api("GET", `/api/threads/${thread}/messages?limit=200`)).messages as any[];
   const busy = async () => Boolean((await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id)?.busy);

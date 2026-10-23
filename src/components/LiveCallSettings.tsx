@@ -100,7 +100,7 @@ export function LiveCallInstallationSettings() {
   const { live, saving, error, save, removeKey } = useLiveSettingsEditor();
   const minutes = [...new Set([...IDLE_CHOICES, live.idleMinutes])].sort((a, b) => a - b);
 
-  // 0.5.6: compact rows (Grok Bot's settings): a switch, a pill menu, the
+  // 0.5.6: compact rows (the reference design's settings): a switch, a pill menu, the
   // key line; why typed replies matter behind the switch's info button.
   return (
     <div className="flex flex-col gap-3 text-[13px]">

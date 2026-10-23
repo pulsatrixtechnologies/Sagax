@@ -33,7 +33,7 @@ describe("botShowsUnread", () => {
   });
 
   it("ignores an AI client's hidden conversation (#291)", () => {
-    const hidden = bot("c", "Cryptic", "c0", [
+    const hidden = bot("c", "Quasar", "c0", [
       task("c0", "Read chat", {}),
       task("c1", "Test de latence", { hidden: true, unread: true }),
     ], { unread: true });

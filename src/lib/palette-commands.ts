@@ -1,5 +1,5 @@
-// The ⌘K palette's rows, grouped the way Cursor's command palette and Grok
-// Bot's quick search are: a heading per group, recently used first, the
+// The ⌘K palette's rows, grouped the way Cursor's command palette and the reference
+// design's quick search are: a heading per group, recently used first, the
 // keyboard shortcut at the right edge, and a fuzzy search that keeps the
 // groups. Pure (no React, no store), so the grouping and the search are
 // tested without a renderer; CommandPalette.tsx renders and runs them.

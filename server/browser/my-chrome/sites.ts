@@ -1,5 +1,5 @@
 // My Chrome: the sites (origins) a person allowed the bots to drive in their own
-// Chrome. Pure. Port of OpenMausBot #2706 (My Chrome), narrowed by JC's rule
+// Chrome. Pure. Port of OpenMausBot #2706 (My Chrome), narrowed by the rule
 // (2026-10-19): nothing outside the sites the person allowed, one origin at a time.
 //
 // An allowed site is one exact origin, written the way the credential vault

@@ -197,13 +197,13 @@ export type BotAvatarProps = Omit<MausAvatarProps, "color"> & {
   primary?: boolean;
   /** The ring around the star, in the colour of what the avatar sits on. */
   primaryRingClassName?: string;
-  /** Draw the mascot as large as its box, as Grok Bot's sidebar does (avatarFillScale). */
+  /** Draw the mascot as large as its box, as the reference design's sidebar does (avatarFillScale). */
   fillBox?: boolean;
 };
 
 /** The Primary Bot mark: orange circle, white star, bottom-right. */
 export function PrimaryBotBadge({ size, ringClassName = "ring-panel", label }: { size: number; ringClassName?: string; label?: string }) {
-  // Grok Bot's main-bot corner: 16px on a 60px portrait (scaled with it,
+  // The reference design's main-bot corner: 16px on a 60px portrait (scaled with it,
   // never under 10px), flush in the avatar box's bottom-right corner, an
   // 8px star (half the badge), cut out of the avatar by a ring of the
   // ground about 2.7px wide at 60px.
@@ -419,7 +419,7 @@ export function resolveBotAvatarOutcome(params: {
  * so an old/corrupt profile can never leave a broken-image icon in the app.
  */
 /**
- * Grok Bot's sidebar portrait fills its box (36px in a row, 60px on a pinned
+ * The reference design's sidebar portrait fills its box (36px in a row, 60px on a pinned
  * tile). A shape mascot's body only uses about 62% of its frame, the rest is
  * room for its moves, so in the sidebar it is drawn 1.6 times larger to fill
  * the same box. Scaled about the point that puts the bodies' centre in the

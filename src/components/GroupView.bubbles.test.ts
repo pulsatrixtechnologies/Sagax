@@ -22,7 +22,7 @@ const members = [
   { id: "theo", name: "Theo", color: "blue" },
 ] as Bot[];
 const people = new Map<string, OrgDirectoryPerson>([
-  [ZACK, { principalId: ZACK, name: "Zachary Sellam", login: "zsellam", role: "member", disabled: false, avatarUrl: "/api/people/pr_zack/avatar?v=1" }],
+  [ZACK, { principalId: ZACK, name: "Sam Taylor", login: "staylor", role: "member", disabled: false, avatarUrl: "/api/people/pr_zack/avatar?v=1" }],
   ["pr_marie", { principalId: "pr_marie", name: "Marie Roy", login: "mroy", role: "member", disabled: false }],
 ]);
 const t0 = new Date(2026, 9, 1, 9, 0).getTime();
@@ -62,8 +62,8 @@ afterAll(() => vi.unstubAllGlobals());
 describe("group chat bubbles", () => {
   const conversation = [
     person("a", { name: "JC", id: JC }, "Test", t0),
-    person("b", { name: "Zachary Sellam", id: ZACK }, "Test zack", t0 + min),
-    person("c", { name: "Zachary Sellam", id: ZACK }, "C'est zack", t0 + 2 * min),
+    person("b", { name: "Sam Taylor", id: ZACK }, "Test zack", t0 + min),
+    person("c", { name: "Sam Taylor", id: ZACK }, "C'est zack", t0 + 2 * min),
     person("d", { name: "JC", id: JC }, "test", t0 + 3 * min),
     person("e", { name: "JC", id: JC }, "adawdawdawd", t0 + 4 * min),
     person("f", { name: "Marie Roy", id: "pr_marie" }, "Bonjour", t0 + 5 * min),
@@ -90,10 +90,10 @@ describe("group chat bubbles", () => {
   it("names each other person once per run, from the directory, with an avatar", () => {
     const markup = render(conversation, memberConfig);
     expect(markup.match(/data-testid="room-person"/g)).toHaveLength(2);
-    expect(markup.match(/>Zachary Sellam</g)).toHaveLength(1);
+    expect(markup.match(/>Sam Taylor</g)).toHaveLength(1);
     expect(markup).toContain('src="/api/people/pr_zack/avatar?v=1"');
     expect(markup).toContain(">MR<");
-    expect(markup.indexOf("Zachary Sellam")).toBeLessThan(markup.indexOf("Test zack"));
+    expect(markup.indexOf("Sam Taylor")).toBeLessThan(markup.indexOf("Test zack"));
     // Your own lines carry no name.
     expect(markup).not.toContain(">JC<");
   });
@@ -101,7 +101,7 @@ describe("group chat bubbles", () => {
   it("tightens a run and starts a new one after five minutes", () => {
     const markup = render([
       ...conversation.slice(1, 3),
-      person("late", { name: "Zachary Sellam", id: ZACK }, "later", t0 + 30 * min),
+      person("late", { name: "Sam Taylor", id: ZACK }, "later", t0 + 30 * min),
     ], memberConfig);
     const [first, second, late] = rows(markup);
     expect(first!.cls).not.toContain("-mt-2");
@@ -120,7 +120,7 @@ describe("group chat bubbles", () => {
   });
 
   it("flips sides for the other viewer", () => {
-    const zackConfig = { viewer: { ...memberConfig.viewer!, principalId: ZACK, email: "zack@example.com", name: "Zachary Sellam" } } as ConfigStatus;
+    const zackConfig = { viewer: { ...memberConfig.viewer!, principalId: ZACK, email: "zack@example.com", name: "Sam Taylor" } } as ConfigStatus;
     const markup = render(conversation.slice(0, 3), zackConfig);
     expect(rows(markup).map((row) => row.author)).toEqual(["person", "self", "self"]);
     expect(markup).toContain(">JC<");
