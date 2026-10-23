@@ -112,12 +112,15 @@ describe("the single stream in the main chat", () => {
     }
   });
 
-  it("points at activity in the topic under a fresh one", () => {
+  // JC 2026-10-22: threads off = one unified conversation, so no cross-topic
+  // "new activity" pill surfaces at the top; the topic is reached by reading
+  // back (PreviousTopicsLine), never a banner.
+  it("draws no earlier-topic activity pill for the topic under a fresh one", () => {
     preferences.setShowThreads(false);
     fixture.fresh = { bot: { threadId: "now", auto: false } };
     try {
       const markup = render({ ...bot, tasks: bot.tasks!.map((task) => task.threadId === "now" ? { ...task, unread: true } : task) });
-      expect(markup).toContain('data-earlier-topic-activity="now"');
+      expect(markup).not.toContain("data-earlier-topic-activity");
     } finally {
       fixture.fresh = {};
     }
@@ -228,10 +231,12 @@ describe("the single stream in the main chat", () => {
     expect(markup).toContain('data-stream-earlier="zero"');
   });
 
-  it("points at an earlier topic that has something new", () => {
+  // The unified conversation never raises a pill for an earlier topic that
+  // has something new (JC 2026-10-22): it is read back in place, not jumped to.
+  it("draws no earlier-topic activity pill for an earlier topic that has something new", () => {
     preferences.setShowThreads(false);
     const markup = render({ ...bot, tasks: bot.tasks!.map((task) => task.threadId === "first" ? { ...task, unread: true } : task) });
-    expect(markup).toContain('data-earlier-topic-activity="first"');
+    expect(markup).not.toContain("data-earlier-topic-activity");
     expect(render(bot)).not.toContain("data-earlier-topic-activity");
   });
 });

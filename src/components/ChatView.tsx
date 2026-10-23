@@ -138,7 +138,7 @@ import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
 import { BotConversationLine, conversationAnchors } from "./BotConversations";
-import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink } from "./TaskPicker";
+import { TaskPicker, ThreadReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
@@ -1816,22 +1816,6 @@ function useStreamAnchor(
   }, [scrollRef, wrapperRef, followRef, active]);
 }
 
-/** An earlier topic of the stream has something new (a late answer, a card):
- * one pill that brings it on screen and reads it. */
-function EarlierTopicActivity({ bot, onReach, includeCurrent = false }: { bot: Bot; onReach: (threadId: string) => void; includeCurrent?: boolean }) {
-  const current = includeCurrent ? bot.tasks?.find((task) => task.threadId === bot.threadId) : undefined;
-  const above = current ? [current, ...segmentsAbove(bot.tasks, bot.threadId)] : segmentsAbove(bot.tasks, bot.threadId);
-  const active = above.find((task) => task.unread || task.activity === "waiting-on-you");
-  if (!active) return null;
-  return (
-    <div className="mx-5 mb-2 flex justify-center" data-earlier-topic-activity={active.threadId}>
-      <button type="button" onClick={() => onReach(active.threadId)} className="ui-pill max-w-full truncate">
-        {t("stream.newActivity", { title: active.title })}
-      </button>
-    </div>
-  );
-}
-
 export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   "use memo";
   const showInspector = useShowInspectorButton();
@@ -2052,16 +2036,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const streamFocus = useStoreSelector((current) => current.focusMessage);
   const streamFocusEarlier = streamHasEarlier && Boolean(streamFocus && !streamFocus.consumed && segmentsAbove(bot.tasks, bot.threadId).some((task) => task.threadId === streamFocus.threadId));
   const [streamShownFor, setStreamShownFor] = useState<string | null>(null);
-  const reachEarlierTopic = useCallback((threadId: string) => {
-    // Under a fresh topic, the activity it points at is shown as it is.
-    dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
-    if (threadId === bot.threadId) {
-      api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
-      return;
-    }
-    setStreamReach((current) => ({ threadId, nonce: (current?.nonce ?? 0) + 1 }));
-    api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
-  }, [bot.id, bot.threadId, dispatch]);
   // Reply on an earlier topic's message quotes it into the live composer.
   const quoteEarlier = useCallback((message: Message, threadId: string) => {
     const text = (message.text ?? "").trim();
@@ -2279,12 +2253,15 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           the name chip; collapsed it keeps its own small row, expanded its
           card hangs over the thread */}
       <VoiceCallDock bot={bot} />
-      {!side && <>
-      <BotActivityPicker bot={bot} />
-      <ThreadsOffReturnLink bot={bot} />
-      {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} includeCurrent={fresh} />}
-      <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
-      </>}
+      {/* Threads off = one unified conversation (JC 2026-10-22): no
+          cross-thread chrome at the top. The "Other activity" dropdown, the
+          "New activity on an earlier topic" pill and the "Back to
+          conversation" links all belonged to the thread-off escape hatches;
+          they are gone now. The conversation's own topics still stream in
+          place below (PreviousTopicsLine / StreamEarlierTopics) and the New
+          topic feature keeps its own Resume (FreshTopicDivider). The thread
+          return link stays only while threads are on. */}
+      {!side && showThreads && <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
 
