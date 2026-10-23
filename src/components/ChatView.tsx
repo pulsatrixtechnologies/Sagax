@@ -88,7 +88,7 @@ import { BotHeaderPill, botPillActions } from "./BotHeaderPill";
 import { TurnPresence } from "./TurnPresence";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
-import { showToolCallRows } from "@/lib/tool-activity-rows";
+import { isAppleMobileWebClient, showToolCallRows } from "@/lib/tool-activity-rows";
 import { normalizeState, stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { peerLine, peerRequest, type PeerLine } from "@/lib/peer-message";
@@ -1058,6 +1058,7 @@ const MessagesList = memo(function MessagesList({
   const getState = useStoreGetter();
   const { botId, threadId, botName, busy, hasMore, bots, focus, showToolCalls, locale, dispatch } = useChatRows();
   const showThreads = useShowThreads();
+  const appleMobileWeb = isAppleMobileWebClient();
   const selfColor = bots.find((candidate) => candidate.id === botId)?.color;
   const owners = useMemo(() => ({ bots: storeBots, groups: storeGroups }), [storeBots, storeGroups]);
   // Bot-to-bot lines become one chip per run first, so a tool fold never
@@ -1074,7 +1075,13 @@ const MessagesList = memo(function MessagesList({
     const seen = new Set<string>();
     // A stop the person asked for leaves no row, stored ones included.
     // Nor does the "On your computer" line, so it never splits a bot exchange.
-    const shown = withoutDeadThreadChips(messages, owners).filter((message) => !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message));
+    // Threads off (the threads toggle): the single stream carries no thread
+    // receipt, so a lone chip never renders and a run of them never folds
+    // into a "N conversations" group (JC 2026-10-22). ThreadChip also hides
+    // each one; dropping them here keeps the go-to grouping clean.
+    const shown = withoutDeadThreadChips(messages, owners).filter((message) =>
+      !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message)
+      && (showThreads || !(message.threadRef && message.tool)));
     const collapsed = collapseBotExchanges(shown, {
       selfBotId: botId,
       self: { id: botId, name: botName, color: selfColor },
@@ -1104,7 +1111,7 @@ const MessagesList = memo(function MessagesList({
     flush();
     // Two or more "Go to conversation" lines in a row become one chip.
     return collapseGotoLines(listed, (item) => silentChatItem(item, showToolCalls)) as ListedItem[];
-  }, [messages, transcript, botId, botName, selfColor, locale, owners, showToolCalls]);
+  }, [messages, transcript, botId, botName, selfColor, locale, owners, showToolCalls, showThreads]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
   let newestUserMessageId: string | undefined;
@@ -1366,7 +1373,14 @@ const MessagesList = memo(function MessagesList({
                   </>
                 );
               }
-              if (!showToolCalls && !m.comm && !m.threadRef && !m.dataResult && !m.inputRequest) return null;
+              // Tool calls (the details toggle) off: a plain step goes, and
+              // so does a bot-to-bot comm chip — verbose detail, not the
+              // clean chat (JC 2026-10-22). A thread receipt (ThreadChip, on
+              // the threads toggle), a Data receipt and an input request stay.
+              // A comm chip stays on Apple mobile web (the only trace there a
+              // teammate was consulted) and whenever the send failed.
+              const keepComm = Boolean(m.comm) && (appleMobileWeb || m.tool?.ok === false);
+              if (!showToolCalls && !m.threadRef && !m.dataResult && !m.inputRequest && !keepComm) return null;
               return <ActivityChip message={m} place={place} />;
             }
             case "digest":
