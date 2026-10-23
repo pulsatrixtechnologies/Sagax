@@ -448,7 +448,7 @@ show Usage. A bot's Overview is a client route since the iOS feature parity
 work, held to the bot's owner by its handler (see below). `/api/me/engines` is a client route
 on an organization server (`orgDirectory`), as before.
 
-## Phone tools (2026-10-21, Grok Bot parity row 81)
+## Phone tools (2026-10-21, the reference design parity row 81)
 
 A bot can ask the person's own iPhone for something only the phone knows:
 its position once, a contact by name (only the fields asked for), reminders
@@ -456,7 +456,7 @@ and calendar events (read, or add one), photos the person picks, one of
 their Shortcuts by name, the clipboard text, and battery, network and Focus.
 Health is not offered.
 
-- Only over a protected transport (JC 2026-10-21): hosted HTTPS or
+- Only over a protected transport (2026-10-21): hosted HTTPS or
   Tailscale, read from the connection, never from what the phone says
   (`shared/phone-transport.ts`; through the sidecar, `companion/src/transport.ts`
   sends `x-openmausbot-companion-transport`: the guardian's socket or a
@@ -518,7 +518,7 @@ Health is not offered.
 - **Scanner avec l'iPhone** (row 84): the vault's New card form on the
   computer asks the person's phone to read a card (`card_scan`, never a bot
   tool: `/api/me/phone-tools/card-scan`, the computer only, never a bot's
-  shell or session nor a phone). End to end (JC 2026-10-21): the form makes
+  shell or session nor a phone). End to end (2026-10-21): the form makes
   a one-time P-256 key and sends its public half; the phone reads the card
   on the device (`CardPhotoScanner`, Vision), shows the last four digits and
   seals the number, the expiry and the name for that key
@@ -633,7 +633,7 @@ module's own test under `server/routes/`.
 | `GET /api/computer/status`, `POST /api/computer/update`, `POST /api/computer/reset` (`{ confirm: true }`) | `{ kind: "org-sandbox" \| "local", configured, state, diskState: "normal" \| "almostFull" \| "full", workspaceBytes, limitBytes?, version?, problem? }` | the person (organization) or the owner (personal) |
 | `POST /api/me/server-environment/update` | rebuilds the person's server environment from the current image, keeping `/workspace` | the person (organization) |
 | `GET /api/plugins/search?q=&cursor=` | `{ featured, results, nextCursor, registryAvailable }` | member |
-| `GET /api/plugins/installed` | `{ plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? } \| { kind: "composio", slug, name, connected, logo?, domain? }], count }` | member |
+| `GET /api/plugins/installed` | `{ plugins: [{ kind: "mcp", name, url, domain, enabled, auth, icon?, catalogId? }], count }` | member |
 | `POST /api/plugins/install` | `{ id, trust?, returnTo?, callbackOrigin? }` -> `{ name, alreadyInstalled, auth, authorizationUrl? }` | admin or owner |
 | `POST /api/mcp/servers/:name/oauth/start` | adds `returnTo` and `callbackOrigin` | admin or owner |
 | `PATCH /api/groups/:id` | adds `pinned` | member |

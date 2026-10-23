@@ -24,7 +24,7 @@ import { EngineConnectorsLine } from "./plugins/EngineCapabilities";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { viewerIsOrgAdmin } from "@/lib/group-owner";
-import { boatComputerEnabled, connectedAppsEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
+import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { DescribedRow, FoldRow, HelpTip, SettingsGroup } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
@@ -294,7 +294,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
     <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
       {policyNote}
       {hostToolsNote}
-      <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} /></div>
+      <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} statusLine={false} /></div>
     </EngineCard>
   );
   if (instance.readOnly) return <EngineCard instance={instance}>
@@ -307,7 +307,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
     <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
       {policyNote}
       {hostToolsNote}
-      {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" />}
+      {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" statusLine={false} />}
       {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
       {!mine && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
@@ -467,7 +467,7 @@ export function EnginesSettings() {
         isReady={isReady}
         refresh={!member}
         renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
-        connectors={!connectedAppsEnabled(state.config)}
+        connectors={true}
         empty={Boolean(member && org && myEngines !== null && shown.length === 0)}
         memberIssuer={member && org ? org.org.identity.issuer : undefined}
       />

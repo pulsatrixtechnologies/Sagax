@@ -146,7 +146,6 @@ private val localizedCopyResources = mapOf(
     "Computer" to R.string.mobile_computer_924645b3,
     "computer" to R.string.mobile_computer_c60266a8,
     "Computer only" to R.string.mobile_computer_only_bc8646ec,
-    "Configure Composio on your computer first. Provider credentials are never returned to this phone." to R.string.mobile_configure_composio_on_your_compute_4281e8b0,
     "Confirm computer" to R.string.mobile_confirm_computer_d778cfbd,
     "Connect" to R.string.mobile_connect_b65463cb,
     "Connect %1\$s" to R.string.mobile_connect_card_label_c9e612b4,

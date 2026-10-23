@@ -20,7 +20,7 @@ export interface Guide {
 
 /** One line more on a Settings page (setting:<id>): what it holds or who sees it. */
 export const SETTING_NOTES: Record<string, { text?: string; access?: string }> = {
-  engines: { text: "Engines and model providers with their sign-in or API keys, the voice engine (xAI, ElevenLabs, Fish Audio) and live calls, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), and the Connected apps (Composio) and Decision model cards." },
+  engines: { text: "Engines and model providers with their sign-in or API keys, the voice engine (xAI, ElevenLabs, Fish Audio) and live calls, the image provider, Cloud coding agents (Cursor, Claude, Codex keys), and the Decision model card." },
   experimental: { text: "Early features, each off until switched on: Connected apps, Meeting notetaker (Google Meet), skill authoring, browser profiles, data window.", access: "on an organization server, only people who may edit the configuration (admins)" },
   backups: { text: "Export full backup (bots, conversations, settings; no secret), import and restore.", access: "solo: the person; organization: permission backup.workspace (off for members by default), restore stays with admins" },
   computer: { text: "Where bots work: this computer, Local VM, cloud computers, self-hosted VPS, isolation, safety and storage.", access: "solo: the person; organization: admins, and each member for their own server environment" },
@@ -106,15 +106,6 @@ export const GUIDES: Guide[] = [
     refs: ["tool:add_mcp_server", "card:myConnections.servers", "px:settings:org.mcp"],
   },
   {
-    id: "connected-apps",
-    title: "Connect Gmail, Slack, Notion and other apps (Composio)",
-    where: "Settings > Experimental > Connected apps, then Settings > Models and voice > Connected apps, then sidebar Connect apps > Connected apps",
-    access: "organization: admins set it up (Experimental needs the right to edit the configuration)",
-    keywords: "gmail slack notion google drive outlook connecter connect apps applications composio connected apps applications connectees",
-    text: "The person does it: 1) Settings > Experimental > Connected apps (Apps connectées) on; 2) the Composio key in Settings > Models and voice > Connected apps; 3) the sidebar's Connect apps > Connected apps to sign in to each account (several labeled accounts per app). Then each bot's grants choose which tools it gets (Edit bot > Model and tools > Access). On an organization server an admin sets this up.",
-    refs: ["setting:experimental", "setting:engines", "bot-setting:access", "file:docs/composio.md"],
-  },
-  {
     id: "voice-note",
     title: "Send a voice note",
     where: "voice engine in Settings > Models and voice; the bot's voice in Edit bot > Model and tools > Voice & alerts",
@@ -196,7 +187,7 @@ export const GUIDES: Guide[] = [
     where: "account menu > Automations > Webhooks",
     access: "organization: server.settings (admin)",
     keywords: "webhook declencheur trigger github gitlab ticket issue evenement event slack sentry pagerduty linear demarrer start",
-    text: "A webhook starts a task from outside: Automations (account menu) > Webhooks creates one with a bearer token shown once. Typed triggers verified by the provider's own signature (GitHub, GitLab, Slack, Microsoft Teams, Outlook, Sentry, PagerDuty, Linear) exist on the server, but the app has no button to open their panel yet: say so rather than promising it. A bot cannot create either without the person's Allow (act on POST /api/webhooks), and on an organization server it needs server.settings (admin).",
+    text: "A webhook starts a task from outside: Automations (account menu) > Webhooks creates one with a bearer token shown once. Each webhook runs its task on the bot's own computer (This computer or its cloud computer), not on the organization's server. Typed triggers verified by the provider's own signature (GitHub, GitLab, Slack, Microsoft Teams, Outlook, Sentry, PagerDuty, Linear) exist on the server, but the app has no button to open their panel yet: say so rather than promising it. A bot cannot create either without the person's Allow (act on POST /api/webhooks). On an organization server a person creates and manages a webhook on the bot's own computer themselves, no admin and no server.settings needed; only a Microsoft trigger (it names a mailbox sign-in) or a webhook that would run on the organization's server is an admin's.",
     refs: ["menu:sidebar.nav.automations", "tool:act", "file:shared/trigger-sources.ts", "file:server/webhooks.ts"],
   },
   {
@@ -218,14 +209,14 @@ export const GUIDES: Guide[] = [
     id: "solo-vs-org",
     title: "Solo Sagax and organization (Perspicax) differences",
     keywords: "solo organisation organization perspicax admin membre member difference entreprise business",
-    text: "Solo: a person's own Sagax; they hold every setting. Organization: a Sagax server linked to Perspicax (Sagax Business); people sign in with Perspicax, admins manage people, teams, bot rights, engines, routines and usage in the Perspicax console, and member bots run host-level tools (act, manage_settings, manage_pairing, add_mcp_server, attach_file, vm_exec, shared_computer, the cloud agent tools) only after an admin's approval. In a member's own scope (their bots, memory, conversations, own computer) their bot works under their own approval level. Perspicax also serves the organization's products (ConnectWise and others) to bots through api_list, api_search and the profile tools.",
+    text: "Solo: a person's own Sagax; they hold every setting. Organization: a Sagax server linked to Perspicax (Sagax Business); people sign in with Perspicax, admins manage people, teams, bot rights, engines, routines and usage in the Perspicax console. A member's bot runs its commands, code and files on its OWN computer by default (its server environment (sagax-environment), its owner's own computer or Local VM (sagax-desktop), or its cloud computer), under the owner's own approval level, never assuming the shared organization server. The engine's host shell (a Bash or shell command on the shared server) is an admin's: only an admin targets the organization's server, so run commands on the bot's own computer instead. Host-level tools (act, manage_settings, manage_pairing, add_mcp_server, attach_file, vm_exec, shared_computer, the cloud agent tools) also run only after an admin's approval. Perspicax also serves the organization's products (ConnectWise and others) to bots through api_list, api_search and the profile tools.",
     refs: ["file:server/member-tool-scope.ts", "px:console:/sagax/permissions", "tool:api_list"],
   },
   {
     id: "admin-asks",
     title: "What a member must ask an admin for",
     keywords: "admin administrateur demander ask permission droit right membre member refuse refused bloque blocked",
-    text: "On an organization server a member asks an admin for: host-level bot tools (act on settings and plugins, manage_settings, add_mcp_server, attach_file, vm_exec, the cloud agent tools), Full access, organization engines such as Voice mode (xAI), backups, Experimental features and Connected apps, server settings and webhooks. The admin grants rights in the Perspicax console > Access > Bot rights, per person or team; a pending admin approval shows in Perspicax To do (À traiter).",
+    text: "On an organization server a member asks an admin for: host-level bot tools (act on settings and plugins, manage_settings, add_mcp_server, attach_file, vm_exec, the cloud agent tools), a command on the organization's server itself (the engine's host shell), Full access, organization engines such as Voice mode (xAI), backups, Experimental features and Connected apps, and server settings. A member does NOT need an admin to run commands on the bot's own computer (its server environment, Local VM, This computer or cloud computer) or to create a webhook on the bot's own computer: those are the owner's own. The admin grants rights in the Perspicax console > Access > Bot rights, per person or team; a pending admin approval shows in Perspicax To do (À traiter).",
     refs: ["file:docs/member-admin-audit.md", "px:console:/sagax/permissions", "px:console:/inbox"],
   },
   {

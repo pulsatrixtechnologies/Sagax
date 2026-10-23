@@ -156,6 +156,10 @@ botField("bot.pinned", "pinned", "boolean", "Pinned in the sidebar", "Sidebar > 
 botField("bot.hidden", "hidden", "boolean", "Archived (hidden)", "Bot editor > ... > Archive");
 botField("bot.memoryEnabled", "memoryEnabled", "boolean", "Memory on", "Bot editor > Memory");
 botField("bot.memoryUpkeep", "memoryUpkeep", "any", "Memory upkeep", "Bot editor > Memory");
+// widening who gets this bot's team-memory cards (back to "shared") reaches
+// other people: a card at every level; narrowing to "private" runs as simple
+botField("bot.teamMemorySharing", "teamMemorySharing", "enum:shared|private", "Team memory sharing (shared, private)", "Bot editor > Memory > Team memory",
+  (v) => v === "private" ? ["own"] : ["others"]);
 botField("bot.browser", "browser", "boolean", "Browser", "Bot editor > Access > Browser");
 botField("bot.browserProfile", "browserProfile", "string?", "Browser profile", "Bot editor > Access > Browser");
 botField("bot.computer", "computer", "enum:auto|off", "Works on (Auto or Off)", "Bot editor > Workspace");
@@ -163,8 +167,6 @@ botField("bot.cloudBackend", "cloudBackend", "enum:box|vps", "Cloud computer kin
 botField("bot.cwd", "cwd", "string?", "Working folder", "Bot editor > Access > Folder");
 botField("bot.mcpServers", "mcpServers", "array", "MCP servers it may use (null: all)", "Bot editor > Access > Tools", selfReach);
 botField("bot.toolScope", "toolScope", "any", "Tool selection", "Bot editor > Access > Tool selection", selfReach);
-botField("bot.connectorScopes", "connectorScopes", "any", "Connected apps scopes", "Bot editor > Access > Connected apps", selfReach);
-botField("bot.composio", "composio", "any", "Connected apps (Composio)", "Bot editor > Access > Connected apps", selfReach);
 botField("bot.parkDirectMessages", "parkDirectMessages", "boolean", "Park direct messages while busy", "Bot editor > Behaviour");
 botField("bot.alwaysAllow", "alwaysAllow", "array", "Always allowed tools", "Bot editor > Access > Always allowed", always("rule-change"));
 // 2026-10-21 (parité 1C): people and bots it writes to without a card
@@ -498,6 +500,7 @@ pref("appearance.glyphRipple", "appearance", "sagax-glyph-ripple", "boolean", "G
 pref("appearance.retro98", "appearance", "omb.retro98.on", "boolean", "Hibou 98", "Settings > Appearance");
 pref("appearance.reduceMotion", "appearance", "sagax.a11y.motion.v1", "enum:system|reduce", "Reduce motion (follow the system, or always)", "Settings > Appearance > Accessibility");
 pref("appearance.highContrast", "appearance", "sagax.a11y.contrast.v1", "enum:system|high", "Contrast (standard, or high)", "Settings > Appearance > Accessibility");
+pref("appearance.hdMascots", "appearance", "sagax.hdMascots.v1", "enum:on|off", "HD mascots (painted art for the characters that have it, or the classic look)", "Settings > Appearance > Mascots");
 pref("appearance.textSize", "appearance", "sagax.a11y.textSize.v1", "enum:default|large|xlarge", "Text size (default, large, extra large)", "Settings > Appearance > Accessibility");
 pref("appearance.hardwareAcceleration", "appearance", "sagax.hardwareAcceleration.v1", "boolean", "Use hardware acceleration (desktop app; needs a restart)", "Settings > Appearance > Desktop");
 pref("appearance.spellcheck", "appearance", "sagax.spellcheck.v1", "boolean", "Check spelling while typing (desktop app)", "Settings > Appearance > Desktop");
@@ -556,7 +559,7 @@ add({
   classes: always("rule-change"),
 });
 
-const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio", "composio"]);
+const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio"]);
 
 // ── server configuration (PATCH /api/config) ──────────────────────────
 function config(key: string, family: SettingFamily, path: string, value: SettingValue, label: string, where: string, classes: SettingSpec["classes"] = serverWide): void {
@@ -569,7 +572,7 @@ function config(key: string, family: SettingFamily, path: string, value: Setting
 }
 config("server.newBotDefaults", "server", "newBotDefaults", "object", "New bot defaults", "Settings > General > System > New bots",
   // a default that sets a level, grants or tools for every new bot widens
-  (v, ctx) => /"(approvalMode|alwaysAllow|routines|toolScope|mcpServers|connectorScopes|composio|fullAccess)"/.test(JSON.stringify(v ?? null)) ? ["rule-change"] : serverWide(v, ctx));
+  (v, ctx) => /"(approvalMode|alwaysAllow|routines|toolScope|mcpServers|fullAccess)"/.test(JSON.stringify(v ?? null)) ? ["rule-change"] : serverWide(v, ctx));
 config("server.threads", "server", "threads", "object", "Conversation cleanup", "Settings > General > Advanced > Threads");
 config("server.showToolCalls", "server", "features.showToolCalls", "boolean", "Show tool calls", "Settings > Appearance");
 config("server.feature", "server", "features", "object", "Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker})", "Settings > Experimental");

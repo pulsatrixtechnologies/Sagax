@@ -117,6 +117,17 @@ describe("bot act", () => {
     const escalated = await full.service.handle({ facts: facts(), raw: { ui: "decideRequest", input: { threadId: "t2", requestId: "r1", behavior: "allow" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
     expect(escalated.status).toBe(403);
     expect(full.performed).toHaveLength(1);
+    // widening who gets a bot's team-memory cards waits on a card at every
+    // level, even Full; narrowing to private is an ordinary write
+    const widened = await full.service.handle({ facts: facts(), raw: { method: "PATCH", path: "/api/bots/b1", body: { teamMemorySharing: "shared" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
+    expect(widened.status).toBe(200);
+    expect(widened.body.held).toBe(true);
+    expect(full.cards).toHaveLength(1);
+    expect(full.performed).toHaveLength(1);
+    const narrowed = await full.service.handle({ facts: facts(), raw: { method: "PATCH", path: "/api/bots/b1", body: { teamMemorySharing: "private" } }, threadId: "t", botId: "b", botName: "Ada", botColor: "green", mode: "full" });
+    expect(narrowed.status).toBe(200);
+    expect(narrowed.body.held).toBeUndefined();
+    expect(full.performed).toHaveLength(2);
     for (const reason of [
       { automation: true },
       { guest: true },

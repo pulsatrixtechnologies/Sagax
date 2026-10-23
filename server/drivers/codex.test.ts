@@ -1193,40 +1193,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     ]);
   });
 
-  it("mounts connected apps without placing credential values in argv", async () => {
-    await create();
-    const dump = join(scratch, "composio.json");
-    process.env.FAKE_CODEX_DUMP = dump;
-    expect(instance.adapter.capabilities.composioMcp).toBe(true);
-
-    await instance.adapter.sendTurn({
-      threadId: "t-composio",
-      text: "check mail",
-      integrations: {
-        composio: {
-          command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
-          env: {
-            SAGAX_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp",
-            SAGAX_CONNECTOR_TOKEN: "per-turn-connector-token",
-          },
-        },
-        agents: {
-          command: process.execPath,
-          args: ["/tmp/agents-proxy.js"],
-          env: { SAGAX_COMMS_TOKEN: "peer-comms-secret" },
-        },
-      },
-    });
-    await recorder.until((event) => event.type === "turn.completed");
-    const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.argv.join(" ")).toContain("mcp_servers.openmausbot_connectors.command");
-    expect(seen.argv.join(" ")).toContain("SAGAX_CONNECTOR_TOKEN");
-    expect(seen.argv.join(" ")).not.toContain("per-turn-connector-token");
-    expect(seen.env.SAGAX_CONNECTOR_TOKEN).toBe("per-turn-connector-token");
-    expect(seen.env.SAGAX_COMMS_TOKEN).toBe("peer-comms-secret");
-  });
-
   it("mounts custom MCP servers on-request while built-ins stay pre-quieted", async () => {
     await create();
     const dump = join(scratch, "custom-mcp.json");
@@ -1240,9 +1206,9 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
         custom: {
           notes: { command: "npx", args: ["-y", "@x/notes-mcp"], env: { NOTES_TOKEN: "tok-notes" } },
         },
-        composio: {
+        agents: {
           command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
+          args: ["/tmp/agents-proxy.js"],
           env: { SAGAX_COMMS_TOKEN: "per-boot-token" },
         },
       },
@@ -1255,10 +1221,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(argv).toContain("NOTES_TOKEN");
     expect(argv).not.toContain("tok-notes");
     expect(seen.env.NOTES_TOKEN).toBe("tok-notes");
-    // the built-in keeps codex's pre-quieted approval mode; the custom
-    // server does NOT — its tool calls arrive as approval cards
-    expect(argv).toContain('mcp_servers.openmausbot_connectors.default_tools_approval_mode');
-    expect(argv).not.toContain('mcp_servers.notes.default_tools_approval_mode');
   });
 
   it("mounts a custom server under its own name when the user's config.toml already has one by that name", async () => {
@@ -1419,7 +1381,6 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
       SHARED_SETTING: "same", OVERRIDDEN: "person", ELECTRON_RUN_AS_NODE: "1" } });
     await instance.adapter.sendTurn({ threadId: "mount-env-shell", text: "go", integrations: {
       agents: { command: process.execPath, args: ["/tmp/agents-proxy.js"], env: { ELECTRON_RUN_AS_NODE: "1", SAGAX_COMMS_TOKEN: "agents-capability" } },
-      composio: { command: process.execPath, args: ["/tmp/connector-proxy.js"], env: { SAGAX_CONNECTORS_TOKEN: "connector-capability" } },
       phone: { command: process.execPath, args: ["/tmp/phone-proxy.js"], env: { SAGAX_PHONE_TOKEN: "phone-capability" } },
       custom: {
         // TZ is a variable no shell should lose, whoever set it
@@ -1433,7 +1394,7 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(seen.calls.find((call: { method: string }) => call.method === "thread/start").params.config["shell_environment_policy.exclude"]).toEqual([
       "USER_SECRET_*", "SAGAX_REMOTE_MCP_CONFIG_*",
       // sorted: the Sagax names sort after OVERRIDDEN (upstream's SAGAX_ names sorted before it)
-      "ELECTRON_RUN_AS_NODE", "GITHUB_PERSONAL_ACCESS_TOKEN", "OVERRIDDEN", "SAGAX_COMMS_TOKEN", "SAGAX_CONNECTORS_TOKEN", "SAGAX_PHONE_TOKEN",
+      "ELECTRON_RUN_AS_NODE", "GITHUB_PERSONAL_ACCESS_TOKEN", "OVERRIDDEN", "SAGAX_COMMS_TOKEN", "SAGAX_PHONE_TOKEN",
     ]);
   });
 

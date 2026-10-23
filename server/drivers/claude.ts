@@ -5,7 +5,6 @@
 // continues across turns via --resume <sessionId> (the resumeCursor).
 //
 // Integrations become MCP servers on the CLI:
-//   - Composio Sessions (connected apps → tools) over streamable HTTP
 //   - every computer (this Mac, a Local VM, a VPS, or a Boat cloud
 //     computer through server/harness-mcp-proxy.ts computer) as the one
 //     stdio `computer` server in turn.integrations.localComputer
@@ -2005,10 +2004,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // upstream exactly as before.
       const harnessHttp = (spec: Parameters<typeof harnessMcpHttpSpec>[0], kind: Parameters<typeof harnessMcpHttpSpec>[1]) =>
         turn.toolScope === undefined ? harnessMcpHttpSpec(spec, kind) : null;
-      if (turn.integrations?.composio) {
-        mcpServers.composio = { ...turn.integrations.composio };
-        allowed.push("mcp__composio");
-      }
       if (turn.integrations?.localComputer) {
         const local = turn.integrations.localComputer;
         // The cloud computer's harness proxy is reached over HTTP directly
@@ -2170,8 +2165,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // A guest's turn pre-allows only the harness's own tools: anything
       // else (the browser can open a file: address) asks the owner first.
       if (turn.guestConfined) allowed.splice(0, allowed.length, ...allowed.filter((name) => name === "mcp__ogb" || name === "mcp__agents"));
-      // The MCP config carries credentials — a Composio consumer key in a
-      // header, the boat token in the computer proxy's env, the comms token in
+      // The MCP config carries credentials — the boat token in the computer
+      // proxy's env, the comms token in
       // the agents proxy's env. On argv every one of those is world-readable
       // through `ps` for the life of the turn, to any local process. The CLI
       // accepts a FILE for this flag, so the secrets go in a 0600 file that
@@ -3464,7 +3459,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           agentsMcp: true,
         customMcp: true,
           computerMcp: true,
-          composioMcp: true,
           phoneMcp: true,
           browserMcp: true,
           dataMcp: true,

@@ -853,9 +853,21 @@ export class PerspicaxDirectory {
     } catch {
       return { ok: false, error: "unreachable" };
     }
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
       void response.body?.cancel().catch(() => {});
       return { ok: false, error: "link", status: response.status };
+    }
+    if (response.status === 403) {
+      // 2026-10-21: a route may refuse the person rather than the link
+      // (inbound mail: `{"error":"not_owner"}`); its small JSON body is kept.
+      let refusal: unknown;
+      try {
+        const text = await readLimited(response, 4_096);
+        refusal = text ? JSON.parse(text) : undefined;
+      } catch {
+        refusal = undefined;
+      }
+      return { ok: false, error: "link", status: 403, ...(refusal !== undefined ? { body: refusal } : {}) };
     }
     let text: string | null;
     try {

@@ -23,7 +23,7 @@ import { openExternalLink } from "@/lib/app-links";
 import { writeComputerPanelView } from "@/lib/computer-panel-view";
 import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
 import {
-  branchAction, branchActions, branchCounts, branchStatus, codingBranchKey, deleteNeedsSecondConfirm, loadBranchDiff, loadBranchInfo, loadBranchPull,
+  branchAction, branchActions, branchCounts, branchStatus, branchUnavailable, codingBranchKey, deleteNeedsSecondConfirm, loadBranchDiff, loadBranchInfo, loadBranchPull, remoteActionNeedsConfirm,
   type BotBranchDiff, type BotBranchInfo, type BotBranchPull, type BranchTone, type CodingBranch,
 } from "@/lib/code-branches";
 import { codeWorkWhen } from "@/lib/bot-activity";
@@ -40,6 +40,9 @@ const ERROR_KEYS: Record<string, LocaleKey> = {
   not_pushed: "botPanel.branch.hint.pushFirst",
   checked_out: "botPanel.branch.error.checkedOut",
   elsewhere: "botPanel.branch.hint.elsewhere",
+  offline: "botPanel.branch.hint.offline",
+  no_path: "botPanel.branch.hint.noPath",
+  unknown_os: "botPanel.branch.hint.unknownOs",
   no_gh: "botPanel.branch.error.noGh",
   nothing_to_commit: "botPanel.branch.hint.nothingToCommit",
   unreachable: "botPanel.branch.error.unreachable",
@@ -108,7 +111,8 @@ export function BranchRow({ branch, now, info, pull, busy, note, archived = fals
   const status = branchStatus(branch, info?.state, pull);
   const tone = TONE_ICON[status.tone];
   const Icon = tone.icon;
-  const subtitle = [branch.repo ?? info?.repo ?? info?.folderName, ...branchCounts(info?.state), codeWorkWhen(branch.at, now)].filter(Boolean).join(" · ");
+  const onComputer = info?.place === "remote" && info.host ? t("botPanel.branch.onComputer", { host: info.host }) : undefined;
+  const subtitle = [branch.repo ?? info?.repo ?? info?.folderName, onComputer, ...branchCounts(info?.state), codeWorkWhen(branch.at, now)].filter(Boolean).join(" · ");
   const url = branch.url;
   const body = (
     <>
@@ -206,7 +210,8 @@ export function BranchMenu({ branch, info, pull, archived, onAct }: {
   const state = info?.state;
   const blocked = info?.publishBlocked;
   const publishHint = blocked === "github_not_connected" ? t("botPanel.branch.hint.githubNotConnected") : blocked === "elsewhere" || info?.place === "elsewhere" ? t("botPanel.branch.hint.elsewhere") : undefined;
-  const unavailable = !branch.threadId ? t("botPanel.branch.hint.noThread") : info?.place === "elsewhere" ? t("botPanel.branch.hint.elsewhere") : state && !state.exists ? t("botPanel.branch.gone") : undefined;
+  const unavailableKey = branchUnavailable(info, branch);
+  const unavailable = unavailableKey ? t(unavailableKey) : undefined;
   const commitHint = unavailable ?? (!state ? undefined : !state.worktree ? t("botPanel.branch.hint.notCheckedOut") : state.changes.length === 0 ? t("botPanel.branch.hint.nothingToCommit") : undefined);
   const pushHint = unavailable ?? publishHint ?? (state?.isDefault ? t("botPanel.branch.hint.default") : state && state.pushed && state.ahead === 0 ? t("botPanel.branch.hint.alreadyPushed") : undefined);
   const prHint = unavailable ?? publishHint ?? (state && !state.pushed ? t("botPanel.branch.hint.pushFirst") : !(branch.repo ?? info?.repo) ? t("botPanel.branch.hint.notGithub") : undefined);
@@ -314,6 +319,7 @@ export function CodeBranchList({ branches, archivedBranches = [], now, actions, 
   const [committing, setCommitting] = useState<CodingBranch | null>(null);
   const [diffOf, setDiffOf] = useState<CodingBranch | null>(null);
   const [deleting, setDeleting] = useState<{ branch: CodingBranch; second: boolean } | null>(null);
+  const [confirming, setConfirming] = useState<{ branch: CodingBranch; action: "push" | "pr" } | null>(null);
   const botId = actions?.botId;
   const patch = useCallback((key: string, next: Partial<RowState>) => setRows((current) => ({ ...current, [key]: { ...current[key], ...next } })), []);
 
@@ -352,11 +358,37 @@ export function CodeBranchList({ branches, archivedBranches = [], now, actions, 
     }
   };
 
+  const runPush = (branch: CodingBranch) => {
+    if (!botId) return;
+    void run(branch, async () => {
+      const result = await branchAction(botId, "push", { threadId: branch.threadId ?? "", branch: branch.name });
+      return t("botPanel.branch.done.push", { remote: result.remote ?? "origin" });
+    });
+  };
+  const runPr = (branch: CodingBranch) => {
+    if (!botId) return;
+    const key = codingBranchKey(branch);
+    void run(branch, async () => {
+      const result = await branchAction(botId, "pr", { threadId: branch.threadId ?? "", branch: branch.name });
+      if (result.pull) {
+        patch(key, { pull: result.pull });
+        void openExternalLink(result.pull.url);
+        return t("botPanel.branch.done.pr", { number: result.pull.number });
+      }
+      // gh was not on the bot's computer: the branch is pushed, open GitHub's
+      // compare page so the person creates the pull request by hand.
+      if (result.compareUrl) {
+        void openExternalLink(result.compareUrl);
+        return t("botPanel.branch.done.prCompare");
+      }
+      return undefined;
+    });
+  };
+
   const act = (branch: CodingBranch) => (action: BranchMenuAction) => {
     if (!actions || !botId) return;
     const key = codingBranchKey(branch);
     const row = rows[key];
-    const threadId = branch.threadId ?? "";
     switch (action) {
       case "commit": setCommitting(branch); return;
       case "diff": setDiffOf(branch); return;
@@ -377,21 +409,13 @@ export function CodeBranchList({ branches, archivedBranches = [], now, actions, 
         dispatch({ type: "toggleComputer", open: true });
         return;
       case "push":
-        void run(branch, async () => {
-          const result = await branchAction(botId, "push", { threadId, branch: branch.name });
-          return t("botPanel.branch.done.push", { remote: result.remote ?? "origin" });
-        });
+        // On the bot's own computer a push runs on a client's machine: confirm first.
+        if (remoteActionNeedsConfirm(row?.info, "push")) { setConfirming({ branch, action: "push" }); return; }
+        runPush(branch);
         return;
       case "pr":
-        void run(branch, async () => {
-          const result = await branchAction(botId, "pr", { threadId, branch: branch.name });
-          if (result.pull) {
-            patch(key, { pull: result.pull });
-            void openExternalLink(result.pull.url);
-            return t("botPanel.branch.done.pr", { number: result.pull.number });
-          }
-          return undefined;
-        });
+        if (remoteActionNeedsConfirm(row?.info, "pr")) { setConfirming({ branch, action: "pr" }); return; }
+        runPr(branch);
         return;
       case "archive":
       case "unarchive":
@@ -480,6 +504,21 @@ export function CodeBranchList({ branches, archivedBranches = [], now, actions, 
         />
       )}
       {diffOf && botId && <DiffDialog botId={botId} branch={diffOf} onClose={() => setDiffOf(null)} />}
+      <ConfirmDialog
+        open={confirming !== null}
+        tone="neutral"
+        title={confirming?.action === "push" ? t("botPanel.branch.confirmPush.title") : t("botPanel.branch.confirmPr.title")}
+        body={confirming ? (confirming.action === "push" ? t("botPanel.branch.confirmPush.body", { branch: confirming.branch.name, host: rows[codingBranchKey(confirming.branch)]?.info?.host ?? "" }) : t("botPanel.branch.confirmPr.body", { branch: confirming.branch.name, host: rows[codingBranchKey(confirming.branch)]?.info?.host ?? "" })) : ""}
+        confirmLabel={confirming?.action === "push" ? t("botPanel.branch.push") : t("botPanel.branch.openPr")}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => {
+          if (!confirming) return;
+          const { branch, action } = confirming;
+          setConfirming(null);
+          if (action === "push") runPush(branch);
+          else runPr(branch);
+        }}
+      />
       <ConfirmDialog
         open={deleting !== null}
         tone="danger"

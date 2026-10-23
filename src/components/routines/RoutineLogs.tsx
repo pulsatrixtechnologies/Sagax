@@ -3,7 +3,7 @@ import { CircleAlert, FileText, Loader2, Search } from "lucide-react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { isRoutineProblemRun, type RoutineRun, type RoutineRunStatusFilter } from "@/lib/routines";
+import { isRoutineProblemRun, routineRunMatchesStatus, type RoutineRun, type RoutineRunStatusFilter } from "@/lib/routines";
 import { routineDateTime, routineRunError, routineRunLabel, routineRunTime, routineRunTone } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
 import { RoutineOwnerBadge } from "./RoutineScopeBar";
@@ -28,7 +28,7 @@ export function RoutineLogs({ runs, bots, ownerOf, viewerPrincipalId, loading, e
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(50);
   const [confirmClear, setConfirmClear] = useState(false);
-  const filtered = runs.filter((run) => (!routineId || run.routineId === routineId) && (status === "all" || (status === "problems" ? isRoutineProblemRun(run) : run.status === status))
+  const filtered = runs.filter((run) => (!routineId || run.routineId === routineId) && routineRunMatchesStatus(run, status)
     && `${run.routineName} ${bots.find((bot) => bot.id === run.botId)?.name ?? ""} ${run.output ?? ""} ${run.error ?? ""} ${run.attention ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()))
     .sort((a, b) => routineRunTime(b) - routineRunTime(a));
   return <section className="mx-auto w-full max-w-5xl space-y-4 p-4 sm:p-6" aria-label={t("routines.logs")}>

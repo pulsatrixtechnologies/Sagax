@@ -32,7 +32,9 @@ export function threadsWhenTreeHidden(bot: Bot, queued: Record<string, unknown[]
   const attention = sidebarBotActivityTasks(bot, queued);
   const seen = new Set(attention.map((task) => task.threadId));
   const pinned = (bot.tasks ?? [])
-    .filter((task) => task.pinned === true && !task.routineRunId && !seen.has(task.threadId))
+    // an automatic routine results thread never surfaces here either, even
+    // pinned (JC 2026-10-22: routines stay out of the unified conversation)
+    .filter((task) => task.pinned === true && !task.routineRunId && task.routineResults !== true && !seen.has(task.threadId))
     .map((task) => ({ ...task, queued: Boolean(queued[task.threadId]?.length) }));
   return orderedThreadList([...attention, ...pinned]);
 }

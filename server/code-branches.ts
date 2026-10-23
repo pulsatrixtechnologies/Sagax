@@ -384,7 +384,7 @@ export function redactPaths(text: string): string {
     .replace(/(?<![\w:/.~-])(?:\/[^\s/'"`:]+){2,}\/?/g, (path) => folderName(path));
 }
 
-function firstLine(text: string): string {
+export function firstLine(text: string): string {
   return stripCredentials(text.split("\n").map((line) => line.replace(/^(?:error|fatal|hint|remote): ?/i, "").trim()).find(Boolean) ?? "").slice(0, 300);
 }
 
@@ -393,7 +393,7 @@ export function stripCredentials(text: string): string {
   return text.replace(/(\b[a-z][\w+.-]*:\/\/)[^/@\s]+@/gi, "$1").replace(/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "***");
 }
 
-function pushError(text: string): BranchActionError {
+export function pushError(text: string): BranchActionError {
   if (/rejected|non-fast-forward|fetch first/i.test(text)) return new BranchActionError("The remote branch has commits this one does not. Pull them first; nothing is forced from here.", "rejected");
   if (/Authentication failed|could not read Username|terminal prompts disabled|Permission denied|403|denied to/i.test(text)) return new BranchActionError("Your git credentials were refused for this repository. Sign in to GitHub with your own account and try again.", "auth", 403);
   if (/Could not resolve host|unable to access|timed out|Connection refused/i.test(text)) return new BranchActionError("The remote could not be reached.", "unreachable", 502);
@@ -487,7 +487,7 @@ export class BranchPulls {
   }
 }
 
-function ghError(text: string): BranchActionError {
+export function ghError(text: string): BranchActionError {
   if (/auth login|not logged|authentication|401|Bad credentials|GH_TOKEN/i.test(text)) return new BranchActionError("GitHub did not accept your sign-in. Connect your own GitHub account and try again.", "auth", 403);
   if (/must first push|not found on remote|No commits between|head sha can't be blank/i.test(text)) return new BranchActionError("Push the branch first: GitHub has no commits for it yet.", "not_pushed");
   return new BranchActionError(firstLine(text) || "GitHub refused the request.", "gh_failed", 502);

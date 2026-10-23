@@ -10,7 +10,7 @@ export function routineRunCard(run: RoutineRun, cardThreadId?: string): RoutineR
   // card: the card keeps only its state, or the report shows twice
   // (2026-10-19, production). A wait or a failure keeps its line.
   const joined = Boolean(cardThreadId && run.threadId === cardThreadId);
-  const visibleSummary = run.status === "waiting" ? run.attention : joined ? undefined : run.output;
+  const visibleSummary = run.status === "waiting" ? run.attention : joined || run.quiet ? undefined : run.output;
   const summary = visibleSummary ? redactSecretsInText(visibleSummary).slice(0, 2_000) : undefined;
   const error = run.error ? redactSecretsInText(run.error).slice(0, 500) : undefined;
   const card: RoutineRunCardData = {
@@ -18,7 +18,9 @@ export function routineRunCard(run: RoutineRun, cardThreadId?: string): RoutineR
     routineId: run.routineId,
     routineName: redactSecretsInText(run.routineName),
     scheduledFor: run.scheduledFor,
-    status: run.status,
+    // A run quiet at the end (nothing for the person, JC 2026-10-22) whose
+    // message was already posted while it waited on them reads as such.
+    status: run.status === "completed" && run.quiet ? "nothing_to_report" : run.status,
   };
   if (run.goalStatus) card.goalStatus = run.goalStatus;
   if (run.deferredAt != null && run.status === "queued") card.deferredAt = run.deferredAt;

@@ -637,6 +637,13 @@ function startComputerDouble(upstreamPort) {
     if (await cardLabHook(req, res, url, `http://127.0.0.1:${upstreamPort}`, api)) return;
     if (await composerLabHook(req, res, url)) return;
     if (await pluginLabHook(req, res, url)) return;
+    // PARITY_BOT_MAIL=1 (B21 / CO5): the bot's own address as an
+    // organization server linked to Perspicax answers it (this fixture is a
+    // personal server, which answers available:false).
+    // PARITY_BOT_MAIL=pending: the address waits for the administrator.
+    if ((process.env.PARITY_BOT_MAIL === "1" || process.env.PARITY_BOT_MAIL === "pending") && /^\/api\/bots\/[\w-]+\/inbound-mail$/.test(url.pathname) && req.method === "GET") {
+      return sendJson(res, 200, { available: true, address: "ara@bots.acme.example", enabled: process.env.PARITY_BOT_MAIL === "1", canChange: true });
+    }
     if (url.pathname === "/__parity/computer") {
       if (req.method === "DELETE") {
         computerRecord.batches = [];

@@ -8,7 +8,7 @@
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
 import { soulSystemPrompt } from "./bot-folder.ts";
 import { teammateAvailabilityPrompt, type RosterMember } from "./peer-roster.ts";
-import type { ConnectorToolGrant } from "../shared/wire.ts";
+import { ROUTINE_REPORT_CONTRACT } from "./routine-report.ts";
 import { CW_FAMILIES, CW_REQUIRED_FIELDS, CW_VIEWS, CW_WIDGET_EXAMPLE, cwOrList } from "../shared/cw-widgets/schema.ts";
 
 export type PromptPart = { id: string; label: string; text: string };
@@ -205,33 +205,6 @@ export function cloudHomePrompt(sharedComputerTools: boolean): string {
     + " Offer what works here: the built-in browser and their cloud computer, a desktop in the cloud. Call it their cloud computer, as the app does. Never ask them to set up this computer or a Local VM; neither exists here.";
 }
 
-export const COMPOSIO_PROMPT =
-  " The user's connected apps (Gmail, Calendar, Slack, Notion, and the rest) are reachable through the composio tools — find the right one with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. Reach for them before telling the user you have no access to a service.";
-
-/** The connected-apps paragraph, personalized to the bot's grants (issue
- * #1737). A bot with no grants record keeps the legacy all-tools sentence;
- * a record names exactly the granted services and tells the model a
- * refusal is a grant question for the person, never a reason to hunt for
- * what else exists; a record granting nothing gets no paragraph at all.
- * Like the persona, the text only changes when settings change, so the
- * stable-prompt split from #1758 is preserved. */
-export function composioSystemPrompt(grants: Record<string, ConnectorToolGrant> | undefined): string {
-  if (grants === undefined) return COMPOSIO_PROMPT;
-  const services = Object.keys(grants);
-  if (services.length === 0) return "";
-  const named = services.map(connectorServiceLabel).join(", ");
-  return ` The user's connected apps assigned to this bot (${named}) are reachable through the composio tools — find the right one with COMPOSIO_SEARCH_TOOLS, read its arguments with COMPOSIO_GET_TOOL_SCHEMAS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. Only the tools this bot was granted will run; when a needed tool is refused, tell the user and ask them to grant it in Sagax. Reach for the granted services before telling the user you have no access.`;
-}
-
-/** "gmail" → "Gmail", "google_calendar" → "Google Calendar". The prompt
- * must not call the network, so the label is derived from the slug. */
-function connectorServiceLabel(slug: string): string {
-  return slug
-    .split(/[-_]+/)
-    .map((part) => (part ? part[0]!.toUpperCase() + part.slice(1) : part))
-    .join(" ");
-}
-
 /** Names the user-added MCP servers a turn actually mounted, so the bot
  * reaches for them instead of saying it has no such tool. Empty when none. */
 export function customMcpPrompt(names: string[]): string {
@@ -310,7 +283,7 @@ export function longCommandsPrompt(computer: ComputerPromptKind | null): string 
   return LONG_COMMANDS_TEXT + (computer === "vm-private" || computer === "vm-shared" ? VM_LONG_COMMANDS_TEXT : "");
 }
 export const THREADS_PROMPT =
-  " A thread is one conversation with its own history and its own run; a bot can have several running at once, and the person sees them as rows under that bot. Use start_thread to open one on yourself for separate work, or on a teammate to hand them a job that should run on its own. Messages the person sends while you work reach you inside your current work, under a note \"[Sent while you work · route <handle> ...]\": you decide what each one does, the person is never asked. A precision or a correction of what you are doing: use it now. An independent request: route_message with that handle and mode parallel, so it runs at once as its own task beside your work (the person sees its card here and its result comes back here); name the files or records it will write in resources. A request that needs your current result, continues it, or touches the same files or records: route_message with mode after, so it starts as soon as this work is done, and tell the person so in one short line. Never let two tasks write the same file or record at once. Use list_threads to see how the ones you opened are going. When you mention a thread to the person, write its title as #Title so it links. Do not use a ticket comment, a note, or a room post as a stand-in for a thread.";
+  " A thread is one conversation with its own history and its own run; a bot can have several running at once, and the person sees them as rows under that bot. Use start_thread to open one on yourself for separate work, or on a teammate to hand them a job that should run on its own. Messages the person sends while you work reach you inside your current work, under a note \"[Sent while you work · route <handle> ...]\": you decide what each one does, the person is never asked. A precision or a correction of what you are doing: use it now. A question about what you are doing, a request to recap or explain, or a short follow-up about this conversation: answer it here when you reach a good point, in this conversation; it is not independent work, so never route it to a parallel task. Only start a parallel task for genuinely independent work that can stand on its own and is worth running beside this one (or that the person asked to run in the background): an independent request: route_message with that handle and mode parallel, so it runs at once as its own task beside your work (the person sees its card here and its result comes back here); name the files or records it will write in resources. A request that needs your current result, continues it, or touches the same files or records: route_message with mode after, so it starts as soon as this work is done, and tell the person so in one short line. Never let two tasks write the same file or record at once. Use list_threads to see how the ones you opened are going. When you mention a thread to the person, write its title as #Title so it links. Do not use a ticket comment, a note, or a room post as a stand-in for a thread.";
 /** One-to-one chats only: rooms refuse widgets. */
 export const WIDGET_PROMPT =
   " When the person asks you to book, schedule or pick something and you need a date, a time, a duration or a choice among a few options to do it, you may show a widget form with pickers through show_widget instead of asking them to type the answers. Never show a widget for anything else: not to display data, not to summarize, not on your own initiative. Put data and comparisons in a markdown table in your message, not in a widget.";
@@ -322,7 +295,10 @@ const PROPOSAL_RESULT_PROMPT =
 export const ROUTINE_PROMPT =
   " If the user explicitly asks to list or review, schedule, run, or change routines, use list_routines and propose_routine or propose_routine_action. Keep run_on omitted or maus to use the bot's current model and configured computer, including its VPS. A routine's box (legacy cloud) destination runs on the bot's cloud computer, not the configured VPS; choose it only when the user explicitly wants the cloud computer. Convert calendar requests such as the first or last day of each month or the second Monday to a five-field cron expression with an explicit IANA timezone; use interval for elapsed every-N-minutes work. Never replace a calendar rule with daily AI date checking or an approximate weekly schedule; clarify ambiguous or unsupported requests." + PROPOSAL_RESULT_PROMPT;
 export const ROUTINE_EXECUTION_PROMPT =
-  " Execute this routine now: use available peer tools for required handoffs rather than merely announcing that you will wait; after an accepted delegation, end this turn for automatic resumption, and report a concrete blocker if no handoff is possible.";
+  " Execute this routine now: use available peer tools for required handoffs rather than merely announcing that you will wait; after an accepted delegation, end this turn for automatic resumption, and report a concrete blocker if no handoff is possible." +
+  // 2026-10-22: the run is in the background; nothing reaches the person's
+  // chat unless it needs them (server/routine-report.ts).
+  ROUTINE_REPORT_CONTRACT;
 export const LEARN_PROMPT =
   " If the user sends /learn or asks you to save a reusable procedure from this work, use skills_list and skill_manage. Create new skills; update an existing learned skill only when the user explicitly asks to revise that exact name. Include source provenance." + PROPOSAL_RESULT_PROMPT;
 export const WEBHOOK_PROMPT =

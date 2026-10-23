@@ -17,10 +17,10 @@ import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
 import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
-import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
+import { PluginsPanel } from "@/components/PluginsPanel";
 import {
   AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
-  PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
+  PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RemoteSessionsAdminPage, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
@@ -335,14 +335,6 @@ function Shell() {
     primeNudgeSound();
   }, []);
 
-  // Warm connected-account state as soon as the local server is available.
-  // The modal then opens with the correct Connect/Add account buttons and
-  // quietly revalidates instead of rediscovering every account from scratch.
-  useEffect(() => {
-    if (!state.connected) return;
-    void preloadConnectedApps().catch(() => {});
-  }, [state.connected]);
-
   // Settings, Routines and the other on-request screens stay out of the
   // launch bundle; fetch them once the first paint is done and the app is idle.
   useEffect(() => preloadScreens(), []);
@@ -369,6 +361,7 @@ function Shell() {
   const mainIsTeamMap = state.activeView === "team-map";
   const mainIsCode = state.activeView === "code";
   const mainIsApprovals = state.activeView === "approvals";
+  const mainIsRemoteSessions = state.activeView === "remote-sessions";
   const calendarFillsMain = calendarOpen;
 
   useEffect(() => {
@@ -489,7 +482,7 @@ function Shell() {
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
-      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && <OrgEngineNotice />}
+      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && !mainIsRemoteSessions && <OrgEngineNotice />}
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
@@ -500,6 +493,8 @@ function Shell() {
         <CodePage />
       ) : mainIsApprovals ? (
         <ApprovalsPage />
+      ) : mainIsRemoteSessions ? (
+        <RemoteSessionsAdminPage />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}

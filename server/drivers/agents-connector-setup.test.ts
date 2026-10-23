@@ -41,19 +41,6 @@ describe("open_connector_setup", () => {
     expect((await callConnectorSetupTool({ connector: "Gmail" }, ctx)).text).toMatch(/already connected/i);
   });
 
-  it("an app Sagax connects itself: shows Sagax's own connection card, bound to this conversation", async () => {
-    const { ctx, calls } = context({
-      "/api/internal/connector-setup/open": { ok: true, status: 200, body: { ok: true, route: "composio", slug: "microsoft_teams", label: "Microsoft Teams" } },
-      "/api/internal/connectors/request": { ok: true, status: 200, body: { messageIds: ["m1"] } },
-    });
-    const out = await callConnectorSetupTool({ connector: "Teams" }, ctx);
-    expect(out.isError).toBeUndefined();
-    expect(calls[1]!.path).toBe("/api/internal/connectors/request");
-    expect(calls[1]!.body).toMatchObject({ botId: "b1", threadId: "t1", items: [{ slug: "microsoft_teams" }] });
-    expect(String((calls[1]!.body as { resumeKey: string }).resumeKey)).toMatch(/^[\w-]{8,100}$/);
-    expect(out.text).toMatch(/End this turn/);
-  });
-
   it("a refusal is the server's sentence, as an error", async () => {
     const { ctx } = context({
       "/api/internal/connector-setup/open": { ok: false, status: 409, body: { error: "not theirs" } },

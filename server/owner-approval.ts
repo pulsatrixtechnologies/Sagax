@@ -28,6 +28,7 @@ import { createHash } from "node:crypto";
 import { approvalAction, describeApproval, parseArgs, parseToolId, type ApprovalWords, ENGLISH_WORDS } from "../shared/approval-describe.ts";
 import { sagaxFolder } from "../shared/human-id.ts";
 import { singleProgramOf } from "../shared/read-only-command.ts";
+import { readShell } from "../shared/custom-rules.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
 import { screenAppTarget, type ScreenAppIdentity } from "../shared/computer-app.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
@@ -268,6 +269,20 @@ export function destructiveKindOf(call: Pick<RuleCall, "tool" | "input" | "hints
   const described = describeApproval(call.tool, call.input, call.hints);
   if (described.risk === "destructive") return "delete";
   const args = parseArgs(call.input);
+  // 2026-10-22: describeApproval reads a shell tool only as "execute" and
+  // never parses the line, so a native `rm -rf`, `shred`, `find -delete`...
+  // used to slip past the owner auto/bypass destructive guard and run with no
+  // card. The custom-rules risk engine already extracts the delete from the
+  // same line (shared/custom-rules.ts readShell); the owner route reads it the
+  // same way, so a destructive shell line is a delete in every mode unless an
+  // allow rule was made for a delete. The line arrives under command/cmd/script
+  // (the built-in Bash, an engine's own shell tool, and the folded native
+  // command line index.ts builds for Codex and the ACP engines alike).
+  const shellLine = typeof args?.command === "string" ? args.command
+    : typeof args?.cmd === "string" ? args.cmd
+      : typeof args?.script === "string" ? args.script
+        : undefined;
+  if (shellLine && readShell(shellLine).actions.has("delete")) return "delete";
   const writes = described.risk === "write" || described.risk === "execute";
   if (BULK_TOOL.test(parseToolId(call.tool).name)) return "bulk";
   if (args && writes && ID_LIST_KEYS.some((key) => Array.isArray(args[key]) && (args[key] as unknown[]).length >= 2)) return "bulk";

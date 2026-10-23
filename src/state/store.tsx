@@ -23,7 +23,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { ROUTINE_CONVERSATION_HEADER } from "../../shared/wire";
-import type { BotVisibility, CardAnswerer, CloudBackend, ConnectorToolGrant, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark, WireBotConversation, WireWaitingApproval } from "../../shared/wire";
+import type { BotVisibility, CardAnswerer, CloudBackend, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark, WireBotConversation, WireWaitingApproval } from "../../shared/wire";
 import { DATA_ROUTES, dataSheetKey, withDataThread, type DataSheet, type DataTable } from "../../shared/data-surface";
 import type { TurnDigest } from "../../shared/digest";
 import type { MessageReaction } from "../../shared/reactions";
@@ -36,6 +36,7 @@ import type { MausColor, MausMotion } from "@/lib/mascot";
 import type { BotAvatarCrop } from "../../shared/bot-avatar";
 import type { BotPublicProfile } from "../../shared/bot-public-profile";
 import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
+import type { ProactiveMode } from "../../shared/proactive-mode";
 import { uiCommandToAction } from "../../shared/bot-act";
 import { onNudgeReceived, onNudgeSent, onNudgeSentEcho } from "@/lib/desktop-nudge";
 import { sameModelSelection } from "../../shared/thread-model";
@@ -77,6 +78,7 @@ import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreen
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
 import { t } from "@/lib/i18n";
+import { teamMemorySettled } from "@/lib/team-memory-settled";
 import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-up-client";
 import type { StepUpTarget } from "../../shared/step-up";
 import { permissionMissingMessage } from "@/lib/permissions";
@@ -219,18 +221,6 @@ export interface OptionCardData {
   emailSendRequest?: import("../../shared/wire").OptionCardData["emailSendRequest"];
 }
 
-export interface ConnectorCardData {
-  slug: string;
-  label: string;
-  description: string;
-  status: "required" | "authorizing" | "connected" | "failed";
-  resumeKey: string;
-  alias?: string;
-  error?: string;
-  dismissed?: boolean;
-  resumed?: boolean;
-}
-
 export interface SecretRequestCardData {
   /** vaultLogin: a login request from the credential vault (carries `vault`). */
   target: import("../../shared/credential-request").CredentialTargetId | import("../../shared/credential-vault").VaultLoginTarget;
@@ -249,10 +239,10 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "routineToggle" | "pagePublish" | "requested" | "outbound"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "app" | "routineToggle" | "pagePublish" | "requested" | "outbound"> {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines";
   text?: string;
   /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
    * `groupId` is set when the line belongs to that group chat. */
@@ -274,7 +264,6 @@ export interface Message extends Pick<import("../../shared/wire").WireMessage, "
   resourceUsage?: import("../../shared/resource-usage").ResourceUsageView;
   /** "Connect Microsoft Teams" card (shared/connector-setup.ts). */
   connectorSetup?: import("../../shared/connector-setup").ConnectorSetupView;
-  connector?: ConnectorCardData;
   secret?: SecretRequestCardData;
   /** Lifecycle mirror for a routine whose real work lives in a fresh task. */
   routineRun?: RoutineRunCardData;
@@ -484,6 +473,9 @@ export interface Task {
   threadId: string;
   /** Internal routine execution; reachable through its run receipt, not history menus. */
   routineRunId?: string;
+  /** An automatic "<routine> · Results" thread: listed with threads shown,
+   * never a stream segment, a row under the bot or a dot (2026-10-22). */
+  routineResults?: true;
   /** An AI client's hidden conversation (#291): the server lists it only
    * while it is the open thread; never a dot, a preview or typing dots. */
   hidden?: true;
@@ -650,6 +642,8 @@ export interface Bot {
   autoApprove?: boolean;
   /** Explicit approval level; absent records use the legacy autoApprove bit. */
   approvalMode?: ApprovalMode;
+  /** how autonomously this bot may act on its own (shared/proactive-mode.ts); absent/"off" = never */
+  proactiveMode?: ProactiveMode;
   /** tools this bot may always use without asking */
   alwaysAllow?: string[];
   /** speak this bot's replies aloud as they settle */
@@ -662,6 +656,8 @@ export interface Bot {
   emailDrafts?: boolean;
   /** whether this bot uses native memory (on unless switched off) */
   memoryEnabled?: boolean;
+  /** who gets this bot's team-memory cards: its section (absent, "shared") or only those who see the bot and the conversation ("private") */
+  teamMemorySharing?: "shared" | "private";
   pinned?: boolean;
   hidden?: boolean;
   /** Sidebar section this bot renders under; absent = unsectioned. */
@@ -683,14 +679,6 @@ export interface Bot {
   /** 2026-10-21 (parité 1C): who it writes to without a card
    * (shared/allowed-recipients.ts). */
   allowedRecipients?: string[];
-  /** Whether this bot may use the workspace's connected apps. Unset means
-   * allowed for existing bots; imported bots start with this disabled. */
-  composio?: boolean;
-  /** Which connected-app tools this bot may call, by service slug. Absent
-   * defers to the composio boolean (unset/true = every tool, false = none);
-   * an explicit {} grants no tools. Edited from bot settings → Access. */
-  connectorTools?: Record<string, ConnectorToolGrant>;
-  connectorScopes?: { apps: Record<string, "read" | "write"> };
   outbound?: { policy: "ask" | "allow"; dailyCap: number };
   fallback?: Array<{ instanceId: string; model: string }>;
   /** Per bot since 2026-10-15 (server/bot-runtime-settings.ts), edited in
@@ -904,7 +892,6 @@ export interface ConfigStatus {
   fleet?: { available: boolean };
   budgets?: { monthlyUsd?: number; warnAtPercent?: number };
   billing?: { currency?: string; prices?: Record<string, { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number }> };
-  composio: { configured: boolean; mode?: "managed" | "self-hosted" | "unavailable" };
   /** `included`: cloud computers come with Cloud Pro, no key is saved. */
   box: { configured: boolean; included?: boolean };
   vps: { configured: boolean; sshAlias: string };
@@ -1072,7 +1059,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "groq" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "composio" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines" | "confidentialThreadsByDefault"
+  "xai" | "mistral" | "cerebras" | "groq" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines" | "confidentialThreadsByDefault"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -1086,7 +1073,6 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     openrouter: frame.openrouter,
     openaiCompat: frame.openaiCompat,
     fleet: frame.fleet,
-    composio: frame.composio,
     box: frame.box,
     vps: frame.vps,
     rooms: frame.rooms,
@@ -1177,7 +1163,6 @@ export interface InstanceInfo {
   capabilities?: {
     computerMcp?: boolean;
     agentsMcp?: boolean;
-    composioMcp?: boolean;
     browserMcp?: boolean;
     images?: boolean;
     effortLevels?: readonly EffortLevel[];
@@ -1307,7 +1292,7 @@ export interface AppState {
   /** The person's sidebar hidden keys (src/lib/sidebar-hidden.ts): a
    * restored or fallback selection never lands on one of them. */
   sidebarHiddenKeys: ReadonlySet<string>;
-  activeView: "chat" | "team-map" | "routines" | "code" | "approvals";
+  activeView: "chat" | "team-map" | "routines" | "code" | "approvals" | "remote-sessions";
   routines: Routine[];
   routineRuns: RoutineRun[];
   routinesLoadState: "loading" | "ready" | "error";
@@ -1567,6 +1552,7 @@ export type Action =
   | { type: "showCode"; runId?: string }
   /** The Approvals screen (src/components/approvals/ApprovalsPage.tsx). */
   | { type: "showApprovals" }
+  | { type: "showRemoteSessions" }
   | { type: "showChat" }
   | { type: "routinesHydrated"; routines: Routine[]; runs: RoutineRun[] }
   | { type: "routinesLoadFailed" }
@@ -1730,6 +1716,9 @@ export type Action =
   | { type: "botPatched"; bot: BotAnnouncement }
   | { type: "messageAdded"; threadId: string; message: Message }
   | { type: "messagePatched"; threadId: string; message: Message }
+  /** A card the server already settled elsewhere (a late answer's 409):
+   * show its real outcome, found by its request on that conversation. */
+  | { type: "cardSettled"; threadId: string; requestId: string; patch: Partial<OptionCardData> }
   /** `restoreLeafId` puts back the branch an optimistic edit replaced; a
    * plain send falls back to the removed row's parent. */
   | { type: "optimisticMessageRemoved"; threadId: string; sendId: string; restoreLeafId?: string | null }
@@ -1812,7 +1801,7 @@ interface NotificationThreadOwner {
   mainThreadId?: string;
   /** The fields the single stream reads (src/lib/single-stream.ts) ride along
    * when the caller has them; a room's tasks need only their ids. */
-  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown;
+  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; routineResults?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown;
     /** What a return reads (src/lib/fresh-topic.ts). */
     updatedAt?: number; busy?: boolean; activity?: string; unread?: boolean; waitingForTeammates?: boolean }>;
 }
@@ -2364,6 +2353,19 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsOpen: false,
         triggersOpen: false,
       };
+    case "showRemoteSessions":
+      return {
+        ...state,
+        activeView: "remote-sessions",
+        settingsOpen: false,
+        computerOpen: false,
+        inspectorOpen: false,
+        activityOpen: false,
+        appSettingsOpen: false,
+        achievementsOpen: false,
+        pluginsOpen: false,
+        triggersOpen: false,
+      };
     case "showTeamMap":
       return {
         ...state,
@@ -2751,6 +2753,14 @@ export function reducer(state: AppState, action: Action): AppState {
       const kept = cleared.groups.find((candidate) => candidate.id === group.id)?.messages ?? [];
       return rewindThreadUpdatedAt(cleared, action.threadId, kept, task?.createdAt ?? group.createdAt);
     }
+    case "cardSettled": {
+      const settle = (messages: Message[]) => messages.map((m) =>
+        m.card?.requestId === action.requestId ? { ...m, card: { ...m.card, ...action.patch } } : m);
+      const group = state.groups.find((g) => g.threadId === action.threadId);
+      if (group) return { ...state, groups: state.groups.map((g) => (g.id === group.id ? { ...g, messages: settle(g.messages) } : g)) };
+      const bot = state.bots.find((b) => b.threadId === action.threadId);
+      return bot ? updateBot(state, bot.id, (b) => ({ ...b, messages: settle(b.messages) })) : state;
+    }
     case "messagePatched": {
       const bot = state.bots.find((b) => b.threadId === action.threadId);
       if (!bot) {
@@ -3115,8 +3125,6 @@ export function reducer(state: AppState, action: Action): AppState {
         organizationFullAccess: _orgFull,
         threadId: _threadId,
         computer,
-        connectorTools,
-        connectorScopes,
         ...rest
       } = action.patch;
       const botPatch: Partial<Bot> = { ...rest };
@@ -3124,12 +3132,6 @@ export function reducer(state: AppState, action: Action): AppState {
       const followMode = action.patch.approvalMode;
       if (computer === null) botPatch.computer = undefined;
       else if (computer !== undefined) botPatch.computer = computer;
-      // A dropped grants record returns the bot to the absent legacy field,
-      // exactly like a cleared computer destination.
-      if (connectorTools === null) botPatch.connectorTools = undefined;
-      else if (connectorTools !== undefined) botPatch.connectorTools = connectorTools;
-      if (connectorScopes === null) botPatch.connectorScopes = undefined;
-      else if (connectorScopes !== undefined) botPatch.connectorScopes = connectorScopes;
       return updateBot(next, action.botId, (b) => {
         const updated: Bot = { ...b, ...botPatch };
         if (followThread && followMode && updated.tasks) {
@@ -4217,7 +4219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const wrapped: React.Dispatch<Action> = (action) => {
       // Deferred folder creation may select its bot only while it is still
       // the latest navigation intent, even if the person went away and back.
-      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode", "showApprovals"].includes(action.type)) selectionRevision++;
+      if (["select", "newTask", "switchTask", "newGroupTask", "switchGroupTask", "showChat", "showRoutines", "showTeamMap", "showCode", "showApprovals", "showRemoteSessions"].includes(action.type)) selectionRevision++;
       // Pin before any await or optimistic state change, including legacy
       // callers such as keyboard shortcuts and voice controls.
       action = pinBotThreadAction(action, stateRef.current.bots);
@@ -4614,6 +4616,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               }
             })
             .catch((error) => {
+              // settled already, elsewhere: the card shows the real outcome
+              const settled = teamMemorySettled(error);
+              if (settled) {
+                rawDispatch({ type: "cardSettled", threadId: action.threadId, requestId: action.requestId, patch: settled.card });
+                showError(settled.text);
+                action.onError?.(settled.text);
+                return;
+              }
               // A settings flush failure deliberately stops the response;
               // otherwise it could resume work under a stale approval level.
               showError(error);
@@ -4658,7 +4668,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 body: JSON.stringify({ text: action.answer, threadId: action.threadId }),
               });
             })
-            .catch(showError);
+            .catch((error) => {
+              // settled already, elsewhere: the card shows the real outcome
+              const settled = teamMemorySettled(error);
+              const threadId = action.threadId ?? host?.threadId;
+              if (settled && card?.requestId && threadId) {
+                rawDispatch({ type: "cardSettled", threadId, requestId: card.requestId, patch: settled.card });
+                showError(settled.text);
+                return;
+              }
+              showError(error);
+            });
           break;
         }
         case "dismissCard": {
@@ -4717,6 +4737,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             avatarZoom: source.avatarZoom,
             avatarFocusX: source.avatarFocusX,
             avatarFocusY: source.avatarFocusY,
+            // a private bot's copy stays private; anything else is the default
+            ...(source.teamMemorySharing !== undefined && source.teamMemorySharing !== "shared" ? { teamMemorySharing: "private" as const } : {}),
           };
           // A copy of a restricted bot is restricted from its first moment.
           api("/api/bots", {

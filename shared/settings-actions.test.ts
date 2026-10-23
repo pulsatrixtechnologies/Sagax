@@ -6,6 +6,7 @@ import { settingsDoc } from "../scripts/settings-actions/doc.ts";
 import { DEVICE_PREFERENCE_KEYS, SETTING_FAMILIES, SETTINGS, pickValue, settingSpec, valueFits } from "./settings-actions.ts";
 import { USER_PREFERENCE_KEYS } from "./user-preferences.ts";
 import { uiCommandToAction } from "./bot-act.ts";
+import { decideSettingEffect } from "./settings-actions-policy.ts";
 
 describe("the settings registry", () => {
   it("names each setting once, in a known family, with a route for any value it takes", () => {
@@ -39,6 +40,29 @@ describe("the settings registry", () => {
     expect(classes("server.showToolCalls", true)).toEqual(["org"]);
     expect(classes("bot.approvalMode")).toEqual(["rule-change"]);
     expect(classes("bot.name")).toEqual(["own"]);
+  });
+
+  it("bot.teamMemorySharing: an enum; widening back to shared waits on a card at every level, narrowing to private runs", () => {
+    const spec = settingSpec("bot.teamMemorySharing")!;
+    expect(spec.value).toBe("enum:shared|private");
+    expect(valueFits(spec.value, "shared")).toBe(true);
+    expect(valueFits(spec.value, "private")).toBe(true);
+    for (const bad of ["everyone", "Private", "", null, true]) expect(valueFits(spec.value, bad), JSON.stringify(bad)).toBe(false);
+    for (const ctx of [{ organization: false }, { organization: true }, { organization: false, self: true }]) {
+      expect(spec.classes!("shared", ctx), JSON.stringify(ctx)).toEqual(["others"]);
+      expect(spec.classes!("private", ctx), JSON.stringify(ctx)).toEqual(["own"]);
+    }
+    for (const mode of ["auto", "full"] as const) {
+      // the bot itself, at its owner's Auto or Full: private -> shared asks, shared -> private runs
+      expect(decideSettingEffect({ classes: spec.classes!("shared", { organization: false, self: true }), mode, ownerWork: true, keyProtected: false }), mode)
+        .toEqual({ effect: "hold", reason: "sensitive" });
+      expect(decideSettingEffect({ classes: spec.classes!("private", { organization: false, self: true }), mode, ownerWork: true, keyProtected: false }), mode)
+        .toEqual({ effect: "run" });
+    }
+    // even when the person asked their Primary Bot for it in this turn
+    expect(decideSettingEffect({ classes: spec.classes!("shared", { organization: false }), mode: "full", ownerWork: true, keyProtected: false, personAsked: true }))
+      .toEqual({ effect: "hold", reason: "sensitive" });
+    expect(spec.write({ target: "b1" }, "private")).toEqual({ method: "PATCH", path: "/api/bots/b1", body: { teamMemorySharing: "private" } });
   });
 
   it("writes the managed teams with the screen's acknowledgement and Full with its confirmation", () => {

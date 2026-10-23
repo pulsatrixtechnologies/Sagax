@@ -184,6 +184,49 @@ describe("destructive actions need their own explicit Always rule", () => {
   });
 });
 
+describe("a destructive shell command is a delete, in every mode (2026-10-22)", () => {
+  // describeApproval reads a shell tool only as "execute", so before this a
+  // native `rm -rf` slipped through the owner auto/bypass destructive guard
+  // (owner-approval.ts) and ran with no card. The custom-rules risk engine
+  // already extracts the delete from the same line; the owner route now does
+  // too. Covers the built-in Bash, an engine's own shell tool and a folded
+  // native command line alike.
+  const BASH = "Bash";
+  const SHELL = "mcp__sagax-desktop__run_command";
+  const shell = (command: string) => JSON.stringify({ command });
+  const shellCall = (tool: string, command: string, over: Partial<RuleCall> = {}): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool, input: shell(command), ...over });
+
+  it("reads rm as a delete whichever tool wraps the line, and leaves a plain command alone", () => {
+    expect(destructiveKindOf({ tool: BASH, input: shell("rm -rf /tmp/zzz") })).toBe("delete");
+    expect(destructiveKindOf({ tool: SHELL, input: shell("rm -rf /tmp/zzz") })).toBe("delete");
+    expect(destructiveKindOf({ tool: BASH, input: shell("rm -rf /tmp/zzz && echo done") })).toBe("delete");
+    // a plain command and a read are not deletes
+    expect(destructiveKindOf({ tool: BASH, input: shell("printf hello") })).toBeUndefined();
+    expect(destructiveKindOf({ tool: BASH, input: shell("ls -la /tmp") })).toBeUndefined();
+    expect(destructiveKindOf({ tool: BASH, input: shell("npm run build") })).toBeUndefined();
+  });
+
+  it("auto and bypass hold a card for it unless an allow rule was made for a delete; a plain command still auto-approves", () => {
+    for (const mode of ["auto", "bypass"] as const) {
+      expect(ownerDecision({ mode, rules: [], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
+        .toMatchObject({ kind: "card", reason: "destructive", destructive: "delete" });
+      // a wide allow rule (any target) never covers it (same guard as an MCP delete)
+      expect(ownerDecision({ mode, rules: [rule({ scope: {} })], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
+        .toMatchObject({ kind: "card", reason: "destructive", destructive: "delete" });
+    }
+    expect(ownerDecision({ mode: "auto", rules: [], call: shellCall(BASH, "printf hello") }))
+      .toEqual({ kind: "allow", source: "owner-auto" });
+  });
+
+  it("a deny rule still denies it and a hold still holds, as for any destructive call", () => {
+    const denyShell: OwnerRule = { id: "d1", ownerId: ALICE, botId: "bot-a", tool: "Bash", scope: {}, behavior: "deny", description: "no shell", createdAt: 1, updatedAt: 1 };
+    expect(ownerDecision({ mode: "bypass", rules: [denyShell], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
+      .toMatchObject({ kind: "deny" });
+    expect(ownerDecision({ mode: "auto", rules: [], call: shellCall(BASH, "rm -rf /tmp/zzz"), personMustAnswer: true }))
+      .toEqual({ kind: "card", reason: "hold" });
+  });
+});
+
 describe("modes", () => {
   it("auto approves what no rule covers and is not destructive", () => {
     expect(ownerDecision({ mode: "auto", rules: [], call: call(ticketUpdate) })).toEqual({ kind: "allow", source: "owner-auto" });

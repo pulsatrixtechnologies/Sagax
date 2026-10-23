@@ -31,6 +31,8 @@ import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
 import { setBotAccentEnabled, useBotAccentEnabled } from "@/lib/bot-accent";
+import { setHdMascotsEnabled, useHdMascots } from "@/lib/hd-mascots-preference";
+import { HD_CHARACTERS } from "../hd-mascots/manifest";
 import { AppIconPicker, appIconAvailable } from "./AppIconPicker";
 import { BackgroundEffectsPicker } from "./BackgroundEffectsPicker";
 
@@ -182,6 +184,23 @@ function BotAccentRow() {
     <DescribedRow label={t("settings.botAccent.title")} description={t("settings.botAccent.subtitle")} rowId="botAccent">
       <Switch checked={enabled} aria-label={t("settings.botAccent.title")} onClick={() => setBotAccentEnabled(!enabled)} />
     </DescribedRow>
+  );
+}
+
+/** HD mascots (src/lib/hd-mascots-preference.ts): painted art for the
+ * characters that ship it, or the classic vector look everywhere. Shown only
+ * while at least one character has HD art. */
+export function HdMascotsGroup({ characters = HD_CHARACTERS }: { characters?: readonly string[] }) {
+  const enabled = useHdMascots();
+  if (characters.length === 0) return null;
+  return (
+    <div data-settings-card="appearance.mascots-hd">
+      <SettingsGroup title={t("settings.group.mascots")} groupId="mascots">
+        <DescribedRow label={t("settings.hdMascots.title")} description={t("settings.hdMascots.subtitle")} rowId="hdMascots">
+          <Switch checked={enabled} aria-label={t("settings.hdMascots.title")} onClick={() => setHdMascotsEnabled(!enabled)} />
+        </DescribedRow>
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -412,6 +431,7 @@ export function AppearanceSettings() {
         {/* Simple: the sidebar's own "Hidden (N)" row brings entries back. */}
         {advanced && <SidebarHiddenSettings />}
       </SettingsGroup>
+      <HdMascotsGroup />
       <AccessibilityGroup />
       <SettingsGroup title={t("settings.group.desktop")} groupId="desktop">
         <AppIconRow />

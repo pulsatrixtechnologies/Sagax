@@ -21,7 +21,7 @@ import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
-import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp } from "./grok.ts";
+import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp, grokConnectableConnectors } from "./grok.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
 import { KimiAgentDriver } from "./kimi.ts";
@@ -260,6 +260,9 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_RPC_FAILURE_FILE;
     delete process.env.FAKE_ACP_RPC_FAILURE_METHOD;
     delete process.env.FAKE_ACP_RPC_FAILURE_AFTER_OUTPUT;
+    delete process.env.FAKE_ACP_REASONING_FAIL_TIMES;
+    delete process.env.FAKE_ACP_REASONING_COUNT_FILE;
+    delete process.env.SAGAX_ACP_REASONING_CONTINUE_MAX;
     delete process.env.FAKE_ACP_RPC_FAILURE_AFTER_USAGE;
     delete process.env.FAKE_ACP_LOAD_ERROR;
     delete process.env.FAKE_ACP_ALLOW_ALWAYS;
@@ -844,33 +847,6 @@ describe("ACP turns (fake CLI)", () => {
     expect(seen.env.BOX_TOKEN).toBeUndefined();
     expect(seen.env.SAGAX_TTS_KEY).toBeUndefined();
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) expect(seen.env[name]).toBeUndefined();
-  });
-
-  // ACP session/new accepts stdio MCP entries, so connected apps use the
-  // same harness-owned bridge as Claude and Codex.
-  it("mounts connected apps as a stdio MCP server", async () => {
-    await create();
-    const dump = join(scratch, "composio.json");
-    process.env.FAKE_ACP_DUMP = dump;
-    expect(instance.adapter.capabilities.composioMcp).toBe(true);
-    await instance.adapter.sendTurn({
-      threadId: "t-composio",
-      text: "go",
-      integrations: {
-        composio: {
-          command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
-          env: { SAGAX_CONNECTOR_UPSTREAM_URL: "http://127.0.0.1:8799/api/internal/connectors/mcp" },
-        },
-      },
-    });
-    await recorder.until((event) => event.type === "turn.completed");
-    expect(JSON.parse(readFileSync(`${dump}.mcp.json`, "utf8"))).toContainEqual({
-      name: "composio",
-      command: process.execPath,
-      args: ["/tmp/connector-proxy.js"],
-      env: [{ name: "SAGAX_CONNECTOR_UPSTREAM_URL", value: "http://127.0.0.1:8799/api/internal/connectors/mcp" }],
-    });
   });
 
   it.each([false, true])("mounts Data through the existing stdio transport unless excluded (excluded=%s)", async (excluded) => {
@@ -1783,6 +1759,59 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(JSON.stringify(seenB)).not.toContain(homeA);
   });
 
+  it("surfaces the connect card for an unconnected cloud connector on an own-account org turn, instead of a dead end", async () => {
+    // The fake CLI answers _x.ai/mcp/list with no servers (like a grok.com
+    // account that never connected Outlook): the Connect-apps card still
+    // shows the connector, so the turn must point the model at the one-step
+    // connect card rather than let it say it has no tool.
+    const dump = join(scratch, "grok-connectable.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    await create(GrokAgentDriver);
+    // A unique stable half so the fake CLI's shared session id never dedups
+    // this turn's first delivery (the volatile catalog section rides it).
+    const rules = "Standing rules. " + randomUUID();
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-connectable-" + randomUUID(),
+      text: "peux-tu lire mes courriels?",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+      withholdHostTools: true,
+      grokCloudConnectors: true,
+      access: { via: "subscription", identity: "subscription:a", engineHome: join(scratch, "person-connectable") },
+      integrations: { agents: { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).toContain("Connectable but not connected yet");
+    expect(prompt).toContain("Outlook (Exchange)");
+    expect(prompt).toContain("agents__open_connector_setup");
+    expect(prompt).not.toContain("This list is complete");
+  });
+
+  it("offers no connectable connectors on a solo turn (cloud connectors never load there)", async () => {
+    const dump = join(scratch, "grok-solo-no-connectable.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    await create(GrokAgentDriver);
+    const rules = "Standing rules. " + randomUUID();
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-solo-no-connectable-" + randomUUID(),
+      text: "peux-tu lire mes courriels?",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).not.toContain("Connectable but not connected yet");
+  });
+
   // Gemini and Kimi withhold their tools since 2026-10-08 (verified with
   // their real CLIs, org-host-tools.test.ts); Droid and Cursor still cannot.
   it("does not claim Droid or Cursor withhold their own tools", async () => {
@@ -2177,6 +2206,56 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(recorder.events.some((e) => e.type === "item.completed")).toBe(false);
     expect(recorder.events.find((e) => e.type === "runtime.error")?.message)
       .toMatch(/no reply, image, or tool result/);
+  });
+
+  it("a reasoning_only empty response is nudged on the live session and recovers", async () => {
+    // Grok/xAI reporting "empty response from model (reasoning_only)" over
+    // session/prompt (rpc -32603): the model spent the turn on reasoning and
+    // committed no content. The driver must nudge the same session once more
+    // and surface the answer, not break the bot with a hard internal error.
+    process.env.FAKE_ACP_REASONING_FAIL_TIMES = "1";
+    await create(GrokAgentDriver, "reasoning-only-error");
+    await instance.adapter.sendTurn({ threadId: "t-reason-recover", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: true, stopReason: null });
+    // the nudge produced a real answer
+    expect(recorder.events.some((e) => e.type === "item.completed" && (e as any).itemType === "assistant_text")).toBe(true);
+    // the reasoning still streamed to the UI
+    expect(recorder.events.some((e) => e.type === "content.delta" && (e as any).streamKind === "reasoning_text")).toBe(true);
+    // the person was told Sagax asked it to finish, and no hard error surfaced
+    expect(recorder.events.some((e) => e.type === "runtime.notice" && /reasoning/i.test((e as any).message))).toBe(true);
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
+  });
+
+  it("a model that only ever reasons gives up gracefully after a bounded retry, never a hard internal error", async () => {
+    const countFile = join(scratch, "reasoning-count");
+    process.env.FAKE_ACP_REASONING_FAIL_TIMES = "99";
+    process.env.FAKE_ACP_REASONING_COUNT_FILE = countFile;
+    process.env.SAGAX_ACP_REASONING_CONTINUE_MAX = "2";
+    await create(GrokAgentDriver, "reasoning-only-error");
+    await instance.adapter.sendTurn({ threadId: "t-reason-giveup", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: false, stopReason: "reasoning_only" });
+    const err = recorder.events.find((e) => e.type === "runtime.error") as { message?: string } | undefined;
+    expect(err?.message).toMatch(/reasoning without a final answer/i);
+    // never the raw internal-error string the bot saw in production
+    expect(err?.message).not.toMatch(/Internal error|session\/prompt|reasoning_only/);
+    // bounded: the first prompt plus exactly the two nudges, and no more
+    expect(Number(readFileSync(countFile, "utf8"))).toBe(3);
+    // the session was evicted so the next turn starts clean
+    expect(instance.adapter.hasSession("t-reason-giveup")).toBe(false);
+  });
+
+  it("a genuine internal error without reasoning_only still surfaces (no swallowing)", async () => {
+    const failureFile = join(scratch, "rpc-failure.json");
+    writeFileSync(failureFile, JSON.stringify({ code: -32603, message: "Internal error", data: { details: "database connection lost", service: "session", errorName: "APIError" } }));
+    process.env.FAKE_ACP_RPC_FAILURE_FILE = failureFile;
+    await create(GrokAgentDriver);
+    await instance.adapter.sendTurn({ threadId: "t-real-error", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: false, stopReason: "rpc_error" });
+    const err = recorder.events.find((e) => e.type === "runtime.error") as { message?: string } | undefined;
+    expect(err?.message).toContain("database connection lost");
   });
 
   it("preserves ACP error codes for provider setup classification", async () => {
@@ -3431,6 +3510,21 @@ describe("grokCloudConnectorEnv", () => {
       GROK_MANAGED_MCPS_ENABLED: "false",
       GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
     });
+  });
+});
+
+describe("grokConnectableConnectors", () => {
+  it("names the xAI cloud connectors on an own-account organization turn so an unconnected one is actionable", () => {
+    const connectable = grokConnectableConnectors(true);
+    const ids = connectable.map((connector) => connector.id);
+    expect(ids).toContain("outlook");
+    expect(ids).toContain("microsoft-teams");
+    expect(ids).toContain("gmail");
+    expect(connectable.find((connector) => connector.id === "outlook")?.label).toBe("Outlook (Exchange)");
+  });
+
+  it("offers nothing on any turn that does not load the account connectors (solo, foreign, member on another's bot)", () => {
+    expect(grokConnectableConnectors(false)).toEqual([]);
   });
 });
 

@@ -6,6 +6,10 @@
 // GET /api/usage and GET /api/usage.csv: the whole ledger, admin (or the
 // usage.view permission on an organization server).
 //
+// GET /api/usage/traces (2026-10-22): per-job usage traces, where each job
+// spent its time and its money, built from the same ledger. Same scope as
+// the whole ledger (admin or usage.view); for the owner/admin, never clients.
+//
 // GET /api/me/usage (2026-10-15): the caller's own turns and nothing else,
 // open to every signed-in person (request-auth.ts CLIENT_ALLOW). Settings >
 // Usage reads it, so a member sees their own plan and cost; the
@@ -23,6 +27,7 @@ import {
   USAGE_GROUPINGS,
   type UsageGroupBy,
 } from "../usage-ledger.ts";
+import { buildUsageTraces, USAGE_TRACE_MAX_JOBS } from "../usage-trace.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -101,6 +106,38 @@ export function createUsageRoutes(deps: UsageRouteDeps): RouteHandler {
         groupBy,
         ...summarizeUsage(usageRowsFor(readUsage(deps.dataDir, range), viewer), groupBy, prices),
         billing: prices ? { currency: deps.currency() } : null,
+      });
+    }
+    // GET /api/me/usage/traces (2026-10-23): the caller's OWN per-job traces
+    // and nothing else, open to every signed-in person like /api/me/usage.
+    // Each signed-in person sees where their own jobs spent their time and
+    // money; another person's turns never ride along (usageRowsFor). Org-wide
+    // traces stay the admin console's (/api/usage/traces), never the app's.
+    if (method === "GET" && path === "/api/me/usage/traces") {
+      const viewer = ownUsageViewer(auth, deps.organization());
+      if (!viewer) return json(res, 403, { error: "sign in as a person first" });
+      const range = parseUsageRange(url.searchParams.get("from"), url.searchParams.get("to"));
+      if (!range) return json(res, 400, { error: "from and to must be YYYY-MM-DD, from no later than to, at most a year apart" });
+      const max = Number(url.searchParams.get("max"));
+      res.setHeader("cache-control", "no-store");
+      return json(res, 200, {
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+        ...buildUsageTraces(usageRowsFor(readUsage(deps.dataDir, range), viewer), Number.isFinite(max) && max > 0 ? { max: Math.min(Math.trunc(max), USAGE_TRACE_MAX_JOBS) } : {}),
+      });
+    }
+    // GET /api/usage/traces (2026-10-22, port of OpenMausBot #3316 rebuilt on
+    // our ledger): per-job traces, where each job spent its time and money.
+    // Owner or usage.view, like the whole ledger; never opened to clients.
+    if (method === "GET" && path === "/api/usage/traces") {
+      const range = parseUsageRange(url.searchParams.get("from"), url.searchParams.get("to"));
+      if (!range) return json(res, 400, { error: "from and to must be YYYY-MM-DD, from no later than to, at most a year apart" });
+      const max = Number(url.searchParams.get("max"));
+      res.setHeader("cache-control", "no-store");
+      return json(res, 200, {
+        from: range.from.toISOString(),
+        to: range.to.toISOString(),
+        ...buildUsageTraces(readUsage(deps.dataDir, range), Number.isFinite(max) && max > 0 ? { max: Math.min(Math.trunc(max), USAGE_TRACE_MAX_JOBS) } : {}),
       });
     }
     if (!(method === "GET" && (path === "/api/usage" || path === "/api/usage.csv"))) return PASS;

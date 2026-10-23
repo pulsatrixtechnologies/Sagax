@@ -916,3 +916,77 @@ test("no update: the person's check lands back on idle, never installing", async
   await h.coordinator.check(true);
   assert.deepEqual(h.states.map((entry) => entry.status), ["checking", "idle"]);
 });
+
+// 2026-10-22 (JC, a 0.7.4 update on a slow disk): "Preparing the update took
+// too long." The old deadline was a hardcoded five minutes that a large
+// (hundreds of MB) native staging pass could not meet, and it fired even while
+// bytes were still arriving. It is now generous, configurable, and reset by
+// every download-progress so a live transfer is never mistaken for a hang.
+async function intoPreparing(h, { version = "2.0.0" } = {}) {
+  // The native ready event never comes, so downloadUpdate stays pending and
+  // the coordinator sits in "preparing" with its watchdog armed.
+  h.updater.downloadUpdate = () => new Promise(() => {});
+  h.updater.checkForUpdates = async () => {
+    h.updater.emit("checking-for-update");
+    h.updater.emit("update-available", { version });
+  };
+  await h.coordinator.check(true);
+  h.updater.emit("update-downloaded", { version });
+}
+
+test("the native preparation deadline is configurable and arms when preparing starts", async (t) => {
+  const h = harness({ nativeStaging: true, prepareTimeoutMs: 1234 });
+  const delays = [];
+  t.mock.method(globalThis, "setTimeout", (_cb, delay) => { delays.push(delay); return { unref() {} }; });
+  await intoPreparing(h);
+  assert.equal(h.getState().status, "preparing");
+  assert.deepEqual(delays, [1234]);
+});
+
+test("the default native preparation deadline is more generous than the old five minutes", async (t) => {
+  const h = harness({ nativeStaging: true });
+  const delays = [];
+  t.mock.method(globalThis, "setTimeout", (_cb, delay) => { delays.push(delay); return { unref() {} }; });
+  await intoPreparing(h);
+  assert.equal(h.getState().status, "preparing");
+  assert.equal(delays.length, 1);
+  assert.ok(delays[0] > 5 * 60 * 1000, `deadline ${delays[0]} must exceed the old 5 min`);
+});
+
+test("download progress during preparation pushes the deadline back instead of failing", async (t) => {
+  const h = harness({ nativeStaging: true, prepareTimeoutMs: 1000 });
+  let seq = 0;
+  const live = new Map();
+  let last = null;
+  t.mock.method(globalThis, "setTimeout", (cb) => { const id = ++seq; live.set(id, cb); last = { id, cb }; return { id, unref() {} }; });
+  t.mock.method(globalThis, "clearTimeout", (handle) => { if (handle) live.delete(handle.id); });
+  await intoPreparing(h);
+  const firstId = last.id;
+  h.updater.emit("download-progress", { percent: 50 });
+  assert.equal(live.has(firstId), false, "the stale deadline is cleared on progress");
+  assert.notEqual(last.id, firstId, "a fresh deadline is armed");
+  assert.equal(h.getState().status, "preparing", "still preparing, never failed while bytes arrive");
+  // Only once the newest deadline fires in true silence is a restart required.
+  last.cb();
+  assert.equal(h.getState().status, "error");
+  assert.equal(h.getState().retryable, false);
+  assert.match(h.getState().message, /Quit and reopen/);
+});
+
+test("a stalled preparation becomes a recoverable restart-required error, not a stuck busy state", async (t) => {
+  const h = harness({ nativeStaging: true, prepareTimeoutMs: 1000 });
+  let fire = null;
+  t.mock.method(globalThis, "setTimeout", (cb) => { fire = cb; return { unref() {} }; });
+  await intoPreparing(h);
+  assert.equal(h.getState().status, "preparing");
+  fire();
+  assert.equal(h.getState().status, "error");
+  assert.equal(h.getState().retryable, false);
+  // A late progress event cannot drag the state back into a busy phase.
+  h.updater.emit("download-progress", { percent: 80 });
+  assert.equal(h.getState().status, "error");
+  // Recovery is a restart: a fresh check stays a no-op until the app reopens.
+  h.updater.checkForUpdates = () => assert.fail("recovery requires a restart first");
+  await h.coordinator.check(true);
+  assert.equal(h.getState().status, "error");
+});

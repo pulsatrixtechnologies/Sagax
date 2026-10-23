@@ -1,37 +1,12 @@
-import { useState } from "react";
 import { X } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { useNetworkOnline } from "@/lib/drafts";
 import { plainErrorLine } from "@/lib/plain-error";
 import type { AppState } from "@/state/store";
 
-const savedDismissed = new Set<string>();
-
-/** An archived conversation: the person is looking at messages that were
- * put away. Dismissed for this thread until the app restarts. */
-export function SavedMessagesNotice({ threadId, archived }: { threadId: string; archived: boolean }) {
-  const [gone, setGone] = useState(() => savedDismissed.has(threadId));
-  if (!archived || gone || savedDismissed.has(threadId)) return null;
-  return (
-    <div className="w-full px-5">
-      <div role="status" data-saved-messages className="mb-2 flex items-start gap-2 rounded-lg border border-hairline/40 bg-panel px-3 py-2 text-[13px] text-ink-secondary">
-        <p className="min-w-0 flex-1">{t("chat.savedMessages")}</p>
-        <button
-          type="button"
-          onClick={() => {
-            savedDismissed.add(threadId);
-            setGone(true);
-          }}
-          aria-label={t("chat.savedMessages.dismiss")}
-          title={t("chat.savedMessages.dismiss")}
-          className="shrink-0 rounded p-0.5 hover:bg-hover hover:text-ink"
-        >
-          <X size={13} />
-        </button>
-      </div>
-    </div>
-  );
-}
+// 2026-10-22 (JC): no "Showing saved messages" banner over an archived
+// conversation. The messages show as they are; being offline has its own
+// line (ChatStaleBanner).
 
 /** The chat and room notice line: a thread or bot reference that no longer
  * resolves. Quiet, not an error; the store clears it after a few seconds. */

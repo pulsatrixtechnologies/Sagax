@@ -52,6 +52,7 @@ import {
 import { filePreviewKind, loadTextPreview } from "@/lib/file-preview";
 import { AttachmentPreviewDialog, canonicalDownloadFilename, type PreviewImage } from "../AttachmentPreview";
 import { HoverCard, type AnchorProps } from "../LinkHoverCard";
+import { AnchoredPopover } from "@/components/AnchoredPopover";
 
 const KIND_ICON: Record<FileKind, LucideIcon> = {
   image: ImageIcon,
@@ -620,10 +621,12 @@ function PopoverMenu({ label, icon, buttonClass, menuLabel, children, className,
 } & Record<`data-${string}`, string>) {
   const [open, setOpen] = useState(defaultOpen);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuElRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !ref.current?.contains(event.target)) setOpen(false);
+      if (event.target instanceof Node && !ref.current?.contains(event.target) && !menuElRef.current?.contains(event.target)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -640,13 +643,13 @@ function PopoverMenu({ label, icon, buttonClass, menuLabel, children, className,
   const close = () => setOpen(false);
   return (
     <div ref={ref} className={cn("relative", className)} {...data}>
-      <button type="button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={buttonClass}>
+      <button ref={buttonRef} type="button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((value) => !value)} className={buttonClass}>
         {icon}
       </button>
       {open && (
-        <div role="menu" aria-label={menuLabel} className={cn("absolute right-0 top-full z-30 mt-1 flex flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px] shadow-lg popover-surface", wide ? "w-[220px]" : "w-[200px]")}>
+        <AnchoredPopover anchorRef={buttonRef} popoverRef={menuElRef} role="menu" aria-label={menuLabel} align="end" className={cn("flex flex-col gap-0.5 rounded-xl border-[0.5px] border-border bg-elevated p-1.5 text-[13px] leading-[18px] shadow-lg popover-surface", wide ? "w-[220px]" : "w-[200px]")}>
           {children(close)}
-        </div>
+        </AnchoredPopover>
       )}
     </div>
   );

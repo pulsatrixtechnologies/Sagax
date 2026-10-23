@@ -74,7 +74,6 @@
     <string name="mobile_collapse_9cf188d3">Collapse</string>
     <string name="mobile_collapsed_0084e8fa">Collapsed</string>
     <string name="mobile_computer_924645b3">Computer</string>
-    <string name="mobile_configure_composio_on_your_compute_4281e8b0">Configure Composio on your computer first. Provider credentials are never returned to this phone.</string>
     <string name="mobile_confirm_computer_d778cfbd">Confirm computer</string>
     <string name="mobile_connect_b65463cb">Connect</string>
     <string name="mobile_connect_card_label_c9e612b4">Connect %1$s</string>

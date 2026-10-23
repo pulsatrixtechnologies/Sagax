@@ -208,8 +208,7 @@ const OBJECT_WORDS: Record<ObjectKind, readonly string[]> = {
 
 /** Products a rule may name (its words), the MCP server ids that are that
  * product (`evil_cw` is not ConnectWise), and the first word of a tool
- * name behind a known gateway (Perspicax's `cw_psa__query`, Composio's
- * `GMAIL_SEND_EMAIL`). */
+ * name behind a known gateway (Perspicax's `cw_psa__query`). */
 const PRODUCTS: Record<string, { words: readonly string[]; servers: readonly string[]; prefixes: readonly string[] }> = {
   connectwise: { words: ["connectwise", "cw", "psa"], servers: ["cw", "cw_psa", "cw-psa", "connectwise", "connectwise_psa"], prefixes: ["cw"] },
   github: { words: ["github"], servers: ["github"], prefixes: ["github"] },
@@ -228,7 +227,7 @@ const PRODUCTS: Record<string, { words: readonly string[]; servers: readonly str
 function productsOf(server: string | undefined, name: string): string[] {
   const id = (server ?? "").toLowerCase();
   const first = name.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)[0] ?? "";
-  const gateway = id === "perspicax" || /^perspicax_[a-z0-9_]+$/.test(id) || id === "composio";
+  const gateway = id === "perspicax" || /^perspicax_[a-z0-9_]+$/.test(id);
   return Object.entries(PRODUCTS).filter(([key, product]) =>
     product.servers.includes(id)
     || (gateway && product.prefixes.includes(first))
@@ -357,6 +356,22 @@ export function compileRule(when: string, home?: string, resolve?: (absolute: st
   const recognized = actions.length > 0 || tools.length > 0 || products.length > 0 || commands.length > 0;
   const shellFamily = actions.includes("command") && commands.length === 0;
   return { actions, objects, paths, realPaths, tools, products, commands, shellFamily, recognized };
+}
+
+/** The risk classes a rule's own words imply, so the editor can set an allow
+ * rule's `riskScope` to exactly what it names: an external send ("envoyer un
+ * courriel"), a payment, a deletion. The engine still reads the risk class
+ * from the call, never from the rule (the A9 fail-closed guard is unchanged):
+ * this only helps the UI tick the right boxes and refuse an allow rule that
+ * names a risky action but would cover none of its classes. "irreversible" is
+ * never inferred from free words; it comes from a shell line on a card, whose
+ * exact risk classes travel with the candidate. Pure. */
+export function impliedRiskScope(compiled: CompiledRule): RiskClass[] {
+  const risks: RiskClass[] = [];
+  if (compiled.actions.includes("send") || compiled.objects.includes("mail")) risks.push("external-send");
+  if (compiled.actions.includes("payment")) risks.push("money");
+  if (compiled.actions.includes("delete")) risks.push("destructive");
+  return risks;
 }
 
 // ── calls ────────────────────────────────────────────────────────────────

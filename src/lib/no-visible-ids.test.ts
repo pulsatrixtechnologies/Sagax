@@ -24,7 +24,6 @@ await import("@/components/dev-pods/all-pods");
 const { devPodDefinitions } = await import("@/components/dev-pods/registry");
 const { environmentData } = await import("@/components/dev-pods/pods/environment");
 const { folderLabel } = await import("@/components/dev-pods/sources");
-const { connectedAccountLabel, disconnectAccountConfirmation } = await import("@/components/plugins/connected-apps");
 const { personLabel: directoryPersonLabel } = await import("@/components/OrgDirectory");
 const { runAsOptionLabel } = await import("@/components/routines/RunAsField");
 const { ownerLabel } = await import("@/components/settings/OrgSharing");
@@ -33,6 +32,12 @@ const { ResourceUsageBody } = await import("@/components/resource-usage/Resource
 const { ConnectorSetupBody } = await import("@/components/connector-setup/ConnectorSetupCard");
 const { resolveConnectorSetupTarget } = await import("../../shared/connector-setup");
 const { OutboundCard } = await import("@/components/OutboundCard");
+const { WidgetBody } = await import("@/components/widget/WidgetBody");
+const { netCheckWidget } = await import("../../shared/net-tools/widget");
+const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
+const { RoutineChangeLine } = await import("@/components/RoutineToggleLine");
+const { BotEmailAddressCard } = await import("@/components/bot-settings/BotEmailAddress");
+const { BotMailAddressLine } = await import("@/components/TypedTriggers");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -168,11 +173,39 @@ describe("no UUID on screen", () => {
     setLocale("en");
   });
 
+  it("a routine change line names the routine, never its id", () => {
+    const event = { action: "updated" as const, turnKey: "u1", routines: [{ id: THREAD_ID, name: "Revue des billets GECKO", botId: BOT_ID }] };
+    for (const action of ["created", "updated", "deleted"] as const) {
+      expectNoUuid(visibleText(createElement(RoutineChangeLine, { event: { ...event, action }, canOpen: () => true, onOpen: () => {} })));
+    }
+  });
+
   it("allowed recipients name a bot, never its id (parité 1C)", () => {
     const bots = [{ id: BOT_ID, name: "Quasar" }];
     expect(recipientLabel(`bot:${BOT_ID}`, bots)).toEqual({ text: "Quasar", title: BOT_ID });
     expectNoUuid(recipientLabel(`bot:${THREAD_ID}`, bots).text);
     expect(recipientLabel("email:ana@example.com", bots).text).toBe("ana@example.com");
+  });
+
+  it("an IT tools card names the check and the target, never an id", () => {
+    for (const result of Object.values(NET_FIXTURES)) {
+      const root = netCheckWidget(result, "en");
+      const text = visibleText(createElement(WidgetBody, { root, headed: false }));
+      expectNoUuid(text);
+      expect(text).toContain("Explain");
+      expectNoUuid(String(root.title));
+      expectNoUuid(String(root.caption));
+    }
+  });
+
+  it("the bot email address row and the trigger's address line show the address, never the bot's id (B21)", () => {
+    const mail = { available: true, address: "cryptic@bots.example.org", enabled: false };
+    for (const element of [createElement(BotEmailAddressCard, { mail }), createElement(BotMailAddressLine, { mail })]) {
+      const text = visibleText(element);
+      expectNoUuid(text);
+      expect(text).toContain("cryptic@bots.example.org");
+      expect(text).not.toContain(BOT_ID);
+    }
   });
 
   it("people, bots, engines and accounts read by name or a plain word", () => {
@@ -181,8 +214,6 @@ describe("no UUID on screen", () => {
       personLabel("", "ann@example.com", PERSON_ID),
       botLabel(undefined, BOT_ID),
       engineLabel(undefined, ENGINE_ID),
-      connectedAccountLabel({ id: ACCOUNT_ID }, 0),
-      disconnectAccountConfirmation("Gmail", { id: ACCOUNT_ID }),
       directoryPersonLabel({ id: PERSON_ID } as Parameters<typeof directoryPersonLabel>[0]),
       runAsOptionLabel({ principalId: PERSON_ID, name: "", selectable: false }),
       ownerLabel({ ownerName: "", ownerPrincipalId: PERSON_ID } as Parameters<typeof ownerLabel>[0]),
@@ -196,7 +227,5 @@ describe("no UUID on screen", () => {
     expect(botLabel(undefined, BOT_ID)).toBe(t("ids.deletedBot"));
     expect(engineLabel(undefined, ENGINE_ID)).toBe(t("ids.removedEngine"));
     expect(engineLabel(undefined, "claude")).toBe("claude");
-    expect(connectedAccountLabel({ id: ACCOUNT_ID, alias: "Work" }, 0)).toBe("Work");
-    expect(connectedAccountLabel({ id: ACCOUNT_ID }, 1)).toBe(t("ids.accountN", { n: 2 }));
   });
 });

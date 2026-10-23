@@ -1926,6 +1926,18 @@ body {
   outline: none;
 }
 
+/* The footer buttons (the account menu, Connect apps) follow the same rule:
+   a click leaves them focused, and the next key would draw the ring. Tab
+   clears the mark and draws it. The account button's own pill carries the
+   ring, so the square outline around it is always off. */
+[data-pointer-focus]:focus-visible,
+button[aria-haspopup="menu"]:has(> [data-sidebar-account-pill]):focus-visible {
+  outline: none;
+}
+[data-sidebar-connect-apps][data-pointer-focus]:focus-visible {
+  box-shadow: none;
+}
+
 /* A question card takes focus only so A, B, C answer it once clicked
    (src/components/QuestionSheet.tsx); its rows keep their own ring. */
 [data-question-sheet]:focus-visible {
@@ -3229,100 +3241,18 @@ button:disabled.bg-danger {
   -webkit-app-region: no-drag;
 }
 
-/* The Connect apps pill (the reference design's measurements, 2026-10-15). Its tiles
-   sit in a 1px ring the pill's own colour, so each one stands out from the
-   tile it overlaps; the ring follows the pill's hover colour. */
-.connect-apps-pill {
-  transition: background-color var(--transition-duration-moderate) var(--ease-out-quint), padding var(--transition-duration-moderate) var(--ease-out-quint);
+/* The foot's two tiles (the account pill and the Connect apps button) share one height:
+   36px, or 44px while the account pill carries a second line (the title and
+   points under the name). One property on the row, so they cannot differ. */
+[data-sidebar-account-row] {
+  --foot-tile-h: 2.25rem;
 }
-.connect-apps-pill [data-pill-tiles] {
-  background-color: inherit;
-  margin-inline-start: 6px;
-  max-width: 60px;
-  opacity: 1;
-  overflow: clip;
-  overflow-clip-margin: 5px;
-  transition: max-width var(--transition-duration-moderate) var(--ease-out-quint), opacity var(--transition-duration-moderate) var(--ease-out-quint), margin-inline-start var(--transition-duration-moderate) var(--ease-out-quint);
-}
-.connect-apps-pill [data-pill-tiles][data-hidden] {
-  margin-inline-start: 0;
-  max-width: 0;
-  opacity: 0;
-}
-.connect-apps-pill [data-pill-tile] {
-  background-color: inherit;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill [data-pill-tile] {
-    transition: transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
-    animation: connect-apps-tile-in 0.3s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
-  }
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill:is(:hover, :focus-visible) [data-pill-tile="start"] {
-    transform: translateX(-3px) rotate(-8deg);
-  }
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill:is(:hover, :focus-visible) [data-pill-tile="middle"] {
-    transform: translateY(-1px);
-  }
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill:is(:hover, :focus-visible) [data-pill-tile="end"] {
-    transform: translateX(3px) rotate(8deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .connect-apps-pill,
-  .connect-apps-pill [data-pill-tiles] {
-    transition-property: background-color;
-  }
-}
-:root[data-reduced-motion="true"] .connect-apps-pill,
-:root[data-reduced-motion="true"] .connect-apps-pill [data-pill-tiles] {
-  transition-property: background-color;
-}
-/* The wide foot's compact Connect apps pill (SidebarAppsPill): the tiles
-   alone at rest, the label folded to nothing (no width, no opacity).
-   Hovered, or focused from the keyboard (not a focus a click left behind:
-   data-pointer-focus), the label slides in on their left and the pill
-   widens; the account pill beside it shrinks. The label always gets 6rem
-   (the English one whole from a 260px sidebar); past that, only what leaves
-   the account pill 80px (its avatar and about three characters) in the row
-   (the container, data-sidebar-account-row): 100cqw less 80px, the 6px row
-   gap and the pill's 62px without its label (borders 2, padding 16, the
-   label's 6px margin, three tiles 38). A longer label is then cut, never the
-   tiles. Reduced motion: no transition, the label simply shows. */
-.sidebar-apps-pill {
-  flex: 0 1 auto;
-}
-.sidebar-apps-pill [data-pill-tiles] {
-  margin-inline-start: 0;
-}
-.sidebar-apps-pill [data-apps-pill-label] {
-  max-width: 0;
-  opacity: 0;
-  margin-inline-end: 0;
-}
-.sidebar-apps-pill:is(:hover, :focus-visible:not([data-pointer-focus])) [data-apps-pill-label] {
-  max-width: max(6rem, calc(100cqw - 148px));
-  opacity: 1;
-  margin-inline-end: 6px;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion="true"]) .sidebar-apps-pill [data-apps-pill-label] {
-    transition: max-width 220ms ease, opacity 220ms ease, margin-inline-end 220ms ease;
-  }
-  :root:not([data-reduced-motion="true"]) .sidebar-apps-pill[data-pointer-focus]:not(:hover) [data-pill-tile] {
-    transform: none;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-apps-pill [data-apps-pill-label] {
-    transition: none;
-  }
-}
-:root[data-reduced-motion="true"] .sidebar-apps-pill [data-apps-pill-label] {
-  transition: none;
+[data-sidebar-account-row]:has([data-account-pill-line]) {
+  --foot-tile-h: 2.75rem;
 }
 /* The foot's update button (SidebarUpdatePill): round, the avatar's size;
    hovered, focused or just landed, it widens to show its word and the
-   Connect apps pill beside it gives way. Reduced motion: no animation, the
+   Connect apps button beside it gives way. Reduced motion: no animation, the
    word simply shows. */
 .sidebar-update-pill [data-update-text] {
   max-width: 0;
@@ -3330,6 +3260,11 @@ button:disabled.bg-danger {
   padding-inline-end: 0;
   margin-inline-start: -4px;
   overflow: hidden;
+}
+.sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) {
+  /* the word needs the icon plus its text; the pill grows in the row, so
+     Connect apps shifts left rather than disappearing under it */
+  width: auto;
 }
 .sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) [data-update-text] {
   max-width: 11rem;
@@ -3341,7 +3276,7 @@ button:disabled.bg-danger {
     transition: max-width 240ms var(--ease-out-quint), opacity 200ms var(--ease-out-quint), padding-inline-end 240ms var(--ease-out-quint);
   }
   :root:not([data-reduced-motion="true"]) .sidebar-update-pill {
-    transition: filter 150ms ease-out;
+    transition: width 240ms var(--ease-out-quint), filter 150ms ease-out;
   }
   :root:not([data-reduced-motion="true"]) .sidebar-update-pill[data-sidebar-update-pill="ready"]:is(:hover, :focus-visible) [data-update-icon] svg {
     animation: sidebar-update-nudge 0.6s cubic-bezier(0.34, 1.4, 0.64, 1);
@@ -3351,10 +3286,6 @@ button:disabled.bg-danger {
   0% { transform: none; }
   40% { transform: translateY(2px); }
   100% { transform: none; }
-}
-@keyframes connect-apps-tile-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
 }
 
 /* The Approvals screen (src/components/approvals/): a new card slides in

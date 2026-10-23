@@ -44,6 +44,7 @@ import {
   Laptop,
   Loader2,
   LogOut,
+  Monitor as MonitorIcon,
   Plus,
   RefreshCw,
   ScrollText,
@@ -280,6 +281,7 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 
 export interface ProfileMenuHandlers {
   onAutomations: () => void;
+  onRemoteSessions: () => void;
   onSettings: () => void;
   onAchievements: () => void;
   onShortcuts: () => void;
@@ -307,6 +309,7 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   automationsActive: boolean;
+  remoteSessionsActive: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -406,6 +409,13 @@ export function profileMenuItems(input: {
       icon: <CalendarDays size={18} />,
       active: input.automationsActive,
       onSelect: input.handlers.onAutomations,
+    },
+    {
+      key: "remote-sessions",
+      label: t("remoteSessionsAdmin.title"),
+      icon: <MonitorIcon size={18} />,
+      active: input.remoteSessionsActive,
+      onSelect: input.handlers.onRemoteSessions,
     },
     ...(input.achievementsLabel
       ? [{
@@ -535,6 +545,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
+    remoteSessionsActive: state.activeView === "remote-sessions",
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: lockedServer ? [] : account.targets,
@@ -542,6 +553,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     signOut: lockedServer,
     handlers: {
       onAutomations: () => dispatch({ type: "showRoutines" }),
+      onRemoteSessions: () => dispatch({ type: "showRemoteSessions" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
       onShortcuts: () => {
@@ -627,7 +639,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
           data-sidebar-account-pill=""
           data-menu-opened={open || undefined}
           className={cn(
-            "flex h-9 w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1.5 text-left transition-colors [button:focus-visible>&]:ring-2 [button:focus-visible>&]:ring-focus",
+            "flex h-[var(--foot-tile-h,2.25rem)] w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1.5 text-left transition-colors [button:focus-visible:not([data-pointer-focus])>&]:ring-2 [button:focus-visible:not([data-pointer-focus])>&]:ring-focus",
             open ? "bg-sidebar-elevated-hover ring-2 ring-accent/60" : "hover:bg-sidebar-elevated-hover",
           )}
         >
@@ -645,7 +657,25 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
             )}
           </span>
           <WhenOpen open={open} onOpen={() => setMenuOpened(true)} />
-          <span data-account-pill-name="" className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-sidebar-ink">{name}</span>
+          {showLine ? (
+            // name on top, then the viewer's title and points (the same line
+            // as the account row); the row's custom property grows both foot
+            // tiles to fit it (styles.css, --foot-tile-h)
+            <span data-account-pill-line="" className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
+              <span data-account-pill-name="" className="min-w-0 truncate text-[14px] font-medium leading-[18px] text-sidebar-ink">{name}</span>
+              <span data-member-line="" className="flex min-w-0 items-center gap-1.5 text-[12px] leading-[16px] text-sidebar-ink-secondary">
+                {titleName && <span data-member-title="" className="min-w-0 truncate">{titleName}</span>}
+                {pointsText && (
+                  <span data-gamertag="" data-footer="" className="achievement-gamertag shrink-0">
+                    <Trophy size={12} strokeWidth={2.4} aria-hidden="true" />
+                    <span>{pointsText}</span>
+                  </span>
+                )}
+              </span>
+            </span>
+          ) : (
+            <span data-account-pill-name="" className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-sidebar-ink">{name}</span>
+          )}
           {placeAttention && !open && (
             <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />
           )}

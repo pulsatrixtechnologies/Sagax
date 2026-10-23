@@ -16,6 +16,7 @@ import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/o
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
+import { APP_TOOL_DEFINITIONS } from "./agents-app-tools.ts";
 import { PLACE_PHONE_CALL_TOOL_SPEC } from "../../shared/outbound-call.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
 import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
@@ -502,6 +503,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   ...WIDGET_TOOL_DEFINITIONS,
+  ...APP_TOOL_DEFINITIONS,
   ...ARTIFACT_TOOL_DEFINITIONS,
   ...PAGE_TOOL_DEFINITIONS,
   ...HELP_TOOL_DEFINITIONS,
@@ -724,7 +726,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
       additionalProperties: false,
       properties: {
         connector: { type: "string", maxLength: 120, description: "The app, as the person named it." },
-        via: { type: "string", enum: ["grok", "claude", "composio"], description: "Only when the person named where." },
+        via: { type: "string", enum: ["grok", "claude"], description: "Only when the person named where." },
         language: { type: "string", enum: ["fr", "en"], description: "The person's language." },
       },
       required: ["connector"],

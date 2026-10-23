@@ -622,15 +622,6 @@ const BUILTIN_ACTION: Record<string, string> = {
   tool: "approval.tool.useTool",
 };
 
-const COMPOSIO_TOOL = /^[A-Z][A-Z0-9]+_([A-Z0-9_]+)$/;
-/** A Composio slug as a verb phrase: LINEAR_CREATE_LINEAR_COMMENT is
- * "create linear comment". */
-export function composioActionPhrase(tool: string): string | undefined {
-  const match = COMPOSIO_TOOL.exec(tool);
-  if (!match) return undefined;
-  return match[1]!.replace(/_+/g, " ").trim().toLowerCase() || undefined;
-}
-
 /** The verb phrase after "wants to" / "Allow X to": Bash is "run a
  * command", mcp__…__cw_psa_schedule__query is "view the schedule in
  * ConnectWise PSA". Never the raw tool id. */
@@ -639,14 +630,11 @@ export function approvalAction(tool: string | undefined, input: string | undefin
   const builtin = BUILTIN_ACTION[tool];
   if (builtin) return words.t(builtin);
   const { server, name } = parseToolId(tool);
-  const composio = composioActionPhrase(name);
-  if (!server) return composio ?? name.replace(/_/g, " ");
-  // Composio's own slug already names the app: "in Composio" would name the broker
-  if (server === "composio" && composio) return composio;
+  if (!server) return name.replace(/_/g, " ");
   const described = describeApproval(tool, input, hints, now, words);
-  const action = described.action && described.verbless && !composio
+  const action = described.action && described.verbless
     ? words.t("approval.verb.use", { name: described.action })
-    : described.action ?? composio ?? name.replace(/_+/g, " ");
+    : described.action ?? name.replace(/_+/g, " ");
   // Sagax's own built-in servers (sagax-environment, sagax-computer) are the
   // bot itself: "run a command", not "run a command in Sagax Environment"
   const builtinServer = server.startsWith("sagax-");

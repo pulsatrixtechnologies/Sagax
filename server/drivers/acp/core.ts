@@ -145,6 +145,34 @@ function acpRpcError(value: any, method: string): Error {
   });
 }
 
+/** A continuation nudge sent after a reasoning-only empty response: the live
+ * session kept its reasoning but committed no content, so ask it to finish. */
+const REASONING_CONTINUE_NUDGE =
+  "You returned your reasoning but no answer. Give your final answer now, or make your next tool call.";
+
+/** How many times a reasoning-only empty response is nudged before the turn
+ * ends gracefully. One by default; SAGAX_ACP_REASONING_CONTINUE_MAX overrides
+ * it (0 turns the continuation off and surfaces the failure as before). */
+function reasoningContinueMax(): number {
+  const raw = Number(process.env.SAGAX_ACP_REASONING_CONTINUE_MAX);
+  return Number.isInteger(raw) && raw >= 0 ? raw : 1;
+}
+
+/** Grok/xAI (and any ACP engine that mirrors it) reporting that the model
+ * spent the turn on reasoning and committed no content or tool call: a
+ * JSON-RPC -32603 whose text carries the `reasoning_only` finish reason
+ * ("empty response from model (reasoning_only)"). Specific on purpose, so a
+ * genuine internal error still surfaces untouched. */
+function isReasoningOnlyEmpty(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { code?: unknown; message?: unknown; data?: any };
+  if (value.code !== -32603) return false;
+  const text = [value.message, value.data?.details, value.data?.message, value.data?.error?.message]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ");
+  return /\breasoning_only\b/i.test(text);
+}
+
 export interface AcpConfig {
   cli: string;
   fullAuto: boolean;
@@ -495,7 +523,7 @@ export interface AcpSupport {
   mcpToolNames?: "grok";
   /** A context section added to the volatile half each turn. The section
    * split (prompt-split.ts) re-sends it only when its text changes. */
-  volatileSection?(input: { botId?: string; serverNames: string[]; sessionId?: string; threadId?: string }): { id: string; text: string } | null;
+  volatileSection?(input: { botId?: string; serverNames: string[]; sessionId?: string; threadId?: string; accountConnectors?: boolean }): { id: string; text: string } | null;
   /** A tool call finished successfully, with the input it was started with. */
   onToolCompleted?(input: { botId?: string; rawInput: unknown }): void;
   /** Ask once more when the agent sends nothing at all (no text, thought or
@@ -1108,15 +1136,6 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         if (agents) {
           servers.push({ name: "agents", command: agents.command, args: agents.args, env: acpEnv(agents.env) });
         }
-        const composio = turn.integrations?.composio;
-        if (composio) {
-          servers.push({
-            name: "composio",
-            command: composio.command,
-            args: composio.args,
-            env: acpEnv(composio.env),
-          });
-        }
         const browser = turn.integrations?.browser;
         if (browser) {
           servers.push({ name: "browser", command: browser.command, args: browser.args, env: acpEnv(browser.env) });
@@ -1164,7 +1183,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             ...(custom.has(server.name) ? { spec: customSpecs[server.name] } : {}),
           }, turn.botId) ?? [],
         });
-        // Sagax's own servers (agents, composio, browser, computer) name their
+        // Sagax's own servers (agents, browser, computer) name their
         // tools admissibly; connectors (Perspicax profiles, URL and stdio
         // servers) can name them anything, so those ride the gate.
         const toolNames = support.mcpToolNames;
@@ -2646,7 +2665,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // a change re-sends that section alone.
             let volatileSections = turn.systemVolatileSections;
             const extraSection = halves.stable !== null
-              ? support.volatileSection?.({ botId: turn.botId, serverNames: mcpServers.map((server) => server.name), sessionId, threadId }) ?? null
+              ? support.volatileSection?.({ botId: turn.botId, serverNames: mcpServers.map((server) => server.name), sessionId, threadId, accountConnectors: turn.grokCloudConnectors === true }) ?? null
               : null;
             if (extraSection && extraSection.text.trim()) {
               halves = { ...halves, volatile: halves.volatile ? `${halves.volatile}\n\n${extraSection.text}` : extraSection.text };
@@ -2704,9 +2723,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             acknowledge();
             const promptIdleMs = promptIdleTimeoutMs();
             const quiet = startQuietWatch(threadId, session, current);
-            const sendPrompt = () => request(
+            const sendPrompt = (promptText: string = text) => request(
               "session/prompt",
-              { sessionId, prompt: [{ type: "text", text }, ...imageBlocks] },
+              { sessionId, prompt: [{ type: "text", text: promptText }, ...imageBlocks] },
               undefined,
               undefined,
               promptIdleMs,
@@ -2734,32 +2753,81 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }) ?? 0;
             if (stallMs > 0) latency.stallMs = stallMs;
             let result: any;
-            if (stallMs > 0) {
-              state.promptActivity = false;
-              let stalled = false;
-              const stallTimer = setTimeout(() => {
-                if (state.promptActivity || state.settled || state.stopped || session.closing || session.current !== current
-                    || current.asks.size || current.runningTools.size) return;
-                stalled = true;
-                latency.stallRetried = true;
-                emit({
-                  ...base(threadId, turnId),
-                  type: "runtime.notice",
-                  message: `${support.displayName} sent nothing for ${Math.round(stallMs / 1000)} s, so Sagax asked again.`,
-                });
-                session.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
-              }, stallMs);
-              stallTimer.unref?.();
+            // A reasoning-capable engine (Grok/xAI-managed, and any other ACP
+            // engine that mirrors it) can spend a turn's whole output budget on
+            // reasoning and commit no content and no tool call. Grok reports
+            // exactly that over session/prompt as an rpc -32603 whose detail is
+            // "empty response from model (reasoning_only)". Nothing streamed,
+            // nothing ran and nothing was approved, so the live session is
+            // healthy: nudge it to finish on the same session instead of
+            // breaking the bot with a hard internal error. Bounded, so a model
+            // that only ever reasons ends gracefully rather than looping.
+            const reasoningMax = reasoningContinueMax();
+            let reasoningRetries = 0;
+            for (;;) {
               try {
-                result = await sendPrompt();
-              } finally {
-                clearTimeout(stallTimer);
+                if (reasoningRetries === 0 && stallMs > 0) {
+                  state.promptActivity = false;
+                  let stalled = false;
+                  const stallTimer = setTimeout(() => {
+                    if (state.promptActivity || state.settled || state.stopped || session.closing || session.current !== current
+                        || current.asks.size || current.runningTools.size) return;
+                    stalled = true;
+                    latency.stallRetried = true;
+                    emit({
+                      ...base(threadId, turnId),
+                      type: "runtime.notice",
+                      message: `${support.displayName} sent nothing for ${Math.round(stallMs / 1000)} s, so Sagax asked again.`,
+                    });
+                    session.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
+                  }, stallMs);
+                  stallTimer.unref?.();
+                  try {
+                    result = await sendPrompt();
+                  } finally {
+                    clearTimeout(stallTimer);
+                  }
+                  if (stalled && result?.stopReason === "cancelled" && !state.promptActivity && !state.stopped && !state.settled && !session.closing) {
+                    result = await sendPrompt();
+                  }
+                } else {
+                  result = await sendPrompt(reasoningRetries === 0 ? text : REASONING_CONTINUE_NUDGE);
+                }
+              } catch (promptError) {
+                // Only a reasoning-only empty response that produced nothing is
+                // safe to re-prompt: with content buffered or an item emitted,
+                // a nudge could duplicate work, so fall through to surface it.
+                const reasoningOnly = isReasoningOnlyEmpty(promptError) && !state.producedItem && !state.text.trim();
+                if (reasoningOnly && reasoningRetries < reasoningMax
+                    && !state.stopped && !state.settled && !session.closing
+                    && session.current === current && session.sessionId === sessionId
+                    && session.child.exitCode === null) {
+                  reasoningRetries += 1;
+                  emit({
+                    ...base(threadId, turnId),
+                    type: "runtime.notice",
+                    message: `${support.displayName} returned its reasoning without an answer, so Sagax asked it to finish.`,
+                  });
+                  continue;
+                }
+                if (reasoningOnly) {
+                  // Bound reached: end the turn with a plain, non-alarming line
+                  // the bot can act on, never the raw "Internal error …
+                  // (session/prompt)". Evict the session so the next turn
+                  // resumes clean, exactly as the generic rpc-failure path does.
+                  console.log(`[acp] ${support.displayName} returned reasoning only after ${reasoningRetries} continuation(s); turn ended gracefully (${threadId})`);
+                  emit({
+                    ...base(threadId, turnId),
+                    type: "runtime.error",
+                    message: `${support.displayName} kept returning its reasoning without a final answer. Nothing was changed. Send the message again, or lower this bot's reasoning effort.`,
+                  });
+                  if (session.child.exitCode === null && !session.closing) closeSession(threadId, "reasoning-only");
+                  settle(threadId, session, false, "reasoning_only");
+                  return;
+                }
+                throw promptError;
               }
-              if (stalled && result?.stopReason === "cancelled" && !state.promptActivity && !state.stopped && !state.settled && !session.closing) {
-                result = await sendPrompt();
-              }
-            } else {
-              result = await sendPrompt();
+              break;
             }
             if (pendingSplitReceipt) {
               // session/prompt resolving is the acceptance boundary: a
@@ -3043,7 +3111,6 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             agentsMcp: true,
         customMcp: true,
             computerMcp: true,
-            composioMcp: true,
             browserMcp: true,
             dataMcp: true,
             images: support.images !== false,

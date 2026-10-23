@@ -144,7 +144,6 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
   const parsed = parseToolScope(turn.toolScope);
   if (!parsed.ok) throw new Error(parsed.error);
   const servers: Record<string, unknown> = {};
-  if (turn.integrations?.composio) servers.composio = { ...turn.integrations.composio };
   if (turn.integrations?.localComputer) {
     const local = turn.integrations.localComputer;
     servers.computer = {
@@ -819,7 +818,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       }
 
       // integrations → stdio MCP servers for the pi-mcp-extension. The config
-      // carries credentials (boat token, composio key, comms token), so it goes
+      // carries credentials (boat token, comms token), so it goes
       // into a 0600 temp file removed when the turn settles — never on argv.
       const mcpServers = buildMcpServers(turn);
       let mcpTempDir: string | null = null;
@@ -831,7 +830,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           writeFileSync(join(mcpTempDir, "mcp.json"), JSON.stringify({ mcpServers: mcpServers ?? {}, toolScope, scopeReadyPath, approvalMode: turn.approvalMode }), { mode: 0o600 });
         } catch (err) {
           // A failed write must not leave the temp dir behind — a partial file
-          // could still hold the boat token / composio key / comms token.
+          // could still hold the boat token / comms token.
           try {
             rmSync(mcpTempDir, { recursive: true, force: true });
           } catch {
@@ -849,7 +848,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       ];
 
       // spawnCli can throw synchronously (unresolvable CLI); if it does, the
-      // 0600 temp file with the boat token / composio key / comms token must
+      // 0600 temp file with the boat token / comms token must
       // not be left on disk — settle() never runs because no child existed.
       const child = (() => {
         try {
@@ -1468,7 +1467,6 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           // pi-mcp-extension (pi core has no MCP client of its own).
           agentsMcp: true,
           computerMcp: true,
-          composioMcp: true,
           phoneMcp: true,
           customMcp: true,
           browserMcp: true,

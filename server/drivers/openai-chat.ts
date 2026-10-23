@@ -1102,7 +1102,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         browserMcp: options.tools !== false, nativeImageInput: true, images: true } : {}),
         // Its tool loop only reaches MCP servers; nothing runs on this machine.
         withholdsHostTools: true,
-        sessionModelSwitch: "in-session", customMcp: options.tools !== false, agentsMcp: options.tools !== false, composioMcp: options.tools !== false,
+        sessionModelSwitch: "in-session", customMcp: options.tools !== false, agentsMcp: options.tools !== false,
         dataMcp: options.tools !== false,
         // The runtime owns the whole tool loop, so it can always take a
         // user message mid-turn: park it, deliver before the next completion.

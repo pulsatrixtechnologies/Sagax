@@ -22,7 +22,7 @@
 //   conversations/**, attachments/**   threads, messages, files (optional)
 //
 // What never travels: tokens and secrets of any kind (marketplace tokens,
-// webhook bearer tokens, MCP header values, Composio credentials), session
+// webhook bearer tokens, MCP header values), session
 // handles, and this server's own bookkeeping (BOT_FIELD_POLICY says why for
 // each field). Text files pass the redactor on the way out.
 //
@@ -71,9 +71,10 @@ import { autoOnlyDestination } from "./surface.ts";
 import { memberImportReset } from "./routes/bot-catalog.ts";
 import type { Routine, RoutineManager } from "./routines.ts";
 import { restoreSkillManifest, setSkillEnabled, skillManifestForExport } from "./skills.ts";
-import { cleanBotGrants, cleanBotPerspicax, parseConnectorTools, type BotRecord, type Message, type Store, type TaskRecord } from "./store.ts";
+import { cleanBotGrants, cleanBotPerspicax, type BotRecord, type Message, type Store, type TaskRecord } from "./store.ts";
 import type { WebhookTrigger } from "./webhooks.ts";
 import { TRIGGER_SOURCES, type TriggerSourceConfig } from "../shared/trigger-sources.ts";
+import { storedTeamMemorySharing } from "../shared/team-memory-sharing.ts";
 import { syncMemoryIndex, workspaceDir } from "./workspace.ts";
 import { ZipError, ZipReader, ZipWriter } from "./zip.ts";
 
@@ -126,6 +127,7 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   automaticRecovery: "settings",
   autoApprove: "settings",
   approvalMode: "settings",
+  proactiveMode: "settings",
   alwaysAllow: "host",
   allowedRecipients: { drop: "the owner's contacts and bot ids of this server: they never travel in a package" },
   toolScope: "settings",
@@ -134,13 +136,11 @@ export const BOT_FIELD_POLICY: { readonly [K in keyof BotRecord]-?: FieldPolicy 
   voiceNotes: "settings",
   emailDrafts: "settings",
   memoryEnabled: "settings",
+  teamMemorySharing: "settings",
   memoryUpkeep: "settings",
   parkDirectMessages: "settings",
   approvePeerComms: "settings",
   peers: "settings",
-  composio: "settings",
-  connectorTools: "settings",
-  connectorScopes: "settings",
   outbound: "settings",
   assignedSkills: "settings",
   perspicax: "settings",
@@ -319,7 +319,7 @@ function portableTask(task: TaskRecord): Record<string, unknown> {
 }
 
 const LIVE_MESSAGE_FIELDS = ["queued", "queueId", "requestPending", "roomRequest", "sendId", "outboundRequest", "teamMemoryRequest", "parallelTask"] as const;
-const CARD_KINDS = new Set(["options", "connector", "secret", "access", "routine.run", "goal.run"]);
+const CARD_KINDS = new Set(["options", "secret", "access", "routine.run", "goal.run"]);
 
 /** A message as it travels: live fields out; a card (an approval, a
  * connection, a secret request, a routine run) becomes its text, so an
@@ -330,7 +330,6 @@ function portableMessage(message: Message): Message {
   if (CARD_KINDS.has(message.kind)) {
     const parts = [message.text ?? ""];
     if (message.card) parts.push(message.card.title, message.card.subtitle, ...message.card.options, message.card.answered ? `Answer: ${message.card.answered}` : "");
-    if (message.kind === "connector") parts.push("[Connection card: reconnect in Settings]");
     if (message.kind === "secret") parts.push("[Secret request: not included]");
     if (message.routineRun) parts.push(`[Routine: ${message.routineRun.routineName}: ${message.routineRun.status}]`, message.routineRun.summary ?? "");
     if (message.goalRun) parts.push(`[Room goal: ${message.goalRun.status}]`, message.goalRun.goal);
@@ -378,7 +377,9 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
   const host_: Record<string, unknown> = {};
   const record = bot as unknown as Record<string, unknown>;
   for (const [key, policy] of Object.entries(BOT_FIELD_POLICY)) {
-    const value = record[key];
+    // team memory sharing leaves in its stored form only ("private" or
+    // nothing), so a corrupted value cannot break the import or the clone
+    const value = key === "teamMemorySharing" ? storedTeamMemorySharing(bot) : record[key];
     if (value === undefined) continue;
     if (policy === "identity") identity[key] = structuredClone(value);
     else if (policy === "settings") settings[key] = structuredClone(value);
@@ -446,11 +447,9 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
   includes.marketplaces = marketplaces.length;
   if (includes.plugins || includes.marketplaces) add("plugins/state.json", `${JSON.stringify(pluginState, null, 2)}\n`);
 
-  // MCP servers and connected apps, by name
+  // MCP servers, by name
   const mcpServers = (bot.mcpServers ?? []).map((name) => ({ name, ...(host.mcpServer(name) ?? { valueNames: [] }) }));
   includes.mcpServers = mcpServers.length;
-  const connectedApps = [...new Set([...Object.keys(bot.connectorTools ?? {}), ...Object.keys(bot.connectorScopes?.apps ?? {})])].sort();
-  includes.connectedApps = connectedApps.length;
   includes.perspicaxProfiles = bot.perspicax?.profiles.length ?? 0;
 
   // routines and webhooks owned by the bot
@@ -521,7 +520,7 @@ export function planBotZip(host: BotZipHost, botId: string, options: BotZipExpor
 
   const manifest: BotZipManifest = {
     format: BOT_ZIP_FORMAT, version: BOT_ZIP_VERSION, appVersion: host.appVersion, exportedAt: Date.now(),
-    bot: { id: bot.id, name: bot.name }, includes, redacted: 0, marketplaces, mcpServers, connectedApps, excluded: BOT_ZIP_EXCLUDED,
+    bot: { id: bot.id, name: bot.name }, includes, redacted: 0, marketplaces, mcpServers, excluded: BOT_ZIP_EXCLUDED,
   };
   const bytes = files.reduce((sum, file) => sum + file.size, 0);
   return { filename: botZipFilename(bot.name), manifest, files, bytes };
@@ -717,7 +716,6 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
       if (!host.mcpServer(server.name)) needsAction.push(line("mcp", `MCP server ${server.name} is not installed here${server.url ? ` (${server.url})` : ""}: add it in Connect apps.`, "mcpMissing", { name: server.name }));
     }
   }
-  for (const app of manifest.connectedApps) needsAction.push(line("app", `${app}: check its sign-in in Connect apps.`, "app", { name: app }));
   const profiles = (settings.perspicax as { profiles?: string[] } | undefined)?.profiles ?? [];
   if (profiles.length) {
     if (host.organization) created.push(line("perspicax", `${profiles.length} Perspicax profile(s)`, "perspicax", { count: profiles.length }));
@@ -764,12 +762,13 @@ const settingsSchema = z.object({
   voiceNotes: z.boolean().optional(),
   emailDrafts: z.boolean().optional(),
   memoryEnabled: z.boolean().optional(),
+  // read as the bot reads it (shared/team-memory-sharing.ts): an archive
+  // written before export normalized it still imports, unknown as private
+  teamMemorySharing: z.unknown().optional(),
   memoryUpkeep: z.boolean().optional(),
   parkDirectMessages: z.boolean().optional(),
   approvePeerComms: z.boolean().optional(),
   peers: z.array(z.string().max(128)).max(500).optional(),
-  composio: z.boolean().optional(),
-  connectorScopes: z.object({ apps: z.record(z.string().max(80), z.enum(["read", "write"])) }).optional(),
   outbound: z.object({ policy: z.enum(["ask", "allow"]), dailyCap: z.number().int().min(0).max(100_000) }).optional(),
   assignedSkills: z.array(z.string().max(64)).max(200).optional(),
   section: z.string().max(60).optional(),
@@ -864,8 +863,6 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
   const hostSettings = hostParsed.success ? hostParsed.data : {};
   if (!hostParsed.success) warnings.push("Host settings were not valid and were left out.");
   const toolScope = parseToolScope(document.settings.toolScope);
-  const connectorTools = document.settings.connectorTools === undefined ? undefined : parseConnectorTools(document.settings.connectorTools);
-  if (connectorTools && !connectorTools.ok) warnings.push("Connected app grants were not valid and were left out.");
 
   const soulText = reader.has(SOUL_FILE) ? reader.text(SOUL_FILE) : "";
   if (Buffer.byteLength(soulText) > 24_000) throw new BotZipError("SOUL.md is larger than 24000 bytes.", "invalid_zip");
@@ -925,13 +922,11 @@ export async function importBotZip(host: BotZipHost, inspected: InspectedBotZip,
       ...(settings.voiceNotes !== undefined ? { voiceNotes: settings.voiceNotes } : {}),
       ...(settings.emailDrafts !== undefined ? { emailDrafts: settings.emailDrafts } : {}),
       ...(settings.memoryEnabled !== undefined ? { memoryEnabled: settings.memoryEnabled } : {}),
+      ...(storedTeamMemorySharing(settings) ? { teamMemorySharing: "private" as const } : {}),
       ...(settings.memoryUpkeep !== undefined ? { memoryUpkeep: settings.memoryUpkeep } : {}),
       ...(settings.parkDirectMessages !== undefined ? { parkDirectMessages: settings.parkDirectMessages } : {}),
       ...(settings.approvePeerComms !== undefined ? { approvePeerComms: settings.approvePeerComms } : {}),
       ...(settings.peers ? { peers: settings.peers.filter((peer) => peer !== id && store.bot(peer)) } : {}),
-      ...(settings.composio !== undefined ? { composio: settings.composio } : {}),
-      ...(connectorTools?.ok ? { connectorTools: connectorTools.grants } : {}),
-      ...(settings.connectorScopes ? { connectorScopes: settings.connectorScopes } : {}),
       ...(settings.outbound ? { outbound: settings.outbound } : {}),
       ...(settings.fallback ? { fallback: settings.fallback.filter((entry) => host.engineUsable(entry as ModelSelection)) } : {}),
       ...(settings.maxConcurrentThreads !== undefined ? { maxConcurrentThreads: settings.maxConcurrentThreads } : {}),

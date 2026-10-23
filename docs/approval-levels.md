@@ -249,8 +249,8 @@ such call go through Sagax.
 
 The same holds for Codex (`approvalsReviewer: auto_review`), Qwen
 (`--approval-mode auto`) and Cursor (`--auto-review`) on **Approve for me**:
-their own reviewer decides first. Grok Bot has a single reviewer, so a bot
-can be switched to one reviewer (Grok Bot parity A13,
+their own reviewer decides first. The reference design has a single reviewer, so a bot
+can be switched to one reviewer (the reference design parity A13,
 `server/drivers/sagax-reviewer.ts`): with `DATA_DIR/sagax-reviewer.json`
 `{"bots": ["<botId>"]}` (or `{"bots": "all"}`), Approve for me on those
 engines starts Qwen at `auto-edit` and Codex and Cursor with the person as

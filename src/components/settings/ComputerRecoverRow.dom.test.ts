@@ -48,7 +48,8 @@ describe("ComputerRecoverRow", () => {
 
   it("does nothing when the person says no", async () => {
     const confirm = vi.fn().mockResolvedValue(false);
-    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: { configured: true, state: "running" }, confirm })));
+    const loadWorkingBotsFn = vi.fn().mockResolvedValue([]);
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: { configured: true, state: "running" }, confirm, loadWorkingBotsFn })));
     await act(async () => (container.querySelector("[data-computer-recover]") as HTMLButtonElement).click());
     await flush();
     expect(fixture.api).not.toHaveBeenCalled();
@@ -76,5 +77,72 @@ describe("ComputerRecoverRow", () => {
     await act(async () => root.render(createElement(ComputerRecoverRow, {})));
     await flush();
     expect(container.innerHTML).toBe("");
+  });
+
+  const running = { configured: true, state: "running" };
+
+  it("enables Update and lists no bot when the computer is idle (0 working)", async () => {
+    const loadWorkingBotsFn = vi.fn().mockResolvedValue([]);
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: running, loadWorkingBotsFn })));
+    await flush();
+    expect(container.querySelector("[data-computer-busy]")?.getAttribute("data-computer-busy")).toBe("no");
+    expect(container.querySelector("[data-working-bots]")).toBeNull();
+    expect((container.querySelector("[data-computer-recover]") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("lists one working bot with a Stop button and disables Update (1 working)", async () => {
+    const loadWorkingBotsFn = vi.fn().mockResolvedValue([{ id: "b-uuid-1", name: "Katarina", threadId: "t1" }]);
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: running, loadWorkingBotsFn })));
+    await flush();
+    expect(container.querySelectorAll("[data-working-bot]")).toHaveLength(1);
+    expect(container.querySelector("[data-stop-bot='b-uuid-1']")?.textContent).toContain("Stop Katarina");
+    expect((container.querySelector("[data-computer-recover]") as HTMLButtonElement).disabled).toBe(true);
+    expect(container.textContent).toMatch(/An agent is working/i);
+    // human label only; the id lives in the tooltip and data attribute, never as the text
+    const label = container.querySelector("[data-working-bot='b-uuid-1'] [data-bot-id]") as HTMLElement;
+    expect(label.textContent).toBe("Katarina");
+    expect(label.getAttribute("title")).toBe("b-uuid-1");
+    expect(container.textContent).not.toContain("b-uuid-1");
+  });
+
+  it("lists several working bots, each with its own Stop (N working)", async () => {
+    const loadWorkingBotsFn = vi.fn().mockResolvedValue([
+      { id: "b1", name: "Katarina", threadId: "t1" },
+      { id: "b2", name: "Ember", threadId: "t2" },
+    ]);
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: running, loadWorkingBotsFn })));
+    await flush();
+    expect(container.querySelectorAll("[data-stop-bot]")).toHaveLength(2);
+    expect((container.querySelector("[data-computer-recover]") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("stops a bot through the stop mechanism, then enables Update when the last one is done", async () => {
+    const loadWorkingBotsFn = vi.fn()
+      .mockResolvedValueOnce([{ id: "b1", name: "Katarina", threadId: "t1" }])
+      .mockResolvedValue([]);
+    const stopWorkingBotFn = vi.fn().mockResolvedValue(undefined);
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: running, loadWorkingBotsFn, stopWorkingBotFn })));
+    await flush();
+    expect((container.querySelector("[data-computer-recover]") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => (container.querySelector("[data-stop-bot='b1']") as HTMLButtonElement).click());
+    await flush();
+    expect(stopWorkingBotFn).toHaveBeenCalledWith({ id: "b1", name: "Katarina", threadId: "t1" });
+    expect(container.querySelector("[data-working-bots]")).toBeNull();
+    expect((container.querySelector("[data-computer-recover]") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("offers Reset as its own row and rebuilds after the person confirms", async () => {
+    fixture.api.mockResolvedValue(running);
+    const confirm = vi.fn().mockResolvedValue(true);
+    const loadWorkingBotsFn = vi.fn().mockResolvedValue([]);
+    await act(async () => root.render(createElement(ComputerRecoverRow, { initial: running, confirm, loadWorkingBotsFn })));
+    await flush();
+    const resetBtn = container.querySelector("[data-computer-reset]") as HTMLButtonElement;
+    expect(resetBtn).not.toBeNull();
+    expect(resetBtn.textContent).toContain("Reset");
+    await act(async () => resetBtn.click());
+    await flush();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(fixture.api).toHaveBeenCalledWith("/api/computer/reset", { method: "POST", body: JSON.stringify({ confirm: true }) });
   });
 });

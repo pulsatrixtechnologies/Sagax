@@ -510,14 +510,22 @@ export interface ConsoleAssertion {
    * the readable reasons of the admin API follow it. */
   locale?: string;
   /** Who presents it for the person (`act.sub`): `console` (the Perspicax
-   * console) or `perspicax-mcp` (an AI client attached to Perspicax, the
-   * member API of 2026-10-09). */
+   * console), `perspicax-mcp` (an AI client attached to Perspicax, the
+   * member API of 2026-10-09) or `perspicax-mail` (the mail relay delivering
+   * a mail to one of the person's bots, 2026-10-21). */
   actor: ConsoleAssertionActor;
+  /** `body_sha256`: lowercase hex SHA-256 of the exact request body, when
+   * the signer binds the assertion to it (the mail relay must, contract v2
+   * of 2026-10-21; the route compares it). Absent otherwise. */
+  bodySha256?: string;
 }
 
 /** The actors a console assertion may name. The admin API accepts only the
- * console; the member API (server/org-member-routes.ts) accepts both. */
-export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp"] as const;
+ * console; the member API (server/org-member-routes.ts) accepts the console
+ * and `perspicax-mcp`; `perspicax-mail` (the Perspicax mail relay,
+ * 2026-10-21) is accepted by `POST /api/org/inbound-mail` alone
+ * (server/bot-inbound-mail.ts). */
+export const CONSOLE_ASSERTION_ACTORS = ["console", "perspicax-mcp", "perspicax-mail"] as const;
 export type ConsoleAssertionActor = typeof CONSOLE_ASSERTION_ACTORS[number];
 
 export interface VerifyConsoleAssertionInput extends JwsCheck {
@@ -566,7 +574,11 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
   const serverId = stringClaim(claims.server_id, 256) ?? null;
   if (input.serverId && serverId !== input.serverId) throw new OidcError(`${kind}_server`, "The console assertion is meant for another linked server.");
   const locale = typeof claims.locale === "string" && /^[A-Za-z]{2}([-_][A-Za-z0-9]{2,8})?$/.test(claims.locale) ? claims.locale : undefined;
-  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor };
+  if (claims.body_sha256 !== undefined && (typeof claims.body_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(claims.body_sha256))) {
+    throw new OidcError(`${kind}_body`, "The assertion's body digest is not a SHA-256.");
+  }
+  const bodySha256 = typeof claims.body_sha256 === "string" ? claims.body_sha256 : undefined;
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor, ...(bodySha256 ? { bodySha256 } : {}) };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine

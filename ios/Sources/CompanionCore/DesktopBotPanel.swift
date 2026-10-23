@@ -50,7 +50,7 @@ public enum DesktopPanelSection: String, CaseIterable, Hashable, Sendable {
         case .soul: ["standing instructions", "instructions", "persona", "rules", "soul.md"]
         case .skills: ["skills", "learned", "procedures", "teach"]
         case .memory: ["memory", "notes", "remember", "topics"]
-        case .access: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "connected apps", "composio", "webhooks", "always allow", "grants", "tool selection", "tools", "mcp", "allow", "exclude"]
+        case .access: ["works on", "computer", "vm", "cloud", "vps", "folder", "workspace", "browser", "webhooks", "always allow", "grants", "tool selection", "tools", "mcp", "allow", "exclude"]
         case .worksOn: ["works on", "computer", "auto", "cloud", "local vm", "vm", "this computer", "browser", "off", "where it works"]
         case .model: ["engine", "model", "provider", "cli", "effort"]
         case .permissions: ["auto mode", "approve", "auto approve", "review", "routine approvals", "peers", "contact", "coordination", "chief of staff", "section"]
@@ -139,6 +139,36 @@ public enum DesktopPanelGroup: String, CaseIterable, Hashable, Sendable {
         guard !wanted.isEmpty else { return true }
         if label.lowercased().contains(wanted) { return true }
         return sections(in: visible).contains { $0.matches(query, label: sectionLabel($0)) }
+    }
+}
+
+/// The iPhone's Edit bot groups, in the desktop editor's own order
+/// (`persona-sections.ts` `PERSONA_GROUPS`: Instructions, Model and tools,
+/// Security, Activity) under the inline identity block (avatar, name, label,
+/// description), which is the Profile group's home. Grok Bot's phone editor
+/// has no Profile list and no search: the three pages Profile held are moved,
+/// not dropped. Who can see it and Shared with join Security (they are access
+/// rules); the read-only Overview (what the model sees, export) opens Activity.
+public enum PhoneBotEditGroup: String, CaseIterable, Hashable, Sendable {
+    case instructions, modelTools, security, activity
+
+    public var sections: [DesktopPanelSection] {
+        switch self {
+        case .instructions: [.soul, .skills, .memory]
+        case .modelTools: [.model, .worksOn, .access, .slack, .voice]
+        case .security: [.permissions, .perspicax, .visibility, .sharing]
+        case .activity: [.overview, .usage, .history]
+        }
+    }
+
+    /// The groups with at least one of `visible`, in order.
+    public static func visible(_ visible: [DesktopPanelSection]) -> [PhoneBotEditGroup] {
+        allCases.filter { !$0.sections(in: visible).isEmpty }
+    }
+
+    /// The group's sections this pairing lists.
+    public func sections(in visible: [DesktopPanelSection]) -> [DesktopPanelSection] {
+        sections.filter(visible.contains)
     }
 }
 
@@ -374,6 +404,8 @@ public enum WebhookPublicURL {
         case "sentry": "Sentry"
         case "pagerduty": "PagerDuty"
         case "linear": "Linear"
+        // not a brand: the app translates it (Localizable "Bot email")
+        case "botmail": "Bot email"
         default: type
         }
     }

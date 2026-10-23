@@ -183,6 +183,15 @@ const bridge = {
   approvals: {
     setMode: (botId, mode, options) => ipcRenderer.invoke("approvals:set-trusted-mode", botId, mode, options),
   },
+  /** Per-loopback-server API keys for local models, kept encrypted on this
+   * computer only. The renderer sets or clears a key and learns which bases
+   * have one; the key value itself never crosses back over this bridge, and
+   * never reaches the organization server. Absent on remote server pages. */
+  localModels: {
+    keyBases: () => ipcRenderer.invoke("local-models:key-bases"),
+    setKey: (base, key) => ipcRenderer.invoke("local-models:set-key", base, key),
+    clearKey: (base) => ipcRenderer.invoke("local-models:clear-key", base),
+  },
   localControl: {
     status: () => ipcRenderer.invoke("cua:linux-status"),
     enable: () => ipcRenderer.invoke("cua:linux-enable"),

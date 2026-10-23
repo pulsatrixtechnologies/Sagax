@@ -29,7 +29,7 @@ export type AdminActivityCategory = typeof ADMIN_ACTIVITY_CATEGORIES[number];
 /** Who acted: as on a decision row, plus the command line, plus (slice 7) a
  * person of the organization by principal id, in Sagax or from the Perspicax
  * console. */
-export type AdminActor = DecisionActor | { kind: "cli" } | { kind: "person"; principalId: string; via: "sagax" | "console" | "perspicax-mcp" };
+export type AdminActor = DecisionActor | { kind: "cli" } | { kind: "person"; principalId: string; via: "sagax" | "console" | "perspicax-mcp" | "perspicax-mail" };
 
 export interface AdminActionRow {
   at: string;
@@ -260,7 +260,7 @@ export function configChangeRows(before: unknown, after: unknown): Array<Omit<Ad
  * see it. Display fields (colour, unread, pins) are not audited. */
 export const BOT_AUDIT_FIELDS = [
   "approvalMode", "autoApprove", "alwaysAllow", "allowedRecipients", "peers", "approvePeerComms", "computer", "cloudBackend", "autoStartVps",
-  "cwd", "composio", "browser", "browserProfile", "mcpServers", "mcpAccounts", "chiefOfStaff", "managedSections", "section",
+  "cwd", "browser", "browserProfile", "mcpServers", "mcpAccounts", "chiefOfStaff", "managedSections", "section",
   "parkDirectMessages", "hidden", "modelSelection", "visibility",
 ] as const;
 
@@ -376,7 +376,7 @@ export function adminActorLabel(actor: AdminActor | undefined, nameOf?: (princip
   if (actor?.kind === "cli") return "Command line";
   if (actor?.kind === "person") {
     const name = nameOf?.(actor.principalId) ?? actor.principalId;
-    return actor.via === "console" ? `${name} (console)` : actor.via === "perspicax-mcp" ? `${name} (AI client)` : name;
+    return actor.via === "console" ? `${name} (console)` : actor.via === "perspicax-mcp" ? `${name} (AI client)` : actor.via === "perspicax-mail" ? `${name} (bot email)` : name;
   }
   return actorLabel(actor as DecisionActor | undefined);
 }

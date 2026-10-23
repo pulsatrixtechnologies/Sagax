@@ -189,3 +189,68 @@ describe("review fixes in the editor (#942)", () => {
     expect(linear).not.toContain("data-typed-bot-comments");
   });
 });
+
+describe("Bot email trigger (B21, 2026-10-21)", () => {
+  const empty = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
+  it("has no secret field and no URL when created, says mail comes through Perspicax, and the subject filter is a contains", async () => {
+    const { TypedSourceFields } = await import("./TypedTriggers");
+    const html = renderToStaticMarkup(createElement(TypedSourceFields, { type: "botmail", draft: empty, onChange: vi.fn(), creating: true }));
+    expect(html).not.toContain("data-typed-secret");
+    expect(html).not.toContain("signing secret");
+    expect(html).toContain("No secret and no URL: mail arrives through Perspicax only.");
+    expect(html).toContain("Matches when the subject contains one of the values.");
+    expect(html).toContain('data-typed-filter="sender"');
+    expect(html).toContain('data-typed-filter="subject"');
+  });
+
+  it("never sends a pasted secret for it", async () => {
+    const { typedTriggerInput } = await import("./TypedTriggers");
+    const input = typedTriggerInput("botmail", { ...empty, signingSecret: "pasted-secret-123" }, { name: "Mail", prompt: "", botId: "b1" });
+    expect(input).not.toHaveProperty("signingSecret");
+    expect(input.source).toEqual({ type: "botmail", events: [], filters: {} });
+  });
+
+  it("its row shows no URL, no secret and no missing-secret warning, only the relay note", () => {
+    const { html } = renderRow(trigger({ source: { type: "botmail", events: [], filters: { subject: ["facture"] } }, signingSecretSet: undefined }));
+    expect(html).not.toContain("/sources/");
+    expect(html).not.toContain("wh_abc");
+    expect(html).not.toMatch(/signing secret/i);
+    expect(html).toContain("Bot email");
+    expect(html).toContain("Nothing to set up: mail sent to this bot&#x27;s address reaches Perspicax");
+    expect(html).not.toContain("New signing secret");
+  });
+
+  it("names the bot's address with a Copy button, or says it has none yet", async () => {
+    const { BotMailAddressLine } = await import("./TypedTriggers");
+    const html = renderToStaticMarkup(createElement(BotMailAddressLine, { mail: { available: true, address: "cryptic@bots.example.org", enabled: true } }));
+    expect(html).toContain("This bot&#x27;s address");
+    expect(html).toContain("cryptic@bots.example.org");
+    expect(html).toContain("Copy address");
+    const none = renderToStaticMarkup(createElement(BotMailAddressLine, { mail: { available: false, address: null, enabled: false } }));
+    expect(none).toContain("This bot has no email address yet.");
+    const off = renderToStaticMarkup(createElement(BotMailAddressLine, { mail: { available: true, address: "e@bots.example.org", enabled: false } }));
+    expect(off).toContain("Waiting for the administrator to turn it on");
+    expect(renderToStaticMarkup(createElement(BotMailAddressLine, { mail: null }))).toBe("");
+  });
+});
+
+describe("Bot email: the owner's full-tools switch (v2, S2)", () => {
+  const empty = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
+  it("is offered for bot email only, off by default, with its warning", async () => {
+    const { TypedSourceFields } = await import("./TypedTriggers");
+    const html = renderToStaticMarkup(createElement(TypedSourceFields, { type: "botmail", draft: empty, onChange: vi.fn(), creating: true }));
+    expect(html).toContain("Give these runs the bot&#x27;s usual tools");
+    expect(html).toContain("no shell, and every change or send asks you first");
+    expect(html).toMatch(/data-botmail-full-tools=""[^>]*aria-checked="false"|aria-checked="false"[^>]*data-botmail-full-tools=""/);
+    const github = renderToStaticMarkup(createElement(TypedSourceFields, { type: "github", draft: empty, onChange: vi.fn(), creating: true }));
+    expect(github).not.toContain("data-botmail-full-tools");
+  });
+
+  it("is saved with the source and read back, for bot email only", async () => {
+    const { typedSourceConfig, draftFromConfig } = await import("./TypedTriggers");
+    expect(typedSourceConfig("botmail", { ...empty, allowFullTools: true })).toEqual({ type: "botmail", events: [], filters: {}, allowFullTools: true });
+    expect(typedSourceConfig("botmail", empty)).toEqual({ type: "botmail", events: [], filters: {} });
+    expect(typedSourceConfig("github", { ...empty, allowFullTools: true })).not.toHaveProperty("allowFullTools");
+    expect(draftFromConfig({ type: "botmail", events: [], filters: {}, allowFullTools: true }).allowFullTools).toBe(true);
+  });
+});

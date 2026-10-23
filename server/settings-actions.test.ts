@@ -153,6 +153,28 @@ describe("sagax_settings", () => {
     await harness({ mode: "full" }).call({ action: "set", key: "bot.share", value: { target: "user:pr_x", level: null } });
   });
 
+  it("team memory sharing: the bot widening to shared waits on a card at Auto and Full; narrowing to private runs; anything else is refused", async () => {
+    for (const mode of ["auto", "full"] as const) {
+      for (const target of [undefined, "b2"]) {
+        const h = harness({ mode });
+        const where = `${mode} ${target ?? "itself"}`;
+        const widen = await h.call({ action: "set", key: "bot.teamMemorySharing", ...(target ? { target } : {}), value: "shared" });
+        expect(widen.body.text, where).toContain("Approval needed.");
+        const narrow = await h.call({ action: "set", key: "bot.teamMemorySharing", ...(target ? { target } : {}), value: "private" });
+        expect(narrow.body.text, where).toContain("Done");
+        expect(h.planned.map((row) => row.effect), where).toEqual(["hold", "run"]);
+        expect(h.planned[1], where).toMatchObject({ method: "PATCH", body: { teamMemorySharing: "private" } });
+        // widening is recorded only once the person allows it
+        expect(h.audits, where).toEqual([expect.objectContaining({ key: "bot.teamMemorySharing", value: "private", how: "run" })]);
+      }
+    }
+    const h = harness({ mode: "full" });
+    for (const value of ["everyone", "Private", "", null]) {
+      expect((await h.call({ action: "set", key: "bot.teamMemorySharing", value })).status, JSON.stringify(value)).toBe(400);
+    }
+    expect(h.planned).toEqual([]);
+  });
+
   it("security review: what widens keeps the card even at Approve for me", async () => {
     const h = harness();
     const held = async (args: Record<string, unknown>) => (await h.call({ action: "set", ...args })).body.text;

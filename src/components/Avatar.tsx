@@ -25,6 +25,8 @@ import type { TrombiPose } from "./retro-assistant/Trombi";
 import { SkinnedTrombi } from "./skin-fx/SkinnedTrombi";
 import { BunbuMascot, type BunbuMood } from "./BunbuMascot";
 import { ShibaMascot } from "./ShibaMascot";
+import { HdOrVector } from "./hd-mascots/HdMascot";
+import { hdKeyForState } from "./hd-mascots/manifest";
 import type { ShibaExpression } from "./shiba-art";
 import { GrumpMascot } from "./GrumpMascot";
 import { OgreMascot } from "./OgreMascot";
@@ -359,7 +361,12 @@ function CharacterAvatar({
     );
   }
   if (full.character === "shiba") {
-    return <ShibaMascot skin={full.skins.shiba} color={color} size={size} mood={bunbuMoodFor(state)} expression={shibaExpressionFor(state)} animated={animated} move={move} moveBody label={label ?? null} />;
+    // HD art while "HD mascots" is on (src/components/hd-mascots); the vector Shiba otherwise, and while the art loads
+    return (
+      <HdOrVector character="shiba" hdKey={hdKeyForState(state)} size={size} animated={animated} label={label ?? null}>
+        <ShibaMascot skin={full.skins.shiba} color={color} size={size} mood={bunbuMoodFor(state)} expression={shibaExpressionFor(state)} animated={animated} move={move} moveBody label={label ?? null} />
+      </HdOrVector>
+    );
   }
   if (full.character === "grump") {
     // Grump's sixteen faces carry the Shapes ids, so the Shiba's state map serves both

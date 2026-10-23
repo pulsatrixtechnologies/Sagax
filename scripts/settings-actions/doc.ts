@@ -23,10 +23,15 @@ function classes(spec: SettingSpec): string {
   const solo = spec.classes ? spec.classes(null, { organization: false }) : ["own"];
   const org = spec.classes ? spec.classes(null, { organization: true }) : ["own"];
   const sample = spec.key === "bot.outbound" ? spec.classes!({ policy: "allow" }, { organization: false })
-    : spec.key === "rules.custom" ? spec.classes!({ behavior: "deny" }, { organization: false }) : solo;
+    : spec.key === "rules.custom" ? spec.classes!({ behavior: "deny" }, { organization: false })
+    : spec.key === "bot.teamMemorySharing" ? spec.classes!("shared", { organization: false }) : solo;
   const label = (list: string[]) => list.map((name) => CLASS_FR[name] ?? name).join(" + ");
-  let out = label(solo);
-  if (label(sample) !== out) out += spec.key === "rules.custom" ? ` (${label(sample)} pour une règle deny ou ask écrite)` : ` (${label(sample)} si allow)`;
+  let out = spec.key === "bot.teamMemorySharing" ? label(spec.classes!("private", { organization: false })) : label(solo);
+  if (label(sample) !== out) {
+    out += spec.key === "rules.custom" ? ` (${label(sample)} pour une règle deny ou ask écrite)`
+      : spec.key === "bot.teamMemorySharing" ? ` (${label(sample)} pour élargir à shared)`
+      : ` (${label(sample)} si allow)`;
+  }
   const self = spec.classes ? spec.classes(null, { organization: false, self: true }) : ["own"];
   if (label(self) !== label(solo)) out += ` (${label(self)} pour le bot qui parle lui-même)`;
   if (label(org) !== label(solo)) out += `; organisation : ${label(org)}`;

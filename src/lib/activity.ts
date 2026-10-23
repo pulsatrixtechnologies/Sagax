@@ -108,10 +108,10 @@ const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 
 function dayLabel(date: Date, now: Date): string {
   const key = localDayKey(date);
-  if (key === localDayKey(now)) return "Today";
+  if (key === localDayKey(now)) return t("botActivity.day.today");
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (key === localDayKey(yesterday)) return "Yesterday";
+  if (key === localDayKey(yesterday)) return t("botActivity.day.yesterday");
   const base = `${DAY_NAMES[date.getDay()]} ${date.getDate()} ${MONTH_NAMES[date.getMonth()]}`;
   return date.getFullYear() === now.getFullYear() ? base : `${base} ${date.getFullYear()}`;
 }
@@ -135,17 +135,17 @@ export type ChipTone = "ok" | "danger" | "accent" | "warn";
 export function outcomeChip(outcome: ActivityOutcome): { text: string; tone: ChipTone } {
   switch (outcome) {
     case "ran":
-      return { text: "Ran", tone: "ok" };
+      return { text: t("botActivity.outcome.ran"), tone: "ok" };
     case "failed":
-      return { text: "Failed", tone: "danger" };
+      return { text: t("botActivity.outcome.failed"), tone: "danger" };
     case "running":
-      return { text: "Running", tone: "accent" };
+      return { text: t("botActivity.outcome.running"), tone: "accent" };
     case "allowed":
-      return { text: "Allowed", tone: "ok" };
+      return { text: t("botActivity.outcome.allowed"), tone: "ok" };
     case "denied":
-      return { text: "Denied", tone: "danger" };
+      return { text: t("botActivity.outcome.denied"), tone: "danger" };
     case "waiting":
-      return { text: "Needs you", tone: "warn" };
+      return { text: t("botActivity.outcome.needsYou"), tone: "warn" };
   }
 }
 

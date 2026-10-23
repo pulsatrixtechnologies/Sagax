@@ -189,7 +189,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             {/* Name and label are edited where they show; the name stays
                 centered on its own line. The description is not shown here. */}
             <div
-              className="mt-2 flex max-w-full items-center justify-center"
+              className="-mt-1 flex max-w-full items-center justify-center"
               // the bot's menu on the name too, as on the mascot
               onContextMenu={openActionsAt}
             >

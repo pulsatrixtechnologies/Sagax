@@ -23,7 +23,7 @@ vi.mock("@/state/store", () => ({
 import { ApiError } from "@/state/store";
 import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
 import { codingWork } from "@/lib/bot-activity";
-import { branchActions, branchCounts, branchStatus, codingBranchKey, deleteNeedsSecondConfirm, type BotBranchInfo, type CodingBranch } from "@/lib/code-branches";
+import { branchActions, branchCounts, branchStatus, branchUnavailable, codingBranchKey, deleteNeedsSecondConfirm, remoteActionNeedsConfirm, type BotBranchInfo, type CodingBranch } from "@/lib/code-branches";
 import type { BotActivityItem } from "../../../shared/bot-activity";
 import { BranchRow, branchErrorText, CodeBranchList, CommitDialog } from "./CodeBranchList";
 import { RoutineList } from "../routines/RoutineList";
@@ -107,6 +107,29 @@ describe("Coding branches: the card", () => {
     expect(deleteNeedsSecondConfirm(info({ pushed: true, ahead: 0 }).state)).toBe(false);
     expect(deleteNeedsSecondConfirm(info({ pushed: true, ahead: 1 }).state)).toBe(true);
     expect(deleteNeedsSecondConfirm(info({ pushed: false, ahead: 0 }).state)).toBe(true);
+  });
+
+  it("acts on a branch on the bot's own computer just like one on this server", () => {
+    const remote = info({}, { place: "remote", host: "Studio de Max" });
+    expect(branchActions(remote, undefined, local)).toEqual({ commit: true, push: true, openPr: false, diff: true, remove: true });
+    expect(branchUnavailable(remote, local)).toBeNull();
+    // push and open-PR on a client's computer ask to confirm first
+    expect(remoteActionNeedsConfirm(remote, "push")).toBe(true);
+    expect(remoteActionNeedsConfirm(remote, "pr")).toBe(true);
+    expect(remoteActionNeedsConfirm(info(), "push")).toBe(false);
+    // the computer's name shows on the row
+    const html = renderToStaticMarkup(createElement(BranchRow, { branch: { ...local, repo: undefined }, now: NOW, info: remote, actions: { botId: "pepper", onArchive: async () => {} }, onAct: () => {} }));
+    expect(html).toContain("on Studio de Max");
+  });
+
+  it("gives one plain reason when the bot's computer cannot be reached, not five disabled rows", () => {
+    expect(branchUnavailable({ branch: local.name, place: "remote", offline: true, canPublish: false, publishBlocked: "offline" }, local)).toBe("botPanel.branch.hint.offline");
+    expect(branchUnavailable({ branch: local.name, place: "remote", noPath: true, canPublish: false }, local)).toBe("botPanel.branch.hint.noPath");
+    expect(branchUnavailable({ branch: local.name, place: "remote", canPublish: false, publishBlocked: "unknown_os" }, local)).toBe("botPanel.branch.hint.unknownOs");
+    expect(branchUnavailable({ branch: local.name, place: "elsewhere", canPublish: false }, local)).toBe("botPanel.branch.hint.elsewhere");
+    expect(branchUnavailable(info(), { ...local, threadId: undefined })).toBe("botPanel.branch.hint.noThread");
+    // when unreachable, no action applies
+    expect(branchActions({ branch: local.name, place: "remote", offline: true, canPublish: false }, undefined, local)).toEqual({ commit: false, push: false, openPr: false, diff: false, remove: false });
   });
 
   it("puts archived branches behind Show archived, and keeps them out of the five", () => {

@@ -41,6 +41,8 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.a11y.motion.v1",
   "sagax.a11y.contrast.v1",
   "sagax.a11y.textSize.v1",
+  // Settings > Appearance > Mascots: painted HD art or the classic vector look (src/lib/hd-mascots-preference.ts). "on" | "off"; absent is on.
+  "sagax.hdMascots.v1",
   // the desktop mascot's behavior (fly away during tasks, activity level)
   "omb.floatingBots.prefs.v1",
   // sidebar layout

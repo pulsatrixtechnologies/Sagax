@@ -212,10 +212,6 @@ struct ExperimentalSettingsView: View {
                         detail: "Off by default. Shows Browse Bots in the sidebar menu, to find and add ready-made bots and teams.",
                         on: config?.features?.templates == true)
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
-                feature("connectedApps", title: "Connected apps",
-                        detail: "Gmail, Slack, GitHub and more through your Composio project: the entry at the foot of the sidebar and the card in Settings > API keys. While off, your Claude account's connectors show in Settings > Model providers.",
-                        on: config?.features?.connectedApps == true)
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(
                     title: LocalizedStringKey(DevPodsStrings.settingTitle),
                     subtitle: DevPodsStrings.settingDetail,

@@ -46,7 +46,7 @@ import { otherAuthorName, viewerActorId } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { ModelPicker } from "./ModelPicker";
-import { connectedAppsEnabled, llmThreadTitlesEnabled } from "@/lib/feature-flags";
+import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
 
@@ -75,6 +75,9 @@ import { ChevronsRight, Eye, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
+import { SidebarSharerBadge } from "./SidebarSharerBadge";
+import { botSharer } from "@/lib/bot-sharer";
+import { presenceLabel, usePresence } from "@/lib/presence";
 import { OrgSectionMenuItems, SectionNameInput, orgSectionMenuItems, type OrgSectionMenuActions } from "./OrgSectionMenu";
 import {
   EMPTY_PERSONAL_SECTIONS,
@@ -150,7 +153,6 @@ import {
   partitionSidebarGroups,
   placeSection,
   sameSectionOrder,
-  sidebarConnectorPreview,
   sidebarGoalRunPreview,
   sidebarLayoutInteractive,
   sidebarSectionCollapsed,
@@ -167,7 +169,6 @@ import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
 import { SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
-import { SidebarConnectApps } from "./ConnectAppsPill";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
@@ -293,7 +294,6 @@ function preview(bot: Bot, visible: Message[], instances: InstanceInfo[]): strin
   // a failed turn reads as the chat row says it, never "error: …"
   if (last.kind === "activity" && last.tool) return activityPreview(last.tool, botEngine(bot, instances), last.dataResult);
   if (last.kind === "screen") return t("sidebar.preview.screenFrame");
-  if (last.kind === "connector" && last.connector) return sidebarConnectorPreview(last.connector, t);
   // one line of what the reply says, never the Markdown that draws it
   // (`**[repo](https://…)**` reads as "repo")
   const peer = peerLine(last);
@@ -338,9 +338,7 @@ export function groupPreview(group: Group, bots: Bot[], config: ConfigStatus | n
     ? activityPreview(last.tool, botEngine(bots.find((bot) => bot.id === last.from?.botId), instances), last.dataResult)
     : last.kind === "goal.run" && last.goalRun
       ? sidebarGoalRunPreview(last.goalRun)
-      : last.kind === "connector" && last.connector
-        ? sidebarConnectorPreview(last.connector, t)
-        : (last.text ?? "");
+      : (last.text ?? "");
   const readable = plainPreviewText(citationPreviewText(text));
   if (last.role === "user") {
     // Someone else's words (src/lib/viewer.ts): a direct conversation's row
@@ -432,6 +430,8 @@ export function GroupListItem({
   const orgPeople = useOrgPeople();
   const peer = peopleDmPeer(group, viewerActorId(state.config), orgPeople);
   const rowName = peer?.name ?? group.name;
+  // The person's presence, also in the rail's accessible name (no text there).
+  const peerPresence = usePresence(peer?.id);
   // No achievement title or points here: they live in the person panel.
   const previewShown = !expanded && (!quiet || groupStatus);
   return (
@@ -466,7 +466,7 @@ export function GroupListItem({
         selected && !expanded ? "bg-sidebar-selected" : "hover:bg-sidebar-hover",
       )}
       title={density === "icons" ? rowName : undefined}
-      aria-label={density === "icons" ? [rowName, groupStatus ? t("chat.activity.working") : null, group.unread ? t("task.unread") : null].filter(Boolean).join(" · ") : undefined}
+      aria-label={density === "icons" ? [rowName, peerPresence ? presenceLabel(peerPresence) : null, groupStatus ? t("chat.activity.working") : null, group.unread ? t("task.unread") : null].filter(Boolean).join(" · ") : undefined}
       data-people-dm={peer ? peer.id : undefined}
     >
       {peer
@@ -2003,7 +2003,10 @@ export function BotListItem({
   // The viewer's own Primary Bot wears the orange star at the avatar's
   // bottom-right corner; a status dot then sits at the top-right instead.
   const primary = isViewersPrimaryBot(bot, orgViewerId(state));
-  const dotCorner = primary ? "-top-0.5" : "-bottom-0.5";
+  // A bot shared with the viewer wears its sharer's face at the bottom-right
+  // (as in Browse Bots), so the status dot moves up, like beside the star.
+  const sharer = botSharer(bot, orgViewerId(state), useOrgPeople());
+  const dotCorner = primary || sharer ? "-top-0.5" : "-bottom-0.5";
   // Grok Bot marks an unread bot with a blue dot at the row's end, the name
   // keeps its weight.
   const trailingDot = !iconOnly && unread && !renaming && !deleting && !selection?.active;
@@ -2031,6 +2034,7 @@ export function BotListItem({
             signal in icons-only density, where the text is hidden. */}
         {working && <StatusDot tone="success" testId="working-dot" className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
         {waiting && <StatusDot tone="warning" testId="waiting-dot" role="status" label={t("sidebar.preview.waiting")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
+        {sharer && !primary && <SidebarSharerBadge sharer={sharer} avatarSize={avatarSize} />}
         {teammateWait && <StatusDot tone="accent" testId="teammate-wait-dot" role="status" label={t("sidebar.preview.waitingOnTeammate")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
         {!teammateWait && !waiting && !working && queued && <StatusDot tone="queued" testId="queued-dot" role="status" label={t("task.queued")} className={cn("absolute -right-0.5", dotCorner)} sizeClassName={iconOnly ? "size-3" : "size-2.5"} />}
       </span>
@@ -2495,7 +2499,6 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
 }) {
   const store = useStore();
   const { state } = store;
-  const connectedApps = connectedAppsEnabled(state.config);
   const listFade = useScrollFade();
   const dispatch: typeof store.dispatch = (action) => {
     store.dispatch(action);
@@ -3491,7 +3494,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         )}
         {density === "icons" ? (
           <>
-            {connectedApps && <SidebarConnectApps iconOnly icon={<Puzzle size={20} />} onOpen={() => dispatch({ type: "togglePlugins", open: true })} />}
+            <SidebarConnectApps iconOnly icon={<Puzzle size={20} />} onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
             {/* one avatar, like the wide foot: its menu holds Settings,
                 Approvals, Code and the rest; Browse bots is a tab of Connect apps */}
             <div data-sidebar-account-rail className="flex h-10 items-center justify-center">
@@ -3501,12 +3504,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           // The foot (reference design): the account pill, your avatar and
           // name (it opens the account menu, Browse bots included), 6px,
-          // then the compact Connect apps pill, then the update button while
-          // an update downloads or waits. The row is the container the open
-          // label's width is capped against (styles.css, .sidebar-apps-pill).
+          // then the Connect apps button, then the update button while an
+          // update downloads or waits. Both tiles take their height from
+          // --foot-tile-h on the row (styles.css).
           <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
             <SidebarProfileMenu avatarOnly withName places={accountPlaces} />
-            {connectedApps && <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />}
+            <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
             {/* a waiting update, right of the pill, which gives way when it
                 widens (JC, 2026-10-18) */}
             <SidebarUpdatePill />
@@ -3812,5 +3815,40 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       />
     </aside>
     </SidebarMascotProvider>
+  );
+}
+
+/** The sidebar's "Connect apps" entry: a plain nav button that opens the
+ * Plugins panel. It no longer previews connected accounts (the standalone
+ * account inventory went away); the panel itself lists MCP servers, engine
+ * connectors, the catalog, skills and marketplaces. */
+function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen: () => void; iconOnly?: boolean; icon?: React.ReactNode }) {
+  const label = t("chat.connectApps.pill");
+  if (iconOnly) {
+    return (
+      <button
+        type="button"
+        data-tour="nav-apps"
+        data-sidebar-connect-apps=""
+        onClick={onOpen}
+        aria-label={label}
+        title={label}
+        className="flex h-9 w-full items-center justify-center rounded-lg px-2 text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
+      >
+        {icon}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-tour="nav-apps"
+      data-sidebar-connect-apps=""
+      onClick={onOpen}
+      className="flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
+    >
+      <Puzzle size={16} aria-hidden="true" className="shrink-0" />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }

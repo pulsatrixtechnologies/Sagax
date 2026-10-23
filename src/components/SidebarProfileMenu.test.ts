@@ -169,7 +169,7 @@ describe("outward links", () => {
 describe("profileMenuItems (the reference design's account menu, 2026-10-16)", () => {
   const noop = () => {};
   const handlers = {
-    onAutomations: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
+    onAutomations: noop, onRemoteSessions: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
     onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
@@ -179,6 +179,7 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     mobile: false,
     achievementsLabel: "Achievements",
     automationsActive: false,
+    remoteSessionsActive: false,
     updateItem: null,
     switchTargets: [],
     canAddOrganization: false,
@@ -187,8 +188,16 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     ...patch,
   });
 
-  it("is Usage, Help, Settings, Automations and Achievements, in that order", () => {
-    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "achievements"]);
+  it("is Usage, Help, Settings, Automations, Remote sessions and Achievements, in that order", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "remote-sessions", "achievements"]);
+  });
+
+  it("opens the Remote sessions page next to Automations", () => {
+    let opened = 0;
+    const entry = items({ handlers: { ...handlers, onRemoteSessions: () => { opened += 1; } } }).find((item) => item.key === "remote-sessions")!;
+    expect(entry).toBeTruthy();
+    entry.onSelect();
+    expect(opened).toBe(1);
   });
 
   it("lists neither Approvals nor Code: both open from their address (#approvals, #code)", () => {

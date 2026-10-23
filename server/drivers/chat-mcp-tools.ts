@@ -308,7 +308,6 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   if (computerUse && integrations?.localComputer && eligible("computer")) servers.push(["computer", integrations.localComputer]);
   if (computerUse && integrations?.browser && eligible("browser")) servers.push(["browser", integrations.browser]);
   if (integrations?.agents && eligible("agents")) servers.push(["agents", integrations.agents]);
-  if (integrations?.composio && eligible("composio")) servers.push(["composio", integrations.composio]);
   if (integrations?.data && eligible("data")) servers.push(["data", integrations.data]);
   if (integrations?.messages && eligible("messages")) servers.push(["messages", integrations.messages]);
   for (const [name, server] of Object.entries(integrations?.custom ?? {})) {
@@ -322,7 +321,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
   if (servers.length > 32) throw new Error("MCP server count exceeds the 32-server limit");
   const clients: ChatMcpClient[] = [];
   // Only a server the person configured is skipped when it cannot mount; the
-  // harness's own servers (browser, computer, agents, data, composio) still
+  // harness's own servers (browser, computer, agents, data) still
   // fail the turn, as they hold what the turn needs to run safely.
   const skippable = new Set(Object.keys(integrations?.custom ?? {}));
   const skipped: SkippedChatMcpServer[] = [];

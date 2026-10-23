@@ -573,6 +573,51 @@ lui-même." On every server (solo and organization):
   `server/host-lazy-claim.e2e.test.ts`, `server/group-local-vm.e2e.test.ts`,
   `server/place-view.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 
+## Routine runs work in the background (2026-10-22)
+
+Decision: "when routine runs you don't need to show something within the chat or
+the sidebar... simply let it run in the background, just letting know by
+'Handling it' is sufficient. If the routine explicitly says to stay silent
+you don't tell me anything in the chat."
+
+- A run always executes in its own hidden task (`routineRunId`), never in
+  the person's conversation: no `joinConversation`, the old
+  `features.routinesInConversation` switch is ignored and gone from Settings.
+  While queued or running nothing reaches the chat or the sidebar; the bot's
+  status (working dot, "Handling it") is the only live signal.
+- `server/routine-report.ts`: the contract (`ROUTINE_REPORT_CONTRACT`, in
+  `ROUTINE_EXECUTION_PROMPT`) tells the bot to end with `NOTHING_TO_REPORT`
+  when nothing needs the person and never to restate the instructions.
+  `routineReportOutcome` reads the final message (the marker, else a short
+  no-op report, longer when the routine asks for silence, never one with a
+  question); a quiet completed run gets `RoutineRun.quiet` and its note stays
+  in `output` without the marker.
+- `syncRoutineRunToSource` (server/index.ts) posts ONE `routine.run` message
+  per run only when `routineRunReportable`: a report (completed, not quiet),
+  a question or approval card waiting in the run's task (re-synced from
+  `tellThePerson`), a team goal needing input, or a failure. Missed,
+  cancelled, deferred, pre-check `nothing_to_report` and quiet runs post
+  nothing, ring nothing (`done` notification skipped) and mark nothing unread.
+  A message already posted (it waited on the person) is patched in place.
+- The client draws it as the bot's report (`ChatMarkdown`, inert) with a
+  small "Routine: <name> · View run" line (`src/components/RoutineRunCard.tsx`).
+  Automations > Logs lists a quiet run as "Nothing to report"
+  (`routineRunMatchesStatus`). iOS gets the same: nothing is posted or pushed.
+- Decision, same day: "I am not in thread mode, everything should be unified in a
+  single chat page." A run for a person (`runAs`, organization server)
+  reports into their own conversation with the bot (`personMainThread`, else
+  `ensureViewerThread`), never a new "<name> · Results" thread. Such threads,
+  old ones included (`markRoutineResultsThreads` at start), carry
+  `routineResults: true`: still listed with threads shown, but never a
+  stream segment, a main thread, a row under the bot, a dot or a preview
+  (`isStreamSegment`, `mainThread`, `taskHiddenFromSidebar`,
+  `taskCountsAsBotUnread`, iOS `BotTask.isHiddenFromPerson`).
+- No "Showing saved messages" banner over an archived conversation
+  (`SavedMessagesNotice` removed); offline keeps `ChatStaleBanner`.
+- Tests: `server/routine-report.test.ts`, `server/routines.test.ts` ("background
+  runs"), `server/routine-silent-runs.e2e.test.ts`, `src/lib/routine-quiet.test.ts`,
+  `src/components/RoutineRunCard.test.ts`.
+
 ## Routines and webhooks: bearer token on every webhook (2026-10-08)
 
 A webhook triggers a MAUS task from outside (`server/webhooks.ts`,
@@ -719,6 +764,132 @@ notifications), Sentry, PagerDuty, Linear. Rules, covered by
   token, subscription, cursor, poller credential, poller user name or
   connector account. The imported copy is off and its import warnings say
   what it still needs (a provided secret, a password or link).
+
+## Bot email address: Perspicax relay (2026-10-21)
+
+Decision 2026-10-21 (B21, iOS CO5): option 1 of the #943 design note.
+Each bot of an organization server has its own address,
+`<name>@<inbound domain>`, given and received by Perspicax (the domain, the
+inbound provider, MX and the safety rules live there). Mail only wakes a
+routine. Wire contract v2 of 2026-10-21 (Perspicax <-> Sagax, Perspicax
+#419). Rules, none optional,
+covered by `server/bot-inbound-mail.test.ts`,
+`server/bot-mail-addresses.test.ts`, `server/routes/bot-inbound-mail.test.ts`,
+`server/oidc-rp.test.ts`, `server/org-member-api.e2e.test.ts` (M10),
+`src/components/bot-settings/BotEmailAddress.test.ts`,
+`src/components/TypedTriggers.test.ts` and iOS `BotInboundMailTests`:
+
+- Delivery: `POST /api/org/inbound-mail` (`server/bot-inbound-mail.ts`),
+  answered before the session gate and loopback trust, next to the member
+  API. The only credential is a console assertion (typ
+  `pulsabot-console+jwt`, at most 120 s, single-use `jti`, `aud` this
+  server's public origin, `server_id` when linked) whose `act.sub` is
+  `perspicax-mail` and whose `body_sha256` claim is the lowercase hex
+  SHA-256 of the exact body bytes (compared in constant time with the body
+  read; missing or different: 401). That actor is accepted HERE ONLY: the admin API
+  (console only) and the member API (`ORG_MEMBER_ASSERTION_ACTORS`) refuse
+  it. Order: 401 `unauthorized` (assertion, replay, body digest, solo
+  server), 400 `invalid` (body not the contract's, no 64-hex `dedupeKey`,
+  over 256 KiB), 404 `no_bot`, 403
+  `not_owner` (assertion `sub` is not the owner's Perspicax user id, or the
+  bot has no Perspicax owner), 403 `owner_inactive`. Every answer carries
+  `X-Sagax-Mail-Api: 1`.
+- Then every ENABLED typed trigger of source `botmail` on that bot goes
+  through `WebhookManager.ingest(id, event, dedupeKey)`: filters, dedupe on
+  Perspicax's `dedupeKey` (the Message-ID is shown, never the key), the per-trigger rate, the unfinished-runs cap and the
+  fence are the typed triggers' own. 202 `{triggers, delivered, duplicate,
+  ignored, reason?: "no_trigger"}`; 429 `rate_limited` only when every
+  trigger refused on its rate. A paused bot's triggers (`disableForBot`)
+  receive nothing.
+- Dedupe window (second review, 2026-10-22): the keys live in the typed
+  triggers' delivery ring (`MAX_DELIVERIES`, 2000, in server/webhooks.ts),
+  ONE ring for every trigger of the server, kept in `webhooks.json`. A
+  retry of the same mail is caught while its key is among the last 2000
+  deliveries of all triggers; past that (a busy server, hours later) a
+  retry would run again. Perspicax keeps its own one-hour memory by
+  `dedupeKey` and does not re-count a retry. A per-trigger ring was judged
+  not worth it here (it changes the persisted shape every trigger shares).
+- Source `botmail` (`shared/trigger-sources.ts`, label "Bot email", fr
+  "Courriel du bot"; the Outlook `email` source is a different thing):
+  `secretMode: "relay"`, no secret and no endpoint. Create and PATCH refuse
+  a signing secret, rotate refuses, `/sources/<endpointId>` always answers
+  401 for it, the create answer has no `sourceSetup`. Filters: `sender`
+  exact or `*` glob on the bare address only, `subject` CONTAINS
+  (case-insensitive, `containsFilters`), `keyword` over subject and text.
+- Confined runs (S2): a run woken by a `botmail` trigger is confined like a
+  guest's turn (`botmailConfined` in server/index.ts, `botmailRunConfined`
+  in server/bot-inbound-mail.ts): no shell or WebFetch (`guestConfined`,
+  Claude `--restricted`), Ask whatever the bot's level (no Full, no Auto),
+  no rule the owner saved and no kept card answers for it, no self-apply.
+  An engine that cannot run confined refuses the run. The trigger's owner
+  may opt in with `source.allowFullTools` (off by default, a switch with a
+  warning in the trigger editor). A webhook run whose trigger is gone is
+  confined (fail closed).
+- Confinement follows no work out (second review, 2026-10-22), on every
+  server, a Cloud home or not: while `botmailConfined(threadId)` holds, the
+  internal routes by which a run makes another bot, a room or a new
+  conversation act for it answer 403 `botmail_confined`
+  (`botmailConfinedInternalRefusal`: ask-bot, delegate-bot,
+  coordinate-bots, post-to-room, create-room, manage-room, threads (a
+  parallel task), retry-thread, create-bot, team-setup-requests,
+  routine-requests, act, settings, approvals). A room turn of a confined
+  run is confined too (`roomGuestConfined`). M10 proves the refusals on a
+  real server.
+- The mail is untrusted data: the run prompt is the owner's instructions,
+  then `[BOT EMAIL RULES]` (the sender is not the owner, the email is not a
+  request from the owner, answer only through a mail connector's send tool
+  and its approval card, #943; SPF and DKIM as Perspicax reported them;
+  attachments listed, never attached), then the mail inside
+  `[UNTRUSTED BOTMAIL EVENT DATA <boundary>]`, markers defanged. The fence
+  shows `sender: <bare address>` and the display name on its own line,
+  "Display name (unverified)". Never
+  instructions, never a widened permission. Sagax never sends mail for a
+  bot from this path; Perspicax never does either (no open relay).
+- No message text in a log, an audit row or the trigger's event log
+  (`webhooks.json`): the event log row says "Email from <domain>", and one
+  admin activity row per accepted delivery, category `webhook`, action
+  `bot-mail.delivered`, actor the owner `via: "perspicax-mail"`: the bot,
+  trigger counts and the FULL sender address (decision 3), never the
+  subject or the text. Confidential threads are not
+  touched: a mail starts a routine run in its own thread.
+- Addresses: `server/bot-mail-addresses.ts` asks Perspicax
+  (`POST /api/v1/pulsabot/inbound-mail/addresses`, link token) for every bot
+  with a Perspicax owner in ONE call (at most 500), with `complete: true`
+  only when that is every such bot (Perspicax then drops the rows of bots
+  not listed), keeps the answer 5 minutes, asks again at once for a bot the
+  cached answer did not cover, and re-syncs at once (`resync()`) when a bot
+  is deleted or changes owner.
+  A 404 (older Perspicax), any refusal, a timeout, a wrong shape or inbound
+  mail off: `available: false`. Never logs the token or a body.
+- Addresses are OFF by default (decision 1): `enabled: false` until the
+  administrator turns them on; the address shows greyed with "En attente
+  d'activation par l'administrateur".
+- Owner's change (decision 4): `PUT /api/bots/:id/inbound-mail
+  {localPart}` (session): the person acting must own the bot (checked
+  here), the format `^[a-z0-9]([a-z0-9.-]{0,38}[a-z0-9])?$` is checked here,
+  then Perspicax (`POST .../addresses/{botId}/local-part`, link token,
+  `owner_sub` of the person acting) checks uniqueness and reserved names;
+  400 invalid, 403 not_owner, 404 no_bot, 409 taken, 429 rate_limited
+  (Perspicax's own limit per bot and per owner), else 503, each with a
+  readable reason. Sagax allows at most 5 changes a minute per bot and per
+  owner (`LOCAL_PART_CHANGES_PER_MINUTE`, counted only when Perspicax is
+  asked), else 429 `rate_limited` with `Retry-After: 60`. The cache is dropped; one audit row `bot-mail.address-changed`
+  (the bot and its new address).
+- App: `GET /api/bots/:id/inbound-mail` (client-scoped, the bot visibility
+  check applies) answers `{available, address, enabled, canChange}`.
+  Desktop: an "Adresse courriel" group at the top of the bot's Overview
+  with a Copy button, Changer for the owner, the rule line, and the waiting
+  line when `enabled` is false; nothing at all when not available
+  (`BotEmailAddress.tsx`). Trigger editor: "Courriel du bot" shows the
+  bot's address where other sources show a URL, no secret, and the full
+  tools switch. iOS (CO5): the same card in the bot panel
+  (`BotPanelPhone.swift` `emailCard`), copy and the waiting state; the
+  change is on the desktop. The address is not an id; it may be shown and
+  copied.
+- Attachments: metadata only; their bytes come in a later lot.
+- Perspicax side (domain, provider, MX, loops, size caps, allowlist,
+  rename) is the Perspicax PR; the steps done outside code are listed
+  there.
 
 ## Confidential threads: kept to their owner (2026-10-16)
 
@@ -1326,7 +1497,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
 `src/components/routines/RoutineOwnerName.test.ts` and
 `server/org-bot-force.test.ts`:
 
-- Connected apps (Composio) is experimental (`features.connectedApps`, off):
+- Connected apps is experimental (`features.connectedApps`, off):
   off hides the sidebar entry, the Settings > Connected apps page and the tour's
   apps steps. The claude.ai connectors status then shows in Settings > Model
   providers (`HarnessConnectorsSection placement="settings"`).
@@ -1642,8 +1813,8 @@ rules, covered by `server/owner-approval.test.ts`,
   (`memberBotAdminApproval`): a server command, a file outside the bot's
   workspace, a host-level `agents` tool or built-in MCP server (`computer`,
   `browser`, `shell`...), an unknown server or tool. A remote or personal MCP
-  server, Sagax's own `perspicax_*` mounts, Composio and a web search are
-  The owner's (`ownerScopedTool`, `ownerScopedMcpServerFor`).
+  server, Sagax's own `perspicax_*` mounts and a web search are
+  the owner's (`ownerScopedTool`, `ownerScopedMcpServerFor`).
 - On the owner route, the owner's rules then the bot's mode answer before a
   card (`ownerDecision`): deny wins, then ask, then allow. A rule is one
   tool plus a target read from the arguments, kept per person
@@ -1731,8 +1902,8 @@ covered by `shared/custom-rules.test.ts`, `server/auto-approve.custom-rules.test
   inside as written and as resolved and none through a symbolic link; a
   deny or ask catches either, case-insensitively and in one Unicode form.
   A server's readOnlyHint never makes a call a read. Tools are named whole,
-  server included; products match known server ids (or a Perspicax or
-  Composio gateway's tool prefix).
+  server included; products match known server ids (or a Perspicax
+  gateway's tool prefix).
 - Model reviewer (examen automatique, 2026-10-21, the reference design parity A1, Decision:
   "OUI, comme Grok"; `server/custom-rules-model.ts`, contract
   `customRulesJudgePrompt` / `modelCustomDecision` in shared/custom-rules.ts):
@@ -3743,7 +3914,7 @@ these rules, each covered by `server/harness-connectors.test.ts` or
 
 ## Mail, Teams, calendar and SharePoint through the engines' connectors (parité R9 + R11, 2026-10-21)
 
-JC: prioritize the connectors the engines already bring (claude.ai
+Decision: prioritize the connectors the engines already bring (claude.ai
 connectors, the xAI account's cloud connectors on grok.com) over any
 Microsoft 365 enterprise app or Entra app registration of our own. Sagax
 builds no Graph client, no Teams bot registration and no mailbox for this.
@@ -3763,7 +3934,7 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   told they belong to someone else and nothing is offered; Grok's cloud
   connectors stay off (`grokCloudConnectors` on the turn,
   `grokCloudConnectorEnv(..., ownAccount)`).
-- Automatic engine switch (JC 2026-10-21, `server/connector-switch.ts`): a
+- Automatic engine switch (2026-10-21, `server/connector-switch.ts`): a
   person's request that needs mail, calendar, Teams or SharePoint
   (`connectorNeed` on the person's raw message only, never the prompt
   composed around it: page, mail or data context, a quoted reply, a
@@ -3784,8 +3955,8 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
 - Grok rules of #918 are unchanged otherwise: organization turn (host
   tools withheld), no tool selection.
 - Every outward call through a connector waits for the approval card
-  (`isOutboundTool` via `connectorWriteKind`, same reading for an MCP tool
-  and a Composio slug): sends, automatic replies (out of office, mailbox
+  (`isOutboundTool` via `connectorWriteKind`, same reading for an MCP tool):
+  sends, automatic replies (out of office, mailbox
   settings), Teams posts and chats, events and meetings (create, insert,
   change, cancel), answering an invitation, every SharePoint, OneDrive or
   Google Drive write (upload, save, permissions, grant access). On an
@@ -3802,25 +3973,25 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
 - The card shows every recipient's address (`Name <address>`; a name that
   looks like another address or a domain is dropped): a display name is
   the sender's to choose.
-- Needs its own infrastructure, so not built here (flagged for JC): a
+- Needs its own infrastructure, so not built here (flagged for later): a
   dedicated inbound address per bot (B21, iOS CO5), a Teams app per bot
   (B20, needs a Bot Framework registration), a free message in a Meet or
   Zoom meeting chat (G10).
 
 ## Connect a connector from the chat: open_connector_setup (2026-10-22)
 
-JC (Sagax 0.7.2, a Grok bot): « peux tu le connecter » (Microsoft Teams)
+Decision (Sagax 0.7.2): « peux tu le connecter » (Microsoft Teams)
 took 13 tool calls and ended in "I can't". Now one call posts a card.
 
 - Agents tool `open_connector_setup` (`server/drivers/agents-connector-setup.ts`,
   loaded directly, never deferred; Grok is told to call
   `agents__open_connector_setup` with use_tool without search_tool):
-  connector by name, optional `via` (grok, claude, composio) and `language`.
+  connector by name, optional `via` (grok, claude) and `language`.
 - Where (`shared/connector-setup.ts` `chooseConnectorSetupRoute`): engine
-  connectors first. A Grok bot on the person's own xAI account:
+  connectors first. A bot on the Grok engine, on the person's own xAI account:
   https://grok.com/connectors (xAI documents no per-connector link). A Claude
   bot on the person's own subscription: https://claude.ai/customize/connectors.
-  Else Sagax's Connect apps card (Composio, the existing
+  Else Sagax's Connect apps card (the existing
   `/api/internal/connectors/request`). An engine account that is someone
   else's (#943 `accountConnectorsForTurn` "foreign") is refused. Only a
   person's own turn (`connectorSetupSpeaker`: person or operator, never a
@@ -4863,6 +5034,9 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   does: title then points under the name, each only while its switch is on,
   the name centred beside the avatar with both off, and the active routines
   badge always at the right edge of the row, centred (never under the name).
+  The wide foot's account pill (beside the Connect apps pill) shows the same
+  second line; both pills take `--foot-tile-h` (36px, 44px with the line) from
+  the row, so their heights always match.
   Titles and points also show in a person's detail (the person panel, from a
   people row or a DM header, the viewer's own included) and on
   Settings > Achievements. Two switches there, same style, stored in the
@@ -5669,7 +5843,7 @@ its JSON reply or choose it saved as a `.json` file (`openmaus.grok/1`, or
 pi-grokbot-import's `grokbot-bundle/v1`; the format ids stay upstream's).
 `shared/grok-import.ts` turns it into an `openmaus.package` v2 with one bot:
 instructions (cut at the soul limit, with a note), skills off, routines with
-a cron or a plain time paused, apps as connector requirements (Composio
+a cron or a plain time paused, apps as connector requirements (connector
 slugs when known), memories only when exported, key-shaped text redacted.
 Event routines and unreadable schedules are listed under Left out with their
 original text. The preview and Add are the templates' own
@@ -5992,7 +6166,7 @@ publiées). Keep these rules, covered by `server/published-pages.test.ts`,
 
 ### Pages: edit, comments, annotation, Presentation, link switch (lot R8, 2026-10-21)
 
-Grok Bot parity, chat rows 31 to 34. Covered by
+The reference design parity, chat rows 31 to 34. Covered by
 `server/published-pages-editing.test.ts`, the second case of
 `server/published-pages.e2e.test.ts` and `src/components/PageViewer.test.ts`.
 
@@ -6049,7 +6223,7 @@ Grok Bot parity, chat rows 31 to 34. Covered by
   and path lose secret-shaped text. The editor, comment and reader-comment
   routes are one regex per line with their method, so each has its own
   tool-policy row, all `defaultEnabled: false`.
-- Reader comments (JC 2026-10-21): per page, off by default
+- Reader comments (2026-10-21): per page, off by default
   (`PATCH /api/pages/:id { readerComments }`), and an admin policy
   (`readerComments` in the pages policy, on = allowed; off: no page takes or
   shows them; settings action `org.pagesReaderComments`). On a reading link
@@ -6259,7 +6433,7 @@ through the same `request.opened` path (owner setup #820, member rules
 
 ## Resource usage card (2026-10-21)
 
-JC: « un graphique de consommation du CPU, RAM, Disque (IO, usage), Network
+Decision: « un graphique de consommation du CPU, RAM, Disque (IO, usage), Network
 usage qui s'affiche de manière esthétique lorsqu'on le demande ». The agents
 tool `resource_usage` (target `this_computer`, `sagax_server`, `host`,
 `remote_session`, `bot_computer`) posts a live card (`resourceUsage` on the

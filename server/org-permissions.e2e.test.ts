@@ -250,6 +250,9 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     // nothing given: every one of them closed, naming its key
     let bob = await bobWith(undefined);
     const closed: Array<[string, string, unknown, string]> = [
+      // 2026-10-22 (JC): the config write opens to server.settings OR the
+      // separate server.experimental key; a member with neither is refused,
+      // named by the primary key server.settings.
       ["PATCH", "/api/config", { language: "fr" }, "server.settings"],
       ["PATCH", "/api/org/settings", { allowVaultExport: false }, "server.settings"],
       ["GET", "/api/mcp/servers", undefined, "host.shell"],
@@ -368,5 +371,28 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect((await api("DELETE", `/api/auth/sessions/${target.id}`, second)).status).toBe(200);
     // the admin is unchanged
     expect((await api("GET", "/api/tool-grants", alice)).status).toBe(200);
+  }, 90_000);
+
+  it("PM-7 (2026-10-22, JC): server.experimental alone flips the experiments and nothing else", async () => {
+    const bob = await bobWith([...MEMBER_DEFAULT_PERMISSIONS, "server.experimental"]);
+    // the section's capability is off (it is not server.settings), yet the
+    // experiment switches write through
+    const caps = (await api("GET", "/api/config", bob)).body.viewer.capabilities;
+    expect(caps).toMatchObject({ editConfig: false, manageKeys: false });
+    const okFeature = await api("PATCH", "/api/config", bob, { features: { dataWindow: true } });
+    expect(okFeature.status, okFeature.text).toBe(200);
+    expect(okFeature.body.features?.dataWindow).toBe(true);
+    // nothing else: a plain setting, an address, a host-reaching feature
+    for (const [patch, field] of [
+      [{ language: "fr" }, "language"],
+      [{ profile: { name: "x" } }, "profile"],
+      [{ features: { vpsComputer: true } }, "features.vpsComputer"],
+      [{ features: { dataWindow: true }, language: "fr" }, "language"],
+    ] as const) {
+      const refused = await api("PATCH", "/api/config", bob, patch);
+      expect(refused.status, field).toBe(403);
+      expect(refused.body.code, field).toBe("admin_only_field");
+      expect(refused.body.field, field).toBe(field);
+    }
   }, 90_000);
 });

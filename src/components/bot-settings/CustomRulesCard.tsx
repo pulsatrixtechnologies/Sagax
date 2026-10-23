@@ -16,7 +16,7 @@
 // none can be added. At Full access a note says allow rules change nothing.
 // A rule may be saved for a chosen set of the person's bots (one rule per
 // bot), and an edit shows what changes in its words.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -24,7 +24,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { noteOrgAlwaysAllowOff } from "@/lib/org-approval-policy";
 import { api, ApiError, useStore, type Bot } from "@/state/store";
-import { compileRule, RISK_CLASSES, type CustomRule, type CustomRuleBehavior, type RiskClass } from "../../../shared/custom-rules";
+import { compileRule, impliedRiskScope, RISK_CLASSES, type CompiledRule, type CustomRule, type CustomRuleBehavior, type RiskClass } from "../../../shared/custom-rules";
 import { OrgRuleBadge, RISK_LABEL, RuleTextDiff, riskList } from "../CustomRuleNotice";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 
@@ -43,6 +43,17 @@ export interface CustomRuleDraft {
   riskScope: RiskClass[];
   /** "Les bots que je choisis": one rule per bot listed (never empty). */
   botIds?: string[];
+}
+
+/** The risk classes an allow rule's words name (envoi externe, paiement,
+ * suppression) that its ticked scope does not yet cover. The editor refuses
+ * to save an allow rule while this is non-empty: without the tick, the engine
+ * (fail-closed) authorizes nothing of that kind, so the rule the person
+ * thinks is broad would silently cover nothing. Empty for a non-allow rule or
+ * one that names no risky action (reading a folder stays empty, as it should). */
+export function missingImpliedRisks(behavior: CustomRuleBehavior, compiled: CompiledRule | null, riskScope: readonly RiskClass[]): RiskClass[] {
+  if (behavior !== "allow" || !compiled) return [];
+  return impliedRiskScope(compiled).filter((risk) => !riskScope.includes(risk));
 }
 
 /** The rules one bot meets, organization's first: theirs win. */
@@ -101,12 +112,31 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
   const shellFamily = behavior === "allow" && compiled?.shellFamily === true;
   const exactOutsideCard = behavior === "allow" && !fromCard && (compiled?.commands.length ?? 0) > 0;
   const exact = (compiled?.commands.length ?? 0) > 0;
+  // the risk classes the rule's words name: the editor sets them for the
+  // person (auto-tick), so a rule for "envoyer un courriel" carries
+  // external-send instead of a scope that covers nothing
+  const implied = behavior === "allow" && compiled ? impliedRiskScope(compiled) : [];
+  // each implied class is offered (ticked) once, the first time the words
+  // name it; the person may then untick it, which the save guard catches
+  const offered = useRef<Set<RiskClass>>(new Set(initial.riskScope));
+  useEffect(() => {
+    if (behavior !== "allow") return;
+    const fresh = implied.filter((risk) => !offered.current.has(risk));
+    if (!fresh.length) return;
+    for (const risk of fresh) offered.current.add(risk);
+    setRiskScope((current) => [...current, ...fresh.filter((risk) => !current.includes(risk))]);
+  }, [behavior, implied.join(",")]);
+  // an allow rule that names a risky action but leaves its class unticked
+  // would authorize nothing of that kind: the person must tick it
+  const missingRisks = missingImpliedRisks(behavior, compiled, riskScope);
   // choosing bots: for a new rule, among two bots or more, never an exact
   // command (bound to the bot that asked it)
   const canChoose = !initial.when && !fromCard && !exact && Boolean(bots && bots.length > 1 && botId);
   const choosing = canChoose && chosen !== null;
-  const blocked = shellFamily || exactOutsideCard || (choosing && !chosen!.length) || (allowOff && behavior === "allow");
-  const shownRisks = risks?.length ? RISK_CLASSES.filter((risk) => risks.includes(risk) || riskScope.includes(risk)) : RISK_CLASSES;
+  const blocked = shellFamily || exactOutsideCard || (choosing && !chosen!.length) || (allowOff && behavior === "allow") || missingRisks.length > 0;
+  const shownRisks = risks?.length || implied.length
+    ? RISK_CLASSES.filter((risk) => risks?.includes(risk) || implied.includes(risk) || riskScope.includes(risk))
+    : RISK_CLASSES;
   return (
     <form
       className="flex flex-col gap-2 rounded-lg bg-inset px-3 py-2.5"
@@ -183,7 +213,7 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
         <fieldset className="flex flex-col gap-1 text-[12.5px] text-ink-secondary" data-custom-rule-risks>
           <legend className="mb-0.5">{t("customRules.form.riskTitle")}</legend>
           {shownRisks.map((risk) => (
-            <label key={risk} className="flex items-center gap-2">
+            <label key={risk} className="flex items-center gap-2" {...(implied.includes(risk) ? { "data-custom-rule-implied": risk } : {})}>
               <input
                 type="checkbox"
                 checked={riskScope.includes(risk)}
@@ -192,7 +222,9 @@ export function CustomRuleForm({ botName, initial, risks, saveLabel, onCancel, o
               <span className={cn(riskScope.includes(risk) && "text-warning")}>{t(RISK_LABEL[risk])}</span>
             </label>
           ))}
-          <p className="text-[11.5px] text-ink-tertiary">{t("customRules.form.riskHint")}</p>
+          {missingRisks.length > 0
+            ? <p role="alert" className="text-[11.5px] text-danger" data-custom-rule-risk-missing>{t("customRules.form.riskMissing", { kinds: riskList(missingRisks) })}</p>
+            : <p className="text-[11.5px] text-ink-tertiary">{t("customRules.form.riskHint")}</p>}
         </fieldset>
       )}
       <div className="flex justify-end gap-2">

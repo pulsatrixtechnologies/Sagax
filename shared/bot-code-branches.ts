@@ -32,8 +32,12 @@ export interface BotBranchState {
   lastCommit?: string;
 }
 
-/** Where the branch's repository is, and whether this person can act there. */
-export type BotBranchPlace = "server" | "elsewhere";
+/** Where the branch's repository is, and whether this person can act there.
+ * - "server": a git repository on this server (the thread's own folder);
+ * - "remote": the bot's own working computer, reached through its connected
+ *   session (the repository is where the bot cloned and worked, not here);
+ * - "elsewhere": nowhere this server can act (no computer, a sandbox, ...). */
+export type BotBranchPlace = "server" | "remote" | "elsewhere";
 
 /** GET /api/bots/:id/code/branch?threadId=&branch= */
 export interface BotBranchInfo {
@@ -43,13 +47,20 @@ export interface BotBranchInfo {
   folderName?: string;
   /** owner/name of origin, when known. */
   repo?: string;
+  /** place "remote": the bot's computer, by its name (never an address). */
+  host?: string;
+  /** place "remote" and that computer cannot be reached right now. */
+  offline?: boolean;
+  /** place "remote" and the thread's working folder on it is not known. */
+  noPath?: boolean;
   state?: BotBranchState;
   /** The commit message proposed for its changes (editable). */
   proposedMessage?: string;
-  /** Push and pull requests have the person's own credentials here. */
+  /** Push and pull requests have credentials to run with here (the person's
+   * own on this server, the computer's own on the bot's computer). */
   canPublish: boolean;
   /** Why not, when it cannot. */
-  publishBlocked?: "github_not_connected" | "not_github" | "elsewhere";
+  publishBlocked?: "github_not_connected" | "not_github" | "elsewhere" | "offline" | "unknown_os";
 }
 
 export interface BotBranchPull {
@@ -88,6 +99,9 @@ export interface BotBranchActionResult {
   remote?: string;
   /** pr */
   pull?: BotBranchPull;
+  /** pr: gh was not available where the repository is, so the branch is
+   * pushed and this is GitHub's "compare" page to open the request by hand. */
+  compareUrl?: string;
   /** The branch afterwards (absent after a delete). */
   state?: BotBranchState;
 }
