@@ -17,10 +17,10 @@ import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
 import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
-import { PluginsPanel, preloadConnectedApps } from "@/components/PluginsPanel";
+import { PluginsPanel } from "@/components/PluginsPanel";
 import {
   AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
-  PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
+  PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RemoteSessionsAdminPage, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
@@ -47,7 +47,7 @@ import { focusComposer } from "@/lib/composer-focus";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { normalizeInboxDeepLink } from "@/lib/inbox-deep-link";
 import { openThreadVisible, pageOpenThreadTarget, type OpenThreadTarget } from "@/lib/open-thread-hash";
-import { isInboxHash } from "../shared/approvals-inbox";
+import { clearLeftViewHash, watchViewHash } from "@/lib/view-hash";
 import { takeSettingsReturn } from "@/lib/settings-return";
 import { saveSidebarAttentionPinned, toggleSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -63,7 +63,9 @@ import { useExternalChatLinks } from "@/hooks/use-external-chat-links";
 import { ChatNotice } from "@/components/ChatErrorBanner";
 import { TeamBotFromThreadHost } from "@/components/TeamBotFromThreadDialog";
 import { navigate } from "@/lib/view-transitions";
+import { useScreenCaptureToBot } from "@/hooks/use-screen-capture-to-bot";
 import { MAUS_COLORS } from "@/lib/mascot";
+import { useBotAccent } from "@/lib/bot-accent";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -111,11 +113,18 @@ function Shell() {
     openThreadTarget.current = null;
     openNotificationTarget(dispatch, target, state, showThreads);
   }, [state.bots, state.groups, dispatch]);
-  // The Approvals screen keeps its filters in the address (#approvals?…):
-  // opened with one, the screen opens with them.
+  // `#approvals` (its filters stay in the address) and `#code` (or
+  // `#code/<run>`, which then leaves the address) open their screen, at load
+  // and when the hash changes in an open tab.
+  useEffect(() => watchViewHash(dispatch), [dispatch]);
+  // leaving Approvals or Code drops its address, so the same link opens it
+  // again; only on leaving, so a link read at load keeps its filters
+  const viewHashFrom = useRef(state.activeView);
   useEffect(() => {
-    if (isInboxHash(window.location.hash)) dispatch({ type: "showApprovals" });
-  }, [dispatch]);
+    const from = viewHashFrom.current;
+    viewHashFrom.current = state.activeView;
+    if (from !== state.activeView && (from === "approvals" || from === "code")) clearLeftViewHash(state.activeView);
+  }, [state.activeView]);
   // Back from a sign-in a Settings page asked for (Settings > Security: the
   // first key needs a fresh one): that page opens again.
   useEffect(() => {
@@ -311,6 +320,9 @@ function Shell() {
   }, [trayKey]);
   const botsRef = useRef(state.bots);
   botsRef.current = state.bots;
+  // The capture key (bots' chord with 0): a picture of the screen in the
+  // open bot's composer (parity R7, system 12).
+  useScreenCaptureToBot(showThreads);
   useEffect(() => {
     return window.ogb?.onOpenBot?.((botId) => {
       const target = botsRef.current.find((bot) => bot.id === botId);
@@ -322,14 +334,6 @@ function Shell() {
   useEffect(() => {
     primeNudgeSound();
   }, []);
-
-  // Warm connected-account state as soon as the local server is available.
-  // The modal then opens with the correct Connect/Add account buttons and
-  // quietly revalidates instead of rediscovering every account from scratch.
-  useEffect(() => {
-    if (!state.connected) return;
-    void preloadConnectedApps().catch(() => {});
-  }, [state.connected]);
 
   // Settings, Routines and the other on-request screens stay out of the
   // launch bundle; fetch them once the first paint is done and the app is idle.
@@ -357,6 +361,7 @@ function Shell() {
   const mainIsTeamMap = state.activeView === "team-map";
   const mainIsCode = state.activeView === "code";
   const mainIsApprovals = state.activeView === "approvals";
+  const mainIsRemoteSessions = state.activeView === "remote-sessions";
   const calendarFillsMain = calendarOpen;
 
   useEffect(() => {
@@ -477,7 +482,7 @@ function Shell() {
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
-      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && <OrgEngineNotice />}
+      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && !mainIsRemoteSessions && <OrgEngineNotice />}
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
@@ -488,6 +493,8 @@ function Shell() {
         <CodePage />
       ) : mainIsApprovals ? (
         <ApprovalsPage />
+      ) : mainIsRemoteSessions ? (
+        <RemoteSessionsAdminPage />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}
@@ -615,6 +622,14 @@ function Shell() {
   );
 }
 
+/** The open bot's colour as the accent, when Settings > Appearance says so. */
+function BotAccentSync() {
+  const { state } = useStore();
+  const bot = state.bots.find((candidate) => candidate.id === state.selectedId);
+  useBotAccent(bot ? MAUS_COLORS[bot.color] : null);
+  return null;
+}
+
 function Application() {
   useEffect(() => {
     initAnalytics();
@@ -630,6 +645,7 @@ function Application() {
         <GuidedTour />
         <LiveCallHost />
         <DataWindowViewSync />
+        <BotAccentSync />
       </StoreProvider>
     </DesktopCapabilitiesProvider>
   );

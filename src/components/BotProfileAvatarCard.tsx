@@ -49,7 +49,7 @@ export function BotProfileAvatarCard({
   return (
     <div className="relative">
       {/* room above for a move's jump and effects: the panel scrolls, so anything past its top is cut by a straight edge */}
-      <div className="flex justify-center pb-3 pt-6">
+      <div className="flex justify-center pb-0 pt-5">
         <button
           type="button"
           aria-label={t("botPanel.avatar.edit")}
@@ -88,7 +88,7 @@ export function BotProfileAvatarCard({
           <BotAvatar
             bot={bot}
             state={activeState}
-            size={112}
+            size={144}
             motion={mascotMotion?.kind ?? "none"}
             motionKey={mascotMotion?.nonce ?? 0}
           />

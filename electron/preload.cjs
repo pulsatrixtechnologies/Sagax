@@ -64,7 +64,7 @@ const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "o
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -183,6 +183,15 @@ const bridge = {
   approvals: {
     setMode: (botId, mode, options) => ipcRenderer.invoke("approvals:set-trusted-mode", botId, mode, options),
   },
+  /** Per-loopback-server API keys for local models, kept encrypted on this
+   * computer only. The renderer sets or clears a key and learns which bases
+   * have one; the key value itself never crosses back over this bridge, and
+   * never reaches the organization server. Absent on remote server pages. */
+  localModels: {
+    keyBases: () => ipcRenderer.invoke("local-models:key-bases"),
+    setKey: (base, key) => ipcRenderer.invoke("local-models:set-key", base, key),
+    clearKey: (base) => ipcRenderer.invoke("local-models:clear-key", base),
+  },
   localControl: {
     status: () => ipcRenderer.invoke("cua:linux-status"),
     enable: () => ipcRenderer.invoke("cua:linux-enable"),
@@ -254,6 +263,8 @@ const bridge = {
   /** Open a web link in the default browser. Unlike renderer window.open,
    * this remains reliable after an asynchronous API request. */
   openExternal: (url) => ipcRenderer.invoke("desktop:open-external", url),
+  /** A Connect card's sign-in page (grok.com or claude.ai only, checked by main). */
+  openConnectorSetup: (url) => ipcRenderer.invoke("desktop:open-connector-setup", url),
   /** Tell the window which skin the page wears, so the native chrome the
    * renderer cannot paint (the Windows caption-button overlay) matches. */
   applySkin: (skin) => ipcRenderer.invoke("desktop:skin", skin),
@@ -374,6 +385,17 @@ const bridge = {
     const listener = (_event, value) => { if (value && typeof value.botId === "string") cb(value.botId); };
     ipcRenderer.on("desktop:open-bot", listener);
     return () => ipcRenderer.removeListener("desktop:open-bot", listener);
+  },
+  /** The bots' chord with 0 took a picture of the screen (base64 PNG), or
+   * could not (Screen Recording not granted): the page attaches it to the
+   * open bot's composer. Never sent by itself. */
+  onScreenCapture: (cb) => {
+    const listener = (_event, value) => {
+      if (value && typeof value.png === "string") cb({ png: value.png });
+      else cb({ error: value?.error === "permission" ? "permission" : "unavailable", platform: value?.platform === "darwin" ? "darwin" : value?.platform === "win32" ? "win32" : "other" });
+    };
+    ipcRenderer.on("desktop:screen-capture", listener);
+    return () => ipcRenderer.removeListener("desktop:screen-capture", listener);
   },
   /** Presence: whether the person is at this computer ("active", "idle",
    * "locked" or "unknown") and the seconds since their last input. Safe on

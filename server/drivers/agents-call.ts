@@ -11,11 +11,14 @@
 import { readFileSync } from "node:fs";
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
+import { wrapUntrusted } from "../../shared/safety-review.ts";
 
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
 import { callCardTool, CARD_TOOL_NAMES } from "./agents-call-cards.ts";
+import { callPhoneTool, PHONE_TOOL_NAME } from "./agents-phone-tools.ts";
+import { callConnectorSetupTool, CONNECTOR_SETUP_TOOL_NAME } from "./agents-connector-setup.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
@@ -508,6 +511,8 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   }
   // create_options_card, show_widget, update_widget (agents-call-cards.ts).
   if (CARD_TOOL_NAMES.has(name)) return callCardTool(name, args, context);
+  if (name === PHONE_TOOL_NAME) return callPhoneTool(args, context);
+  if (name === CONNECTOR_SETUP_TOOL_NAME) return callConnectorSetupTool(args, context);
   if (ARTIFACT_TOOL_NAMES.has(name)) return callArtifactTool(name, args, context);
   // sagax_help (server/self-knowledge.ts): a few sections of the generated
   // knowledge base, chosen and worded for this server and speaker.
@@ -901,7 +906,16 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (folder) body.folder = folder;
     if (args.report_back === true) body.reportBack = true;
     if (typeof args.workspace === "string" && args.workspace) body.workspace = args.workspace;
+    if (args.read_only === true) body.readOnly = true;
+    const resumeId = typeof args.thread_id === "string" ? args.thread_id.trim() : "";
+    if (resumeId) body.resumeThreadId = resumeId;
     const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify(body) });
+    if (resumeId && (!r.error || r.state === "failed")) {
+      // a follow-up into a thread of its own (sub-agent resume, parity D1)
+      const into = `Sent a follow-up into #${String(r.title ?? title)} [thread id: ${String(r.threadId ?? resumeId)}]`;
+      if (r.state === "failed") return { text: `${into}, but it could not start: ${String(r.error ?? "unknown reason")}. Tell the person.`, isError: true };
+      return { text: `${into}. ${r.state === "queued" ? "It waits for a free slot, then runs" : "It is running now"} with that thread's history; its result stays in that thread. Mention it to the person as #${String(r.title ?? title)}.` };
+    }
     // A refusal opened nothing. A "failed" state opened the thread and could
     // not start its turn — that one still counts, and still has an id.
     if (r.error && r.state !== "failed") return { text: `Couldn't open that thread: ${String(r.error)}`, isError: true };
@@ -1135,6 +1149,39 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       ? " The tunnel folder is not on this server yet, so a shell and file transfer will wait until it is."
       : " The person can open a shell, send a file, or close the session from that card.";
     return { text: `A remote session card for ${host} is in the chat.${reach} Never repeat a tunnel address or a key.` };
+  }
+  if (name === "resource_usage") {
+    const target = typeof args.target === "string" ? args.target.trim() : "";
+    const host = typeof args.host === "string" ? args.host.trim().slice(0, 200) : "";
+    const session = typeof args.session === "string" ? args.session.trim().slice(0, 200) : "";
+    const started = await apiResponse("/api/internal/resource-usage/start", {
+      method: "POST",
+      body: JSON.stringify({ target, ...(host ? { host } : {}), ...(session ? { session } : {}) }),
+    });
+    const r = started.body;
+    if (!started.ok || r.error) return { text: String(r.error ?? "No usage card could be shown."), isError: true };
+    const summary = typeof r.summary === "string" ? r.summary : "";
+    return { text: `${summary} The live card is in the chat (it updates every two seconds for five minutes, then the person can tap Reprendre). Answer in a sentence or two from these numbers; do not repeat the whole card.` };
+  }
+  if (name === "remote_session_exec" || name === "remote_session_snapshot") {
+    const exec = name === "remote_session_exec";
+    if (exec && (typeof args.command !== "string" || !args.command.trim())) return { text: "command: the command line to run on the remote computer.", isError: true };
+    const body = {
+      ...(typeof args.session === "string" && args.session.trim() ? { session: args.session.trim() } : {}),
+      ...(exec ? { command: String(args.command) } : {}),
+      ...(exec && typeof args.timeout_seconds === "number" ? { timeout_seconds: args.timeout_seconds } : {}),
+    };
+    const { ok, body: r } = await apiResponse(`/api/internal/remote-sessions/${exec ? "exec" : "snapshot"}`, { method: "POST", body: JSON.stringify(body) });
+    if (!ok || r.error) return { text: String(r.error ?? "The remote computer did not run that command."), isError: true };
+    const exitCode = Number(r.exitCode ?? 0);
+    const stdout = String(r.stdout ?? "");
+    const stderr = String(r.stderr ?? "");
+    const lines = [`${String(r.host ?? "remote computer")} (${String(r.os ?? "")}): ${r.timedOut ? "stopped at its time limit" : `exit code ${exitCode}`}`];
+    // the client's computer wrote this: data, never instructions (review of #965)
+    if (stdout) lines.push(wrapUntrusted("remote stdout", stdout.replace(/\s+$/, "")));
+    if (stderr) lines.push(wrapUntrusted("remote stderr", stderr.replace(/\s+$/, "")));
+    if (!stdout && !stderr && !r.timedOut) lines.push("(no output)");
+    return { text: lines.join("\n"), ...(exitCode !== 0 || r.timedOut ? { isError: true } : {}) };
   }
   if (name === "offer_shell_terminal") {
     const resourceId = typeof args.resource_id === "string" ? args.resource_id.trim() : "";

@@ -128,6 +128,16 @@ function blinkFrame(state: { shape: MascotShape; expression: ShapeExpression; co
 /** A pose standing on the shared ground (shape-volume.ts groundLift). */
 const grounded = (pose: Pose, shape: MascotShape): Pose => ({ ...pose, scale: pose.scale * SHAPE_FIT[shape], lift: pose.lift + groundLift(shape) });
 
+/**
+ * The idle pose of a live shape keeps the rest turn out of the picture plane
+ * (the still sidebar drawing's), so its outline never bends: the sway's yaw
+ * and pitch keystone the contour, which shows from about 96 px. Breath, bob
+ * and the in-plane roll still move it; a move plays its full turn.
+ */
+export function uprightPose(pose: Pose): Pose {
+  return { ...pose, yaw: REST_POSE.yaw, pitch: REST_POSE.pitch };
+}
+
 const seconds = () => (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
 
 /** Skins drawn flat on purpose (an ink outline): no side, no turn. */
@@ -441,7 +451,8 @@ export function ShapeMascot({
       lastDraw = at;
       sway.setMood(motionForMood(moodRef.current), at);
       const next = run.frame(at);
-      const pose = grounded(sway.pose(at), shapeRef.current);
+      const swayed = sway.pose(at);
+      const pose = grounded(run.playing(at) ? swayed : uprightPose(swayed), shapeRef.current);
       poseRef.current = pose;
       lastFrame.current = next;
       if (drawn && body.current && shapeFrameWritable(drawn, next)) {

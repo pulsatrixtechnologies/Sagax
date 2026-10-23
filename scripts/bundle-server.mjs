@@ -53,6 +53,8 @@ const ENTRY_POINTS = [
   // the packaged desktop's early port (desktop-entry.mjs imports it first)
   "early-listener.ts",
   "message-search.worker.ts",
+  // WebP decode/scale off the main thread (server/webp-scale-worker.ts)
+  "webp-scale.worker.ts",
   // the `openmausbot` command (serve/pair/sessions/status) for the npm
   // package, the container image and checkouts; pair-cli.ts stays as an alias
   "openmausbot.ts",
@@ -74,7 +76,6 @@ const ENTRY_POINTS = [
   "container-mcp.ts",
   "vps-container-mcp.ts",
   "permission-proxy.ts",
-  "connector-proxy.ts",
   "perspicax-mcp-bridge.ts",
   "mcp-gate.ts",
   "mcp-remote-proxy.ts",

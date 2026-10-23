@@ -14,14 +14,15 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { json, readBody } from "../harness/http.ts";
 import { requiredScope } from "../request-auth.ts";
 import { repositoryInfo } from "../activity-code-work.ts";
 import { BranchArchive, BranchPulls, hostGit, parseStatus, proposedMessage, redactPaths, validBranchName, type GitExec } from "../code-branches.ts";
 import type { BotBranchInfo } from "../../shared/bot-code-branches.ts";
-import { createBotCodeBranchRoutes, type BotCodeBranchRouteDeps, type BranchCredentials } from "./bot-code-branches.ts";
+import { createBotCodeBranchRoutes, type BotCodeBranchRouteDeps, type BranchCredentials, type RemoteBranchDeps, type RemoteBranchReach } from "./bot-code-branches.ts";
+import type { RemoteExec } from "../remote-code-branches.ts";
 import { dispatchRoutes } from "./table.ts";
 
 const NOW = 1_800_000_000_000;
@@ -301,6 +302,99 @@ describe("Coding branches: acted on where the repository is", () => {
     expect(requiredScope("POST", "/api/bots/pepper/code/branch/push")).toBe("client");
     expect(requiredScope("GET", "/api/bots/pepper/code/branch")).toBe("client");
     expect(requiredScope("POST", "/api/bots/pepper/code/branches/archived")).toBe("client");
+  });
+});
+
+describe("Coding branches: on the bot's own computer", () => {
+  let botRepo = "";
+  beforeEach(() => {
+    const tag = Math.random().toString(36).slice(2);
+    const botRemote = join(dir, `bot-remote-${tag}.git`);
+    git(dir, "init", "--bare", "--initial-branch=main", botRemote);
+    const seed = join(dir, `bot-seed-${tag}`);
+    git(dir, "clone", botRemote, seed);
+    writeFileSync(join(seed, "README.md"), "hi\n");
+    git(seed, "add", "."); git(seed, "commit", "-m", "first"); git(seed, "push", "origin", "main");
+    botRepo = join(dir, `bot-wt-${tag}`);
+    git(dir, "clone", botRemote, botRepo);
+    git(botRepo, "checkout", "-b", "feat/on-bot");
+    writeFileSync(join(botRepo, "x.ts"), "export const x = 1;\n");
+  });
+
+  // The "bot's computer" is the local shell; the repository is a folder the
+  // server does not see as a git repository (deps.repository -> undefined).
+  const shellExec: RemoteExec = async (command) => {
+    const { execFileSync } = await import("node:child_process");
+    try {
+      const stdout = execFileSync("/bin/sh", ["-c", command], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "Bot", GIT_AUTHOR_EMAIL: "bot@example.com", GIT_COMMITTER_NAME: "Bot", GIT_COMMITTER_EMAIL: "bot@example.com" } });
+      return { exitCode: 0, stdout, stderr: "" };
+    } catch (error) {
+      const fail = error as { status?: number; stdout?: Buffer; stderr?: Buffer };
+      return { exitCode: typeof fail.status === "number" ? fail.status : 1, stdout: String(fail.stdout ?? ""), stderr: String(fail.stderr ?? "") };
+    }
+  };
+
+  const remoteDeps = (reach: RemoteBranchReach | null, calls?: Array<{ botId: string; threadId: string }>): RemoteBranchDeps => ({
+    reach: () => reach,
+    exec: (botId, threadId) => { calls?.push({ botId, threadId }); return shellExec; },
+  });
+
+  const remoteOverrides = (reach: RemoteBranchReach | null, calls?: Array<{ botId: string; threadId: string }>): Partial<BotCodeBranchRouteDeps> => ({
+    tasks: () => [{ threadId: "t-remote", title: "On the bot", cwd: botRepo }],
+    threadWritable: (_bot, threadId) => threadId === "t-remote",
+    messages: () => ({ messages: [bash("git checkout -b feat/on-bot", NOW - 60_000)] }),
+    repository: () => undefined,
+    remote: remoteDeps(reach, calls),
+  });
+
+  const online: RemoteBranchReach = { computer: true, online: true, host: "Studio de Max", osKnown: true };
+  const qr = (branch = "feat/on-bot") => q(branch, "t-remote");
+
+  it("reads the branch on the bot's computer and offers its actions", async () => {
+    const api = await serve(deps(remoteOverrides(online)));
+    const { status, body } = await api.get(`/api/bots/pepper/code/branch?${qr()}`);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ place: "remote", host: "Studio de Max", canPublish: true });
+    expect(body.state).toMatchObject({ exists: true, pushed: false, base: "main", isDefault: false });
+    expect(body.state.worktree).toBe(botRepo);
+    expect(body.state.changes).toEqual([{ path: "x.ts", status: "untracked" }]);
+  });
+
+  it("runs commit, diff (no card) and push on the bot's computer, and audits it there", async () => {
+    const calls: Array<{ botId: string; threadId: string }> = [];
+    const api = await serve(deps(remoteOverrides(online, calls)));
+    const commit = await api.post("/api/bots/pepper/code/branch/commit", { threadId: "t-remote", branch: "feat/on-bot", message: "On the bot" });
+    expect(commit.status).toBe(200);
+    expect(commit.body.sha).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(botRepo, "log", "-1", "--format=%s")).toBe("On the bot");
+    const diff = await api.get(`/api/bots/pepper/code/branch/diff?${qr()}`);
+    expect(diff.status).toBe(200);
+    expect(diff.body.files.map((file: { path: string }) => file.path)).toEqual(["x.ts"]);
+    const push = await api.post("/api/bots/pepper/code/branch/push", { threadId: "t-remote", branch: "feat/on-bot" });
+    expect(push.status).toBe(200);
+    expect(push.body.state).toMatchObject({ pushed: true, ahead: 0 });
+    // every command ran against this bot's own conversation, never another's
+    expect(calls.every((call) => call.botId === "pepper" && call.threadId === "t-remote")).toBe(true);
+  });
+
+  it("says offline, unknown folder and unknown OS plainly, not five disabled rows", async () => {
+    const offline = await serve(deps(remoteOverrides({ computer: true, online: false, host: "Studio de Max", osKnown: true })));
+    const offInfo = await offline.get(`/api/bots/pepper/code/branch?${qr()}`);
+    expect(offInfo.body).toMatchObject({ place: "remote", offline: true, host: "Studio de Max", canPublish: false, publishBlocked: "offline" });
+    expect((await offline.post("/api/bots/pepper/code/branch/push", { threadId: "t-remote", branch: "feat/on-bot" })).body.code).toBe("offline");
+
+    const noPath = await serve(deps({ ...remoteOverrides(online), tasks: () => [{ threadId: "t-remote", title: "On the bot", cwd: null }] }));
+    expect((await noPath.get(`/api/bots/pepper/code/branch?${qr()}`)).body).toMatchObject({ place: "remote", noPath: true, canPublish: false });
+
+    const windows = await serve(deps(remoteOverrides({ computer: true, online: true, host: "PC", osKnown: true, windows: true })));
+    expect((await windows.get(`/api/bots/pepper/code/branch?${qr()}`)).body).toMatchObject({ place: "remote", publishBlocked: "unknown_os", canPublish: false });
+  });
+
+  it("stays 'elsewhere' when the bot has no computer at all", async () => {
+    const api = await serve(deps({ ...remoteOverrides(null), remote: remoteDeps(null) }));
+    const info = await api.get(`/api/bots/pepper/code/branch?${qr()}`);
+    expect(info.body).toMatchObject({ place: "elsewhere", canPublish: false, publishBlocked: "elsewhere" });
+    expect((await api.post("/api/bots/pepper/code/branch/push", { threadId: "t-remote", branch: "feat/on-bot" })).body.code).toBe("elsewhere");
   });
 });
 

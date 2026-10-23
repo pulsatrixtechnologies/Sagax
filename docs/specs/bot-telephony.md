@@ -869,3 +869,41 @@ Toutes les questions R1 à R16 ont une réponse de JC (section 0), sauf :
   (a) La ligne de JC (le numéro repris de `voicebridge`), JC seul sur la
   liste, cryptic comme premier bot joignable [recommandé] ; (b) une ligne
   d'équipe GOX ; (c) attendre P3.
+
+## 9. Première tranche livrée (R13, 2026-10-21, ÉFVP 2026-10-22)
+
+Partie interne sûre, sans compte ni infrastructure nouvelle, en **pilote
+interne** (conditions de l'ÉFVP Loi 25 du 2026-10-22) :
+
+- **Garde téléphonique** (`server/telephony-guard.ts`, branchée dans le relais
+  `server/perspicax-mcp.ts`) : liste blanche. Avec les outils Twilio, un bot
+  lit, et envoie un texto (`Messages` create, qui garde sa carte
+  `external-message`, sans aucun champ `*Url` ni `*Callback`). Les recettes de
+  lecture (`read_action`, `find_*`) passent ; une action de lecture sur un outil
+  d'écriture ne passe pas. Un catalogue qui vise Twilio sous un autre nom
+  (sa description dans `tools/list`) est gardé de même, et un `flow_action`
+  qui nomme Twilio est refusé hors essai à blanc. Tout le reste est refusé : appels, numéros et
+  webhooks, flux, paiements, conférences, applications, domaines SIP, codes
+  courts, identifiants d'appelant, clés, comptes. Les noms d'outils sont
+  comparés séparateurs repliés (`twilio_api-write`) et par ressource
+  (`twilio_api__Calls_write`). Les `_dry_run` restent permis.
+- **Pilote désactivé par défaut** : un admin l'active dans Réglages >
+  Organisation > Appels téléphoniques, y saisit le **numéro de rappel**
+  (obligatoire : sans numéro, aucun appel) et tient la liste **« Ne pas
+  appeler »**, vérifiée à la carte et de nouveau au départ de l'appel.
+- **`place_phone_call`** (`shared/outbound-call.ts`, `server/outbound-calls.ts`) :
+  Canada seulement (R10, sans N11, 976 ni central 0 ou 1), ouverture fixe
+  construite par Sagax (assistant IA, au nom de qui, numéro de rappel, « pour
+  ne plus recevoir d'appels, dites-le au numéro de rappel »), puis objectif et
+  message dits deux fois, rappel du numéro, raccroche (R16 : jamais l'`Url`
+  ni le `Twiml` du bot ; pas de détection de répondeur). Essai à blanc par
+  `twilio_api__write` du profil Perspicax de la personne, puis carte « Appel
+  vers … » : la personne **coche le numéro pour le confirmer**, puis Appeler.
+  Une approbation = un appel, liée au numéro, aux mots, au bot et au nom
+  annoncé, 15 minutes ; jamais « Toujours permettre » (5.7). Le bot principal
+  peut refuser un appel, pas le confirmer. Limites du pilote par personne et
+  par jour : 20 cartes, 10 appels. Rétention 30 jours ; journaux et audit
+  avec le numéro masqué.
+- Limite assumée : sans le crochet de la ligne (P0) ni Media Streams (P2),
+  l'appel est **à sens unique**. La suite (deux voix, liste blanche, heures,
+  plafonds réglables, SVI, SMS entrants : P0 à P5) attend l'ÉFVP complète.

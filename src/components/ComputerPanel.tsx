@@ -37,7 +37,6 @@ import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { usePageVisible } from "@/lib/page-visible";
 import { listenLiveFrames } from "@/lib/live-events";
 import { CloudScreenPreview } from "./CloudScreenPreview";
-import { RemoteSessionControl } from "./remote-session/RemoteSessionControl";
 import { isActiveTurnRefusal, isRemoteScreenshotContention } from "@/lib/remote-desktop";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
@@ -68,6 +67,7 @@ import { BrowserScreen, OrgComputerTab, ScreenPicker } from "./computer/OrgCompu
 import { BrowserPanel } from "./BrowserPanel";
 import { browserAvailable, builtInBrowserEnabled } from "@/lib/feature-flags";
 import { browserTeachPending, onBrowserTeachRequest } from "@/lib/teach-request";
+import { withTeachBot } from "@/lib/computer-teach-client";
 
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 
@@ -988,7 +988,8 @@ export function ComputerPanel({
       if (!viewerUrl) throw new LocalizedPanelError("computer.err.noDesktopLink");
 
       if (window.ogb?.desktopViewer) {
-        const opened = await window.ogb.desktopViewer.open(viewerUrl, t("computer.viewerTitle", { name: bot.name }), bot.id);
+        // the app's own viewer offers Teach on this bot's computer (parity R7)
+        const opened = await window.ogb.desktopViewer.open(withTeachBot(viewerUrl, bot), t("computer.viewerTitle", { name: bot.name }), bot.id);
         if (!opened) throw new LocalizedPanelError("computer.err.openDesktop");
       } else if (fallbackTab) {
         fallbackTab.location.replace(viewerUrl);
@@ -1285,7 +1286,6 @@ export function ComputerPanel({
 
   const deviceBody = (
       <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-          <RemoteSessionControl botId={bot.id} />
           {soloPicker}
           {/* Screen preview. Works on lives in Edit persona > Access. */}
           <div className="mb-1.5 mt-2 flex items-center justify-between text-[13px] text-ink-secondary">
@@ -1590,7 +1590,6 @@ export function ComputerPanel({
   // (src/components/computer/OrgComputerTab.tsx).
   const body = bridgeStatus ? (
     <div className={embedded ? "pb-5" : "flex-1 overflow-y-auto px-5 pb-5"}>
-      <RemoteSessionControl botId={bot.id} />
       <OrgComputerTab
         bridge={bridgeStatus}
         // The conversation's own place (its pin, else Works on), not the

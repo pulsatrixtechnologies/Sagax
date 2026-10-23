@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 import { canEditConfig } from "@/lib/viewer";
 import { FONT_IDS, applyFont, readFont, type FontId } from "@/lib/fonts";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
+import { setShowAllHistory, setShowSuggestions, useShowAllHistory, useShowSuggestions } from "@/lib/panel-visibility";
 import { setShowThreads, setThreadsLocation, useShowThreadsChoice, useThreadsLocationChoice, type ThreadsLocation } from "@/lib/thread-preferences";
 import { FRESH_TOPIC_AFTER_CHOICES, useFreshTopicAfter, writeFreshTopicAfter, type FreshTopicAfterHours } from "@/lib/fresh-topic";
 import { setShowUnreadyProviders, useShowUnreadyProviders } from "@/lib/unready-providers-preference";
@@ -29,6 +30,9 @@ import { BOT_HOTKEY_MODIFIERS, botHotkeyModifierChoice, botHotkeysChoice, hardwa
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { SidebarHiddenSettings } from "../SidebarHiddenSettings";
 import { SkinPicker } from "../SkinPicker";
+import { setBotAccentEnabled, useBotAccentEnabled } from "@/lib/bot-accent";
+import { setHdMascotsEnabled, useHdMascots } from "@/lib/hd-mascots-preference";
+import { HD_CHARACTERS } from "../hd-mascots/manifest";
 import { AppIconPicker, appIconAvailable } from "./AppIconPicker";
 import { BackgroundEffectsPicker } from "./BackgroundEffectsPicker";
 
@@ -170,6 +174,33 @@ function FreshTopicRow() {
         }))}
       />
     </DescribedRow>
+  );
+}
+
+/** The open bot's colour as the app's accent (src/lib/bot-accent.ts). */
+function BotAccentRow() {
+  const enabled = useBotAccentEnabled();
+  return (
+    <DescribedRow label={t("settings.botAccent.title")} description={t("settings.botAccent.subtitle")} rowId="botAccent">
+      <Switch checked={enabled} aria-label={t("settings.botAccent.title")} onClick={() => setBotAccentEnabled(!enabled)} />
+    </DescribedRow>
+  );
+}
+
+/** HD mascots (src/lib/hd-mascots-preference.ts): painted art for the
+ * characters that ship it, or the classic vector look everywhere. Shown only
+ * while at least one character has HD art. */
+export function HdMascotsGroup({ characters = HD_CHARACTERS }: { characters?: readonly string[] }) {
+  const enabled = useHdMascots();
+  if (characters.length === 0) return null;
+  return (
+    <div data-settings-card="appearance.mascots-hd">
+      <SettingsGroup title={t("settings.group.mascots")} groupId="mascots">
+        <DescribedRow label={t("settings.hdMascots.title")} description={t("settings.hdMascots.subtitle")} rowId="hdMascots">
+          <Switch checked={enabled} aria-label={t("settings.hdMascots.title")} onClick={() => setHdMascotsEnabled(!enabled)} />
+        </DescribedRow>
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -361,6 +392,8 @@ export function AppearanceSettings() {
   const unready = useShowUnreadyProviders();
   const logo = useShowSidebarLogo();
   const routinesBadge = useShowRoutinesBadge();
+  const suggestions = useShowSuggestions();
+  const allHistory = useShowAllHistory();
   return (
     <>
       <SettingsGroup title={t("settings.group.interface")} groupId="interface">
@@ -370,6 +403,7 @@ export function AppearanceSettings() {
       <div data-settings-card="appearance.skin">
         <SettingsGroup title={t("settings.skin.title")} groupId="skin">
           <SkinPicker />
+          <BotAccentRow />
         </SettingsGroup>
       </div>
       {/* the effect behind the conversation, chosen as the skins are (the
@@ -392,9 +426,12 @@ export function AppearanceSettings() {
         <SidebarDensityRow />
         {advanced && <SwitchLine label={t("settings.sidebarLogo.title")} ariaLabel={t("settings.sidebarLogo.show")} checked={logo} onChange={setShowSidebarLogo} rowId="sidebarLogo" />}
         {advanced && <SwitchLine label={t("settings.routinesBadge.title")} ariaLabel={t("settings.routinesBadge.show")} checked={routinesBadge} onChange={setShowRoutinesBadge} rowId="routinesBadge" />}
+        <SwitchLine label={t("settings.showSuggestions.title")} ariaLabel={t("settings.showSuggestions.show")} checked={suggestions} onChange={setShowSuggestions} rowId="showSuggestions" />
+        <SwitchLine label={t("settings.allHistory.title")} ariaLabel={t("settings.allHistory.show")} checked={allHistory} onChange={setShowAllHistory} rowId="allHistory" />
         {/* Simple: the sidebar's own "Hidden (N)" row brings entries back. */}
         {advanced && <SidebarHiddenSettings />}
       </SettingsGroup>
+      <HdMascotsGroup />
       <AccessibilityGroup />
       <SettingsGroup title={t("settings.group.desktop")} groupId="desktop">
         <AppIconRow />

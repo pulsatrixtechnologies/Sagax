@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  cardRuleCandidate,
   destructiveKindOf,
   matchOwnerRule,
   normalizeRuleTool,
@@ -11,8 +12,12 @@ import {
   ruleCandidateFor,
   ruleCoversExactScope,
   WHOLE_CALL_KEY,
+  APP_KEY,
+  APP_RULE_TOOL,
+  ruleInputFor,
   ruleScopeFor,
   scopeKeepable,
+  scopeRemembers,
   type OwnerRule,
   type RuleCall,
 } from "./owner-approval.ts";
@@ -176,6 +181,49 @@ describe("destructive actions need their own explicit Always rule", () => {
   });
   it("a deny rule covers a destructive call too", () => {
     expect(ownerDecision({ mode: "bypass", rules: [rule({ scope: {}, behavior: "deny" })], call: call(ticketDelete) })).toMatchObject({ kind: "deny" });
+  });
+});
+
+describe("a destructive shell command is a delete, in every mode (2026-10-22)", () => {
+  // describeApproval reads a shell tool only as "execute", so before this a
+  // native `rm -rf` slipped through the owner auto/bypass destructive guard
+  // (owner-approval.ts) and ran with no card. The custom-rules risk engine
+  // already extracts the delete from the same line; the owner route now does
+  // too. Covers the built-in Bash, an engine's own shell tool and a folded
+  // native command line alike.
+  const BASH = "Bash";
+  const SHELL = "mcp__sagax-desktop__run_command";
+  const shell = (command: string) => JSON.stringify({ command });
+  const shellCall = (tool: string, command: string, over: Partial<RuleCall> = {}): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool, input: shell(command), ...over });
+
+  it("reads rm as a delete whichever tool wraps the line, and leaves a plain command alone", () => {
+    expect(destructiveKindOf({ tool: BASH, input: shell("rm -rf /tmp/zzz") })).toBe("delete");
+    expect(destructiveKindOf({ tool: SHELL, input: shell("rm -rf /tmp/zzz") })).toBe("delete");
+    expect(destructiveKindOf({ tool: BASH, input: shell("rm -rf /tmp/zzz && echo done") })).toBe("delete");
+    // a plain command and a read are not deletes
+    expect(destructiveKindOf({ tool: BASH, input: shell("printf hello") })).toBeUndefined();
+    expect(destructiveKindOf({ tool: BASH, input: shell("ls -la /tmp") })).toBeUndefined();
+    expect(destructiveKindOf({ tool: BASH, input: shell("npm run build") })).toBeUndefined();
+  });
+
+  it("auto and bypass hold a card for it unless an allow rule was made for a delete; a plain command still auto-approves", () => {
+    for (const mode of ["auto", "bypass"] as const) {
+      expect(ownerDecision({ mode, rules: [], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
+        .toMatchObject({ kind: "card", reason: "destructive", destructive: "delete" });
+      // a wide allow rule (any target) never covers it (same guard as an MCP delete)
+      expect(ownerDecision({ mode, rules: [rule({ scope: {} })], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
+        .toMatchObject({ kind: "card", reason: "destructive", destructive: "delete" });
+    }
+    expect(ownerDecision({ mode: "auto", rules: [], call: shellCall(BASH, "printf hello") }))
+      .toEqual({ kind: "allow", source: "owner-auto" });
+  });
+
+  it("a deny rule still denies it and a hold still holds, as for any destructive call", () => {
+    const denyShell: OwnerRule = { id: "d1", ownerId: ALICE, botId: "bot-a", tool: "Bash", scope: {}, behavior: "deny", description: "no shell", createdAt: 1, updatedAt: 1 };
+    expect(ownerDecision({ mode: "bypass", rules: [denyShell], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
+      .toMatchObject({ kind: "deny" });
+    expect(ownerDecision({ mode: "auto", rules: [], call: shellCall(BASH, "rm -rf /tmp/zzz"), personMustAnswer: true }))
+      .toEqual({ kind: "card", reason: "hold" });
   });
 });
 
@@ -393,5 +441,143 @@ describe("Always allow keeps a command's one program (JC 2026-10-20)", () => {
     const candidate = ruleCandidateFor({ tool: RUN, input: JSON.stringify({ command: "npm test" }) }, undefined, { wholeCall: true });
     expect(candidate.scope.program).toBeUndefined();
     expect(candidate.scope[WHOLE_CALL_KEY]).toBeDefined();
+  });
+});
+
+// 2026-10-21 (review of #938): Codex and the ACP engines (Grok, Cursor,
+// Qwen, Kimi, OpenCode, Hermes, Droid) report a shell line as `command`
+// beside no `input`. The rule must read that line, at creation and at each
+// use, and never keep an empty scope (which would cover every command).
+describe("a shell line reported beside no input (Codex, ACP)", () => {
+  const SHELL = "shell";
+  const CWD = "/srv/acme/app";
+  const engineCall = (command: string | undefined, input?: string): RuleCall => ({
+    ownerId: ALICE, botId: "bot-a", tool: SHELL, ...(ruleInputFor(input, command) !== undefined ? { input: ruleInputFor(input, command)! } : {}), cwd: CWD,
+  });
+  const saved = (candidate: NonNullable<ReturnType<typeof cardRuleCandidate>>): OwnerRule => ({
+    id: "s1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description,
+    ...(candidate.from ? { from: candidate.from } : {}), createdAt: 1, updatedAt: 1,
+  });
+
+  it("reads the line as the call's command, keeping the other arguments", () => {
+    expect(JSON.parse(ruleInputFor(undefined, "npm test")!)).toEqual({ command: "npm test" });
+    expect(JSON.parse(ruleInputFor(JSON.stringify({ reason: "tests" }), "npm test")!)).toEqual({ reason: "tests", command: "npm test" });
+    // a call that names its command already keeps it as is
+    expect(ruleInputFor(JSON.stringify({ command: "ls" }), "npm test")).toBe(JSON.stringify({ command: "ls" }));
+    expect(ruleInputFor(undefined, undefined)).toBeUndefined();
+    expect(ruleInputFor(undefined, "   ")).toBeUndefined();
+  });
+
+  it("Codex: an admin's Always allow keeps the program in its folder, never every command", () => {
+    const candidate = cardRuleCandidate({ tool: SHELL, command: "npm test", cwd: CWD }, { from: "admin" });
+    expect(candidate).toMatchObject({ scope: { program: "npm", cwd: CWD }, from: "admin" });
+    const rule = saved(candidate!);
+    expect(matchOwnerRule([rule], engineCall("npm run build"))?.id).toBe("s1");
+    expect(matchOwnerRule([rule], engineCall("uname -a"))).toBeUndefined();
+    expect(matchOwnerRule([rule], engineCall("npm test; rm -rf ~"))).toBeUndefined();
+    // a call with no line at all is never covered
+    expect(matchOwnerRule([rule], engineCall(undefined))).toBeUndefined();
+  });
+
+  it("ACP: the same with other arguments beside the line", () => {
+    const candidate = cardRuleCandidate({ tool: SHELL, input: JSON.stringify({ title: "Run tests" }), command: "git status", cwd: CWD }, { from: "admin" });
+    expect(candidate).toMatchObject({ scope: { program: "git", cwd: CWD }, from: "admin" });
+    const rule = saved(candidate!);
+    expect(matchOwnerRule([rule], engineCall("git log -1", JSON.stringify({ title: "Last commit" })))?.id).toBe("s1");
+    expect(matchOwnerRule([rule], engineCall("hostname", JSON.stringify({ title: "Host" })))).toBeUndefined();
+  });
+
+  it("an ordinary owner card of such an engine keeps the program too", () => {
+    expect(cardRuleCandidate({ tool: SHELL, command: "npm test", cwd: CWD }, {})?.scope).toEqual({ program: "npm", cwd: CWD });
+  });
+
+  it("never offers a rule for a call with no readable arguments", () => {
+    expect(cardRuleCandidate({ tool: SHELL, cwd: CWD }, { from: "admin" })).toBeUndefined();
+    expect(cardRuleCandidate({ tool: SHELL }, { from: "hold", held: true })).toBeUndefined();
+    expect(cardRuleCandidate({ tool: SHELL, input: "{}" }, {})).toBeUndefined();
+    expect(cardRuleCandidate({ tool: SHELL, input: "  " }, { from: "origin" })).toBeUndefined();
+  });
+
+  it("an empty scope, or the fingerprint of no arguments, is never remembered", () => {
+    expect(scopeRemembers({})).toBe(false);
+    expect(scopeRemembers({ [WHOLE_CALL_KEY]: ruleCandidateFor({ tool: SHELL }, undefined, { wholeCall: true }).scope[WHOLE_CALL_KEY]! })).toBe(false);
+    expect(scopeRemembers({ [WHOLE_CALL_KEY]: ruleCandidateFor({ tool: SHELL, input: "{}" }, undefined, { wholeCall: true }).scope[WHOLE_CALL_KEY]! })).toBe(false);
+    expect(scopeRemembers({ program: "npm" })).toBe(true);
+  });
+
+  // review of #938, finding 3: a held admin card (safety hold,
+  // dangerouslyDisableSandbox, Codex additionalPermissions or network,
+  // requiresExplicitApproval) keeps the whole request, never the program
+  it("a held admin card keeps the whole request: npm install kept, npm run deploy asks", () => {
+    const candidate = cardRuleCandidate({ tool: "Bash", input: JSON.stringify({ command: "npm install", dangerouslyDisableSandbox: true }), command: "npm install", cwd: CWD }, { from: "admin", held: true });
+    expect(candidate?.scope.program).toBeUndefined();
+    expect(candidate?.scope).toMatchObject({ command: "npm install", cwd: CWD });
+    expect(candidate?.scope[WHOLE_CALL_KEY]).toBeDefined();
+    const rule = { ...saved(candidate!), tool: candidate!.tool };
+    const bash = (command: string, extra: Record<string, unknown> = {}): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool: "Bash", input: JSON.stringify({ command, ...extra }), cwd: CWD });
+    expect(matchOwnerRule([rule], bash("npm run deploy"))).toBeUndefined();
+    expect(matchOwnerRule([rule], bash("npm install"))).toBeUndefined();
+    expect(matchOwnerRule([rule], bash("npm install", { dangerouslyDisableSandbox: true }))?.id).toBe("s1");
+  });
+});
+
+describe("app rules on the person's own computer (parité R10, ligne 80)", () => {
+  const CLICK = "mcp__computer__click";
+  const TYPE = "mcp__sagax-desktop__computer_use";
+  const clickSafari = JSON.stringify({ pid: 812, element_index: 5 });
+  const typeSafari = JSON.stringify({ tool_name: "type_text", arguments: { pid: 812, text: "bonjour" } });
+  const SAFARI = { label: "Safari", bundleId: "com.apple.Safari", team: "apple" };
+  const appRule = (candidate: NonNullable<ReturnType<typeof cardRuleCandidate>>): OwnerRule => ({
+    id: "r_app", ownerId: ALICE, botId: "bot_1", tool: candidate.tool, scope: candidate.scope, behavior: "allow",
+    description: candidate.description, ...(candidate.from ? { from: candidate.from } : {}), createdAt: 1, updatedAt: 1,
+  });
+
+  it("keeps the signed app the server read, never the whole call", () => {
+    const candidate = cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {});
+    expect(candidate).toMatchObject({ tool: APP_RULE_TOOL, scope: { [APP_KEY]: "Safari", bundle: "com.apple.Safari", team: "apple" } });
+    expect(candidate?.from).toBeUndefined();
+    expect(candidate?.description).toContain("Safari");
+  });
+
+  it("covers every coverable screen action of that app, never another app or another signature", () => {
+    const rule = appRule(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {})!);
+    const call = (over: Partial<RuleCall>) => ({ ownerId: ALICE, botId: "bot_1", tool: CLICK, input: clickSafari, app: SAFARI, ...over });
+    expect(matchOwnerRule([rule], call({}))?.id).toBe("r_app");
+    expect(matchOwnerRule([rule], call({ tool: TYPE, input: typeSafari }))?.id).toBe("r_app");
+    expect(matchOwnerRule([rule], call({ app: { label: "Notes", bundleId: "com.apple.Notes", team: "apple" } }))).toBeUndefined();
+    // a copied "Safari" signed by someone else is another app
+    expect(matchOwnerRule([rule], call({ app: { label: "Safari", bundleId: "com.apple.Safari", team: "ABCDE12345" } }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ app: { label: "Safari", bundleId: "com.evil.Safari", team: "apple" } }))).toBeUndefined();
+    // the server read no app (another turn, another computer): no match
+    expect(matchOwnerRule([rule], call({ app: undefined }))).toBeUndefined();
+    // a call an app rule never covers (foreground, a file written)
+    expect(matchOwnerRule([rule], call({ input: JSON.stringify({ pid: 812, delivery_mode: "foreground" }) }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ input: JSON.stringify({ pid: 812, debug_image_out: "/tmp/a.png" }) }))).toBeUndefined();
+    // another bot, another person, a tool that is not a screen action
+    expect(matchOwnerRule([rule], call({ botId: "bot_2" }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ ownerId: BOB }))).toBeUndefined();
+    expect(matchOwnerRule([rule], call({ tool: "mcp__sagax-desktop__run_command", input: JSON.stringify({ command: "ls" }) }))).toBeUndefined();
+  });
+
+  it("an app rule missing its signature never covers anything (no empty scope, no older label-only rule)", () => {
+    const base = appRule(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {})!);
+    const call = { ownerId: ALICE, botId: "bot_1", tool: CLICK, input: clickSafari, app: SAFARI };
+    expect(matchOwnerRule([{ ...base, scope: {} }], call)).toBeUndefined();
+    expect(matchOwnerRule([{ ...base, scope: { [APP_KEY]: "Safari" } }], call)).toBeUndefined();
+  });
+
+  it("answers an ordinary card, never a held card, a key or a turn that is not the person's own", () => {
+    const rule = appRule(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, {})!);
+    const call = { ownerId: ALICE, botId: "bot_1", tool: CLICK, input: clickSafari, app: SAFARI };
+    expect(ownerDecision({ mode: "approval", rules: [rule], call })).toMatchObject({ kind: "allow", source: "owner-rule" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, autonomyRefused: true }).kind).toBe("card");
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, stepUpRequired: true }).kind).toBe("card");
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, personMustAnswer: true }).kind).toBe("card");
+  });
+
+  it("a held, an admin's or an origin card keeps its own rule", () => {
+    for (const situation of [{ held: true }, { from: "admin" as const }, { from: "origin" as const }]) {
+      expect(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, situation)?.tool).not.toBe(APP_RULE_TOOL);
+    }
   });
 });

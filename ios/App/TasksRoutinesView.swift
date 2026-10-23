@@ -351,6 +351,9 @@ struct TasksRoutinesView: View {
                     if routine.mayRun { Button("Run now") { Task { await runNow(routine) } }.tint(Theme.accent) }
                 }
                 .contextMenu {
+                    if let expression = routine.schedule.expression, routine.schedule.type == .cron {
+                        Button(String(localized: "Copy cron expression"), systemImage: "doc.on.doc") { PlatformBridge.copyToPasteboard(expression) }
+                    }
                     if routine.mayRun {
                         Button("Run now", systemImage: "play.fill") { Task { await runNow(routine) } }
                     }

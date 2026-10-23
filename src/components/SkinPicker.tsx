@@ -26,6 +26,7 @@ import {
   schemesOf,
   SKIN_DEPTHS,
   SKIN_TEXTURES,
+  variantsForScheme,
   variantSkin,
   visibleFamilies,
   type SkinFamily,
@@ -132,7 +133,9 @@ export function SkinPicker() {
   const place = placeOfSkin(active, activeTint);
   const [, rerender] = useState(0);
   // Secret families stay out of the list until this device has found them.
-  const [families] = useState(() => visibleFamilies(readRetroUnlocked(), place.family.id));
+  const [unlockedFamilies] = useState(() => visibleFamilies(readRetroUnlocked(), place.family.id));
+  // and a family with no look in the scheme worn now is not offered (Hibou 98 has only a light one); the worn family stays
+  const families = unlockedFamilies.filter((family) => family.id === place.family.id || variantsForScheme(family, place.scheme).length > 0);
   const remembered = readRememberedVariants();
   const mode: SkinModeChoice = auto && canFollowSystem(place.variant) ? "auto" : place.scheme;
 
@@ -191,14 +194,16 @@ export function SkinPicker() {
         })}
       </div>
       {GROUPS.map((group) => {
-        const variants = place.family.variants.filter((variant) => variant.group === group);
-        if (variants.length === 0 || place.family.variants.length < 2) return null;
+        // only the moods that exist in the scheme worn now; Auto stays in the mode pill
+        const offered = variantsForScheme(place.family, place.scheme, place.variant);
+        const variants = offered.filter((variant) => variant.group === group);
+        if (variants.length === 0 || offered.length < 2) return null;
         return (
           <CompactRow key={group} label={t(`settings.skin.group.${group}`)} rowId={`skinVariant-${group}`}>
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               {variants.map((variant) => {
                 const selected = variant.id === place.variant.id;
-                // a variant lacking the scheme worn now shows the one it has (Cyberpunk is dark, Candy light)
+                // the swatch shows the skin of the scheme worn now; only the worn variant can lack it
                 const swatchScheme = schemesOf(variant).includes(place.scheme) ? place.scheme : schemesOf(variant)[0];
                 return (
                   <button

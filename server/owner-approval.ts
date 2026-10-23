@@ -28,7 +28,9 @@ import { createHash } from "node:crypto";
 import { approvalAction, describeApproval, parseArgs, parseToolId, type ApprovalWords, ENGLISH_WORDS } from "../shared/approval-describe.ts";
 import { sagaxFolder } from "../shared/human-id.ts";
 import { singleProgramOf } from "../shared/read-only-command.ts";
+import { readShell } from "../shared/custom-rules.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
+import { screenAppTarget, type ScreenAppIdentity } from "../shared/computer-app.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
 
 export const BOT_PERMISSION_MODES = ["approval", "auto", "bypass"] as const;
@@ -84,6 +86,12 @@ export interface RuleCall {
    * reports it: an exact command is bound to it (`./deploy.sh` elsewhere is
    * another script). */
   cwd?: string;
+  /** 2026-10-21 (parité R10, ligne 80): the app a screen action of the
+   * person's own computer acts on, as the SERVER read it from the call's
+   * process id (server/computer-app.ts): its name, bundle id and signing
+   * team, never from the call's arguments.
+   * Set only for the person's own turn on their own computer. */
+  app?: ScreenAppIdentity;
 }
 
 /** `mcp__srv__tool` and `srv__tool` are one tool; a built-in keeps its name. */
@@ -205,9 +213,31 @@ export function wholeCallDigest(input: string | undefined): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 32);
 }
 
+/** The scope keys of an app rule: the name, bundle id and signing team the
+ * server read (review of #954: bound to the signature, not the folder). */
+export const APP_KEY = "app";
+export const APP_BUNDLE_KEY = "bundle";
+export const APP_TEAM_KEY = "team";
+const APP_KEYS = [APP_KEY, APP_BUNDLE_KEY, APP_TEAM_KEY] as const;
+/** The tool an app rule is kept under: it covers every screen action of
+ * that one app (see, click, type), never another app, never a call whose
+ * app the server did not read. */
+export const APP_RULE_TOOL = "computer_app";
+const MAX_APP_LABEL = 80;
+
 /** The call's scope, its shell folder included when the engine reports one. */
-export function callScopeFor(call: Pick<RuleCall, "input" | "cwd">): RuleScope {
+function appScope(app: ScreenAppIdentity): RuleScope | null {
+  const label = app.label.trim();
+  const bundle = app.bundleId.trim();
+  const team = app.team.trim();
+  if (!label || !bundle || !team || label.length > MAX_APP_LABEL || bundle.length > 255 || team.length > 40) return null;
+  return { [APP_KEY]: label, [APP_BUNDLE_KEY]: bundle, [APP_TEAM_KEY]: team };
+}
+
+export function callScopeFor(call: Pick<RuleCall, "input" | "cwd" | "app">): RuleScope {
   const scope = ruleScopeFor(call.input);
+  const app = call.app ? appScope(call.app) : null;
+  if (app) Object.assign(scope, app);
   const cwd = call.cwd?.trim();
   if (cwd && (scope.command !== undefined || scope.cmd !== undefined)) {
     // a folder Sagax made for this bot (a conversation's, a parallel task's,
@@ -239,6 +269,20 @@ export function destructiveKindOf(call: Pick<RuleCall, "tool" | "input" | "hints
   const described = describeApproval(call.tool, call.input, call.hints);
   if (described.risk === "destructive") return "delete";
   const args = parseArgs(call.input);
+  // 2026-10-22: describeApproval reads a shell tool only as "execute" and
+  // never parses the line, so a native `rm -rf`, `shred`, `find -delete`...
+  // used to slip past the owner auto/bypass destructive guard and run with no
+  // card. The custom-rules risk engine already extracts the delete from the
+  // same line (shared/custom-rules.ts readShell); the owner route reads it the
+  // same way, so a destructive shell line is a delete in every mode unless an
+  // allow rule was made for a delete. The line arrives under command/cmd/script
+  // (the built-in Bash, an engine's own shell tool, and the folded native
+  // command line index.ts builds for Codex and the ACP engines alike).
+  const shellLine = typeof args?.command === "string" ? args.command
+    : typeof args?.cmd === "string" ? args.cmd
+      : typeof args?.script === "string" ? args.script
+        : undefined;
+  if (shellLine && readShell(shellLine).actions.has("delete")) return "delete";
   const writes = described.risk === "write" || described.risk === "execute";
   if (BULK_TOOL.test(parseToolId(call.tool).name)) return "bulk";
   if (args && writes && ID_LIST_KEYS.some((key) => Array.isArray(args[key]) && (args[key] as unknown[]).length >= 2)) return "bulk";
@@ -263,7 +307,10 @@ function sameText(a: string, b: string): boolean {
 export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScope, destructive: DestructiveKind | undefined): boolean {
   if (!sameText(rule.ownerId, call.ownerId)) return false;
   if (rule.botId !== null && rule.botId !== call.botId) return false;
-  if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
+  if (rule.tool === APP_RULE_TOOL) {
+    // an app rule: a screen action whose app the server read, that same app
+    if (!APP_KEYS.every((key) => key in rule.scope) || !call.app || !screenAppTarget(call.tool, call.input)) return false;
+  } else if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
   if (rule.behavior === "allow" && Object.keys(rule.scope).length) {
     for (const key of Object.keys(callScope)) {
       if (STRICT_KEY_SET.has(key) && !(key in rule.scope) && !(PROGRAM_KEY in rule.scope && (key === "command" || key === "cmd"))) return false;
@@ -426,6 +473,88 @@ export function ruleCandidateFor(call: Pick<RuleCall, "tool" | "input" | "hints"
     scope,
     ...(destructive ? { destructive } : {}),
     description: describeRule(call.tool, scope, words, call.input),
+  };
+}
+
+/** 2026-10-21 (review of #938): the arguments a rule reads for a call.
+ * Codex and the ACP engines (Grok, Cursor, Qwen, Kimi, OpenCode, Hermes,
+ * Droid) report a shell line as the event's `command` beside no `input`: the
+ * line is read as the call's `command` argument, at a rule's creation and at
+ * each use, so its program (or exact text) is kept, never an empty scope that
+ * would cover every command of the bot. A call that names its command
+ * already, or whose input is not a JSON object, is kept as is. */
+export function ruleInputFor(input: string | undefined, command: string | undefined): string | undefined {
+  const line = typeof command === "string" && command.trim() ? command : undefined;
+  if (!line) return input;
+  if (input === undefined || !input.trim()) return JSON.stringify({ command: line });
+  const args = parseArgs(input);
+  if (!args || "command" in args || "cmd" in args) return input;
+  return JSON.stringify({ ...args, command: line });
+}
+
+const NO_ARGUMENT_DIGESTS: ReadonlySet<string> = new Set([wholeCallDigest(undefined), wholeCallDigest("{}")]);
+
+/** 2026-10-21 (review of #938): whether a scope may be kept from a card. An
+ * empty scope is the whole tool, and the fingerprint of a call with no
+ * arguments covers every such call (on main, every input-less shell line of
+ * Codex or an ACP engine): neither is ever saved from a card. "Any target"
+ * stays the person's explicit choice on their own rule (PATCH anyTarget). */
+export function scopeRemembers(scope: RuleScope): boolean {
+  const keys = Object.keys(scope);
+  if (!keys.length) return false;
+  return !(keys.length === 1 && keys[0] === WHOLE_CALL_KEY && NO_ARGUMENT_DIGESTS.has(scope[WHOLE_CALL_KEY]!));
+}
+
+/** What "Always allow" or "Always deny" on a permission card would keep, or
+ * undefined when nothing safe can be kept.
+ * - an ordinary card (no `from`): the target, a command as its one program;
+ * - a card that never had a rule (`from`: an admin's, a held one, a turn
+ *   that is not the person's own) keeps the whole request, every argument;
+ * - 2026-10-21 (JC: "Toujours permettre" on a member's bot must stick): on
+ *   an admin's card (or a holder's), the engine's own shell line is kept like
+ *   on a solo bot, as its one program in its folder (else its exact text),
+ *   for that bot only; the engine writes a new `description` beside each
+ *   command, so the whole request never matched again;
+ * - review of #938: a held card (a safety hold, a sandbox widening, Codex
+ *   additional permissions or network, requiresExplicitApproval) keeps the
+ *   whole request even when it is an admin's card. */
+export function cardRuleCandidate(
+  call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
+  situation: { from?: RuleSituation; held?: boolean },
+  words: ApprovalWords = ENGLISH_WORDS,
+): (RuleCandidate & { from?: RuleSituation }) | undefined {
+  // 2026-10-21 (parité R10, ligne 80): a screen action on the person's own
+  // computer whose app the server read keeps that app, never more: "Toujours
+  // permettre" then covers seeing, clicking and typing in that one app.
+  // Only an ordinary card: a held card, an admin's card and a turn that is
+  // not the person's own keep their own rule (review of R10).
+  const app = call.app && appScope(call.app) ? call.app : null;
+  if (app && situation.held !== true && situation.from === undefined && screenAppTarget(call.tool, call.input)) {
+    return appRuleCandidate(app, words);
+  }
+  const input = ruleInputFor(call.input, call.command);
+  if (input === undefined || !input.trim()) return undefined;
+  const args = parseArgs(input);
+  if (args && Object.keys(args).length === 0) return undefined;
+  const held = situation.held === true || situation.from === "hold";
+  const nativeShell = situation.from === "admin" && !held && typeof call.command === "string" && call.command.trim().length > 0;
+  const candidate = ruleCandidateFor({ tool: call.tool, input, ...(call.cwd ? { cwd: call.cwd } : {}) }, words, {
+    wholeCall: situation.from !== undefined && !nativeShell,
+    programScope: !held && (situation.from !== "admin" || nativeShell),
+  });
+  if (!scopeKeepable(candidate.scope) || !scopeRemembers(candidate.scope)) return undefined;
+  return { ...candidate, ...(situation.from ? { from: situation.from } : {}) };
+}
+
+/** The rule "Toujours permettre" keeps for one app of this computer. */
+export function appRuleCandidate(identity: ScreenAppIdentity, words: ApprovalWords = ENGLISH_WORDS): RuleCandidate {
+  const key = "approval.rule.computerApp";
+  const app = identity.label.trim();
+  const worded = words.t(key, { app });
+  return {
+    tool: APP_RULE_TOOL,
+    scope: appScope(identity) ?? {},
+    description: (worded === key ? `Use ${app} on this computer (see it, click and type in it)` : worded).slice(0, 500),
   };
 }
 

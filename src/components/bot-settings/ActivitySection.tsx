@@ -32,6 +32,7 @@ import { api, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { openExternalLink } from "@/lib/app-links";
+import { useShowAllHistory, watchBotHistoryRequests } from "@/lib/panel-visibility";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import {
   activityLive,
@@ -287,7 +288,7 @@ export function SectionHeader({ icon, title, name, onOpenHistory }: { icon: Reac
  * keeps the history one click away. A first load that failed
  * is one quiet line; a later failed refresh keeps the last list. Split out so
  * it renders without the fetching. */
-export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunched, error = false, advanced = true, archived, branchActions }: {
+export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunched, error = false, advanced = true, archived, branchActions, showAllHistory = true }: {
   list: BotActivityList | null;
   live?: LiveView;
   actions: CardActions;
@@ -301,6 +302,8 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
   archived?: ReadonlySet<string>;
   /** The branches' menus (commit, push, ...); without it they have none. */
   branchActions?: BranchListActions;
+  /** The quiet "All history" row (Settings > Appearance; hidden by default in the panel). */
+  showAllHistory?: boolean;
 }) {
   const { coding, work, launched, showCoding } = panelSections(list, live, advanced, archived);
   if (list === null) {
@@ -325,7 +328,7 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
       )}
       {/* Only when no section title opens the history: same header as
           Routines, 28px like its row. */}
-      {!showCoding && (
+      {!showCoding && showAllHistory && (
         <div className="flex min-h-7 items-center">
           <SectionHeader
             icon={<History size={16} aria-hidden="true" className="text-ink-secondary" />}
@@ -341,6 +344,7 @@ export function PanelSections({ list, live, actions, onOpenHistory, onOpenLaunch
 
 export function ActivitySection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
+  const showAllHistory = useShowAllHistory();
   const feed = useBotActivityFeed(bot);
   const [open, setOpen] = useState<BotActivityItem | null>(null);
   const [all, setAll] = useState<BotActivityFilter | null>(null);
@@ -363,6 +367,8 @@ export function ActivitySection({ bot }: { bot: Bot }) {
     onChanged: () => { void feed.refresh(); },
   };
 
+  // The command palette's "<bot> history" opens it with the row hidden.
+  useEffect(() => watchBotHistoryRequests(bot.id, () => setAll("coding")), [bot.id]);
   useEffect(() => {
     if (feed.deepLinked) setOpen(feed.deepLinked);
   }, [feed.deepLinked]);
@@ -375,7 +381,7 @@ export function ActivitySection({ bot }: { bot: Bot }) {
 
   return (
     <>
-      <PanelSections list={list} live={feed.live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} advanced={advanced} archived={archived} branchActions={branchActions} />
+      <PanelSections list={list} live={feed.live} actions={actions} onOpenHistory={setAll} onOpenLaunched={openLaunched} error={error} advanced={advanced} archived={archived} branchActions={branchActions} showAllHistory={showAllHistory} />
       {all && (
         <ActivityListModal
           botId={bot.id}

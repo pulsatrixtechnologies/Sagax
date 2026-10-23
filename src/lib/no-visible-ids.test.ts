@@ -24,11 +24,20 @@ await import("@/components/dev-pods/all-pods");
 const { devPodDefinitions } = await import("@/components/dev-pods/registry");
 const { environmentData } = await import("@/components/dev-pods/pods/environment");
 const { folderLabel } = await import("@/components/dev-pods/sources");
-const { connectedAccountLabel, disconnectAccountConfirmation } = await import("@/components/plugins/connected-apps");
 const { personLabel: directoryPersonLabel } = await import("@/components/OrgDirectory");
 const { runAsOptionLabel } = await import("@/components/routines/RunAsField");
 const { ownerLabel } = await import("@/components/settings/OrgSharing");
 const { recipientLabel } = await import("@/components/bot-settings/AllowedRecipientsRow");
+const { ResourceUsageBody } = await import("@/components/resource-usage/ResourceUsageCard");
+const { ConnectorSetupBody } = await import("@/components/connector-setup/ConnectorSetupCard");
+const { resolveConnectorSetupTarget } = await import("../../shared/connector-setup");
+const { OutboundCard } = await import("@/components/OutboundCard");
+const { WidgetBody } = await import("@/components/widget/WidgetBody");
+const { netCheckWidget } = await import("../../shared/net-tools/widget");
+const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
+const { RoutineChangeLine } = await import("@/components/RoutineToggleLine");
+const { BotEmailAddressCard } = await import("@/components/bot-settings/BotEmailAddress");
+const { BotMailAddressLine } = await import("@/components/TypedTriggers");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -127,11 +136,76 @@ describe("no UUID on screen", () => {
     expect(text).toContain("ssh build-01");
   });
 
+  it("the usage card names the computer, never a sampler id or a UUID in its host name", () => {
+    const text = visibleText(createElement(ResourceUsageBody, {
+      view: { samplerId: "ru_0123456789abcdef01", target: "host", label: "Serveur web", hostLabel: BOT_ID },
+      snapshot: { id: "ru_0123456789abcdef01", state: "live", host: { hostname: `srv ${THREAD_ID}`, os: "Linux" }, frames: [{ t: 1, cpu: { total: 5 }, mem: null, disk: null, net: null, volumes: [{ name: `/mnt/${PERSON_ID}`, used: 1, total: 2 }] }] },
+      scheme: "light",
+    }));
+    expectNoUuid(text);
+    expect(text).not.toContain("ru_0123456789abcdef01");
+  });
+
+  it("the Connect card names the connector, never its card id, its owner digest or a UUID", () => {
+    const view = { id: "cs_0123456789abcdef01", connector: "microsoft-teams", label: "Microsoft Teams", provider: "grok" as const, url: "https://grok.com/connectors", status: "pending" as const, owner: "0123456789abcdef", createdAt: 1 };
+    const text = visibleText(createElement(ConnectorSetupBody, { view, checking: false, opened: true, onConnect: () => undefined, onDone: () => undefined }));
+    expectNoUuid(text);
+    expect(text).toContain("Microsoft Teams");
+    expect(text).not.toContain("cs_0123456789abcdef01");
+    expect(text).not.toContain("0123456789abcdef");
+    // a bot that passes an id as the connector's name gets no card at all
+    expect(resolveConnectorSetupTarget(BOT_ID)).toBeNull();
+  });
+
+  it("a phone call and a purchase card name the bot and the shop, never the record id (parité R13)", () => {
+    setLocale("fr");
+    const base = { id: THREAD_ID, role: "bot" as const, kind: "text" as const, text: "", at: 0 };
+    const call = { ...base, outbound: { kind: "call" as const, id: "call_0123456789abcdef", status: "pending" as const, botName: "Rocket", destination: "+1 514 555 0142", from: "+1 438 555 0100", purpose: "Confirmer", script: "Bonjour", callback: "+1 438 555 0199" } } as unknown as Message;
+    const pay = { ...base, outbound: { kind: "purchase" as const, id: "pay_0123456789abcdef", status: "done" as const, botName: "Rocket", merchant: "Boutique", amount: "45.20", currency: "CAD", items: [{ name: "Câble", quantity: 3 }], orderRef: "A-1" } } as unknown as Message;
+    for (const message of [call, pay]) {
+      const text = visibleText(createElement(OutboundCard, { message }));
+      expectNoUuid(text);
+      expect(text).not.toMatch(/(call|pay)_[0-9a-f]{16}/);
+    }
+    expect(visibleText(createElement(OutboundCard, { message: call }))).toContain("Appel vers +1 514 555 0142");
+    expect(visibleText(createElement(OutboundCard, { message: call }))).toContain("Ne pas appeler");
+    expect(visibleText(createElement(OutboundCard, { message: pay }))).toMatch(/3 articles achetés · 45,20\s\$/);
+    setLocale("en");
+  });
+
+  it("a routine change line names the routine, never its id", () => {
+    const event = { action: "updated" as const, turnKey: "u1", routines: [{ id: THREAD_ID, name: "Revue des billets GECKO", botId: BOT_ID }] };
+    for (const action of ["created", "updated", "deleted"] as const) {
+      expectNoUuid(visibleText(createElement(RoutineChangeLine, { event: { ...event, action }, canOpen: () => true, onOpen: () => {} })));
+    }
+  });
+
   it("allowed recipients name a bot, never its id (parité 1C)", () => {
     const bots = [{ id: BOT_ID, name: "Cryptic" }];
     expect(recipientLabel(`bot:${BOT_ID}`, bots)).toEqual({ text: "Cryptic", title: BOT_ID });
     expectNoUuid(recipientLabel(`bot:${THREAD_ID}`, bots).text);
     expect(recipientLabel("email:ana@example.com", bots).text).toBe("ana@example.com");
+  });
+
+  it("an IT tools card names the check and the target, never an id", () => {
+    for (const result of Object.values(NET_FIXTURES)) {
+      const root = netCheckWidget(result, "en");
+      const text = visibleText(createElement(WidgetBody, { root, headed: false }));
+      expectNoUuid(text);
+      expect(text).toContain("Explain");
+      expectNoUuid(String(root.title));
+      expectNoUuid(String(root.caption));
+    }
+  });
+
+  it("the bot email address row and the trigger's address line show the address, never the bot's id (B21)", () => {
+    const mail = { available: true, address: "cryptic@bots.example.org", enabled: false };
+    for (const element of [createElement(BotEmailAddressCard, { mail }), createElement(BotMailAddressLine, { mail })]) {
+      const text = visibleText(element);
+      expectNoUuid(text);
+      expect(text).toContain("cryptic@bots.example.org");
+      expect(text).not.toContain(BOT_ID);
+    }
   });
 
   it("people, bots, engines and accounts read by name or a plain word", () => {
@@ -140,8 +214,6 @@ describe("no UUID on screen", () => {
       personLabel("", "ann@example.com", PERSON_ID),
       botLabel(undefined, BOT_ID),
       engineLabel(undefined, ENGINE_ID),
-      connectedAccountLabel({ id: ACCOUNT_ID }, 0),
-      disconnectAccountConfirmation("Gmail", { id: ACCOUNT_ID }),
       directoryPersonLabel({ id: PERSON_ID } as Parameters<typeof directoryPersonLabel>[0]),
       runAsOptionLabel({ principalId: PERSON_ID, name: "", selectable: false }),
       ownerLabel({ ownerName: "", ownerPrincipalId: PERSON_ID } as Parameters<typeof ownerLabel>[0]),
@@ -155,7 +227,5 @@ describe("no UUID on screen", () => {
     expect(botLabel(undefined, BOT_ID)).toBe(t("ids.deletedBot"));
     expect(engineLabel(undefined, ENGINE_ID)).toBe(t("ids.removedEngine"));
     expect(engineLabel(undefined, "claude")).toBe("claude");
-    expect(connectedAccountLabel({ id: ACCOUNT_ID, alias: "Work" }, 0)).toBe("Work");
-    expect(connectedAccountLabel({ id: ACCOUNT_ID }, 1)).toBe(t("ids.accountN", { n: 2 }));
   });
 });

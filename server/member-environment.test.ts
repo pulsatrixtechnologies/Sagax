@@ -167,6 +167,38 @@ describe("own-environment autonomy, security review 2026-10-16", () => {
     expect(autonomy({ origin: "owner", tool: "sagax-environment__read_file", input: JSON.stringify({ path: "~/.ssh/id_rsa" }) })).toBe(true);
   });
 
+  it("#875 2026-10-22: a read of the bot's own Sagax-made workspace is a plain read, not a dotfile", () => {
+    const WS = "0f1e2d3c-4b5a-6789-0123-456789abcdef";
+    const read = (path: unknown, tool = "sagax-environment__read_file") =>
+      autonomy({ origin: "other", tool, input: JSON.stringify({ path }) });
+    // the workspace tree sits under the server data dir (~/.sagax, legacy
+    // ~/.openmausbot), whose own name begins with a dot: that data-dir dotfile
+    // is not a user credential, so a read of the bot's own work area runs
+    // unasked even on a turn that is not the owner's own (never a card).
+    for (const path of [
+      `/data/.openmausbot/workspaces/${WS}`,
+      `/data/.sagax/workspaces/${WS}/notes/today.md`,
+      `/srv/.openmausbot/task-workspaces/${WS}/${WS}/report.csv`,
+      `/home/sagax/.sagax/parallel-worktrees/${WS}/${WS}`,
+    ]) {
+      expect(ownEnvironmentSensitiveRead(JSON.stringify({ path })), path).toBe(false);
+      expect(read(path), path).toBe(true);
+      expect(read(path, "sagax-environment__list_files"), path).toBe(true);
+    }
+    // a credential path BELOW the workspace root still cards on a non-owner turn
+    for (const path of [
+      `/data/.openmausbot/workspaces/${WS}/.ssh/id_rsa`,
+      `/data/.sagax/workspaces/${WS}/.env`,
+      `/data/.sagax/workspaces/${WS}/credentials.json`,
+      `/data/.sagax/workspaces/${WS}/../.ssh/id_rsa`,
+    ]) {
+      expect(ownEnvironmentSensitiveRead(JSON.stringify({ path })), path).toBe(true);
+      expect(read(path), path).toBe(false);
+    }
+    // a write of the bot's own workspace is not a read tool: it still gates
+    expect(autonomy({ origin: "other", tool: "sagax-environment__write_file", input: JSON.stringify({ path: `/data/.sagax/workspaces/${WS}/x` }) })).toBe(false);
+  });
+
   it("re-review 2026-10-17: the Local VM's run is destructive and irreversible, like run_command", () => {
     const vm = callStepUpClasses({ tool: "other", mcpTool: "sagax-desktop__local_vm", input: JSON.stringify({ action: "run", command: "ls" }), summary: "" });
     const shell = callStepUpClasses({ tool: "other", mcpTool: "sagax-environment__run_command", input: JSON.stringify({ command: "ls" }), summary: "" });

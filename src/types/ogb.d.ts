@@ -254,6 +254,15 @@ const __BASE_VERSION__: string;
             modelSelection?: import("../state/store").ModelSelection; updateBotDefault?: boolean },
         ): Promise<import("../state/store").Bot>;
       };
+      /** Per-loopback-server API keys for local models, kept encrypted on
+       * this computer only. `keyBases` lists which loopback bases have a key
+       * (never the key value); `setKey`/`clearKey` store or remove one and
+       * re-probe. Absent on remote server pages and in older desktop builds. */
+      localModels?: {
+        keyBases(): Promise<string[]>;
+        setKey(base: string, key: string): Promise<boolean>;
+        clearKey(base: string): Promise<boolean>;
+      };
       localControl: {
         status(): Promise<LinuxLocalControlStatus>;
         enable(): Promise<LinuxLocalControlStatus>;
@@ -301,6 +310,8 @@ const __BASE_VERSION__: string;
       copyText?(text: string): Promise<boolean>;
       /** Opens an http(s) link in the user's default browser. */
       openExternal?(url: string): Promise<boolean>;
+      /** A Connect card's sign-in page; main allows grok.com and claude.ai only. */
+      openConnectorSetup?(url: string): Promise<boolean>;
       /** Recolor the native window chrome for a skin; absent on older builds. */
       applySkin?(skin: string): Promise<boolean>;
       /** Settings > Appearance > App icon (electron/app-icon.mjs). */
@@ -398,6 +409,8 @@ const __BASE_VERSION__: string;
       setTrayRoster?(roster: Array<{ id: string; name: string; color: string; working: boolean; unread: number }>, labels?: Record<string, string>): void;
       /** A bot chosen in the menu bar list or by its global shortcut. */
       onOpenBot?(cb: (botId: string) => void): () => void;
+      /** A picture of the screen from the bots' chord with 0 (base64 PNG), or why there is none. */
+      onScreenCapture?(cb: (capture: { png: string } | { error: "permission" | "unavailable"; platform: "darwin" | "win32" | "other" }) => void): () => void;
       /** Presence: the computer's idle state and seconds since the last
        * input (Electron powerMonitor). Null outside the main window. */
       systemIdle?(): Promise<{ state: "active" | "idle" | "locked" | "unknown"; idleSeconds: number } | null>;
@@ -450,7 +463,7 @@ const __BASE_VERSION__: string;
       openPdf?(bytes: Uint8Array, name: string): Promise<boolean>;
       /** Save a provider credential through Electron's OS-backed store. */
       setCredential?(
-        name: "composioApiKey" | "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "xaiVoiceKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",
+        name: "xaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "xaiVoiceKey" | "jevApiKey" | "openaiImageApiKey" | "customImageApiKey" | "openaiLiveKey",
         value: string,
       ): Promise<ConfigStatus>;
       /** In-app auto-update (packaged app only; dormant in dev). Updates

@@ -30,6 +30,17 @@ export interface RemoteSessionFacts {
   ramGb?: number;
 }
 
+/** Why the facts (and the screen) are or are not there, so the card says it
+ * instead of n/a everywhere:
+ * - pending: Sagax is reading the computer (inventory in progress);
+ * - ready: read;
+ * - no-tunnel: this server does not have the session's tunnel (opened
+ *   outside Sagax, for example by a script on another computer);
+ * - no-answer: the tunnel is here but the computer did not answer;
+ * - os-unknown: the computer answered neither uname nor PowerShell;
+ * - no-client: this Sagax server has no ssh client (tailcat execs it). */
+export type RemoteInventoryState = "pending" | "ready" | "no-tunnel" | "no-answer" | "os-unknown" | "no-client";
+
 export interface RemoteSessionView {
   id: string;
   code: string;
@@ -47,6 +58,15 @@ export interface RemoteSessionView {
   disk?: string;
   /** The session the Computer tab is showing. Absent on the others. */
   focused?: boolean;
+  /** Absent on a card written before 2026-10-22 (treated as ready). */
+  inventory?: RemoteInventoryState;
+  /** False while the OS is not known yet (`os` is then only a placeholder). */
+  osKnown?: boolean;
+  /** A server without a desktop (Server Core, a Linux server): shell only. */
+  headless?: boolean;
+  /** macOS refused the screenshot: Screen Recording is not allowed for the
+   * program that runs the session on that Mac. */
+  screenDenied?: boolean;
   suggestions: RemoteSessionSuggestion[];
 }
 
@@ -72,6 +92,26 @@ export function parseRemoteSessionId(value: unknown): string | null {
 export function parseRemoteSessionCode(value: unknown): string | null {
   const code = typeof value === "string" ? value.trim().toUpperCase().replace(/-/g, "") : "";
   return REMOTE_SESSION_CODE.test(code) ? code : null;
+}
+
+/** The longest Tailcat address both sides accept (the support folder and the tunnel reader). */
+export const TAILCAT_ADDRESS_MAX = 8000;
+
+/** `tc` then at least 8 characters, TAILCAT_ADDRESS_MAX in all, no space, no control character. */
+export function isTailcatAddress(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("tc") && value.length >= 10 && value.length <= TAILCAT_ADDRESS_MAX && !/\s/.test(value)
+    // oxlint-disable-next-line no-control-regex -- a tunnel address never contains control characters
+    && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+/** A session's end: at most 15 minutes past and 26 hours ahead (Perspicax caps
+ * an open at 24 hours). The same bound for publish_remote_session and for an
+ * open the bot made through a Perspicax profile. Null when outside it. */
+export function parseRemoteSessionEnd(value: unknown, now: number): number | null {
+  if (typeof value !== "string") return null;
+  const end = Date.parse(value);
+  if (!Number.isFinite(end) || end < now - 15 * 60_000 || end > now + 26 * 60 * 60_000) return null;
+  return end;
 }
 
 export function parseRemoteSessionOs(value: unknown): RemoteSessionOs | null {
@@ -109,7 +149,7 @@ export function formatDisk(freeGb: number, totalGb: number): { text: string; fre
 }
 
 const INVENTORY_KEYS = new Set([
-  "hostname", "user", "model", "serial", "cpu", "os", "admin",
+  "hostname", "user", "model", "serial", "cpu", "os", "admin", "gui",
   "ramBytes", "diskFreeKb", "diskTotalKb",
 ]);
 
@@ -122,6 +162,8 @@ export function parseInventory(stdout: string): {
   cpu?: string;
   osName?: string;
   elevated?: boolean;
+  /** false: no desktop on that computer (shell only). */
+  gui?: boolean;
   ramGb?: number;
   diskFreeGb?: number;
   diskTotalGb?: number;
@@ -139,6 +181,7 @@ export function parseInventory(stdout: string): {
   const freeKb = Number(out.diskFreeKb);
   const totalKb = Number(out.diskTotalKb);
   const admin = out.admin?.toLowerCase();
+  const gui = out.gui?.toLowerCase();
   return {
     ...(out.hostname ? { hostname: out.hostname } : {}),
     ...(out.user ? { user: out.user } : {}),
@@ -147,6 +190,7 @@ export function parseInventory(stdout: string): {
     ...(out.cpu ? { cpu: out.cpu } : {}),
     ...(out.os ? { osName: out.os } : {}),
     ...(admin === "true" || admin === "false" ? { elevated: admin === "true" } : {}),
+    ...(gui === "true" || gui === "false" ? { gui: gui === "true" } : {}),
     ...(Number.isFinite(ramBytes) && ramBytes > 0 ? { ramGb: ramBytes / (1024 ** 3) } : {}),
     ...(Number.isFinite(freeKb) && freeKb >= 0 ? { diskFreeGb: freeKb / (1024 ** 2) } : {}),
     ...(Number.isFinite(totalKb) && totalKb > 0 ? { diskTotalGb: totalKb / (1024 ** 2) } : {}),

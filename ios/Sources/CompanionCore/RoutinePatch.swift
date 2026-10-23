@@ -47,6 +47,9 @@ public enum RoutinePatch {
         if let onlyWhenPresent = input.onlyWhenPresent, onlyWhenPresent != (original.onlyWhenPresent == true) {
             body["onlyWhenPresent"] = onlyWhenPresent
         }
+        if let postResults = input.postResults, postResults != (original.postResults == true) {
+            body["postResults"] = postResults
+        }
         return body
     }
 
@@ -73,6 +76,7 @@ public enum RoutinePatch {
         }
         if let runAs = input.runAs, !runAs.isEmpty { body["runAs"] = runAs }
         if input.onlyWhenPresent == true { body["onlyWhenPresent"] = true }
+        if let postResults = input.postResults { body["postResults"] = postResults }
         return body
     }
 

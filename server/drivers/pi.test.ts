@@ -223,18 +223,16 @@ describe("buildMcpServers", () => {
     expect(buildMcpServers({ threadId: "t", text: "hi" })).toBeNull();
   });
 
-  it("passes composio/agents/phone through as stdio servers", () => {
+  it("passes agents/phone through as stdio servers", () => {
     const servers = buildMcpServers({
       threadId: "t",
       text: "hi",
       integrations: {
-        composio: { command: "node", args: ["c"], env: { A: "1" } },
         agents: { command: "node", args: ["a"], env: { B: "2" } },
         phone: { command: "node", args: ["p"], env: {} },
       },
     });
     expect(servers).toEqual({
-      composio: { command: "node", args: ["c"], env: { A: "1" } },
       agents: { command: "node", args: ["a"], env: { B: "2" } },
       phone: { command: "node", args: ["p"], env: {} },
     });
@@ -879,7 +877,7 @@ describe("PiDriver turns (fake CLI)", () => {
       threadId: "t-mcp",
       text: "hi",
       integrations: {
-        composio: { command: "node", args: ["connector-proxy.js"], env: { COMPOSIO_KEY: "ck" } },
+        agents: { command: "node", args: ["agents-proxy.js"], env: { SAGAX_COMMS_TOKEN: "ck" } },
       },
     });
     await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
@@ -898,8 +896,8 @@ describe("PiDriver turns (fake CLI)", () => {
     expect(mcpRow!.argv).not.toContain("--no-builtin-tools");
 
     const servers = mcpRow!.mcpConfig!.mcpServers!;
-    // composio passes through verbatim as a stdio server
-    expect(servers.composio).toMatchObject({ command: "node", args: ["connector-proxy.js"], env: { COMPOSIO_KEY: "ck" } });
+    // a built-in server passes through verbatim as a stdio server
+    expect(servers.agents).toMatchObject({ command: "node", args: ["agents-proxy.js"], env: { SAGAX_COMMS_TOKEN: "ck" } });
   });
 
   it("withholds pi builtins on an organization turn and still loads the Sagax MCP extension", async () => {
@@ -911,7 +909,7 @@ describe("PiDriver turns (fake CLI)", () => {
       threadId: "t-withhold",
       text: "hi",
       withholdHostTools: true,
-      integrations: { composio: { command: "node", args: ["connector-proxy.js"], env: {} } },
+      integrations: { agents: { command: "node", args: ["agents-proxy.js"], env: {} } },
     });
     await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
     const rows = readFileSync(dump, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { argv: string[] });

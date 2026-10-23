@@ -91,11 +91,17 @@ export interface PluginContents {
 }
 
 /** A marketplace of the installation's one list, with this bot's installs. */
+export type MarketplaceVisibility = "private" | "org";
+
 export interface MarketplaceListing {
   name: string;
   source: string;
   /** A token is saved for it on this bot (never the token itself). */
   hasToken?: boolean;
+  /** "private" (the person who added it) or "org" (shared with everyone) */
+  visibility?: MarketplaceVisibility;
+  /** this viewer added it, so may change its visibility */
+  mine?: boolean;
   description?: string;
   addedAt: number;
   updatedAt: number;
@@ -147,9 +153,9 @@ export interface BotPluginsView {
 
 const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
 export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string, options: { ref?: string; token?: string } = {}) =>
+export const addMarketplace = (botId: string, source: string, options: { ref?: string; token?: string; visibility?: MarketplaceVisibility } = {}) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, {
-    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.token ? { token: options.token } : {}) }), timeoutMs: 180_000,
+    method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.token ? { token: options.token } : {}), ...(options.visibility ? { visibility: options.visibility } : {}) }), timeoutMs: 180_000,
   });
 /** This bot's token for a marketplace of the one list (kept per bot and source). */
 export const setMarketplaceToken = (botId: string, name: string, token: string) =>

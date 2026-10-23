@@ -139,6 +139,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Archived (hidden) | Bot editor > ... > Archive | `sagax_settings` get, set `bot.hidden` | simple |
 | Memory on | Bot editor > Memory | `sagax_settings` get, set `bot.memoryEnabled` | simple |
 | Memory upkeep | Bot editor > Memory | `sagax_settings` get, set `bot.memoryUpkeep` | simple |
+| Team memory sharing (shared, private) | Bot editor > Memory > Team memory | `sagax_settings` get, set `bot.teamMemorySharing` | simple (autrui pour élargir à shared) |
 | Browser | Bot editor > Access > Browser | `sagax_settings` get, set `bot.browser` | simple |
 | Browser profile | Bot editor > Access > Browser | `sagax_settings` get, set `bot.browserProfile` | simple |
 | Works on (Auto or Off) | Bot editor > Workspace | `sagax_settings` get, set `bot.computer` | simple |
@@ -147,7 +148,6 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | MCP servers it may use (null: all) | Bot editor > Access > Tools | `sagax_settings` get, set `bot.mcpServers` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Tool selection | Bot editor > Access > Tool selection | `sagax_settings` get, set `bot.toolScope` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Connected apps scopes | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.connectorScopes` | simple (élargit les droits pour le bot qui parle lui-même) |
-| Connected apps (Composio) | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.composio` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Park direct messages while busy | Bot editor > Behaviour | `sagax_settings` get, set `bot.parkDirectMessages` | simple |
 | Always allowed tools | Bot editor > Access > Always allowed | `sagax_settings` get, set `bot.alwaysAllow` | élargit les droits |
 | Allowed recipients (no card: bot:<id>, email:<address>, phone:+<digits>) | Bot editor > Permissions > Allowed recipients | `sagax_settings` get, set `bot.allowedRecipients` | élargit les droits |
@@ -259,12 +259,15 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Language (fr, en; empty follows the system) | Settings > General > Appearance | `sagax_settings` set `appearance.language` | simple |
 | Simple or Advanced | Settings > Appearance | `sagax_settings` set `appearance.interfaceMode` | simple |
 | Show threads | Settings > Appearance | `sagax_settings` set `appearance.showThreads` | simple |
+| Show the Suggestions card in the bot panel | Settings > Appearance | `sagax_settings` set `appearance.showSuggestions` | simple |
+| Show the All history row in the bot panel | Settings > Appearance | `sagax_settings` set `appearance.showAllHistory` | simple |
 | Threads location | Settings > Appearance | `sagax_settings` set `appearance.threadsLocation` | simple |
 | Background effect | Settings > Appearance > Background | `sagax_settings` set `appearance.backgroundEffect` | simple |
 | Glyph ripple | Settings > Appearance > Background | `sagax_settings` set `appearance.glyphRipple` | simple |
 | Hibou 98 | Settings > Appearance | `sagax_settings` set `appearance.retro98` | simple |
 | Reduce motion (follow the system, or always) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.reduceMotion` | simple |
 | Contrast (standard, or high) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.highContrast` | simple |
+| HD mascots (painted art for the characters that have it, or the classic look) | Settings > Appearance > Mascots | `sagax_settings` set `appearance.hdMascots` | simple |
 | Text size (default, large, extra large) | Settings > Appearance > Accessibility | `sagax_settings` set `appearance.textSize` | simple |
 | Use hardware acceleration (desktop app; needs a restart) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.hardwareAcceleration` | simple |
 | Check spelling while typing (desktop app) | Settings > Appearance > Desktop | `sagax_settings` set `appearance.spellcheck` | simple |
@@ -348,6 +351,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Allow vault export | Settings > Organization > Credentials | `sagax_settings` get, set `org.allowVaultExport` | organisation |
 | People from before: days | Settings > Organization > People | `sagax_settings` get, set `org.interimAttachDays` | organisation |
 | Plugin marketplaces | Connect apps > Sources | `sagax_settings` get, set `org.pluginMarketplaces` | organisation |
+| Public links for published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesLinkSharing` | organisation |
+| Reader comments on published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesReaderComments` | organisation |
 
 ### Ordinateur
 

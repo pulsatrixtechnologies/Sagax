@@ -12,6 +12,7 @@ import { Compass, ExternalLink, FolderOpen, Loader2, Share2, UploadCloud } from 
 import { track } from "@/lib/analytics";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
+import { scrollTabsWithWheel } from "@/lib/tab-wheel-scroll";
 import type { LocaleKey } from "@/locales";
 import type { Routine } from "@/lib/routines";
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
@@ -353,7 +354,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-template-tools={tool}>
       <div className="shrink-0 px-6 pt-2 sm:px-8">
-        <div className="flex h-7 w-fit max-w-full items-center overflow-x-auto rounded-full bg-hover p-0.5" role="tablist" aria-label={t("botCatalog.tools.aria")}>
+        <div className="flex h-7 w-fit max-w-full items-center overflow-x-auto rounded-full bg-hover p-0.5" role="tablist" aria-label={t("botCatalog.tools.aria")} onWheel={scrollTabsWithWheel}>
           {TEMPLATE_TOOLS.map((id) => (
             <button
               key={id}

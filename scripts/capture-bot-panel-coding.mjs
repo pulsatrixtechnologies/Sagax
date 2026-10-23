@@ -30,6 +30,13 @@ const INFO = {
   "fix/lexer": { state: state({ pushed: true, worktree: undefined }) },
   "spike/old-parser": { state: state({ ahead: 3, worktree: undefined }) },
 };
+// Branches whose repository is on the bot's own computer (place "remote"):
+// one actionable (its actions run there), one with the computer offline. The
+// `/code/branch` reply returns these verbatim instead of the server default.
+const REMOTE = {
+  "feat/on-bot-computer": { branch: "feat/on-bot-computer", place: "remote", host: "Studio de Max", folderName: "web", repo: "acme/web", canPublish: true, state: state({ ahead: 1, changes: [{ path: "src/widgets/grid.tsx", status: "modified" }, { path: "src/widgets/tools.ts", status: "untracked" }] }), proposedMessage: "Add the IT tools widgets" },
+  "feat/bot-offline": { branch: "feat/bot-offline", place: "remote", host: "Studio de Max", offline: true, canPublish: false, publishBlocked: "offline" },
+};
 const PULL = {
   "feat/dark-mode": { number: 42, url: "https://github.com/acme/web/pull/42", state: "open" },
   "fix/lexer": { number: 37, url: "https://github.com/acme/web/pull/37", state: "merged" },
@@ -83,7 +90,7 @@ try {
     const url = new URL(route.request().url());
     const branch = url.searchParams.get("branch") ?? "";
     const reply = (body, status = 200) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
-    if (url.pathname.endsWith("/code/branch")) return reply({ branch, place: "server", folderName: "web", repo: "acme/web", canPublish: true, ...INFO[branch] });
+    if (url.pathname.endsWith("/code/branch")) return reply(REMOTE[branch] ?? { branch, place: "server", folderName: "web", repo: "acme/web", canPublish: true, ...INFO[branch] });
     if (url.pathname.endsWith("/code/branch/pull")) return reply({ pull: PULL[branch] ?? null });
     if (url.pathname.endsWith("/code/branch/diff")) return reply(DIFF);
     if (url.pathname.endsWith("/code/branches/archived")) return reply({ keys: [] });
@@ -109,6 +116,21 @@ try {
     await page.waitForSelector("[data-branch-menu]");
     await page.waitForTimeout(250);
     await page.screenshot({ path: join(outDir, `after-menu-${label}.png`), clip: { x: 0, y: 0, width: 380, height: 760 } });
+    await page.keyboard.press("Escape");
+    // the "..." menu of a branch on the bot's own computer: its actions are
+    // enabled (they run on that computer), not greyed out.
+    await page.click('[data-branch-menu-button="feat/on-bot-computer"]');
+    await page.waitForSelector("[data-branch-menu]");
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: join(outDir, `after-menu-bot-computer-${label}.png`), clip: { x: 0, y: 0, width: 380, height: 820 } });
+    await page.keyboard.press("Escape");
+    // the same, but the bot's computer is offline: one plain reason.
+    await page.click('[data-branch-menu-button="feat/bot-offline"]');
+    await page.waitForSelector("[data-branch-menu]");
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: join(outDir, `after-menu-offline-${label}.png`), clip: { x: 0, y: 0, width: 380, height: 820 } });
+    await page.keyboard.press("Escape");
+    await page.click('[data-branch-menu-button="feat/it-tools-widgets"]');
     // the commit dialog
     await page.click('[data-branch-menu] [data-menu-item="commit"]');
     await page.waitForSelector("[data-branch-commit]");

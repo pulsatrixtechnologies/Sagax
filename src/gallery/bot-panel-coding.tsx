@@ -29,6 +29,9 @@ const work = {
   pullRequests: [pr, merged],
   branches: [
     { name: "feat/it-tools-widgets", repo: "acme/web", pushed: false, at: NOW - 15 * H, threadId: "t1", folder: "/srv/web" },
+    // On the bot's own computer: actionable (place "remote"), and offline.
+    { name: "feat/on-bot-computer", repo: "acme/web", pushed: false, at: NOW - 3 * H, threadId: "t1", folder: "/srv/web" },
+    { name: "feat/bot-offline", repo: "acme/web", pushed: false, at: NOW - 40 * H, threadId: "t1", folder: "/srv/web" },
     { name: "feat/search-index", repo: "acme/web", pushed: true, url: "https://github.com/acme/web/tree/feat/search-index", at: NOW - 5 * H, threadId: "t1", folder: "/srv/web" },
     { name: "feat/dark-mode", repo: "acme/web", pushed: true, url: "https://github.com/acme/web/tree/feat/dark-mode", at: NOW - 2 * H, threadId: "t1", folder: "/srv/web", pull: pr },
     { name: "fix/lexer", repo: "acme/web", pushed: true, url: "https://github.com/acme/web/tree/fix/lexer", at: NOW - 30 * H, threadId: "t1", folder: "/srv/web", pull: merged },

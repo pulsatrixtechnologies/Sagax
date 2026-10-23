@@ -293,14 +293,36 @@ export function decideBotAct(input: {
   }
   const write = target.kind === "route" ? target.method !== "GET" && target.method !== "HEAD" : target.write;
   // Full still runs an ordinary write. Auto does not: it is "Approve for me"
-  // for the bot's own tools, not a pass for act to skip the card.
-  const unattended = input.mode === "full";
+  // for the bot's own tools, not a pass for act to skip the card. A write
+  // that widens who gets a bot's team-memory cards waits at every level, as
+  // sagax_settings' bot.teamMemorySharing does.
+  const unattended = input.mode === "full" && !widensTeamMemorySharing(target);
   return {
     ok: true,
     effect: write && !unattended ? "hold" : "run",
     summary: summaryOf(target),
     target,
   };
+}
+
+/** A write that sets a bot's team memory sharing to anything but "private"
+ * (back to "shared" reaches other people). Narrowing to "private" is an
+ * ordinary write. */
+function widensTeamMemorySharing(target: ActTarget): boolean {
+  const records = target.kind === "ui" ? [target.input] : [target.query, target.body];
+  return records.some((record) => setsWiderSharing(record));
+}
+
+function setsWiderSharing(value: unknown, depth = 0): boolean {
+  if (value === null || typeof value !== "object") return false;
+  // deeper than the check reads: held, never assumed clean
+  if (depth > 8) return true;
+  if (Array.isArray(value)) return value.some((item) => setsWiderSharing(item, depth + 1));
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === "teamMemorySharing" && child !== "private") return true;
+    if (setsWiderSharing(child, depth + 1)) return true;
+  }
+  return false;
 }
 
 const ESCALATION_KEYS = new Set(["approvalMode", "confirmFullAccess", "autoApprove", "alwaysAllow", "stepUp", "refreshPermissions"]);

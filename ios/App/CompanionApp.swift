@@ -72,6 +72,8 @@ struct CompanionApp: App {
                 .themeRoot()
                 // Settings > Achievements: reads, reports and unlock banners (ST9).
                 .achievementsHost(session)
+                // a bot asks this phone for a tool: the card (Features/PhoneTools)
+                .phoneToolsHost(session)
                 .onAppear {
                     SagaxSharedInbox.removeDirectories(olderThan: 60 * 60)
                     session.connect()

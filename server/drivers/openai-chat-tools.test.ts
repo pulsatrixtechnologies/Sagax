@@ -648,7 +648,7 @@ describe.each<Provider>(["openai-compat", "grok", "minimax"])("%s structured too
     expect(started?.itemId).toEqual(expect.any(String));
     expect(f.recorder.events).toContainEqual(expect.objectContaining({ type: "item.completed", itemType: "tool", itemId: started?.itemId, ok: true }));
     expect(f.recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: true });
-    expect(f.instance.adapter.capabilities).toMatchObject({ agentsMcp: true, composioMcp: true, customMcp: true });
+    expect(f.instance.adapter.capabilities).toMatchObject({ agentsMcp: true, customMcp: true });
   });
 
   it("preserves ordinary transcript chat and leaves textual tool imitations as text", async () => {

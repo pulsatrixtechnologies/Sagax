@@ -29,6 +29,7 @@ import {
   requestSource,
   requiredScope,
   routePermission,
+  routePermissions,
   PERMISSION_ROUTES,
   readWorkerRelayToken,
   resolveLoopbackTrust,
@@ -133,6 +134,8 @@ describe("scopes", () => {
       ["GET", "/api/config"], ["GET", "/api/webhooks"], ["POST", "/api/tts/speak"],
       ["GET", "/api/auth/session"], ["POST", "/api/auth/stream-ticket"], ["POST", "/api/auth/logout"],
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
+      ["GET", "/api/bots/x/inbound-mail"], // the bot's own email address (Perspicax relay), read-only
+      ["PUT", "/api/bots/x/inbound-mail"], // its owner changes it (the handler checks the owner)
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
       ["POST", "/api/bots/x/primary"], ["DELETE", "/api/bots/x/primary"], // the owner's own Primary Bot, both ways
@@ -143,6 +146,13 @@ describe("scopes", () => {
       ["POST", "/api/workers/laptop/drop"],
       ["POST", "/api/workers/queue/m1/cancel"],
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
+      // 2026-10-22 (JC): a webhook runs on the bot's own computer, so its
+      // owner creates and manages it without the server-settings right; the
+      // handler (webhookDelegateRefusal, webhookExecTargetAdminOnly) keeps the
+      // limits (an admin's bot, a Microsoft trigger, a server run target).
+      ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"],
+      ["POST", "/api/webhooks/w/test"], ["POST", "/api/webhooks/w/reveal"],
+      ["PATCH", "/api/webhooks/w"], ["DELETE", "/api/webhooks/w"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/cli-test"], ["GET", "/api/cli-candidates"], ["PATCH", "/api/instances/claude"],
@@ -155,9 +165,13 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
       ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
-      ["POST", "/api/webhooks"], ["POST", "/api/webhooks/w/rotate"], ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
+      ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
       ["PATCH", "/api/bots/x/model"], ["POST", "/api/teams/import"], ["GET", "/api/teams/scout"],
       ["GET", "/api/bots/x/memory"], ["PUT", "/api/bots/x/memory"], ["PUT", "/api/section-context"], ["GET", "/api/threads/t/events"],
+      // shared team memory: direct reads and writes stay admin; a member only
+      // answers the team-memory card of their own team (the respond routes)
+      ["GET", "/api/team-memory"], ["POST", "/api/team-memory"],
+      ["PATCH", "/api/team-memory/entry_1"], ["DELETE", "/api/team-memory/entry_1"],
       ["GET", "/api/mcp/servers"], ["POST", "/api/mcp/servers"], ["POST", "/api/connectors/slack/authorize"],
       ["POST", "/api/bots/x/slack-management"], ["GET", "/api/bots/x/slack-management/extra"],
       ["PUT", "/api/config"], ["POST", "/api/auth/pairing"], ["GET", "/api/auth/sessions"], ["DELETE", "/api/auth/sessions/abc"],
@@ -427,8 +441,18 @@ describe("resolveRequestAuth", () => {
     expect(routePermission("POST", "/api/instances/claude/leftover-files/remove", org)).toBeNull();
     // 2026-10-19: the four admin keys an admin gives in Perspicax
     expect(routePermission("PUT", "/api/mcp/servers/x", org)).toBe("host.shell");
+    // 2026-10-22 (JC): the config write opens to EITHER server.settings OR the
+    // separate server.experimental key (no implication). A refusal names the
+    // primary (server.settings); routePermissions lists both.
     expect(routePermission("PATCH", "/api/config", org)).toBe("server.settings");
+    expect(routePermission("PUT", "/api/config", org)).toBe("server.settings");
+    expect([...routePermissions("PATCH", "/api/config", org)!]).toEqual(["server.settings", "server.experimental"]);
     expect(routePermission("PATCH", "/api/org/settings", org)).toBe("server.settings");
+    // 2026-10-22 (JC): webhooks are no longer gated behind server.settings;
+    // a normal owner creates and manages one on the bot's own computer.
+    expect(routePermission("POST", "/api/webhooks", org)).toBeNull();
+    expect(routePermission("PATCH", "/api/webhooks/w", org)).toBeNull();
+    expect(routePermission("POST", "/api/webhooks/w/rotate", org)).toBeNull();
     expect(routePermission("GET", "/api/workspace-backup/status", org)).toBe("backup.workspace");
     expect(routePermission("POST", "/api/workspace-backup/export", org)).toBe("backup.workspace");
     expect(routePermission("DELETE", "/api/auth/sessions/abc", org)).toBe("people.manage");

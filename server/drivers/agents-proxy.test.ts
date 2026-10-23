@@ -706,6 +706,8 @@ describe("agents-proxy MCP surface", () => {
       "check_widget",
       "show_widget",
       "update_widget",
+      "show_html",
+      "update_html",
       "save_artifact",
       "update_artifact",
       "list_artifacts",
@@ -726,9 +728,13 @@ describe("agents-proxy MCP surface", () => {
       "manage_room",
       "request_credential",
       "request_login",
+      "open_connector_setup",
       "list_terminal_resources",
       "offer_shell_terminal",
+      "resource_usage",
       "publish_remote_session",
+      "remote_session_snapshot",
+      "remote_session_exec",
       "memory_update",
       "rules_update",
       "docs_update",
@@ -783,6 +789,7 @@ describe("agents-proxy MCP surface", () => {
       "remote_support_status",
       "remote_support_close",
       "review_write",
+      "place_phone_call",
     ]);
     const ask = list.result.tools.find((tool: { name: string }) => tool.name === "ask_bot");
     const delegate = list.result.tools.find((tool: { name: string }) => tool.name === "delegate_bot");
@@ -1245,7 +1252,7 @@ describe("agents-proxy MCP surface", () => {
     const list = await rpc("tools/list");
     const start = list.result.tools.find((tool: { name: string }) => tool.name === "start_thread");
     expect(start.inputSchema.required).toEqual(["title", "message"]);
-    expect(Object.keys(start.inputSchema.properties)).toEqual(["title", "message", "bot_id", "folder", "report_back", "workspace"]);
+    expect(Object.keys(start.inputSchema.properties)).toEqual(["title", "message", "bot_id", "folder", "report_back", "workspace", "read_only", "thread_id"]);
     expect(start.description).toContain("Leave bot_id out to open it on yourself");
     expect(start.description).toContain("Do not use it for a question you need answered right now");
     expect(start.description).toContain("do not retry it");

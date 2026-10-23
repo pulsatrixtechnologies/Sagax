@@ -345,3 +345,19 @@ describe("groupTranscript", () => {
     ]);
   });
 });
+
+describe("1Password waiting row (parité R10)", () => {
+  it("is a notice in the reader's language", async () => {
+    const { ONE_PASSWORD_WAITING } = await import("../../shared/credential-vault");
+    const row = statusActivity({ id: "a", role: "bot", kind: "activity", at: 1, tool: { name: ONE_PASSWORD_WAITING, ok: true } } as Message);
+    expect(row?.kind).toBe("notice");
+    expect(row?.text).toContain("1Password");
+  });
+});
+
+describe("the connector switch line (review of #943)", () => {
+  it("reads in the person's language, from the structured line", () => {
+    const message: Message = { id: "cs", at: 1, role: "bot", kind: "activity", tool: { name: "notice: Switched to Claude for Gmail.", ok: true, connectorSwitch: { engine: "Claude", connector: "Gmail" } } };
+    expect(statusActivity(message)).toEqual({ kind: "notice", text: "Switched to Claude for Gmail" });
+  });
+});

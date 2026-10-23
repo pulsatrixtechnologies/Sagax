@@ -71,4 +71,35 @@ final class SkinFamiliesTests: XCTestCase {
         XCTAssertEqual(ThemeSelection.carry(.dark, to: SkinPlace.of(.lagoon).variant, worn: .dark), .light)
         XCTAssertEqual(ThemeSelection.carry(.auto, to: neutral, worn: .dark), .auto)
     }
+
+    func testEverySlotHasTheAppearanceOfItsSkin() {
+        for family in SkinFamily.all {
+            for variant in family.variants {
+                if let light = variant.light { XCTAssertFalse(light.isDark, "\(family.id)/\(variant.id) light") }
+                if let dark = variant.dark { XCTAssertTrue(dark.isDark, "\(family.id)/\(variant.id) dark") }
+            }
+        }
+    }
+
+    func testThePickerOffersOnlyTheVariantsOfTheSchemeWorn() {
+        let studio = SkinFamily.of(.studio)
+        XCTAssertEqual(studio.variants(for: .dark).map(\.id), ["neutral", "slate", "plum"])
+        XCTAssertEqual(studio.variants(for: .light).map(\.id), ["neutral", "slate"])
+        let atelier = SkinFamily.of(.atelier)
+        XCTAssertEqual(atelier.variants(for: .dark).map(\.id), ["brass"])
+        XCTAssertEqual(atelier.variants(for: .light).map(\.id), ["brass", "lagoon"])
+        for family in SkinFamily.all {
+            for scheme in [SkinScheme.light, .dark] {
+                for variant in family.variants(for: scheme) {
+                    XCTAssertEqual(variant.skin(scheme).isDark, scheme == .dark, "\(family.id)/\(variant.id)")
+                }
+            }
+        }
+        // Hibou 98 has only a light look, the phone family only a dark one
+        XCTAssertTrue(SkinFamily.of(.retro98).variants(for: .dark).isEmpty)
+        XCTAssertTrue(SkinFamily.of(.phone).variants(for: .light).isEmpty)
+        // the worn variant stays listed
+        let lagoon = SkinPlace.of(.lagoon).variant
+        XCTAssertTrue(atelier.variants(for: .dark, keeping: lagoon).contains(lagoon))
+    }
 }

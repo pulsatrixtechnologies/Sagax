@@ -163,6 +163,9 @@ export function UpdateBanner() {
     setPending("check");
     runCheck();
   };
+  // A native staging failure cannot be retried in place (Squirrel.Mac has no
+  // cancel); quitting and reopening is the remedy the message names.
+  const quitAndReopen = () => void window.ogb?.relaunch?.();
 
   if (view === "checking" || view === "up-to-date") {
     return <UpdateCheckDialog checking={view === "checking"} onDismiss={dismiss} />;
@@ -171,9 +174,9 @@ export function UpdateBanner() {
     return <UpdateNotesDialog state={s} pending={pending} onDismiss={dismiss} onUpdate={beginUpdate} onWaitForBots={waitForBots} />;
   }
   if (view === "problem-dialog") {
-    return <UpdateProblemDialog state={s} pending={pending} onDismiss={dismiss} onRetry={retry} />;
+    return <UpdateProblemDialog state={s} pending={pending} onDismiss={dismiss} onRetry={retry} onQuit={quitAndReopen} />;
   }
-  return <UpdateProblemCard state={s} pending={pending} onDismiss={dismiss} onRetry={retry} />;
+  return <UpdateProblemCard state={s} pending={pending} onDismiss={dismiss} onRetry={retry} onQuit={quitAndReopen} />;
 }
 
 /** The person's check, while it runs and when it found nothing. */
@@ -366,11 +369,13 @@ export function UpdateProblemDialog({
   pending,
   onDismiss,
   onRetry,
+  onQuit,
 }: {
   state: UpdaterState;
   pending: "install" | "check" | null;
   onDismiss: () => void;
   onRetry: () => void;
+  onQuit?: () => void;
 }) {
   const retryable = s.retryable !== false;
   const primaryRef = useRef<HTMLButtonElement>(null);
@@ -390,10 +395,10 @@ export function UpdateProblemDialog({
         frameProps={{ "aria-describedby": "update-problem-body", "data-update-dialog": "error" }}
         footer={
           <>
-            <button type="button" onClick={onDismiss} disabled={pending !== null} className={retryable ? PILL : PRIMARY_PILL} ref={retryable ? undefined : primaryRef}>
+            <button type="button" onClick={onDismiss} disabled={pending !== null} className={PILL}>
               {t("releaseNotes.close")}
             </button>
-            {retryable && (
+            {retryable ? (
               <button ref={primaryRef} type="button" onClick={onRetry} disabled={pending !== null} className={PRIMARY_PILL}>
                 {pending === "check" ? (
                   <>
@@ -402,6 +407,12 @@ export function UpdateProblemDialog({
                 ) : (
                   t("updates.problem.retry")
                 )}
+              </button>
+            ) : (
+              // The staging failed and cannot be retried in place: the remedy
+              // is to quit and reopen, so that action must stay clickable.
+              <button ref={primaryRef} type="button" onClick={onQuit} className={PRIMARY_PILL}>
+                {t("settings.updates.quitReopen")}
               </button>
             )}
           </>
@@ -418,11 +429,13 @@ function UpdateProblemCard({
   pending,
   onDismiss,
   onRetry,
+  onQuit,
 }: {
   state: UpdaterState;
   pending: "install" | "check" | null;
   onDismiss: () => void;
   onRetry: () => void;
+  onQuit?: () => void;
 }) {
   const title = s.status === "handed-off" ? t("updates.problem.terminalTitle") : t("updates.problem.failedTitle");
   const subtitle =
@@ -486,6 +499,13 @@ function UpdateProblemCard({
             ) : (
               t("updates.problem.retry")
             )}
+          </button>
+        )}
+        {s.status === "error" && s.retryable === false && (
+          // The native staging failed and cannot be retried in place; the
+          // only remedy is to quit and reopen, so keep that control clickable.
+          <button type="button" onClick={onQuit} className={PRIMARY_PILL}>
+            {t("settings.updates.quitReopen")}
           </button>
         )}
       </div>

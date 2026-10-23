@@ -6,7 +6,7 @@ exposes to a bot or an AI client. The machine-readable form is the registry in
 `server/mcp-permissions.ts`; `server/mcp-permissions.test.ts` fails when a
 catalog tool has no permission.
 
-Totals: capabilities 133, covered 133, gaps 0.
+Totals: capabilities 140, covered 140, gaps 0.
 
 Sources read: the agents tool catalog, the internal routes it calls
 (`/api/internal/*`), the member API (`docs/org-member-api.md`), and the
@@ -45,6 +45,8 @@ Reading the table:
 | teamsetup:list | sagax | `list_team_setup` | `teamsetup:list` | covered |
 | computers:list | sagax | `list_shared_computers` | `computers:list` | covered |
 | terminal:list | sagax | `list_terminal_resources` | `terminal:list` | covered |
+| resources:usage | sagax | `resource_usage` | `resources:usage` | covered |
+| connectors:setup | sagax | `open_connector_setup` | `connectors:setup` | covered |
 | delegation:check | sagax | `check_delegation` | `delegation:check` | covered |
 | delegation:wait | sagax | `wait_delegation` | `delegation:wait` | covered |
 | sessions:search | sagax | `session_search` | `sessions:search` | covered |
@@ -77,11 +79,14 @@ Reading the table:
 | help:read | sagax | `sagax_help` | `help:read` | covered |
 | widgets:show | sagax | `show_widget` | `widgets:show` | covered |
 | widgets:update | sagax | `update_widget` | `widgets:update` | covered |
+| apps:show | sagax | `show_html` | `apps:show` | covered |
+| apps:update | sagax | `update_html` | `apps:update` | covered |
 | artifacts:save | sagax | `save_artifact` | `artifacts:save` | covered |
 | artifacts:update | sagax | `update_artifact` | `artifacts:update` | covered |
 | artifacts:list | sagax | `list_artifacts` | `artifacts:list` | covered |
 | artifacts:delete | sagax | `delete_artifact` | `artifacts:delete` | covered |
 | pages:propose | sagax | `propose_page` | `pages:propose` | covered |
+| phone:call | sagax | `place_phone_call` | `phone:call` | covered |
 | cards:options | sagax | `create_options_card` | `cards:options` | covered |
 | rooms:react | sagax | `react_to_message` | `rooms:react` | covered |
 | rooms:unreact | sagax | `remove_reaction` | `rooms:unreact` | covered |
@@ -96,6 +101,8 @@ Reading the table:
 | routines:propose.action | sagax | `propose_routine_action` | `routines:propose.action` | covered |
 | terminal:offer | sagax | `offer_shell_terminal` | `terminal:offer` | covered |
 | remote:publish | sagax | `publish_remote_session` | `remote:publish` | covered |
+| remote:snapshot | sagax | `remote_session_snapshot` | `remote:snapshot` | covered |
+| remote:exec | sagax | `remote_session_exec` | `remote:exec` | covered |
 | meetings:join | sagax | `join_meeting` | `meetings:join` | covered |
 | bots:ask | sagax | `ask_bot` | `bots:ask` | covered |
 | bots:delegate | sagax | `delegate_bot` | `bots:delegate` | covered |

@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import geistLatin from "@fontsource-variable/geist/files/geist-latin-wght-normal.woff2?inline";
 
 import { t } from "@/lib/i18n";
+import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { cn } from "@/lib/cn";
 import { clampWidgetHeight, WIDGET_MESSAGE } from "@/lib/rich-blocks";
 import { widgetFontFace } from "@/lib/widget-kit";
@@ -24,6 +25,22 @@ const DEFAULT_HEIGHT = 160;
 export function postArtifactData(frame: HTMLIFrameElement | null, data: Artifact["data"]): void {
   if (!data) return;
   frame?.contentWindow?.postMessage({ type: ARTIFACT_DATA_MESSAGE, data: data.value, at: data.at }, "*");
+}
+
+/** The full-screen layer is a modal dialog: Escape and Tab are handled by useModalDialog. */
+function FullscreenLayer({ artifact, onClose }: { artifact: Pick<Artifact, "id" | "title" | "html" | "data" | "rev">; onClose: () => void }) {
+  const layer = useRef<HTMLDivElement>(null);
+  useModalDialog(layer, onClose);
+  return (
+    <div ref={layer} tabIndex={-1} className="fixed inset-0 z-50 flex flex-col bg-panel outline-none" role="dialog" aria-modal="true" aria-label={artifact.title}>
+      <div className="flex justify-end p-2">
+        <button type="button" data-artifact-exit-fullscreen onClick={onClose} className="rounded-md px-2 py-1 text-[12px] text-ink hover:bg-hover">
+          {t("artifact.exitFullscreen")}
+        </button>
+      </div>
+      <ArtifactFrame artifact={artifact} fill bare className="min-h-0 flex-1" />
+    </div>
+  );
 }
 
 export function ArtifactFrame({ artifact, fill = false, className, bare = false }: {
@@ -107,14 +124,7 @@ export function ArtifactFrame({ artifact, fill = false, className, bare = false 
         </button>
       )}
       {full && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 z-50 flex flex-col bg-panel" role="dialog" aria-label={artifact.title}>
-          <div className="flex justify-end p-2">
-            <button type="button" data-artifact-exit-fullscreen onClick={() => setFull(false)} className="rounded-md px-2 py-1 text-[12px] text-ink hover:bg-hover">
-              {t("artifact.exitFullscreen")}
-            </button>
-          </div>
-          <ArtifactFrame artifact={artifact} fill bare className="min-h-0 flex-1" />
-        </div>,
+        <FullscreenLayer artifact={artifact} onClose={() => setFull(false)} />,
         document.body,
       )}
       {blocked ? (

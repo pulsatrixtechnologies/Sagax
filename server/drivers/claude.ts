@@ -5,7 +5,6 @@
 // continues across turns via --resume <sessionId> (the resumeCursor).
 //
 // Integrations become MCP servers on the CLI:
-//   - Composio Sessions (connected apps → tools) over streamable HTTP
 //   - every computer (this Mac, a Local VM, a VPS, or a Boat cloud
 //     computer through server/harness-mcp-proxy.ts computer) as the one
 //     stdio `computer` server in turn.integrations.localComputer
@@ -22,6 +21,7 @@ import { join, dirname, isAbsolute, normalize } from "node:path";
 import { LOGIN_MARKER } from "../principal-engine-logins.ts";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
+import { claudeProtectedDenyRules } from "../engine-protected-paths.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { writeFileAtomic, writeFileAtomicIfChanged } from "../atomic.ts";
 import { augmentedPath } from "../env-path.ts";
@@ -48,6 +48,7 @@ import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { newEventId, newId, type EffortLevel, type TurnAccessInput } from "../contracts.ts";
 import { askInputDetail, askInputSummary, commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
+import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT } from "../../shared/phone-tools.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, USAGE_LIMIT } from "./retry.ts";
 import { engineFailureMessage, type EngineFailureKind } from "./engine-errors.ts";
@@ -530,6 +531,11 @@ const CLAUDE_RULE = /^[A-Za-z_][\w-]*(\([^\p{Cc}]+\))?$/u;
  * --settings file, the one source --setting-sources project still reads besides
  * the bot's folder, so every bot of the instance gets them; a guest's confined
  * turn never does. A malformed value grants nothing. */
+/** Deny rules applied to every non-guest Claude turn: the protected folders. */
+export function remoteSupportDenyRules(): string[] {
+  return claudeProtectedDenyRules();
+}
+
 export function instanceClaudeAllowRules(env: NodeJS.ProcessEnv = process.env): string[] {
   const raw = env.SAGAX_CLAUDE_ALLOW?.trim();
   if (!raw) return [];
@@ -1998,10 +2004,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // upstream exactly as before.
       const harnessHttp = (spec: Parameters<typeof harnessMcpHttpSpec>[0], kind: Parameters<typeof harnessMcpHttpSpec>[1]) =>
         turn.toolScope === undefined ? harnessMcpHttpSpec(spec, kind) : null;
-      if (turn.integrations?.composio) {
-        mcpServers.composio = { ...turn.integrations.composio };
-        allowed.push("mcp__composio");
-      }
       if (turn.integrations?.localComputer) {
         const local = turn.integrations.localComputer;
         // The cloud computer's harness proxy is reached over HTTP directly
@@ -2163,8 +2165,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // A guest's turn pre-allows only the harness's own tools: anything
       // else (the browser can open a file: address) asks the owner first.
       if (turn.guestConfined) allowed.splice(0, allowed.length, ...allowed.filter((name) => name === "mcp__ogb" || name === "mcp__agents"));
-      // The MCP config carries credentials — a Composio consumer key in a
-      // header, the boat token in the computer proxy's env, the comms token in
+      // The MCP config carries credentials — the boat token in the computer
+      // proxy's env, the comms token in
       // the agents proxy's env. On argv every one of those is world-readable
       // through `ps` for the life of the turn, to any local process. The CLI
       // accepts a FILE for this flag, so the secrets go in a 0600 file that
@@ -2211,7 +2213,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (turn.guestConfined) settings.permissions = GUEST_CLAUDE_PERMISSIONS;
       else {
         const allow = instanceClaudeAllowRules();
-        if (allow.length) settings.permissions = { allow };
+        // Always deny reads of the remote-support folder: on an organization
+        // server the engine runs in the Sagax container, so the technician key
+        // and the session addresses would otherwise be on its filesystem.
+        const deny = remoteSupportDenyRules();
+        if (allow.length || deny.length) settings.permissions = { ...(allow.length ? { allow } : {}), ...(deny.length ? { deny } : {}) };
       }
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
@@ -2829,10 +2835,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               if (b.type === "tool_result") {
                 const toolName = typeof b.tool_use_id === "string" ? session.toolNames.get(b.tool_use_id) : undefined;
                 emit({
-                  ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error, output: toolDetailPreview(b.content),
+                  ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error,
+                  // a phone's answer reaches the model, never the event log or the chat (phone_tool)
+                  output: isPhoneToolCallName(toolName) ? PHONE_TOOL_OUTPUT_NOT_KEPT : toolDetailPreview(b.content),
                   ...(b.is_error ? {} : cwToolResult(toolName, b.content)),
                 });
-                for (const img of extractMcpImages(b.content)) {
+                // photos a phone sent go to the model only, never into the chat (phone_tool)
+                for (const img of isPhoneToolCallName(toolName) ? [] : extractMcpImages(b.content)) {
                   emit({ ...base(threadId, currentTurnId()), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }
                 if (!b.is_error && isArtifactTool(toolName)) {
@@ -3450,7 +3459,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
           agentsMcp: true,
         customMcp: true,
           computerMcp: true,
-          composioMcp: true,
           phoneMcp: true,
           browserMcp: true,
           dataMcp: true,

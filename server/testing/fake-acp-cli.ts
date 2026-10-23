@@ -16,7 +16,7 @@
 //   FAKE_ACP_CACHED_LIVE_LOAD  acknowledge session/load of a live session but
 //                       keep its original MCP credentials, matching Qwen.
 //   FAKE_ACP_TEXT_REPLY  answer every session/prompt with only this text.
-//   FAKE_ACP_MODE   happy (default) | image | empty-reply | reasoning-only | exit-early | fail-after-text | hang | hang-initialize | stall-after-text | stall-first-prompt | unkeyed-tool | no-auth | auth-required | permission | question
+//   FAKE_ACP_MODE   happy (default) | image | empty-reply | reasoning-only | reasoning-only-error | exit-early | fail-after-text | hang | hang-initialize | stall-after-text | stall-first-prompt | unkeyed-tool | no-auth | auth-required | permission | question
 //                   | ask-question-unsupported (send a cursor/ask_question server→client
 //                     request mid-prompt; the driver must answer -32601 method
 //                     not found, and the prompt completes only after that
@@ -525,6 +525,7 @@ let onAskQuestionAnswered: (() => void) | null = null;
 let hangingPromptId: unknown = null;
 // stall-first-prompt mode: how many prompts this process has received
 let stallPrompts = 0;
+let reasoningErrors = 0;
 let hangKeepAlive: ReturnType<typeof setInterval> | null = null;
 
 // ask-peer mode: the "agents" MCP server entry from session/new's mcpServers
@@ -1050,6 +1051,30 @@ function handle(msg: any) {
         );
       };
       const promptHead = String(msg.params?.prompt?.[0]?.text ?? "");
+      if (mode === "reasoning-only-error") {
+        // Grok/xAI's "empty response from model (reasoning_only)": a thought
+        // stream, then an rpc -32603 with that detail, for the first N prompts
+        // of the turn (FAKE_ACP_REASONING_FAIL_TIMES, default every prompt).
+        // After that it answers normally, so one fixture drives both the nudge
+        // recovery and the bounded give-up. Each failure is counted to
+        // FAKE_ACP_REASONING_COUNT_FILE so a test can prove the bound.
+        out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_thought_chunk", content: { text: "thinking hard, producing no answer" } } } });
+        const failTimes = process.env.FAKE_ACP_REASONING_FAIL_TIMES === undefined
+          ? Infinity
+          : Number(process.env.FAKE_ACP_REASONING_FAIL_TIMES);
+        if (reasoningErrors < failTimes) {
+          reasoningErrors += 1;
+          if (process.env.FAKE_ACP_REASONING_COUNT_FILE) {
+            try { writeFileSync(process.env.FAKE_ACP_REASONING_COUNT_FILE, String(reasoningErrors)); } catch {}
+          }
+          recordMethod("session/prompt.error");
+          out({ jsonrpc: "2.0", id: msg.id, error: { code: -32603, message: "Internal error", data: { details: "empty response from model (reasoning_only)" } } });
+          return;
+        }
+        out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: "here is the answer after thinking" } } } });
+        complete();
+        return;
+      }
       if (promptHead.includes("[sagax-cache-prime]")) {
         voiceCachePrimed = true;
         out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: "ok" } } } });

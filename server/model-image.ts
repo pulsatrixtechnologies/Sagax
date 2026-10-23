@@ -28,6 +28,8 @@ import type { renderAsync as RenderAsync } from "@resvg/resvg-js";
 import { ATTACHMENTS_DIR, modelImageCopyPath } from "./attachments.ts";
 import type { TurnImageInput } from "./contracts.ts";
 import { nativeRequire } from "./data/engine.ts";
+import { serverApprovalWords } from "./approval-words.ts";
+import { WebpUndecodable, scaleWebpOffThread } from "./webp-scale-worker.ts";
 
 /** Claude's recommended long edge; beyond it a model only scales down itself. */
 export const MODEL_IMAGE_MAX_EDGE = 1568;
@@ -39,6 +41,44 @@ const MIN_EDGE = 512;
 const MAX_SOURCE_SIDE = 20_000;
 /** Most pixels drawn for one picture (resvg holds them all, 4 bytes each). */
 const MAX_SOURCE_PIXELS = 50_000_000;
+/** A WebP is decoded to RGBA in memory (4 bytes a pixel) in a worker thread:
+ * a larger one is refused. */
+export const MAX_WEBP_PIXELS = 16_000_000;
+
+export type ModelImageRefusalReason = "too-big" | "unreadable";
+
+/** A WebP that cannot be shrunk for the model (too big to decode, damaged,
+ * animated). The turn is refused with a message; the original is never sent. */
+export class ModelImageRefused extends Error {
+  readonly status = 422;
+  readonly reason: ModelImageRefusalReason;
+  constructor(reason: ModelImageRefusalReason, language?: string) {
+    super(refusalText(reason, language));
+    this.reason = reason;
+  }
+}
+
+const REFUSALS: Record<"en" | "fr", Record<ModelImageRefusalReason, string>> = {
+  en: {
+    "too-big": "This WebP picture is too large to shrink for the model (over 16 megapixels). Send it as a PNG or JPEG, or make it smaller.",
+    unreadable: "This WebP picture could not be read (it is damaged or animated). Send it as a PNG or JPEG.",
+  },
+  fr: {
+    "too-big": "Cette image WebP est trop grande pour être réduite avant d'aller au modèle (plus de 16 mégapixels). Envoyez-la en PNG ou en JPEG, ou réduisez-la.",
+    unreadable: "Cette image WebP est illisible (abîmée ou animée). Envoyez-la en PNG ou en JPEG.",
+  },
+};
+
+function refusalText(reason: ModelImageRefusalReason, language?: string): string {
+  const locale = serverApprovalWords(language).locale;
+  return REFUSALS[locale.startsWith("fr") ? "fr" : "en"][reason];
+}
+
+function isWebp(bytes: Uint8Array, mime: string): boolean {
+  if (mime === "image/webp") return true;
+  const view = Buffer.from(bytes.buffer, bytes.byteOffset, Math.min(bytes.byteLength, 12));
+  return view.length === 12 && view.toString("latin1", 0, 4) === "RIFF" && view.toString("latin1", 8, 12) === "WEBP";
+}
 
 export interface RasterSize {
   width: number;
@@ -116,14 +156,23 @@ export interface FittedImage {
 
 /** Fit one picture: long edge at most MODEL_IMAGE_MAX_EDGE, at most
  * MODEL_IMAGE_MAX_BYTES. Null when it cannot be read or drawn. */
-export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime"], render: ScaleRenderer = resvgScale): Promise<FittedImage | null> {
+export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime"], renderer?: ScaleRenderer): Promise<FittedImage | null> {
   const size = rasterSize(bytes);
-  if (!size || size.width > MAX_SOURCE_SIDE || size.height > MAX_SOURCE_SIDE || size.width * size.height > MAX_SOURCE_PIXELS) return null;
-  // resvg 2.6 draws a WebP as an empty frame: it goes as it is (engines take
-  // WebP, and scale a large one down themselves).
-  if (mime === "image/webp" || (Math.max(size.width, size.height) <= MODEL_IMAGE_MAX_EDGE && bytes.length <= MODEL_IMAGE_MAX_BYTES)) {
+  const webp = isWebp(bytes, mime);
+  if (!size) {
+    // An unreadable header is only the model's problem when the file is small.
+    if (webp && bytes.length > MODEL_IMAGE_MAX_BYTES) throw new ModelImageRefused("unreadable");
+    return null;
+  }
+  if (Math.max(size.width, size.height) <= MODEL_IMAGE_MAX_EDGE && bytes.length <= MODEL_IMAGE_MAX_BYTES) {
     return { bytes, mime, size, resized: false };
   }
+  // resvg 2.6 draws a WebP as an empty frame, so a WebP is decoded by libwebp
+  // in a worker thread (webp-scale-worker.ts) and comes out as a PNG like any
+  // other format. One that cannot be shrunk is refused, never sent as stored.
+  if (webp && size.width * size.height > MAX_WEBP_PIXELS) throw new ModelImageRefused("too-big");
+  if (size.width > MAX_SOURCE_SIDE || size.height > MAX_SOURCE_SIDE || size.width * size.height > MAX_SOURCE_PIXELS) return null;
+  const render = renderer ?? (webp ? (data: Buffer, _mime: TurnImageInput["mime"], to: RasterSize) => scaleWebpOffThread(data, to) : resvgScale);
   let edge = Math.min(MODEL_IMAGE_MAX_EDGE, Math.max(size.width, size.height));
   let smallest: FittedImage | null = null;
   for (;;) {
@@ -131,7 +180,8 @@ export async function fitImageForModel(bytes: Buffer, mime: TurnImageInput["mime
     let out: Buffer;
     try {
       out = await render(bytes, mime, target);
-    } catch {
+    } catch (error) {
+      if (webp && error instanceof WebpUndecodable) throw new ModelImageRefused("unreadable");
       return smallest;
     }
     if (!rasterSize(out)) return smallest;
@@ -148,6 +198,8 @@ export { modelImageCopyPath };
 export interface FitTurnImagesOptions {
   attachmentsDir?: string;
   render?: ScaleRenderer;
+  /** The server's language setting: words the refusal of a WebP in it. */
+  language?: string;
 }
 
 /** The turn's pictures as the engine should get them: each one within the
@@ -156,11 +208,11 @@ export async function fitTurnImagesForModel(images: readonly TurnImageInput[], o
   const attachmentsDir = options.attachmentsDir ?? ATTACHMENTS_DIR;
   // One at a time: each draw holds a decoded picture in memory.
   const out: TurnImageInput[] = [];
-  for (const image of images) out.push(await fitOne(image, attachmentsDir, options.render));
+  for (const image of images) out.push(await fitOne(image, attachmentsDir, options.render, options.language));
   return out;
 }
 
-async function fitOne(image: TurnImageInput, attachmentsDir: string, render: ScaleRenderer | undefined): Promise<TurnImageInput> {
+async function fitOne(image: TurnImageInput, attachmentsDir: string, render: ScaleRenderer | undefined, language?: string): Promise<TurnImageInput> {
   try {
     const copy = modelImageCopyPath(attachmentsDir, image.path);
     if (existsSync(copy) && statSync(copy).mtimeMs >= statSync(image.path).mtimeMs) {
@@ -176,6 +228,7 @@ async function fitOne(image: TurnImageInput, attachmentsDir: string, render: Sca
     await rename(temp, copy);
     return { path: copy, mime: fitted.mime, bytes: fitted.bytes.length };
   } catch (error) {
+    if (error instanceof ModelImageRefused) throw new ModelImageRefused(error.reason, language);
     console.warn(`model image: kept as stored (${error instanceof Error ? error.message : "unknown"})`);
     return image;
   }

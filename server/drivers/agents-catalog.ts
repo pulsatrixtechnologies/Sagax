@@ -16,10 +16,14 @@ import { OPTIONS_CARD_LIMITS, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/o
 import { agentToolAnnotations } from "../agent-tool-policy.ts";
 import { PAGE_TOOL_DEFINITIONS } from "./agents-page-tools.ts";
 import { WIDGET_TOOL_DEFINITIONS } from "./agents-widget-tools.ts";
+import { APP_TOOL_DEFINITIONS } from "./agents-app-tools.ts";
+import { PLACE_PHONE_CALL_TOOL_SPEC } from "../../shared/outbound-call.ts";
 import { ARTIFACT_TOOL_DEFINITIONS } from "./agents-artifact-tools.ts";
 import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
+import { phoneToolDefinition, phoneToolsFromEnv } from "./agents-phone-tools.ts";
+import type { PhoneToolId } from "../../shared/phone-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
 /** Which tools a turn is shown. The harness decides each of these when it
@@ -76,6 +80,9 @@ export interface CatalogProfile {
   /** The claim tools (server/perspicax-claims.ts): a Perspicax profile is
    * mounted for the person speaking in this turn. Absent is off. */
   claims?: boolean;
+  /** The tools a phone of the person speaking offers right now (phone_tool,
+   * agents-phone-tools.ts). Absent or empty is off, so the wire goldens stay. */
+  phoneTools?: PhoneToolId[];
 }
 
 /** The profile a spawned proxy was given. Everything is off unless the
@@ -104,6 +111,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     agentApi: env.SAGAX_AGENT_API === "1",
     perspicax: !externalRuntime && env.SAGAX_PERSPICAX_TOOLS === "1",
     claims: env.SAGAX_CLAIMS === "1",
+    phoneTools: externalRuntime ? [] : phoneToolsFromEnv(env.SAGAX_PHONE_TOOLS),
   };
 }
 
@@ -460,6 +468,8 @@ const toolDefinitions = (externalRuntime: boolean) => [
         folder: { type: "string", description: "Optional: the name of one of that bot's existing folders to file the thread under. Leave out unless the person named one." },
         report_back: { type: "boolean", description: "Optional, on yourself only: true runs it as a parallel task of this conversation. The person sees its live card here and its result is posted back here as a reply when it finishes. Use it when the person asks for something unrelated while you are busy, so both run at once." },
         workspace: { type: "string", enum: ["this_computer", "browser", "cloud", "local_vm"], description: "Optional, on yourself, when your Workspace is Auto: where that thread works (this_computer = their files and apps, browser = web only, cloud = keeps running while they are away, local_vm = isolated). A place not allowed or offline falls back." },
+        read_only: { type: "boolean", description: "On yourself: read-only (starts in Ask)." },
+        thread_id: { type: "string", description: "On yourself: resume your earlier thread by id." },
       },
       required: ["title", "message"],
     },
@@ -493,6 +503,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   ...WIDGET_TOOL_DEFINITIONS,
+  ...APP_TOOL_DEFINITIONS,
   ...ARTIFACT_TOOL_DEFINITIONS,
   ...PAGE_TOOL_DEFINITIONS,
   ...HELP_TOOL_DEFINITIONS,
@@ -707,6 +718,21 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "open_connector_setup",
+    description:
+      "When the person asks to connect a connector (Microsoft Teams, Outlook, Gmail, Google Drive, OneDrive, SharePoint, Salesforce, X, ...): one call posts a card whose button opens the right sign-in page in their browser (grok.com or claude.ai for this engine's own connectors, else Sagax's Connect apps). Sagax detects the connection. Then answer in one short sentence in their language; no steps, no settings tour.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        connector: { type: "string", maxLength: 120, description: "The app, as the person named it." },
+        via: { type: "string", enum: ["grok", "claude"], description: "Only when the person named where." },
+        language: { type: "string", enum: ["fr", "en"], description: "The person's language." },
+      },
+      required: ["connector"],
+    },
+  },
+  {
     name: "send_voice_note",
     description:
       "Send the user a voice note: a short spoken message synthesized with your configured voice, stored as audio, and attached to your reply when the turn ends. Write the note as speakable words, exactly as it should be said — no lists, links or markdown meant for screens. The same text becomes the note's visible caption and transcript, so the person can read or listen. Use it for warmth, tone or emphasis a written line cannot carry; use ordinary text otherwise.",
@@ -764,9 +790,24 @@ const toolDefinitions = (externalRuntime: boolean) => [
     },
   },
   {
+    name: "resource_usage",
+    description:
+      "Live usage card (CPU, memory, disks, network; last minute) for a computer the person reaches, with its first sample. Only when they ask to see usage. Read-only, no approval.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        target: { type: "string", enum: ["this_computer", "sagax_server", "host", "remote_session", "bot_computer"] },
+        host: { type: "string", maxLength: 200, description: "A server host's name (list_terminal_resources)." },
+        session: { type: "string", maxLength: 200, description: "Tailcat session code or computer name; default: this conversation's." },
+      },
+      required: ["target"],
+    },
+  },
+  {
     name: "publish_remote_session",
     description:
-      "Post the connected Tailcat remote-support session into this chat. Call it as soon as the end user connects. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
+      "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -786,6 +827,25 @@ const toolDefinitions = (externalRuntime: boolean) => [
         os_name: { type: "string" },
       },
       required: ["flow_session_id", "code", "os", "rights", "end_at"],
+    },
+  },
+  {
+    name: "remote_session_snapshot",
+    description: "Read the connected Tailcat remote computer in one call: OS, uptime, CPU, memory, disks, top processes. No card.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { session: { type: "string", description: "Support code; default: this chat's session." } } },
+  },
+  {
+    name: "remote_session_exec",
+    description: "Run one command on the connected Tailcat remote computer (sh on macOS/Linux, PowerShell on Windows); returns exit code and output. A read-only command runs at once, any other asks the person.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        command: { type: "string", maxLength: 8000 },
+        session: { type: "string", description: "Support code; default: this chat's session." },
+        timeout_seconds: { type: "integer", minimum: 1, maximum: 120 },
+      },
+      required: ["command"],
     },
   },
   {
@@ -1235,7 +1295,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "propose_team_memory",
     description:
-      "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a workspace admin to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
+      "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a member of this team, or an organization admin, to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -1671,12 +1731,14 @@ export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "launch_cloud_agent", "list_cloud_agents", "get_cloud_agent", "cancel_cloud_agent", "archive_cloud_agent",
   "cloud_agent_follow_up", "cloud_agent_transcript", "find_cloud_agent_by_pr", "list_cloud_agent_artifacts",
   "save_artifact", "update_artifact", "delete_artifact", "list_artifacts",
-  "manage_settings", "sagax_settings", "manage_pairing", "offer_shell_terminal", "list_terminal_resources", "vm_exec",
+  "manage_settings", "sagax_settings", "manage_pairing", "offer_shell_terminal", "list_terminal_resources", "resource_usage", "vm_exec",
   "shared_computer", "list_shared_computers", "nudge_person", "remove_reaction", "retry_thread",
   "read_transcript", "read_transcript_cold", "read_transcript_page", "read_latest_page", "read_latest_page_with_threads",
   "find_agents", "get_agent", "list_agents", "send_prompt", "await_turn", "create_agent", "delete_agent",
   "workspace_read", "workspace_search", "session_read", "close_thread", "list_threads",
-  "request_login",
+  "request_login", "place_phone_call",
+  // The person's iPhone (agents-phone-tools.ts): rare, and long.
+  "phone_tool",
   // A post into a room from a 1:1 chat: rare.
   "list_rooms", "post_to_room",
 ]);
@@ -1744,14 +1806,14 @@ export const PERSPICAX_TOOLS = [
   // Remote support (Perspicax 1.8.43, Tailcat). The bot does not supply a
   // nodekey: server/remote-support-local.ts creates the technician key once
   // on this computer and forwards only the public half.
-  pxTool("remote_support_open", "Remote support (Tailcat, assistance a distance). When the person asks for a link for their client, a remote session, or assistance a distance, call this with no key. Sagax creates the technician key once on this computer (the desktop PC or the bot's cloud computer) and never sends the private key. Do not ask for a nodekey, a template or a session id, and do not run tailcat serve, an exit node or file sharing. Sagax ships tailcat 0.7.0 beside the app. Do not download tailcat and do not copy it into a system directory. Defaults, unless the person says otherwise: the technician is their name and organization, the session ends in 2 hours (24 hours at most), the page detects the OS, and rights stay standard (pass rights elevated only when they ask). Answers a code and a page link: give those to the person. Then poll remote_support_status (this computer connects on the technician side) and always end with remote_support_close. Refused with remote_support_disabled while an admin has not turned it on, and absent without the remote support permission.", {
+  pxTool("remote_support_open", "Remote support (Tailcat, assistance a distance). When the person asks for a link for their client, a remote session, or assistance a distance, call this with no key: it is the first of at most three calls (open, one status when the person says it is launched, then the status that connects). No schema search, no cloud fallback. Sagax creates the technician key once on this computer (the desktop PC or the bot's cloud computer) and never sends the private key. Do not ask for a nodekey, a template or a session id, and do not run tailcat serve, an exit node or file sharing: never expose the person's own computer. Sagax ships tailcat 0.7.0 beside the app. Do not download tailcat and do not copy it into a system directory. Defaults, unless the person says otherwise: the technician is their name and organization, the session ends in 2 hours (24 hours at most), the page detects the OS, and rights stay standard, a session without administrator rights (pass rights elevated only when they ask). Answers a code, a page link and the script lines, already in code fences: put them in your first reply exactly as given, and never pass a line through a shell on this computer (a Mac shell eats its $ variables). Then call remote_support_status when the person says it is launched, and always end with remote_support_close. Refused with remote_support_disabled while an admin has not turned it on, and absent without the remote support permission.", {
     rights: { type: "string", enum: ["standard", "elevated"], description: "standard unless the person asks for elevated (one administrator consent on the end user's computer)" },
     technician: { type: "string", maxLength: 80, description: "optional override. Omit it: Sagax uses the person's name and the organization" },
     os: { type: ["string", "null"], enum: ["windows", "macos", "linux", null], description: "omit it. The support page detects the OS. Pass one only when the person named it" },
     end_at: { type: "string", description: "optional RFC 3339 end. Omit it for 2 hours from now. Never later than 24 hours" },
     start_minutes: { type: "integer", minimum: 5, maximum: 30, description: "minutes allowed before the first script fetch (default 15)" },
   }),
-  pxTool("remote_support_status", "The state of a remote support session you opened: waiting, fetched, started, connected, ended or expired. When the end user has started, this computer connects with the local technician key. The address stays on this computer: it is not in this result, and you do not repeat it or run tailcat yourself. fetch_ip_count above 1 means someone else read the code: do not connect, close it (cancelled) and open a new one. Pass the code remote_support_open answered.", { code: { type: "string", description: "the code remote_support_open answered" }, mark_connected: { type: "boolean", description: "omit it. Sagax marks the session connected after the local key reaches the computer" } }, ["code"]),
+  pxTool("remote_support_status", "The state of a remote support session you opened: waiting, fetched, started, connected, ended or expired. Call it when the person says the script is launched, not in a loop. fetch_ip_count must be exactly 1 (one address took the script): above 1 someone else read the code, do not connect, close it (cancelled) and open a new one. When the end user has started, this same call connects this computer with the local technician key and marks the session connected; if it still says started, call it once more. Once connected, Sagax posts the session card and the live screen in the chat by itself: never write a screenshot to the Desktop or open Preview. Then use remote_session_snapshot. The address stays on this computer: it is not in this result, and you do not repeat it or run tailcat yourself. Pass the code remote_support_open answered.", { code: { type: "string", description: "the code remote_support_open answered" }, mark_connected: { type: "boolean", description: "omit it. Sagax marks the session connected after the local key reaches the computer" } }, ["code"]),
   pxTool("remote_support_close", "Close a remote support session you opened: outcome ended for a session that ran, cancelled for one that never connected. The end user's script stops the tunnel within 10 s. Always call it at the end.", { code: { type: "string", description: "the code remote_support_open answered" }, outcome: { type: "string", enum: ["ended", "cancelled"] } }, ["code", "outcome"]),
   pxTool("review_write", "Approve or refuse a write waiting for an approver: the review id from the pending answer and decision approve or refuse. Only the named approver can decide it.", { id: { type: "string" }, decision: { type: "string", enum: ["approve", "refuse"] } }, ["id", "decision"]),
 ];
@@ -1762,7 +1824,11 @@ function catalogTools(profile: CatalogProfile) {
   const base = [
     ...core,
     ...(profile.perspicax && !profile.externalRuntime ? PERSPICAX_TOOLS : []),
+    // a call through the speaker's Twilio profile on Perspicax, on a card
+    // (server/outbound-calls.ts); never in a room
+    ...(profile.perspicax && !profile.externalRuntime && !profile.coordinating ? [PLACE_PHONE_CALL_TOOL_SPEC] : []),
     ...(profile.claims && !profile.externalRuntime ? CLAIM_TOOLS : []),
+    ...(profile.phoneTools?.length && !profile.externalRuntime ? [phoneToolDefinition(profile.phoneTools)] : []),
   ];
   if (!profile.agentApi || profile.externalRuntime) return base;
   return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || (tool.name !== "create_agent" && tool.name !== "delete_agent"))];

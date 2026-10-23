@@ -78,6 +78,26 @@ final class Parity3ETests: XCTestCase {
         XCTAssertEqual(RoutinePatch.createBody(created)["onlyWhenPresent"] as? Bool, true)
     }
 
+    func testPostResultsRoundTripsAndIsSentOnlyWhenItChanges() throws {
+        // A migrated routine decodes postResults=true; it stays silent only
+        // when the editor turns it off (JC 2026-10-22).
+        let original = try routine(#"""
+        {"id":"r1","name":"Digest","prompt":"p","botId":"b1","runOn":"maus","enabled":true,
+         "schedule":{"type":"daily","time":"09:00","weekdays":[1]},"durationMinutes":30,
+         "createdAt":1,"updatedAt":2,"postResults":true}
+        """#)
+        XCTAssertEqual(original.postResults, true)
+        var same = RoutineInput(name: "Digest", prompt: "p", botId: "b1", schedule: original.schedule, durationMinutes: 30)
+        same.postResults = true
+        XCTAssertNil(RoutinePatch.body(original: original, input: same)["postResults"])
+        same.postResults = false
+        XCTAssertEqual(RoutinePatch.body(original: original, input: same)["postResults"] as? Bool, false)
+        var created = RoutineInput(name: "Digest", prompt: "p", botId: "b1", schedule: original.schedule)
+        XCTAssertNil(RoutinePatch.createBody(created)["postResults"])
+        created.postResults = true
+        XCTAssertEqual(RoutinePatch.createBody(created)["postResults"] as? Bool, true)
+    }
+
     func testATriggerUrlNeverCarriesASecret() throws {
         let json = #"{"webhooks":[{"id":"w1","endpointId":"ep_1","name":"PRs","botId":"b1","enabled":true,"deliveryCount":2,"lastReceivedAt":50,"signingSecretSet":true,"token":"whsec_secret","source":{"type":"github","events":["pr.opened","ci.failed"],"filters":{"repo":["acme/app"]}}}],"ingress":{"available":true,"baseUrl":"https://hooks.example.test/"}}"#
         let list = try JSONDecoder().decode(WebhooksResponse.self, from: Data(json.utf8))

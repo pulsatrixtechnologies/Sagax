@@ -263,7 +263,7 @@ describe("the upkeep loop", () => {
       { text: "The person has exams this weekend", kind: "fact", until: "2026-09-27", confidence: 0.9 },
     ]));
     const report = await upkeep().capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "I'm vegetarian and I have exams this weekend", bot: "Good luck!" }] });
-    expect(report).toMatchObject({ added: 2, topics: 0, aboutMe: 1 });
+    expect(report).toMatchObject({ added: 2, topics: 0, aboutMe: 1, known: 0 });
     expect(memory()).toContain('- 2026-09-25 · from chat "Plans" (noticed) · The person is vegetarian\n');
     expect(memory()).toContain("The person has exams this weekend · until 2026-09-27");
     await flushMemoryJournal(BOT.id);
@@ -335,7 +335,7 @@ describe("the upkeep loop", () => {
     writeMemoryFile(BOT.id, "- 2026-09-25 · The user's company is called Northwind Studio.\n");
     answers.push(JSON.stringify([{ text: "The user's company is Northwind Studio", kind: "fact", aboutUser: true, noted: true }]));
     const report = await upkeep().capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "My company is Northwind Studio", bot: "Noted." }] });
-    expect(report).toMatchObject({ added: 0, aboutMe: 1 });
+    expect(report).toMatchObject({ added: 0, aboutMe: 1, known: 1 });
     expect(memory().match(/Northwind/g)).toHaveLength(1);
   });
 
@@ -359,6 +359,13 @@ describe("the upkeep loop", () => {
     expect((await upkeep().capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "pasta again", bot: "ok" }] })).topics).toBe(0);
     await flushMemoryJournal(BOT.id);
     expect(readMemoryJournal(BOT.id, 10).filter((row) => row.via === "capture").map((row) => row.path).sort()).toEqual(["MEMORY.md", "memory/family.md", "memory/food.md"]);
+    // the receipt counts what was already there (M3: "3 added, 2 already known")
+    answers.push(JSON.stringify([
+      { text: "The person loves pasta", kind: "preference", topic: "food" },
+      { text: "The person is vegetarian", kind: "preference" },
+      { text: "The person plays chess", kind: "fact" },
+    ]));
+    expect(await upkeep().capture({ botId: BOT.id, threadId: "t1", turns: [{ person: "pasta, vegetarian, chess", bot: "ok" }] })).toMatchObject({ added: 1, topics: 0, known: 2 });
   });
 
   it("does not add About me lines from another person's message", async () => {

@@ -67,7 +67,7 @@ import { roomRetryRequest } from "@/lib/room-retry";
 import { botEngine, failedTurnCause } from "@/lib/failed-turn";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 import { Composer } from "./Composer";
-import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
 import { GroupCostNotice, WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ConversationTurnLimit } from "./ConversationTurnLimit";
@@ -75,14 +75,12 @@ import { GroupTaskPicker, PersonThreadPicker, ThreadReturnLink } from "./TaskPic
 import { isPureLeakedSystemHarnessMessage, stripLeakedSystemHarnessMessages } from "../../shared/system-message-guard.ts";
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { ReplyQuote } from "./ReplyQuote";
-import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
-import { prefersWideBubble } from "@/lib/rich-blocks";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
 import { GroupCallOverlay } from "./GroupCallView";
@@ -95,7 +93,7 @@ import { GroupPeoplePicker, useOrgDirectory } from "./GroupPeoplePicker";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { groupHumanLabel } from "@/lib/private-threads";
 import { ManageMembersPanel } from "./ManageMembersPanel";
-import { GroupAvatarStack, GroupPanel } from "./GroupPanel";
+import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
 import { groupActivityRuns, isHiddenStatusActivity, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
@@ -311,18 +309,23 @@ function RoomTextMessage({
         <div
           data-chat-bubble
           className={cn(
-            "rounded-[18px] text-[13px] leading-5",
-            !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
+            "text-[13px] leading-5",
             !user && emerging && "turn-answer",
-            // A bot message that is only attachments is just the files: no bubble.
-            !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
-              ? "text-ink"
-              : mine
-                ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
-                : user
-                  ? "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40"
-                  : "bg-card px-3 py-[7px] text-ink",
-            runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
+            !user
+              // A bot reads flat like Grok Bot: no card, the column's measure,
+              // aligned to the rail; its name labels the run above (RoomBotLabel).
+              // An attachments-only line keeps its tighter fit.
+              ? (!m.text?.trim() && !m.replyToId && m.attachments?.length
+                  ? "w-fit max-w-[min(80%,560px,calc(100%-82px))] text-ink"
+                  : "w-full max-w-[calc(100%-82px)] text-ink")
+              // A person (you or another) keeps a rounded bubble.
+              : cn(
+                  "rounded-[18px] w-fit max-w-[min(80%,560px,calc(100%-82px))]",
+                  mine
+                    ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
+                    : "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40",
+                  runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
+                ),
           )}
           title={new Date(m.at).toLocaleString()}
         >
@@ -776,8 +779,6 @@ export const Transcript = memo(function Transcript({
             </div>
           ) : m.kind === "secret" && m.secret && m.from?.botId ? (
             <SecretRequestCard botId={m.from.botId} threadId={group.threadId} message={m} />
-          ) : m.kind === "connector" && m.connector && m.from?.botId ? (
-            <ConnectorCard botId={m.from.botId} threadId={group.threadId} message={m} />
           ) : m.kind === "options" && m.card?.requestId && m.card.questionRequest ? (
             <div className="flex justify-start">
               <MessageBoundary fallbackText={m.card.subtitle || m.card.title || ""}>
@@ -1213,7 +1214,6 @@ export function GroupView({ group: stored }: { group: Group }) {
 
   // Mascot stays while a member works; the finished reply pops in above it.
   const lastGroupMessage = group.messages.at(-1);
-  const toolInFlight = lastGroupMessage?.kind === "activity" && lastGroupMessage.tool?.ok === undefined;
   const activity = liveActivityPhrases(lastGroupMessage);
   // A member busy elsewhere takes its turn when free; until then the room
   // works with no speaker, and the presence row names who it is waiting on.
@@ -1480,7 +1480,6 @@ export function GroupView({ group: stored }: { group: Group }) {
         )}
       </div>}
 
-      <SavedMessagesNotice threadId={group.threadId} archived={group.tasks?.some((task) => task.threadId === group.threadId && task.archivedAt != null) === true} />
 
       {/* Pinned message banner — resolves against the room's full transcript */}
       {(() => {
@@ -1585,23 +1584,15 @@ export function GroupView({ group: stored }: { group: Group }) {
           )}
           {(speaker || presenceVisible) && (
             <TurnPresence
-              avatar={
-                // the speaker's real profile image when it has one, as in ChatView
-                <BotAvatar
-                  bot={presenceSpeaker ?? { color: "green" }}
-                  state={toolInFlight && !awaited ? "working" : "thinking"}
-                  size={36}
-                  forward={false}
-                  lookAround={1}
-                  trackPointer={false}
-                />
-              }
+              // the speaker's colour and mascot, as in ChatView
+              bot={presenceSpeaker ?? { color: "green" }}
+              // a bot the room waits on (busy elsewhere) is not typing here
+              streamThreadId={speaker ? group.threadId : null}
               visible={presenceVisible}
               phrases={activity.phrases}
               phase={activity.phase}
               seed={`${group.id}:${group.turnStartedAt ?? ""}:${speaker?.id ?? ""}`}
               answering={popping !== null}
-              since={speaker ? group.turnStartedAt ?? null : null}
             />
           )}
           </ConversationGalleryProvider>
@@ -1652,8 +1643,7 @@ export function GroupView({ group: stored }: { group: Group }) {
           readOnlyNote={!remoteClient && !ownsRoom}
           details={
             <>
-              <section>
-                <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("groupPanel.people")}</h3>
+              <PanelSection title={t("groupPanel.people")}>
                 <ChannelMembers
                   part="humans"
                   humans={channelHumans}
@@ -1689,9 +1679,8 @@ export function GroupView({ group: stored }: { group: Group }) {
                     onDone={() => setPickingPeople(false)}
                   />
                 )}
-              </section>
-              <section>
-                <h3 className="mb-1.5 text-[13px] text-ink-secondary">Bots</h3>
+              </PanelSection>
+              <PanelSection title="Bots">
                 <ChannelMembers
                   part="bots"
                   humans={[]}
@@ -1725,7 +1714,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                     {t("room.members.manage")}
                   </button>
                 )}
-              </section>
+              </PanelSection>
               {!remoteClient && !ownsRoom && viewerListed && (
                 <button
                   type="button"
@@ -1740,24 +1729,20 @@ export function GroupView({ group: stored }: { group: Group }) {
           advanced={
             remoteClient ? null : (
               <>
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.responder.aria")}</h3>
+                <PanelSection title={t("room.responder.aria")}>
                   <DefaultResponderSelect group={group} members={members} disabled={!ownsRoom} />
-                </section>
+                </PanelSection>
                 {(group.humanIds?.length ?? 0) > 0 && (
-                  <section>
-                    <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.mentionAll.title")}</h3>
+                  <PanelSection title={t("room.mentionAll.title")}>
                     <RoomMentionAll group={group} disabled={!ownsRoom} />
-                  </section>
+                  </PanelSection>
                 )}
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.turnLimit.aria")}</h3>
+                <PanelSection title={t("room.turnLimit.aria")}>
                   <ConversationTurnLimit group={group} />
-                </section>
-                <section>
-                  <h3 className="mb-1.5 text-[13px] text-ink-secondary">{t("room.folder.title")}</h3>
+                </PanelSection>
+                <PanelSection title={t("room.folder.title")}>
                   <RoomWorkingFolder group={group} disabled={!ownsRoom || !folderEditable} adminOnlyNote={ownsRoom && !folderEditable} />
-                </section>
+                </PanelSection>
               </>
             )
           }

@@ -54,6 +54,7 @@ import { redactSecretsInText } from "../redact.ts";
 import { appendNative } from "./native.ts";
 import { permissionCommand, permissionLaunchCwd } from "./permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../tool-summary.ts";
+import { isPhoneToolCallName, PHONE_TOOL_OUTPUT_NOT_KEPT } from "../../shared/phone-tools.ts";
 import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { codexDeveloperInstructions, forgetCodexVolatile, syncCodexInstructions } from "./codex-instructions.ts";
 import { sectionFingerprints, volatileContextNote, volatileSectionsUpdate, withContextNote } from "./prompt-split.ts";
@@ -71,6 +72,7 @@ import { canUseMcpServer } from "../../shared/tool-scope.ts";
 import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { gateServer, mcpStdioServer } from "../mcp-gate-config.ts";
 import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, directoryCallTarget } from "../mcp-directory.ts";
+import { sagaxReviewsAuto } from "./sagax-reviewer.ts";
 
 export { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 
@@ -416,7 +418,7 @@ function extendShellExclusions(policy: Record<string, unknown>, patterns: readon
 /** Ask and Edits both run Codex's workspace-write sandbox with the person as
  * reviewer: Codex has no narrower "edits only" mode, so the selector never
  * offers Edits for it (supportsApprovalMode) and a stray value asks. */
-function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprovalParams {
+export function codexNamedApprovalParams(mode: Exclude<ApprovalMode, "custom">, sagaxReviews = false): CodexApprovalParams {
   if (mode === "full") {
     return {
       thread: {
@@ -434,12 +436,14 @@ function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprov
   return {
     thread: {
       approvalPolicy: "on-request",
-      approvalsReviewer: mode === "auto" ? "auto_review" : "user",
+      // Approve for me: Codex's own reviewer, unless Sagax decides for
+      // this bot (sagax-reviewer.ts, parity A13)
+      approvalsReviewer: mode === "auto" && !sagaxReviews ? "auto_review" : "user",
       sandbox: "workspace-write",
     },
     turn: {
       approvalPolicy: "on-request",
-      approvalsReviewer: mode === "auto" ? "auto_review" : "user",
+      approvalsReviewer: mode === "auto" && !sagaxReviews ? "auto_review" : "user",
       sandboxPolicy: { type: "workspaceWrite" },
     },
   };
@@ -1030,9 +1034,6 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             if (turn.toolScope !== undefined && approval === "prompt") appServerArgs.push("-c", `mcp_servers.${mountName}.default_tools_approval_mode="prompt"`);
           }
         };
-        if (turn.integrations?.composio) {
-          mountSelected("composio", "openmausbot_connectors", turn.integrations.composio);
-        }
         if (turn.integrations?.agents) {
           // Sagax's own coordination tools never ask, as on Claude
           // (mcp__agents is pre-allowed): "auto" quiets only read-only tools,
@@ -1717,12 +1718,16 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 itemType: "tool",
                 itemId: item.id,
                 ok: item.status !== "failed" && item.status !== "declined",
-                output: toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action),
+                // a phone's answer reaches the model, never the event log or the chat (phone_tool)
+                output: item.type === "mcpToolCall" && isPhoneToolCallName(typeof item.tool === "string" ? item.tool : undefined)
+                  ? PHONE_TOOL_OUTPUT_NOT_KEPT
+                  : toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action),
                 ...(item.type === "mcpToolCall" && !item.error && typeof item.tool === "string"
                   ? cwToolResult(typeof item.server === "string" ? `${item.server}__${item.tool}` : item.tool, item.result)
                   : {}),
               });
-              if (item.type === "mcpToolCall") {
+              // photos a phone sent go to the model only, never into the chat (phone_tool)
+              if (item.type === "mcpToolCall" && !isPhoneToolCallName(typeof item.tool === "string" ? item.tool : undefined)) {
                 for (const img of extractMcpImages(item.result)) {
                   emit({ ...base(threadId, turnId), type: "item.completed", itemType: "assistant_image", data: img.data });
                 }
@@ -2017,7 +2022,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           // on a resumed thread would keep the previous named mode sticky.
           approvalParams = customApprovalParams(effectiveConfig);
         } else {
-          approvalParams = namedApprovalParams(approvalMode);
+          approvalParams = codexNamedApprovalParams(approvalMode, approvalMode === "auto" && sagaxReviewsAuto(turn.botId));
         }
         // Organization server: read-only and asking, every command or write
         // is then a request the handler below declines.
@@ -2314,7 +2319,6 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         queueing: true,
         computerMcp: true,
         localComputerMcp: true,
-        composioMcp: true,
         agentsMcp: true,
       customMcp: true,
         phoneMcp: true,

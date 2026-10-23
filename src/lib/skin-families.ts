@@ -194,6 +194,39 @@ export function familySkins(): SkinId[] {
   return [...out];
 }
 
+/**
+ * The appearance of every base skin: the scheme its CSS block draws
+ * (`--code-color-scheme` in styles.css, checked by the tests). The picker
+ * files a variant under a scheme only through this, so a skin tagged wrong
+ * would leak a light mood into the dark list.
+ */
+export const SKIN_SCHEMES: Record<SkinId, SkinScheme> = {
+  pulsatrix: "dark",
+  "pulsatrix-light": "light",
+  midnight: "dark",
+  atelier: "light",
+  foundry: "dark",
+  lagoon: "light",
+  graphite: "dark",
+  linen: "light",
+  dusk: "dark",
+  daylight: "light",
+  retro98: "light",
+  meadow: "light",
+};
+
+/**
+ * The variants the picker offers for the scheme worn now: those with a skin in
+ * that scheme (Cyberpunk is dark only, Candy and the Windows editions light
+ * only), so dark mode never lists a light mood and light mode never a dark
+ * one. A variant with both is listed once and shows the skin of the scheme.
+ * `keep` is the variant worn now, always listed so the selection never
+ * disappears (a stored choice from a build that allowed the other scheme).
+ */
+export function variantsForScheme(family: SkinFamily, scheme: SkinScheme, keep?: SkinVariant): SkinVariant[] {
+  return family.variants.filter((variant) => variant === keep || (scheme === "light" ? variant.light : variant.dark) !== undefined);
+}
+
 export function schemesOf(variant: SkinVariant): SkinScheme[] {
   const out: SkinScheme[] = [];
   if (variant.light) out.push("light");

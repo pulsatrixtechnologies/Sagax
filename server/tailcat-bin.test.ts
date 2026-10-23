@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resolveTailcatBinary } from "./tailcat-bin.ts";
+import { resolveSystemSsh, resolveTailcatBinary } from "./tailcat-bin.ts";
 
 const GUI_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const roots: string[] = [];
@@ -100,5 +100,24 @@ describe("resolveTailcatBinary", () => {
       appRoot: "/repo",
       exists: (file) => file === staged,
     })).toBe(staged);
+  });
+});
+
+describe("resolveSystemSsh", () => {
+  it("finds the ssh client tailcat execs on PATH and the system folders", () => {
+    const found = new Set(["/usr/bin/ssh"]);
+    expect(resolveSystemSsh({ env: { PATH: "/usr/local/bin:/usr/bin" }, platform: "linux", exists: (file) => found.has(file) })).toBe("/usr/bin/ssh");
+    // a bare PATH (a desktop app) still sees /usr/bin
+    expect(resolveSystemSsh({ env: { PATH: "" }, platform: "darwin", exists: (file) => found.has(file) })).toBe("/usr/bin/ssh");
+  });
+
+  it("answers null when the server has no ssh client (the slim server image before openssh-client)", () => {
+    expect(resolveSystemSsh({ env: { PATH: "/usr/local/bin:/usr/bin:/bin" }, platform: "linux", exists: () => false })).toBeNull();
+  });
+
+  it("looks for ssh.exe on Windows", () => {
+    const found = new Set(["C:\\Windows\\System32\\OpenSSH\\ssh.exe"]);
+    expect(resolveSystemSsh({ env: { Path: "C:\\Windows\\System32\\OpenSSH" }, platform: "win32", exists: (file) => found.has(file) }))
+      .toBe("C:\\Windows\\System32\\OpenSSH\\ssh.exe");
   });
 });
