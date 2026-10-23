@@ -129,15 +129,6 @@ describe("what the app may do", () => {
     ["POST", "/api/routines/routine_1/run"],
     ["POST", "/api/routine-runs/run_1/cancel"],
     ["POST", "/api/routine-runs/run_1/seen"],
-    ["GET", "/api/connectors/catalog"],
-    ["GET", "/api/connectors/connected"],
-    ["GET", "/api/connectors"],
-    ["POST", "/api/connectors/slack/authorize"],
-    ["DELETE", "/api/connectors/slack/accounts/ca_123"],
-    ["GET", "/api/bots/bot_123/connector-cards/msg_2/status"],
-    ["POST", "/api/bots/bot_123/connector-cards/msg_2/authorize"],
-    ["POST", "/api/bots/bot_123/connector-cards/msg_2/resume"],
-    ["POST", "/api/bots/bot_123/connector-cards/msg_2/dismiss"],
     ["POST", "/api/bots/bot_123/secret-cards/msg_2/resume"],
     ["POST", "/api/bots/bot_123/secret-cards/msg_2/dismiss"],
   ];
@@ -301,9 +292,9 @@ describe("what it may not", () => {
     expect(allowed("POST", "/api/routine-runs/run_1/retry")).toBe(false);
     expect(allowed("DELETE", "/api/connectors/slack")).toBe(false);
     expect(allowed("GET", "/api/connectors/connected/all")).toBe(false);
-    // per-account removal is allowed (the server proves ownership before
-    // revoking); removing the whole service binding stays host-only
-    expect(allowed("DELETE", "/api/connectors/slack/accounts/ca_123")).toBe(true);
+    // Connected apps are set up on this computer. The whole family stays
+    // here, including a per-account removal and a path that climbs out.
+    expect(allowed("DELETE", "/api/connectors/slack/accounts/ca_123")).toBe(false);
     expect(allowed("DELETE", "/api/connectors/slack/accounts/../gmail")).toBe(false);
     expect(allowed("POST", "/api/bots/bot_123/secret-cards/msg_2/provided")).toBe(false);
     // A room's PATCH crosses for pinning and renaming; the harness holds a
@@ -461,7 +452,6 @@ describe("desktop remote-client parity", () => {
       ["POST", "/api/bots/bot_1/always-allow"], ["POST", "/api/threads/th_1/messages/m_1/reactions"],
       ["GET", "/api/threads/th_1/export"], ["POST", "/api/threads/th_1/messages/m_1/file"],
       ["POST", "/api/attachments"], ["GET", "/api/attachments/a1b2.png"], ["POST", "/api/files"],
-      ["GET", "/api/bots/bot_1/connector-cards/m_1/status"], ["POST", "/api/bots/bot_1/connector-cards/m_1/authorize"],
       ["POST", "/api/bots/bot_1/secret-cards/m_1/dismiss"], ["POST", "/api/instances/claude/claude-update"],
       ["GET", "/api/instances/mistral/api-key"], ["POST", "/api/instances/mistral/api-key"],
       ["POST", "/api/instances/cursor/auth/start"], ["GET", "/api/instances/cursor/auth/status"],
@@ -478,8 +468,6 @@ describe("desktop remote-client parity", () => {
       ["POST", "/api/routines"], ["PATCH", "/api/routines/r_1"], ["DELETE", "/api/routines/r_1"], ["POST", "/api/routines/r_1/run"],
       ["POST", "/api/routine-runs/run_1/cancel"], ["POST", "/api/routine-runs/run_1/seen"], ["POST", "/api/routine-runs/seen-all"],
       ["GET", "/api/team-map"],
-      ["GET", "/api/connectors"], ["GET", "/api/connectors/catalog"], ["GET", "/api/connectors/connected"],
-      ["POST", "/api/connectors/gmail/authorize"], ["DELETE", "/api/connectors/gmail/accounts/ca_1"],
       ["GET", "/api/mcp/servers"], ["POST", "/api/mcp/servers/notion/oauth/start"], ["GET", "/api/mcp/servers/notion/oauth/status"],
     ] as const) expect(allowed(method, path), `${method} ${path}`).toBe(true);
   });
@@ -495,6 +483,9 @@ describe("desktop remote-client parity", () => {
       ["DELETE", "/api/sidebar-sections"], ["GET", "/api/sidebar-sections"], ["PUT", "/api/sidebar-sections"],
       ["GET", "/api/team-computers"], ["GET", "/api/teams/scout"], ["POST", "/api/teams/import"],
       ["GET", "/api/bot-defaults"], ["DELETE", "/api/bot-presets/preset_1"], ["GET", "/api/connectors/tools"],
+      ["GET", "/api/connectors"], ["GET", "/api/connectors/catalog"], ["GET", "/api/connectors/connected"],
+      ["POST", "/api/connectors/gmail/authorize"], ["DELETE", "/api/connectors/gmail/accounts/ca_1"],
+      ["GET", "/api/bots/bot_1/connector-cards/m_1/status"], ["POST", "/api/bots/bot_1/connector-cards/m_1/authorize"],
       ["GET", "/api/calendar-calls"], ["GET", "/api/webhooks"],
       // host-only: keys, engines setup, Local VM, backups, pairing, MCP server writes, people
       ["PUT", "/api/config"], ["PATCH", "/api/config"], ["POST", "/api/keys/test"], ["PATCH", "/api/instances/claude"],

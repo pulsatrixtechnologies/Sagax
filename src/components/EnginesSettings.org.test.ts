@@ -1,9 +1,8 @@
 // Settings > Model providers on an organization server: the person's own
 // access on each engine card (one "Pays with" line, Connect or Disconnect,
 // a small link to their keys while no subscription is signed in; the
-// separate "My subscriptions and keys" card is gone since 2026-10-02), and,
-// while Connected apps is switched off, the read-only status of their Claude
-// account's connectors.
+// separate "My subscriptions and keys" card is gone since 2026-10-02), and
+// the read-only status of their Claude account's connectors.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -181,13 +180,14 @@ describe("Model providers on an organization server", () => {
     const { MyEngineAccess } = await import("./settings/MyEngines");
     expect(renderToStaticMarkup(createElement(MyEngineAccess, { engine: mine("claude", "claudeAgent", "Claude") }))).toContain("Sign in with my subscription");
     expect(renderToStaticMarkup(createElement(MyEngineAccess, { engine: mine("kimi", "kimiAgent", "Kimi", { subscription: { supported: false, signedIn: false } }) }))).toBe("");
-    expect(renderToStaticMarkup(createElement(MyEngineAccess, { engine: mine("codex", "codex", "Codex", { installed: false }) }))).toBe("");
+    // A bare installed:false is not proof the binary is gone, so Connect stays.
+    // Only a server that says the engine is not available withholds it.
+    expect(renderToStaticMarkup(createElement(MyEngineAccess, { engine: mine("codex", "codex", "Codex", { installed: false }) }))).toContain("Sign in with my subscription");
+    expect(renderToStaticMarkup(createElement(MyEngineAccess, { engine: mine("codex", "codex", "Codex", { installed: false, notAvailable: "Not available on this server" }) }))).toBe("");
   });
 
-  it("shows the Claude connectors status here while Connected apps is off, and not once it is on", async () => {
+  it("shows the Claude connectors status on the engines page", async () => {
     expect(await render()).toContain('data-harness-connectors="settings"');
-    fixture.features = { connectedApps: true };
-    expect(await render()).not.toContain("data-harness-connectors");
   });
 });
 

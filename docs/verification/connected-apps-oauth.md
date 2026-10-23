@@ -4,11 +4,13 @@ Run from the repository root:
 
 ```sh
 node --experimental-strip-types scripts/verify-connected-apps.ts
-pnpm exec vitest run src/lib/connector-oauth.test.ts src/components/PluginsPanel.layout.test.ts src/components/PluginsPanel.i18n.test.ts
+pnpm exec vitest run shared/connector-setup.test.ts src/components/connector-setup/ConnectorSetupCard.test.ts src/components/PluginsPanel.layout.test.ts src/components/PluginsPanel.i18n.test.ts
 pnpm exec vitest run server/index.test.ts -t 'second-account cards|retries abandoned connector OAuth'
 ```
 
-The renderer recipe launches a disposable fake-engine workspace and mounts the
+Engine connector sign-in (grok.com and claude.ai) is the connector-setup
+tests in that command. The renderer recipe launches a disposable fake-engine
+workspace and mounts the
 actual Apps modal and connector card. Synthetic authorization responses are
 delayed; a disposable HTTPS loopback server supplies the authorization page,
 never a provider. Its temporary certificate and hostname mapping apply only

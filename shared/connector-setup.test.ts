@@ -20,28 +20,27 @@ describe("which connector the person named", () => {
       expect(target?.id).toBe("microsoft-teams");
       expect(target?.label).toBe("Microsoft Teams");
       expect(target?.grok).toBe("microsoft-teams");
-      expect(target?.composio).toBe("microsoft_teams");
     }
   });
 
-  it("knows the Grok catalog and the usual Composio apps", () => {
+  it("knows the Grok catalog", () => {
     expect(resolveConnectorSetupTarget("Outlook")?.grok).toBe("outlook");
     expect(resolveConnectorSetupTarget("Exchange")?.id).toBe("outlook");
-    expect(resolveConnectorSetupTarget("Gmail")?.composio).toBe("gmail");
+    expect(resolveConnectorSetupTarget("Gmail")?.grok).toBe("gmail");
     expect(resolveConnectorSetupTarget("Google Drive")?.grok).toBe("google-drive");
     expect(resolveConnectorSetupTarget("OneDrive")?.grok).toBe("onedrive");
     expect(resolveConnectorSetupTarget("SharePoint")?.grok).toBe("sharepoint");
     expect(resolveConnectorSetupTarget("Salesforce")?.grok).toBe("salesforce");
-    expect(resolveConnectorSetupTarget("X")?.composio).toBe("twitter");
+    expect(resolveConnectorSetupTarget("X")?.id).toBe("x");
     expect(resolveConnectorSetupTarget("twitter")?.id).toBe("x");
-    // not in Grok's catalog: Claude or Composio only
+    // Google Calendar is not in Grok's catalog: the name is kept, with no Grok id.
     const calendar = resolveConnectorSetupTarget("Google Calendar");
     expect(calendar?.grok).toBeUndefined();
-    expect(calendar?.composio).toBe("googlecalendar");
+    expect(calendar?.id).toBe("google-calendar");
   });
 
   it("keeps another app by its cleaned name, never an empty or a control-laden one", () => {
-    expect(resolveConnectorSetupTarget("Notion")).toMatchObject({ id: "notion", label: "Notion", composio: "notion" });
+    expect(resolveConnectorSetupTarget("Notion")).toMatchObject({ id: "notion", label: "Notion" });
     expect(resolveConnectorSetupTarget("")).toBeNull();
     expect(resolveConnectorSetupTarget("   ")).toBeNull();
     expect(resolveConnectorSetupTarget("5752d21c-e77c-4a83-84f0-66048216a5df")).toBeNull();
@@ -55,34 +54,31 @@ describe("where the person signs in", () => {
   const teams = resolveConnectorSetupTarget("Teams")!;
 
   it("a Grok bot on the person's own xAI account: grok.com/connectors", () => {
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "own", composio: true })).toEqual({ route: "grok", url: GROK_CONNECTORS_URL });
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "own" })).toEqual({ route: "grok", url: GROK_CONNECTORS_URL });
   });
 
   it("a Claude bot on the person's own subscription: claude.ai connectors", () => {
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "claude", account: "own", composio: true })).toEqual({ route: "claude", url: CLAUDE_AI_CONNECTORS_URL });
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "claude", account: "own" })).toEqual({ route: "claude", url: CLAUDE_AI_CONNECTORS_URL });
   });
 
   it("an engine account that is someone else's is refused: no sign-in for another person's account", () => {
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "foreign", composio: true })).toEqual({ refusal: "foreign" });
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "claude", account: "foreign", composio: false })).toEqual({ refusal: "foreign" });
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "foreign" })).toEqual({ refusal: "foreign" });
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "claude", account: "foreign" })).toEqual({ refusal: "foreign" });
   });
 
-  it("an engine with no connectors of its own falls back to Sagax's Connect apps when it knows the app", () => {
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "other", account: "none", composio: true })).toEqual({ route: "composio", slug: "microsoft_teams" });
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "none", composio: true })).toEqual({ route: "composio", slug: "microsoft_teams" });
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "other", account: "none", composio: false })).toEqual({ refusal: "no_route" });
+  it("an engine with no connectors of its own, or no account of the person's, has nowhere to send them", () => {
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "other", account: "none" })).toEqual({ refusal: "no_route" });
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "none" })).toEqual({ refusal: "no_route" });
   });
 
-  it("a connector outside Grok's catalog on a Grok bot goes to Connect apps, or is refused", () => {
+  it("a connector outside Grok's catalog on the person's own Grok account is refused", () => {
     const calendar = resolveConnectorSetupTarget("Google Calendar")!;
-    expect(chooseConnectorSetupRoute({ target: calendar, engine: "grok", account: "own", composio: true })).toEqual({ route: "composio", slug: "googlecalendar" });
-    expect(chooseConnectorSetupRoute({ target: calendar, engine: "grok", account: "own", composio: false })).toEqual({ refusal: "not_on_engine" });
+    expect(chooseConnectorSetupRoute({ target: calendar, engine: "grok", account: "own" })).toEqual({ refusal: "not_on_engine" });
+    expect(chooseConnectorSetupRoute({ target: calendar, engine: "claude", account: "own" })).toEqual({ route: "claude", url: CLAUDE_AI_CONNECTORS_URL });
   });
 
-  it("a preferred route is honoured when it is possible", () => {
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "own", composio: true, prefer: "composio" })).toEqual({ route: "composio", slug: "microsoft_teams" });
-    // a preference that cannot be met falls back to the engine's own
-    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "own", composio: false, prefer: "composio" })).toEqual({ route: "grok", url: GROK_CONNECTORS_URL });
+  it("the engine's own page wins over a preference", () => {
+    expect(chooseConnectorSetupRoute({ target: teams, engine: "grok", account: "own", prefer: "claude" })).toEqual({ route: "grok", url: GROK_CONNECTORS_URL });
   });
 });
 
