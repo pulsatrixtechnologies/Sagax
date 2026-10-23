@@ -34,7 +34,7 @@ Runs fully on a server:
 - text-to-speech (with a key), the web UI (the server serves it itself)
 
 - a browser for bots, once the engine is installed on the server
-  (`npx @pulsatrixtechnologies/sagax browser install`, or nothing to do in the Docker image,
+  (`pnpm omb browser install`, or nothing to do in the Docker image,
   which ships it): each bot gets its own isolated, persistent session.
   Watching it live from the app is the next step (docs/plans/browser-engine.md).
 
@@ -42,13 +42,19 @@ Desktop-only for now (needs the Mac/Linux app):
 
 - dictation/voice, controlling the host desktop
 
-## Quickest: one command with Node
+## Quickest: from a checkout with Node
 
-On any machine with Node 24 or newer (a VPS, a Mac mini, a Raspberry Pi):
+On any machine with Node 24 or newer and pnpm (a VPS, a Mac mini, a
+Raspberry Pi), build a checkout once, then start it:
 
 ```sh
-npx @pulsatrixtechnologies/sagax start
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax
+pnpm install && pnpm build
+pnpm omb start
 ```
+
+An npm package is planned; until it is published, the checkout is the
+install. Run the `pnpm omb` commands below from that folder.
 
 First launch asks you to choose AI access, connect an account or API key,
 and choose the default model for new bots. Existing sign-ins can be reused;
@@ -59,11 +65,11 @@ explains the choices, key storage, and how to run setup again safely.
 It then starts the server and keeps your data in `~/.sagax`. If you
 choose phone access, it prints a pairing link and QR code only after checking
 the HTTPS connection. Choosing **Skip for now** keeps the workspace local-only
-and creates no pairing invitation. Use `npx @pulsatrixtechnologies/sagax setup` to configure without starting, or
-`npx @pulsatrixtechnologies/sagax serve` to start non-interactively with your existing config
+and creates no pairing invitation. Use `pnpm omb setup` to configure without starting, or
+`pnpm omb serve` to start non-interactively with your existing config
 (for services and scripts).
 
-The npm package does not include engine CLIs (`claude`, `codex`, …); setup
+Sagax does not include engine CLIs (`claude`, `codex`, …); setup
 can offer to install and sign in supported engines on this machine.
 Run setup, engine authentication, and the server as the same unprivileged
 operating-system user. Engine credentials live in that user's CLI-specific
@@ -72,19 +78,19 @@ directories, not all under `.openmausbot`.
 For a Linux service, the [VPS guide](deploy-vps.md#before-you-start) shows the
 account setup, engine installation, and browser dependency installation.
 After installing browser libraries as administrator, also run
-`npx @pulsatrixtechnologies/sagax browser install` as the service user so that user's browser
+`pnpm omb browser install` as the service user so that user's browser
 is present. Three ways to make the server reachable from elsewhere:
 
 - **On your Tailscale network, no domain needed:**
-  `npx @pulsatrixtechnologies/sagax serve --tailscale`. Tailscale terminates HTTPS with its
+  `pnpm omb serve --tailscale`. Tailscale terminates HTTPS with its
   own certificate and the link uses this machine's MagicDNS name, so only
   devices on your tailnet can reach it. Needs Tailscale signed in and HTTPS
   certificates enabled for the tailnet (admin console → DNS).
 - **A public address, no domain, no proxy, no open port:**
 
   ```sh
-  npx @pulsatrixtechnologies/sagax login          # once: an emailed code signs this machine in
-  npx @pulsatrixtechnologies/sagax serve --tunnel
+  pnpm omb login          # once: an emailed code signs this machine in
+  pnpm omb serve --tunnel
   ```
 
   `login` reserves an address like `https://c-….openmausbot.com` for this
@@ -93,7 +99,7 @@ is present. Three ways to make the server reachable from elsewhere:
   that address. The first run downloads `cloudflared` (pinned version and
   digest) into the data dir. Only traffic through the tunnel reaches the
   server, and it still has to pair: the tunnel lands on a separate listener
-  the server treats as "through a proxy", never as the owner. `npx @pulsatrixtechnologies/sagax
+  the server treats as "through a proxy", never as the owner. `pnpm omb
   logout` releases the address. The account credentials live in
   `~/.sagax/tunnel-account.json` (mode 0600).
   Starting it from a fleet or a container, where nobody can type an emailed
@@ -104,7 +110,7 @@ is present. Three ways to make the server reachable from elsewhere:
 - **Your own domain, still one command:**
 
   ```sh
-  npx @pulsatrixtechnologies/sagax serve --domain maus.example.com
+  pnpm omb serve --domain maus.example.com
   ```
 
   Point the domain's A record at this machine and open ports 80 and 443.
@@ -113,17 +119,17 @@ is present. Three ways to make the server reachable from elsewhere:
   and renews the certificate from Let's Encrypt. On Linux, binding ports 80
   and 443 as a normal user needs one privilege grant; when Caddy reports the
   refusal, `serve` prints the exact `setcap` command to run once.
-- **Behind your own proxy or domain:** `npx @pulsatrixtechnologies/sagax serve --public-url
+- **Behind your own proxy or domain:** `pnpm omb serve --public-url
   https://maus.example.com`, with the proxy rules from "Putting a proxy in
   front".
 
-Later: `npx @pulsatrixtechnologies/sagax pair --label "Kitchen iPad"` for another device
+Later: `pnpm omb pair --label "Kitchen iPad"` for another device
 (`--client` for one that may chat but not change settings), and
-`npx @pulsatrixtechnologies/sagax sessions` to see or revoke them. `sagax serve` is a
+`pnpm omb sessions` to see or revoke them. `pnpm omb serve` is a
 plain foreground process. For unattended use, follow the
-[systemd example](deploy-vps.md#keep-it-running), which installs a chosen
-release and runs its binary directly. Restarting that service does not
-implicitly download a new release.
+[systemd example](deploy-vps.md#keep-it-running), which runs a checkout of a chosen
+release directly. Restarting that service does not
+pull or build a new release.
 
 ## Connect ChatGPT from the browser
 
@@ -208,14 +214,15 @@ Requirements: Docker with Compose, a DNS name pointing at the machine, and
 ports 80/443 open.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot/deploy
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax/deploy
 cp .env.example .env            # set DOMAIN
-docker compose pull omb && docker compose up -d
+docker compose up -d --build
 ```
 
-That uses the image CI publishes on every `main` push
-(`ghcr.io/milind-soni/openmausbot`, tagged `latest`, `sha-…` and `v…`).
-To build from your checkout instead: `docker compose up -d --build`.
+The compose file builds the image from your checkout (the repository root is
+the build context) and names it `sagax:local`. There is no public prebuilt
+Sagax image to pull yet. To stay on one release, check out its tag before you
+build (`git checkout pulsa-v<version>`).
 
 Then sign the engine CLIs in **inside the container** (their logins live on
 the `data` volume, so they survive restarts and image upgrades) and mint a
@@ -249,14 +256,12 @@ What the stack does, so you can adapt it:
   own pairing is the login. A shared-password `basic_auth` block is there,
   commented out, if you want a second wall in front of pairing.
 
-Upgrade with `docker compose pull omb && docker compose up -d` (or
-`git pull && docker compose up -d --build`). State (chats, routines,
+Upgrade with `git pull && docker compose up -d --build`. State (chats, routines,
 engine logins, paired sessions) is on the `data` volume; back that up.
 
-The published image installs the current Chrome for Testing whenever a new
-Stable ships. A build from source keeps the Chrome (and any `ENGINES`) it
-installed first, because those layers sit beneath the app and stay cached
-across code changes. To pick up the current ones, rebuild with a new tag:
+A local build keeps the Chrome for Testing (and any `ENGINES`) it installed
+first, because those layers sit beneath the app and stay cached across code
+changes. To pick up the current ones, rebuild with a new tag:
 
 ```sh
 docker compose build --build-arg CHROME_CACHE_TAG=$(date +%F) omb && docker compose up -d
@@ -268,7 +273,7 @@ Requirements: Node 24+, pnpm, and at least one agent CLI installed and
 signed in on the server.
 
 ```sh
-git clone https://github.com/pulsatrixtechnologies/sagax && cd pulsa-bot
+git clone https://github.com/pulsatrixtechnologies/sagax && cd sagax
 pnpm install
 
 # choose where data lives and start the server
@@ -279,17 +284,17 @@ SAGAX_DATA_DIR="$HOME/.openmausbot" SAGAX_PORT=8799 \
 For something durable, let the CLI write the service for you:
 
 ```sh
-npx @pulsatrixtechnologies/sagax service install --domain maus.example.com   # or --tunnel, --tailscale, or nothing
+pnpm omb service install --domain maus.example.com   # or --tunnel, --tailscale, or nothing
 ```
 
 It renders a systemd unit (Linux) or a launchd agent (macOS) that runs the
-same `sagax serve …` with your options, restarts it if it stops, and,
+same `serve …` with your options, restarts it if it stops, and,
 for `--domain`, grants the unit the capability to bind ports 80 and 443
 without root. The file is written next to your data and the two commands
 that install and start it are printed (they need `sudo` on Linux).
-`sagax service uninstall` prints the reverse. Install the package
-permanently first (`npm install -g @pulsatrixtechnologies/sagax`): a service must not point
-at an `npx` cache that npm may prune.
+`pnpm omb service uninstall` prints the reverse. The unit runs the CLI from
+this checkout, so keep the folder in place (and build it again after a
+`git pull`).
 
 Engine CLIs read their logins from the service user's home: sign them in
 from Settings → Engines (below), or as that user in a terminal, before you
@@ -411,7 +416,6 @@ Pair once, then use the server from any browser on any machine that can
 reach it. On the server:
 
 ```sh
-npx @pulsatrixtechnologies/sagax pair                         # npm install
 pnpm omb pair                                # from a checkout
 docker compose exec omb node dist-server/openmausbot.js pair   # Docker
 ```
@@ -428,7 +432,7 @@ From the **desktop app**, use the server dropdown above Search → **Connect
 to a server…**, or **Settings → Servers**. Enter the server's
 HTTPS address or full pairing link, with an optional name. Custom domains and
 Cloudflare tunnel addresses work; Tailscale is not required. Generate a fresh
-link for each device: `npx @pulsatrixtechnologies/sagax pair --label "My desktop"` creates an
+link for each device: `pnpm omb pair --label "My desktop"` creates an
 owner link without the phone wizard; add `--client` for chat-only access.
 A code already used by your phone cannot also pair your desktop.
 
@@ -1119,14 +1123,14 @@ SAGAX_SIGNIN_MEMBER_EMAILS="freelancer@example.com"          # chat and approval
 ```
 
 Signed in as an admin? Settings → Remote access → **Who can sign in with an
-email** edits the same list in the browser, no command line needed. With the
-npm package, the same thing from the command line, with the server running
+email** edits the same list in the browser, no command line needed. From a
+checkout, the same thing from the command line, with the server running
 or not, no restart needed:
 
 ```sh
-npx @pulsatrixtechnologies/sagax access add her@yourcompany.com
-npx @pulsatrixtechnologies/sagax access add freelancer@example.com --chat-only
-npx @pulsatrixtechnologies/sagax access list
+pnpm omb access add her@yourcompany.com
+pnpm omb access add freelancer@example.com --chat-only
+pnpm omb access list
 ```
 
 An entry is an address or `@domain` (everyone at that domain). Admins get
@@ -1477,7 +1481,7 @@ on your private networks (Tailscale-aware) and issues its own per-device
 credentials, which are **not** `sagax sessions` and are revoked from
 its own page at the `127.0.0.1:8811/#token=…` link it prints. It also serves phones over cleartext HTTP
 on port 8810, so do not expose it from a public server. It ships only in a
-git checkout: neither the npm package nor the Docker image contains it.
+git checkout: the Docker image does not contain it.
 
 ```sh
 node --experimental-strip-types companion/src/index.ts
@@ -1663,14 +1667,14 @@ Verification: [external runtime fixture](verification/external-runtime.md).
 
 ## Updating
 
-For the npm service, [install the chosen new version](deploy-vps.md#update)
-as the service user while the server is stopped, then start it again.
-For a foreground invocation, `npx --yes @pulsatrixtechnologies/sagax@X.Y.Z serve --tunnel`
-selects a particular published release; replace `X.Y.Z` with that version.
+For a service that runs a checkout, [check out and build the chosen
+release](deploy-vps.md#update) as the service user while the server is
+stopped, then start it again. A foreground server runs whatever the checkout
+holds: `git checkout vX.Y.Z`, build, then `pnpm omb serve`.
 
 ```sh
-docker compose -f deploy/docker-compose.yml pull omb && docker compose -f deploy/docker-compose.yml up -d   # Docker
-git pull && pnpm install && sudo systemctl restart openmausbot          # from source
+git pull && docker compose -f deploy/docker-compose.yml up -d --build   # Docker
+git pull && pnpm install && pnpm build && sudo systemctl restart openmausbot   # from source
 ```
 
 Routines and queued work survive restarts. A teammate turn in flight runs

@@ -49,7 +49,7 @@ data class PairingOutcome(
 /** No automatically permitted route identified itself and completed the logical pairing. */
 class PairingRouteError(val attemptedRoutes: List<String>) : IOException(
     "Couldn't reach this computer through any available route " +
-        "(${attemptedRoutes.joinToString()}). Keep Phone access turned on in OpenMausBot, then try again.",
+        "(${attemptedRoutes.joinToString()}). Keep Phone access turned on in Sagax, then try again.",
 )
 
 /** Keep the same code and request id after an uncertain redemption or rate-limit refusal. */
@@ -578,7 +578,7 @@ class CompanionClient(
             if (error.serverMessage?.contains(ALREADY_DRAINED, ignoreCase = true) == true) return false
             throw APIError.Status(
                 404,
-                "This computer is too old to take back a queued message. Update OpenMausBot on it.",
+                "This computer is too old to take back a queued message. Update Sagax on it.",
             )
         }
     }
