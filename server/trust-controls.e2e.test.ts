@@ -21,9 +21,7 @@ let brokerOrigin = "";
 const relayed: unknown[] = [];
 const evidence: unknown[] = [];
 let blockRelay: (() => void) | undefined;
-let relayEntered = false;
 let blockSession: (() => void) | undefined;
-let sessionEntered = false;
 const api = async (method: string, path: string, body?: unknown, token = admin) => {
   const response = await fetch(fixture.info.url + path, {
     method, headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
@@ -67,7 +65,6 @@ beforeAll(async () => {
     if (req.url === "/v1/connectors/connected") return res.end(JSON.stringify({ services: { gmail: { connected: true }, slack: { connected: true } } }));
     if (req.url === "/api/tool_router/session/fixture-session") {
       if (blockSession) {
-        sessionEntered = true;
         await new Promise<void>(resolve => { blockSession = resolve; });
       }
       return res.end(JSON.stringify({ session_id: "fixture-session", mcp: { type: "http", url: brokerOrigin + "/mcp" },
@@ -76,7 +73,6 @@ beforeAll(async () => {
     if (req.url === "/mcp") {
       relayed.push(body);
       if (blockRelay) {
-        relayEntered = true;
         await new Promise<void>(resolve => { blockRelay = resolve; });
       }
       return res.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "relay-ok" }] } }));
