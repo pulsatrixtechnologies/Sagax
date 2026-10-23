@@ -20,7 +20,7 @@ import { ComposeToPicker } from "@/components/ComposeToPicker";
 import { PluginsPanel } from "@/components/PluginsPanel";
 import {
   AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
-  PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
+  PersonaEditorModal, preloadScreens, RemoteAgentSettingsPanel, RemoteDesktopPanel, RemoteSessionsAdminPage, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 } from "@/components/lazy-screens";
 import { WorkspaceBackupRecovery } from "@/components/WorkspaceBackupSettings";
 import { ReleaseNotesPrompt } from "@/components/ReleaseNotesPrompt";
@@ -361,6 +361,7 @@ function Shell() {
   const mainIsTeamMap = state.activeView === "team-map";
   const mainIsCode = state.activeView === "code";
   const mainIsApprovals = state.activeView === "approvals";
+  const mainIsRemoteSessions = state.activeView === "remote-sessions";
   const calendarFillsMain = calendarOpen;
 
   useEffect(() => {
@@ -481,7 +482,7 @@ function Shell() {
       <div className="app-content-frame relative flex h-full min-w-0 flex-1 flex-col" data-sidebar-follower="">
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
-      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && <OrgEngineNotice />}
+      {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && !mainIsRemoteSessions && <OrgEngineNotice />}
       {composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
@@ -492,6 +493,8 @@ function Shell() {
         <CodePage />
       ) : mainIsApprovals ? (
         <ApprovalsPage />
+      ) : mainIsRemoteSessions ? (
+        <RemoteSessionsAdminPage />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
           primaryBotId={localVmWorkspaceBotId}

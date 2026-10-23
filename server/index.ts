@@ -787,10 +787,14 @@ import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, org
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
+import { createRemoteSessionActionsAudit, readRemoteSessionLog } from "./remote-session-actions-audit.ts";
+import { createUnattendedConsentStore } from "./remote-session-consent-store.ts";
+import { createRemoteSessionsAdmin } from "./remote-sessions-admin.ts";
 import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
 import { recallSupportSession } from "./remote-support-local.ts";
 import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
+import { createRemoteSessionsAdminRoutes } from "./routes/remote-sessions-admin.ts";
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
 import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
 import { installResourceUsage } from "./resource-usage/install.ts";
@@ -10466,12 +10470,16 @@ const terminalFeature = installTerminalFeature({
   },
 });
 const REMOTE_SUPPORT_DIR = join(DATA_DIR, "remote-support");
+// The per-session action audit (exec, file transfers), beside the control
+// audit. The admin Remote Sessions page reads both for its logs view.
+const remoteSessionActionsAudit = createRemoteSessionActionsAudit(DATA_DIR);
 const remoteSessions = createRemoteSessionService({
   dataDir: DATA_DIR,
   supportDir: () => REMOTE_SUPPORT_DIR,
   store,
   registry: terminalFeature.registry,
   sessions: terminalFeature.sessions,
+  actionsAudit: remoteSessionActionsAudit,
   access: terminalAccessFor,
   owner: (botId, threadId) => {
     const taskOwner = store.taskByThread(botId, threadId)?.ownerPrincipalId?.trim().toLowerCase();
@@ -10507,6 +10515,29 @@ openRemoteShell = (args) => {
   if (!principalId) return Promise.resolve(null);
   return remoteSessions.openShell({ principalId, botId: args.botId, threadId: args.threadId });
 };
+// The admin Remote Sessions page: the install-time unattended consent store,
+// and the aggregator that enforces who sees which session (a workspace admin
+// sees the organization's sessions; anyone else only their own).
+const unattendedConsent = createUnattendedConsentStore({ dataDir: DATA_DIR });
+const remoteSessionsAdmin = createRemoteSessionsAdmin({
+  rows: () => remoteSessions.adminRows(),
+  botLabel: (botId) => store.bot(botId)?.name ?? botId,
+  consent: unattendedConsent,
+  log: (sessionId) => readRemoteSessionLog(DATA_DIR, sessionId),
+  closeById: (id) => remoteSessions.adminClose(id),
+  // Unattended (Access) is gated OFF by default: the host-service install, the
+  // revoke that uninstalls it, and the expiry enforcement are designed but not
+  // wired yet (see docs/remote-sessions-admin.md). Set SAGAX_UNATTENDED_ACCESS=1
+  // only once that wiring lands. The page, listing, logs, End and the live
+  // tunnel cut do not depend on this flag.
+  unattendedEnabled: () => process.env.SAGAX_UNATTENDED_ACCESS === "1",
+  // Revoke propagates to the host service (the Pulsatrix Assist "Sagax Remote
+  // Control" service uninstalls) and to Perspicax (the --allow binding drops);
+  // the consent is already marked revoked and any live tunnel is cut here.
+  onRevoke: async (consent) => {
+    remoteSessionActionsAudit.write({ at: Date.now(), sessionId: consent.hostKey, principalId: consent.installedBy, botId: "", kind: "exec", command: `[unattended revoked for ${consent.hostLabel}]`, readOnly: true });
+  },
+});
 // The usage card (server/resource-usage/): read-only samples of a computer
 // the person already reaches, under the same rules as its terminal.
 const resourceUsage = installResourceUsage({
@@ -35948,6 +35979,7 @@ ROUTES.push(createRemoteControlRoutes({
   upgrade: (req) => desktopViewer.upgradeOf(req),
 }));
 ROUTES.push(createRemoteSessionFileRoutes({ sessions: remoteSessions, principalId: terminalPrincipalId }));
+ROUTES.push(createRemoteSessionsAdminRoutes({ admin: remoteSessionsAdmin, principalId: terminalPrincipalId, orgAdmin: orgAdminCaller }));
 ROUTES.push(resourceUsage.route);
 
 // Live calls (GPT-Live as the voice, the bot as the brain). A client holds

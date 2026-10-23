@@ -44,6 +44,7 @@ import {
   Laptop,
   Loader2,
   LogOut,
+  Monitor as MonitorIcon,
   Plus,
   RefreshCw,
   ScrollText,
@@ -280,6 +281,7 @@ export function footerMenuItems(places: SidebarMenuItem[], profileItems: Sidebar
 
 export interface ProfileMenuHandlers {
   onAutomations: () => void;
+  onRemoteSessions: () => void;
   onSettings: () => void;
   onAchievements: () => void;
   onShortcuts: () => void;
@@ -307,6 +309,7 @@ export function profileMenuItems(input: {
   mobile: boolean;
   achievementsLabel: string | null;
   automationsActive: boolean;
+  remoteSessionsActive: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -406,6 +409,13 @@ export function profileMenuItems(input: {
       icon: <CalendarDays size={18} />,
       active: input.automationsActive,
       onSelect: input.handlers.onAutomations,
+    },
+    {
+      key: "remote-sessions",
+      label: t("remoteSessionsAdmin.title"),
+      icon: <MonitorIcon size={18} />,
+      active: input.remoteSessionsActive,
+      onSelect: input.handlers.onRemoteSessions,
     },
     ...(input.achievementsLabel
       ? [{
@@ -535,6 +545,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     mobile: SAGAX_MOBILE_URL !== null,
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
+    remoteSessionsActive: state.activeView === "remote-sessions",
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: lockedServer ? [] : account.targets,
@@ -542,6 +553,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     signOut: lockedServer,
     handlers: {
       onAutomations: () => dispatch({ type: "showRoutines" }),
+      onRemoteSessions: () => dispatch({ type: "showRemoteSessions" }),
       onSettings: () => dispatch({ type: "toggleAppSettings" }),
       onAchievements: openAchievements,
       onShortcuts: () => {
