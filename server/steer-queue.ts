@@ -152,7 +152,7 @@ export function queueSteeredMessage(
   botId: string,
   threadId: string,
   text: string,
-  options: { prompt?: string; replyToId?: string; sendId?: string; dataContext?: Message["dataContext"]; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; origin?: WorkOrigin; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker; voiceCall?: Message["voiceCall"]; callId?: string; via?: "call"; existingMessageId?: string } = {},
+  options: { prompt?: string; replyToId?: string; sendId?: string; dataContext?: Message["dataContext"]; reason?: SteerQueueReason; unattended?: boolean; peerAsk?: Message["peerAsk"]; origin?: WorkOrigin; sender?: ResolvedSender; trigger?: UsageTrigger; speaker?: TurnSpeaker; voiceCall?: Message["voiceCall"]; callId?: string; via?: "call"; existingMessageId?: string; front?: boolean } = {},
 ): QueuedSteer {
   const id = newId();
   const entry = queues.get(threadId) ?? { botId, items: [] };
@@ -179,10 +179,33 @@ export function queueSteeredMessage(
     ...(options.existingMessageId ? { existingMessageId: options.existingMessageId } : {}),
   };
   saveChatFollowup({ id, kind: "bot", ownerId: botId, threadId, payload: item });
-  entry.items.push(item);
-  queues.set(threadId, entry);
+  if (options.front) {
+    entry.items.unshift(item);
+    promoteSteerQueue(threadId, entry);
+  } else {
+    entry.items.push(item);
+    queues.set(threadId, entry);
+  }
   changed();
   return { id };
+}
+
+/** Put this thread's queue ahead of the same bot's other waiting threads.
+ * The drain and queuedThreadPosition both walk the map in insertion order. */
+function promoteSteerQueue(threadId: string, entry: QueueEntry): void {
+  const rest: Array<[string, QueueEntry]> = [];
+  let placed = false;
+  for (const [id, queued] of queues) {
+    if (id === threadId) continue;
+    if (!placed && queued.botId === entry.botId) {
+      rest.push([threadId, entry]);
+      placed = true;
+    }
+    rest.push([id, queued]);
+  }
+  if (!placed) rest.push([threadId, entry]);
+  queues.clear();
+  for (const [id, queued] of rest) queues.set(id, queued);
 }
 
 /** Where a thread stands among this bot's threads waiting for the bot to

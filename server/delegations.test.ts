@@ -197,6 +197,12 @@ describe("queueDelegation", () => {
     expect(JSON.stringify(ownSnapshot)).not.toContain("private customer task details");
   });
 
+  it("puts a front handoff ahead of one already waiting", () => {
+    queueDelegation(commsBus, from, { toBotId: target.id, message: "later", reason: "later", depth: 0 }, 1);
+    queueDelegation(commsBus, from, { toBotId: target.id, message: "sooner", reason: "sooner", depth: 0 }, 1, from.threadId, { front: true });
+    expect(pendingDelegationSnapshot().filter((item) => item.sourceThreadId === from.threadId).map((item) => item.reason)).toEqual(["sooner", "later"]);
+  });
+
   it("keys detached routine delegations to their real source thread", async () => {
     const routineTask = store.createTask(from.id, "Routine run", false)!;
     const result = queueDelegation(
