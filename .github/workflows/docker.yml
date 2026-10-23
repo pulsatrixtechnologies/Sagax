@@ -57,18 +57,17 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
           "$HOME/bin/trivy" --version
       - name: Assemble exception list
-        # Private exceptions (reviewed periodically) come from a repository
-        # secret. Absent or empty: fail closed. Combined with the public
-        # ignore file so build and publish read the same list.
+        # Exceptions come only from the repository secret. Missing or
+        # blank: fail closed. Comments only: the scan ignores nothing.
+        # Smoke, publish, and the signing proof share this secret.
         env:
           TRIVYIGNORE_PRIVATE: ${{ secrets.TRIVYIGNORE_PRIVATE }}
         run: |
           set -euo pipefail
           node scripts/combine-trivyignore.mjs \
-            --public .trivyignore \
             --private-env TRIVYIGNORE_PRIVATE \
             --out /tmp/trivyignore.ci
-      - name: Vulnerability gate with .trivyignore
+      - name: Vulnerability gate
         run: |
           set -euo pipefail
           trivy image --scanners vuln --severity HIGH,CRITICAL \
@@ -85,7 +84,7 @@ jobs:
           trivy image --scanners vuln --severity HIGH,CRITICAL \
             --ignorefile /tmp/trivyignore.empty --format json --output /tmp/trivy-raw.json \
             openmausbot:ci
-          node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan /tmp/trivy-raw.json
+          node scripts/trivy-ignore-guard.mjs --allow-empty --ignore /tmp/trivyignore.ci --scan /tmp/trivy-raw.json
       - name: Boot the container and prove the server + UI answer
         run: |
           set -euo pipefail
@@ -305,7 +304,6 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/combine-trivyignore.mjs \
-            --public .trivyignore \
             --private-env TRIVYIGNORE_PRIVATE \
             --out /tmp/trivyignore.ci
       - name: Scan both platforms
@@ -421,7 +419,6 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/combine-trivyignore.mjs \
-            --public .trivyignore \
             --private-env TRIVYIGNORE_PRIVATE \
             --out /tmp/trivyignore.ci
       - name: Scan both platforms

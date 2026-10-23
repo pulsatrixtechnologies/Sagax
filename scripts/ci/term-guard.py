@@ -18,16 +18,28 @@ Commit metadata: with --commits FILE (GET /pulls/N/commits as a JSON array or
 one object per line) every
 commit's author and committer name and e-mail and its message are scanned too.
 
-Usage: term-guard.py [--commits COMMITS_JSON] DIFF_FILE
+A vulnerability identifier (CVE- followed by a year and a number) is also
+refused in the title, branch, commit metadata, added lines, and, with
+--tree ROOT, in tracked and untracked text files. That check uses
+CVE_ALLOW_FILE (default .github/cve-id-allow-paths.txt), a separate path
+list: a glob matches the full path or the file name, so a third-party
+lockfile or changelog can cite an identifier. A hit prints the location
+only. --tree does not require FORBIDDEN_TERMS. Titles, branches, and
+paths are still checked.
+
+Usage: term-guard.py [--commits COMMITS_JSON] [--tree ROOT] [DIFF_FILE]
        (PR_TITLE and PR_BRANCH come from the environment)
 """
 import json
 import fnmatch
 import os
 import re
+import subprocess
 import sys
 
 DEFAULT_ALLOW_FILE = ".github/term-guard-allow-paths.txt"
+DEFAULT_CVE_ALLOW_FILE = ".github/cve-id-allow-paths.txt"
+CVE_ID = re.compile(r"CVE-\d{4}-\d+")
 
 
 def load_allow(path=None):
@@ -41,6 +53,14 @@ def load_allow(path=None):
 
 def allowed(path, globs):
     return bool(path) and any(fnmatch.fnmatchcase(path, g) for g in globs)
+
+
+def cve_allowed(path, globs):
+    """Full path or file name. Basename matching stays off the shared allowlist."""
+    if not path:
+        return False
+    base = os.path.basename(path)
+    return any(fnmatch.fnmatchcase(path, g) or fnmatch.fnmatchcase(base, g) for g in globs)
 
 
 def load_terms():
@@ -79,7 +99,7 @@ def scan_commits(commits, terms):
     return found
 
 
-def scan_diff(lines, terms, allow=()):
+def scan_diff(lines, terms, allow=(), allow_fn=allowed):
     found = []
     path, new_line, index, skip = None, 0, 0, False
     for raw in lines:
@@ -92,7 +112,7 @@ def scan_diff(lines, terms, allow=()):
             continue
         if line.startswith("+++ "):
             path = line[6:] if line.startswith("+++ b/") else line[4:]
-            skip = allowed(path, allow)
+            skip = allow_fn(path, allow)
             if hit(path, terms):
                 path = f"file #{index}"
             continue
@@ -115,33 +135,125 @@ def scan_diff(lines, terms, allow=()):
     return found
 
 
-def main(argv):
-    terms = load_terms()
-    if not terms:
-        print("::error::FORBIDDEN_TERMS is empty or unavailable; failing closed.")
-        return 2
+def load_cve_allow():
+    return load_allow(os.environ.get("CVE_ALLOW_FILE") or DEFAULT_CVE_ALLOW_FILE)
+
+
+def scan_cve_surface(title, branch, commits, diff_lines):
+    terms = [CVE_ID]
+    allow = load_cve_allow()
     found = []
-    if hit(os.environ.get("PR_TITLE", ""), terms):
+    if hit(title, terms):
         found.append("title")
-    if hit(os.environ.get("PR_BRANCH", ""), terms):
+    if hit(branch, terms):
         found.append("branch")
+    if commits is not None:
+        found += scan_commits(commits, terms)
+    if diff_lines is not None:
+        found += scan_diff(diff_lines, terms, allow, cve_allowed)
+    return found
+
+
+def scan_tree(root):
+    """Tracked and untracked text, honoring gitignore. Fail closed if git fails."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z", "-c", "-o", "--exclude-standard"],
+            capture_output=True,
+        )
+    except OSError:
+        return ["tree (git failed)"]
+    if proc.returncode != 0:
+        return ["tree (git ls-files failed)"]
+    allow = load_cve_allow()
+    found = []
+    for raw in proc.stdout.split(b"\0"):
+        if not raw:
+            continue
+        rel = raw.decode("utf-8", "surrogateescape")
+        if cve_allowed(rel, allow):
+            continue
+        path = os.path.join(root, rel)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        if b"\0" in data:
+            continue
+        text = data.decode("utf-8", "replace")
+        for n, line in enumerate(text.splitlines(), 1):
+            if CVE_ID.search(line):
+                where = f"file:{n}" if CVE_ID.search(rel) else f"{rel}:{n}"
+                found.append(where)
+    return found
+
+
+def main(argv):
     args = list(argv[1:])
+    tree_root = None
+    if "--tree" in args:
+        i = args.index("--tree")
+        if i + 1 >= len(args):
+            print("::error::--tree needs a path")
+            return 2
+        tree_root = args[i + 1]
+        del args[i:i + 2]
+    commits = None
     if "--commits" in args:
         i = args.index("--commits")
         with open(args[i + 1], encoding="utf-8") as fh:
             text = fh.read().strip()
         # a JSON array, or one commit object per line (gh api --paginate --jq '.[]')
         commits = json.loads(text) if text.startswith("[") else [json.loads(l) for l in text.splitlines() if l.strip()]
-        found += scan_commits(commits, terms)
         del args[i:i + 2]
+    diff_lines = None
     if args:
         with open(args[0], encoding="utf-8", errors="replace") as fh:
-            found += scan_diff(fh, terms, load_allow())
-    if found:
+            diff_lines = fh.readlines()
+
+    title = os.environ.get("PR_TITLE", "")
+    branch = os.environ.get("PR_BRANCH", "")
+    cve_found = scan_cve_surface(title, branch, commits, diff_lines)
+    if tree_root is not None:
+        cve_found += scan_tree(tree_root)
+
+    wants_terms = commits is not None or diff_lines is not None or bool(title) or bool(branch)
+    terms = load_terms()
+    found = []
+    if wants_terms:
+        if not terms:
+            if cve_found:
+                for where in cve_found:
+                    print(f"::error::Vulnerability identifier found in {where}")
+                print(f"{len(cve_found)} location(s) contain a vulnerability identifier. The identifier is not shown.")
+                return 1
+            print("::error::FORBIDDEN_TERMS is empty or unavailable; failing closed.")
+            return 2
+        if hit(title, terms):
+            found.append("title")
+        if hit(branch, terms):
+            found.append("branch")
+        if commits is not None:
+            found += scan_commits(commits, terms)
+        if diff_lines is not None:
+            found += scan_diff(diff_lines, terms, load_allow())
+
+    if cve_found or found:
+        for where in cve_found:
+            print(f"::error::Vulnerability identifier found in {where}")
         for where in found:
             print(f"::error::Forbidden term found in {where}")
-        print(f"{len(found)} location(s) contain a forbidden term. The term is not shown; check the locations above.")
+        if found:
+            print(f"{len(found)} location(s) contain a forbidden term. The term is not shown; check the locations above.")
+        if cve_found:
+            print(f"{len(cve_found)} location(s) contain a vulnerability identifier. The identifier is not shown.")
         return 1
+    if tree_root is not None and not wants_terms:
+        print("No vulnerability identifiers in the tree.")
+        return 0
     print(f"No forbidden terms in title, branch, commits, or diff ({len(terms)} terms checked).")
     return 0
 
