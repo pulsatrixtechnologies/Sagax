@@ -3504,9 +3504,9 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         ) : (
           // The foot (reference design): the account pill, your avatar and
           // name (it opens the account menu, Browse bots included), 6px,
-          // then the compact Connect apps pill, then the update button while
-          // an update downloads or waits. The row is the container the open
-          // label's width is capped against (styles.css, .sidebar-apps-pill).
+          // then the Connect apps button, then the update button while an
+          // update downloads or waits. Both tiles take their height from
+          // --foot-tile-h on the row (styles.css).
           <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
             <SidebarProfileMenu avatarOnly withName places={accountPlaces} />
             <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
@@ -3845,10 +3845,10 @@ function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen: () => 
       data-tour="nav-apps"
       data-sidebar-connect-apps=""
       onClick={onOpen}
-      className="sidebar-apps-pill flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
+      className="flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
     >
       <Puzzle size={16} aria-hidden="true" className="shrink-0" />
-      <span className="truncate" data-apps-pill-label>{label}</span>
+      <span className="truncate">{label}</span>
     </button>
   );
 }
