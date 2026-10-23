@@ -652,11 +652,12 @@ export function useComposerDraft(
         setAttachmentState(next);
         return;
       }
-      setAttachmentState((previous) => {
-        const value = next(previous);
-        setDraftAttachments(store, id, value);
-        return value;
-      });
+      // Base the edit on the store. An in-flight screenshot is appended
+      // there before React has rendered it, and writing the stale list
+      // back would drop that chip.
+      const value = next(getDraftAttachments(store, id));
+      setDraftAttachments(store, id, value);
+      setAttachmentState(value);
     },
     [store, id],
   );
