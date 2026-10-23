@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot } from "@/state/store";
 
 const api = vi.hoisted(() => vi.fn());
-vi.mock("@/state/store", () => ({ api, useStore: () => ({ state: { config: { browserProfiles: [], browserEngine: { kind: "engine" } } } }) }));
+const browserEngine = vi.hoisted(() => ({ current: { kind: "engine" } as { kind: string; installable?: boolean } }));
+vi.mock("@/state/store", () => ({ api, useStore: () => ({ state: { config: { browserProfiles: [], browserEngine: browserEngine.current } } }) }));
 vi.mock("./BrowserProfilesManager", () => ({ BrowserProfilesManager: () => null }));
 import { BrowserComputerScreen, BrowserPanel } from "./BrowserPanel";
 
@@ -33,6 +34,7 @@ const requestFullscreen = vi.fn(async () => {});
 
 beforeEach(() => {
   FakeSource.all = [];
+  browserEngine.current = { kind: "engine" };
   api.mockReset().mockImplementation(async (path: string) => path === "/api/auth/session" ? { scopes: ["admin"] } : { ok: true });
   vi.stubGlobal("EventSource", FakeSource);
   HTMLElement.prototype.requestFullscreen = requestFullscreen;
@@ -67,6 +69,18 @@ describe("browser tab: a live preview like the VM's screen", () => {
     expect(document.body.textContent).not.toMatch(/Nothing is streamed|full screen/);
     // No Play / Pause / Stop: a browser has no power of its own.
     expect(document.querySelector("[data-screen-controls]")).toBeNull();
+  });
+
+  it("lets a member watch and keeps installing the engine for an admin", async () => {
+    api.mockImplementation(async (path: string) => path === "/api/auth/session" ? { scopes: ["client"] } : { ok: true });
+    await act(async () => root.render(createElement(BrowserPanel, { bot })));
+    expect(document.body.textContent).not.toContain("Only admins of this installation");
+    expect(screen()?.getAttribute("data-computer-source")).toBe("browser");
+    browserEngine.current = { kind: "unavailable", installable: true };
+    await act(async () => root.render(createElement(BrowserPanel, { bot })));
+    const install = [...document.querySelectorAll("button")].find((button) => button.textContent === "Install the browser engine") as HTMLButtonElement;
+    expect(install.disabled).toBe(true);
+    expect(document.body.textContent).not.toContain("Only admins of this installation");
   });
 
   it("shows each frame and acknowledges it, with Take control over the picture", async () => {
