@@ -64,8 +64,17 @@ export interface UsageTraceList {
   truncated: boolean;
 }
 
+/** The whole-ledger traces: every job of the workspace (owner or usage.view).
+ * The admin console reads this; the app's personal screen reads fetchMyTraces. */
 export function fetchTraces(range: { from: string; to: string }, get: <T>(path: string) => Promise<T> = api): Promise<UsageTraceList> {
   return get<UsageTraceList>(`/api/usage/traces?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`);
+}
+
+/** The signed-in person's OWN traces and nothing else (GET /api/me/usage/traces,
+ * open to every member). Settings > Usage reads this so a person sees where
+ * their own jobs spent time and money, never another person's. */
+export function fetchMyTraces(range: { from: string; to: string }, get: <T>(path: string) => Promise<T> = api): Promise<UsageTraceList> {
+  return get<UsageTraceList>(`/api/me/usage/traces?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`);
 }
 
 /** "0 ms", "450 ms", "6.9 s", "51 s", "1 m 40 s", "2 h 5 m": units are

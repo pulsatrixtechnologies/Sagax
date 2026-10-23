@@ -213,6 +213,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"GET","kind":"exact","route":"/api/me/spend-cap","tier":"admin","readOnly":true,"scope":"me:admin","defaultEnabled":false,"billing":true},
   {"method":"PUT","kind":"exact","route":"/api/me/spend-cap","tier":"admin","readOnly":false,"scope":"me:admin","defaultEnabled":false,"billing":true},
   {"method":"GET","kind":"exact","route":"/api/me/usage","tier":"admin","readOnly":true,"scope":"me:admin","defaultEnabled":false,"billing":true},
+  {"method":"GET","kind":"exact","route":"/api/me/usage/traces","tier":"admin","readOnly":true,"scope":"me:admin","defaultEnabled":false,"billing":true},
   {"method":"GET","kind":"prefix","route":"/api/media/proxy/","tier":"read","readOnly":true,"scope":"media:read","defaultEnabled":true},
   {"method":"ANY","kind":"prefix","route":"/api/meetings/","tier":"write","readOnly":false,"scope":"meetings:write","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/messages","tier":"read","readOnly":true,"scope":"messages:read","defaultEnabled":true},

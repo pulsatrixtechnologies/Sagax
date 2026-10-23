@@ -1,7 +1,9 @@
-// Settings > Usage, owner/admin only (gated by canViewUsage, usage.view):
-// the per-job usage traces. Each job is one thread under one trigger (a
+// Settings > Usage, every signed-in person: their OWN per-job usage traces
+// (the `load` prop is fetchMyTraces -> GET /api/me/usage/traces, which keeps
+// the caller's own turns only). Each job is one thread under one trigger (a
 // routine run, a person's conversation, a bot-to-bot exchange); the row shows
 // where it spent its time and its money, and expands to the per-turn trace.
+// The whole-ledger variant (fetchTraces) is for an admin console, not here.
 //
 // Port of OpenMausBot #3316 rebuilt on OUR ledger: no Cloud, no credit, no
 // team plumbing. Human labels throughout; the bot and thread ids ride a Copy
@@ -108,7 +110,8 @@ function JobRow({ job }: { job: UsageJobTrace }) {
   );
 }
 
-/** The per-job usage traces for the current month, owner/admin only. */
+/** The per-job usage traces for the current month. In Settings > Usage the
+ * caller passes fetchMyTraces, so a person sees their own jobs only. */
 export function UsageTraces({ load = fetchTraces }: { load?: (range: { from: string; to: string }) => Promise<UsageTraceList> }) {
   const [list, setList] = useState<UsageTraceList | null>(null);
   const [failed, setFailed] = useState(false);

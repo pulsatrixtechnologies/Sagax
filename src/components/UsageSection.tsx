@@ -31,6 +31,7 @@ import {
   type PersonalUsageGroup,
   type PersonalUsageSummary,
 } from "@/lib/usage-personal";
+import { fetchMyTraces } from "@/lib/usage-trace";
 import { PlanUsage } from "./PlanUsage";
 import { UsageTraces } from "./usage/UsageTraces";
 import { perspicaxConsoleUrl } from "./PerspicaxOrgSettings";
@@ -179,7 +180,7 @@ export function UsageSection() {
         </div>
       )}
       plan={<PlanUsage enabled={planUsageShown({ organization: org !== null, viewUsage: canViewUsage(state.config) })} />}
-      rest={canViewUsage(state.config) ? <UsageTraces /> : null}
+      rest={<UsageTraces load={fetchMyTraces} />}
     />
   );
 }

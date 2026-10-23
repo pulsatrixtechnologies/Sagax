@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fetchTraces, formatDuration, freshInput, triggerLabelOf, type UsageJobTrace } from "./usage-trace.ts";
+import { fetchMyTraces, fetchTraces, formatDuration, freshInput, triggerLabelOf, type UsageJobTrace } from "./usage-trace.ts";
 
 describe("formatDuration", () => {
   it("picks a readable unit and rounds before it", () => {
@@ -47,5 +47,17 @@ describe("fetchTraces", () => {
     };
     await fetchTraces({ from: "2026-10-01", to: "2026-10-22" }, get);
     expect(calls[0]).toBe("/api/usage/traces?from=2026-10-01&to=2026-10-22");
+  });
+});
+
+describe("fetchMyTraces", () => {
+  it("asks the per-person endpoint so the caller sees only their own traces", async () => {
+    const calls: string[] = [];
+    const get = async <T>(path: string): Promise<T> => {
+      calls.push(path);
+      return { from: "", to: "", jobs: [] as UsageJobTrace[], total: {} as never, truncated: false } as unknown as T;
+    };
+    await fetchMyTraces({ from: "2026-10-01", to: "2026-10-22" }, get);
+    expect(calls[0]).toBe("/api/me/usage/traces?from=2026-10-01&to=2026-10-22");
   });
 });
