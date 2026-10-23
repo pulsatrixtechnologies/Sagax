@@ -1507,12 +1507,16 @@ export type SideChat = { header: ReactNode; label: string };
 
 const noop = () => {};
 
-/** The line that opens a topic of the single stream. */
+/** The line that opens a topic of the single stream. Like Grok Bot, it is one
+ * quiet "New topic" marker, the same label the fresh-topic divider carries:
+ * the topic's own title and time are not stamped on the stream (they stayed
+ * on the "Show the previous topic" pill and in search); the title rides along
+ * as the hover tooltip so it is still reachable without crowding the line. */
 function TopicDivider({ task }: { task: Pick<Task, "threadId" | "title" | "createdAt"> }) {
   return (
     <div className="my-2 flex items-center gap-3 text-[11.5px] text-ink-tertiary" role="separator" data-topic-divider={task.threadId}>
       <span className="h-px flex-1 bg-hairline/60" />
-      <span className="max-w-[70%] truncate" title={task.title}>{t("stream.divider", { title: task.title })} · {formatTime(task.createdAt)}</span>
+      <span className="truncate" title={task.title}>{t("stream.newTopic")}</span>
       <span className="h-px flex-1 bg-hairline/60" />
     </div>
   );
