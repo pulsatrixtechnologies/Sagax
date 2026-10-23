@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -11,12 +11,11 @@ import {
   parseTrivyignore,
 } from "./trivy-ignore-guard.mjs";
 
-const root = join(import.meta.dirname, "..");
 const script = join(import.meta.dirname, "trivy-ignore-guard.mjs");
 
-/** Fictional ids only. Real scan identifiers stay in `.trivyignore`. */
-const LISTED = "CVE-0000-0001";
-const OTHER = "CVE-0000-0002";
+/** Built at runtime so the source does not contain an identifier. */
+const LISTED = ["CVE", "0000", "0001"].join("-");
+const OTHER = ["CVE", "0000", "0002"].join("-");
 
 function ignoreFile(body) {
   return String(body).replace(/^\n/, "");
@@ -56,17 +55,18 @@ function withTemp(run) {
   }
 }
 
-function runGuard({ ignore, scan: scanDoc, gated, today } = {}) {
+function runGuard({ ignore, scan: scanDoc, gated, today, allowEmpty = false } = {}) {
   return withTemp((dir) => {
     const args = [];
+    if (allowEmpty) args.push("--allow-empty");
     if (gated !== undefined) {
       const path = join(dir, "gated.json");
       writeFileSync(path, typeof gated === "string" ? gated : JSON.stringify(gated));
       args.push("--gated", path);
     } else {
-      writeFileSync(join(dir, ".trivyignore"), ignore ?? "");
+      writeFileSync(join(dir, "exceptions.txt"), ignore ?? "");
       writeFileSync(join(dir, "scan.json"), typeof scanDoc === "string" ? scanDoc : JSON.stringify(scanDoc));
-      args.push("--ignore", join(dir, ".trivyignore"), "--scan", join(dir, "scan.json"));
+      args.push("--ignore", join(dir, "exceptions.txt"), "--scan", join(dir, "scan.json"));
     }
     if (today) args.push("--today", today);
     return spawnSync(process.execPath, [script, ...args], { encoding: "utf8" });
@@ -83,6 +83,14 @@ describe("trivy ignore guard", () => {
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
     expect(result.entries.map((row) => row.id)).toEqual([LISTED]);
+    const cli = runGuard({
+      ignore: listed,
+      scan: scan([{ id: LISTED, severity: "CRITICAL" }]),
+      today: "2026-10-14",
+    });
+    expect(cli.status, cli.stderr + cli.stdout).toBe(0);
+    expect(cli.stdout).toMatch(/ok 1 exception/);
+    expect(cli.stdout + cli.stderr).not.toContain(LISTED);
   });
 
   it("refuses a listed CVE that now has a FixedVersion", () => {
@@ -285,6 +293,36 @@ ${LISTED}
     });
     expect(cli.status, cli.stderr + cli.stdout).not.toBe(0);
     expect(cli.stderr).toMatch(/absent from the scan/);
+    expect(cli.stderr + cli.stdout).not.toContain(LISTED);
+  });
+
+  it("accepts an empty ignore file when --allow-empty is set and still checks entries", () => {
+    const empty = assessIgnoreGuard({
+      ignoreText: "",
+      scan: scan([{ id: OTHER, severity: "HIGH" }]),
+      today: "2026-10-14",
+      allowEmpty: true,
+    });
+    expect(empty.ok).toBe(true);
+    expect(empty.entries).toEqual([]);
+    const cli = runGuard({
+      ignore: "# comments only\n",
+      scan: scan([{ id: OTHER, severity: "HIGH" }]),
+      today: "2026-10-14",
+      allowEmpty: true,
+    });
+    expect(cli.status, cli.stderr + cli.stdout).toBe(0);
+    expect(cli.stdout).toMatch(/ok 0 exception/);
+    expect(cli.stdout + cli.stderr).not.toContain(OTHER);
+
+    const stillChecked = assessIgnoreGuard({
+      ignoreText: listed,
+      scan: scan([{ id: LISTED, severity: "CRITICAL", fixed: "2" }]),
+      today: "2026-10-14",
+      allowEmpty: true,
+    });
+    expect(stillChecked.ok).toBe(false);
+    expect(stillChecked.errors.join("\n")).toMatch(/FixedVersion/);
   });
 });
 
@@ -315,20 +353,25 @@ ${LISTED}
     expect(parsed.errors.join("\n")).toMatch(/more than once|duplicate/i);
   });
 
-  it("reads the repository ignore file as explicit CVEs with a reason and review date", () => {
-    const parsed = parseTrivyignore(readFileSync(join(root, ".trivyignore"), "utf8"));
+  it("reads explicit identifiers with a reason and one review date", () => {
+    const second = ["CVE", "0000", "0003"].join("-");
+    const ignore = ignoreFile(`
+# Debian no-dsa. Review 2026-11-13
+${LISTED}
+# pas de correctif dans trixie. Review 2026-11-13
+${second}
+`);
+    const parsed = parseTrivyignore(ignore);
     expect(parsed.errors).toEqual([]);
-    expect(parsed.entries).toHaveLength(34);
+    expect(parsed.entries).toHaveLength(2);
     expect(parsed.entries.some((row) => /[*?]/.test(row.id))).toBe(false);
     for (const row of parsed.entries) {
       expect(row.id).toMatch(/^CVE-\d{4}-\d+$/);
       expect(row.reviewDate).toBe("2026-11-13");
-      expect(
-        /no-dsa/i.test(row.reason) || /pas de correctif dans trixie/i.test(row.reason),
-        row.id,
-      ).toBe(true);
+      expect(/no-dsa/i.test(row.reason) || /pas de correctif dans trixie/i.test(row.reason)).toBe(true);
     }
     const ids = parsed.entries.map((row) => row.id);
     expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual([LISTED, second]);
   });
 });

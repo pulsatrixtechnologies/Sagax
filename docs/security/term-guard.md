@@ -25,6 +25,20 @@ GitHub noreply address (`<id>+<login>@users.noreply.github.com`) for commits.
 
 Tests: `python3 scripts/ci/term-guard.test.py`.
 
+## Vulnerability identifiers
+
+Added lines, the title, the branch name, and commit metadata are also
+checked for a vulnerability identifier (`CVE-` plus a four-digit year and
+a number). A hit prints the location only. The path allowlist for that
+check is `.github/cve-id-allow-paths.txt`, read from the base branch in
+CI, and is separate from the given-names list. A glob matches the full
+path or the file name, so a third-party lockfile or changelog can cite an
+identifier. Titles, branches, and paths are still checked.
+
+The working tree is checked with `python3 scripts/ci/term-guard.py --tree .`.
+That mode does not need the secret. It reads tracked files and untracked
+files that git does not ignore, and skips the allowlisted paths.
+
 Runs on a GitHub-hosted `ubuntu-latest` runner.
 
 ## Path allowlist

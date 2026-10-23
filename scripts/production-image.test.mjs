@@ -2,8 +2,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { parseTrivyignore } from "./trivy-ignore-guard.mjs";
-
 const root = join(import.meta.dirname, "..");
 // A Windows checkout may hand back CRLF; the patterns below are written for LF.
 const read = (path) => readFileSync(join(root, path), "utf8").replace(/\r\n/g, "\n");
@@ -84,16 +82,16 @@ describe("production image sources", () => {
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("2.15.1");
     expect(read("scripts/hermes-jwt-overlay-smoke.py")).toContain("hermes-agent");
     expect(workflow).toContain("trivy_0.75.0_Linux-64bit.tar.gz");
-    expect(workflow).toContain("--public .trivyignore");
+    expect(workflow).not.toContain("--public");
+    expect(workflow).not.toContain("--ignore .trivyignore");
+    expect(workflow).toContain("--private-env TRIVYIGNORE_PRIVATE");
+    expect(workflow).toContain("--allow-empty");
     expect(workflow).toContain("--out /tmp/trivyignore.ci");
     expect(workflow).toContain("--ignorefile /tmp/trivyignore.ci");
     expect(workflow).toContain("--ignorefile /tmp/trivyignore.empty");
+    expect(workflow).toContain("--ignore /tmp/trivyignore.ci");
     expect(workflow).toContain("secrets.TRIVYIGNORE_PRIVATE");
-    expect(workflow).toContain(".trivyignore");
     expect(workflow.split("scripts/combine-trivyignore.mjs").length - 1).toBeGreaterThanOrEqual(3);
-    const publicIgnore = parseTrivyignore(read(".trivyignore"));
-    expect(publicIgnore.errors).toEqual([]);
-    expect(publicIgnore.entries).toHaveLength(34);
     expect(workflow).toContain("--startup-log");
     expect(workflow).toContain("/healthz");
     expect(workflow).toContain("cursor-agent");
