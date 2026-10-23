@@ -71,6 +71,17 @@ describe("failed turn text", () => {
       .toBe("The service is busy right now. Try again in a moment.");
   });
 
+  it("previews a missing engine in the app's language", async () => {
+    const { setLocale } = await import("@/lib/i18n");
+    const { NO_ENGINE_MESSAGE, NO_ENGINE_PERSON } = await import("../../shared/bot-engine-error");
+    const stored = { name: `error: ${NO_ENGINE_MESSAGE}`, ok: false as const };
+    setLocale("en");
+    expect(activityPreview(stored, engine())).toBe(NO_ENGINE_PERSON);
+    setLocale("fr");
+    expect(activityPreview(stored, engine())).toBe("Ce bot n'a pas de moteur : choisissez-en un dans Modifier le bot > Modèle");
+    setLocale("en");
+  });
+
   it("finds the engine a bot's turns ran on", () => {
     const claude = engine();
     const bot = { modelSelection: { instanceId: "claude", model: "sonnet" } } as Bot;

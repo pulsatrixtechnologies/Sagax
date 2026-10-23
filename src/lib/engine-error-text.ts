@@ -1,0 +1,34 @@
+// A bot with no engine used to answer the person with one French sentence,
+// whatever language the app was set to. The server still sends that sentence
+// to other bots, and older chats stored it. A person's own screen reads the
+// code, or either historical sentence, and says it in the app's language.
+import { t } from "@/lib/i18n";
+import {
+  ENGINE_REMOVED_MESSAGE,
+  ENGINE_REMOVED_PERSON,
+  NO_ENGINE_CODE,
+  NO_ENGINE_MESSAGE,
+  NO_ENGINE_PERSON,
+} from "../../shared/bot-engine-error";
+
+/** The no-engine or removed-engine sentence in the app's language, or null
+ * when `text` is some other cause. */
+export function localizedEngineCause(text: string): string | null {
+  if (text === NO_ENGINE_MESSAGE || text === NO_ENGINE_PERSON) return t("composer.error.noEngine");
+  if (text === ENGINE_REMOVED_MESSAGE || text === ENGINE_REMOVED_PERSON) return t("composer.error.engineRemoved");
+  return null;
+}
+
+/** The sentence for a refusal body that is the no-engine error
+ * (`{ code: "no_engine" }` or the sentence itself), or null otherwise. */
+export function engineErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const record = body as { code?: unknown; error?: unknown };
+  if (record.code === NO_ENGINE_CODE) return t("composer.error.noEngine");
+  const error = record.error;
+  if (typeof error === "string") return localizedEngineCause(error);
+  if (error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string") {
+    return localizedEngineCause((error as { message: string }).message);
+  }
+  return null;
+}
