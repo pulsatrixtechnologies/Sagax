@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { botShowsUnread, taskHiddenFromSidebar } from "@/lib/bot-unread";
 import { streamHomeThread } from "@/lib/single-stream";
-import { sidebarBotActivityTasks } from "@/components/SidebarBotActivity";
+import { sidebarBotActivityTasks, threadsWhenTreeHidden } from "@/components/SidebarBotActivity";
 import { routineRunLabel } from "@/lib/routine-display";
 import { routineRunMatchesStatus, type RoutineRun } from "@/lib/routines";
 import { initialState, reducer, type Bot } from "@/state/store";
@@ -76,5 +76,13 @@ describe("a routine results thread with threads hidden", () => {
 
   it("never becomes the single chat the bot opens to (its preview)", () => {
     expect(streamHomeThread(katarina.tasks, "chat")).toBe("chat");
+  });
+
+  it("stays out of the threads-hidden activity list even when pinned", () => {
+    const pinned = {
+      ...katarina,
+      tasks: [katarina.tasks![0]!, { ...katarina.tasks![1]!, pinned: true as const, unread: false }],
+    } as Bot;
+    expect(threadsWhenTreeHidden(pinned, {}).map((task) => task.threadId)).toEqual([]);
   });
 });
