@@ -81,7 +81,6 @@ import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
-import { prefersWideBubble } from "@/lib/rich-blocks";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
 import { OptionCard } from "./OptionCard";
 import { GroupCallOverlay } from "./GroupCallView";
@@ -310,18 +309,23 @@ function RoomTextMessage({
         <div
           data-chat-bubble
           className={cn(
-            "rounded-[18px] text-[13px] leading-5",
-            !user && m.text && prefersWideBubble(m.text) ? "w-full max-w-[min(94%,780px,calc(100%-82px))]" : "w-fit max-w-[min(80%,560px,calc(100%-82px))]",
+            "text-[13px] leading-5",
             !user && emerging && "turn-answer",
-            // A bot message that is only attachments is just the files: no bubble.
-            !user && !m.text?.trim() && !m.replyToId && m.attachments?.length
-              ? "text-ink"
-              : mine
-                ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
-                : user
-                  ? "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40"
-                  : "bg-card px-3 py-[7px] text-ink",
-            runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
+            !user
+              // A bot reads flat like Grok Bot: no card, the column's measure,
+              // aligned to the rail; its name labels the run above (RoomBotLabel).
+              // An attachments-only line keeps its tighter fit.
+              ? (!m.text?.trim() && !m.replyToId && m.attachments?.length
+                  ? "w-fit max-w-[min(80%,560px,calc(100%-82px))] text-ink"
+                  : "w-full max-w-[calc(100%-82px)] text-ink")
+              // A person (you or another) keeps a rounded bubble.
+              : cn(
+                  "rounded-[18px] w-fit max-w-[min(80%,560px,calc(100%-82px))]",
+                  mine
+                    ? "chat-text whitespace-pre-wrap bg-bubble-user px-3 py-[7px] text-ink"
+                    : "chat-text whitespace-pre-wrap bg-raised px-3 py-[7px] text-ink ring-1 ring-inset ring-hairline/40",
+                  runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
+                ),
           )}
           title={new Date(m.at).toLocaleString()}
         >

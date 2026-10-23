@@ -143,6 +143,36 @@ describe("the single stream in the main chat", () => {
     expect(markup.indexOf('data-topic-divider="now"')).toBeLessThan(markup.indexOf("Live answer"));
   });
 
+  it("draws a bot answer flat like Grok Bot: no card, no bubble shape", () => {
+    preferences.setShowThreads(false);
+    const markup = render(bot);
+    // the bubble wrapper that holds the bot's answer
+    const end = markup.indexOf(">Live answer<");
+    const marker = markup.lastIndexOf('data-chat-bubble="true"', end);
+    const start = markup.indexOf('class="', marker) + 'class="'.length;
+    const cls = markup.slice(start, markup.indexOf('"', start));
+    expect(cls).toContain("text-ink");
+    expect(cls).not.toContain("bg-card");
+    expect(cls).not.toContain("rounded-[18px]");
+    expect(cls).not.toContain("bg-bubble-user");
+  });
+
+  it("draws the topic divider as Grok Bot's quiet New topic marker, not the topic's title and time", () => {
+    preferences.setShowThreads(false);
+    fixture.focus = { threadId: "first", messageId: "old", nonce: 1, consumed: false };
+    let markup = "";
+    try {
+      markup = render(bot);
+    } finally {
+      fixture.focus = null;
+    }
+    // one generic "New topic" label, the topic name only as the hover tooltip
+    expect(markup).toContain('title="Backups">New topic<');
+    // never the old titled, timestamped divider ("New topic: Backups · 00:00")
+    expect(markup).not.toContain("New topic: Backups");
+    expect(markup).not.toMatch(/New topic\b[^<]*·/);
+  });
+
   it("waits for the live topic to be read back to its start", () => {
     preferences.setShowThreads(false);
     const markup = render({ ...bot, hasMore: true });

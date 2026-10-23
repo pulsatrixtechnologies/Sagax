@@ -609,6 +609,10 @@ const Bubble = memo(function Bubble({
   const attachmentsOnly = !webhookView && !replyTarget && !visibleText.trim() &&
     (user ? hasAttachments : generatedPaths.length + linkedFiles.length > 0);
   const remoteCard = !user && Boolean(message.remoteSession || message.resourceUsage || message.connectorSetup);
+  // A plain bot answer draws flat like Grok Bot (no card). A person's message,
+  // a webhook card, a remote/resource card and an attachments-only line keep
+  // their own treatment just below.
+  const flatBot = !user && !webhookView && !remoteCard && !attachmentsOnly;
   const collapsible =
     user && !webhookView && !expanded && (visibleText.length > USER_COLLAPSE_CHARS || visibleText.split("\n").length > USER_COLLAPSE_LINES);
   useEffect(() => {
@@ -686,18 +690,26 @@ const Bubble = memo(function Bubble({
         <div
           data-chat-bubble
           className={cn(
-            "rounded-[18px] text-[13px] leading-5",
-            CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: !user && Boolean(message.terminalEmbed), wide: wideBubble || remoteCard })],
+            "text-[13px] leading-5",
             emerging && "turn-answer",
-            user && webhookView
-              ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
-              : remoteCard && !visibleText.trim()
-                ? "text-ink"
-              : attachmentsOnly
-                ? "text-ink"
-                : user
-                  ? "bg-bubble-user px-3 py-[7px] whitespace-pre-wrap text-ink"
-                  : "bg-card px-3 py-[7px] text-ink",
+            flatBot
+              // A bot answer reads flat like Grok Bot: no card, no bubble shape,
+              // the column's measure, aligned to the rail. Only the person's own
+              // message keeps a bubble. Cards (webhook, remote) stay carded below.
+              ? "w-full max-w-[calc(100%-82px)] text-ink"
+              : cn(
+                  "rounded-[18px]",
+                  CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: !user && Boolean(message.terminalEmbed), wide: wideBubble || remoteCard })],
+                  user && webhookView
+                    ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+                    : remoteCard && !visibleText.trim()
+                      ? "text-ink"
+                    : attachmentsOnly
+                      ? "text-ink"
+                      : user
+                        ? "bg-bubble-user px-3 py-[7px] whitespace-pre-wrap text-ink"
+                        : "bg-card px-3 py-[7px] text-ink",
+                ),
           )}
           title={new Date(message.at).toLocaleString()}
         >
@@ -1507,12 +1519,16 @@ export type SideChat = { header: ReactNode; label: string };
 
 const noop = () => {};
 
-/** The line that opens a topic of the single stream. */
+/** The line that opens a topic of the single stream. Like Grok Bot, it is one
+ * quiet "New topic" marker, the same label the fresh-topic divider carries:
+ * the topic's own title and time are not stamped on the stream (they stayed
+ * on the "Show the previous topic" pill and in search); the title rides along
+ * as the hover tooltip so it is still reachable without crowding the line. */
 function TopicDivider({ task }: { task: Pick<Task, "threadId" | "title" | "createdAt"> }) {
   return (
     <div className="my-2 flex items-center gap-3 text-[11.5px] text-ink-tertiary" role="separator" data-topic-divider={task.threadId}>
       <span className="h-px flex-1 bg-hairline/60" />
-      <span className="max-w-[70%] truncate" title={task.title}>{t("stream.divider", { title: task.title })} · {formatTime(task.createdAt)}</span>
+      <span className="truncate" title={task.title}>{t("stream.newTopic")}</span>
       <span className="h-px flex-1 bg-hairline/60" />
     </div>
   );
