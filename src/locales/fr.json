@@ -1745,6 +1745,8 @@
   "composer.dictation.stopHint": "Arrêter la dictée (Échap)",
   "composer.dictation.unavailable": "La dictée n'est pas disponible dans cette version.",
   "composer.error.clipboardImage": "Impossible de lire l'image du presse-papiers. Joignez plutôt le fichier image.",
+  "composer.error.engineRemoved": "Le moteur de ce bot n'est plus disponible : choisissez-en un autre dans Modifier le bot > Modèle",
+  "composer.error.noEngine": "Ce bot n'a pas de moteur : choisissez-en un dans Modifier le bot > Modèle",
   "composer.error.noImages": "Le répondeur sélectionné ne prend pas en charge les images jointes.",
   "composer.failed.attachment": "pièce jointe",
   "composer.failed.dismiss": "Ignorer",

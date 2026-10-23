@@ -1,7 +1,7 @@
 import { rmSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DATA_DIR } from "./config.ts";
-import { NO_ENGINE_MESSAGE, engineProblem, namesEngine } from "./bot-engine.ts";
+import { ENGINE_REMOVED_MESSAGE, NO_ENGINE_MESSAGE, NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { Store } from "./store.ts";
 
 describe("a bot's engine", () => {
@@ -24,8 +24,16 @@ describe("a bot's engine", () => {
 
   it("explains a missing or removed engine in plain words", () => {
     expect(engineProblem({ instanceId: "" }, () => true)).toBe(NO_ENGINE_MESSAGE);
-    expect(engineProblem({ instanceId: "gone" }, () => false)).toContain("plus disponible");
+    expect(engineProblem({ instanceId: "gone" }, () => false)).toBe(ENGINE_REMOVED_MESSAGE);
     expect(engineProblem({ instanceId: "claude" }, () => true)).toBeUndefined();
     expect(NO_ENGINE_MESSAGE).toBe("Ce bot n'a pas de moteur : choisis-en un dans Modifier le bot > Modèle");
+  });
+
+  it("tells a person in English, with a code the app translates", () => {
+    const error = noEngineError();
+    expect(error.message).toBe(NO_ENGINE_PERSON);
+    expect(error.status).toBe(409);
+    expect(error.code).toBe("no_engine");
+    expect(error.message).not.toBe(NO_ENGINE_MESSAGE);
   });
 });
