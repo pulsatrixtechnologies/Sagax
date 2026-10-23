@@ -283,7 +283,7 @@ function normalizeScheduleInput(args: Json): NormalizedSchedule {
   return { error: `Unknown schedule type "${type || "(missing)"}". ${SUPPORTED_SCHEDULES}` };
 }
 
-type RoutineAction = "update" | "pause" | "resume" | "run_now" | "delete";
+type RoutineAction = "update" | "pause" | "resume" | "run_now" | "delete" | "rotate_webhook_key";
 
 /** Keeps a large result within what a model should be handed, saving the
  * rest in the harness for tool_result_read. */
@@ -308,9 +308,26 @@ function jsonRecord(value: unknown): value is Json {
 }
 
 function routineAction(value: unknown): RoutineAction | null {
-  return value === "update" || value === "pause" || value === "resume" || value === "run_now" || value === "delete"
+  return value === "update" || value === "pause" || value === "resume" || value === "run_now" || value === "delete" || value === "rotate_webhook_key"
     ? value
     : null;
+}
+
+function normalizeTrigger(raw: unknown): { trigger?: { type: "webhook" | "email" }; error?: string } {
+  if (raw === undefined || raw === null) return {};
+  let value: unknown = raw;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return { error: "trigger must be { type: \"webhook\" } or { type: \"email\" }." };
+    try { value = JSON.parse(trimmed); }
+    catch { return { error: "trigger must be { type: \"webhook\" } or { type: \"email\" }." }; }
+  }
+  if (!jsonRecord(value)) return { error: "trigger must be { type: \"webhook\" } or { type: \"email\" }." };
+  const extra = Object.keys(value).filter((key) => key !== "type");
+  if (extra.length > 0 || (value.type !== "webhook" && value.type !== "email")) {
+    return { error: "trigger must be { type: \"webhook\" } or { type: \"email\" }." };
+  }
+  return { trigger: { type: value.type } };
 }
 
 function routineFields(args: Json): { fields: Json; error?: string } {
@@ -356,6 +373,12 @@ function routineFields(args: Json): { fields: Json; error?: string } {
     if (normalized.error) return { fields, error: normalized.error };
     fields.schedule = normalized.schedule;
   }
+  const trigger = normalizeTrigger(args.trigger);
+  if (trigger.error) return { fields, error: trigger.error };
+  if (fields.schedule && trigger.trigger) {
+    return { fields, error: "Choose exactly one of schedule or trigger." };
+  }
+  if (trigger.trigger) fields.trigger = trigger.trigger;
   if (runOn != null) fields.runOn = runOn;
   if (args.clear_timeout === true) fields.timeoutMinutes = null;
   else if (timeoutMinutes != null) fields.timeoutMinutes = timeoutMinutes;
@@ -365,20 +388,45 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   return { fields };
 }
 
+const HIDDEN_RESULT_KEYS = new Set([
+  "webhookKey", "secret", "signingSecret", "pendingToken", "token", "secretHash", "ownerCopiesKey",
+]);
+
+/** The model never sees a trigger key, or any string that carries one. */
+function publicProposalValue(value: unknown): unknown {
+  if (typeof value === "string") return value.includes("whsec_") ? "[redacted]" : value;
+  if (Array.isArray(value)) return value.map(publicProposalValue);
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (HIDDEN_RESULT_KEYS.has(key)) continue;
+    out[key] = publicProposalValue(child);
+  }
+  return out;
+}
+
+function ownerKeyNote(result: Json): string {
+  if (result.ownerCopiesKey !== true) return "";
+  return result.action === "rotate_webhook_key"
+    ? "\n\nThe trigger key was rotated; the owner copies its key in the app."
+    : "\n\nWebhook created; the owner copies its key in the app";
+}
+
 /** Full Access is decided by the harness, not inferred from a model claim or
  * local environment flag. Missing state preserves older pending responses. */
-function completedProposalResult(r: Json, subject: string): { text: string; isError?: boolean } | undefined {
+export function completedProposalResult(r: Json, subject: string): { text: string; isError?: boolean } | undefined {
   const state = r.state;
   const result = jsonRecord(r.result) ? r.result : undefined;
   const error = typeof r.error === "string" ? r.error : typeof result?.error === "string" ? result.error : undefined;
   const attention = error ?? (r.settlementPending && typeof r.message === "string" ? r.message : undefined);
   if ((!state || state === "pending") && !error) return undefined;
   const summary = typeof r.summary === "string" && r.summary.trim() ? `\n\n${r.summary.trim()}` : "";
-  const details = result ? `\n\nResult: ${JSON.stringify(result)}` : "";
+  const details = result ? `\n\nResult: ${JSON.stringify(publicProposalValue(result))}` : "";
+  const keyNote = result ? ownerKeyNote(result) : "";
   if (state !== "applied" || (result?.state !== undefined && result.state !== "applied")) {
     return { text: `The request for ${subject} did not complete successfully.${error ? ` ${error}` : ""}${summary}${details}\n\nDo not claim it was applied. Address the reported blocker rather than repeating the request or asking for a duplicate confirmation.`, isError: true };
   }
-  return { text: `Applied ${subject}.${summary}${details}${attention ? `\n\nNeeds attention: ${attention}` : ""}\n\nNo additional confirmation is needed. Continue the requested work; do not wait for a review card or ask the user to approve this change again.` };
+  return { text: `Applied ${subject}.${summary}${keyNote}${details}${attention ? `\n\nNeeds attention: ${attention}` : ""}\n\nNo additional confirmation is needed. Continue the requested work; do not wait for a review card or ask the user to approve this change again.` };
 }
 
 function confirmationResult(r: Json, fallback: string, noun = "routine"): { text: string; isError?: boolean } {
@@ -1283,8 +1331,10 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (name === "propose_routine") {
     const { fields: routine, error: scheduleError } = routineFields(args);
     if (scheduleError) return { text: scheduleError, isError: true };
-    if (!routine.name || !routine.instructions || !routine.schedule) {
-      return { text: "propose_routine needs name, instructions, and schedule.", isError: true };
+    const hasSchedule = routine.schedule !== undefined;
+    const hasTrigger = routine.trigger !== undefined;
+    if (!routine.name || !routine.instructions || hasSchedule === hasTrigger) {
+      return { text: "propose_routine needs a name, instructions, and exactly one of schedule or trigger.", isError: true };
     }
     const forBotId = String(args.for_bot_id ?? "").trim();
     const r = await api("/api/internal/routine-requests", {
@@ -1325,6 +1375,9 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
       if (scheduleError) return { text: scheduleError, isError: true };
       if (Object.hasOwn(changes, "enabled")) {
         return { text: "Pause and resume are their own actions. Do not set enabled in changes.", isError: true };
+      }
+      if (Object.hasOwn(changes, "trigger")) {
+        return { text: "A trigger cannot be retargeted. Use rotate_webhook_key to rotate its key.", isError: true };
       }
       if (!Object.keys(changes).length) {
         return { text: "The update action needs at least one supported field in changes.", isError: true };

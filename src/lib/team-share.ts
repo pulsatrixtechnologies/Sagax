@@ -20,7 +20,8 @@ export const PICTURES_BASE64_BUDGET = 2 * 1024 * 1024;
 export type ShareSkipReason =
   | "picture_too_large" | "picture_invalid" | "pictures_budget" | "stdio_server" | "insecure_address"
   | "files_not_shared" | "lead_not_in_group_chat" | "notes_too_large" | "skill_changed"
-  | "skill_conflict" | "bot_skill_limit" | "team_skill_limit" | "preset_empty" | "preset_skill_conflict";
+  | "skill_conflict" | "bot_skill_limit" | "team_skill_limit" | "preset_empty" | "preset_skill_conflict"
+  | "trigger_not_portable";
 
 export interface ShareSkip { part: string; reason: ShareSkipReason | string }
 

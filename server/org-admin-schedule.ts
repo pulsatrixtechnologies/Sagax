@@ -33,5 +33,11 @@ export function routineScheduleLabel(schedule: RoutineSchedule): string {
       if (schedule.endsAt != null) parts.push(`until ${iso(schedule.endsAt)} UTC`);
       return parts.join(", ");
     }
+    case "webhook": return "Incoming webhook";
+    case "event": return "Incoming email";
+    default: {
+      const unexpected: never = schedule;
+      return unexpected;
+    }
   }
 }

@@ -5786,7 +5786,7 @@ const routineRequestEnvelopeSchema = z.discriminatedUnion("action", [
     changes: z.unknown(),
     forBotId: z.unknown().optional(),
   }).strict(),
-  ...(["pause", "resume", "run_now", "delete"] as const).map((action) =>
+  ...(["pause", "resume", "run_now", "delete", "rotate_webhook_key"] as const).map((action) =>
     z.object({ ...routineRequestSourceSchema, action: z.literal(action), routineId: z.unknown(), forBotId: z.unknown().optional() }).strict()
   ),
 ]);
@@ -21211,6 +21211,17 @@ routines = new RoutineManager({
   handedOffWorkLive: (threadId) => coordinator.outstandingDirect(threadId).length > 0 || pendingThreads().includes(threadId) ||
     [...delegationWatch.values()].some((watch) => watch.sourceThreadId === threadId) || pendingDelegationWakes.has(threadId),
   botState: unattendedDispatchState,
+  onTriggerRoutineRemoved: (routine) => { webhooks.removeOwnedRoutine(routine.id); },
+  onTriggerRoutineUpdated: (routine) => {
+    webhooks.syncOwned({
+      id: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      enabled: routine.enabled,
+    });
+  },
   goalState: (groupId, coordinatorBotId) => {
     const group = store.group(groupId);
     const coordinator = store.bot(coordinatorBotId);
@@ -21649,6 +21660,22 @@ const routineRequests = new RoutineRequestService({
       return `@${target.name} is no longer in this section, so this routine request cannot be confirmed for it`;
     }
     return null;
+  },
+  bindTrigger: (routine) => {
+    webhooks.createOwned({
+      routineId: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      kind: routine.schedule.type === "event" ? "email" : "webhook",
+    });
+  },
+  rotateTrigger: (routine) => {
+    if (!webhooks.rotateOwned(routine.id)) throw new Error("That routine has no trigger");
+  },
+  onAudit: (action, routine) => {
+    routineAudit(action, effectiveRunAs(routine), { routine });
   },
 });
 async function deleteBotWithLifecycle(botId: string, revalidate: () => void = () => {}, setupRequest?: TeamSetupRequest) {
@@ -22211,11 +22238,15 @@ const agentRoutine = (
           }
         : routine.schedule.type === "cron"
           ? { ...routine.schedule }
-          : {
-              type: "weekly" as const,
-              time: routine.schedule.time,
-              weekdays: routine.schedule.weekdays.map((day) => ROUTINE_WEEKDAY_NAMES[day]),
-            },
+          : routine.schedule.type === "webhook"
+            ? { type: "webhook" as const }
+            : routine.schedule.type === "event"
+              ? { type: "event" as const, source: "email" as const }
+              : {
+                  type: "weekly" as const,
+                  time: routine.schedule.time,
+                  weekdays: routine.schedule.weekdays.map((day) => ROUTINE_WEEKDAY_NAMES[day]),
+                },
     nextRunAt: routine.nextRunAt === null ? null : new Date(routine.nextRunAt).toISOString(),
     latestRun: latestRun
       ? {
@@ -22233,9 +22264,17 @@ const agentRoutine = (
       : null,
   };
 };
+/** A webhook or email key is shown once, and only to the person who tapped
+ * Allow. A bot replaying that tap, or a service on loopback, leaves the key
+ * for the app. */
+function routineKeyReveal(auth: RequestAuth): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  return auth.kind === "session" && !isBotActSession(auth.session);
+}
 function sendRoutineResolution(
   res: ServerResponse,
   result: ReturnType<RoutineRequestService["resolve"]>,
+  revealKey = false,
 ): boolean {
   if (!result.claimed) return false;
   if (result.state === "invalid") {
@@ -22254,11 +22293,15 @@ function sendRoutineResolution(
     json(res, 200, { ok: true, outcome: "rejected" });
     return true;
   }
+  const webhookKey = revealKey && result.state === "applied" && result.ownerCopiesKey
+    ? webhooks.revealForRoutine(result.resultId)?.secret
+    : undefined;
   json(res, 200, {
     ok: true,
     outcome: "allowed-once",
     routineAction: result.action,
     resultId: result.resultId,
+    ...(webhookKey ? { webhookKey } : {}),
   });
   return true;
 }
@@ -22266,6 +22309,7 @@ function resolveAndSendRoutine(
   res: ServerResponse,
   args: { botId: string; botName?: string; threadId: string; requestId: string; behavior: string; actorPrincipalId?: string },
   ownersAnswer = false,
+  revealKey = false,
 ): boolean {
   if (args.behavior === "allow") safetyForgetArmed(args.requestId);
   else if (args.behavior === "deny") safetyRejectArmed(args.requestId);
@@ -22293,7 +22337,7 @@ function resolveAndSendRoutine(
       source: "user",
     });
   }
-  return sendRoutineResolution(res, result);
+  return sendRoutineResolution(res, result, revealKey);
 }
 function resolveAndSendProfile(
   res: ServerResponse,
@@ -22502,6 +22546,19 @@ const webhooks = new WebhookManager({
   },
   botState: unattendedDispatchState,
   enqueue: (input) => routines!.enqueueWebhook(input),
+  ownedRoutine: (id) => {
+    const routine = routines!.routineById(id);
+    if (!routine) return null;
+    return {
+      id: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      enabled: routine.enabled,
+    };
+  },
+  onOwnedRoutineRemoved: (routineId) => { routines!.remove(routineId); },
   findRun: (webhookId, deliveryId) => routines!.webhookRunReceipt(webhookId, deliveryId),
   cancelQueued: (webhookId, message) => routines!.cancelQueuedWebhook(webhookId, message),
   pendingRuns: (webhookId) => routines!.activeWebhookRunCount(webhookId),
@@ -45215,7 +45272,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           requestId: String(body.requestId),
           behavior,
           ...routineActor(auth),
-        }, auth.kind === "session" && cloudOwnerSession(auth))) return;
+        }, auth.kind === "session" && cloudOwnerSession(auth), routineKeyReveal(auth))) return;
         if (resolveAndSendProfile(res, {
           botId: bot.id,
           botName: bot.name,
@@ -45376,7 +45433,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             requestId,
             behavior,
             ...routineActor(auth),
-          }, auth.kind === "session" && cloudOwnerSession(auth))) return;
+          }, auth.kind === "session" && cloudOwnerSession(auth), routineKeyReveal(auth))) return;
         }
         const setupCard = store.messagesFor(threadId).find((message) => message.card?.requestId === requestId && message.card.teamSetupRequest);
         if (setupCard) {
