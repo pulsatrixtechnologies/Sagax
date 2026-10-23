@@ -147,6 +147,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Working folder | Bot editor > Access > Folder | `sagax_settings` get, set `bot.cwd` | simple |
 | MCP servers it may use (null: all) | Bot editor > Access > Tools | `sagax_settings` get, set `bot.mcpServers` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Tool selection | Bot editor > Access > Tool selection | `sagax_settings` get, set `bot.toolScope` | simple (élargit les droits pour le bot qui parle lui-même) |
+| Connected apps scopes | Bot editor > Access > Connected apps | `sagax_settings` get, set `bot.connectorScopes` | simple (élargit les droits pour le bot qui parle lui-même) |
 | Park direct messages while busy | Bot editor > Behaviour | `sagax_settings` get, set `bot.parkDirectMessages` | simple |
 | Always allowed tools | Bot editor > Access > Always allowed | `sagax_settings` get, set `bot.alwaysAllow` | élargit les droits |
 | Allowed recipients (no card: bot:<id>, email:<address>, phone:+<digits>) | Bot editor > Permissions > Allowed recipients | `sagax_settings` get, set `bot.allowedRecipients` | élargit les droits |
