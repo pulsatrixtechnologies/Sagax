@@ -139,6 +139,25 @@ describe("steer-queue module", () => {
     expect(queuedThreadPosition("other-bot", "thread-slot")).toBeNull();
   });
 
+  it("moves a priority send ahead of the same bot's waiting line", () => {
+    queueSteeredMessage("bot-priority-other", "thread-priority-other", "other", { reason: "capacity" });
+    queueSteeredMessage("bot-priority-front", "thread-priority-later", "later", { reason: "capacity" });
+    queueSteeredMessage("bot-priority-front", "thread-priority-first", "first", { reason: "capacity", front: true });
+    expect(queuedThreadPosition("bot-priority-other", "thread-priority-other")).toBe(1);
+    expect(queuedThreadPosition("bot-priority-front", "thread-priority-first")).toBe(1);
+    expect(queuedThreadPosition("bot-priority-front", "thread-priority-later")).toBe(2);
+  });
+
+  it("drains a front-queued send before the one that was waiting", () => {
+    const bot = fakeBot("bot-priority-drain", "thread-priority-drain", false);
+    const store = fakeStore([bot]);
+    queueSteeredMessage(bot.id, bot.threadId, "later", { reason: "capacity" });
+    queueSteeredMessage(bot.id, bot.threadId, "first", { reason: "capacity", front: true });
+    const run = vi.fn();
+    drainSteeredMessages(store, run);
+    expect(String(run.mock.calls[0][2]).startsWith("first")).toBe(true);
+  });
+
   it("preserves self-opened request provenance through persistence and a capacity wait", () => {
     const bot = fakeBot("bot-self-provenance", "thread-self-provenance", true);
     const store = fakeStore([bot]);

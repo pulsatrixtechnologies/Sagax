@@ -13,6 +13,7 @@ import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credentia
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
 import { wrapUntrusted } from "../../shared/safety-review.ts";
 
+import { PRIORITY_DOWNGRADED_NOTE, parseWakePriority } from "../priority-wake.ts";
 import { peerName } from "../peer-roster.ts";
 import { renderPeerDeliveryReceipts, type PeerDeliveryOutcome, type PeerDeliveryReceipt } from "../peer-delivery.ts";
 import { CLOUD_AGENT_READ_TOOLS, CLOUD_AGENT_WRITE_TOOLS, cloudAgentToolAction } from "../../shared/cloud-agents.ts";
@@ -645,18 +646,27 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (botId === context.botId) {
       return { text: "send_to_bot is cross-bot only. Use start_thread to send independent work to yourself.", isError: true };
     }
+    const asked = parseWakePriority(args.priority);
+    if (asked === "invalid") return { text: "priority is now or normal.", isError: true };
     const r = await api("/api/internal/threads", { method: "POST", body: JSON.stringify({
       fromBotId: context.botId, fromThreadId: context.threadId, toBotId: botId,
       title, message, depth: context.depth, oneWay: true,
+      ...(asked === "now" || asked === "normal" ? { priority: asked } : {}),
     }) });
     if (r.error) return { text: `Couldn't send to that bot: ${String(r.error)}`, isError: true };
     const destination = `@${String(r.botName ?? "that bot")} in #${String(r.title ?? title)} [thread id: ${String(r.threadId ?? "")}]`;
     const state = r.approvalRequired === true
       ? `Send to ${destination} is pending approval. The person's approval card appears after this turn ends; dispatch starts once approved.`
-      : r.state === "queued"
-        ? `Send to ${destination} is queued ${ordinal(Number(r.position) || 1)} for a free slot and can dispatch after this turn ends.`
-        : `Send to ${destination} is pending until this turn ends, then dispatch starts.`;
-    return { text: `${state} Its result stays in that thread; nothing there will resume you.` };
+      : r.state === "running"
+        ? `Send to ${destination} started now.`
+        : r.state === "queued"
+          ? `Send to ${destination} is queued ${ordinal(Number(r.position) || 1)} for a free slot and can dispatch after this turn ends.`
+          : `Send to ${destination} is pending until this turn ends, then dispatch starts.`;
+    const note = r.downgraded === true ? ` ${PRIORITY_DOWNGRADED_NOTE}` : "";
+    const handle = typeof r.threadId === "string" && typeof r.handle === "string"
+      ? `\n${JSON.stringify({ threadId: r.threadId, handle: r.handle })}`
+      : "";
+    return { text: `${state}${note} Its result stays in that thread; nothing there will resume you.${handle}` };
   }
   if (name === "list_bots") {
     const r = await api(`/api/internal/agents?self=${encodeURIComponent(BOT_ID)}`);

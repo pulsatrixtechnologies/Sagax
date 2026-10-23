@@ -1141,7 +1141,8 @@ import {
 } from "./temporary-agents.ts";
 import { createTemporaryAgentRoutes } from "./routes/temporary-agents.ts";
 import { botCreationDepth, botCreationOffered, botCreationRefusal, createdByBotMark, recentBotCreations, type BotCreationRefusal } from "./bot-creation.ts";
-import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
+import { createAgentApi, refuse as agentRefuse, SEND_FILE_MAX_BYTES as AGENT_SEND_FILE_MAX_BYTES, signTurnHandle, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type Refusal, type TurnState } from "./agent-api.ts";
+import { parseWakePriority, planPriorityWake, releasePriorityNow, type PriorityDelivery } from "./priority-wake.ts";
 import { parseHideList, planHiddenAgentThreads, planHiddenBotThreads } from "./agent-threads.ts";
 import { MemberLiveText } from "./member-live-text.ts";
 import { computersRoutes, type ComputersDeps } from "./org-admin-computers.ts";
@@ -35643,13 +35644,23 @@ const agentPromptWithFiles = (prompt: string, staged: string[]) =>
     : prompt;
 /** A bot's prompt to a peer's hidden conversation: runs now when the peer
  * has a free slot, else waits in its queue; the line records the sender. */
-async function startAgentPrompt(from: BotRecord, target: BotRecord, threadId: string, text: string, sourceThreadId: string, depth: number): Promise<{ messageId: string | null } | Refusal> {
+async function startAgentPrompt(from: BotRecord, target: BotRecord, threadId: string, text: string, sourceThreadId: string, depth: number, wake?: PriorityDelivery): Promise<{ messageId: string | null } | Refusal> {
   const unattended = isUnattended(from.id, sourceThreadId);
   const peerAsk = { botId: from.id, name: from.name, unattended: unattended || undefined };
   const speaker = peerSpeaker(from.id, sourceThreadId);
   const decision = admit("opened-thread", {}, { atCapacity: botAtThreadCapacity(target.id), groupTurn: Boolean(activeGroupTurnForBot(target.id)) });
-  if (decision.action === "queue") {
-    queueSteeredMessage(target.id, threadId, text, { reason: decision.reason, unattended, peerAsk, speaker });
+  // front is set only when the conversation is already busy. priorityNow
+  // alone still starts when admit says start; using it as front would queue
+  // an idle wake.
+  const forceFront = wake?.front === true;
+  if (forceFront || decision.action === "queue") {
+    const reason = decision.action === "queue" && (decision.reason === "capacity" || decision.reason === "group-turn")
+      ? decision.reason
+      : "capacity";
+    queueSteeredMessage(target.id, threadId, text, {
+      reason, unattended, peerAsk, speaker,
+      ...((forceFront || wake?.priorityNow) ? { front: true } : {}),
+    });
     return { messageId: null };
   }
   const before = new Set(store.messagesFor(threadId).map((message) => message.id));
@@ -35925,7 +35936,7 @@ const agentApi = createAgentApi({
     applyDelegatedLevel(from, caller.sourceThreadId, target, task.threadId);
     return { threadId: task.threadId };
   },
-  async post(caller, agentId, threadId, prompt, files) {
+  async post(caller, agentId, threadId, prompt, files, wake) {
     const target = store.bot(agentId);
     if (!target) return agentRefuse(404, "unknown_agent", "No such agent.");
     if (target.temporary?.archived) return agentRefuse(404, "unknown_agent", "No such agent.");
@@ -35960,7 +35971,7 @@ const agentApi = createAgentApi({
     }
     const staged = agentApiStageFiles(caller, target, files);
     if ("code" in staged) return staged;
-    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged), caller.sourceThreadId, capability);
+    return startAgentPrompt(from, target, threadId, agentPromptWithFiles(prompt, staged), caller.sourceThreadId, capability, wake);
   },
   async interrupt(agentId, threadId) {
     await interruptDirectThread(agentId, threadId);
@@ -39787,6 +39798,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 400, { error: "workspace is only for a thread on yourself: a teammate works where its own Workspace says" });
         }
         const oneWay = body.oneWay === true;
+        const wakeAsked = parseWakePriority(body.priority);
+        if (wakeAsked === "invalid") return json(res, 400, { error: "priority is now or normal." });
         if (oneWay && target.id === from.id) {
           return json(res, 409, { error: "send_to_bot is cross-bot only; use start_thread to send independent work to yourself" });
         }
@@ -39921,16 +39934,73 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         threadStarters.set(task.threadId, openerFrom(fromThreadId));
         applyDelegatedLevel(from, fromThreadId, target, task.threadId);
         const sourceUrl = threadRefUrl({ botId: owner.group?.id ?? from.id, threadId: fromThreadId });
+        const handed = oneWay
+          ? `${message}\n\n[Source conversation](${sourceUrl}). This link grants no additional access and contains no copied transcript.`
+          : message;
+        const origin = turnOrigin(internalCapability);
+        const slotFree = !botAtThreadCapacity(target.id) && !activeGroupTurnForBot(target.id);
+        const needsApproval = peerReviewRequired(from, fromThreadId);
+        const wakePlan = planPriorityWake({
+          asked: wakeAsked,
+          applies: oneWay,
+          slotFree,
+          needsApproval,
+          senderId: from.id,
+          now: Date.now(),
+        });
+        const priorityFields = wakePlan.reported
+          ? { priority: wakePlan.reported, ...(wakePlan.downgraded ? { downgraded: true } : {}) }
+          : {};
+        const oneWayHandle = () => signTurnHandle(agentApiSecret(), {
+          agentId: target.id,
+          threadId: task.threadId,
+          messageId: null,
+          issuedAt: Date.now(),
+          callerId: from.id,
+          callerKind: "bot",
+        });
+        // An idle recipient with a free slot starts at once. A running turn
+        // is never interrupted: the message waits at the front of the queue.
+        if (wakePlan.wakeNow) {
+          const chip: Omit<Message, "id" | "at"> = {
+            role: "bot",
+            kind: "activity",
+            tool: { name: `Opened thread #${task.title} on ${target.name}`, ok: true },
+            threadRef: { botId: target.id, threadId: task.threadId, title: task.title },
+          };
+          const sourceGroup = store.groupByThread(fromThreadId);
+          if (sourceGroup && !sourceGroup.dm) chip.from = { botId: from.id, name: from.name, color: from.color };
+          store.appendMessage(fromThreadId, chip);
+          store.setTaskOpenedBy(target.id, task.threadId, { botId: from.id, name: from.name, at: task.openedBy?.at ?? Date.now() });
+          internalCapability.openedThreads += 1;
+          const wakeId = newId();
+          delegatedThisTurn(wakeId);
+          void Promise.resolve().then(() => runDelegatedTurn(
+            target.id, handed, 0, fromThreadId, undefined, wakeId, from.id, task.threadId, true, undefined, origin,
+          )).catch(() => undefined);
+          return json(res, 201, {
+            threadId: task.threadId,
+            title: task.title,
+            botId: target.id,
+            botName: target.name,
+            self: false,
+            state: "running",
+            approvalRequired: false,
+            handle: oneWayHandle(),
+            limit: botMaxConcurrentThreads(target, cfg),
+            priority: "now",
+          });
+        }
         const queued = queueDelegation(
           commsBus,
           from,
-          { toBotId: target.id, message: oneWay
-            ? `${message}\n\n[Source conversation](${sourceUrl}). This link grants no additional access and contains no copied transcript.`
-            : message, depth, targetThreadId: task.threadId, oneWay, origin: turnOrigin(internalCapability) },
+          { toBotId: target.id, message: handed, depth, targetThreadId: task.threadId, oneWay, origin },
           MAX_COMMS_DEPTH,
           fromThreadId,
+          { front: wakePlan.queueFront },
         );
         if (queued.result !== "ok" || !queued.id) {
+          if (wakePlan.reported === "now") releasePriorityNow(from.id);
           // nothing will ever run there: take the row back before the person
           // sees a thread that goes nowhere
           store.deleteTask(target.id, task.threadId);
@@ -39961,9 +40031,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           botName: target.name,
           self: false,
           delegationId: queued.id,
-          approvalRequired: peerReviewRequired(from, fromThreadId),
+          approvalRequired: needsApproval,
           limit,
           ...(position > limit ? { state: "queued", position: position - limit } : { state: "pending" }),
+          ...(oneWay ? { handle: oneWayHandle() } : {}),
+          ...priorityFields,
         });
       }
       if (method === "POST" && path === "/api/internal/create-bot") {
