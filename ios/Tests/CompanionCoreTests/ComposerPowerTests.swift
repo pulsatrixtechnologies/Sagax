@@ -190,24 +190,24 @@ final class ComposerSuggestionsTests: XCTestCase {
         let threads = ThreadRefCandidate.collect(bots: [scout, atlas], rooms: [])
         XCTAssertEqual(
             ThreadRefs.serialize("look at #qa pr 245 now", threads: threads, currentBotId: "a"),
-            "look at [QA PR 245](openmausbot://thread/t1?bot=a) now",
+            "look at [QA PR 245](sagax://thread/t1?bot=a) now",
             "the longest title wins, the open bot's own thread among equals"
         )
         XCTAssertEqual(
             ThreadRefs.serialize("#QA PR 245", threads: threads, currentBotId: "z"),
-            "[QA PR 245](openmausbot://thread/t3?bot=b)",
+            "[QA PR 245](sagax://thread/t3?bot=b)",
             "else the newest"
         )
         XCTAssertEqual(ThreadRefs.serialize("C#QA and `#QA` and #QAx", threads: threads, currentBotId: "a"), "C#QA and `#QA` and #QAx")
         XCTAssertEqual(
             ThreadRefs.serialize("[#QA](https://x.example) #QA", threads: threads, currentBotId: "a"),
-            "[#QA](https://x.example) [QA](openmausbot://thread/t2?bot=a)"
+            "[#QA](https://x.example) [QA](sagax://thread/t2?bot=a)"
         )
         XCTAssertEqual(ThreadRefs.serialize("no refs", threads: threads, currentBotId: "a"), "no refs")
-        let parsed = ThreadRefs.parse("openmausbot://thread/t1?bot=a")
+        let parsed = ThreadRefs.parse("sagax://thread/t1?bot=a")
         XCTAssertEqual(parsed?.threadId, "t1")
         XCTAssertEqual(parsed?.botId, "a")
-        XCTAssertNil(ThreadRefs.parse("openmausbot://thread/t1?bot=a&x=1"))
+        XCTAssertNil(ThreadRefs.parse("sagax://thread/t1?bot=a&x=1"))
         XCTAssertNil(ThreadRefs.parse("https://thread/t1"))
     }
 }

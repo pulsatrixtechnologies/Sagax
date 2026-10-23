@@ -1,5 +1,5 @@
-// Chat links opened from outside the app (#2383): openmausbot://thread/… and
-// openmausbot://bot/…, handed over by the desktop shell. Subscribed from the
+// Chat links opened from outside the app (#2383): sagax://thread/… and
+// sagax://bot/…, handed over by the desktop shell. Subscribed from the
 // always-mounted shell, not a view: the sidebar is not mounted on every page,
 // and a link must work from any of them.
 import { useEffect, useState } from "react";

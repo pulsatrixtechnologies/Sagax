@@ -39,8 +39,6 @@ export declare const ENVIRONMENT_PATHS: readonly string[];
 export declare function fetchEnvironmentDescriptor(origin: string, init?: RequestInit, fetchImpl?: typeof fetch): Promise<Response>;
 
 export declare const URL_SCHEME: "sagax";
-export declare const LEGACY_URL_SCHEME: "openmausbot";
-export declare const URL_SCHEMES: readonly string[];
 export declare function isAppProtocol(protocol: unknown): boolean;
 export declare function isAppLink(url: unknown, host: string): boolean;
 export declare function appLink(host: string): string;

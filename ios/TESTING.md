@@ -289,10 +289,9 @@ port — only the route to it is different.
 reads its `/.well-known/openmausbot/environment`, and opens
 `/auth/oidc/start?client=phone` in the system authentication sheet
 (`ASWebAuthenticationSession`, so Safari's Perspicax session and passkeys
-work). When the descriptor lists `identity.phoneReturnSchemes: ["sagax", ...]`
-the app adds `&return=sagax` and the sheet ends on
-`sagax://pair?address=&token=` (a refusal on `sagax://pair?error=<code>`);
-an older server ends on `openmausbot://pair`. The two-minute credential is
+work). The app adds `&return=sagax` and the sheet ends on
+`sagax://pair?address=&token=` (a refusal on `sagax://pair?error=<code>`).
+The two-minute credential is
 redeemed with `POST /api/pair` into a session bound to the person (their
 private threads, their payer, member permissions), kept in the Keychain.
 Every failure stays on the page with its reason: unreachable, not a Sagax

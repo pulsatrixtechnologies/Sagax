@@ -762,19 +762,17 @@ What changes:
   **Rouvrir le navigateur**; it stops after ten minutes. The descriptor's
   `identity.loopbackReturn: true` says the server takes `return`. Against an
   older server without it, the app falls back to
-  `openmausbot://auth?origin=...#code=...` only when this exact copy of the
-  app is the system's handler for `openmausbot://` (another installed copy
+  `sagax://auth?origin=...#code=...` only when this exact copy of the
+  app is the system's handler for `sagax://` (another installed copy
   would otherwise get the return), and otherwise says the server must be
   updated. Perspicax is unchanged: its redirect stays
   `<SAGAX_PUBLIC_URL>/auth/oidc/callback`. Only the app redeems that
   credential without a click: `/pair#code=...&auto=1` opened in an ordinary
   browser shows the code form. The phone apps offer **Sign in with Pulsatrix**
   for such a server: `?client=phone` ends on the same
-  `openmausbot://pair?address=...&token=...` link a pairing QR code carries,
-  and `?client=phone&return=sagax` (Sagax for iOS, when
-  `identity.phoneReturnSchemes` lists `sagax`) ends on
-  `sagax://pair?address=...&token=...` instead, a refused sign-in on
-  `sagax://pair?address=...&error=<code>`. Perspicax is unchanged for phones
+  `sagax://pair?address=...&token=...` link a pairing QR code carries, and
+  with `&return=sagax` (Sagax for iOS; `identity.phoneReturnSchemes` lists
+  `sagax`) a refused sign-in ends on `sagax://pair?address=...&error=<code>`. Perspicax is unchanged for phones
   too: the server is the OpenID Connect client.
   A signed-in member may also open a pairing code for their own device; the
   device acts as them and never gets more than their own scopes. Such a

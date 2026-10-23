@@ -358,9 +358,8 @@ data class PairingInvite(val connection: Connection, val credential: String) {
             if (url.scheme.equals("https", true) || url.scheme.equals("http", true)) {
                 return parseServerLink(url)
             }
-            // sagax:// is what Sagax 0.4.0 servers and desktops emit;
-            // openmausbot:// stays accepted for older ones.
-            if (!(url.scheme.equals("openmausbot", ignoreCase = true) || url.scheme.equals("sagax", ignoreCase = true)) ||
+            // sagax:// is the app's only scheme.
+            if (!url.scheme.equals("sagax", ignoreCase = true) ||
                 !url.host.equals("pair", ignoreCase = true)
             ) {
                 return null

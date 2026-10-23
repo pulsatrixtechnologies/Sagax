@@ -730,10 +730,10 @@ class PairingConfirmationTest {
 
     @Test
     fun `a QR or deep link without an address never becomes a pending pairing`() {
-        assertNull(PairingInvite.parse("openmausbot://pair?token=$credential"))
+        assertNull(PairingInvite.parse("sagax://pair?token=$credential"))
         // The control: with one, the invite carries a host and a port.
         val invite = PairingInvite.parse(
-            "openmausbot://pair?address=192.168.1.42:8810&name=Kesley%27s%20Ubuntu&token=$credential",
+            "sagax://pair?address=192.168.1.42:8810&name=Kesley%27s%20Ubuntu&token=$credential",
         )
         assertEquals("192.168.1.42", invite?.connection?.host)
         assertEquals(8810, invite?.connection?.port)

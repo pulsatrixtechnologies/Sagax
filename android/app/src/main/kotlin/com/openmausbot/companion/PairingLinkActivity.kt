@@ -7,7 +7,7 @@ import com.openmausbot.companion.ui.PairingHandoff
 import com.openmausbot.companion.ui.PairingLink
 
 /**
- * The only door `openmausbot://pair?…&token=omb_pair_…` may come through.
+ * The only door `sagax://pair?…&token=omb_pair_…` may come through.
  *
  * A pairing URL carries a one-time credential, and §6 forbids persisting one.
  * Keeping the deep link on [MainActivity] broke that by a path no `Saver` audit

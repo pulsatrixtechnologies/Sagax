@@ -423,7 +423,7 @@ final class ComposerPowerUITests: XCTestCase {
         send(app)
         try eventually("the reference left as a thread link") {
             try page(lab.threadId).contains {
-                $0.role == "user" && ($0.text ?? "").hasPrefix("Demande à @Card Lab de lire [\(title)](openmausbot://thread/")
+                $0.role == "user" && ($0.text ?? "").hasPrefix("Demande à @Card Lab de lire [\(title)](sagax://thread/")
             }
         }
         idle(lab)
