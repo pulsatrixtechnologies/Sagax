@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enginesBinDir, enginesPrefix, installNpmEngine, npmPackageOf, serverInstallFor } from "./engine-install.ts";
 import { augmentedPath, findCliCandidates, registerPathDir, resetPathCacheForTests } from "./env-path.ts";
@@ -52,7 +52,9 @@ function writeFakeNpm(dir: string): void {
   chmodSync(join(dir, "npm"), 0o755);
 }
 
-/** A scratch data dir and a PATH holding only the stand-in npm. */
+/** A scratch data dir and a PATH whose first entry is the stand-in npm.
+ * Node stays on PATH: the stand-in is `#!/usr/bin/env node`, and a Windows
+ * `.cmd` shim starts the same way. */
 function useFakeNpm() {
   const ctx = { scratch: "", binDir: "", base: "" };
   let originalPath: string | undefined;
@@ -63,7 +65,7 @@ function useFakeNpm() {
     mkdirSync(ctx.binDir);
     writeFakeNpm(ctx.binDir);
     originalPath = process.env.PATH;
-    process.env.PATH = ctx.binDir;
+    process.env.PATH = `${ctx.binDir}${delimiter}${dirname(process.execPath)}`;
     process.env.FAKE_NPM_LOG = join(ctx.scratch, "calls.jsonl");
     delete process.env.FAKE_NPM_MODE;
     resetPathCacheForTests();
