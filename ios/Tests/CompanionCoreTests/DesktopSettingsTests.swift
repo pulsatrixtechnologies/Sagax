@@ -62,8 +62,8 @@ final class DesktopSettingsTests: XCTestCase {
     }
 
     func testPluginsTabsFollowTheConnectorGates() {
-        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .serverAdmin)), [.apps, .mcp])
-        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .sidecar)), [.apps, .mcp])
+        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .serverAdmin)), [.mcp])
+        XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .sidecar)), [.mcp])
         XCTAssertEqual(DesktopPluginsTab.available(for: SurfaceGate(scope: .serverClient)), [])
     }
 

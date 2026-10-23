@@ -18,7 +18,7 @@
 //            Notifications switch with its caption.
 //   Edit bot under "..." and as the "Edit" pill. The editor starts with
 //            the avatar, Name, Title, Description, Appearance and Voice calls, then lists
-//            its six groups (`DesktopPanelGroup`); a group shows its sections.
+//            its groups (`PhoneBotEditGroup`, the desktop's order); a row opens its page.
 //
 // Which tabs and sections a pairing shows is `DesktopPanelTab` /
 // `DesktopPanelSection` / `DesktopPersonaEditor` (CompanionCore, from
@@ -64,7 +64,6 @@ private struct PhoneBotPanelContent: View {
     @State private var pickingPrimary = false
     @State private var primaryWorking = false
     @State private var sharedFile: IdentifiedURL?
-    @State private var query = ""
     @StateObject private var owlHandle = OwlMascotHandle()
     @State private var draft: CharacterDraft
     @State private var libraryStart: BotLibraryChip = .files(.all)
@@ -459,7 +458,6 @@ private struct PhoneBotPanelContent: View {
 
     private func openPersona() {
         Haptics.selection()
-        query = ""
         path.append(PanelPersonaRoute())
     }
 
@@ -589,6 +587,9 @@ private struct PhoneBotPanelContent: View {
         .background(Theme.bg.ignoresSafeArea())
         .navigationTitle(Text("Edit bot"))
         .navigationBarTitleDisplayMode(.inline)
+        // one way out, as Grok Bot's editor: Done (everything is saved as
+        // it is left, so there is no Cancel)
+        .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") {
@@ -602,30 +603,14 @@ private struct PhoneBotPanelContent: View {
     }
 
     private var personaList: some View {
-        // a group's own name finds all its sections
-        let matchedGroups = Set(DesktopPanelGroup.allCases.filter { $0.localizedTitle.lowercased().contains(query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) && !query.trimmingCharacters(in: .whitespaces).isEmpty })
-        let shown = sections.filter { $0.matches(query, label: $0.localizedTitle) || matchedGroups.contains(DesktopPanelGroup.of($0)) }
-        return VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
-                TextField(String(localized: "Search"), text: $query)
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textPrimary)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityLabel(Text("Search settings"))
-                    .accessibilityIdentifier("panel-persona-search")
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 40)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .padding(.horizontal, Theme.Profile.cardMargin)
-            // the editor's six groups (#518), each with its sections
-            ForEach(DesktopPanelGroup.visible(shown), id: \.self) { group in
+        // Grok Bot's phone editor: the identity block above, then the
+        // desktop editor's groups in order, no search and no Profile list
+        VStack(spacing: 12) {
+            ForEach(PhoneBotEditGroup.visible(sections), id: \.self) { group in
                 VStack(spacing: 0) {
                     ProfileSectionLabel(text: group.title)
                     ProfileCard {
-                        ForEach(Array(group.sections(in: shown).enumerated()), id: \.element) { index, section in
+                        ForEach(Array(group.sections(in: sections).enumerated()), id: \.element) { index, section in
                             if index > 0 { ProfileDivider() }
                             NavigationLink(value: section) {
                                 ProfileRow(icon: ProfileRowIcon(systemImage: section.symbol, size: 16), title: Text(section.title),
@@ -639,15 +624,6 @@ private struct PhoneBotPanelContent: View {
                 .padding(.top, 8)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("panel-group.\(group.rawValue)")
-            }
-            if shown.isEmpty {
-                ProfileCard {
-                    Text("Nothing matches “\(query.trimmingCharacters(in: .whitespacesAndNewlines))”")
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(Theme.Profile.textInset)
-                }
             }
         }
         .accessibilityElement(children: .contain)
