@@ -3672,3 +3672,8 @@ button:disabled.bg-danger {
    browser's fallback. */
 :root[data-text-size="large"]:not([data-zoom-native]) { zoom: 1.1; }
 :root[data-text-size="xlarge"]:not([data-zoom-native]) { zoom: 1.25; }
+
+/* A message's time is painted, not a text node. A right-to-left drag on
+   one's own message reaches the bar that sits before the bubble, and
+   Windows still copies a user-select:none text node in that range. */
+[data-message-time]::after { content: attr(data-time); }
