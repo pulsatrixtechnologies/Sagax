@@ -151,8 +151,9 @@ elapsed readout to the server's `turnStartedAt` stamp. It launches the full
 app with the fake engine in `hang` mode, so a sent turn stays officially in
 flight and the bot stays busy with no reply arriving. A second thread is
 created through the same `POST /api/bots/:id/tasks` the sidebar's
-**New thread** dispatches, the bot's thread list is expanded through its
-chevron, and the test switches to the idle thread and back mid-turn. The
+**New thread** dispatches. Threads are off until chosen, so the test turns
+them on and opens the list from the header's **All threads** button, then
+switches to the idle thread and back mid-turn. The
 readout before the switch, the readout after the return, and the stamp on
 the wire are compared: the count must resume from the stamp (13+ seconds
 in), never from the moment of re-selection, and the stamp itself must not
