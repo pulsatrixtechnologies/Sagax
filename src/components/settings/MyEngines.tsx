@@ -12,6 +12,7 @@ import { ApiError, api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { openExternalLink } from "@/lib/app-links";
 import { perspicaxKeysUrl, reloadMyEngines, type MyEngine } from "@/lib/perspicax-org";
+import { engineUnavailable } from "@/lib/model-payers";
 
 interface LoginState {
   flowId: string | null;
@@ -164,7 +165,10 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
     }
   };
 
-  if (!engine.installed || !engine.subscription.supported) return null;
+  // Gate on connectability, not the bare `installed` probe: a signed-out
+  // subscription engine still offers Connect (the Grok lockout). Only an engine
+  // the image deliberately does not carry (engineUnavailable) withholds it.
+  if (engineUnavailable(engine) || !engine.subscription.supported) return null;
   return (
     <div className="flex min-w-0 flex-col gap-2 text-[13px]" data-my-engine={id}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
