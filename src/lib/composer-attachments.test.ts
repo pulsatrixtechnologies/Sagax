@@ -9,6 +9,7 @@ import {
   attachmentImageUrl,
   clipboardHasImages,
   clipboardImageFiles,
+  snapshotClipboardImages,
   composeMessage,
   documentMime,
   fileAttachment,
@@ -473,6 +474,144 @@ describe("clipboardImageFiles", () => {
     const svg = new File(["<svg/>"], "shot.svg", { type: "image/svg+xml" });
     const png = new File(["image"], "shot.png", { type: "image/png" });
     expect(clipboardImageFiles({ items: [mockClipboardItem("file", svg.type, svg), mockClipboardItem("string", png.type, png)], files: [svg] })).toEqual([]);
+  });
+
+  it("drops a much smaller item preview and keeps the file screenshot", () => {
+    const preview = new File([new Uint8Array(100)], "preview.png", { type: "image/png" });
+    const full = new File([new Uint8Array(8000)], "shot.png", { type: "image/png" });
+    expect(clipboardImageFiles({
+      items: [mockClipboardItem("file", "image/png", preview)],
+      files: [full],
+    })).toEqual([full]);
+  });
+
+  it("keeps an item and a file when they are a similar size", () => {
+    const item = new File([new Uint8Array(1000)], "a.png", { type: "image/png" });
+    const file = new File([new Uint8Array(1000)], "b.png", { type: "image/png" });
+    expect(clipboardImageFiles({
+      items: [mockClipboardItem("file", "image/png", item)],
+      files: [file],
+    })).toEqual([item, file]);
+  });
+
+  it("keeps two item images of different sizes when files is empty", () => {
+    const small = new File([new Uint8Array(100)], "a.png", { type: "image/png" });
+    const large = new File([new Uint8Array(8000)], "b.png", { type: "image/png" });
+    expect(clipboardImageFiles({
+      items: [
+        mockClipboardItem("file", "image/png", small),
+        mockClipboardItem("file", "image/png", large),
+      ],
+      files: [],
+    })).toEqual([small, large]);
+  });
+
+  it("keeps two file images even when one is much smaller", () => {
+    const small = new File([new Uint8Array(100)], "a.png", { type: "image/png" });
+    const large = new File([new Uint8Array(8000)], "b.png", { type: "image/png" });
+    expect(clipboardImageFiles({ items: [], files: [small, large] })).toEqual([small, large]);
+  });
+
+  it("ignores an empty image item and uses the file", () => {
+    const empty = new File([], "empty.png", { type: "image/png" });
+    const full = new File([new Uint8Array(50)], "shot.png", { type: "image/png" });
+    expect(clipboardImageFiles({
+      items: [mockClipboardItem("file", "image/png", empty)],
+      files: [full],
+    })).toEqual([full]);
+  });
+});
+
+describe("snapshotClipboardImages", () => {
+  function liveImage(name: string, payload: Uint8Array): File {
+    let reads = 0;
+    return {
+      name,
+      type: "image/png",
+      size: payload.byteLength,
+      arrayBuffer: async () => {
+        reads += 1;
+        if (reads > 1) return new ArrayBuffer(0);
+        return payload.slice().buffer;
+      },
+    } as unknown as File;
+  }
+
+  it("copies the bytes so a later read of the live blob cannot blank the file", async () => {
+    const payload = new Uint8Array([9, 8, 7, 6, 5]);
+    const live = liveImage("shot.png", payload);
+    const first = await snapshotClipboardImages({
+      items: [mockClipboardItem("file", "image/png", live)],
+      files: [],
+    });
+    expect(first).toHaveLength(1);
+    expect(new Uint8Array(await first[0]!.arrayBuffer())).toEqual(payload);
+    const second = await snapshotClipboardImages({
+      items: [mockClipboardItem("file", "image/png", live)],
+      files: [],
+    });
+    expect(second).toEqual([]);
+    expect(new Uint8Array(await first[0]!.arrayBuffer())).toEqual(payload);
+  });
+
+  it("keeps the full screenshot when the item is a much smaller preview", async () => {
+    const preview = new File([new Uint8Array(100)], "preview.png", { type: "image/png" });
+    const full = new Uint8Array(8000);
+    full[0] = 1;
+    const shot = new File([full], "shot.png", { type: "image/png" });
+    const shots = await snapshotClipboardImages({
+      items: [mockClipboardItem("file", "image/png", preview)],
+      files: [shot],
+    });
+    expect(shots).toHaveLength(1);
+    expect(shots[0]!.size).toBe(8000);
+    expect(new Uint8Array(await shots[0]!.arrayBuffer())[0]).toBe(1);
+  });
+
+  it("uses the bytes that were read when a preview reports a large size", async () => {
+    const previewBytes = new Uint8Array(100);
+    const fullBytes = new Uint8Array(8000);
+    fullBytes[0] = 4;
+    const preview = {
+      name: "preview.png",
+      type: "image/png",
+      size: 10000,
+      arrayBuffer: async () => previewBytes.slice().buffer,
+    } as unknown as File;
+    const full = {
+      name: "shot.png",
+      type: "image/png",
+      size: 8000,
+      arrayBuffer: async () => fullBytes.slice().buffer,
+    } as unknown as File;
+    const shots = await snapshotClipboardImages({
+      items: [mockClipboardItem("file", "image/png", preview)],
+      files: [full],
+    });
+    expect(shots).toHaveLength(1);
+    expect(shots[0]!.size).toBe(8000);
+    expect(new Uint8Array(await shots[0]!.arrayBuffer())[0]).toBe(4);
+  });
+
+  it("keeps one copy when the item and the file hold the same bytes", async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    const shots = await snapshotClipboardImages({
+      items: [mockClipboardItem("file", "image/png", new File([bytes], "a.png", { type: "image/png" }))],
+      files: [new File([bytes], "b.png", { type: "image/png" })],
+    });
+    expect(shots).toHaveLength(1);
+    expect(new Uint8Array(await shots[0]!.arrayBuffer())).toEqual(bytes);
+  });
+
+  it("keeps two different screenshots from one paste", async () => {
+    const shots = await snapshotClipboardImages({
+      items: [
+        mockClipboardItem("file", "image/png", new File([new Uint8Array(2000).fill(1)], "a.png", { type: "image/png" })),
+        mockClipboardItem("file", "image/png", new File([new Uint8Array(3000).fill(2)], "b.png", { type: "image/png" })),
+      ],
+      files: [],
+    });
+    expect(shots.map((shot) => shot.size).sort((left, right) => left - right)).toEqual([2000, 3000]);
   });
 });
 

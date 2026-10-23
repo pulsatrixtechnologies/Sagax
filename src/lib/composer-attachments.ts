@@ -223,37 +223,127 @@ export function isImageFile(file: { type: string; size?: number }): boolean {
   );
 }
 
+/** A clipboard item this much smaller than a file on the same paste is the
+ * preview Chromium puts on `items` while `files` holds the screenshot. */
+const CLIPBOARD_PREVIEW_RATIO = 8;
+
+type ClipboardImageSource = {
+  files?: Iterable<File> | null;
+  items?: Iterable<{ kind: string; type: string; getAsFile(): File | null }> | null;
+};
+
+function dedupeIdentity<T>(values: readonly T[]): T[] {
+  const seen = new Set<T>();
+  const unique: T[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    unique.push(value);
+  }
+  return unique;
+}
+
+/** Keep every image from one collection. When `items` and `files` disagree
+ * and every item is a small preview of a file, keep the files: that is the
+ * full screenshot. A macOS paste often has items only, and that side stays. */
+function preferFullRepresentations<T extends { size: number }>(items: readonly T[], files: readonly T[]): T[] {
+  const itemFiles = dedupeIdentity(items.filter((item) => item.size > 0));
+  const fileFiles = dedupeIdentity(files.filter((file) => file.size > 0));
+  if (itemFiles.length === 0) return fileFiles;
+  if (fileFiles.length === 0) return itemFiles;
+  const largestFile = fileFiles.reduce((largest, file) => Math.max(largest, file.size), 0);
+  const itemsArePreviews = itemFiles.every((item) => item.size * CLIPBOARD_PREVIEW_RATIO <= largestFile);
+  if (itemsArePreviews) return fileFiles;
+  return dedupeIdentity([...itemFiles, ...fileFiles]);
+}
+
+function clipboardImageSides(clipboardData: ClipboardImageSource): { items: File[]; files: File[] } {
+  const items: File[] = [];
+  if (clipboardData.items) {
+    for (const item of clipboardData.items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        // An empty item is a placeholder. Leave it out so the file side,
+        // which often holds the real screenshot, can still be chosen.
+        if (file && isImageFile(file) && file.size > 0) items.push(file);
+      }
+    }
+  }
+  const files = clipboardData.files
+    ? Array.from(clipboardData.files).filter((file) => isImageFile(file) && file.size > 0)
+    : [];
+  return { items, files };
+}
+
 /**
- * Extracts valid image files from clipboard data, checking items first because
- * Chromium on macOS exposes screenshots and copied image bitmaps via items
- * while clipboardData.files may remain empty.
+ * Extracts valid image files from clipboard data. Chromium on macOS exposes
+ * screenshots through items while clipboardData.files stays empty, so items
+ * are read too. A tiny item next to a much larger file is the preview, and
+ * the file is the screenshot that gets attached.
  *
  * @param clipboardData - The clipboard DataTransfer object or mock data.
  * @returns Array of valid image File objects found in the clipboard.
  */
-export function clipboardImageFiles(
-  clipboardData: {
-    files?: Iterable<File> | null;
-    items?: Iterable<{ kind: string; type: string; getAsFile(): File | null }> | null;
-  } | null | undefined,
-): File[] {
+export function clipboardImageFiles(clipboardData: ClipboardImageSource | null | undefined): File[] {
   if (!clipboardData) return [];
-  if (clipboardData.items) {
-    const fromItems: File[] = [];
-    for (const item of clipboardData.items) {
-      if (item.kind === "file" && item.type.startsWith("image/")) {
-        const file = item.getAsFile();
-        if (file && isImageFile(file)) {
-          fromItems.push(file);
-        }
-      }
+  const { items, files } = clipboardImageSides(clipboardData);
+  return preferFullRepresentations(items, files);
+}
+
+type ClipboardShot = { name: string; type: string; size: number; bytes: Uint8Array };
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.byteLength !== right.byteLength) return false;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    if (left[index] !== right[index]) return false;
+  }
+  return true;
+}
+
+async function readClipboardShot(file: File): Promise<ClipboardShot | null> {
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch {
+    return null;
+  }
+  if (bytes.byteLength === 0) return null;
+  const type = file.type.split(";", 1)[0]!.trim().toLowerCase();
+  if (!isImageFile({ type, size: bytes.byteLength })) return null;
+  const name = file.name.trim() || "image";
+  return { name, type, size: bytes.byteLength, bytes };
+}
+
+/**
+ * Reads every clipboard image once, during the paste event, and returns new
+ * files that own those bytes. A live clipboard blob can be read only once
+ * and goes empty after the next copy, which used to drop the second
+ * screenshot. The choice uses the bytes actually read, so a preview that
+ * reports a large size and comes back tiny does not win over the screenshot.
+ */
+export function snapshotClipboardImages(
+  clipboardData: ClipboardImageSource | null | undefined,
+): Promise<File[]> {
+  if (!clipboardData) return Promise.resolve([]);
+  const { items, files } = clipboardImageSides(clipboardData);
+  const pending = new Map<File, Promise<ClipboardShot | null>>();
+  for (const file of dedupeIdentity([...items, ...files])) {
+    pending.set(file, readClipboardShot(file));
+  }
+  return Promise.all([...pending.entries()].map(async ([file, read]) => [file, await read] as const)).then((entries) => {
+    const byFile = new Map(entries);
+    const shotsOf = (sources: readonly File[]): ClipboardShot[] => sources.flatMap((file) => {
+      const shot = byFile.get(file);
+      return shot ? [shot] : [];
+    });
+    const chosen = preferFullRepresentations(shotsOf(items), shotsOf(files));
+    const kept: ClipboardShot[] = [];
+    for (const shot of chosen) {
+      if (kept.some((prior) => sameBytes(prior.bytes, shot.bytes))) continue;
+      kept.push(shot);
     }
-    if (fromItems.length > 0) return fromItems;
-  }
-  if (clipboardData.files) {
-    return Array.from(clipboardData.files).filter(isImageFile);
-  }
-  return [];
+    return kept.map((shot) => new File([shot.bytes], shot.name, { type: shot.type }));
+  });
 }
 
 /**
