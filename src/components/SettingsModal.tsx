@@ -240,15 +240,25 @@ export function UpdatesRow() {
                 : s.status === "error"
                   ? t("settings.updates.failed", { message: s.message ?? t("settings.updates.unknownError") })
                   : t("settings.updates.latest");
+  // A native staging failure (retryable === false) cannot be retried in place:
+  // the message tells the person to quit and reopen, so this button must do
+  // exactly that and stay clickable, never be greyed out.
+  const mustRestart = s.retryable === false;
   return (
     <SettingRow title={t("settings.updates.title")} subtitle={label}>
       <button
         // The update dialog follows the check and asks before any restart
         // ("Restart to install" or "Later"); this button never installs.
-        onClick={() => (s.status === "downloaded" ? openUpdatePrompt() : requestUpdateCheck())}
+        onClick={() =>
+          mustRestart
+            ? void window.ogb?.relaunch?.()
+            : s.status === "downloaded"
+              ? openUpdatePrompt()
+              : requestUpdateCheck()
+        }
         disabled={
           s.status === "checking" || s.status === "downloading" || s.status === "preparing" ||
-          s.status === "installing" || s.retryable === false
+          s.status === "installing"
         }
         className="ui-button"
       >
