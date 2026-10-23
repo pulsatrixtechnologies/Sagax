@@ -493,7 +493,7 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
-import { readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_MESSAGE, engineProblem, namesEngine } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
@@ -42769,7 +42769,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // 2026-10-11: what a new bot starts on when the template names no
         // level (New bot shows it): Approve for me, or the organization's.
         approvalMode: newBotApprovalMode(),
-        modelSelection: await defaultSelection(),
+        // A new bot opens on Auto (docs/plans/2026-10-08-auto-model.md): the
+        // engine is auto-resolved, the model is Auto. A template that pins a
+        // model wins over this on the client, so an advanced default is kept.
+        modelSelection: autoNewBotSelection(await defaultSelection()),
         suggestedName: pickBotName(store.bots.map(bot => bot.name)),
       });
     }
