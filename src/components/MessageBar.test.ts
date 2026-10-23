@@ -124,7 +124,7 @@ describe("MessageBar", () => {
     expect(time.childNodes).toHaveLength(0);
     expect(bar().className).toContain("select-none");
     expect(time.className).toContain("select-none");
-    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+    const css = readFileSync("src/styles.css", "utf8");
     expect(css).toContain("[data-message-time]::after { content: attr(data-time); }");
   });
 });
