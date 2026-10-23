@@ -16,6 +16,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
 }));
 
 import { EngineConnect, connectName, engineConnectHasAction, paysWithText } from "./EngineConnect";
+import { engineSignInError } from "./settings/MyEngines";
 import { deviceCodeHintShown } from "./DeviceSignIn";
 
 const issuer = "https://px.example.test";
@@ -117,6 +118,28 @@ describe("EngineConnect", () => {
     setLocale("fr");
     expect(paysWithText({ installed: true, myTurns: "subscription" })).toBe("Payé par : votre abonnement");
     expect(render(engine())).toContain("Non connecté");
+  });
+});
+
+describe("a sign-in refused on an engine the server lists as installed", () => {
+  const grok = engine({ instanceId: "grok", driver: "grokAgent", displayName: "Grok" });
+  it("says the engine is not connected, never that it is not installed", () => {
+    const raw = "Grok is not installed on this server. Install it with xAI's installer (https://x.ai/cli), then try again.";
+    expect(engineSignInError(grok, new Error(raw))).toBe("Grok is not connected. Connect it to use it.");
+    setLocale("fr");
+    expect(engineSignInError(grok, new Error(raw))).toBe("Grok n'est pas connecté. Connectez-le pour l'utiliser.");
+  });
+  it("keeps other failures, and keeps not-installed for an engine the host really lacks", () => {
+    expect(engineSignInError(grok, new Error("Grok could not reach its sign-in service."))).toBe("Grok could not reach its sign-in service.");
+    expect(engineSignInError(grok, new Error(""))).toBe("The sign-in did not finish.");
+    expect(engineSignInError({ ...grok, installed: false }, new Error("Grok is not installed on this server."))).toBe("Grok is not installed on this server.");
+  });
+  it("the card keeps Connect and the keys link, and the status line shows once", () => {
+    const html = render({ ...grok, myKey: true, myTurns: "key" });
+    expect(html.match(/>Pays with: your key in Perspicax</g)).toHaveLength(1);
+    expect(html).toContain("Connect Grok");
+    expect(html).toContain("Manage my keys in Perspicax");
+    expect(html).not.toContain("not installed");
   });
 });
 
