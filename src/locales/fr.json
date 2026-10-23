@@ -4883,7 +4883,7 @@
   "usage.colNewTokens": "Nouveaux jetons",
   "usage.colTokens": "Jetons",
   "usage.colTurns": "Tours",
-  "usage.trace.caption": "Où chaque job a passé son temps et son argent, depuis le registre d’utilisation de cet espace. Seulement des compteurs, du temps et un coût; aucun contenu de message.",
+  "usage.trace.caption": "Où chacun de vos jobs a passé son temps et son argent, depuis le registre d’utilisation. Seulement des compteurs, du temps et un coût; aucun contenu de message.",
   "usage.trace.copied": "Copié",
   "usage.trace.copyId": "Copier les id",
   "usage.trace.empty": "Aucun job enregistré pour cette période pour l’instant.",
