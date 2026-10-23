@@ -9789,7 +9789,7 @@
   "remoteSessionsAdmin.unattended.revoke": "Revoke",
   "remoteSessionsAdmin.unattended.notReady": "Unattended access (a persistent host service) is designed but not enabled on this server yet.",
   "remoteSessionsAdmin.logs.title": "Log of {host}",
-  "remoteSessionsAdmin.logs.retention": "Audited actions, kept 90 days. No keystrokes, no secrets, no tunnel address. Visible to a workspace admin or the session owner.",
+  "remoteSessionsAdmin.logs.retention": "Audited actions, kept 90 days. No keystrokes, no secrets, no tunnel address. Visible to an organization admin or the session owner.",
   "remoteSessionsAdmin.logs.loading": "Loading...",
   "remoteSessionsAdmin.logs.empty": "No audited action for this session.",
   "remoteSessionsAdmin.log.start": "Control started",

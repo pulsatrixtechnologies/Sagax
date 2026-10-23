@@ -63,6 +63,7 @@ import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/C
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
 import { routineRunError, routineRunLabel, upcomingRoutines } from "@/lib/routine-display";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { useDesktopCapabilities } from "@/components/DesktopCapabilities";
@@ -1636,7 +1637,7 @@ export function EventDetails({
             </div>
             {(routine || call) && <div className="mt-1 flex items-start gap-1.5">
               <div data-schedule-label title={scheduleRawCron((routine ?? call)!.schedule) ?? undefined} className="min-w-0 flex-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>
-              {routine?.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { void navigator.clipboard?.writeText(routine.schedule.type === "cron" ? routine.schedule.expression : "").catch(() => {}); }} className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} /></button>}
+              {routine?.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { if (routine.schedule.type === "cron") void copyText(routine.schedule.expression); }} className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} /></button>}
             </div>}
             {routine?.schedule.type === "cron" && <div className="mt-3"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
           </div>
