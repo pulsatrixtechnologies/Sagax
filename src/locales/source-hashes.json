@@ -14069,7 +14069,21 @@
       "botPanel.email.error.unavailable": "ebcce2f63ca015fdb30e85fb5434b32334d7d85bf6cd1ef1413f7cbee3f8884a",
       "botPanel.email.error.rate_limited": "5ee33b458d3078f2bc37f4b1d69ad5906a70207a9650b41768ca364476594b38",
       "triggers.botmail.fullTools": "83d46bdc0dd1959bfb358f5d5e7f0c5afe8b30e9e20f57021987832c16166574",
-      "triggers.botmail.fullToolsHelp": "a5927f5db47d881e58ecac1af0c7690310c34ad6e8827940592eb8b3845cea0c"
+      "triggers.botmail.fullToolsHelp": "a5927f5db47d881e58ecac1af0c7690310c34ad6e8827940592eb8b3845cea0c",
+      "onboarding.firstRun.bot.advanced": "bc79cdffbaa8df096f0ea0dbdf03575b6d4fa3f90f783d3795d01aa9a7a1c926",
+      "onboarding.firstRun.bot.create": "02763cc2194e81aa192daea6e9b9d913b7666dfd0008770afb59e597a060edb6",
+      "onboarding.firstRun.bot.creating": "c79ed9492e3c17199ab50694e07f5525cc6d598a02531528b0eb5ed933cd5466",
+      "onboarding.firstRun.bot.error": "4fe37c0977030ef5ebeb683361615a540c7447c3d079ad36bebb2c73b9c5da33",
+      "onboarding.firstRun.bot.haveOne": "cc97c5492ffd2c46d6e2649a681c3323bd3012df7bee8b205f419de1903cb2d1",
+      "onboarding.firstRun.bot.intro": "ead89e592ba7e689aba519a41c06b8bb429313bfbbf61aa1972c8e1b950932b7",
+      "onboarding.firstRun.bot.needEngine": "6260803fe31f549af6c176ad2b755e0a38a1ca6140c01b496c330fedb0371613",
+      "onboarding.firstRun.bot.title": "326bf8b5d9faa8731ebd8f579945c2d40e1f33c8b170dd76e90b49cdf06c72fa",
+      "onboarding.firstRun.connectEngine": "902878044bd76a99f2ddc692632aca8e56095fef4f4fce0727a742e7c869a4d6",
+      "onboarding.firstRun.dialog": "61e8d44ad423a4a0951b21b9d11440a1c23a881fe79335c367f63be251c64800",
+      "onboarding.firstRun.message.intro": "088014b3163bc2aec746ed3eda742d85febceb577c64cd56de7c5a71579bc60a",
+      "onboarding.firstRun.message.introGeneric": "b47d2fa2a2970a0a2cf7b35edad2572899961144ceb78c38c4c562ed9e697158",
+      "onboarding.firstRun.message.start": "b94c5ac62b878b7cd4bbb35ddc134b0125e2f233033ceca1c9194d3a07ac707b",
+      "onboarding.firstRun.message.title": "8d420f03fec76eecdc92a349ff4e232b70ec37deba805cf41dfe1fbca4441cf7"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
