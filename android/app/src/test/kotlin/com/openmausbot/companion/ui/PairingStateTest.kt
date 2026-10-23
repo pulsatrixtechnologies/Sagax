@@ -581,7 +581,7 @@ class PairingFailureDispositionTest {
  *    screen before confirming a scan *and* before typing six digits.
  *  - the scanned branch reads: "Confirm this computer to establish an
  *    authenticated companion connection. Use a trusted Wi-Fi network or a
- *    tailnet; OpenMausBot does not encrypt local Wi-Fi traffic." Authenticated
+ *    tailnet; Sagax does not encrypt local Wi-Fi traffic." Authenticated
  *    and encrypted are different claims, and only one of them is true of the
  *    local network.
  */
@@ -730,10 +730,10 @@ class PairingConfirmationTest {
 
     @Test
     fun `a QR or deep link without an address never becomes a pending pairing`() {
-        assertNull(PairingInvite.parse("openmausbot://pair?token=$credential"))
+        assertNull(PairingInvite.parse("sagax://pair?token=$credential"))
         // The control: with one, the invite carries a host and a port.
         val invite = PairingInvite.parse(
-            "openmausbot://pair?address=192.168.1.42:8810&name=Kesley%27s%20Ubuntu&token=$credential",
+            "sagax://pair?address=192.168.1.42:8810&name=Kesley%27s%20Ubuntu&token=$credential",
         )
         assertEquals("192.168.1.42", invite?.connection?.host)
         assertEquals(8810, invite?.connection?.port)

@@ -240,7 +240,7 @@ object SharePolicy {
             return api.detail
         }
         if (api != null && isAmbiguousTransport(api)) {
-            return computerName?.let(::offline) ?: "Couldn't reach your computer. Keep OpenMausBot open and Phone access on, then try again."
+            return computerName?.let(::offline) ?: "Couldn't reach your computer. Keep Sagax open and Phone access on, then try again."
         }
         // Mirror ShareViewModel: raw exception text never reaches the sheet.
         return generic()
@@ -251,7 +251,7 @@ object SharePolicy {
             detail == "This saved connection is no longer available on this phone. Remove it and pair again." ||
             (
                 detail.startsWith("Couldn't reach ") &&
-                    detail.endsWith(". Keep OpenMausBot open and Phone access on, then try again.")
+                    detail.endsWith(". Keep Sagax open and Phone access on, then try again.")
                 )
 
     private fun isAmbiguousTransport(error: APIError): Boolean = when (error) {
@@ -261,16 +261,16 @@ object SharePolicy {
     }
 
     fun notPaired(): String =
-        "Open the OpenMausBot app once after updating. If this phone still isn't connected, pair it before sharing."
+        "Open the Sagax app once after updating. If this phone still isn't connected, pair it before sharing."
 
     fun noDestinations(): String =
         "There aren't any bots or channels to send this to yet. Create one on your computer first."
 
     fun imageSupportUnavailable(): String =
-        "Update OpenMausBot on this computer before sharing images."
+        "Update Sagax on this computer before sharing images."
 
     fun offline(name: String): String =
-        "Couldn't reach $name. Keep OpenMausBot open and Phone access on, then try again."
+        "Couldn't reach $name. Keep Sagax open and Phone access on, then try again."
 
     fun nothingSupported(): String =
         "There isn't any text, link, image, or supported document to send."
@@ -285,14 +285,14 @@ object SharePolicy {
         "$name isn't a supported document. Try PDF, text, Word, Excel, or PowerPoint."
 
     fun unreadable(name: String): String =
-        "OpenMausBot couldn't read $name. Try exporting it to Files first."
+        "Sagax couldn't read $name. Try exporting it to Files first."
 
     fun sendTimedOut(): String = "Sending took too long. Check your connection and try again."
 
-    fun generic(): String = "OpenMausBot couldn't send this. Please try again."
+    fun generic(): String = "Sagax couldn't send this. Please try again."
 
     fun pairingExpired(): String =
-        "This phone's pairing has expired. Open OpenMausBot and pair it again."
+        "This phone's pairing has expired. Open Sagax and pair it again."
 
     fun ignoredCaption(count: Int): String = if (count == 1) {
         "1 unsupported item was left out."

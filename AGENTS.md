@@ -3382,7 +3382,7 @@ window of its own (passkeys and password managers live in the browser).
 `electron/oidc-system-sign-in.cjs` own it; there is no in-app sign-in
 window, do not add one back. Return paths, in order: a one-shot loopback
 listener on `127.0.0.1` (ephemeral port, random state path, exact Host and
-Origin, ten-minute timeout, closed after use), then `sagax://auth` (or `openmausbot://auth`) only
+Origin, ten-minute timeout, closed after use), then `sagax://auth` only
 when this exact running copy owns the scheme and the server advertises
 `nativeReturn`, else an error on `/pair`. The server side is
 `validLoopbackReturn` in `server/oidc-login.ts` (loopback IP literals with a
@@ -5254,8 +5254,8 @@ it after an upstream merge instead of renaming by hand.
   installs, suggests or publishes them, and `fleet upgrade` installs an
   exact `@pulsatrixtechnologies/sagax@X.Y.Z`, never a floating tag. Until the first
   publish, the checkout (`pnpm omb`) is the way to run the CLI.
-- Links: both schemes `sagax://` and `openmausbot://`, both
-  `/.well-known/sagax/` and `/.well-known/openmausbot/`, and the health body's
+- Links: both `/.well-known/sagax/` and `/.well-known/openmausbot/`, and the
+  health body's
   `app: "openmausbot"` beside `product: "sagax"`.
 - Tokens: `sgx_` is issued and `omb_` still accepted; pairing codes stay
   `omb_pair_` (released phone apps check it); other `omb_*` prefixes (cookies,
@@ -5271,9 +5271,30 @@ it after an upstream merge instead of renaming by hand.
 - Stored field names that predate a rename of their own, such as a bot's
   `chiefOfStaff` (the Primary Bot, see above).
 - The native apps (`ios/`, `android/`): bundle ids, keychain services and
-  package names change only with a store release of their own.
+  package names change only with a store release of their own. Their
+  user-visible copy (Android string values and the English copy of its
+  helpers, the App Store text) says Sagax; resource names keep the old word.
+  Android release signing reads `SAGAX_KEYSTORE_FILE`,
+  `SAGAX_KEYSTORE_PASSWORD`, `SAGAX_KEY_ALIAS` and `SAGAX_KEY_PASSWORD`
+  first, and still reads the `OPENMAUSBOT_*` names for two releases. A set
+  variable, even an empty one, wins over `keystore.properties`; an empty
+  `SAGAX_*` one counts as unset only for the fallback to the old name.
+- Not kept: the deploy stack (`deploy/docker-compose.yml`) builds its image
+  from the checkout as `sagax:local`, never the upstream author's image.
+  There is no public Sagax image yet. The self-hosting and VPS docs run the
+  CLI from a checkout (`pnpm omb <command>`) or in the container. The
+  remaining npm install hints name `@pulsatrixtechnologies/sagax`. This batch
+  does not rewrite them into checkout commands: `docs/verification/fleet.md`
+  (the VPS recipe), the npx cache warning in `server/service-unit.ts`, the
+  npm package README (`scripts/build-npm-package.mjs`), the npm line of the
+  release notes (`.github/workflows/npm-package.yml`) and `fleet upgrade` in
+  `server/fleet.ts`. The rebrand script re-applies the image, the native copy
+  and the signing names after a merge, and reports `npx openmausbot` or
+  `npm install -g openmausbot` in the docs for a person to replace.
 - Legal and history: `LICENSE-APACHE`, the OpenMausBot lines of `NOTICE`, the README attribution,
-  About's "Based on OpenMausBot", "Where work goes" and "Upstream sync" below.
+  About's "Based on OpenMausBot" in every language, CONTRIBUTING's licensing
+  note, the upstream pull requests a port names ("port of OpenMausBot #N"),
+  "Where work goes" and "Upstream sync" below.
 
 ## iOS communication notifications (2026-10-11)
 
@@ -5977,7 +5998,7 @@ the person asked for are not views.
   conversation, then every open one of the person archived (never routine
   runs, confidential threads, an AI client's hidden thread, or a bot-to-bot
   thread); memory, files, routines and settings stay.
-- Copy link to this bot: `openmausbot://bot/<id>` (`botRefUrl`), which the
+- Copy link to this bot: `sagax://bot/<id>` (`botRefUrl`), which the
   app already opens (`electron/chat-link.mjs`).
 
 ## Plugins parity 2F: configuration, data centers, link (2026-10-21)

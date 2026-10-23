@@ -56,10 +56,11 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertNil(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "other://chat/t-1"))))
     }
 
-    func testTheUpstreamSchemeIsIgnored() throws {
+    func testAnotherSchemeIsIgnored() throws {
         let token = "omb_pair_" + String(repeating: "a", count: 43)
-        XCTAssertNil(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "openmausbot://chat/t-9f2c"))))
-        XCTAssertNil(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "openmausbot://pair?address=mac.local&token=\(token)"))))
+        let otherScheme = "otherapp"
+        XCTAssertNil(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "\(otherScheme)://chat/t-9f2c"))))
+        XCTAssertNil(CompanionDeepLink.parse(try XCTUnwrap(URL(string: "\(otherScheme)://pair?address=mac.local&token=\(token)"))))
     }
 
     func testDecodesAPercentEncodedChatId() throws {

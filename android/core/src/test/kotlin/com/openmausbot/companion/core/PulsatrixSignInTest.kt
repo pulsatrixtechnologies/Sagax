@@ -38,19 +38,19 @@ class PulsatrixSignInTest {
     fun startUrlAsksForThePhoneReturn() {
         assertEquals("https://bot.acme.test/auth/oidc/start?client=phone", PulsatrixSignIn.startUrl(URI("https://bot.acme.test"))?.toString())
         assertEquals("http://127.0.0.1:18788/auth/oidc/start?client=phone", PulsatrixSignIn.startUrl(URI("http://127.0.0.1:18788/pair?x=1#y"))?.toString())
-        assertNull(PulsatrixSignIn.startUrl(URI("openmausbot://pair")))
+        assertNull(PulsatrixSignIn.startUrl(URI("sagax://pair")))
     }
 
     @Test
     fun theServersReturnLinkIsAnInvite() {
         val address = URLEncoder.encode("https://bot.acme.test", "UTF-8")
-        val link = URI("openmausbot://pair?address=$address&token=$credential&name=Acme%20%26%20Co")
+        val link = URI("sagax://pair?address=$address&token=$credential&name=Acme%20%26%20Co")
         val invite = assertNotNull(PairingInvite.parse(link))
         assertEquals(credential, invite.credential)
         assertEquals("Acme & Co", invite.connection.name)
         assertNotNull(PulsatrixSignIn.invite(link, URI("https://bot.acme.test")))
         assertNull(PulsatrixSignIn.invite(link, URI("https://other.acme.test")))
-        val companion = URI("openmausbot://pair?address=$address&code=123456")
+        val companion = URI("sagax://pair?address=$address&code=123456")
         assertNull(PulsatrixSignIn.invite(companion, URI("https://bot.acme.test")))
     }
 }

@@ -34,7 +34,7 @@ describe("self-hosted server pairing links", () => {
     "https://bots.example.com/pair?code=secret#code=ABCD-EFGH-JKLM",
     "https://bots.example.com/pair#code=ABCD EFGH JKLM",
     "https://bots.example.com\\@other.example/pair#code=ABCD-EFGH-JKLM",
-    "openmausbot://pair?code=123456",
+    "sagax://pair?code=123456",
   ])("rejects an incomplete, malformed, or insecure link: %s", (link) => {
     expect(isServerPairingLink(link)).toBe(false);
   });
@@ -53,7 +53,7 @@ describe("remote connection Settings", () => {
     expect(html).toContain('<option value="server" selected="">Self-hosted server</option>');
     expect(html).toContain('<option value="companion">Desktop companion</option>');
     expect(html).toContain("Server pairing link");
-    expect(html).toContain("npx @pulsatrixtechnologies/sagax pair --client");
+    expect(html).toContain("pnpm omb pair --client");
     expect(html).toContain("12-character code");
     expect(html).toContain("custom domains and Cloudflare Tunnel");
     expect(html).toContain("Connect to server");

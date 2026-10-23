@@ -377,7 +377,7 @@ internal object PairingCopy {
     /**
      * Mirrors `ios/App/PairingView.swift`, which says of a scanned computer:
      * "Confirm this computer to establish an authenticated companion connection.
-     * Use a trusted Wi-Fi network or a tailnet; OpenMausBot does not encrypt
+     * Use a trusted Wi-Fi network or a tailnet; Sagax does not encrypt
      * local Wi-Fi traffic."
      *
      * The pairing handshake authenticates the phone to the computer; the session
@@ -388,7 +388,7 @@ internal object PairingCopy {
     const val CONFIRM_SCAN: String =
         "Only continue if this is the computer whose QR code you just scanned. " +
             "Confirming establishes an authenticated companion connection. Use a " +
-            "trusted Wi-Fi network or a tailnet; OpenMausBot does not encrypt " +
+            "trusted Wi-Fi network or a tailnet; Sagax does not encrypt " +
             "local Wi-Fi traffic."
 
     /** Both the desktop companion and headless server show pairing codes. */

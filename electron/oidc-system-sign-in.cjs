@@ -15,7 +15,7 @@
 //      the fragment back to the same address and tells the person they can
 //      return to the app; the listener then closes. Only the exact state,
 //      the exact Host and Origin, once, for ten minutes.
-//   2. openmausbot://auth, only when this exact running app owns the scheme
+//   2. sagax://auth, only when this exact running app owns the scheme
 //      and the server returns there (an older server with no loopback
 //      return). Another installed copy of the app could own it otherwise.
 //   3. Neither: no sign-in, and the app says why. There is no in-app
@@ -70,8 +70,8 @@ function signInSupport(descriptor) {
   return {
     loopbackReturn: perspicax && identity.loopbackReturn === true,
     nativeReturn: perspicax && identity.nativeReturn === true,
-    /** The server can end on sagax://auth when the start names it
-     * (`return=<sagaxReturnLink>`); older servers end on openmausbot://auth. */
+    /** The server takes `return=<sagaxReturnLink>` on the start; it ends
+     * on sagax://auth either way. */
     sagaxReturn: perspicax && identity.nativeReturn === true
       && Array.isArray(identity.nativeReturnSchemes) && identity.nativeReturnSchemes.includes("sagax"),
   };
@@ -94,7 +94,7 @@ function appHandlerPath(execPath, platform) {
   return execPath;
 }
 
-/** Whether openmausbot:// links reach this exact running app, not another
+/** Whether sagax:// links reach this exact running app, not another
  * installed copy (the dev build next to /Applications/Sagax.app, say).
  * `handlerPath` is what the system reports for the scheme, null when it
  * cannot say (then only isDefaultProtocolClient decides, on Linux). */
@@ -115,7 +115,7 @@ function chooseReturnPath({ loopbackReturn, loopbackReady, nativeReturn, ownsSch
   return "unsupported";
 }
 
-/** The one openmausbot:// sign-in this app is waiting for (fallback 2). */
+/** The one sagax:// sign-in this app is waiting for (fallback 2). */
 function createPendingSystemSignIn({ now = Date.now } = {}) {
   let pending = null;
   return {

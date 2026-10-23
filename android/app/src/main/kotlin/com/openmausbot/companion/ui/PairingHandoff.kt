@@ -7,14 +7,12 @@ package com.openmausbot.companion.ui
  * keeps the credential-carrying URL out of any Intent the system remembers.
  */
 internal object PairingLink {
-    const val SCHEME = "openmausbot"
-    /** Servers and desktops from Sagax 0.4.0 emit sagax://pair. */
-    const val SAGAX_SCHEME = "sagax"
+    /** The app's only scheme: servers and desktops emit sagax://pair. */
+    const val SCHEME = "sagax"
     const val HOST = "pair"
 
     fun isInvite(scheme: String?, host: String?): Boolean =
-        (scheme.equals(SCHEME, ignoreCase = true) || scheme.equals(SAGAX_SCHEME, ignoreCase = true)) &&
-            host.equals(HOST, ignoreCase = true)
+        scheme.equals(SCHEME, ignoreCase = true) && host.equals(HOST, ignoreCase = true)
 }
 
 /**

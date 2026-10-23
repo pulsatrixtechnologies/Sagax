@@ -4,8 +4,8 @@
 // button of Permissions: Edit bot, Rename, Put on the desktop, Make primary
 // bot, Export the conversation (copy or download), Export the bot (.zip),
 // Archive and, in Advanced mode, the Inspector. A right click on the mascot
-// or the name opens the same menu where the pointer is. 2026-10-21 (parity
-// with Grok Bot): Copy link to this bot (openmausbot://bot/<id>) and Reset
+// or the name opens the same menu where the pointer is. 2026-10-21: Copy
+// link to this bot (sagax://bot/<id>) and Reset
 // the history (src/lib/bot-history-reset.ts: a new conversation, the open
 // ones archived; memory, files and routines kept; routine runs,
 // confidential threads, hidden client threads and bot-to-bot threads stay).

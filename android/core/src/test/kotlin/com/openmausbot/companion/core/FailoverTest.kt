@@ -220,7 +220,7 @@ class FailoverTest {
         // there (`ios/Sources/CompanionCore/Failover.swift:156`).
         assertEquals(
             "Reached your computer, but Phone access isn't answering on port 8810 — " +
-                "open OpenMausBot → Settings → Phone. The app keeps retrying automatically.",
+                "open Sagax → Settings → Phone. The app keeps retrying automatically.",
             message,
         )
     }

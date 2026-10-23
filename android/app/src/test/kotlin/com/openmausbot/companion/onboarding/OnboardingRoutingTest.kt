@@ -128,7 +128,7 @@ class OnboardingRoutingTest {
         compose.onNodeWithText(OnboardingCopy.WELCOME_TITLE).assertIsDisplayed()
 
         scene.session.receivePairingURL(
-            "openmausbot://pair?address=127.0.0.1:8810&code=123456",
+            "sagax://pair?address=127.0.0.1:8810&code=123456",
         )
         compose.waitForIdle()
 
@@ -279,7 +279,7 @@ class OnboardingRoutingTest {
         compose.onNodeWithText(OnboardingCopy.WELCOME_TITLE).assertIsDisplayed()
 
         scene.session.receivePairingURL(
-            "openmausbot://pair?address=127.0.0.1:8810&code=123456",
+            "sagax://pair?address=127.0.0.1:8810&code=123456",
         )
         compose.waitUntil(5_000) { scene.session.pairingInvite.value != null }
         compose.waitForIdle()
@@ -417,7 +417,7 @@ class OnboardingRoutingTest {
         compose.onNodeWithText("This phone was unpaired").assertIsDisplayed()
 
         scene.session.receivePairingURL(
-            "openmausbot://pair?address=127.0.0.1:8810&code=123456",
+            "sagax://pair?address=127.0.0.1:8810&code=123456",
         )
         compose.waitForIdle()
 

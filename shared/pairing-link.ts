@@ -1,5 +1,5 @@
-// The one `sagax://pair` link builder (phones also still read the older
-// `openmausbot://pair`). The desktop's phone setup, the headless server's
+// The one `sagax://pair` link builder; `sagax` is the only scheme the phone
+// apps read. The desktop's phone setup, the headless server's
 // pairing endpoint and `openmausbot pair` all print this link; the Android
 // and iOS scanners read it (android/core Connection.kt `PairingInvite.parse`,
 // ios CompanionCore Client.swift `PairingInvite.parse`).

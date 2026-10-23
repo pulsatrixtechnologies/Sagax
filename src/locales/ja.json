@@ -2407,7 +2407,7 @@
   "onboarding.reel.automations.title": "設定すれば、あとはお任せ",
   "onboarding.reel.automations.body": "カレンダーにボットを置くと自動で動きます。外部アプリに webhook アドレスを渡すと、呼ばれたときにボットが起動します。",
   "onboarding.reel.terminal.title": "ターミナルからも起動",
-  "onboarding.reel.terminal.body": "npx @pulsatrixtechnologies/sagax と入力してモデルを選ぶと、同じアプリがブラウザーで開きます。スマートフォンをペアリングしたり、サーバーで動かしたりできます。",
+  "onboarding.reel.terminal.body": "リポジトリのチェックアウトで pnpm omb を実行してモデルを選ぶと、同じアプリがブラウザーで開きます。スマートフォンをペアリングしたり、サーバーで動かしたりできます。",
   "onboarding.back": "戻る",
   "onboarding.progress": "{total} ステップ中 {current}",
   "onboarding.dialog": "初回ツアー",

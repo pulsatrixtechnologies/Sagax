@@ -32,7 +32,7 @@ describe("SAGAX_IDENTITY", () => {
   it("derives the redirect URI from the public origin and defaults the client id", () => {
     const config = identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "https://px.example.test/", SAGAX_PUBLIC_URL: "https://bot.example.test/" });
     expect(config).toEqual({ kind: "perspicax", issuer: "https://px.example.test", clientId: "pulsa-bot", publicOrigin: "https://bot.example.test", redirectUri: "https://bot.example.test/auth/oidc/callback" });
-    expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"], phoneReturnSchemes: ["sagax", "openmausbot"] });
+    expect(identityDescriptor(config)).toEqual({ kind: "perspicax", protocol: "oidc", issuer: "https://px.example.test", loginPath: "/auth/oidc/start", nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax"], phoneReturnSchemes: ["sagax"] });
     expect(identityConfigFromEnv({ SAGAX_IDENTITY: "perspicax", SAGAX_PERSPICAX_ISSUER: "http://localhost:18787", SAGAX_PUBLIC_URL: "http://localhost:18788", SAGAX_OIDC_CLIENT_ID: "other" }))
       .toMatchObject({ clientId: "other", redirectUri: "http://localhost:18788/auth/oidc/callback" });
   });
@@ -70,7 +70,7 @@ describe("a desktop sign-in's loopback return (RFC 8252 7.3)", () => {
       `http://127.0.0.1.evil.example:53123/${STATE}`,
       `http://[::2]:53123/${STATE}`,
       `https://127.0.0.1:53123/${STATE}`,
-      `openmausbot://auth/${STATE}`,
+      `sagax://auth/${STATE}`,
       `http://127.0.0.1/${STATE}`,
       `http://127.0.0.1:80/${STATE}`,
       `http://127.0.0.1:0999/${STATE}`,
@@ -98,7 +98,7 @@ describe("a desktop sign-in's loopback return (RFC 8252 7.3)", () => {
     const back = `http://127.0.0.1:53123/${STATE}`;
     expect(desktopReturnLink("https://bot.example.test", { code: "omb_pair_x" }, back)).toBe(`${back}#code=omb_pair_x`);
     expect(desktopReturnLink("https://bot.example.test", { error: "role" }, back)).toBe(`${back}#error=role`);
-    expect(desktopReturnLink("https://bot.example.test", { code: "omb_pair_x" })).toBe("openmausbot://auth?origin=https%3A%2F%2Fbot.example.test#code=omb_pair_x");
+    expect(desktopReturnLink("https://bot.example.test", { code: "omb_pair_x" })).toBe("sagax://auth?origin=https%3A%2F%2Fbot.example.test#code=omb_pair_x");
   });
 });
 
@@ -236,7 +236,7 @@ describe("the sign-in routes (in process)", () => {
   it("hands every sign-in's access token to the routine delegation, web and desktop, with no consent (2026-10-08)", async () => {
     signedIn.length = 0;
     expect((await walk()).location).toBe("/");
-    expect((await walk("desktop")).location).toMatch(/^openmausbot:\/\/auth/);
+    expect((await walk("desktop")).location).toMatch(/^sagax:\/\/auth/);
     const person = principals.bySubject(provider.issuer, USER.sub)!;
     expect(signedIn).toEqual([
       { principalId: person.id, accessToken: expect.stringMatching(/^pxlo1\./) },
@@ -254,16 +254,16 @@ describe("the sign-in routes (in process)", () => {
     expect(bad.location).toBe("/pair#signin_error=client");
     vaultOk = false;
     expect((await walk()).location).toBe("/pair#signin_error=unavailable");
-    expect((await walk("desktop")).location).toBe(`openmausbot://auth?origin=${encodeURIComponent(base)}#error=unavailable`);
+    expect((await walk("desktop")).location).toBe(`sagax://auth?origin=${encodeURIComponent(base)}#error=unavailable`);
   });
 
-  it("ends a desktop sign-in on openmausbot://auth with a person-bound, single-use pairing credential", async () => {
+  it("ends a desktop sign-in on sagax://auth with a person-bound, single-use pairing credential", async () => {
     const { callback, location } = await walk("desktop");
     expect(callback!.status).toBe(303);
     expect(callback!.headers.get("cache-control")).toBe("no-store");
     expect(callback!.headers.get("referrer-policy")).toBe("no-referrer");
     expect(callback!.headers.getSetCookie().some((c) => c.startsWith("omb_session_test="))).toBe(false);
-    const match = /^openmausbot:\/\/auth\?origin=([^#&]+)#code=(omb_pair_[A-Za-z0-9_-]{43})$/.exec(location);
+    const match = /^sagax:\/\/auth\?origin=([^#&]+)#code=(omb_pair_[A-Za-z0-9_-]{43})$/.exec(location);
     expect(match, location).not.toBeNull();
     expect(decodeURIComponent(match![1]!)).toBe(base);
     expect(location).toBe(desktopReturnLink(base, { code: match![2]! }));
@@ -320,7 +320,7 @@ describe("the sign-in routes (in process)", () => {
     const back = sagaxReturnLink(base);
     const { location } = await walk("desktop", { returnTo: back });
     expect(location).toMatch(new RegExp(`^sagax://auth\\?origin=${escapeRegExp(encodeURIComponent(base))}#code=omb_pair_[A-Za-z0-9_-]{43}$`));
-    for (const returnTo of [sagaxReturnLink("https://evil.example"), `${back}&x=1`, "sagax://auth", "openmausbot://auth"]) {
+    for (const returnTo of [sagaxReturnLink("https://evil.example"), `${back}&x=1`, "sagax://auth", back.replace(/^sagax:/, "otherapp:")]) {
       expect((await walk("desktop", { returnTo })).location, returnTo).toBe("/pair#signin_error=return");
     }
     expect((await walk("phone", { returnTo: back })).location).toBe("/pair#signin_error=return");
@@ -371,11 +371,11 @@ describe("the sign-in routes (in process)", () => {
   });
 
   it("sends desktop errors back to the app, phone and web errors to /pair", async () => {
-    expect((await walk("desktop", { binding: "omb_session_test_oidc=wrong" })).location).toBe(`openmausbot://auth?origin=${encodeURIComponent(base)}#error=binding`);
+    expect((await walk("desktop", { binding: "omb_session_test_oidc=wrong" })).location).toBe(`sagax://auth?origin=${encodeURIComponent(base)}#error=binding`);
     expect((await walk("phone", { binding: "omb_session_test_oidc=wrong" })).location).toBe("/pair#signin_error=binding");
     provider.user = { ...USER, sub: "01J9SERVICE", role: "service" };
     const revokedBefore = provider.revoked.length;
-    expect((await walk("desktop")).location).toBe(`openmausbot://auth?origin=${encodeURIComponent(base)}#error=role`);
+    expect((await walk("desktop")).location).toBe(`sagax://auth?origin=${encodeURIComponent(base)}#error=role`);
     await new Promise((r) => setTimeout(r, 100));
     expect(provider.revoked.length).toBe(revokedBefore + 1); // the refused sign-in's grant is revoked
   });
@@ -631,7 +631,7 @@ describe("the sign-in routes (in process)", () => {
       expect(location).toBe("/");
       expect(provider.lastAuthorize).toMatchObject({ prompt: "login", max_age: "0", scope: "openid profile email offline_access" });
       expect(recentInteractiveSignIn(record)).toBe(true);
-      expect((await walk("desktop", { fresh: true })).location).toMatch(/^openmausbot:\/\/auth/);
+      expect((await walk("desktop", { fresh: true })).location).toMatch(/^sagax:\/\/auth/);
       expect(provider.lastAuthorize).toMatchObject({ prompt: "login", max_age: "0" });
       // anything else than 1 is a plain sign-in
       const start = await fetch(`${base}/auth/oidc/start?fresh=yes`, { redirect: "manual" });

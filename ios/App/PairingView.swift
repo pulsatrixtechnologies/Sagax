@@ -25,7 +25,7 @@ struct PairingView: View {
     /// Set when the chosen server signs people in with Pulsatrix and returns
     /// to native apps (its descriptor's `identity.nativeReturn`).
     @State private var pulsatrixOrigin: URL?
-    @State private var pulsatrixScheme = PulsatrixSignIn.legacyCallbackScheme
+    @State private var pulsatrixScheme = PulsatrixSignIn.callbackScheme
     @StateObject private var pulsatrixSignIn = PulsatrixWebSignIn()
 
     private let onCancel: () -> Void
