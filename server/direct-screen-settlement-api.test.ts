@@ -34,8 +34,12 @@ describe.skipIf(process.platform === "win32")("direct final-screen settlement", 
   };
   const bot = async () => (await api("GET", "/api/bots")).body.bots.find((item: any) => item.id === botId);
   const gate = (name: string) => writeFileSync(join(fixture, name), "ready");
+  // A settled screenshot is held only when the person asked to see the screen
+  // and a screen-touching tool finished (shared/requested-views.ts). The
+  // sentinel alone matches neither, so the turn never stayed busy.
+  const SCREEN_ASK = "take a screenshot FIRST_SCREEN";
   const beginCapture = async () => {
-    expect((await api("POST", `/api/bots/${botId}/messages`, { text: "FIRST_SCREEN", threadId })).status).toBe(202);
+    expect((await api("POST", `/api/bots/${botId}/messages`, { text: SCREEN_ASK, threadId })).status).toBe(202);
     await expect.poll(() => existsSync(join(fixture, "provider.json")), { timeout: 10_000 }).toBe(true);
     const dump = JSON.parse(readFileSync(join(fixture, "provider.json"), "utf8"));
     const token = String(dump.mcpConfig.mcpServers.browser.headers?.Authorization ?? "").replace(/^Bearer /, "");
@@ -43,10 +47,12 @@ describe.skipIf(process.platform === "win32")("direct final-screen settlement", 
       method: "tools/call", params: { name: "agent_browser_screenshot", arguments: {} },
     }, token)).status).toBe(200);
     gate("tools.gate");
-    await expect.poll(() => existsSync(join(fixture, "capture.entered")), { timeout: 10_000 }).toBe(true);
-    gate("finish.gate");
     await expect.poll(async () => (await api("GET", `/api/threads/${threadId}/messages`)).body.messages
-      .some((message: any) => typeof message.text === "string" && withoutTurnClock(message.text) === "reply to: FIRST_SCREEN"), { timeout: 5_000 }).toBe(true);
+      .some((message: any) => typeof message.tool?.name === "string" && message.tool.name.includes("screenshot")), { timeout: 10_000 }).toBe(true);
+    gate("finish.gate");
+    await expect.poll(() => existsSync(join(fixture, "capture.entered")), { timeout: 10_000 }).toBe(true);
+    await expect.poll(async () => (await api("GET", `/api/threads/${threadId}/messages`)).body.messages
+      .some((message: any) => typeof message.text === "string" && withoutTurnClock(message.text) === `reply to: ${SCREEN_ASK}`), { timeout: 5_000 }).toBe(true);
   };
 
   beforeEach(async () => {
@@ -83,6 +89,7 @@ describe.skipIf(process.platform === "win32")("direct final-screen settlement", 
       'import { existsSync } from "node:fs";',
       `const dir = ${JSON.stringify(fixture)};`,
       'process.env.FAKE_CLAUDE_MODE = "slow";',
+      'process.env.FAKE_CLAUDE_HOLD_AFTER_TOOL = "1";',
       'process.env.FAKE_CLAUDE_DUMP = dir + "/provider.json";',
       'process.env.FAKE_CLAUDE_SLOW_FINISH_GATE = dir + "/finish.gate";',
       'if (process.argv.includes("--input-format")) {',

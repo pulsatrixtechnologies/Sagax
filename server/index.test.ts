@@ -6792,7 +6792,10 @@ describe("harness HTTP API", () => {
     } finally {
       writeFileSync(releaseFile, "release");
       await Promise.allSettled(provideRequests);
-      await waitForExit(isolatedChild, { signal: "SIGTERM" });
+      // Hang mode keeps the resumed turn busy. Shutdown spends the drain
+      // (5s, bounded at 6s) and the cleanup race (6s) before exit 0. The
+      // default 5s grace sends SIGKILL during that drain.
+      await waitForExit(isolatedChild, { signal: "SIGTERM", graceMs: 15_000 });
       await removeTempDir(isolatedHome);
     }
     expectStoppedTestServerCleanly(isolatedChild, isolatedStderr);
@@ -8267,10 +8270,12 @@ describe("harness HTTP API", () => {
     await api("PUT", "/api/config", { rooms: { turnTimeoutMinutes: 5 } });
   });
 
-  it("cards every ask when Claude's reviewer never started, says so once, and can hand the allow to Claude for the session", async () => {
-    // A bot on Approve for me with Haiku 4.5: the CLI takes `auto`, runs
-    // Manual, and asks about everything. Sagax passes that through —
-    // no rule of its own answers — and says why, once.
+  it("cards every ask when Claude's reviewer never started, and can hand the allow to Claude for the session", async () => {
+    // Approve for me no longer launches the CLI reviewer (`--permission-mode
+    // auto`). It is acceptEdits plus a fixed allowlist, and the driver does
+    // not report nativeReview, so the old "automatic reviewer is not
+    // available" notice is not posted. The ask is still a card, and the
+    // session allow still reaches Claude.
     const bot = (await api("POST", "/api/bots", { name: "Quill" })).body.bot;
     const conns: Socket[] = [];
     try {
@@ -8319,12 +8324,7 @@ describe("harness HTTP API", () => {
       expect(card.allowKey).toBeUndefined();
       expect(card.allowSession).toBe(true);
       expect((await messages()).some((m) => m.tool?.name.startsWith("auto-approved"))).toBe(false);
-      // the person is told once who is asking and why, naming the model
-      await expect.poll(async () => (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available")).length, windowsPoll).toBe(1);
-      const notices = (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available"));
-      expect(notices).toHaveLength(1);
-      expect(notices[0].tool!.name).toContain("claude-haiku-4-5");
-      expect(notices[0].tool!.name).toContain("asks before each action");
+      expect((await messages()).some((m) => m.tool?.name.startsWith("Approve for me:"))).toBe(false);
 
       // "Always allow this session" rides to Claude as `always`
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: card.requestId, behavior: "allow", always: true })).status).toBe(200);
@@ -8332,7 +8332,7 @@ describe("harness HTTP API", () => {
 
       const second = raise("ask-ls", "ls memory");
       await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls memory")?.card?.title, windowsPoll).toBe("Approval needed");
-      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer"))).toHaveLength(1);
+      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me:"))).toHaveLength(0);
       const secondCard = (await messages()).find((m) => m.card?.subtitle === "ls memory")!.card!;
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: secondCard.requestId, behavior: "allow" })).status).toBe(200);
       const plain = await second;
@@ -8413,17 +8413,34 @@ describe("harness HTTP API", () => {
         chiefOfStaff: true,
         modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
       })).status).toBe(200);
-      const roster = "Current Roster end section team:\n- No other visible bots are available yet.";
+      const header = "Current Roster end section team:\n";
+      // A solo server leaves the Primary Bot's cover unset, so the roster is
+      // every other bot, not the empty-section line. The section still ends
+      // on those roster lines, and the old VM status block stays gone.
+      const rosterLines = (text: string): string[] => {
+        const at = text.indexOf(header);
+        expect(at).toBeGreaterThanOrEqual(0);
+        const lines: string[] = [];
+        for (const line of text.slice(at + header.length).split("\n")) {
+          if (line.startsWith("- ")) lines.push(line);
+          else if (line === "" && lines.length === 0) continue;
+          else break;
+        }
+        return lines;
+      };
 
       const sections = (await api("GET", `/api/bots/${bot.id}/system-prompt`)).body.sections as Array<{ id: string; text: string }>;
       const team = sections.find((section) => section.id === "coordination")?.text ?? "";
       expect(team).toContain("Your home team is the Roster end section;");
-      expect(team.endsWith(roster)).toBe(true);
+      const previewRoster = rosterLines(team);
+      expect(previewRoster.length).toBeGreaterThan(0);
+      expect(team.trimEnd().endsWith(previewRoster[previewRoster.length - 1]!)).toBe(true);
+      expect(team).not.toContain("SAGAX STATUS");
 
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       const system = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(system).toContain(roster);
+      expect(rosterLines(system).length).toBeGreaterThan(0);
       expect(system).not.toContain("SAGAX STATUS");
     } finally {
       await api("POST", `/api/bots/${bot.id}/interrupt`);

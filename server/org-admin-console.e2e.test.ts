@@ -118,6 +118,9 @@ async function start() {
       SAGAX_ORG_NAME: "Acme",
       SAGAX_IMAGE: "sagax:test",
       SAGAX_IMAGE_COMMIT: "c0ffee",
+      // C1's broken engine answers 429. Limit failover would resend that
+      // message on a working engine, so the console would never see a failure.
+      SAGAX_LIMIT_FAILOVER: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
