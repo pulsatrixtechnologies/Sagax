@@ -1,9 +1,10 @@
 // The top of the phone's Edit bot page (the reference design): the avatar
-// with a pencil badge, the Name and Title fields, Appearance > Avatar, and
+// with a pencil badge, the Name, Title and Description fields (Grok Bot's
+// identity block: the short blurb rosters and other bots show), Appearance > Avatar, and
 // the Voice calls group (Voice, Speed, Language as menus). The persona
 // editor's groups follow it on the same page.
 //
-// Name and Title save when the field is left or Return is pressed
+// Name, Title and Description save when the field is left or Return is pressed
 // (`DesktopInlineEdit.commit`, as the panel's inline name does). Voice,
 // Speed and Language are the call's own settings (`VoiceModeSettings`,
 // key `omb.voiceMode.v1`), the same values the call's gear card changes.
@@ -17,10 +18,11 @@ struct PhoneBotEditHeader: View {
     /// Opens the avatar editor (the badge and the Avatar row).
     let onAvatar: () -> Void
 
-    private enum Field: Hashable { case name, title }
+    private enum Field: Hashable { case name, title, description }
 
     @State private var name = ""
     @State private var title = ""
+    @State private var blurb = ""
     @State private var voices: [VoiceModeVoice]?
     @FocusState private var focus: Field?
     @AppStorage(VoiceModeSettings.storageKey) private var voiceRaw = ""
@@ -35,6 +37,9 @@ struct PhoneBotEditHeader: View {
             field(text: $name, prompt: nil, field: .name, id: "panel-edit-name")
             fieldLabel("Title")
             field(text: $title, prompt: "Add a label", field: .title, id: "panel-edit-title")
+            fieldLabel("Description")
+            descriptionField
+            ProfileFooter(text: "Shown in rosters, on the phone and to other bots. Standing instructions go in Personality.")
             fieldLabel("Appearance")
             ProfileCard {
                 Button {
@@ -78,15 +83,18 @@ struct PhoneBotEditHeader: View {
         .onAppear {
             name = current.name
             title = current.title
+            blurb = current.description
         }
         // leaving the page saves what is still in a field
         .onDisappear {
             commitName()
             commitTitle()
+            commitBlurb()
         }
         .onValueChange(of: focus) { now in
             if now != .name { commitName() }
             if now != .title { commitTitle() }
+            if now != .description { commitBlurb() }
         }
         .task {
             guard voices == nil, let client = session.callClient else { return }
@@ -139,6 +147,32 @@ struct PhoneBotEditHeader: View {
             .padding(.horizontal, Theme.Profile.cardMargin)
             .accessibilityLabel(Text(field == .name ? LocalizedStringKey("Name") : LocalizedStringKey("Title")))
             .accessibilityIdentifier(id)
+    }
+
+    /// The short blurb: several lines, the server's own limit, saved on leaving.
+    private var descriptionField: some View {
+        TextField("", text: $blurb, prompt: Text("One line on what this bot is for"), axis: .vertical)
+            .font(Theme.Font.body)
+            .foregroundStyle(Theme.textPrimary)
+            .lineLimit(3...8)
+            .focused($focus, equals: .description)
+            .padding(.horizontal, Theme.Profile.textInset)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, minHeight: Theme.Profile.toggleRow * 2, alignment: .topLeading)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+            .padding(.horizontal, Theme.Profile.cardMargin)
+            .onValueChange(of: blurb) { now in
+                if now.count > NewBotRules.descriptionLimit { blurb = String(now.prefix(NewBotRules.descriptionLimit)) }
+            }
+            .accessibilityLabel(Text("Description"))
+            .accessibilityIdentifier("panel-edit-description")
+    }
+
+    private func commitBlurb() {
+        guard let next = DesktopInlineEdit.commit(draft: blurb, current: current.description, required: false) else { return }
+        var patch = BotProfilePatch()
+        patch.description = next
+        save(patch)
     }
 
     private func commitName() {

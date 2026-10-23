@@ -17,7 +17,7 @@
 //            the desktop's three tabs, Details split in two. Then the
 //            Notifications switch with its caption.
 //   Edit bot under "..." and as the "Edit" pill. The editor starts with
-//            the avatar, Name, Title, Appearance and Voice calls, then lists
+//            the avatar, Name, Title, Description, Appearance and Voice calls, then lists
 //            its six groups (`DesktopPanelGroup`); a group shows its sections.
 //
 // Which tabs and sections a pairing shows is `DesktopPanelTab` /

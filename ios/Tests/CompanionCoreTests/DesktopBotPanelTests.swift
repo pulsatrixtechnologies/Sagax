@@ -90,6 +90,15 @@ final class DesktopBotPanelTests: XCTestCase {
         XCTAssertNil(DesktopInlineEdit.commit(draft: "", current: "", required: false))
     }
 
+    /// Edit bot's Description (several lines, optional): a change is saved
+    /// trimmed, an emptied blurb clears, an unchanged one saves nothing.
+    func testInlineEditDescriptionKeepsLinesAndMayClear() {
+        XCTAssertEqual(DesktopInlineEdit.commit(draft: "Line 1\nLine 2\n", current: "Line 1", required: false), "Line 1\nLine 2")
+        XCTAssertEqual(DesktopInlineEdit.commit(draft: "  ", current: "Does things", required: false), "")
+        XCTAssertNil(DesktopInlineEdit.commit(draft: "Does things ", current: "Does things", required: false))
+        XCTAssertEqual(NewBotRules.descriptionLimit, 4_000)
+    }
+
     // MARK: More > Access, Works on
 
     private func config(_ json: String) throws -> ConfigStatus {
