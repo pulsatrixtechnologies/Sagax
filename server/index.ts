@@ -962,6 +962,10 @@ import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions
 import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
+import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
+import { BOT_MAIL_ASSERTION_ACTORS, botmailConfinedInternalRefusal, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
+import { isRelaySource } from "../shared/trigger-sources.ts";
+import { BotMailAddresses } from "./bot-mail-addresses.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
 import { createBotCatalogRoutes, memberImportReset } from "./routes/bot-catalog.ts";
 import { createBotZipRoutes } from "./routes/bot-zip.ts";
@@ -1126,7 +1130,7 @@ import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTER
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
-import { createOrgMemberRoutes, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
+import { createOrgMemberRoutes, ORG_MEMBER_ASSERTION_ACTORS, type MemberPerson, type MemberRequest } from "./org-member-routes.ts";
 import { createOrgLinkRoutes, DirectoryRefreshScheduler } from "./org-link-routes.ts";
 import { internalAgentApiTool } from "./routes/agent-api-internal.ts";
 import { isInternalVoiceCallEnd } from "./routes/voice-call-internal.ts";
@@ -2471,7 +2475,10 @@ function guestWorkThread(from: BotRecord, target: BotRecord, fromThreadId: strin
  * the owner is told about one, and when its engine cannot be confined. */
 const ROUTINE_FROM_BEFORE = "This routine was made before this update. Open it and save it once to run it with full access.";
 const CONVERSATION_FROM_BEFORE = "This conversation is from before My Cloud was only yours, so this bot works in it without a shell. Start a new conversation to use it fully.";
+const BOTMAIL_ENGINE_REFUSAL = "This bot's engine can't run a routine woken by email without a shell. Use Claude or Codex for this bot, or turn on full tools for this Bot email trigger.";
+const BOTMAIL_CONFINED_WHY = "This run was woken by an email: no shell, and every change or send asks first. The trigger's owner can turn on full tools for it.";
 function confinedWhy(threadId: string): string {
+  if (!cloudGuestDriven(threadId) && botmailConfined(threadId)) return BOTMAIL_CONFINED_WHY;
   const run = activeRoutineRunForThread(threadId);
   const writer = run ? cloudRoutineAuthors?.writer(run.routineId) : undefined;
   return run && writer && !cloudOwnerPerson(writer) ? ROUTINE_FROM_BEFORE : CONVERSATION_FROM_BEFORE;
@@ -7827,6 +7834,8 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   // own level. Judged by the conversation the turn runs in (a room's, for a
   // room turn), never by whichever of the bot's conversations is active.
   if (cloudGuestDriven(threadId)) return "ask";
+  // A mail-woken routine run (bot email, S2): Ask, whatever the bot's level.
+  if (botmailConfined(threadId)) return "ask";
   const mode = approvalModeForOrigin(approvalModeFor(bot), { peerInitiated });
   if (!supportsApprovalMode(bot.modelSelection, mode)) {
     return "ask";
@@ -7851,7 +7860,7 @@ function fullAccessForSource(botId: string, threadId: string): boolean {
 /** On a Cloud home a turn a guest drives keeps a card for every change,
  * even one to the bot itself. */
 function selfApplyBlocked(threadId: string): boolean {
-  return cloudGuestDriven(threadId);
+  return cloudGuestDriven(threadId) || botmailConfined(threadId);
 }
 
 /** Whether a bot's routine, skill, profile or model change applies without
@@ -10394,7 +10403,7 @@ const terminalFeature = installTerminalFeature({
     // 2026-10-20 (security review): never on a guest's turn, nor on a turn
     // that is not the person's own (a routine, a webhook, another bot)
     const bot = store.bot(botId);
-    if (!bot || cloudGuestDriven(threadId)) return null;
+    if (!bot || cloudGuestDriven(threadId) || botmailConfined(threadId)) return null;
     const origin = ownEnvironmentTurnOrigin({
       speaker: turnSpeakers.get(threadId),
       ownerPrincipalId: principalId,
@@ -12288,7 +12297,7 @@ const limitFailover = createLimitFailoverHost({
     }
     const bot = store.projectBotForTask(botId, threadId);
     if (!bot) return [];
-    const guestConfined = cloudGuestDriven(threadId);
+    const guestConfined = cloudGuestDriven(threadId) || botmailConfined(threadId);
     return autoEnginesFor(bot, (speaker ?? { origin: "person" }) as TurnSpeaker, guestConfined).map((engine) => ({
       instanceId: engine.instanceId, driverKind: engine.driverKind,
       models: engine.models.options.map((option) => option.id), defaultModel: engine.models.default,
@@ -14564,7 +14573,9 @@ bus.subscribe((event: RuntimeEvent) => {
       }
       // A turn a guest drives on a Cloud home is Ask, room turns included,
       // and no command the owner saved answers for it.
-      const guestDriven = cloudGuestDriven(event.threadId);
+      // A mail-woken routine run (S2) is held the same way: Ask, and no rule
+      // the owner saved answers for it.
+      const guestDriven = cloudGuestDriven(event.threadId) || botmailConfined(event.threadId);
       const ownApprovalMode = (who: BotRecord) => approvalModeForTurn(who, isInternalTurn(event.threadId), event.threadId);
       // A room turn runs at the level it was sent with, which a Chief's
       // handoff may have raised (roomTurnApprovalMode). The bot's own level
@@ -18852,7 +18863,7 @@ async function startTurn(
       role: autoContinuing && !opts?.autoSkip?.length ? "continue" : worker ? "worker" : "orchestration",
       fallback: worker ? "worker" : "orchestration",
       // A guest's turn on a Cloud home only goes to an engine that confines it.
-      guestConfined: cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id),
+      guestConfined: cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id) || botmailConfined(threadId),
       ...(opts?.autoSkip ? { skip: opts.autoSkip } : {}),
     });
     // Recorded on the task once the turn is admitted (below), never before.
@@ -18986,8 +18997,12 @@ async function startTurn(
   // refused, in one plain line, before anything is recorded.
   // (The thread is idle here: a mark a turn that never started left is stale.)
   guestDrivenTurns.delete(threadId);
-  const guestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id);
+  // A mail-woken routine run (bot email, S2) is confined the same way: no
+  // shell, no reads outside its folder.
+  const mailConfined = botmailConfined(threadId);
+  const guestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id) || mailConfined;
   if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") {
+    if (mailConfined && !cloudGuestDriven(threadId)) throw Object.assign(new Error(BOTMAIL_ENGINE_REFUSAL), { status: 409, code: "botmail_engine" });
     throw Object.assign(new Error(guestEngineRefusal(threadId)), { status: 409, code: "guest_engine" });
   }
   // Codex and the API drivers cannot start without a prompt. Sending them
@@ -21828,6 +21843,7 @@ async function deleteBotWithLifecycle(botId: string, revalidate: () => void = ()
           // if the bot/receipt write fails, so a failed deletion is retryable.
           routines!.disableForBot(bot.id);
           webhooks.disableForBot(bot.id);
+          botMailResync();
           calendarCalls!.removeBot(bot.id);
           browserLive.closeForBot(bot.id);
           browserNetworkDebug.clearBot(bot.id);
@@ -22852,8 +22868,9 @@ async function runGroupMemberTurn(
   // A room turn a guest drives on a Cloud home is confined like a guest's
   // own conversation, or refused on an engine that cannot be.
   if (!groupSpeakers.has(threadId)) guestDrivenTurns.delete(threadId);
-  const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId);
-  const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined" ? guestEngineRefusal(threadId) : undefined;
+  const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId) || botmailConfined(threadId);
+  const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined"
+    ? (cloudGuestDriven(threadId) || !botmailConfined(threadId) ? guestEngineRefusal(threadId) : BOTMAIL_ENGINE_REFUSAL) : undefined;
   if (!instance || roomPolicyRefusal || roomGuestRefusal) {
     const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_MESSAGE);
     store.appendMessage(threadId, {
@@ -26775,7 +26792,7 @@ function connectorSwitchForTurn(bot: BotRecord, threadId: string, speaker: TurnS
   const base = registry.get(bot.modelSelection.instanceId);
   if (!base) return null;
   const current = { instanceId: base.instanceId, engineLabel: engineDisplayName(base), models: [], reach: engineReachFor(bot, base, speaker) };
-  const candidates = autoEnginesFor(bot, speaker, cloudGuestDriven(threadId)).flatMap((engine) => {
+  const candidates = autoEnginesFor(bot, speaker, cloudGuestDriven(threadId) || botmailConfined(threadId)).flatMap((engine) => {
     const live = engine.instanceId === base.instanceId ? undefined : registry.get(engine.instanceId);
     if (!live) return [];
     return [{
@@ -27568,6 +27585,86 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
 ];
 ROUTES.push(createHostedSlackRoutes({ bot: (id) => store.bot(id), hostedReady: () => Boolean(workspaceAccess) && entitled("admin") }));
+// 2026-10-21 (B21 / iOS CO5): the bots' own email addresses, from the
+// Perspicax relay (server/bot-mail-addresses.ts, contract B), and the
+// delivery route (server/bot-inbound-mail.ts, contract A, wired before the
+// session gate with the member API).
+const botMailAddresses = new BotMailAddresses({
+  link: () => (IDENTITY.kind === "perspicax" ? perspicaxDirectory : null),
+  bots: () => store.bots.map((bot) => ({ id: bot.id, name: bot.name, ownerSub: botMailOwner(bot.id)?.sub ?? null })),
+});
+function botMailOwner(botId: string): { principalId: string; sub: string | null; active: boolean } | null {
+  const bot = store.bot(botId);
+  if (!bot || IDENTITY.kind !== "perspicax") return null;
+  const principalId = effectiveBotOwner(bot);
+  const person = principalId ? principals.byId(principalId) : null;
+  if (!person) return null;
+  const sub = person.subject && person.subject.iss === IDENTITY.issuer ? person.subject.sub : null;
+  const listed = perspicaxDirectory?.directory();
+  const entry = sub ? listed?.people.find((candidate) => candidate.sub === sub) : undefined;
+  const listedActive = listed ? Boolean(entry && entry.status === "active" && entry.kind !== "service" && entry.type !== "service") : true;
+  return { principalId: person.id, sub, active: listedActive && person.disabledAt === undefined && !person.consoleDisabled };
+}
+ROUTES.push(createBotInboundMailReadRoutes({
+  bot: (id) => store.bot(id),
+  organization: () => IDENTITY.kind === "perspicax" && Boolean(perspicaxDirectory),
+  address: (botId) => botMailAddresses.forBot(botId),
+  // v2 (JC decision 4): the person acting owns the bot; their Perspicax id
+  ownerSub: (auth, botId) => {
+    const owner = botMailOwner(botId);
+    const acting = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : localPrincipalId();
+    return owner?.sub && acting && acting === owner.principalId ? owner.sub : null;
+  },
+  setLocalPart: (botId, sub, localPart) => botMailAddresses.setLocalPart(botId, sub, localPart),
+  record: (auth, row) => appendAdminAction(DATA_DIR, {
+    category: "bot",
+    action: "bot-mail.address-changed",
+    target: { kind: "bot", id: row.botId, name: store.bot(row.botId)?.name ?? "" },
+    after: { address: row.address },
+    actor: orgAuditActor(auth),
+  }),
+}));
+/** v2 (S3): a bot deleted or given to another owner: Perspicax's list follows. */
+function botMailResync(): void {
+  try {
+    void botMailAddresses.resync();
+  } catch {
+    /* before start-up finished: the first read syncs */
+  }
+}
+/** v2 (S2): a routine run woken by bot email is confined (no shell, a card
+ * for every write or outbound call, no Always-allow or Full) unless its
+ * trigger's owner turned on full tools. */
+function botmailConfined(threadId: string): boolean {
+  try {
+    return botmailRunConfined(activeRoutineRunForThread(threadId), (id) => webhooks.list().find((hook) => hook.id === id) ?? null);
+  } catch {
+    return false;
+  }
+}
+const inboundMail = createBotInboundMailRoute({
+  identity: () => IDENTITY.kind,
+  publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
+  linkServerId: () => perspicaxDirectory?.serverId() ?? null,
+  verify: (token, audience, serverId) => {
+    if (!oidcRp) throw new Error("This server has no identity provider configured.");
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId, BOT_MAIL_ASSERTION_ACTORS);
+  },
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot ? { id: bot.id, name: bot.name } : null;
+  },
+  owner: (id) => botMailOwner(id),
+  triggers: (botId) => webhooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "botmail").map((hook) => hook.id),
+  ingest: (id, event, key) => webhooks.ingest(id, event, key),
+  record: (row) => appendAdminAction(DATA_DIR, {
+    category: "webhook",
+    action: "bot-mail.delivered",
+    target: { kind: "bot", id: row.botId, name: row.botName },
+    after: { triggers: row.triggers, delivered: row.delivered, duplicate: row.duplicate, ignored: row.ignored, sender: row.sender },
+    actor: { kind: "person", principalId: row.ownerPrincipalId, via: "perspicax-mail" },
+  }),
+});
 // A shared Grok Bot's public card (port of OpenMausBot #3073).
 ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
@@ -31160,7 +31257,7 @@ function strictCardRule(
  * scope key for key; none while a security key of theirs protects one of
  * the classes, or on a guest's turn. */
 function keptCardRule(bot: BotRecord, threadId: string, candidate: { tool: string; scope: Record<string, string> }, classes: readonly StepUpClass[] = []): OwnerRule | undefined {
-  if (cloudGuestDriven(threadId)) return undefined;
+  if (cloudGuestDriven(threadId) || botmailConfined(threadId)) return undefined;
   const answerer = approvalOwnerId(bot, threadId);
   if (!answerer) return undefined;
   if (classes.length && securityKeys.required(answerer, [...classes], answerer).length) return undefined;
@@ -34224,6 +34321,7 @@ async function importPackageFor(raw: unknown, ownerPrincipalId: string): Promise
     throw error;
   }
   for (const bot of result.bots) store.patchBot(bot.id, { ownerUserId: ownerPrincipalId });
+  botMailResync();
   settleMemberAutoLevels(result.bots.map((bot) => bot.id));
   for (const bot of result.bots) {
     const current = store.bot(bot.id);
@@ -34355,6 +34453,7 @@ const orgBotsDeps: BotsDeps = {
     if (previous) grants.push({ target: `user:${previous}`, level: "manage", by: previous, at: Date.now() } as (typeof grants)[number]);
     if (bot.chiefOfStaff) store.clearPrimaryBot(botId);
     store.patchBot(botId, { ownerUserId: ownerPrincipalId });
+    botMailResync();
     store.setBotGrants(botId, grants);
     settleMemberAutoLevels([botId]);
     audienceChanged();
@@ -35913,7 +36012,7 @@ const orgMember = createOrgMemberRoutes({
   linkServerId: () => perspicaxDirectory?.serverId() ?? null,
   verify: (token, audience, serverId) => {
     if (!oidcRp) throw new Error("This server has no identity provider configured.");
-    return oidcRp.verifyConsoleAssertion(token, audience, serverId, ["console", "perspicax-mcp"]);
+    return oidcRp.verifyConsoleAssertion(token, audience, serverId, ORG_MEMBER_ASSERTION_ACTORS);
   },
   personFor: (iss, sub) => {
     const person = principals.bySubject(iss, sub);
@@ -36207,6 +36306,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (await orgAdmin(req, res, url)) return;
     // 2026-10-09: the member API, same credential rule: an assertion only.
     if (await orgMember(req, res, url)) return;
+    // 2026-10-21: bot inbound mail from the Perspicax relay, same rule.
+    if (await inboundMail(req, res, url)) return;
     // 2026-10-11: Perspicax's link routes, the link token only.
     if (await orgLink(req, res, url)) return;
     // 2026-10-16: a security key ceremony, its own id only (server/routes/security-keys.ts).
@@ -37067,6 +37168,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (store.isConfidentialThread(internalCapability.threadId)) {
         const confidentialRefusal = confidentialInternalRefusal(path, method);
         if (confidentialRefusal) return json(res, 403, confidentialRefusal);
+      }
+      // A confined mail-woken run (S2) hands no work on: its confinement
+      // would not follow it to a teammate, a room or a parallel task.
+      if (botmailConfined(internalCapability.threadId)) {
+        const mailRefusal = botmailConfinedInternalRefusal(path, method);
+        if (mailRefusal) return json(res, 403, mailRefusal);
       }
       if (internalCapability.generation === EXTERNAL_RUNTIME_GENERATION && !externalRuntimeMayCall(method, path)) {
         return json(res, 403, { error: "an external runtime can only list, ask and delegate to its peers and read its delegations" });
@@ -40694,6 +40801,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // A typed trigger is reached by its provider's signature on its source
       // path: no bearer command to hand out, only the setup (shown once).
       if (created.webhook.source) {
+        // Bot email (2026-10-21) has no endpoint and no secret: no setup to hand out.
+        if (isRelaySource(created.webhook.source.type)) return json(res, 201, { webhook: created.webhook, ingress });
         return json(res, 201, { webhook: created.webhook, ingress, sourceSetup: triggerSourceSetup(ingress.baseUrl, created.webhook.endpointId, created.signingSecret) });
       }
       return json(res, 201, {

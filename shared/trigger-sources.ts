@@ -16,6 +16,7 @@ export const TRIGGER_SOURCE_TYPES = [
   "sentry",
   "pagerduty",
   "linear",
+  "botmail",
 ] as const;
 
 export type TriggerSourceType = (typeof TRIGGER_SOURCE_TYPES)[number];
@@ -49,8 +50,12 @@ export type TriggerFilterKey = (typeof TRIGGER_FILTER_KEYS)[number];
 
 /** How the provider proves who it is.
  * - `generated`: Sagax makes the secret, shown once, pasted into the provider.
- * - `provided`: the provider makes it; the owner pastes it into Sagax. */
-export type TriggerSecretMode = "generated" | "provided";
+ * - `provided`: the provider makes it; the owner pastes it into Sagax.
+ * - `relay`: no secret and no endpoint at all. Events arrive only through a
+ *   Sagax route with its own credential (bot email: the Perspicax relay's
+ *   console assertion on `POST /api/org/inbound-mail`), never on
+ *   `/sources/<endpointId>`. */
+export type TriggerSecretMode = "generated" | "provided" | "relay";
 
 export interface TriggerSourceDefinition {
   type: TriggerSourceType;
@@ -75,6 +80,12 @@ export interface TriggerSourceDefinition {
   /** The source also accepts events pushed by a connector poller
    * (`WebhookManager.ingest`), e.g. calendar start times. */
   connectorEvents?: readonly string[];
+  /** Filters on these keys match when the field CONTAINS a value
+   * (case-insensitive) instead of the exact or `*` glob rule. */
+  containsFilters?: readonly TriggerFilterKey[];
+  /** Word of the run's fence (`[UNTRUSTED <fence> EVENT DATA ...]`) when
+   * the label is not one (two words, translated in the app). */
+  fence?: string;
   /** Window, in seconds, a signed timestamp may differ from now. Absent
    * when the provider signs none (replay is then stopped by the delivery id
    * the deduplication keeps). */
@@ -167,6 +178,19 @@ export const TRIGGER_SOURCES: Record<TriggerSourceType, TriggerSourceDefinition>
     legacyEvents: ["issue.created", "issue.updated", "issue.removed", "comment.created"],
     replayWindowSeconds: 60,
   },
+  // 2026-10-21 (B21 / iOS CO5): mail sent to the bot's own address,
+  // `<name>@<inbound domain>`, received by Perspicax and relayed to this
+  // server (server/bot-inbound-mail.ts). It only wakes a routine; replies go
+  // through a mail connector's send tool and its approval card.
+  botmail: {
+    type: "botmail",
+    label: "Bot email",
+    secretMode: "relay",
+    events: ["email.received"],
+    filters: ["sender", "subject", "keyword"],
+    containsFilters: ["subject"],
+    fence: "BOTMAIL",
+  },
 };
 
 /** Version of the event catalog a trigger was saved against. 2 added the
@@ -190,6 +214,12 @@ export function triggerEventSelected(type: TriggerSourceType, selected: readonly
   return parents !== undefined && Object.hasOwn(parents, kind) && pool.includes(parents[kind]!);
 }
 
+/** A source whose events come only through its own Sagax route (no secret,
+ * no `/sources/<endpointId>` endpoint). */
+export function isRelaySource(type: TriggerSourceType): boolean {
+  return TRIGGER_SOURCES[type].secretMode === "relay";
+}
+
 export function isTriggerSourceType(value: unknown): value is TriggerSourceType {
   return typeof value === "string" && (TRIGGER_SOURCE_TYPES as readonly string[]).includes(value);
 }
@@ -207,6 +237,10 @@ export interface TriggerSourceConfig {
   /** GitHub: also run for PR and inline review comments posted by a GitHub
    * app or bot. Off by default so a bot never triggers itself. */
   includeBotComments?: boolean;
+  /** Bot email (2026-10-21, S2): a mail-woken run is confined (no shell,
+   * a card for every write or outbound call, no Always-allow or Full) unless
+   * the owner turns this on for the trigger. Off by default. */
+  allowFullTools?: boolean;
   /** Deliveries accepted per minute before 429 (1 to 120, default 10). */
   rateLimitPerMinute?: number;
   /** Microsoft Graph: only notifications from this tenant are accepted. */

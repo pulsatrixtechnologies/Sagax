@@ -74207,6 +74207,42 @@
           }
         }
       }
+    },
+    "Copy email address": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Copy email address" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Copier l'adresse courriel" } }
+      }
+    },
+    "Email address copied": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Email address copied" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Adresse courriel copiée" } }
+      }
+    },
+    "Waiting for the administrator to turn it on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for the administrator to turn it on" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente d'activation par l'administrateur" } }
+      }
+    },
+    "Mail received at this address only wakes a routine (Bot email trigger).": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mail received at this address only wakes a routine (Bot email trigger)." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le courrier reçu à cette adresse ne réveille qu'une routine (déclencheur Courriel du bot)." } }
+      }
+    },
+    "Bot email": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Bot email" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Courriel du bot" } }
+      }
+    },
+    "Waiting for the administrator to turn it on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting for the administrator to turn it on" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente d'activation par l'administrateur" } }
+      }
     }
   },
   "version": "1.0"

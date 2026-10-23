@@ -53,6 +53,8 @@ private struct PhoneBotPanelContent: View {
 
     @State private var path = NavigationPath()
     @State private var slackURL: URL?
+    /// B21 / CO5 (2026-10-21): the bot's own address from the Perspicax relay.
+    @State private var mailRow: BotInboundMailRow?
     @State private var viewerId = "local-owner"
     @State private var menuOpen = false
     @State private var toast: String?
@@ -183,6 +185,7 @@ private struct PhoneBotPanelContent: View {
             await loadRoutines()
             viewerId = PrimaryBotRules.viewerId(config: await config)
             if gate.allows(.botSlack) { slackURL = await session.profileClient?.slackManagementURL(botId: bot.id) }
+            mailRow = await session.profileClient?.botInboundMail(botId: bot.id)
             #if DEBUG
             await applyParityScreen()
             #endif
@@ -201,6 +204,10 @@ private struct PhoneBotPanelContent: View {
                         .padding(.top, 20)
                     AnyView(overviewCard)
                         .padding(.top, 8)
+                    if let mailRow {
+                        AnyView(emailCard(mailRow))
+                            .padding(.top, Theme.Profile.cardGap + 12)
+                    }
                     AnyView(notificationsCard)
                         .padding(.top, Theme.Profile.cardGap + 12)
                     Color.clear.frame(height: 1).id("panel-end")
@@ -433,6 +440,41 @@ private struct PhoneBotPanelContent: View {
             rows.append(OverviewRow(id: "panel-tab.computer", symbol: "desktopcomputer", title: Text("Computer"), value: computerStatus, page: .computer))
         }
         return rows
+    }
+
+    /// The bot's own email address (B21 / CO5): the address with a copy
+    /// button, then the one rule, or the wait for the administrator (off by
+    /// default). Changing it is on the desktop (the owner's PUT). Absent
+    /// when there is none (solo server, older Perspicax, inbound mail off).
+    private func emailCard(_ row: BotInboundMailRow) -> some View {
+        VStack(spacing: 0) {
+            ProfileCard {
+                ProfileRow(icon: ProfileRowIcon(systemImage: "envelope", size: 16), title: Text("Email address"),
+                           // greyed while the administrator has not turned it on
+                           subtitle: Text(verbatim: row.address).foregroundColor(row.waitingForAdmin ? Theme.textTertiary : Theme.textSecondary),
+                           height: Theme.Profile.routineRow) {
+                    Button {
+                        UIPasteboard.general.string = row.address
+                        Haptics.selection()
+                        show(String(localized: "Email address copied"))
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 15))
+                            .foregroundStyle(Theme.textSecondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Copy email address"))
+                    .accessibilityIdentifier("panel-email-copy")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("panel-email")
+            ProfileFooter(text: row.waitingForAdmin
+                ? "Waiting for the administrator to turn it on"
+                : "Mail received at this address only wakes a routine (Bot email trigger).")
+        }
     }
 
     /// The bot's notifications switch, under the list, with its caption.
