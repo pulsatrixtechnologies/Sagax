@@ -1,5 +1,5 @@
 import { boatCapableEngine } from "@/lib/remote-desktop";
-import { boatComputerEnabled } from "@/lib/feature-flags";
+import { boatComputerEnabled, routinesInConversationEnabled } from "@/lib/feature-flags";
 import {
   useCallback,
   useEffect,
@@ -390,6 +390,9 @@ function EventEditor({
   const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
+  // Post results in the conversation (JC 2026-10-22): the routine's own
+  // choice, else the installation default. Off keeps a run in the background.
+  const [postResults, setPostResults] = useState(existingRoutine?.postResults ?? routinesInConversationEnabled(state.config));
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
   const initialTiming = readTiming(schedule);
   const [timingMode, setTimingMode] = useState<"exact" | "flexible">(initialTiming.mode);
@@ -582,6 +585,7 @@ function EventEditor({
           // Room goals can't carry a report yet, and a one-time run has no next run.
           continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
           onlyWhenPresent,
+          postResults: routineTarget === "bot" ? postResults : undefined,
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
           // Sent only when the person was changed in the dropdown.
@@ -970,6 +974,15 @@ function EventEditor({
               <span>
                 <span className="block text-[12.5px] font-medium text-ink">{t("routines.away.onlyLabel")}</span>
                 <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.away.onlyHelp")}</span>
+              </span>
+            </label>
+          )}
+          {kind === "routine" && !isRoomGoal && (
+            <label data-routine-post-results className="ml-8 flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
+              <input type="checkbox" aria-label={t("routines.postResults.label")} checked={postResults} onChange={(event) => setPostResults(event.target.checked)} className="mt-0.5 accent-accent" />
+              <span>
+                <span className="block text-[12.5px] font-medium text-ink">{t("routines.postResults.label")}</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.postResults.help")}</span>
               </span>
             </label>
           )}

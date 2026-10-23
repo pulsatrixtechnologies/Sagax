@@ -473,6 +473,9 @@ export interface Task {
   threadId: string;
   /** Internal routine execution; reachable through its run receipt, not history menus. */
   routineRunId?: string;
+  /** An automatic "<routine> · Results" thread: listed with threads shown,
+   * never a stream segment, a row under the bot or a dot (2026-10-22). */
+  routineResults?: true;
   /** An AI client's hidden conversation (#291): the server lists it only
    * while it is the open thread; never a dot, a preview or typing dots. */
   hidden?: true;
@@ -1798,7 +1801,7 @@ interface NotificationThreadOwner {
   mainThreadId?: string;
   /** The fields the single stream reads (src/lib/single-stream.ts) ride along
    * when the caller has them; a room's tasks need only their ids. */
-  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown;
+  tasks?: Array<{ threadId: string; createdAt?: number; routineRunId?: unknown; routineResults?: unknown; hidden?: unknown; confidential?: unknown; openedBy?: unknown; parallelOf?: unknown;
     /** What a return reads (src/lib/fresh-topic.ts). */
     updatedAt?: number; busy?: boolean; activity?: string; unread?: boolean; waitingForTeammates?: boolean }>;
 }

@@ -92,6 +92,16 @@ export function isRoutineProblemRun(run: { status: RoutineRunStatus }): boolean 
  * indicators count, or one exact status. */
 export type RoutineRunStatusFilter = "all" | "problems" | RoutineRunStatus;
 
+/** Whether a run shows under a logs status filter. A completed run that had
+ * nothing for the person (`quiet`, 2026-10-22) is listed as Nothing to
+ * report, with the pre-check's quiet runs. */
+export function routineRunMatchesStatus(run: { status: RoutineRunStatus; quiet?: true }, filter: RoutineRunStatusFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "problems") return isRoutineProblemRun(run);
+  const status = run.status === "completed" && run.quiet ? "nothing_to_report" : run.status;
+  return status === filter;
+}
+
 export interface Routine {
   id: string;
   name: string;
@@ -123,6 +133,14 @@ export interface Routine {
   suspended?: { reason: RoutineSuspendReason; at: number };
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** 2026-10-22 (JC): whether this routine's completed runs post their
+   * result message in the person's conversation. `true` posts (as a visible
+   * report, never the prompt); `false`/absent is silent and the result lives
+   * only in Automations. Approvals, questions and errors always surface, and
+   * a NOTHING_TO_REPORT run stays silent, whichever this is. Absent on a new
+   * routine inherits the installation default (features.routinesInConversation);
+   * existing routines were migrated to true so nothing went silent. */
+  postResults?: boolean;
   /** Occurrences skipped while the person was away; `reportedAt` once they
    * are back. Cleared by POST /api/routines/:id/away-seen. */
   awaySkips?: { count: number; firstAt: number; lastAt: number; reportedAt?: number };
@@ -179,6 +197,9 @@ export interface RoutineRun {
   startedAt?: number;
   finishedAt?: number;
   output?: string;
+  /** 2026-10-22: a completed run that had nothing for the person; nothing
+   * was posted to their conversation (server/routine-report.ts). */
+  quiet?: true;
   error?: string;
   /** Set when the run used its one automatic second start, and why. */
   retried?: RoutineRetryCause;
@@ -217,6 +238,9 @@ export interface RoutineInput {
   continuity?: boolean;
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** 2026-10-22: post this routine's results in the conversation. `null`
+   * clears it back to the installation default; omission preserves it. */
+  postResults?: boolean | null;
   attachments?: RoutineContextAttachment[];
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;

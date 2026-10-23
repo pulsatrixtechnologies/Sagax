@@ -123,7 +123,7 @@ import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
-import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
 import { WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
@@ -2258,7 +2258,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
 
-      <SavedMessagesNotice threadId={bot.threadId} archived={bot.tasks?.some((task) => task.threadId === bot.threadId && task.archivedAt != null) === true} />
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
       {!side && <ChatStaleBanner />}

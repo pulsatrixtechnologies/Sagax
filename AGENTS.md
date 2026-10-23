@@ -573,6 +573,51 @@ lui-même." On every server (solo and organization):
   `server/host-lazy-claim.e2e.test.ts`, `server/group-local-vm.e2e.test.ts`,
   `server/place-view.e2e.test.ts`, `server/desktop-bridge.e2e.test.ts`.
 
+## Routine runs work in the background (2026-10-22)
+
+JC: "when routine runs you don't need to show something within the chat or
+the sidebar... simply let it run in the background, just letting know by
+'Handling it' is sufficient. If the routine explicitly says to stay silent
+you don't tell me anything in the chat."
+
+- A run always executes in its own hidden task (`routineRunId`), never in
+  the person's conversation: no `joinConversation`, the old
+  `features.routinesInConversation` switch is ignored and gone from Settings.
+  While queued or running nothing reaches the chat or the sidebar; the bot's
+  status (working dot, "Handling it") is the only live signal.
+- `server/routine-report.ts`: the contract (`ROUTINE_REPORT_CONTRACT`, in
+  `ROUTINE_EXECUTION_PROMPT`) tells the bot to end with `NOTHING_TO_REPORT`
+  when nothing needs the person and never to restate the instructions.
+  `routineReportOutcome` reads the final message (the marker, else a short
+  no-op report, longer when the routine asks for silence, never one with a
+  question); a quiet completed run gets `RoutineRun.quiet` and its note stays
+  in `output` without the marker.
+- `syncRoutineRunToSource` (server/index.ts) posts ONE `routine.run` message
+  per run only when `routineRunReportable`: a report (completed, not quiet),
+  a question or approval card waiting in the run's task (re-synced from
+  `tellThePerson`), a team goal needing input, or a failure. Missed,
+  cancelled, deferred, pre-check `nothing_to_report` and quiet runs post
+  nothing, ring nothing (`done` notification skipped) and mark nothing unread.
+  A message already posted (it waited on the person) is patched in place.
+- The client draws it as the bot's report (`ChatMarkdown`, inert) with a
+  small "Routine: <name> · View run" line (`src/components/RoutineRunCard.tsx`).
+  Automations > Logs lists a quiet run as "Nothing to report"
+  (`routineRunMatchesStatus`). iOS gets the same: nothing is posted or pushed.
+- JC, same day: "I am not in thread mode, everything should be unified in a
+  single chat page." A run for a person (`runAs`, organization server)
+  reports into their own conversation with the bot (`personMainThread`, else
+  `ensureViewerThread`), never a new "<name> · Results" thread. Such threads,
+  old ones included (`markRoutineResultsThreads` at start), carry
+  `routineResults: true`: still listed with threads shown, but never a
+  stream segment, a main thread, a row under the bot, a dot or a preview
+  (`isStreamSegment`, `mainThread`, `taskHiddenFromSidebar`,
+  `taskCountsAsBotUnread`, iOS `BotTask.isHiddenFromPerson`).
+- No "Showing saved messages" banner over an archived conversation
+  (`SavedMessagesNotice` removed); offline keeps `ChatStaleBanner`.
+- Tests: `server/routine-report.test.ts`, `server/routines.test.ts` ("background
+  runs"), `server/routine-silent-runs.e2e.test.ts`, `src/lib/routine-quiet.test.ts`,
+  `src/components/RoutineRunCard.test.ts`.
+
 ## Routines and webhooks: bearer token on every webhook (2026-10-08)
 
 A webhook triggers a MAUS task from outside (`server/webhooks.ts`,

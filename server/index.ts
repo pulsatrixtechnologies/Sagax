@@ -650,6 +650,7 @@ import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { dispatchLoopStop, makeLoopStopSubscriber } from "./loop-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
+import { routineRunReportable } from "./routine-report.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
@@ -9634,7 +9635,7 @@ function finishGroupGoalRun(
       ));
     }
   }
-  if (routineRun?.status === "completed") {
+  if (routineRun?.status === "completed" && !routineRun.quiet && routineEffectivePostResults(routineRun)) {
     const coordinator = store.bot(routineRun.botId);
     if (coordinator) {
       const notificationBot = routineSourceOwner(routineRun)?.bot ?? coordinator;
@@ -15235,6 +15236,10 @@ bus.subscribe((event: RuntimeEvent) => {
           const tellThePerson = () => {
             // the bot is not working now. it is waiting on a person
             if (bot) store.setTaskActivity(bot.id, event.threadId, "waiting-on-you");
+            // A routine run's card waits in its hidden task: its one message in
+            // the person's conversation says so and opens the run (2026-10-22).
+            const waitingRun = routineRun ? routines?.runForThread(event.threadId) : null;
+            if (waitingRun?.status === "waiting") syncRoutineRunToSource(waitingRun);
             else if (asker.busy) store.setActivity(asker.id, "waiting-on-you");
             if (event.requestId) showWaitingOnPersonChip(event.threadId, event.requestId, asker, permission ? "approval" : "answer");
             const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || asker;
@@ -15626,7 +15631,9 @@ bus.subscribe((event: RuntimeEvent) => {
         // A failed peer turn stays a chip too. The bot that delegated is woken
         // with the failure and answers the person in its own thread — buzzing
         // here as well would ring twice for one piece of news.
-        if ((!routineRun || routineRun.status === "completed") && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
+        // A routine run with nothing to report, or one whose routine does not
+        // post results to the conversation, rings nothing (2026-10-22).
+        if ((!routineRun || (routineRun.status === "completed" && !routineRun.quiet && routineEffectivePostResults(routineRun))) && !internal && !computerSelectionTurns.get(event.threadId)?.selected) {
           // the frame carries the bot's avatar so every desktop client can
           // show the notification under that bot's own face
           const completionDetail = routineRun
@@ -20908,6 +20915,28 @@ function legacyResultsThread(routineName: string, task: TaskRecord): boolean {
   return task.title.endsWith(" · Results") || task.title === threadTitleFrom(`${routineName} · Results`);
 }
 
+/** A person's own conversation with a bot on an organization server: the
+ * open thread of theirs they last wrote in (main-thread.ts), never a run's
+ * task, a results thread, a hidden, confidential, parallel or bot-opened one. */
+function personMainThread(bot: BotRecord, principalId: string): string | undefined {
+  const own = threadsShownTo(bot, store.tasks(bot.id), principalId)
+    .filter((task) => !task.routineRunId && task.routineResults !== true && task.hidden !== true && task.confidential !== true && !task.openedBy && !task.parallelOf);
+  return own.length ? mainThread(own, viewerThreadOf(bot, principalId)) : undefined;
+}
+
+/** Automatic "<name> · Results" threads made before 2026-10-22 get the
+ * routineResults mark once: kept, listed with threads shown, but no longer a
+ * row under the bot, a stream segment or a dot with threads hidden. */
+function markRoutineResultsThreads(): void {
+  for (const routine of routines?.listRoutines() ?? []) {
+    if (!routine.resultsThreadId || !routine.botId) continue;
+    const task = store.taskByThread(routine.botId, routine.resultsThreadId);
+    if (task && task.routineResults !== true && !task.routineRunId && legacyResultsThread(routine.name, task)) {
+      store.patchTask(routine.botId, task.threadId, { routineResults: true, unread: false });
+    }
+  }
+}
+
 function routineSourceThread(run: RoutineRun): string | null {
   return routineSourceOwner(run)?.threadId ?? null;
 }
@@ -20935,6 +20964,8 @@ function routineRunFallbackText(card: NonNullable<Message["routineRun"]>): strin
             ? "was cancelled"
             : card.status === "missed"
               ? "was missed"
+              : card.status === "nothing_to_report"
+                ? "had nothing to report"
               : card.status === "queued" && card.deferredAt != null
                 ? "deferred: target busy"
               : card.status
@@ -20942,30 +20973,65 @@ function routineRunFallbackText(card: NonNullable<Message["routineRun"]>): strin
   // Clients without the card (older phones) draw only this line, so it
   // carries what the run said, not just that it finished.
   const detail = card.summary ?? card.error;
+  // A report reads as the bot's own message, the routine named under it.
+  if (card.status === "completed" && (!card.goalStatus || card.goalStatus === "completed") && card.summary) return `${card.summary}\n\nRoutine “${card.routineName}”`;
   return `Routine “${card.routineName}” ${state}${detail ? `\n\n${detail}` : ""}`;
 }
 
-/** Upsert one durable lifecycle card per run. Replaying the same transition,
- * including restart recovery, patches the existing run id instead of adding
- * another chat message. */
+/** An approval or question card in a run's own task waits on the person. */
+function routineRunNeedsPerson(run: RoutineRun): boolean {
+  return Boolean(run.threadId && store.messagesFor(run.threadId).some((message) => message.card && !message.card.answered));
+}
+
+/** Whether this run's routine posts its completed results in the conversation
+ * (JC 2026-10-22): the routine's own choice, else the installation default
+ * (features.routinesInConversation). A deleted routine falls back to the
+ * default. Approvals, questions and errors surface regardless. */
+function routineEffectivePostResults(run: Pick<RoutineRun, "routineId">): boolean {
+  const own = routines?.getRoutine(run.routineId)?.postResults;
+  return own ?? routinesInConversationEnabled(cfg);
+}
+
+/** 2026-10-22 (JC): a run works in the background, in its own hidden task.
+ * Nothing reaches the person's conversation while it is queued or running,
+ * nor when it ends with nothing to report (server/routine-report.ts): no
+ * card, no unread, no sidebar bump; the bot's status shows the work and
+ * Automations keeps the whole record. A run that has something for the
+ * person (its report, a question or approval waiting on them, an error)
+ * posts ONE message, upserted in place by run id, and that conversation
+ * turns unread. Replaying a transition never adds another message. */
 function syncRoutineRunToSource(run: RoutineRun): string | null {
   const source = routineSourceOwner(run);
+  const reportable = routineRunReportable({ ...run, needsPerson: run.status === "waiting" && routineRunNeedsPerson(run), postResults: routineEffectivePostResults(run) });
+  // A bot run's task stays hidden (Automations, Open run) from its start.
+  const execution = run.target === "bot" && run.triggerSource !== "webhook" && run.threadId && run.threadId !== source?.threadId
+    ? store.taskByThread(run.botId, run.threadId)
+    : null;
+  if (execution && run.status === "running" && !execution.routineRunId && store.messagesFor(execution.threadId).length === 0) {
+    // Only a fresh execution, before dispatch adds any transcript. A person
+    // can later promote it by writing in it; replaying or marking the old
+    // receipt seen must never hide that conversation again.
+    store.patchTask(run.botId, execution.threadId, { routineRunId: run.id, unread: false });
+  } else if (source && execution?.routineRunId === run.id && execution.unread) {
+    // Already this run. Clear the dot without rewriting the tag, so a
+    // promoted thread (tag cleared, transcript present) stays visible.
+    store.patchTask(run.botId, execution.threadId, { unread: false });
+  }
   if (!source) {
-    const execution = run.threadId ? store.taskByThread(run.botId, run.threadId) : null;
-    if (execution?.routineRunId === run.id) {
-      store.patchTask(run.botId, execution.threadId, {
-        routineRunId: undefined,
-        ...(["waiting", "completed", "failed", "missed"].includes(run.status) ? { unread: true } : {}),
-      });
-    }
+    // Nowhere to report: a run with something for the person becomes a
+    // conversation of its own; a quiet one stays in Automations.
+    const own = run.threadId ? store.taskByThread(run.botId, run.threadId) : null;
+    if (reportable && own?.routineRunId === run.id) store.patchTask(run.botId, own.threadId, { routineRunId: undefined, unread: true });
     return null;
   }
   const sourceThreadId = source.threadId;
-  const card = routineRunCard(run, sourceThreadId);
-  const text = routineRunFallbackText(card);
   const existing = store.messagesFor(sourceThreadId).find(
     (message) => message.kind === "routine.run" && message.routineRun?.runId === run.id,
   );
+  // Never posted and nothing for the person: the chat is left alone.
+  if (!existing && !reportable) return sourceThreadId;
+  const card = routineRunCard(run, sourceThreadId);
+  const text = routineRunFallbackText(card);
   const statusChanged = existing?.routineRun?.status !== run.status;
   if (existing) {
     store.patchMessage(sourceThreadId, existing.id, { text, routineRun: card });
@@ -20981,27 +21047,8 @@ function syncRoutineRunToSource(run: RoutineRun): string | null {
     }
     store.appendMessage(sourceThreadId, message);
   }
-
-  // Mark only the fresh execution, after its first running card persisted
-  // and before dispatch adds any transcript. A user can later promote it by
-  // sending a normal follow-up; replaying/marking the old receipt seen must
-  // never hide that conversation again.
-  if (run.target === "bot" && run.triggerSource !== "webhook" && run.threadId && run.threadId !== sourceThreadId) {
-    const execution = store.taskByThread(run.botId, run.threadId);
-    const freshExecution = execution && run.status === "running" && !execution.routineRunId &&
-      store.messagesFor(run.threadId).length === 0;
-    if (execution && freshExecution) {
-      store.patchTask(run.botId, run.threadId, { routineRunId: run.id, unread: false });
-    } else if (execution?.routineRunId === run.id && execution.unread) {
-      // Already this run. Clear the dot without rewriting the tag, so a
-      // promoted thread (tag cleared, transcript present) stays visible.
-      store.patchTask(run.botId, run.threadId, { unread: false });
-    }
-  }
-
-  // Merely queueing/running is ambient progress. Attention and terminal
-  // states become unread in the conversation where the user asked for them.
-  if (statusChanged && ["waiting", "completed", "failed", "missed"].includes(run.status)) {
+  // Something for the person turns the conversation unread, once per state.
+  if (reportable && statusChanged) {
     if (source.group) store.patchGroup(source.group.id, { unread: true });
     else store.patchTask(source.bot.id, sourceThreadId, { unread: true });
   }
@@ -21223,16 +21270,11 @@ routines = new RoutineManager({
     }, PREWARM_ENGINE_LEAD_MS + 3 * 60_000);
     if (outcome === "started") console.log(`[prewarm] routine ${routine.id}: engine warming`);
   },
-  joinConversation: (run) => {
-    if (!routinesInConversationEnabled(cfg) || run.target !== "bot") return null;
-    const source = routineSourceOwner(run);
-    // Only this bot's own visible chat. A room, or a teammate's thread, keeps
-    // the detached run so one bot cannot write its work into the wrong place.
-    if (!source || source.group || source.bot.id !== run.botId) return null;
-    // never into a confidential thread (server/confidential-threads.ts)
-    if (store.isConfidentialThread(source.threadId)) return null;
-    return source.threadId;
-  },
+  // 2026-10-22 (JC): no joinConversation. A run never works in the
+  // person's conversation (its instructions would show there as their
+  // message): it runs in its own hidden task and reports at the end, only
+  // when it has something for them (syncRoutineRunToSource). The old
+  // features.routinesInConversation switch is ignored.
   // A run joining a conversation that is working waits for it (queued).
   threadBusy: (botId, threadId) => threadBusy(botId, threadId),
   createGoalTask: (groupId, title) => store.createGroupTask(groupId, title, false),
@@ -21292,13 +21334,21 @@ routines = new RoutineManager({
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's (or nobody's) keeps a results conversation opened as theirs.
     const opener = CLOUD_HOME ? routineOpener(routine.id) : undefined;
-    const main = bot && !bot.hidden && !runAs ? botMainThread(bot.id) : undefined;
+    // 2026-10-22 (JC: "everything should be unified in a single chat
+    // page"): a run for a person reports into their own conversation with
+    // the bot, the one they last wrote in, not a "<name> · Results" thread.
+    // A person with no conversation with this bot yet gets theirs, as
+    // opening the bot would start it.
+    const main = bot && !bot.hidden ? (runAs ? personMainThread(bot, runAs) ?? ensureViewerThread(bot, runAs) : botMainThread(bot.id)) : undefined;
     const mainAllowed = main && !store.isConfidentialThread(main) && (!CLOUD_HOME || (opener === CLOUD_OWNER_KEY && !cloudGuestOpened(main)));
-    const keepChosen = chosen && !chosen.routineRunId && chosen.confidential !== true && !(mainAllowed && legacyResultsThread(routine.name, chosen));
+    const keepChosen = chosen && !chosen.routineRunId && chosen.confidential !== true &&
+      !(mainAllowed && (chosen.routineResults === true || legacyResultsThread(routine.name, chosen)));
     if (keepChosen) return { threadId: chosen.threadId };
     if (mainAllowed) return { threadId: main, main: true };
     if (!CLOUD_HOME && !runAs) return undefined;
     const threadId = store.createTask(routine.botId, `${routine.name} · Results`, false, undefined, undefined, undefined, runAs)?.threadId;
+    // never a segment of the single stream nor a row under the bot
+    if (threadId) store.patchTask(routine.botId, threadId, { routineResults: true });
     if (threadId && opener) threadStarters.set(threadId, opener);
     return threadId ? { threadId } : undefined;
   },
@@ -21443,6 +21493,7 @@ if (CLOUD_HOME && CLOUD_OWNER_KEY && cloudRoutineAuthors) {
 // Whether an oldest thread is someone else's (frozenResultsThread) is known
 // only now: an earlier key of the owner's is theirs once settled.
 routines.clearFrozenResultsThreads();
+markRoutineResultsThreads();
 orgLibrary = new OrgLibrary({
   dataDir: DATA_DIR,
   store,

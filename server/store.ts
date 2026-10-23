@@ -194,7 +194,7 @@ export function toWireTask(task: TaskRecord, botModel: ModelSelection): WireTask
 const TASK_PATCH_FIELDS = [
   "title", "projectId", "modelSelection", "approvalMode", "autoApprove", "alwaysAllow",
   "unread", "lastReadMessageId", "rewound", "archivedAt", "pinned", "pinnedMessageId", "resumeCursors", "lastInstanceId", "cwd",
-  "routineRunId", "surface", "surfaceSource", "snoozedUntil", "link", "linkAuto", "appliedCompactionId", "contextSummaries", "contextFloor", "lastContextModel",
+  "routineRunId", "routineResults", "surface", "surfaceSource", "snoozedUntil", "link", "linkAuto", "appliedCompactionId", "contextSummaries", "contextFloor", "lastContextModel",
   "autoModel", "autoWorkspace", "streamSegment", "segmentDigest",
 ] as const satisfies readonly (keyof TaskRecord)[];
 export type TaskPatch = Partial<Pick<TaskRecord, typeof TASK_PATCH_FIELDS[number]>>;
@@ -657,8 +657,8 @@ export function roomResponders<T extends { id: string; name: string; hidden?: bo
 /** A hidden routine execution is not a conversation the person can open,
  * and an AI client's hidden conversation (`hidden`, #291) is not one they
  * read: neither lights the bot's dot. */
-function taskCountsAsBotUnread(task: { unread?: boolean; routineRunId?: string; hidden?: true; openedBy?: { botId?: string } }): boolean {
-  return Boolean(task.unread) && !task.routineRunId && task.hidden !== true;
+function taskCountsAsBotUnread(task: { unread?: boolean; routineRunId?: string; routineResults?: true; hidden?: true; openedBy?: { botId?: string } }): boolean {
+  return Boolean(task.unread) && !task.routineRunId && task.routineResults !== true && task.hidden !== true;
 }
 
 /** A thread another bot opened on this one (pair, work or an agent ask):

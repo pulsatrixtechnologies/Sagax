@@ -157,8 +157,8 @@ private struct DesktopGeneralAdvancedSettings: View {
         DesktopSettingsGroup {
             DesktopSettingRow(
                 title: Text("Routines in the conversation"),
-                subtitle: Text("Post routine work in the chat instead of a hidden thread."),
-                help: Text("Run a routine in the chat it reports to, as ordinary messages. Off by default: the work stays in a hidden thread, and the chat only gets the status card.")
+                subtitle: Text("The default for whether a new routine posts its result in the conversation."),
+                help: Text("A routine always runs in the background; questions, approvals and errors reach you, and a run with nothing to report stays silent. This is the default for whether a new routine also posts its result as a message. Each routine can override it, and nothing ever posts the routine's instructions.")
             ) {
                 let on = config?.features?.routinesInConversation == true
                 DesktopSwitch(isOn: on, label: Text("Run routines in the conversation"),

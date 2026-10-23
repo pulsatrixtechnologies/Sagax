@@ -8,6 +8,7 @@ import { DATA_DIR } from "./config.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { routineReportOutcome } from "./routine-report.ts";
 import { stopCause } from "./drivers/engine-errors.ts";
 import {
   evaluateRoutinePrecheck,
@@ -157,6 +158,11 @@ export interface Routine {
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts).
    * Absent: runs whether they are there or not. */
   onlyWhenPresent?: boolean;
+  /** 2026-10-22 (JC): post this routine's completed results in the person's
+   * conversation (a visible report, never the prompt). Absent inherits the
+   * installation default (features.routinesInConversation). Approvals,
+   * questions and errors surface whichever this is; a quiet run stays silent. */
+  postResults?: boolean;
   /** Occurrences skipped while the person was away, until dismissed. */
   awaySkips?: RoutineAwaySkips;
   /** Deterministic test run before a scheduled run starts any model turn
@@ -294,6 +300,9 @@ export interface RoutineRun {
   attention?: string;
   /** Why a `nothing_to_report` run had nothing to do. */
   quietReason?: string;
+  /** 2026-10-22: a completed run whose final message had nothing for the
+   * person (server/routine-report.ts): nothing is posted to their chat. */
+  quiet?: true;
   error?: string;
   cost?: number | null;
   denials?: string[];
@@ -363,6 +372,8 @@ export interface RoutineInput {
   overlap?: "skip" | "queue";
   /** Only while the person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** Post results in the conversation; null clears to the installation default. */
+  postResults?: boolean | null;
   /** Omission preserves it; null removes it. */
   precheck?: RoutinePrecheck | null;
   /** Omission preserves routing; null resets it to the bot's main thread. */
@@ -382,6 +393,9 @@ interface RoutineFile {
   webhookRunReceipts?: WebhookRunReceipt[];
   /** Who was told about an owner-only failure (signed out, no credit...), until a run of that bot completes. */
   ownerNotices?: RoutineOwnerNotice[];
+  /** 2026-10-22: existing routines were pinned postResults=true once, so an
+   * upgrade never silences a person's already-visible routine results. */
+  postResultsMigrated?: true;
 }
 
 const webhookRunReceiptSchema = z.object({
@@ -1140,6 +1154,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(continuity ? { continuity: true } : {}),
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(input.onlyWhenPresent === true ? { onlyWhenPresent: true } : {}),
+    ...(typeof input.postResults === "boolean" ? { postResults: input.postResults } : {}),
     ...(precheck ? { precheck } : {}),
   };
 }
@@ -1177,6 +1192,9 @@ export class RoutineManager {
   /** A file from before frozenResultsCleared: clearFrozenResultsThreads has
    * not run on it yet, and no save says it has. */
   private frozenPending = false;
+  /** A file from before postResults existed: its routines have not been
+   * pinned to the old visible behaviour yet, and no save says they have. */
+  private postResultsPending = false;
 
   constructor(options: RoutineManagerOptions) {
     this.options = options;
@@ -1217,11 +1235,13 @@ export class RoutineManager {
               runAs: loadRunAs(routine.runAs),
               suspended: loadSuspension(routine.suspended),
               onlyWhenPresent: routine.onlyWhenPresent === true ? true : undefined,
+              postResults: typeof routine.postResults === "boolean" ? routine.postResults : undefined,
               awaySkips: loadAwaySkips(routine.awaySkips),
               precheck: loadRoutinePrecheck(routine.precheck),
             };
             if (loaded.precheck === undefined) delete loaded.precheck;
             if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
+            if (loaded.postResults === undefined) delete loaded.postResults;
             if (loaded.awaySkips === undefined) delete loaded.awaySkips;
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
@@ -1306,6 +1326,20 @@ export class RoutineManager {
         if (known.has(key)) continue;
         this.webhookRunReceipts.push({ webhookId: run.webhookId, deliveryId: run.deliveryId, runId: run.id, acceptedAt: run.createdAt });
         known.add(key);
+      }
+      // 2026-10-22 (JC): before postResults a routine's completed runs always
+      // posted a card into its conversation. Pin every existing routine to
+      // true once, so an upgrade never makes a person's visible routine go
+      // silent; new routines created after this inherit the installation
+      // default instead. A fresh install reaches the catch below and marks
+      // itself migrated with nothing to pin.
+      this.postResultsPending = disk.postResultsMigrated !== true;
+      if (this.postResultsPending) {
+        for (const routine of this.routines) {
+          if (routine.postResults === undefined) routine.postResults = true;
+        }
+        this.postResultsPending = false;
+        this.save();
       }
     } catch (error) {
       this.routines = [];
@@ -1611,6 +1645,8 @@ export class RoutineManager {
       continuity: patch.continuity ?? routine.continuity,
       overlap: Object.hasOwn(patch, "overlap") ? patch.overlap : routine.overlap,
       onlyWhenPresent: patch.onlyWhenPresent ?? routine.onlyWhenPresent,
+      // null clears it back to the installation default; omission preserves it.
+      postResults: Object.hasOwn(patch, "postResults") ? (patch.postResults ?? undefined) : routine.postResults,
       precheck: Object.hasOwn(patch, "precheck") ? patch.precheck : routine.precheck,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
@@ -1665,6 +1701,9 @@ export class RoutineManager {
       }
       // Switching "Only when I'm here" off forgets what it skipped.
       if (!clean.onlyWhenPresent) { delete routine.onlyWhenPresent; delete routine.awaySkips; }
+      // A cleared postResults (null in the patch) is absent, not false, so it
+      // goes back to inheriting the installation default.
+      if (clean.postResults === undefined) delete routine.postResults;
       if (!clean.precheck) delete routine.precheck;
       if (Object.hasOwn(patch, "timeoutMinutes") && patch.timeoutMinutes == null) {
         delete routine.timeoutMinutes;
@@ -2598,6 +2637,7 @@ export class RoutineManager {
         run.status = "completed";
         run.attention = undefined;
         run.finishedAt = this.now();
+        this.settleReport(run);
         // A run that completes ends the owner's open notices for its bot.
         this.ownerNotices = this.ownerNotices.filter((notice) => notice.botId !== run.botId);
       }
@@ -2609,6 +2649,15 @@ export class RoutineManager {
     this.emitRun(run);
     if (event.type === "turn.completed") queueMicrotask(() => void this.tick());
     return cloneRun(run);
+  }
+
+  /** Whether the completed run has anything for the person (JC 2026-10-22):
+   * a quiet run keeps its note in the logs, without the marker. */
+  private settleReport(run: RoutineRun) {
+    const outcome = routineReportOutcome(run.output);
+    run.output = outcome.report || undefined;
+    if (outcome.quiet) run.quiet = true;
+    else delete run.quiet;
   }
 
   failThread(threadId: string, message: string, facts: RoutineFailureFacts = {}) {
@@ -2660,7 +2709,10 @@ export class RoutineManager {
       run.attention = undefined;
       run.finishedAt = this.now();
       run.error = undefined;
-      if (status !== "stopped") run.output = safeDetail.slice(0, 2_000) || undefined;
+      if (status !== "stopped") {
+        run.output = safeDetail.slice(0, 2_000) || undefined;
+        this.settleReport(run);
+      }
       this.save();
       this.emitRun(run);
     }
@@ -3193,6 +3245,7 @@ export class RoutineManager {
     writeFileAtomic(this.file, JSON.stringify({
       version: 1,
       ...(this.frozenPending ? {} : { frozenResultsCleared: true }),
+      ...(this.postResultsPending ? {} : { postResultsMigrated: true }),
       routines: [...this.routines, ...this.unloadedRoutines],
       runs: this.runs,
       routineRequestReceipts: this.routineRequestReceipts,

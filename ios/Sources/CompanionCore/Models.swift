@@ -644,9 +644,13 @@ public struct BotTask: Codable, Hashable, Sendable {
     /// a link or the bot's activity, never in the list, previews, unread or
     /// notifications.
     public var hidden: Bool? = nil
-    /// Out of the person's thread list: a routine run's execution or an AI
-    /// client's hidden conversation.
-    public var isHiddenFromPerson: Bool { routineRunId != nil || hidden == true }
+    /// An automatic "<routine> · Results" thread (2026-10-22): a routine's
+    /// reports now go to the person's own conversation, so this old thread is
+    /// kept but never listed, previewed or counted unread.
+    public var routineResults: Bool? = nil
+    /// Out of the person's thread list: a routine run's execution, an
+    /// automatic routine results thread or an AI client's hidden conversation.
+    public var isHiddenFromPerson: Bool { routineRunId != nil || routineResults == true || hidden == true }
     /// A confidential thread ("Fil confidentiel"): never remembered,
     /// exported or shared beyond its owner. Permanent once set; only
     /// deleting the thread ends it. Absent means an ordinary thread.
@@ -918,7 +922,7 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
         (AvatarFraming.clampZoom(avatarZoom), AvatarFraming.clampFocus(avatarFocusX), AvatarFraming.clampFocus(avatarFocusY))
     }
 
-    /// Routine results are ordinary tasks; only their per-run executions are hidden.
+    /// Routine runs' executions and automatic results threads are hidden.
     public var visibleTasks: [BotTask] {
         (tasks ?? []).filter { !$0.isHiddenFromPerson }
     }
@@ -1913,6 +1917,10 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     public var redacted: Bool? = nil
     /// Skip scheduled runs while the person is away. Absent means it runs.
     public var onlyWhenPresent: Bool? = nil
+    /// Post this routine's completed result in the conversation (2026-10-22).
+    /// Absent inherits the installation default; a quiet run stays silent and
+    /// questions, approvals and errors always reach the person.
+    public var postResults: Bool? = nil
     /// Skipped runs to report once the person is back.
     public var awaySkips: RoutineAwaySkips? = nil
 }
@@ -1994,6 +2002,9 @@ public struct RoutineInput: Encodable, Sendable {
     /// "Only when I'm here". Nil leaves the stored value alone on an edit
     /// and means off on a create.
     public var onlyWhenPresent: Bool? = nil
+    /// Post results in the conversation. Nil leaves the stored value alone on
+    /// an edit and inherits the installation default on a create.
+    public var postResults: Bool? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",
