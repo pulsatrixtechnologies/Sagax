@@ -105,10 +105,10 @@ function ReferenceFoot() {
           <button
             type="button"
             data-sidebar-connect-apps=""
-            className="sidebar-apps-pill flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
+            className="flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
           >
             <Puzzle size={16} aria-hidden="true" className="shrink-0" />
-            <span className="truncate" data-apps-pill-label>{t("chat.connectApps.pill")}</span>
+            <span className="truncate">{t("chat.connectApps.pill")}</span>
           </button>
           {params.get("pill") !== "0" && <SidebarUpdatePill />}
         </div>
