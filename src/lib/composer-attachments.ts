@@ -342,7 +342,14 @@ export function snapshotClipboardImages(
       if (kept.some((prior) => sameBytes(prior.bytes, shot.bytes))) continue;
       kept.push(shot);
     }
-    return kept.map((shot) => new File([shot.bytes], shot.name, { type: shot.type }));
+    return kept.map((shot) => {
+      // Copy into a plain ArrayBuffer. A Uint8Array view of a shared buffer
+      // is not a BlobPart, and the copy also keeps the upload off the
+      // clipboard's own buffer.
+      const buffer = new ArrayBuffer(shot.bytes.byteLength);
+      new Uint8Array(buffer).set(shot.bytes);
+      return new File([buffer], shot.name, { type: shot.type });
+    });
   });
 }
 
