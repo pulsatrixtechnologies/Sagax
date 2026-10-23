@@ -148,14 +148,15 @@ describe("sidebar header", () => {
     expect(foot).not.toContain("data-sidebar-place=");
     expect(foot).not.toContain(">Browse Bots</span>");
     expect(foot).not.toContain("data-account-name");
-    expect(foot).not.toContain("data-member-line");
+    // Show my title / Show my points are on: the line sits under the name
+    expect(foot).toContain("data-member-line");
     const pill = (foot.match(/<button[^>]*data-sidebar-connect-apps[^>]*>/g) ?? [])[0] ?? "";
     expect(pill).toContain('data-tour="nav-apps"');
     expect(pill).toContain("rounded-full");
     // it gives its label up before the account pill's minimum (styles.css)
     expect(pill).toContain("min-w-0");
     expect(pill).not.toContain("shrink-0");
-    expect(pill).toContain("h-9");
+    expect(pill).toContain("h-[var(--foot-tile-h,2.25rem)]");
     expect(pill).toContain('aria-label="Connect apps"');
     expect(foot).toContain("data-apps-pill-label");
     // the account pill carries the avatar and the name

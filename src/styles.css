@@ -3303,6 +3303,15 @@ button:disabled.bg-danger {
 .sidebar-apps-pill {
   flex: 0 1 auto;
 }
+/* The foot's two tiles (the account pill and this pill) share one height:
+   36px, or 44px while the account pill carries a second line (the title and
+   points under the name). One property on the row, so they cannot differ. */
+[data-sidebar-account-row] {
+  --foot-tile-h: 2.25rem;
+}
+[data-sidebar-account-row]:has([data-account-pill-line]) {
+  --foot-tile-h: 2.75rem;
+}
 .sidebar-apps-pill [data-pill-tiles] {
   margin-inline-start: 0;
 }

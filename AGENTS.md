@@ -4908,6 +4908,9 @@ rules, each covered by `shared/achievements-catalog.test.ts`,
   does: title then points under the name, each only while its switch is on,
   the name centred beside the avatar with both off, and the active routines
   badge always at the right edge of the row, centred (never under the name).
+  The wide foot's account pill (beside the Connect apps pill) shows the same
+  second line; both pills take `--foot-tile-h` (36px, 44px with the line) from
+  the row, so their heights always match.
   Titles and points also show in a person's detail (the person panel, from a
   people row or a DM header, the viewer's own included) and on
   Settings > Achievements. Two switches there, same style, stored in the

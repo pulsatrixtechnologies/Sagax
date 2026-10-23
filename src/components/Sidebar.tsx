@@ -3845,7 +3845,7 @@ function SidebarConnectApps({ onOpen, iconOnly = false, icon }: { onOpen: () => 
       data-tour="nav-apps"
       data-sidebar-connect-apps=""
       onClick={onOpen}
-      className="sidebar-apps-pill flex h-9 min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
+      className="sidebar-apps-pill flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
     >
       <Puzzle size={16} aria-hidden="true" className="shrink-0" />
       <span className="truncate" data-apps-pill-label>{label}</span>
