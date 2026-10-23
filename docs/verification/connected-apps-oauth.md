@@ -9,8 +9,9 @@ pnpm exec vitest run server/index.test.ts -t 'second-account cards|retries aband
 ```
 
 Engine connector sign-in (grok.com and claude.ai) is the connector-setup
-tests in that command. The renderer recipe launches a disposable fake-engine
-workspace and mounts the
+tests in that command.
+
+The renderer recipe launches a disposable fake-engine workspace and mounts the
 actual Apps modal and connector card. Synthetic authorization responses are
 delayed; a disposable HTTPS loopback server supplies the authorization page,
 never a provider. Its temporary certificate and hostname mapping apply only
