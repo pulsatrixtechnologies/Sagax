@@ -74163,6 +74163,50 @@
           }
         }
       }
+    },
+    "Shown in rosters, on the phone and to other bots. Standing instructions go in Personality.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shown in rosters, on the phone and to other bots. Standing instructions go in Personality."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affichée dans les listes, sur le téléphone et aux autres bots. Les instructions permanentes vont dans Personnalité."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exibida nas listas, no telefone e para outros bots. As instruções permanentes ficam em Personalidade."
+          }
+        }
+      }
+    },
+    "Security": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Security"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sécurité"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Segurança"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
