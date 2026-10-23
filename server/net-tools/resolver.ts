@@ -7,7 +7,7 @@ import { lookup as dnsLookup, Resolver } from "node:dns/promises";
 import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
 
-import { isIpv4Literal, isIpv6Literal, isRefusedName } from "../../shared/net-tools/target.ts";
+import { isIpv4Literal, isRefusedName } from "../../shared/net-tools/target.ts";
 import { publicAddressRefusal } from "./guard.ts";
 import type { DnsAnswer, DnsRecord, DnsRecordType, DnsStatus, NetResolver } from "./model.ts";
 

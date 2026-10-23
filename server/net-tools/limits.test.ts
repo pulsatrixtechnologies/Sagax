@@ -69,7 +69,6 @@ describe("rate windows", () => {
     expect(next.ok).toBe(true);
     expect(limiter.count("dns:person:person", TEN)).toBe(1);
     if (next.ok) next.release();
-    next && releases[0]?.();
   });
 
   it("keeps the port day cap after the short window has aged out", () => {
@@ -119,7 +118,7 @@ describe("result cache", () => {
   it("keeps the stored answer and appends how long ago it was checked", () => {
     const cache = new NetResultCache();
     const stored = sample(0);
-    cache.set("dns", stored, 60_000, 0);
+    cache.set("dns", stored, 180_000, 0);
     stored.raw = "mutated";
     const first = cache.get("dns", 60_000);
     expect(first?.raw).toBe("hello\nchecked 1 min ago");

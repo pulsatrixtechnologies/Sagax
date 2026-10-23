@@ -30,7 +30,7 @@ export function memoResolver(resolver: NetResolver): NetResolver {
     cache.set(key, pending);
     return pending;
   };
-  const queryServer = resolver.queryServer;
+  const queryServer = resolver.queryServer?.bind(resolver);
   return {
     query: (name, type, signal) => remember(`${name.toLowerCase()} ${type}`, () => resolver.query(name, type, signal)),
     ...(queryServer
