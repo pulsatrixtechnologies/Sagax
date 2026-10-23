@@ -2212,6 +2212,7 @@
   "engineConnect.connect": "Connecter {name}",
   "engineConnect.connected": "Connecté",
   "engineConnect.disconnect": "Déconnecter",
+  "engineConnect.notConnectedHint": "{name} n'est pas connecté. Connectez-le pour l'utiliser.",
   "engineConnect.notConnected": "Non connecté",
   "engineConnect.paysWith.key": "Payé par : votre clé dans Perspicax",
   "engineConnect.paysWith.orgKey": "Payé par : la clé de l’organisation",

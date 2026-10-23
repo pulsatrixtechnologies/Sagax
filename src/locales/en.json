@@ -2806,6 +2806,7 @@
   "engineConnect.connect": "Connect {name}",
   "engineConnect.connected": "Connected",
   "engineConnect.disconnect": "Disconnect",
+  "engineConnect.notConnectedHint": "{name} is not connected. Connect it to use it.",
   "engineConnect.notConnected": "Not connected",
   "engineConnect.paysWith.key": "Pays with: your key in Perspicax",
   "engineConnect.paysWith.orgKey": "Pays with: the organization key",

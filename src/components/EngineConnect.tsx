@@ -17,19 +17,9 @@ import { perspicaxKeysUrl, type MyEngine } from "@/lib/perspicax-org";
 import { keyProviderDriver } from "@/lib/model-payers";
 import { ClaudeSignIn } from "./ClaudeSignIn";
 import { DeviceSignIn } from "./DeviceSignIn";
-import { MyEngineAccess } from "./settings/MyEngines";
+import { MyEngineAccess, connectName } from "./settings/MyEngines";
 
-/** The name on the Connect button: the account people sign in with. */
-export function connectName(engine: Pick<MyEngine, "driver" | "displayName">): string {
-  switch (engine.driver) {
-    case "codex": return "ChatGPT";
-    case "claudeAgent": return "Claude";
-    case "grokAgent": return "Grok";
-    case "kimiAgent": return "Kimi";
-    case "geminiAgent": return "Gemini";
-    default: return engine.displayName;
-  }
-}
+export { connectName };
 
 /** The one status line: what pays for the person's turns today. */
 export function paysWithText(engine: Pick<MyEngine, "myTurns" | "installed" | "notAvailable">): string {
