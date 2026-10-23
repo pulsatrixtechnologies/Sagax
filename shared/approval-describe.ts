@@ -474,7 +474,7 @@ const RECIPIENT_KEYS = ["to", "cc", "bcc", "toRecipients", "ccRecipients", "reci
 const SHOWN_RECIPIENTS = 3;
 
 /** One recipient as a person reads it. The address always shows: a
- * display name is the sender's to choose ("Ana Tremblay (GOX)" can sit on
+ * display name is the sender's to choose ("Ana Tremblay" can sit on
  * anyone's address), so it only ever comes beside the address, and a name
  * that itself looks like an address or a domain is dropped. */
 function recipientName(value: unknown): string | undefined {

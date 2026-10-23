@@ -1,7 +1,7 @@
 // What a bot can reach on this turn, said once, so "what connectors do you
 // have?" is answered from the context with zero tool calls.
 //
-// JC 2026-10-21: a Grok bot asked "what connector do you have access to
+// 2026-10-21: the reference design asked "what connector do you have access to
 // (mcp)" made 25 search_tool and use_tool calls before answering. The
 // servers, the computer and the browser a turn mounted are already known to
 // the server when it builds the prompt: one short line names them.

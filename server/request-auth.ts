@@ -701,7 +701,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // like a routine. Server-side, webhookDelegateRefusal keeps a member off an
   // admin's bot and off a Microsoft trigger, and the create handler refuses a
   // non-admin a run target on the shared server (server/exec-target.ts
-  // webhookExecTargetAdminOnly). 2026-10-22 (JC): a normal user must be able
+  // webhookExecTargetAdminOnly). 2026-10-22 a normal user must be able
   // to use this basic bot feature without the server-settings right.
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
   { methods: ["POST"], path: /^\/api\/webhooks$/ },
@@ -882,7 +882,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   // backup.workspace: the export, never the restore
   { methods: ["GET", "POST"], path: /^\/api\/workspace-backup\/(?:status|client-state|export|download\/[\w.-]{1,200})$/, permission: "backup.workspace" },
   // server.settings
-  // 2026-10-22 (JC): the config write opens to EITHER server.settings (the
+  // 2026-10-22 the config write opens to EITHER server.settings (the
   // whole installation) OR server.experimental (the switches of Settings >
   // Experimental only). The two are separate rights; any one admits the
   // request at the gate. The handler then holds a caller who lacks

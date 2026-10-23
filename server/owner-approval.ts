@@ -509,15 +509,15 @@ export function scopeRemembers(scope: RuleScope): boolean {
  * undefined when nothing safe can be kept.
  * - an ordinary card (no `from`): the target, a command as its one program;
  * - a card that never had a rule (`from`: an admin's, a held one, a turn
- *   that is not the person's own) keeps the whole request, every argument;
- * - 2026-10-21 (JC: "Toujours permettre" on a member's bot must stick): on
- *   an admin's card (or a holder's), the engine's own shell line is kept like
- *   on a solo bot, as its one program in its folder (else its exact text),
- *   for that bot only; the engine writes a new `description` beside each
- *   command, so the whole request never matched again;
+ * that is not the person's own) keeps the whole request, every argument;
+ * - 2026-10-21 ("Toujours permettre" on a member's bot must stick): on
+ * an admin's card (or a holder's), the engine's own shell line is kept like
+ * on a solo bot, as its one program in its folder (else its exact text),
+ * for that bot only; the engine writes a new `description` beside each
+ * command, so the whole request never matched again;
  * - review of #938: a held card (a safety hold, a sandbox widening, Codex
- *   additional permissions or network, requiresExplicitApproval) keeps the
- *   whole request even when it is an admin's card. */
+ * additional permissions or network, requiresExplicitApproval) keeps the
+ * whole request even when it is an admin's card. */
 export function cardRuleCandidate(
   call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
   situation: { from?: RuleSituation; held?: boolean },

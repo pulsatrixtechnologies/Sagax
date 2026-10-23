@@ -608,7 +608,7 @@ export const ROUTINE_CONVERSATION_HEADER = "x-sagax-conversation";
 /** WireMessage.routineToggle: a routine change this turn made, as one quiet
  * line in the conversation. `enabled`/`disabled` group every routine a turn
  * turned on or off into one count line ("Disabled · 5 routines"). `created`/
- * `updated`/`deleted` (2026-10-21, JC) are a bot touching a routine's
+ * `updated`/`deleted` (2026-10-21) are a bot touching a routine's
  * definition: one named line each ("Updated routine · <name>"), the name never
  * a UUID (shared/human-id.ts). */
 export interface RoutineToggleEvent {
@@ -840,7 +840,7 @@ export interface WireMessage {
    * reviews and publishes it from. `text` is the fallback line. */
   pagePublish?: { pageId: string; version: number; title: string };
   /** An outward action that costs money or reaches a real person, on its
-   * approval card (parité Grok Bot V4, 59, 83): a phone call
+   * approval card (parité the reference design V4, 59, 83): a phone call
    * (server/outbound-calls.ts) or a purchase (server/credential-vault.ts).
    * `text` is the fallback line. */
   outbound?: OutboundCard;

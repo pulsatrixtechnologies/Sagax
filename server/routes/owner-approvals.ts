@@ -36,7 +36,7 @@ export interface OwnerApprovalRouteDeps {
   /** A bot's name for the list (a rule saved on a bot someone else owns,
    * an admin's rule on a member's bot), or undefined when it is gone. */
   botName?: (botId: string) => string | undefined;
-  /** 2026-10-21 (JC): the rules saved on an admin's card of this bot
+  /** 2026-10-21 the rules saved on an admin's card of this bot
    * (`from: "admin"`) by someone else, that this person may see and remove:
    * the bot's owner and an organization admin. Empty for anyone else. */
   sharedBotRules?: (personId: string, botId: string) => OwnerRule[];
@@ -107,7 +107,7 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         const name = row.botId && deps.botName ? deps.botName(row.botId) : undefined;
         return name ? { ...row, botName: name } : row;
       });
-      // 2026-10-21 (JC): an Always allow saved on an admin's card of this
+      // 2026-10-21 an Always allow saved on an admin's card of this
       // bot by someone else is listed too, to remove (never to edit)
       const shared = botId ? (deps.sharedBotRules?.(me, botId) ?? []).filter((row) => !same(row.ownerId, me)) : [];
       const own = owned ? deps.store.rulesOf(me, botId) : deps.store.rulesOf(me).filter((row) => row.botId === botId);
@@ -185,7 +185,7 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
         if (refused) return json(res, refused.status, refused.body);
       }
       if (method === "DELETE") {
-        // 2026-10-21 (JC): the bot's owner or an admin removes an Always
+        // 2026-10-21 the bot's owner or an admin removes an Always
         // allow someone else saved on an admin's card of that bot
         const shared = existing ? undefined : deps.store.adminRuleById(id);
         if (shared?.botId && deps.sharedBotRules?.(me, shared.botId).some((row) => row.id === id && !same(row.ownerId, me))) {

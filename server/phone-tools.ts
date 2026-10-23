@@ -422,7 +422,7 @@ export function createPhoneToolBroker(deps: PhoneToolBrokerDeps): PhoneToolBroke
   };
 }
 
-/** Whose phone a turn may use, or why not. Owner-only (JC 2026-10-21):
+/** Whose phone a turn may use, or why not. Owner-only (2026-10-21):
  * the person speaking in their own 1:1 conversation with a bot they own,
  * in a turn they started. Never a room, never another member's bot, never
  * a routine or a bot asking a bot (nobody is there to hold the phone). */

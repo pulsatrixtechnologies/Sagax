@@ -3,7 +3,7 @@
 //
 // Grok defers every MCP tool behind search_tool and use_tool. A bot asked
 // "what connector do you have access to (mcp)" searched each server, then
-// called tools one by one to see what they did (JC 2026-10-21: 25 calls).
+// called tools one by one to see what they did (2026-10-21: 25 calls).
 // Each search is a full model round over the whole context (~20k tokens on
 // grok 1.0.62). Sagax already asks Grok for its catalog before every prompt
 // (`_x.ai/mcp/list`, grok.ts configureSession): it lists every server, its

@@ -27,8 +27,8 @@
   {
     "term": "initials",
     "files": "^dist/assets/[^/]+\\.js$",
-    "context": "(?:[\\w$]\\(|[-+*/%<>^~,!=;{}:?&|]|return |function |break |continue |case |=>)[A-Za-z]{2}(?:[-+*/%<>^~(=;,)\\]}:]|\\.[A-Za-z$])",
-    "reason": "A two-letter variable or label name the minifier picked in the built web bundle (for example `function XY(e,t)`, `i-XY(e)`, `.some(XY)` or `XY:{...break XY}`), not prose: comments are stripped there. Matched in any case, with any operator around it."
+    "context": "(?:[\\w$]\\(|[-+*/%<>^~,!=;{}:?&|(]|return |function |break |continue |case |=>)[A-Za-z]{2}(?:[-+*/%<>^~(=;,)\\]}:]| as |\\.[A-Za-z$])",
+    "reason": "A two-letter variable or label name the minifier picked in the built web bundle (for example `function XY(e,t)`, `i-XY(e)`, `.some(XY)`, `XY:{...break XY}`, `(0,$.jsx)(XY,{` or `XY as r`), not prose: comments are stripped there. Matched in any case, with any operator around it."
   },
   {
     "term": "grok-bot",
@@ -81,5 +81,16 @@
     "files": "^dist-server/self-knowledge/knowledge\\.generated\\.json$",
     "context": "shared/fixtures/grok-import/shared-grok-bot\\.json",
     "reason": "Path of the importer's test fixture (a sample export of a bot shared on x.ai), cited in the agent notes."
+  },
+  {
+    "term": "initials",
+    "files": "\\.(?:png|jpe?g|gif|webp|avif|ico|icns|bmp|tiff?|woff2?|ttf|otf|wasm|onnx|mp3|mp4|ogg|wav|webm)$",
+    "context": "[^A-Za-z0-9_\\s][A-Za-z]{2}[^A-Za-z0-9_\\s]",
+    "reason": "Two letters inside a printable run of a compressed binary, with a symbol on each side. A real word with a space or a letter beside it is still refused."
+  },
+  {
+    "term": "grok-bot",
+    "context": "[\"']grok[\"'],\\s*[\"']grok bot[\"']",
+    "reason": "The on-screen name in the list of apps that never get a standing one-app rule, kept as the quoted pair so that app stays on the denylist. A comment that merely says the product name does not match."
   }
 ]

@@ -29,7 +29,7 @@ export interface StreamTaskFacts {
  * (a job or a pair conversation, reached by its own link) or a parallel task
  * (its card and result already sit in the conversation that asked). */
 export function isStreamSegment(task: StreamTaskFacts): boolean {
-  // nor an automatic routine results thread (2026-10-22, JC: "everything
+  // nor an automatic routine results thread (2026-10-22: "everything
   // should be unified in a single chat page")
   return !task.routineRunId && task.routineResults !== true && task.hidden !== true && task.confidential !== true && !task.openedBy && !task.parallelOf;
 }

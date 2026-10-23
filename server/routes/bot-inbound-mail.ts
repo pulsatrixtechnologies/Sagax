@@ -4,10 +4,10 @@
 // trigger editor. `{ available, address, enabled, canChange }`:
 // `available: false` on a solo server, an older Perspicax, inbound mail
 // off, or any failure (the app then shows nothing). `enabled: false` is an
-// address waiting for the administrator (off by default, JC decision 1).
+// address waiting for the administrator (off by default decision 1).
 // The address is not an id; it may be shown and copied.
 //
-// PUT /api/bots/:id/inbound-mail { localPart } (v2, JC decision 4): the
+// PUT /api/bots/:id/inbound-mail { localPart } (v2 decision 4): the
 // bot's OWNER picks the part before the @. Checked here first (the person
 // acting owns the bot, the format), then Perspicax checks uniqueness and
 // reserved names with the owner's Perspicax user id. One audit row

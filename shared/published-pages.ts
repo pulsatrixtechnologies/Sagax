@@ -49,7 +49,7 @@ export const PAGE_LIMITS = {
   commentChars: 2000,
   /** Annotations kept in the viewer and sent in one message. */
   annotations: 50,
-  /** Reader comments (JC 2026-10-21): kept per page, waiting per page, the
+  /** Reader comments (2026-10-21): kept per page, waiting per page, the
    * name and text a reader may write, and posts per address per window. */
   readerComments: 200,
   readerCommentsPending: 50,

@@ -1,7 +1,7 @@
 // Mail, calendar, Teams and SharePoint through the connectors the engines
-// already bring (parité R9 + R11, JC 2026-10-21): the claude.ai connectors
+// already bring (parité R9 + R11 2026-10-21): the claude.ai connectors
 // of the speaker's own Claude account (server/harness-connectors.ts) and
-// the cloud connectors of the xAI account a Grok bot runs on
+// the cloud connectors of the xAI account the reference design runs on
 // (shared/grok-cloud-connectors.ts). Sagax registers no Microsoft 365 or
 // Entra app of its own for any of this.
 //

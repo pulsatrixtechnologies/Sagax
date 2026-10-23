@@ -309,7 +309,7 @@ const definitions = [
       fr: "Changer les réglages de l'installation, les webhooks, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils, la fenêtre de rattachement intérimaire et les clés de fournisseurs du serveur (OpenRouter, OpenAI, Anthropic, voix...) restent aux admins.",
     },
   },
-  // 2026-10-22 (JC): the experimental features of the server (Settings >
+  // 2026-10-22 the experimental features of the server (Settings >
   // Experimental), delegable on its own. It governs who sees and toggles the
   // early features there (skill authoring, the built-in browser, connected
   // apps, the decision model, the data window, the meeting notetaker). These

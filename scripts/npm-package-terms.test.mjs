@@ -110,6 +110,10 @@ describe("npm package term scan", () => {
     expect(blocked('"grokImport.title":`Import a Grok Bot`', "dist/assets/i18n-abc.js")).toEqual([]);
     expect(blocked("// as Grok Bot's sidebar does", "dist-server/index.js")).toEqual(["grok-bot"]);
     expect(blocked('throw new B(`That is not a Grok Bot export.`)', "dist/assets/Sidebar-abc.js")).toEqual(["grok-bot"]);
+    const pair = '"grok", "grok bot"';
+    expect(blocked(pair, "dist-server/shared/computer-app.js")).toEqual([]);
+    expect(blocked(pair, "dist-server/index.js")).toEqual([]);
+    expect(blocked("a grok bot in a comment", "dist-server/shared/computer-app.js")).toEqual(["grok-bot"]);
   });
 
   it("allows a minified two-letter variable only in the web bundle", () => {
@@ -120,6 +124,10 @@ describe("npm package term scan", () => {
     expect(blocked(code, "dist-server/index.js")).toEqual(["initials", "initials"]);
     expect(blocked("o=Yc(e,Math.max(0,i-PQ(e)))", "dist/assets/dist-1.js")).toEqual([]);
     expect(blocked("o=Yc(e,Math.max(0,i-PQ(e)))", "dist-server/index.js")).toEqual(["initials"]);
+    expect(blocked("(0,$.jsx)(PQ,{name:1})", "dist/assets/chunk-1.js")).toEqual([]);
+    expect(blocked("Kc as qt,PQ as r,i_ as rt", "dist/assets/chunk-1.js")).toEqual([]);
+    expect(blocked("(0,$.jsx)(PQ,{name:1})", "dist-server/index.js")).toEqual(["initials"]);
+    expect(blocked("Kc as qt,PQ as r", "dist-server/index.js")).toEqual(["initials"]);
   });
 
   it("allows a bot-like given name only inside the new-bot dialog's list of given names", () => {
@@ -145,6 +153,10 @@ describe("npm package term scan", () => {
     writeFileSync(join(dir, "clean.js"), "export {};\n");
     const result = scanPackage(dir, allowlist);
     expect(result.blocked.map((hit) => `${hit.file}:${hit.term}`)).toEqual(["dist/a.js:company", "font.woff2:bot-name", "image.png:company"]);
+    writeFileSync(join(dir, "a.webp"), Buffer.concat([Buffer.from([0, 1]), Buffer.from("h@`PQ(OB#^)?"), Buffer.from([0])]));
+    writeFileSync(join(dir, "b.png"), Buffer.concat([Buffer.from([0x89, 0]), Buffer.from(" note PQ here today \0")]));
+    const again = scanPackage(dir, allowlist);
+    expect(again.blocked.map((hit) => `${hit.file}:${hit.term}`)).toEqual(["b.png:initials", "dist/a.js:company", "font.woff2:bot-name", "image.png:company"]);
   });
 
   it("refuses a file with a NUL byte that is not a known binary type, instead of skipping it", () => {

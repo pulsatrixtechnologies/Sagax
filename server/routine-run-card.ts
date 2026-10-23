@@ -18,7 +18,7 @@ export function routineRunCard(run: RoutineRun, cardThreadId?: string): RoutineR
     routineId: run.routineId,
     routineName: redactSecretsInText(run.routineName),
     scheduledFor: run.scheduledFor,
-    // A run quiet at the end (nothing for the person, JC 2026-10-22) whose
+    // A run quiet at the end (nothing for the person 2026-10-22) whose
     // message was already posted while it waited on them reads as such.
     status: run.status === "completed" && run.quiet ? "nothing_to_report" : run.status,
   };

@@ -1,5 +1,5 @@
 // Where a member bot's commands, code and actions run on an organization
-// server, and who may target the shared server (JC, 2026-10-22).
+// server, and who may target the shared server (2026-10-22).
 //
 // A member-owned bot's own computer is its server environment
 // (sagax-environment, one isolated Linux sandbox per person), the Local VM or
@@ -7,7 +7,7 @@
 // host shell (Bash, shell, ...) runs on the SHARED organization server, which
 // is an admin's to drive.
 //
-// JC: a bot must run on its OWN computer by default and never assume it can
+// Decision: a bot must run on its OWN computer by default and never assume it can
 // run on the shared server; and only an admin may target the shared server.
 // So a member bot's server command no longer waits for an admin in a dead
 // end. When a non-admin drives the turn:
