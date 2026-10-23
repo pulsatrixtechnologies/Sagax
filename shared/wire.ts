@@ -13,6 +13,7 @@ import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
 import type { DataBroadcast } from "./data-surface.ts";
 import type { ApprovalMode } from "./approval-mode.ts";
+import type { ProactiveMode } from "./proactive-mode.ts";
 import type { ToolScope } from "./tool-scope.ts";
 import type { CommandAllowlistCandidate } from "./command-allowlist.ts";
 import type { CustomRuleCandidate, CustomRuleNotice } from "./custom-rules.ts";
@@ -29,6 +30,8 @@ import type { CwAction } from "./cw-widgets/actions.ts";
 import type { MessageReaction } from "./reactions.ts";
 import type { BotCatalogListing } from "./bot-catalog.ts";
 import type { RemoteSessionView } from "./remote-session.ts";
+import type { ResourceUsageView } from "./resource-usage.ts";
+import type { ConnectorSetupView } from "./connector-setup.ts";
 import type { BotPublicProfile } from "./bot-public-profile.ts";
 import type { CredentialTargetId } from "./credential-request.ts";
 import type { VaultLoginTarget, VaultRequestCardData } from "./credential-vault.ts";
@@ -41,6 +44,7 @@ import type { SkillRequestCardData } from "./skill-request.ts";
 import type { QuestionRequestCardData } from "./ask-question.ts";
 import type { RoutineRunCardData } from "./routine-run.ts";
 import type { WidgetPayload } from "./widget.ts";
+import type { AppPayload } from "./app.ts";
 import type { GroupGoalRunCardData } from "./group-goal-run.ts";
 import type { RuntimeEvent } from "./runtime-events.ts";
 import type { Notification } from "./notification.ts";
@@ -160,6 +164,11 @@ export interface WireTask {
   projectId?: string;
   /** Detached routine execution, reachable through its visible results card. */
   routineRunId?: string;
+  /** An automatic "<routine> · Results" thread (2026-10-22): kept and listed
+   * with threads shown, but never a segment of the single stream, never a row
+   * under the bot with threads hidden, never unread. New reports go to the
+   * person's own conversation instead. Only `true` is stored. */
+  routineResults?: true;
   /** A hidden conversation: an AI client (the Perspicax MCP `sagax_send`,
    * the member API) works with the bot here on the person's behalf, the way
    * Grok Bot keeps its subagents' conversations out of the chat (#291). Never
@@ -281,15 +290,6 @@ export interface InstalledPackageMetadata {
 
 /** One service's connector tool grant: `"*"` widens to every tool on the
  * service, an explicit list names exact tools. */
-export interface ConnectorToolGrant {
-  tools: "*" | string[];
-}
-
-/** Lowercased Composio service slug, e.g. `gmail`. */
-export const CONNECTOR_SLUG_PATTERN = /^[a-z0-9][a-z0-9_-]{0,80}$/;
-/** Composio tool names are upper-snake, e.g. `GMAIL_SEND_EMAIL`. */
-export const CONNECTOR_TOOL_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
-
 /** A bot as a client may see it. Wire form: no provider session
  * bookkeeping (resumeCursors), no elevation journal (approvalGrant), no
  * settlement receipts (lastProfileRequestId, lastTeamSetupReceipt); the
@@ -401,6 +401,10 @@ export interface WireBot {
    * (server/org-full-access.ts). Later grants by that person skip it. */
   fullAccessConsent?: { principalId: string; at: number };
   approvalMode?: ApprovalMode;
+  /** How autonomously this bot may act on its own (shared/proactive-mode.ts):
+   * absent/"off" = never; "propose", "read-auto" and "follow-rules" each gate
+   * a proactive step through our approval model. Never a Chief orchestrator. */
+  proactiveMode?: ProactiveMode;
   /** Tools this bot may always use without asking. */
   alwaysAllow?: string[];
   /** Speak this bot's replies aloud as they settle, without being asked. */
@@ -415,6 +419,10 @@ export interface WireBot {
   emailDrafts?: boolean;
   /** Whether this bot uses native memory. Absent/true = enabled. */
   memoryEnabled?: boolean;
+  /** How far this bot's team-memory cards travel (shared/team-memory-sharing.ts):
+   * absent or "shared", every member of its section; "private", only the
+   * members who see this bot and the card's conversation or channel. */
+  teamMemorySharing?: "shared" | "private";
   /** Queue direct-chat messages behind outstanding delegated work. */
   parkDirectMessages?: boolean;
   /** true after an edit/branch-switch rewound the visible conversation. */
@@ -441,14 +449,6 @@ export interface WireBot {
    * `bot:<id>`, `email:<address>`, `phone:+<digits>`
    * (shared/allowed-recipients.ts). Anyone else keeps the card. */
   allowedRecipients?: string[];
-  /** Whether this bot may use the workspace's connected apps. */
-  composio?: boolean;
-  /** Which connected-app tools this bot may call, by service slug. Absent
-   * defers to the legacy `composio` boolean above (unset/true = every tool,
-   * false = none); an explicit `{}` grants no tools. Grants never travel in
-   * shareable exports and imported bots always land with none. */
-  connectorTools?: Record<string, ConnectorToolGrant>;
-  connectorScopes?: { apps: Record<string, "read" | "write"> };
   outbound?: { policy: "ask" | "allow"; dailyCap: number };
   /** Ordered backups used only by opt-in, pre-prompt startup recovery. */
   fallback?: Array<{ instanceId: string; model: string }>;
@@ -605,13 +605,19 @@ export interface VoiceCallMark {
  * writes its "Disabled · 1 routine" line (server/routine-chat-events.ts). */
 export const ROUTINE_CONVERSATION_HEADER = "x-sagax-conversation";
 
-/** WireMessage.routineToggle: the routines one turn turned on or off. */
+/** WireMessage.routineToggle: a routine change this turn made, as one quiet
+ * line in the conversation. `enabled`/`disabled` group every routine a turn
+ * turned on or off into one count line ("Disabled · 5 routines"). `created`/
+ * `updated`/`deleted` (2026-10-21, JC) are a bot touching a routine's
+ * definition: one named line each ("Updated routine · <name>"), the name never
+ * a UUID (shared/human-id.ts). */
 export interface RoutineToggleEvent {
-  action: "enabled" | "disabled";
+  action: "enabled" | "disabled" | "created" | "updated" | "deleted";
   /** The user message that started the turn (the line groups by it); the
    * thread's first message id, or "", when no person spoke first. */
   turnKey: string;
-  /** In the order they changed; the name as it was then. */
+  /** In the order they changed; the name as it was then. The created/updated/
+   * deleted lines carry exactly one routine. */
   routines: Array<{ id: string; name: string; botId?: string; groupId?: string; runAs?: string }>;
 }
 
@@ -635,7 +641,7 @@ export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "connector" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "routines";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines";
   text?: string;
   /** kind "routines" (2026-10-15): one compact line in the conversation
    * saying this turn turned routines on or off (server/routine-chat-events.ts).
@@ -675,7 +681,11 @@ export interface WireMessage {
    * `text` is always its readable fallback, for clients that do not know
    * the kind. */
   widget?: WidgetPayload;
-  connector?: ConnectorCardData;
+  /** app rows (kind "app"): a bot-authored live HTML surface (shared/app.ts),
+   * drawn in the sandboxed app frame and replaced in place by update_html.
+   * `text` is always its readable fallback, for clients that do not know
+   * the kind. */
+  app?: AppPayload;
   secret?: SecretRequestCardData;
   /** One idempotently updated status card for a routine run. */
   routineRun?: RoutineRunCardData;
@@ -715,6 +725,10 @@ export interface WireMessage {
     /** 2026-10-19: a usage limit sent the turn to another engine, or it
      * came back (shared/limit-failover.ts); drawn in the reader's language. */
     limitFailover?: LimitFailoverLine;
+    /** 2026-10-21 (review of #943): a request ran on another engine that
+     * has the connector it needed (server/connector-switch.ts); drawn in
+     * the reader's language. */
+    connectorSwitch?: { engine: string; connector: string };
   };
   /** A bot line a "post" webhook wrote: whoever called the webhook chose
    * its words. On a Cloud home a conversation holding one is someone else's
@@ -825,6 +839,11 @@ export interface WireMessage {
   /** A bot's page proposal (shared/published-pages.ts): the card the person
    * reviews and publishes it from. `text` is the fallback line. */
   pagePublish?: { pageId: string; version: number; title: string };
+  /** An outward action that costs money or reaches a real person, on its
+   * approval card (parité Grok Bot V4, 59, 83): a phone call
+   * (server/outbound-calls.ts) or a purchase (server/credential-vault.ts).
+   * `text` is the fallback line. */
+  outbound?: OutboundCard;
   /** A published Data result, linked to its bot's main viewer. */
   dataResult?: { botId: string; cardId: string; title: string; kind: "table" | "chart" | "text"; sql?: string };
   /** user messages: the Data result the person was viewing when they sent
@@ -843,6 +862,11 @@ export interface WireMessage {
   terminalEmbed?: TerminalEmbed;
   /** A Tailcat remote-support session. The tunnel address is never on this object. */
   remoteSession?: RemoteSessionView;
+  /** A live usage card (shared/resource-usage.ts), shown only when asked. Labels only. */
+  resourceUsage?: ResourceUsageView;
+  /** "Connect Microsoft Teams" (shared/connector-setup.ts): a sign-in page on
+   * grok.com or claude.ai, opened by the person. The row's text is its fallback. */
+  connectorSetup?: ConnectorSetupView;
 }
 
 export interface OptionCardData {
@@ -1033,21 +1057,6 @@ export interface LiveSettings {
   voice: string;
   readTypedReplies: boolean;
   idleMinutes: number;
-}
-
-export interface ConnectorCardData {
-  /** Composio toolkit slug. It is validated server-side before every action. */
-  slug: string;
-  label: string;
-  description: string;
-  status: "required" | "authorizing" | "connected" | "failed";
-  /** Cards created by one agent request resume together after all connect. */
-  resumeKey: string;
-  /** Account alias supplied by the agent when adding a second account. */
-  alias?: string;
-  error?: string;
-  dismissed?: boolean;
-  resumed?: boolean;
 }
 
 export interface SecretRequestCardData {
@@ -1337,3 +1346,55 @@ export type ServerFrame =
   /** The config status object spread flat into the frame; its full typing
    * is the deferred client-model extraction (see j1-phase-bc-progress). */
   | ({ kind: "config" } & Record<string, unknown>);
+
+/** One line of what a purchase buys: an article, or a flight. */
+export interface PurchaseLine {
+  name: string;
+  quantity?: number;
+  /** "12.50", the line's own price when the page shows one. */
+  price?: string;
+}
+
+export interface PurchaseFlight {
+  from: string;
+  to: string;
+  /** YYYY-MM-DD */
+  date: string;
+  flight?: string;
+  passenger?: string;
+}
+
+/** The card of an outward action (WireMessage.outbound). Never a card
+ * number, never a security code, never an id in its words. */
+export interface OutboundCard {
+  kind: "call" | "purchase";
+  /** The record the answer goes to: call_... or pay_... (never shown). */
+  id: string;
+  status: "pending" | "approved" | "denied" | "done" | "failed";
+  botName: string;
+  /** A call: the full number (the person's own card), the line it comes
+   * from, why, the exact words, the language. */
+  destination?: string;
+  from?: string;
+  /** The callback number the call says (the organization's). */
+  callback?: string;
+  purpose?: string;
+  script?: string;
+  language?: "fr" | "en";
+  /** A purchase: the shop, the amount, the card's brand and last four
+   * digits, what it buys, and once done, the receipt. */
+  merchant?: string;
+  amount?: string;
+  currency?: string;
+  cardLabel?: string;
+  items?: PurchaseLine[];
+  flights?: PurchaseFlight[];
+  orderRef?: string;
+  /** The receipt is what the bot declared, not read by Sagax from the page. */
+  declared?: boolean;
+  /** The total the shop confirmed, when it is not the approved amount. */
+  mismatchTotal?: string;
+  /** Who answered for the person (their Primary Bot). */
+  via?: string;
+  error?: string;
+}

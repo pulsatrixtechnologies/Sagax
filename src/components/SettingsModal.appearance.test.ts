@@ -16,6 +16,10 @@ const fixture = vi.hoisted(() => ({
   setShowThreads: vi.fn(),
   setThreadsLocation: vi.fn(),
   showRunCard: true,
+  showSuggestions: true,
+  showAllHistory: false,
+  setShowSuggestions: vi.fn(),
+  setShowAllHistory: vi.fn(),
   setShowRunCard: vi.fn(),
   sidebarDensity: "comfortable" as "comfortable" | "compact" | "icons",
   setSidebarDensity: vi.fn(),
@@ -47,6 +51,12 @@ vi.mock("@/lib/thread-preferences", () => ({
   setShowThreads: fixture.setShowThreads,
   useThreadsLocationChoice: () => "header",
   setThreadsLocation: fixture.setThreadsLocation,
+}));
+vi.mock("@/lib/panel-visibility", () => ({
+  useShowSuggestions: () => fixture.showSuggestions,
+  setShowSuggestions: fixture.setShowSuggestions,
+  useShowAllHistory: () => fixture.showAllHistory,
+  setShowAllHistory: fixture.setShowAllHistory,
 }));
 vi.mock("@/lib/run-card-preferences", () => ({
   useShowRunCard: () => fixture.showRunCard,
@@ -97,6 +107,8 @@ beforeEach(() => {
   fixture.section = "appearance";
   fixture.showThreads = true;
   fixture.showRunCard = true;
+  fixture.showSuggestions = true;
+  fixture.showAllHistory = false;
   fixture.sidebarDensity = "comfortable";
   fixture.notificationSounds = true;
   fixture.nudgeSound = true;
@@ -117,6 +129,20 @@ afterEach(() => {
 const render = () => renderToStaticMarkup(createElement(SettingsModal));
 
 describe("Settings → Appearance", () => {
+  it("has the Suggestions and All history switches wired to the panel preferences", () => {
+    const html = render();
+    expect(html).toContain("Show suggestions");
+    expect(html).toContain("Show All history");
+    const suggestions = fixture.switches.find((props) => props["aria-label"] === "Show the Suggestions card in the bot panel")!;
+    expect(suggestions.checked).toBe(true);
+    suggestions.onClick!({} as never);
+    expect(fixture.setShowSuggestions).toHaveBeenCalledWith(false);
+    const history = fixture.switches.find((props) => props["aria-label"] === "Show the All history row in the bot panel")!;
+    expect(history.checked).toBe(false);
+    history.onClick!({} as never);
+    expect(fixture.setShowAllHistory).toHaveBeenCalledWith(true);
+  });
+
   it("groups skins, thread visibility, and tool-call display with preservation copy", () => {
     const html = render();
     expect(html).toContain('<option value="appearance" selected="">Appearance</option>');
@@ -138,8 +164,8 @@ describe("Settings → Appearance", () => {
   it("is laid out as Grok Bot's pages: grey headings, compact rows, pill menus, no help text", () => {
     const html = render();
     const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
-    expect(groups).toEqual(["interface", "skin", "backgroundEffects", "conversation", "sidebar", "accessibility", "desktop"]);
-    for (const heading of ["Interface", "Skin", "Background effects", "Conversations", "Sidebar", "Accessibility", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
+    expect(groups).toEqual(["interface", "skin", "backgroundEffects", "conversation", "sidebar", "mascots", "accessibility", "desktop"]);
+    for (const heading of ["Interface", "Skin", "Background effects", "Conversations", "Sidebar", "Mascots", "Accessibility", "Desktop"]) expect(html).toContain(`>${heading}</h3>`);
     // no native select on the page itself, only the narrow-window section menu
     const page = html.slice(html.indexOf('data-settings-group="interface"'));
     expect(page).not.toContain("<select");

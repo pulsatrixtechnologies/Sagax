@@ -16,6 +16,7 @@ import { useStore } from "@/state/store";
 import type { VaultItemKind } from "../../../shared/credential-vault";
 import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
 import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
+import { PhoneCardScanButton, scannedCardFields } from "./PhoneCardScanButton";
 import { botLabel } from "@/lib/human-label";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
@@ -291,6 +292,7 @@ function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Pro
       {(draft.kind === "login" || draft.kind === "apiKey") && <input className={inputClass} dir="ltr" value={draft.domains} onChange={set("domains")} placeholder={t("vault.field.sitesHint")} aria-label={t("vault.field.sites")} />}
       {draft.kind === "card" && !readOnly && (
         <>
+          {!item && <PhoneCardScanButton onRead={(card) => setDraft((current) => ({ ...current, ...scannedCardFields(card) }))} />}
           <input className={inputClass} value={draft.holder} onChange={set("holder")} placeholder={t("vault.field.holder")} aria-label={t("vault.field.holder")} autoComplete="off" />
           <input className={inputClass} dir="ltr" type="password" value={draft.pan} onChange={set("pan")} placeholder={keep ?? t("vault.field.pan")} aria-label={t("vault.field.pan")} autoComplete="off" inputMode="numeric" />
           <input className={inputClass} dir="ltr" type="password" value={draft.cvv} onChange={set("cvv")} placeholder={keep ?? t("vault.field.cvv")} aria-label={t("vault.field.cvv")} autoComplete="off" inputMode="numeric" />
@@ -338,7 +340,7 @@ function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Pro
 
 function PurchaseList({ purchases, onChanged, onError }: { purchases: PurchaseListing[]; onChanged: () => Promise<void>; onError: (error: string | null) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
-  const answer = async (id: string, decision: "deny" | "once" | "always") => {
+  const answer = async (id: string, decision: "deny" | "once") => {
     setBusy(id);
     onError(null);
     try {
@@ -360,7 +362,6 @@ function PurchaseList({ purchases, onChanged, onError }: { purchases: PurchaseLi
             <div className="text-[12px] text-ink-secondary">{purchase.line}</div>
             <div className="flex flex-wrap justify-end gap-2">
               <button type="button" className={`${PILL} text-danger`} disabled={busy !== null} onClick={() => void answer(purchase.id, "deny")}>{t("vault.purchase.deny")}</button>
-              <button type="button" className={PILL} disabled={busy !== null} onClick={() => void answer(purchase.id, "always")}>{t("vault.purchase.always")}</button>
               <button type="button" className={PRIMARY_PILL} disabled={busy !== null} onClick={() => void answer(purchase.id, "once")}>{t("vault.purchase.once")}</button>
             </div>
           </div>
@@ -395,6 +396,18 @@ function OnePasswordCard({ data, onImported }: { data: CredentialVaultState; onI
       setBusy(false);
     }
   };
+  // 2026-10-21 (parité R10, ligne 41): check again after the person
+  // followed the steps (a fresh look, not the minute-old cached one).
+  const recheck = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await loadOnePasswordItems().catch(() => undefined);
+      await onImported();
+    } finally {
+      setBusy(false);
+    }
+  };
   const pick = async (item: OnePasswordItem) => {
     setBusy(true);
     setError(null);
@@ -411,6 +424,18 @@ function OnePasswordCard({ data, onImported }: { data: CredentialVaultState; onI
     <div data-settings-card="credentials.onePassword">
       <SettingsGroup title="1Password" groupId="credentials.onePassword">
         <SettingsTextRow>{subtitle}</SettingsTextRow>
+        {!status.available && (
+          <div className="flex flex-col gap-2 px-3.5 py-2.5 text-[13px]" data-onepassword-steps>
+            <span className="text-[12.5px] font-medium text-ink-secondary">{t("vault.onePassword.stepsTitle")}</span>
+            <ol className="ms-4 list-decimal text-[12.5px] leading-5 text-ink-secondary">
+              <li>{t("vault.onePassword.step1")}</li>
+              <li>{t("vault.onePassword.step2")}</li>
+              <li>{t("vault.onePassword.step3")}</li>
+            </ol>
+            <div className="flex justify-end"><button type="button" className={PILL} disabled={busy} onClick={() => void recheck()}>{t("vault.onePassword.recheck")}</button></div>
+          </div>
+        )}
+        {status.available && <SettingsTextRow>{t("vault.onePassword.perRequest")}</SettingsTextRow>}
         {status.available && (
           <div className="flex flex-col gap-2 px-3.5 py-2.5 text-[13px]">
             {items === null

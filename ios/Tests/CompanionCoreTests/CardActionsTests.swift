@@ -1,6 +1,6 @@
 // WP2: the approval dock and the interactive cards, decided as the Electron
 // renderer decides them (PendingApproval.tsx, OptionCard.tsx,
-// SecretRequestCard.tsx, ConnectorCard.tsx, AccessCard.tsx,
+// SecretRequestCard.tsx, AccessCard.tsx,
 // ParallelTaskCard.tsx, GoalRunCard.tsx, ChatView.tsx ErrorRow), and the
 // requests they send.
 import Foundation
@@ -292,23 +292,6 @@ final class CardActionsTests: XCTestCase {
         XCTAssertFalse(SecretCardRules.canRetryResume(saved))
     }
 
-    // MARK: Connector card
-
-    func testConnectorCardActions() throws {
-        func card(_ status: String, resumed: Bool? = nil) -> ConnectorRequestCard {
-            ConnectorRequestCard(slug: "gmail", label: "Gmail", description: "", status: status, resumeKey: "k", resumed: resumed)
-        }
-        XCTAssertEqual(ConnectorCardRules.action(card("required")), .connect(label: .connectSecurely))
-        XCTAssertEqual(ConnectorCardRules.action(card("failed")), .connect(label: .tryAgain))
-        XCTAssertEqual(ConnectorCardRules.action(card("authorizing")), .connect(label: .openAgain))
-        XCTAssertEqual(ConnectorCardRules.action(card("connected")), .continueTask)
-        XCTAssertEqual(ConnectorCardRules.action(card("connected", resumed: true)), .continuing)
-        XCTAssertTrue(ConnectorCardRules.polls(card("authorizing")))
-        var dismissed = card("authorizing")
-        dismissed.dismissed = true
-        XCTAssertFalse(ConnectorCardRules.polls(dismissed))
-    }
-
     // MARK: Parallel task card
 
     func testParallelCardStateRecordedEndWinsThenLiveState() throws {
@@ -514,32 +497,6 @@ final class CardClientTests: XCTestCase {
         XCTAssertEqual(sent.body["threadId"] as? String, "t1")
         try await client.dismissSecretCard(botId: "b1", messageId: "m2", threadId: "t1")
         XCTAssertEqual(try last().path, "/api/bots/b1/secret-cards/m2/dismiss")
-
-        try await client.resumeConnectorCard(botId: "b1", messageId: "m3", threadId: "t1")
-        XCTAssertEqual(try last().path, "/api/bots/b1/connector-cards/m3/resume")
-        try await client.dismissConnectorCard(botId: "b1", messageId: "m3", threadId: "t1")
-        XCTAssertEqual(try last().path, "/api/bots/b1/connector-cards/m3/dismiss")
-
-        CardRequestStub.responseBody = Data(#"{"connected":true,"pending":false,"status":"ACTIVE"}"#.utf8)
-        let status = try await client.connectorCardStatus(botId: "b1", messageId: "m3", threadId: "t1")
-        XCTAssertTrue(status.connected)
-        sent = try last()
-        XCTAssertEqual(sent.method, "GET")
-        XCTAssertEqual(sent.path, "/api/bots/b1/connector-cards/m3/status")
-        XCTAssertEqual(sent.query, "threadId=t1")
-    }
-
-    func testConnectorAuthorizeOpensOnlyAnHTTPSPage() async throws {
-        CardRequestStub.responseBody = Data(#"{"url":"https://connect.composio.dev/link/x"}"#.utf8)
-        let url = try await client.authorizeConnectorCard(botId: "b1", messageId: "m3", threadId: "t1")
-        XCTAssertEqual(url.host, "connect.composio.dev")
-        XCTAssertEqual(try last().path, "/api/bots/b1/connector-cards/m3/authorize")
-
-        CardRequestStub.responseBody = Data(#"{"url":"http://evil.example/x"}"#.utf8)
-        do {
-            _ = try await client.authorizeConnectorCard(botId: "b1", messageId: "m3", threadId: "t1")
-            XCTFail("plain http must be refused")
-        } catch {}
     }
 
     func testParallelStopRefusesARouteIdThatIsNotOne() async throws {

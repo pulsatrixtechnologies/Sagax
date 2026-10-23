@@ -110,6 +110,19 @@ describe("UpdateBanner", () => {
     expect(html).toContain("Quit and reopen Sagax");
     expect(html).not.toContain("Try again</button>");
   });
+
+  // 2026-10-22 (JC): the "preparing took too long" card told the person to
+  // quit and reopen, but offered no enabled control to do it. The remedy is
+  // now a clickable button, never greyed out.
+  it("offers an enabled quit-and-reopen control on the non-retryable error card", () => {
+    const html = render(
+      { status: "error", retryable: false, message: "Preparing the update took too long. Quit and reopen Sagax before trying the update again." },
+      { ogb: { updater: {}, relaunch: () => {} } },
+    );
+    expect(html).toContain(">Quit and reopen the app</button>");
+    expect(html).not.toMatch(/disabled=""[^>]*>Quit and reopen the app<\/button>/);
+    expect(html).not.toContain("Try again</button>");
+  });
 });
 
 // 2026-10-19 (a Windows report): "Check for updates" restarted into a silent
@@ -199,11 +212,22 @@ describe("the person's own check, followed in the dialog", () => {
   it("shows a failed check clearly, with Try again", () => {
     vi.stubGlobal("window", { ogb: { updater: {} } });
     const html = renderToStaticMarkup(createElement(UpdateProblemDialog, {
-      state: { status: "error", message: "net::ERR_INTERNET_DISCONNECTED" }, pending: null, onDismiss: noop, onRetry: noop,
+      state: { status: "error", message: "net::ERR_INTERNET_DISCONNECTED" }, pending: null, onDismiss: noop, onRetry: noop, onQuit: noop,
     }));
     expect(html).toContain(">Update failed</h2>");
     expect(html).toContain("Couldn&#x27;t reach the update server.");
     expect(html).toContain(">Try again</button>");
+  });
+
+  it("the failed-check dialog swaps Try again for an enabled quit-and-reopen when a restart is required", () => {
+    vi.stubGlobal("window", { ogb: { updater: {}, relaunch: () => {} } });
+    const html = renderToStaticMarkup(createElement(UpdateProblemDialog, {
+      state: { status: "error", retryable: false, message: "Preparing the update took too long. Quit and reopen Sagax before trying the update again." },
+      pending: null, onDismiss: noop, onRetry: noop, onQuit: noop,
+    }));
+    expect(html).toContain(">Quit and reopen the app</button>");
+    expect(html).not.toContain(">Try again</button>");
+    expect(html).not.toMatch(/disabled=""[^>]*>Quit and reopen the app<\/button>/);
   });
 
   it("only the dialog's Restart to install installs, and it says it was confirmed", () => {
@@ -213,6 +237,22 @@ describe("the person's own check, followed in the dialog", () => {
     for (const file of ["./SidebarProfileMenu.tsx", "./SettingsModal.tsx", "./SidebarUpdatePill.tsx"]) {
       expect(readFileSync(new URL(file, import.meta.url), "utf8"), file).not.toMatch(/updater\??\.install\(/);
     }
+  });
+
+  // 2026-10-22 (JC's screenshot): Settings > Updates showed the "Quit and
+  // reopen" label on a disabled button, so the remedy could not be clicked.
+  // The row's whole import graph is too heavy to mount here, so pin the fix at
+  // the source: the restart-required state must not disable the button, and it
+  // must relaunch rather than re-check.
+  it("the Settings > Updates button is clickable and relaunches in the restart-required state", () => {
+    const source = readFileSync(new URL("./SettingsModal.tsx", import.meta.url), "utf8");
+    const row = source.slice(source.indexOf("export function UpdatesRow"));
+    const body = row.slice(0, row.indexOf("\n}"));
+    const disabled = body.slice(body.indexOf("disabled={"), body.indexOf("}", body.indexOf("disabled={")) + 1);
+    expect(disabled).not.toContain("retryable === false");
+    expect(body).toContain("window.ogb?.relaunch?.()");
+    // the quit-and-reopen label is still what the restart-required state shows
+    expect(body).toContain("settings.updates.quitReopen");
   });
 });
 

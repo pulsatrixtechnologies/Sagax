@@ -33,7 +33,6 @@ struct VaultSettingsView: View {
                             Text(purchase.line).font(.footnote).foregroundStyle(.secondary)
                             HStack {
                                 Button("Deny") { Task { await answer(purchase, "deny") } }
-                                Button("Always allow") { Task { await answer(purchase, "always") } }
                                 Button("Allow once") { Task { await answer(purchase, "once") } }
                             }
                             .buttonStyle(.bordered)
@@ -63,6 +62,13 @@ struct VaultSettingsView: View {
             }
             SettingsSectionLabel(text: "New card")
             SettingsCard {
+                // read on the phone from photos of the card (parité R10)
+                CardPhotoScanner { read in
+                    if let number = read.pan { pan = number }
+                    if let month = read.expMonth { expMonth = String(month) }
+                    if let year = read.expYear { expYear = String(year) }
+                    if let name = read.holder { holder = name }
+                }
                 VaultField(text: $cardName, prompt: "Name", identifier: "vault-card-name")
                 VaultField(text: $holder, prompt: "Name on the card", identifier: "vault-card-holder")
                 VaultField(text: $pan, prompt: "Card number", identifier: "vault-card-number", secure: true)

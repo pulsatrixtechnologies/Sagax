@@ -390,6 +390,16 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/achievements\/events$/ },
   { methods: ["PUT"], path: /^\/api\/me\/achievements\/settings$/ },
   { methods: ["GET"], path: /^\/api\/achievements\/public$/ },
+  // own phone tools (server/routes/phone-tools.ts: the session's person and
+  // this device only; a bot's session is refused by the handler)
+  { methods: ["POST"], path: /^\/api\/me\/phone-tools\/device$/ },
+  { methods: ["GET"], path: /^\/api\/me\/phone-tools\/requests$/ },
+  { methods: ["POST"], path: /^\/api\/me\/phone-tools\/requests\/[\w-]+$/ },
+  { methods: ["GET", "DELETE"], path: /^\/api\/me\/phone-tools\/grants$/ },
+  // "Scanner avec l'iPhone" from the person's own computer (the handler refuses a bot or a phone)
+  { methods: ["GET", "POST"], path: /^\/api\/me\/phone-tools\/card-scan$/ },
+  { methods: ["POST"], path: /^\/api\/me\/phone-tools\/card-scan\/[\w-]+\/wait$/ },
+  { methods: ["DELETE"], path: /^\/api\/me\/phone-tools\/card-scan\/[\w-]+$/ },
   // People's custom labels (server/routes/person-labels.ts): everyone reads
   // them; the handler lets a person change their own, an organization admin
   // anyone's and a team manager their team's people.
@@ -410,9 +420,19 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // which the handler keeps to the owner).
   { methods: ["GET"], path: /^\/api\/computer\/status$/ },
   { methods: ["POST"], path: /^\/api\/computer\/(?:update|reset)$/ },
+  // Its scheduled update, read and set from the phone (parity R7, O2). The
+  // handler (routes/computer-care.ts) keys it to the person's own computer.
+  // The disk saver stays admin.
+  { methods: ["GET", "PUT"], path: /^\/api\/computer\/maintenance$/ },
   // In-chat terminal: list shell-capable resources and manage the person's own sessions.
   { methods: ["GET"], path: /^\/api\/terminal\/resources$/ },
   { methods: ["GET", "POST"], path: /^\/api\/terminal\/sessions\/[\w-]+(?:\/(?:bot-input|close))?$/ },
+  // The usage card the person asked for (server/routes/resource-usage.ts): the
+  // handler answers the person who asked only.
+  { methods: ["GET", "POST"], path: /^\/api\/resource-usage\/ru_[a-f0-9]{18}(?:\/(?:live|resume|pause))?$/ },
+  // "Connect Microsoft Teams" card (server/routes/connector-setup.ts): the
+  // handler answers the person the card is for only.
+  { methods: ["POST"], path: /^\/api\/connector-setup\/cs_[a-f0-9]{18}\/check$/ },
   // Plugin catalog (reads: names, descriptions, icons; no secrets). Installing
   // one changes the server's MCP servers: the handler lets through an admin
   // or this computer's own person (clientSessionIsComputerOwner), nobody else.
@@ -461,6 +481,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/instances$/, feature: "serverCatalogue" },
   // a link into the organisation's Admin: identifiers only, and Admin authorizes its own visitor
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/slack-management$/ },
+  // the bot's own email address from the Perspicax relay (an address, no id, no secret)
+  // and its owner's change of it (PUT: the handler checks the owner)
+  { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/inbound-mail$/ },
   { methods: ["GET"], path: /^\/api\/search$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/messages\/[\w-]+\/image$/ },
@@ -672,8 +695,18 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/routine-runs\/[\w-]+\/(?:cancel|seen)$/ },
   { methods: ["POST"], path: /^\/api\/routine-runs\/seen-all$/ },
   { methods: ["DELETE"], path: /^\/api\/routine-runs$/ },
-  // webhook list is secret-free; creating or rotating one is not
+  // Webhooks are a bot feature its owner uses: a webhook runs a task on the
+  // bot's own computer (This computer or its cloud computer), never on the
+  // shared organization server, so creating or managing one is client scope
+  // like a routine. Server-side, webhookDelegateRefusal keeps a member off an
+  // admin's bot and off a Microsoft trigger, and the create handler refuses a
+  // non-admin a run target on the shared server (server/exec-target.ts
+  // webhookExecTargetAdminOnly). 2026-10-22 (JC): a normal user must be able
+  // to use this basic bot feature without the server-settings right.
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
+  { methods: ["POST"], path: /^\/api\/webhooks$/ },
+  { methods: ["POST"], path: /^\/api\/webhooks\/[\w-]+\/(?:rotate|test|reveal)$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/webhooks\/[\w-]+$/ },
   // configured-or-not booleans; the handler strips the few identifying fields for clients
   { methods: ["GET"], path: /^\/api\/config$/ },
   // Accepting an invite is how a person who is not yet a member joins a
@@ -706,9 +739,12 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/(?:notes|grants|reveal)$/ },
   { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases$/ },
   { methods: ["POST"], path: /^\/api\/me\/credentials\/purchases\/pay_[a-f0-9]{16}\/answer$/ },
+  // a phone call card (server/routes/outbound-calls.ts): the person's own answer
+  { methods: ["POST"], path: /^\/api\/me\/phone-calls$/ },
+  { methods: ["POST"], path: /^\/api\/me\/phone-calls\/call_[a-f0-9]{16}\/answer$/ },
   { methods: ["DELETE"], path: /^\/api\/me\/credentials\/[a-z0-9]{8,40}\/grants\/[\w-]{1,128}$/ },
   // A bot's login request card: the handler checks the card is the caller's.
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/vault-cards\/[\w-]+\/(?:grant|dismiss|onepassword)$/ },
   // The person's own memory sync token for the desktop's Settings > Memory
   // (server/perspicax-memory-sync-token.ts): the session's own sub only.
   { methods: ["GET", "POST"], path: /^\/api\/me\/memory-sync-token$/, feature: "orgDirectory" },
@@ -745,10 +781,14 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
-  // A person's own usage ledger (server/routes/usage.ts, 2026-10-15): the
-  // handler keeps the caller's own turns only, never another person's; the
-  // whole ledger (/api/usage) stays admin or usage.view.
-  { methods: ["GET"], path: /^\/api\/me\/usage$/ },
+  // A person's own usage ledger and their own per-job traces
+  // (server/routes/usage.ts, 2026-10-15 / 2026-10-23): the handler keeps the
+  // caller's own turns only, never another person's; the whole ledger and the
+  // whole-ledger traces (/api/usage, /api/usage/traces) stay admin or usage.view.
+  { methods: ["GET"], path: /^\/api\/me\/usage(?:\/traces)?$/ },
+  // The person's own monthly spend limit: anyone signed in reads it; changing
+  // it stays admin scope (server/routes/usage.ts).
+  { methods: ["GET"], path: /^\/api\/me\/spend-cap$/ },
   // A person's own plan windows (5-hour, weekly) read from their own
   // subscription logins only (server/plan-usage.ts orgPlanAccounts). On a
   // solo server this path stays admin.
@@ -805,9 +845,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
  * (an engine's program path stays admin, see server/index.ts). A route not
  * listed here stays admin scope, which the catalogue names server.settings
  * or another admin-only key. */
-export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path: RegExp; permission: PermissionKey }> = [
-  // the usage ledger and its export (server/routes/usage.ts)
-  { methods: ["GET"], path: /^\/api\/usage(?:\.csv)?$/, permission: "usage.view" },
+export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path: RegExp; permission: PermissionKey | readonly PermissionKey[] }> = [
+  // the usage ledger, its export and the per-job traces (server/routes/usage.ts)
+  { methods: ["GET"], path: /^\/api\/usage(?:\.csv|\/traces)?$/, permission: "usage.view" },
   // the admin activity log and its export
   { methods: ["GET"], path: /^\/api\/admin-activity(?:\.csv)?$/, permission: "people.activityLog" },
   // plugin marketplaces (server/routes/marketplaces.ts)
@@ -842,11 +882,18 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   // backup.workspace: the export, never the restore
   { methods: ["GET", "POST"], path: /^\/api\/workspace-backup\/(?:status|client-state|export|download\/[\w.-]{1,200})$/, permission: "backup.workspace" },
   // server.settings
-  { methods: ["PUT", "PATCH"], path: /^\/api\/config$/, permission: "server.settings" },
+  // 2026-10-22 (JC): the config write opens to EITHER server.settings (the
+  // whole installation) OR server.experimental (the switches of Settings >
+  // Experimental only). The two are separate rights; any one admits the
+  // request at the gate. The handler then holds a caller who lacks
+  // server.settings to the experiments alone (shared/permissions.ts
+  // experimentalOnlyConfigViolation). A refusal names server.settings, the
+  // primary key.
+  { methods: ["PUT", "PATCH"], path: /^\/api\/config$/, permission: ["server.settings", "server.experimental"] },
   { methods: ["POST"], path: /^\/api\/keys\/test$/, permission: "server.settings" },
-  { methods: ["POST"], path: /^\/api\/webhooks$/, permission: "server.settings" },
-  { methods: ["POST"], path: /^\/api\/webhooks\/[\w-]+\/(?:rotate|test|reveal)$/, permission: "server.settings" },
-  { methods: ["PATCH", "DELETE"], path: /^\/api\/webhooks\/[\w-]+$/, permission: "server.settings" },
+  // Webhooks are client scope (CLIENT_ALLOW): a webhook runs on the bot's own
+  // computer, so its owner creates and manages it without server.settings.
+  // webhookDelegateRefusal and webhookExecTargetAdminOnly keep the limits.
   { methods: ["PATCH"], path: /^\/api\/org\/settings$/, permission: "server.settings" },
   { methods: ["PUT", "DELETE"], path: /^\/api\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, permission: "server.settings" },
   { methods: ["PUT"], path: /^\/api\/tts\/provider$/, permission: "server.settings" },
@@ -866,14 +913,23 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["GET", "POST"], path: /^\/api\/admin\/pages(?:\/[\w-]+\/revoke)?$/, permission: "people.manage" },
 ];
 
-/** The permission that opens this admin-scope route to a person, or null. */
-export function routePermission(method: string, path: string, features: ClientFeatures = {}): PermissionKey | null {
+/** Every permission that opens this admin-scope route to a person (holding any
+ * one of them suffices), or null when no rule matches. */
+export function routePermissions(method: string, path: string, features: ClientFeatures = {}): readonly PermissionKey[] | null {
   if (features.orgDirectory !== true) return null;
   const upper = method.toUpperCase();
   for (const rule of PERMISSION_ROUTES) {
-    if (rule.path.test(path) && rule.methods.includes(upper)) return rule.permission;
+    if (rule.path.test(path) && rule.methods.includes(upper)) {
+      return Array.isArray(rule.permission) ? rule.permission : [rule.permission as PermissionKey];
+    }
   }
   return null;
+}
+
+/** The primary permission that opens this route, i.e. the one a refusal names
+ * when the client holds none of the route's keys, or null. */
+export function routePermission(method: string, path: string, features: ClientFeatures = {}): PermissionKey | null {
+  return routePermissions(method, path, features)?.[0] ?? null;
 }
 
 export function requiredScope(method: string, path: string, features: ClientFeatures = {}): Scope {
@@ -1092,9 +1148,9 @@ export function resolveRequestAuth(req: IncomingMessage, options: ResolveOptions
     }
     const needed = requiredScope(method, path, options.features ?? {});
     if (!session.scopes.includes(needed)) {
-      const permission = needed === "admin" && session.scopes.includes("client") ? routePermission(method, path, options.features ?? {}) : null;
-      if (!permission) return deny(403, `forbidden: this session lacks the ${needed} scope`);
-      if (!options.permits?.(session, permission)) return { auth: null, status: 403, error: "forbidden", permission };
+      const grants = needed === "admin" && session.scopes.includes("client") ? routePermissions(method, path, options.features ?? {}) : null;
+      if (!grants) return deny(403, `forbidden: this session lacks the ${needed} scope`);
+      if (!grants.some((key) => options.permits?.(session, key))) return { auth: null, status: 403, error: "forbidden", permission: grants[0] };
     }
     // Only a request that passed both checks counts as use of the session,
     // and only a request the client made itself: redeeming a stream ticket

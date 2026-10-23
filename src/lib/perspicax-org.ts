@@ -83,6 +83,7 @@ export function useOrgPeople(): Map<string, OrgDirectoryPerson> {
     void loadOrgPeople().then((value) => { if (alive) setPeople(value); });
     // A photo changed (src/lib/person-avatars.ts): read the directory again.
     const reload = () => { void loadOrgPeople(true).then((value) => { if (alive) setPeople(value); }); };
+    if (typeof window === "undefined") return () => { alive = false; };
     window.addEventListener(PERSON_AVATAR_EVENT, reload);
     return () => { alive = false; window.removeEventListener(PERSON_AVATAR_EVENT, reload); };
   }, []);

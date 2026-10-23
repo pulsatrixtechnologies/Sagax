@@ -57,7 +57,7 @@ describe("gateReadOnlyTools", () => {
   it("gives every other server nothing, whatever it is named", () => {
     expect(gateReadOnlyTools({ name: "agents", builtin: false, spec: bridge })).toEqual([]);
     expect(gateReadOnlyTools({ name: "perspicax_fake", builtin: false, spec: { command: "node", args: ["/tmp/x.mjs"], env: { SAGAX_PERSPICAX_PROFILE: "p" } } })).toEqual([]);
-    for (const name of ["composio", "browser", "computer", "sagax-environment", "sagax-computer", "github"]) {
+    for (const name of ["browser", "computer", "sagax-environment", "sagax-computer", "github"]) {
       expect(gateReadOnlyTools({ name, builtin: name !== "sagax-environment" && name !== "sagax-computer" && name !== "github" })).toEqual([]);
     }
   });

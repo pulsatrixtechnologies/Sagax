@@ -817,6 +817,8 @@ final class Session: ObservableObject {
             pairingRequested = true
         case let .chat(threadId):
             openChat(threadId: threadId)
+        case let .bot(id):
+            openBot(id: id)
         case .inbox:
             pendingInbox = true
         }
@@ -832,6 +834,17 @@ final class Session: ObservableObject {
     func openChat(threadId: String) {
         guard let chat = state.chat(forThread: threadId) else { return }
         pendingChat = chat
+    }
+
+    /// `sagax://bot/<id>`: that bot's (or room's) current conversation. An
+    /// id this phone does not know lands on the roster silently, like a
+    /// stale chat link.
+    func openBot(id: String) {
+        if let bot = state.bot(id) {
+            pendingChat = .bot(bot)
+        } else if let room = state.rooms.first(where: { $0.id == id }) {
+            pendingChat = .room(room)
+        }
     }
 
     func consumePendingChat() {
@@ -1299,6 +1312,8 @@ final class Session: ObservableObject {
                         status = .live
                         // this server pushes to the phone while the app is closed
                         Task { await PushRegistrar.shared.sync() }
+                        // phone tools: what this phone offers, and any request waiting
+                        PhoneToolCenter.shared.streamOpened(self)
                         // Remember what actually carried the stream for
                         // display and legacy ordering. Typed routes retain
                         // their explicit security priority next launch.
@@ -1310,6 +1325,10 @@ final class Session: ObservableObject {
                     if streamed { foldQuietly { state.apply(frame) } } else { state.apply(frame) }
                     // people: presence and labels (#167, #172)
                     PeopleDirectory.shared.apply(frame.frame)
+                    // a bot asks this phone for a tool (Features/PhoneTools)
+                    if case let .unknown(kind) = frame.frame, kind == "phone-tools" {
+                        Task { await PhoneToolCenter.shared.refresh() }
+                    }
                     // a routine changed or ran: the account's routines badge
                     if case let .unknown(kind) = frame.frame, kind.hasPrefix("routine") {
                         Task { await AccountRowModel.shared.refresh(self) }
@@ -3394,26 +3413,6 @@ final class Session: ObservableObject {
             actionError = error.localizedDescription
             return nil
         }
-    }
-
-    // MARK: - Connected apps
-
-    func loadConnectorCatalog() async -> ConnectorCatalog? {
-        guard let client else { return nil }
-        do { return try await client.connectorCatalog() }
-        catch { actionError = error.localizedDescription; return nil }
-    }
-
-    func loadAllConnectorStatuses() async -> ConnectorStatuses? {
-        guard let client else { return nil }
-        do { return try await client.allConnectorStatuses() }
-        catch { actionError = error.localizedDescription; return nil }
-    }
-
-    func authorizeConnector(_ slug: String, alias: String?) async -> URL? {
-        guard let client else { return nil }
-        do { return try await client.authorizeConnector(slug: slug, alias: alias) }
-        catch { actionError = error.localizedDescription; return nil }
     }
 
     func refreshNotificationAuthorization() async {

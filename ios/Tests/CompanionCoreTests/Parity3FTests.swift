@@ -8,8 +8,11 @@ final class Parity3FTests: XCTestCase {
         XCTAssertFalse(ComputerCare.needsRecover(configured: true, state: "running", problem: nil, waking: false))
         XCTAssertFalse(ComputerCare.needsRecover(configured: true, state: "ready", problem: "  ", waking: false))
         XCTAssertTrue(ComputerCare.needsRecover(configured: true, state: "running", problem: "unreachable", waking: false))
-        XCTAssertTrue(ComputerCare.needsRecover(configured: true, state: "running", problem: nil, waking: true))
-        XCTAssertTrue(ComputerCare.needsRecover(configured: true, state: "stopped", problem: nil, waking: false))
+        XCTAssertFalse(ComputerCare.needsRecover(configured: true, state: "running", problem: nil, waking: true))
+        XCTAssertFalse(ComputerCare.needsRecover(configured: true, state: "stopped", problem: nil, waking: false))
+        XCTAssertFalse(ComputerCare.needsRecover(configured: true, state: "paused", problem: nil, waking: false))
+        XCTAssertFalse(ComputerCare.needsRecover(configured: true, state: "missing", problem: nil, waking: true))
+        XCTAssertTrue(ComputerCare.needsRecover(configured: true, state: "unavailable", problem: nil, waking: false))
     }
 
     func testOtherComputersSkipTheOneInUseAndRefuseABadName() {
@@ -51,13 +54,6 @@ final class Parity3FTests: XCTestCase {
         XCTAssertEqual(note.words?.map(\.text), ["Bonjour", "JC"])
     }
 
-    func testConnectorPreferencesOnlyClearsSlugsThatTurnedToolsOff() {
-        XCTAssertEqual(
-            ConnectorPreferences.slugsToClear(["gmail": ["SEND"], "slack": [], "bad slug": ["X"], "notion": ["READ"]]),
-            ["gmail", "notion"]
-        )
-    }
-
     func testPublishedPageRules() {
         XCTAssertTrue(PublishedPagesRules.validID("page_id_1"))
         XCTAssertFalse(PublishedPagesRules.validID("short"))
@@ -84,17 +80,6 @@ final class Parity3FTests: XCTestCase {
         } catch let error as ComputerChangeFailure {
             XCTAssertEqual(error.refusal, .online)
         }
-        harness.finish()
-    }
-
-    func testClearConnectorPreferencesPutsAnEmptyToolList() async throws {
-        let harness = Harness()
-        harness.respond(#"{"disabledTools":{"gmail":["GMAIL_SEND_EMAIL"],"slack":[]}}"#)
-        let cleared = try await harness.client.clearConnectorPreferences()
-        XCTAssertEqual(cleared, 1)
-        XCTAssertEqual(harness.captured?.httpMethod, "PUT")
-        XCTAssertEqual(harness.captured?.url?.path, "/api/connectors/gmail/tools")
-        XCTAssertEqual(try harness.body()["disabledTools"] as? [String], [])
         harness.finish()
     }
 

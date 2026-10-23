@@ -30,6 +30,7 @@ import {
   createPermissionBroker,
   hookTokenFile,
   instanceClaudeAllowRules,
+  remoteSupportDenyRules,
   parseClaudeCliVersion,
   permissionSocketPath,
   readClaudeAuthSettings,
@@ -1098,7 +1099,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await instance.adapter.sendTurn({ threadId: "t-allow", text: "hi" });
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
-      expect(seen.settings.permissions).toEqual({ allow: ["Bash(claude plugin marketplace add acme/marketplace)"] });
+      expect(seen.settings.permissions).toEqual({ allow: ["Bash(claude plugin marketplace add acme/marketplace)"], deny: remoteSupportDenyRules() });
       expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
     } finally {
       delete process.env.SAGAX_CLAUDE_ALLOW;
@@ -1135,7 +1136,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       await recorder.until((e) => e.type === "turn.completed");
       const seen = JSON.parse(readFileSync(dump, "utf8"));
       expect(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).toBe(["Bash", "Read", "Write", "Edit", ...CLAUDE_UNUSED_TOOLS].join(","));
-      expect(Object.keys(seen.settings.permissions)).toEqual(["allow"]);
+      expect(Object.keys(seen.settings.permissions)).toEqual(["allow", "deny"]);
+      expect(seen.settings.permissions.deny).toEqual(remoteSupportDenyRules());
       expect(seen.settings.permissions.allow).toEqual(["Bash(claude plugin marketplace add acme/marketplace)", "Read", "Edit"]);
     } finally {
       delete process.env.SAGAX_CLAUDE_ALLOW;
@@ -2309,7 +2311,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await instance.adapter.sendTurn({ threadId: "t-auth-settings", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], apiKeyHelper: settings.apiKeyHelper, env: { ANTHROPIC_BASE_URL: settings.env.ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN: "synthetic-token" } });
+    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], apiKeyHelper: settings.apiKeyHelper, env: { ANTHROPIC_BASE_URL: settings.env.ANTHROPIC_BASE_URL, ANTHROPIC_AUTH_TOKEN: "synthetic-token" }, permissions: { deny: remoteSupportDenyRules() } });
     expect(seen.argv[seen.argv.indexOf("--setting-sources") + 1]).toBe("project");
     expect(JSON.stringify(seen.argv)).not.toContain("synthetic");
     const settingsPath = seen.argv[seen.argv.indexOf("--settings") + 1];
@@ -2348,7 +2350,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await instance.adapter.sendTurn({ threadId: "t-auth-explicit", text: "hi" });
     await recorder.until((e) => e.type === "turn.completed");
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")] });
+    expect(seen.settings).toEqual({ claudeMdExcludes: [join(homedir(), ".claude", "CLAUDE.md")], permissions: { deny: remoteSupportDenyRules() } });
     expect(seen.env.ANTHROPIC_API_KEY).toBe("workspace-key");
     expect(seen.env.ANTHROPIC_BASE_URL).toBeUndefined();
     expect(readClaudeAuthSettings({ HOME: scratch, CLAUDE_CONFIG_DIR: join(scratch, "other-account") })).toEqual({});
@@ -2762,39 +2764,6 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain("mcp__dweb");
   });
 
-  // the harness gates both the integration and the prompt hint on
-  // capabilities.composioMcp, so the flag and the mount must agree — a bot
-  // told about tools its driver never mounted burns the turn hunting
-  it("mounts the user's connected apps and claims the capability that gates them", async () => {
-    await create();
-    const dump = join(scratch, "dump.json");
-    process.env.FAKE_CLAUDE_DUMP = dump;
-
-    expect(instance.adapter.capabilities.composioMcp).toBe(true);
-    await instance.adapter.sendTurn({
-      threadId: "t-composio",
-      text: "hi",
-      integrations: {
-        composio: {
-          command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
-          env: { SAGAX_CONNECTOR_UPSTREAM_URL: "https://example.test/mcp" },
-        },
-      },
-    });
-    await recorder.until((e) => e.type === "turn.completed");
-
-    const seen = JSON.parse(readFileSync(dump, "utf8"));
-    expect(seen.mcpConfig.mcpServers.composio).toMatchObject({
-      command: process.execPath,
-      args: ["/tmp/connector-proxy.js"],
-      env: { SAGAX_CONNECTOR_UPSTREAM_URL: "https://example.test/mcp" },
-    });
-    // the user's Composio key must not be readable via `ps`
-    expect(JSON.stringify(seen.argv)).not.toContain("ak_test");
-    expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).toContain("mcp__composio");
-  });
-
   // the config file holds live credentials, so it must not outlive the turn —
   // including when the CLI dies mid-turn, which is the path that leaks if
   // cleanup is hung off the happy-path result instead of settle()
@@ -2810,10 +2779,12 @@ describe("ClaudeDriver turns (fake CLI)", () => {
       threadId: "t-cleanup",
       text: "hi",
       integrations: {
-        composio: {
-          command: process.execPath,
-          args: ["/tmp/connector-proxy.js"],
-          env: { SAGAX_CONNECTOR_UPSTREAM_URL: "https://example.test/mcp" },
+        custom: {
+          notes: {
+            command: process.execPath,
+            args: ["/tmp/notes-mcp.js"],
+            env: { NOTES_TOKEN: "secret-token" },
+          },
         },
       },
     });
@@ -4336,7 +4307,7 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await create(undefined, { CLAUDE_CONFIG_DIR: instanceConfigDir });
     const dump = join(scratch, "generate-text-env.json");
     process.env.FAKE_CLAUDE_DUMP = dump;
-    const names = ["XAI_API_KEY", "COMPOSIO_API_KEY", "BOX_TOKEN", "OPENCODE_API_KEY", "SAGAX_TTS_KEY"] as const;
+    const names = ["XAI_API_KEY", "BOX_TOKEN", "OPENCODE_API_KEY", "SAGAX_TTS_KEY"] as const;
     for (const name of names) process.env[name] = `${name}-must-not-leak`;
 
     await expect(instance.generateText?.("summarize safely")).resolves.toBe("fake generated text");

@@ -66,17 +66,25 @@ struct RoutineTriggersSection: View {
         }
     }
 
+    /// A brand as written; bot email (not a brand) in the app's language.
+    private static func sourceName(_ type: String) -> String {
+        type == "botmail" ? String(localized: "Bot email") : WebhookPublicURL.sourceLabel(type)
+    }
+
     private func title(_ hook: WebhookListing) -> String {
         if !hook.name.isEmpty { return hook.name }
-        if let type = hook.sourceType, !type.isEmpty { return WebhookPublicURL.sourceLabel(type) }
+        if let type = hook.sourceType, !type.isEmpty { return Self.sourceName(type) }
         return String(localized: "Webhook")
     }
 
     private func detail(_ hook: WebhookListing) -> String {
         guard let type = hook.sourceType, !type.isEmpty else { return String(localized: "Webhook") }
-        let label = WebhookPublicURL.sourceLabel(type)
+        let label = Self.sourceName(type)
         if hook.sourceEvents.isEmpty { return "\(label) · \(String(localized: "Every event"))" }
-        return "\(label) · \(hook.sourceEvents.joined(separator: ", "))"
+        let events = hook.sourceEvents.map { kind in
+            WebhookPublicURL.eventLabel(kind).map { String(localized: String.LocalizationValue($0)) } ?? kind
+        }
+        return "\(label) · \(events.joined(separator: ", "))"
     }
 
     private func delivery(_ hook: WebhookListing) -> String {

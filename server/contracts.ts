@@ -244,10 +244,6 @@ export interface SendTurnInput {
   preloadBrowserTools?: boolean;
   /** Per-bot integrations the driver may hand to the agent as tools. */
   integrations?: {
-    /** A local stdio bridge owns the remote Composio transport. Keeping the
-     * bridge harness-controlled lets it turn connection requests into trusted
-     * chat cards consistently across provider CLIs. */
-    composio?: { command: string; args: string[]; env: Record<string, string> };
     /** Direct stdio connection to a computer MCP server: Cua Driver (host,
      * sandbox, or VPS) or the harness's own cloud computer server (a Boat).
      * Every engine reaches every computer this way, on its own model.
@@ -329,6 +325,11 @@ export interface SendTurnInput {
    * Claude driver then drops --strict-mcp-config only; other drivers ignore
    * it. Their tools ride the normal permission flow, never pre-allowed. */
   claudeAiConnectors?: boolean;
+  /** Grok: load the cloud connectors of the xAI account this turn runs on,
+   * which is the person's own grok.com sign-in
+   * (harness-connectors.ts grokCloudConnectorsForTurn). Absent or false:
+   * off, whatever the organization turn (review of #943). */
+  grokCloudConnectors?: boolean;
   /** Claude Code plugins installed on the bot (server/bot-plugins.ts): one
    * folder each, already stripped of hooks, MCP and LSP servers. The Claude
    * driver loads each with --plugin-dir. Other drivers do not get these
@@ -404,10 +405,6 @@ export interface ProviderAdapter {
      * told it has a computer whose tools its driver cannot mount — it
      * burns turns hunting for tools that aren't there. */
     computerMcp?: boolean;
-    /** True when the driver mounts turn.integrations.composio (the user's
-     * connected apps). Same rule again: a key in the config says the user
-     * HAS those connections, not that this driver can reach them. */
-    composioMcp?: boolean;
     /** True when the driver can mount the first-party physical-phone MCP. */
     phoneMcp?: boolean;
     /** True when the driver can mount the built-in browser MCP. Same rule:
@@ -442,7 +439,7 @@ export interface ProviderAdapter {
      * Full-auto/bypass provider instances must leave this false. */
     localComputerMcp?: boolean;
     /** True when the driver mounts turn.integrations.custom (the user's own
-     * MCP servers from config). Same rule as composioMcp: an entry in the
+     * MCP servers from config). Same rule as computerMcp: an entry in the
      * config says the servers exist, not that this engine can reach them. */
     customMcp?: boolean;
     /** True when a turn given a resumeCursor runs in that exact native

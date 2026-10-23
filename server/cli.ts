@@ -110,6 +110,8 @@ export interface CliOptions {
   dryRun?: boolean;
   yes?: boolean;
   keepData?: boolean;
+  /** fleet upgrade --to: the exact release to install. */
+  fleetVersion?: string;
   fleetUserAction?: "add" | "remove";
   withDeps?: boolean;
   json: boolean;
@@ -204,6 +206,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
       else if (options.command === "fleet" && arg === "--dry-run") options.dryRun = true;
       else if (options.command === "fleet" && arg === "--yes") options.yes = true;
       else if (options.command === "fleet" && arg === "--keep-data") options.keepData = true;
+      else if (options.command === "fleet" && options.fleetAction === "upgrade" && arg === "--to") options.fleetVersion = value();
       else if (options.command === "fleet" && arg === "--chat-only") options.chatOnly = true;
       else return { error: `unknown argument "${arg}"` };
     } catch (error) {
@@ -227,30 +230,30 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = process.env):
   return options;
 }
 
-export const USAGE = `openmausbot — your team of AI bots, ready in a few steps
+export const USAGE = `sagax — your team of AI bots, ready in a few steps
 
-  openmausbot                         set up once, then open your workspace
-  openmausbot setup [--data-dir DIR]
-  openmausbot start [the same options as serve]
-  openmausbot serve [--port 8799] [--data-dir DIR] [--label NAME]
-                    [--public-url https://host] [--tailscale | --tunnel | --domain HOST] [--no-pair]
-  openmausbot pair  [--label NAME] [--client] [--phone ios|android]
-                    [--public-url https://host]
-  openmausbot sessions [revoke ID]
-  openmausbot status
-  openmausbot login [--email you@example.com]
-  openmausbot logout
-  openmausbot access list | add EMAIL [--chat-only] | remove EMAIL
-  openmausbot service install [--domain HOST | --tunnel | --tailscale] [--port N] [--data-dir DIR] | uninstall
-  openmausbot browser install [--with-deps] | status
-  openmausbot fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
-                    [--anthropic-key-file FILE] [--cap USD] [--license-key KEY] [--memory 1G]
-                  | list | users NAME add|remove EMAIL [--chat-only] | suspend NAME | resume NAME
-                  | delete NAME --yes [--keep-data] | upgrade   (all take --dry-run)
-                  | agent [--socket PATH] [--group USER]   (root; installed by init --operator)
+  sagax                   set up once, then open your workspace
+  sagax setup [--data-dir DIR]
+  sagax start [the same options as serve]
+  sagax serve [--port 8799] [--data-dir DIR] [--label NAME]
+              [--public-url https://host] [--tailscale | --tunnel | --domain HOST] [--no-pair]
+  sagax pair  [--label NAME] [--client] [--phone ios|android]
+              [--public-url https://host]
+  sagax sessions [revoke ID]
+  sagax status
+  sagax login [--email you@example.com]
+  sagax logout
+  sagax access list | add EMAIL [--chat-only] | remove EMAIL
+  sagax service install [--domain HOST | --tunnel | --tailscale] [--port N] [--data-dir DIR] | uninstall
+  sagax browser install [--with-deps] | status
+  sagax fleet init --domain HOST [--operator USER] | create NAME --admin EMAIL [--member EMAIL] [--brand FILE]
+              [--anthropic-key-file FILE] [--cap USD] [--license-key KEY] [--memory 1G]
+            | list | users NAME add|remove EMAIL [--chat-only] | suspend NAME | resume NAME
+            | delete NAME --yes [--keep-data] | upgrade [--to X.Y.Z]   (all take --dry-run)
+            | agent [--socket PATH] [--group USER]   (root; installed by init --operator)
 
 setup   choose AI access and optional phone access; keep existing bots and chats
-start   same as openmausbot: use your saved settings and open the workspace
+start   same as sagax: use your saved settings and open the workspace
 serve   starts the server without prompts and prints a pairing link + QR code
 pair    mints a pairing code against a running server (--client: chat only)
 sessions lists paired devices; "sessions revoke ID" signs one out
@@ -278,6 +281,9 @@ fleet   many client workspaces on one Linux server, each its own account,
         init --operator USER also installs the fleet agent, a root service
         on a Unix socket only USER may open, so the workspace running as
         USER manages the others from Settings → Installations.
+        upgrade installs one exact release of @pulsatrixtechnologies/sagax (--to
+        X.Y.Z, default this CLI's own), points the workspaces at it and
+        restarts them; never a floating tag.
 
 --tailscale  serve over your tailnet: Tailscale terminates HTTPS and the
              link uses this machine's MagicDNS name (needs Tailscale signed in
@@ -285,7 +291,7 @@ fleet   many client workspaces on one Linux server, each its own account,
 --tunnel     serve at a public https address from your control plane
              (SAGAX_CONTROL_PLANE_URL) through a Cloudflare tunnel: no
              domain, no proxy, no open port. Run
-             \`openmausbot login\` once on this machine first.
+             \`sagax login\` once on this machine first.
 --domain     serve at https://HOST on your own domain: a pinned Caddy is
              downloaded once and run alongside the server, and gets the
              certificate itself. Point the domain's DNS at this machine and
@@ -1256,6 +1262,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         dryRun: options.dryRun ?? false,
         yes: options.yes ?? false,
         keepData: options.keepData ?? false,
+        ...(options.fleetVersion ? { version: options.fleetVersion } : {}),
         userAction: options.fleetUserAction,
         email: options.email,
         chatOnly: options.chatOnly,

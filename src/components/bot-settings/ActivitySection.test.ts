@@ -300,6 +300,19 @@ const codeJob = (id: string, over: Partial<BotActivityItem> = {}) => job(id, {
 describe("history and errors", () => {
   const props = (over: Partial<Parameters<typeof PanelSections>[0]> = {}) => ({ list: { items: [], subagents: [] }, live: liveOf([]), actions: { onOpen: () => {}, now: NOW }, onOpenHistory: () => {}, ...over });
 
+  it("draws no All history row when the person hid it (Settings > Appearance)", () => {
+    const html = renderToStaticMarkup(createElement(PanelSections, props({ showAllHistory: false })));
+    expect(html).not.toContain(">All history<");
+    expect(html).not.toContain('data-activity-history="all"');
+  });
+
+  it("is hidden by default in the panel: ActivitySection reads the preference", () => {
+    const source = readFileSync(new URL("./ActivitySection.tsx", import.meta.url), "utf8");
+    expect(source).toContain("showAllHistory={showAllHistory}");
+    expect(source).toContain("useShowAllHistory()");
+    expect(source).toContain("watchBotHistoryRequests(bot.id");
+  });
+
   it("keeps the history reachable through one quiet All history row when no section is drawn", () => {
     const html = renderToStaticMarkup(createElement(PanelSections, props()));
     expect(html).toContain('data-activity-history="all"');

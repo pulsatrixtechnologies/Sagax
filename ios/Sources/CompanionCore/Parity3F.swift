@@ -9,16 +9,20 @@ import Foundation
 // MARK: - Computer recover (O4)
 
 public enum ComputerCare {
-    /// Up, or coming up on purpose. Anything else can be recovered.
-    private static let healthy: Set<String> = ["running", "ready", "idle"]
+    /// Up and usable.
+    private static let running: Set<String> = ["running", "ready", "idle"]
+    /// Asleep or not created yet on purpose (an organization's environments
+    /// sleep off hours): it starts with the next task.
+    private static let asleep: Set<String> = ["stopped", "paused", "missing", "starting"]
 
-    /// True when the shared computer is configured and not simply running:
-    /// a problem, a cluster still waking, or a state that is not healthy.
+    /// True for a real failure only: a problem the computer reports, or a
+    /// state that is neither up nor asleep. A computer that sleeps or wakes
+    /// is left alone (parity R7 review: a rebuild removes installed apps).
+    /// Same rule as the desktop (src/lib/computer-recover.ts).
     public static func needsRecover(configured: Bool, state: String, problem: String?, waking: Bool) -> Bool {
         guard configured else { return false }
         if let problem, !problem.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        if waking { return true }
-        return !healthy.contains(state)
+        return !running.contains(state) && !asleep.contains(state)
     }
 }
 
@@ -170,24 +174,6 @@ public enum PublishedPagesRules {
     }
 }
 
-// MARK: - Connector preferences (PL4)
-
-public enum ConnectorPreferences {
-    /// Services whose tool list was narrowed. Clearing sends an empty list.
-    public static func slugsToClear(_ disabled: [String: [String]]) -> [String] {
-        disabled.compactMap { slug, tools in
-            guard !tools.isEmpty, validSlug(slug) else { return nil }
-            return slug
-        }.sorted()
-    }
-
-    public static func validSlug(_ slug: String) -> Bool {
-        !slug.isEmpty && slug.utf8.allSatisfy { byte in
-            (48...57).contains(byte) || (65...90).contains(byte) || (97...122).contains(byte) || byte == 95 || byte == 45
-        }
-    }
-}
-
 // MARK: - Client
 
 private struct PublishedPageListBody: Decodable {
@@ -196,10 +182,6 @@ private struct PublishedPageListBody: Decodable {
 
 private struct PublishedPageBody: Decodable {
     var page: PublishedPageSummary?
-}
-
-private struct ConnectorToolsBody: Decodable {
-    var disabledTools: [String: [String]]?
 }
 
 private struct ComputerChangeBody: Decodable {
@@ -258,17 +240,6 @@ public extension CompanionClient {
     func deletePublishedPage(id: String) async throws {
         guard PublishedPagesRules.validID(id) else { throw APIError.badURL }
         try await send(makeRequest("DELETE", "/api/pages/\(id)"))
-    }
-
-    /// How many services had a tool turned off. Each is set back to all on.
-    /// Accounts stay connected. `PUT /api/connectors/:slug/tools`.
-    func clearConnectorPreferences() async throws -> Int {
-        let inventory = try await send(makeRequest("GET", "/api/connectors/tools"), as: ConnectorToolsBody.self)
-        let slugs = ConnectorPreferences.slugsToClear(inventory.disabledTools ?? [:])
-        for slug in slugs {
-            try await send(makeRequest("PUT", "/api/connectors/\(slug)/tools", body: ["disabledTools": [String]()]))
-        }
-        return slugs.count
     }
 
     private func changeDesktopComputer(_ action: String, _ body: [String: String]) async throws {

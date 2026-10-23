@@ -230,7 +230,10 @@ struct MessageRow: View {
         case .secret:
             if let secret = message.secret {
                 // A decline that resumed leaves nothing to show (SecretRequestCard.tsx).
-                if !SecretCardRules.isHidden(secret) {
+                if VaultLoginCard.isVaultLogin(secret) {
+                    // a bot's sign-in request: saved logins and 1Password (parité R10)
+                    VaultLoginCardView(chat: chat, message: message, secret: secret)
+                } else if !SecretCardRules.isHidden(secret) {
                     CredentialRequestCardView(chat: chat, message: message, secret: secret)
                 }
             } else if let text = message.text, !text.isEmpty {
@@ -312,9 +315,9 @@ struct MessageRow: View {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .connector:
-            if let connector = message.connector, session.surfaceGate.allows(.connectorCard) {
-                ConnectorCardView(chat: chat, message: message, connector: connector)
-            } else if let text = message.text, !text.isEmpty {
+            // The connect-an-app card is gone; a message of this kind still
+            // carries text written for this reader, so show it.
+            if let text = message.text, !text.isEmpty {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
         case .access:

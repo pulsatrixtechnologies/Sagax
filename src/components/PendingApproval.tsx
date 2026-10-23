@@ -20,7 +20,7 @@ import { describeApproval, isTechnicalText } from "@/lib/approval-describe";
 import { reviewedSkillSha256 } from "../../shared/skill-request";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { useOrgApprovalPolicy } from "@/lib/org-approval-policy";
-import { CustomRuleNoticeLine } from "./CustomRuleNotice";
+import { CustomRuleNoticeLine, riskList } from "./CustomRuleNotice";
 import { customRuleError } from "./bot-settings/CustomRulesCard";
 import { recipientKeysForSendCard } from "../../shared/send-card-recipients";
 import { parseRecipientEntry } from "../../shared/allowed-recipients";
@@ -486,6 +486,27 @@ export function PendingApprovalActions({
       {t("approval.action.alwaysAllow")}
     </button>
   ) : null;
+  // 2026-10-21 (parité R10, ligne 80): a screen action on the person's own
+  // computer whose app the server read says which app, and what Always
+  // allow then covers ("Katarina peut voir Safari, y cliquer et y saisir du
+  // texte sur cet ordinateur").
+  const computerApp = ownerRule?.tool === "computer_app" && typeof ownerRule.scope?.app === "string" ? ownerRule.scope.app : null;
+  const appLine = computerApp ? (
+    <span className="min-w-0 text-[12.5px] leading-5 text-ink-secondary" data-computer-app="">
+      {t("approval.computerApp.line", { name: bot?.name ?? t("approval.someone"), app: computerApp })}
+    </span>
+  ) : null;
+  // 2026-10-22: why a card still shows although the bot is on auto mode and
+  // has rules — a risky action (a deletion, an external send, a payment) no
+  // rule covers. Name the risk type in human terms; "Toujours permettre"
+  // (the candidate button below) authors a correctly scoped rule that covers
+  // it. Not shown when a rule notice already explains (card.customRule), nor
+  // on the owner-rule path.
+  const riskHint = candidate && candidate.risks.length > 0 && !ownerRule && !pending.message.card?.customRule ? (
+    <span className="basis-full min-w-0 text-[12.5px] leading-5 text-ink-secondary" data-approval-risk-hint="">
+      {t("approval.whyRisk", { kinds: riskList(candidate.risks) })}
+    </span>
+  ) : null;
   if (variant === "inbox") {
     // Yes and No side by side, as large as the panel allows: green allows
     // exactly what the card shows, red declines it. The grants that last
@@ -493,6 +514,8 @@ export function PendingApprovalActions({
     const big = "flex min-h-14 flex-1 flex-col items-center justify-center rounded-2xl px-4 py-2.5 transition-[filter,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed disabled:opacity-40";
     return (
       <div className="flex flex-col gap-3 px-5 pb-5 pt-3" data-approval-actions="inbox">
+        {appLine}
+        {riskHint}
         <div className="flex gap-3">
           <button
             type="button"
@@ -528,6 +551,8 @@ export function PendingApprovalActions({
   }
   return (
     <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-2">
+      {appLine}
+      {riskHint}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
         <button
           type="button"

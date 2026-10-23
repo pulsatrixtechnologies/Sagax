@@ -66,9 +66,12 @@ FROM node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f
 # a t64 suffix for its 64-bit time_t transition): agent-browser --with-deps
 # invokes sudo even as root, and this image deliberately does not ship sudo.
 # git + curl: agent CLIs shell out to git; curl backs the healthcheck
+# openssh-client: `tailcat ssh` and `tailcat cp` exec the system ssh client
+# (tailcat is its ProxyCommand), so a Tailcat remote session's shell,
+# inventory, screen and files need it on the server.
 RUN apt-get update \
   && apt-get upgrade -y --no-install-recommends \
-  && apt-get install -y --no-install-recommends ca-certificates curl git \
+  && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client \
     libstdc++6 \
     python3.13=3.13.5-2+deb13u5 python3.13-venv=3.13.5-2+deb13u5 \
     libxcb-shm0 libx11-xcb1 libx11-6 libxcb1 libxext6 libxrandr2 \

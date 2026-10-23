@@ -91,12 +91,20 @@ describe("SkinPicker", () => {
       [...host.querySelectorAll(`[data-settings-row="skinVariant-${group}"] [data-skin-variant]`)].map((el) => el.getAttribute("data-skin-variant"));
     expect(row("color")).toEqual(["basic", "red", "pink", "blue", "green", "yellow"]);
     expect(row("duo")).toEqual(["aurore", "ocean", "neon", "foret"]);
-    expect(row("ambiance")).toEqual(["cyberpunk", "sunset", "nordic", "candy"]);
-    // a mood without the scheme worn now shows the one it has
-    expect(swatch("candy")!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe("daylight");
+    // dark mode: no light mood (Candy), JC 2026-10-22
+    expect(row("ambiance")).toEqual(["cyberpunk", "sunset", "nordic"]);
+    expect(swatch("candy")).toBeNull();
     const dot = swatch("yellow")!.querySelector("[data-skin]")!;
     expect([dot.getAttribute("data-skin"), dot.getAttribute("data-skin-tint")]).toEqual(["midnight", "yellow"]);
     expect(swatch("basic")!.querySelector("[data-skin]")!.hasAttribute("data-skin-tint")).toBe(false);
+  });
+
+  it("lists only the light moods in a light skin", () => {
+    open("daylight");
+    const row = (group: string) =>
+      [...host.querySelectorAll(`[data-settings-row="skinVariant-${group}"] [data-skin-variant]`)].map((el) => el.getAttribute("data-skin-variant"));
+    expect(row("ambiance")).toEqual(["sunset", "nordic", "candy"]);
+    expect(swatch("candy")!.querySelector("[data-skin]")!.getAttribute("data-skin")).toBe("daylight");
   });
 
   it("picks a colour: the skin stays, the tint changes and is remembered", async () => {
@@ -125,7 +133,7 @@ describe("SkinPicker", () => {
     systemDark = false;
     const trigger = modePill()!.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!;
     await act(async () => { trigger.click(); await flush(); });
-    const auto = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Auto"))!;
+    const auto = [...document.body.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Auto"))!;
     await act(async () => { auto.click(); await flush(); });
     expect(localStorage.getItem(SKIN_MODE_KEY)).toBe("auto");
     expect(worn()).toEqual(["daylight", "green"]);
@@ -140,7 +148,7 @@ describe("SkinPicker", () => {
     await act(async () => { swatch("red")!.click(); await flush(); });
     const depth = host.querySelector<HTMLElement>('[data-settings-row="skinDepth"]')!;
     await act(async () => { depth.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!.click(); await flush(); });
-    const full = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Full"))!;
+    const full = [...document.body.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Full"))!;
     await act(async () => { full.click(); await flush(); });
     expect(document.documentElement.dataset.skinDepth).toBe("full");
     expect(localStorage.getItem("omb-skin-depth")).toBe("full");
@@ -148,7 +156,7 @@ describe("SkinPicker", () => {
     expect(host.querySelector('[data-settings-row="skinDepth"]')).toBeNull();
     const textureRow = host.querySelector<HTMLElement>('[data-settings-row="skinTexture"]')!;
     await act(async () => { textureRow.querySelector<HTMLButtonElement>("[aria-haspopup='listbox']")!.click(); await flush(); });
-    const dots = [...host.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Dots"))!;
+    const dots = [...document.body.querySelectorAll<HTMLElement>("[role='option']")].find((el) => el.textContent?.includes("Dots"))!;
     await act(async () => { dots.click(); await flush(); });
     expect(document.documentElement.dataset.skinTexture).toBe("dots");
     expect(localStorage.getItem("omb-skin-texture")).toBe("dots");

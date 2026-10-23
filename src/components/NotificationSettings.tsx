@@ -20,6 +20,7 @@ import {
 import { NOTIFICATION_SOUND_CHOICES, notificationSoundChoice, playNotificationSound } from "@/lib/notification-sound";
 import { CompactRow, DescribedRow, PillSelect, SettingsGroup, Switch } from "./SettingsPrimitives";
 import { PrivacySettings } from "./PrivacySettings";
+import { NotificationInvite } from "./NotificationInvite";
 
 function ThisComputer() {
   return <span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary">· {t("settings.notifications.thisComputer")}</span>;
@@ -36,6 +37,8 @@ export function NotificationSettings({ privacy = false }: { privacy?: boolean })
   return (
     <>
       <SettingsGroup title={t("settings.group.alerts")} groupId="alerts" accessory={<ThisComputer />}>
+        {/* asks for the browser permission, only while it was never asked */}
+        <NotificationInvite />
         <CompactRow label={t("settings.notificationSounds.title")} rowId="notificationSounds">
           <Switch checked={sounds} aria-label={t("settings.notificationSounds.play")} onClick={() => setNotificationSounds(!sounds)} />
         </CompactRow>

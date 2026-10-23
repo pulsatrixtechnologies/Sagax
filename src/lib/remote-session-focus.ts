@@ -1,5 +1,5 @@
-// Which remote session the Computer tab should show. The server keeps the
-// same choice for the shell; this store updates the panel before the next poll.
+// Which remote session is in focus (the one the shell opens on). The server
+// keeps the same choice; this store updates the screen before the next poll.
 import { useSyncExternalStore } from "react";
 
 let focused: { botId: string; id: string } | null = null;

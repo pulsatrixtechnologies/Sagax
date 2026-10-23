@@ -43,11 +43,7 @@ export const ALLOWED = [
     test: (match, around) => /^milind-soni$/i.test(match) && /BLOCKED_GITHUB_OWNERS = Object\.freeze\(\["milind-soni"\]\)/.test(around),
   },
   {
-    why: "Composio's app catalog: a person may connect their own PostHog account",
-    test: (match, around) => /^posthog$/i.test(match) && /slug: "posthog", label: "PostHog", blurb: "Analytics, feature flags, experiments", domain: "posthog\.com"/.test(around),
-  },
-  {
-    why: "Grok import's Composio toolkit slug map (shared/grok-import.ts): the word PostHog as a slug, no host",
+    why: "Grok import's toolkit slug map (shared/grok-import.ts): the word PostHog as a slug, no host",
     test: (match, around) => /^posthog$/i.test(match) && /sentry:\s*["`]sentry["`],\s*posthog:\s*["`]posthog["`]/.test(around),
   },
   {

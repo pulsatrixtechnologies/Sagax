@@ -3,7 +3,10 @@ import { DEFAULT_BROWSER_RESULT_BUDGET, describePageChange, OBSERVE_PAGE_SCRIPT,
 import { randomBytes } from "node:crypto";
 import { aimOf, FILL_CREDENTIAL_TOOL, FILL_CREDENTIAL_TOOL_SPEC, formPostsOnly, formStaysOnOrigin, LOGIN_MODE, parseEvalArray, parseEvalObject, parseFillArguments, parseProbe, parseWrite, probeScript, problemText, SecretRedactor, writeScript, type FillRequest, type LoginRequest } from "./credential-fill.ts";
 import { itemIdFromHandle } from "../shared/credential-vault.ts";
-import { parsePurchaseCall, REQUEST_PURCHASE_TOOL, REQUEST_PURCHASE_TOOL_SPEC } from "../shared/payment-vault.ts";
+import {
+  parsePurchaseCall, parseReceiptCall, RECORD_PURCHASE_TOOL, RECORD_PURCHASE_TOOL_SPEC, REQUEST_PURCHASE_TOOL, REQUEST_PURCHASE_TOOL_SPEC,
+  type PurchaseFlightLeg, type PurchaseItem,
+} from "../shared/payment-vault.ts";
 import { clearScript, loginOutcomeText, loginStateScript, markerScript, MAX_LOGIN_STEPS, parseLoginState, stepFields, submitScript, type LoginField, type LoginOutcome, type LoginPageState } from "./login-fill.ts";
 import type { VaultFillField } from "../shared/credential-vault.ts";
 
@@ -76,12 +79,16 @@ export class TransportError extends Error {}
 export interface CredentialFillAccess {
   /** The value to type: the vault checks the bot's grant and the page's
    * top-level URL (read from the engine) against the item's sites. */
-  resolve(request: { handle: string; field: VaultFillField; pageUrl: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code?: string }>;
+  /** `form`: the identity of the form the field sits in (its submit
+   * targets), so a payment approval is used on that one form. */
+  resolve(request: { handle: string; field: VaultFillField; pageUrl: string; form?: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code?: string }>;
   /** The bot holds a live grant on some item: its own scripts are off in
    * the whole browser session, so it cannot plant a listener before a fill. */
   armed(): boolean;
   /** Ask the person to approve a payment. The value never comes back. */
-  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId: string; merchant?: string; addressId?: string; contactId?: string }): { ok: true; message: string } | { ok: false; message: string };
+  requestPurchase?(input: { pageUrl: string; amount: string; currency: string; cardId: string; merchant?: string; addressId?: string; contactId?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
+  /** The shop confirmed the order: the receipt for the person. */
+  recordPurchase?(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
 }
 
 /** Argument names that address an element. On a browser where a login was
@@ -616,6 +623,9 @@ export class BrowserRuntime {
         if (method === "tools/call" && toolName === REQUEST_PURCHASE_TOOL) {
           return await this.requestPurchase(session, entry.client, params, beforeDispatch, credentials);
         }
+        if (method === "tools/call" && toolName === RECORD_PURCHASE_TOOL) {
+          return await this.recordPurchase(session, entry.client, params, beforeDispatch, credentials);
+        }
         let guardedParams = params;
         if (method === "tools/call" && scriptTool(toolName)) {
           // While the bot may use a saved login, and in a browser where one
@@ -853,8 +863,24 @@ export class BrowserRuntime {
       ...(call.merchant ? { merchant: call.merchant } : {}),
       ...(addressId ? { addressId } : {}),
       ...(contactId ? { contactId } : {}),
+      ...(call.items ? { items: call.items } : {}),
+      ...(call.flights ? { flights: call.flights } : {}),
     });
     return toolText(opened.message, !opened.ok);
+  }
+
+  /** The receipt of a purchase the person approved, from the shop's
+   * confirmation page (the page's own site, never one the bot names). */
+  private async recordPurchase(session: string, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
+    const call = parseReceiptCall(params);
+    if (typeof call === "string") return toolText(call, true);
+    if (!credentials?.recordPurchase) return toolText("Purchases are not available in this browser.", true);
+    const href = await this.engineUrl(client);
+    beforeDispatch?.();
+    if (this.gate(session).owner !== null) throw new Error(BROWSER_CONTROL_REFUSAL);
+    if (!href) return toolText("The page's address could not be read; nothing was recorded.", true);
+    const recorded = credentials.recordPurchase({ pageUrl: href, ...call });
+    return toolText(recorded.message, !recorded.ok);
   }
 
   private async fillCredential(session: string, spec: BrowserSpawnSpec, client: BrowserClient, params: unknown, beforeDispatch: (() => void) | undefined, credentials: CredentialFillAccess | undefined): Promise<unknown> {
@@ -901,7 +927,7 @@ export class BrowserRuntime {
     if (probe.problem) return refuse(probe.problem);
     if (!formStaysOnOrigin(probe.targets, origin)) return refuse("cross_origin_form");
     if (!formPostsOnly(probe.methods)) return refuse("get_form");
-    const resolved = await credentials.resolve({ handle: request.credential, field: request.field, pageUrl: href });
+    const resolved = await credentials.resolve({ handle: request.credential, field: request.field, pageUrl: href, form: [...probe.targets, ...probe.methods].sort().join("\n") });
     stillOurs();
     if (!resolved.ok) return { ok: false, code: resolved.code ?? "vault", message: resolved.message };
     // Remembered before the value leaves: anything the engine says from now
@@ -1456,7 +1482,7 @@ function firstText(result: unknown): string {
  * fill_credential. An engine tool with either name is replaced. */
 function withRestartTool(result: unknown): unknown {
   if (!result || typeof result !== "object" || !Array.isArray((result as { tools?: unknown }).tools)) return result;
-  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL, REQUEST_PURCHASE_TOOL]);
+  const own = new Set<unknown>([BROWSER_RESTART_TOOL, FILL_CREDENTIAL_TOOL, REQUEST_PURCHASE_TOOL, RECORD_PURCHASE_TOOL]);
   const tools = ((result as { tools: unknown[] }).tools).filter((tool) => !own.has((tool as { name?: unknown } | null)?.name));
-  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC, REQUEST_PURCHASE_TOOL_SPEC] };
+  return { ...result, tools: [...tools, BROWSER_RESTART_TOOL_SPEC, FILL_CREDENTIAL_TOOL_SPEC, REQUEST_PURCHASE_TOOL_SPEC, RECORD_PURCHASE_TOOL_SPEC] };
 }

@@ -8,6 +8,7 @@ import { DATA_DIR } from "./config.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { redactSecretsInText } from "./redact.ts";
+import { routineReportOutcome } from "./routine-report.ts";
 import { stopCause } from "./drivers/engine-errors.ts";
 import {
   evaluateRoutinePrecheck,
@@ -157,6 +158,11 @@ export interface Routine {
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts).
    * Absent: runs whether they are there or not. */
   onlyWhenPresent?: boolean;
+  /** 2026-10-22 (JC): post this routine's completed results in the person's
+   * conversation (a visible report, never the prompt). Absent inherits the
+   * installation default (features.routinesInConversation). Approvals,
+   * questions and errors surface whichever this is; a quiet run stays silent. */
+  postResults?: boolean;
   /** Occurrences skipped while the person was away, until dismissed. */
   awaySkips?: RoutineAwaySkips;
   /** Deterministic test run before a scheduled run starts any model turn
@@ -294,6 +300,9 @@ export interface RoutineRun {
   attention?: string;
   /** Why a `nothing_to_report` run had nothing to do. */
   quietReason?: string;
+  /** 2026-10-22: a completed run whose final message had nothing for the
+   * person (server/routine-report.ts): nothing is posted to their chat. */
+  quiet?: true;
   error?: string;
   cost?: number | null;
   denials?: string[];
@@ -363,6 +372,8 @@ export interface RoutineInput {
   overlap?: "skip" | "queue";
   /** Only while the person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
+  /** Post results in the conversation; null clears to the installation default. */
+  postResults?: boolean | null;
   /** Omission preserves it; null removes it. */
   precheck?: RoutinePrecheck | null;
   /** Omission preserves routing; null resets it to the bot's main thread. */
@@ -382,6 +393,9 @@ interface RoutineFile {
   webhookRunReceipts?: WebhookRunReceipt[];
   /** Who was told about an owner-only failure (signed out, no credit...), until a run of that bot completes. */
   ownerNotices?: RoutineOwnerNotice[];
+  /** 2026-10-22: existing routines were pinned postResults=true once, so an
+   * upgrade never silences a person's already-visible routine results. */
+  postResultsMigrated?: true;
 }
 
 const webhookRunReceiptSchema = z.object({
@@ -513,6 +527,11 @@ export interface RoutineManagerOptions {
    * card, its Undo, the person's switch while the conversation is open).
    * Changes made elsewhere (the console, a deleted bot) never call it. */
   onEnabledChanged?: (routine: Routine, change: RoutineEnabledChange) => void;
+  /** 2026-10-21 (JC): a bot created, updated or deleted a routine from a
+   * conversation; its named line goes there (server/routine-chat-events.ts).
+   * `updated` is a definition edit, never a bare on/off flip (onEnabledChanged
+   * carries those). Changes with no conversation (console, API) do not call it. */
+  onRoutineChanged?: (routine: Routine, change: RoutineChangeNote) => void;
   /** 2026-10-16: whether the routine's person is there now, for a routine
    * with onlyWhenPresent (server/routine-away.ts). Absent: unknown (runs). */
   presence?: (routine: Routine) => AwayVerdict;
@@ -544,8 +563,25 @@ export interface RoutineEnabledChange {
   messageId?: string;
 }
 
+/** Where a routine's definition was created, updated or deleted, for its
+ * named line in that conversation (server/routine-chat-events.ts). */
+export interface RoutineChangeNote {
+  action: "created" | "updated" | "deleted";
+  threadId: string;
+  /** the routine card the change was confirmed on, when there is one */
+  messageId?: string;
+}
+
 /** Slice 6: routine fields whose edit moves runAs to the editor. */
 const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments"] as const;
+
+/** Fields whose edit is a definition change worth an "Updated routine" line
+ * (everything the editor exposes but the bare enabled flip). */
+const ROUTINE_DEFINITION_FIELDS = [
+  "name", "prompt", "target", "botId", "groupId", "runOn", "schedule",
+  "durationMinutes", "timeoutMinutes", "attachments", "continuity", "overlap",
+  "onlyWhenPresent", "precheck",
+] as const;
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const CATCH_UP_MS = 12 * 60 * 60_000;
@@ -1118,6 +1154,7 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(continuity ? { continuity: true } : {}),
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(input.onlyWhenPresent === true ? { onlyWhenPresent: true } : {}),
+    ...(typeof input.postResults === "boolean" ? { postResults: input.postResults } : {}),
     ...(precheck ? { precheck } : {}),
   };
 }
@@ -1155,6 +1192,9 @@ export class RoutineManager {
   /** A file from before frozenResultsCleared: clearFrozenResultsThreads has
    * not run on it yet, and no save says it has. */
   private frozenPending = false;
+  /** A file from before postResults existed: its routines have not been
+   * pinned to the old visible behaviour yet, and no save says they have. */
+  private postResultsPending = false;
 
   constructor(options: RoutineManagerOptions) {
     this.options = options;
@@ -1195,11 +1235,13 @@ export class RoutineManager {
               runAs: loadRunAs(routine.runAs),
               suspended: loadSuspension(routine.suspended),
               onlyWhenPresent: routine.onlyWhenPresent === true ? true : undefined,
+              postResults: typeof routine.postResults === "boolean" ? routine.postResults : undefined,
               awaySkips: loadAwaySkips(routine.awaySkips),
               precheck: loadRoutinePrecheck(routine.precheck),
             };
             if (loaded.precheck === undefined) delete loaded.precheck;
             if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
+            if (loaded.postResults === undefined) delete loaded.postResults;
             if (loaded.awaySkips === undefined) delete loaded.awaySkips;
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
             if (loaded.installedPackage === undefined) delete loaded.installedPackage;
@@ -1284,6 +1326,20 @@ export class RoutineManager {
         if (known.has(key)) continue;
         this.webhookRunReceipts.push({ webhookId: run.webhookId, deliveryId: run.deliveryId, runId: run.id, acceptedAt: run.createdAt });
         known.add(key);
+      }
+      // 2026-10-22 (JC): before postResults a routine's completed runs always
+      // posted a card into its conversation. Pin every existing routine to
+      // true once, so an upgrade never makes a person's visible routine go
+      // silent; new routines created after this inherit the installation
+      // default instead. A fresh install reaches the catch below and marks
+      // itself migrated with nothing to pin.
+      this.postResultsPending = disk.postResultsMigrated !== true;
+      if (this.postResultsPending) {
+        for (const routine of this.routines) {
+          if (routine.postResults === undefined) routine.postResults = true;
+        }
+        this.postResultsPending = false;
+        this.save();
       }
     } catch (error) {
       this.routines = [];
@@ -1553,6 +1609,7 @@ export class RoutineManager {
       if (request) this.rememberRoutineRequest(request, routine.id, at);
     }, discardResults);
     this.emitRoutine(routine);
+    this.noteRoutineChanged("created", routine, request, meta);
     return this.routineWithHealth(routine);
   }
 
@@ -1588,11 +1645,17 @@ export class RoutineManager {
       continuity: patch.continuity ?? routine.continuity,
       overlap: Object.hasOwn(patch, "overlap") ? patch.overlap : routine.overlap,
       onlyWhenPresent: patch.onlyWhenPresent ?? routine.onlyWhenPresent,
+      // null clears it back to the installation default; omission preserves it.
+      postResults: Object.hasOwn(patch, "postResults") ? (patch.postResults ?? undefined) : routine.postResults,
       precheck: Object.hasOwn(patch, "precheck") ? patch.precheck : routine.precheck,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
     const enabledChanged = clean.enabled !== routine.enabled;
+    // A definition edit (anything but a bare on/off flip): its named line goes
+    // in the conversation. Read before commitMutation rewrites `routine`.
+    const definitionChanged = ROUTINE_DEFINITION_FIELDS.some((field) =>
+      JSON.stringify((clean as Record<string, unknown>)[field] ?? null) !== JSON.stringify((routine as unknown as Record<string, unknown>)[field] ?? null));
     // Definition-only edits retain due work and offline catch-up.
     let nextRunAt = routine.nextRunAt;
     let nominal = routine.nominalRunAt;
@@ -1638,6 +1701,9 @@ export class RoutineManager {
       }
       // Switching "Only when I'm here" off forgets what it skipped.
       if (!clean.onlyWhenPresent) { delete routine.onlyWhenPresent; delete routine.awaySkips; }
+      // A cleared postResults (null in the patch) is absent, not false, so it
+      // goes back to inheriting the installation default.
+      if (clean.postResults === undefined) delete routine.postResults;
       if (!clean.precheck) delete routine.precheck;
       if (Object.hasOwn(patch, "timeoutMinutes") && patch.timeoutMinutes == null) {
         delete routine.timeoutMinutes;
@@ -1672,7 +1738,26 @@ export class RoutineManager {
         // The change is committed; its line in the conversation is a courtesy.
       }
     }
+    if (definitionChanged) this.noteRoutineChanged("updated", routine, request, meta);
     return this.routineWithHealth(routine);
+  }
+
+  /** Raise onRoutineChanged when a create/update/delete came from a
+   * conversation (a routine card, or the person's own edit while it is open). */
+  private noteRoutineChanged(
+    action: RoutineChangeNote["action"],
+    routine: Routine,
+    request?: { threadId: string; messageId: string },
+    meta?: RoutineWriteMeta,
+  ): void {
+    if (!this.options.onRoutineChanged) return;
+    const conversation = request?.threadId ? { threadId: request.threadId, messageId: request.messageId } : meta?.conversation;
+    if (!conversation?.threadId) return;
+    try {
+      this.options.onRoutineChanged(cloneRoutine(routine), { action, threadId: conversation.threadId, messageId: conversation.messageId });
+    } catch {
+      // The change is committed; its line in the conversation is a courtesy.
+    }
   }
 
   remove(id: string, request?: RoutineRequestCommitFor<"delete">): boolean {
@@ -1680,6 +1765,9 @@ export class RoutineManager {
     if (request && this.matchingRoutineRequestReceipt(request)) return true;
     const at = this.routines.findIndex((r) => r.id === id);
     if (at === -1) return false;
+    // Keep the name and ownership for the "Deleted routine" line: the routine
+    // is gone once spliced, so the chip has nothing live to read.
+    const removed = cloneRoutine(this.routines[at]);
     const changedRuns: RoutineRun[] = [];
     this.commitMutation(() => {
       this.routines.splice(at, 1);
@@ -1701,6 +1789,7 @@ export class RoutineManager {
     });
     for (const run of changedRuns) this.emitRun(run);
     this.options.emit?.({ kind: "routine.deleted", routineId: id });
+    this.noteRoutineChanged("deleted", removed, request);
     return true;
   }
 
@@ -2548,6 +2637,7 @@ export class RoutineManager {
         run.status = "completed";
         run.attention = undefined;
         run.finishedAt = this.now();
+        this.settleReport(run);
         // A run that completes ends the owner's open notices for its bot.
         this.ownerNotices = this.ownerNotices.filter((notice) => notice.botId !== run.botId);
       }
@@ -2559,6 +2649,15 @@ export class RoutineManager {
     this.emitRun(run);
     if (event.type === "turn.completed") queueMicrotask(() => void this.tick());
     return cloneRun(run);
+  }
+
+  /** Whether the completed run has anything for the person (JC 2026-10-22):
+   * a quiet run keeps its note in the logs, without the marker. */
+  private settleReport(run: RoutineRun) {
+    const outcome = routineReportOutcome(run.output);
+    run.output = outcome.report || undefined;
+    if (outcome.quiet) run.quiet = true;
+    else delete run.quiet;
   }
 
   failThread(threadId: string, message: string, facts: RoutineFailureFacts = {}) {
@@ -2610,7 +2709,10 @@ export class RoutineManager {
       run.attention = undefined;
       run.finishedAt = this.now();
       run.error = undefined;
-      if (status !== "stopped") run.output = safeDetail.slice(0, 2_000) || undefined;
+      if (status !== "stopped") {
+        run.output = safeDetail.slice(0, 2_000) || undefined;
+        this.settleReport(run);
+      }
       this.save();
       this.emitRun(run);
     }
@@ -3143,6 +3245,7 @@ export class RoutineManager {
     writeFileAtomic(this.file, JSON.stringify({
       version: 1,
       ...(this.frozenPending ? {} : { frozenResultsCleared: true }),
+      ...(this.postResultsPending ? {} : { postResultsMigrated: true }),
       routines: [...this.routines, ...this.unloadedRoutines],
       runs: this.runs,
       routineRequestReceipts: this.routineRequestReceipts,

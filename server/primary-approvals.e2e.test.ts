@@ -28,7 +28,10 @@ import { launchVerificationServer } from "../scripts/control-omb.ts";
 
 it("the Primary Bot answers, always allows and cancels the person's cards at their request, refuses otherwise, and turns cards off", async () => {
   const owner = randomBytes(32).toString("base64url");
-  const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang", SAGAX_TEST_DESKTOP_OWNER_TOKEN: owner });
+  // desktop mode: the vault key the shell would hand over from the OS
+  // keychain (a throwaway one), else the credential store is unavailable
+  // and the Primary Bot's tools answer 503
+  const fixture = await launchVerificationServer({ ...process.env, FAKE_CLAUDE_MODE: "hang", SAGAX_TEST_DESKTOP_OWNER_TOKEN: owner, SAGAX_MCP_OAUTH_KEY: randomBytes(32).toString("hex") });
   const { url, dataDir } = fixture.info;
   const sockets: Socket[] = [];
   const call = async (method: string, path: string, body?: unknown, token?: string) => {

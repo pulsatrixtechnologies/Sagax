@@ -70,10 +70,14 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   delete_artifact: "conversation",
   // a page proposal: a card in the member's own conversation; publishing is theirs
   propose_page: "conversation",
+  // a phone call: a card in the member's own conversation, through their own Twilio profile
+  place_phone_call: "conversation",
   send_voice_note: "conversation",
   end_call: "conversation",
   request_credential: "conversation",
   request_login: "conversation",
+  // a sign-in card in the member's own conversation, for their own engine account
+  open_connector_setup: "conversation",
   // claims (perspicax-claims.ts): a lease in Perspicax held by this bot for
   // its person, through the turn's own Perspicax token; claim_list is a read
   claim: "conversation",
@@ -110,6 +114,13 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   list_terminal_resources: "read",
   offer_shell_terminal: "conversation",
   publish_remote_session: "conversation",
+  // a usage card (server/resource-usage/): read-only, on a computer this
+  // person already reaches; the target's own rights are checked
+  resource_usage: "conversation",
+  // the speaker's own Tailcat session: a fixed read, and one command that
+  // asks unless it only reads (server/remote-session-exec.ts)
+  remote_session_snapshot: "read",
+  remote_session_exec: "conversation",
   // join_meeting only stages a consent card; the person approves each join
   join_meeting: "conversation",
 });

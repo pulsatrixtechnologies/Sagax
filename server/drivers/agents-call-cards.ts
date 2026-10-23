@@ -9,11 +9,13 @@
 import { parseOptionsCardInput, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { parsePageProposal } from "../../shared/published-pages.ts";
 import { parseWidgetInput, widgetAdvice } from "../../shared/widget.ts";
+import { parseAppInput } from "../../shared/app.ts";
+import { PLACE_PHONE_CALL_TOOL } from "../../shared/outbound-call.ts";
 
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
 
-export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "check_widget", "show_widget", "update_widget", "propose_page"]);
+export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "check_widget", "show_widget", "update_widget", "show_html", "update_html", "propose_page", PLACE_PHONE_CALL_TOOL]);
 
 const CARD_ROUTE = "/api/internal/options-card";
 
@@ -50,6 +52,14 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
     };
   }
 
+  // place_phone_call (server/outbound-calls.ts): the card first, the call
+  // once the person said Call; the harness builds every word sent to Twilio.
+  if (name === PLACE_PHONE_CALL_TOOL) {
+    const { ok, body } = await apiResponse("/api/internal/phone-call", { method: "POST", body: JSON.stringify(args) });
+    if (!ok) return { text: String(body.error ?? "The call could not be prepared. Nothing was placed."), isError: true };
+    return { text: String(body.text ?? ""), ...(body.isError === true ? { isError: true } : {}) };
+  }
+
   if (name === "propose_page") {
     const parsed = parsePageProposal(args);
     if (!parsed.ok) return { text: parsed.error, isError: true };
@@ -61,6 +71,31 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
     const pageId = String(body.pageId ?? "");
     return {
       text: `Proposed page ${pageId}, version ${Number(body.version ?? 1)}. It is NOT published: the person reviews it on its card and decides whether to publish it and who can see it. Do not say it is online. To revise it, call propose_page again with page_id "${pageId}".`,
+    };
+  }
+
+  // Live apps (server/chat-apps.ts): the same internal card route, told apart
+  // by `tool`. Checked here first so a malformed page costs no round trip.
+  if (name === "show_html" || name === "update_html") {
+    const parsed = parseAppInput(args);
+    if (!parsed.ok) return { text: parsed.error, isError: true };
+    const updating = name === "update_html";
+    if (updating && (typeof args.app_id !== "string" || !args.app_id.trim())) {
+      return { text: "app_id: is required, the id show_html returned.", isError: true };
+    }
+    const payload = updating
+      ? { tool: "update_html", app_id: args.app_id, html: args.html, ...(typeof args.title === "string" ? { title: args.title } : {}) }
+      : { tool: "show_html", html: args.html, ...(typeof args.title === "string" ? { title: args.title } : {}) };
+    const { ok, body } = await apiResponse(CARD_ROUTE, { method: "POST", body: JSON.stringify(payload) });
+    if (!ok) return { text: String(body.error ?? (updating ? "Could not update that app." : "Could not show that app.")), isError: true };
+    const messageId = String(body.messageId ?? "");
+    const masked = body.masked === true
+      ? " Something in it read as a secret and was masked before it was stored. Never put a password, token or key in an app."
+      : "";
+    return {
+      text: (updating
+        ? `Updated live app ${messageId}.`
+        : `Shown as a live app, id ${messageId}. It runs sandboxed with no network and cannot read anything outside its frame. To change what it shows, call update_html with app_id "${messageId}".`) + masked,
     };
   }
 

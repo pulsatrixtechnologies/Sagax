@@ -78,6 +78,13 @@ export function createUpdaterCoordinator(
     // older page's button, a stray call). Resolves true to go on. Without
     // it such a call does nothing: nothing installs unconfirmed.
     confirmInstall = null,
+    // How long the native macOS staging pass (Squirrel.Mac unpacking the ZIP
+    // after the transfer) may run before we declare it hung. The 0.7.x assets
+    // are hundreds of MB, and staging is disk-bound, so a slow or full disk
+    // needs far more than the old five minutes. The watchdog is reset by every
+    // download-progress, so this is an idle deadline, never a wall clock on a
+    // transfer that is still moving bytes.
+    prepareTimeoutMs = 20 * 60 * 1000,
   } = {},
 ) {
   // The update the state shows, and the body the release API gave for it.
@@ -182,6 +189,24 @@ export function createUpdaterCoordinator(
     routeError(manual, error);
   }
 
+  // Squirrel.Mac native staging is event-only: it emits no progress and
+  // resolves downloadUpdate solely on the native ready event. If it never
+  // readies we would sit in "preparing" forever, so an idle watchdog fails it
+  // into a restart-required state. Every download-progress re-arms it, so a
+  // transfer that is still moving bytes is never mistaken for a hang.
+  function armPrepareWatchdog(operation) {
+    if (!operation) return;
+    clearTimeout(operation.timer);
+    operation.timer = setTimeout(() => {
+      if (downloadOperation !== operation || operation.failed) return;
+      updater.logger?.warn?.(
+        `Native update preparation went quiet past the ${Math.round(prepareTimeoutMs / 60000)}-minute deadline; a restart is required before retrying.`,
+      );
+      routeError(true, new Error("Preparing the update took too long."));
+    }, prepareTimeoutMs);
+    operation.timer.unref?.();
+  }
+
   function checkOwnsState() {
     return !recoveryRequired && !actionOwnsState && !installOperation && !downloadOperation && !checkOperation?.supersededByDownload;
   }
@@ -217,7 +242,14 @@ export function createUpdaterCoordinator(
     routeError(manual, error);
   });
   updater.on("download-progress", (progress) => {
-    if (recoveryRequired || installOperation || nativeStagingStarted) return;
+    if (recoveryRequired || installOperation) return;
+    // While the native updater prepares, bytes may still be arriving. Push the
+    // preparation deadline back on each one so a large or slow transfer never
+    // trips the watchdog; the "preparing" state stays as it is.
+    if (nativeStagingStarted) {
+      if (downloadOperation && !downloadOperation.failed) armPrepareWatchdog(downloadOperation);
+      return;
+    }
     setState({ status: "downloading", percent: Math.round(progress?.percent ?? 0) });
   });
   updater.on("update-downloaded", (info) => {
@@ -230,11 +262,7 @@ export function createUpdaterCoordinator(
       if (nativeStaging && !nativeStagingStarted) {
         nativeStagingStarted = true;
         setState(withNotes({ status: "preparing", version: info?.version, message: undefined }, info));
-        downloadOperation.timer = setTimeout(() => {
-          updater.logger?.warn?.("Native update preparation exceeded the five-minute deadline; restart is required before retrying.");
-          routeError(true, new Error("Preparing the update took too long."));
-        }, 5 * 60 * 1000);
-        downloadOperation.timer.unref?.();
+        armPrepareWatchdog(downloadOperation);
       }
       return;
     }

@@ -22,6 +22,7 @@ import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
 import type { ApprovalMode } from "../../../shared/approval-mode";
+import { PROACTIVE_MODES, type ProactiveMode } from "../../../shared/proactive-mode";
 import { DEFAULT_OUTBOUND_POLICY, type OutboundPolicy } from "../../../shared/outbound";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
 import { AllowedRecipientsRow } from "./AllowedRecipientsRow";
@@ -75,12 +76,26 @@ export function PermissionsSection({
   const perspicaxOrg = usePerspicaxOrg();
   const viewerId = state.config?.viewer?.principalId ?? null;
   const orgFullAccess = draft ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
+  // The menu shows the open conversation. The grant names that conversation
+  // so the saved level is the one still on screen after the reply.
+  const grantOrgFull = (target: string, confirm: boolean) => {
+    dispatch({
+      type: "updateBot",
+      botId: target,
+      patch: {
+        approvalMode: "full",
+        organizationFullAccess: true,
+        ...(confirm ? { confirmFullAccess: true } : {}),
+        ...(bot.id === target ? { threadId: bot.threadId } : {}),
+      },
+    });
+  };
   const setApprovalMode = (mode: ApprovalMode) => {
     if (bot.busy || mode === approvalMode) return;
     if (mode === "full" && orgFullAccess !== undefined) {
       if (orgFullAccess !== "allowed") return;
       if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
-      else dispatch({ type: "updateBot", botId: bot.id, patch: { approvalMode: "full", organizationFullAccess: true } });
+      else grantOrgFull(bot.id, false);
       return;
     }
     if (mode === "full") {
@@ -93,6 +108,14 @@ export function PermissionsSection({
       return;
     }
     patch({ approvalMode: mode });
+  };
+  // How autonomously this bot may act on its own. A level next to the approval
+  // level, not a Chief orchestrator: the server enforces it per bot
+  // (shared/proactive-mode.ts, server/proactive.ts).
+  const proactiveMode: ProactiveMode = bot.proactiveMode ?? "off";
+  const setProactiveMode = (mode: ProactiveMode) => {
+    if (bot.busy || mode === proactiveMode) return;
+    patch({ proactiveMode: mode });
   };
   const showPrimary = canStepPrimary(state.config, bot, { draft });
   const showApproval = canEditBotField(state.config, bot, "approvalMode", { draft });
@@ -147,6 +170,22 @@ export function PermissionsSection({
         >
           <ProposalStatus bot={bot} />
           {advanced && approvalSelector}
+        </DescribedRow>
+      )}
+      {showApproval && advanced && (
+        <DescribedRow
+          label={t("botPanel.permissions.proactive")}
+          help={t("botPanel.permissions.proactiveHelp")}
+          description={t(`botPanel.permissions.proactive.${proactiveMode}.hint`)}
+          rowId="proactiveMode"
+        >
+          <PillSelect<ProactiveMode>
+            value={proactiveMode}
+            ariaLabel={t("botPanel.permissions.proactive")}
+            disabled={Boolean(bot.busy)}
+            onChange={setProactiveMode}
+            options={PROACTIVE_MODES.map((mode) => ({ value: mode, label: t(`botPanel.permissions.proactive.${mode}`) }))}
+          />
         </DescribedRow>
       )}
       {showContactUi && (
@@ -260,7 +299,7 @@ export function PermissionsSection({
           setFullAccessTarget(null);
           if (!target) return;
           if (orgFullAccess !== undefined) {
-            dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, organizationFullAccess: true } });
+            grantOrgFull(target, true);
             return;
           }
           dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: allThreads } });

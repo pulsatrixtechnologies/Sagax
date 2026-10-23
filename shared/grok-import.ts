@@ -280,21 +280,6 @@ function fitBytes(text: string, max: number): string {
   return text.slice(0, end);
 }
 
-/** Composio toolkit slugs for the apps Grok Bot plugins usually name. */
-const COMPOSIO_SLUGS: Record<string, string> = {
-  gmail: "gmail", "google mail": "gmail", slack: "slack", github: "github", notion: "notion", linear: "linear",
-  x: "twitter", twitter: "twitter", "x (twitter)": "twitter", discord: "discord", reddit: "reddit",
-  "google calendar": "googlecalendar", calendar: "googlecalendar", "google drive": "googledrive", drive: "googledrive",
-  "google sheets": "googlesheets", sheets: "googlesheets", "google docs": "googledocs", docs: "googledocs",
-  hubspot: "hubspot", salesforce: "salesforce", jira: "jira", asana: "asana", trello: "trello", dropbox: "dropbox",
-  airtable: "airtable", figma: "figma", stripe: "stripe", sentry: "sentry", posthog: "posthog", zapier: "zapier",
-  outlook: "outlook", "microsoft outlook": "outlook", "microsoft teams": "microsoft_teams", teams: "microsoft_teams",
-  youtube: "youtube", linkedin: "linkedin", shopify: "shopify", calendly: "calendly", zoom: "zoom",
-};
-
-/** The Composio toolkit for an app a Grok Bot names, when Sagax knows one. */
-export const composioSlugFor = (label: string): string | undefined => COMPOSIO_SLUGS[label.trim().toLowerCase().replace(/\s+/g, " ")];
-
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const EVENT_WORDS = /\b(?:when|whenever|each time|every time|on (?:new|each|every)|webhook|mention(?:ed|s)?|incoming|arrives?|opens?|merged?|pushed?)\b/i;
 
@@ -421,7 +406,7 @@ export function grokExportToPackage(
   const appSlugs = new Set<string>();
   const apps = x.plugins.flatMap((plugin) => {
     const label = clip(plugin.name, 100);
-    const appSlug = composioSlugFor(label) ?? slug(label, 60);
+    const appSlug = slug(label, 60);
     if (!appSlug || appSlugs.has(appSlug)) return [];
     if (appSlugs.size >= MAX_APPS) return skip({ kind: "app", name: `App “${label}”`, reason: `a package lists at most ${MAX_APPS} apps` });
     appSlugs.add(appSlug);

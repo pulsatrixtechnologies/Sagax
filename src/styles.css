@@ -1926,6 +1926,18 @@ body {
   outline: none;
 }
 
+/* The footer buttons (the account menu, Connect apps) follow the same rule:
+   a click leaves them focused, and the next key would draw the ring. Tab
+   clears the mark and draws it. The account button's own pill carries the
+   ring, so the square outline around it is always off. */
+[data-pointer-focus]:focus-visible,
+button[aria-haspopup="menu"]:has(> [data-sidebar-account-pill]):focus-visible {
+  outline: none;
+}
+[data-sidebar-connect-apps][data-pointer-focus]:focus-visible {
+  box-shadow: none;
+}
+
 /* A question card takes focus only so A, B, C answer it once clicked
    (src/components/QuestionSheet.tsx); its rows keep their own ring. */
 [data-question-sheet]:focus-visible {
@@ -2120,11 +2132,11 @@ body {
   }
 }
 .turn-mascot-in {
-  transform-origin: 18px 18px;
+  transform-origin: 10px 50%;
   animation: turn-mascot-in 0.38s var(--ease-emphasized) both;
 }
 .turn-mascot-out {
-  transform-origin: 18px 18px;
+  transform-origin: 10px 50%;
   animation: turn-mascot-out 0.28s var(--ease-emphasized) both;
 }
 .turn-answer {
@@ -2250,28 +2262,48 @@ body {
   background: var(--color-ultracode);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-ultracode) 25%, var(--color-sidebar));
 }
-.turn-presence.ultracode-active .turn-mascot-in > :first-child {
-  filter: drop-shadow(0 0 10px var(--color-ultracode-glow));
+.turn-presence.ultracode-active .bot-activity-dots,
+.turn-presence.ultracode-active [data-presence-mascot] {
+  filter: drop-shadow(0 0 6px var(--color-ultracode-glow));
 }
-/* rotating presence phrase: the old phrase fades out where the new one
-   fades in, in the same grid cell */
-@keyframes turn-phrase-in {
-  from { opacity: 0; }
+/* The bot's activity line (BotActivityIndicator): three dots in the bot's
+   colour, one brighter and larger at a time, a wave left to right. Only
+   transform and opacity move, so the compositor draws it. */
+@keyframes bot-activity-wave {
+  0%, 60%, 100% { transform: scale(0.75); opacity: 0.35; }
+  25% { transform: scale(1.15); opacity: 1; }
 }
-@keyframes turn-phrase-out {
-  to { opacity: 0; }
+.bot-activity-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.turn-phrase-in { animation: shimmer 2s linear infinite, turn-phrase-in 0.32s ease-out both; }
-.turn-phrase-out { animation: shimmer 2s linear infinite, turn-phrase-out 0.32s ease-in both; pointer-events: none; }
+.bot-activity-dots > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--bot-activity-color, var(--color-accent));
+  transform: scale(0.75);
+  opacity: 0.55;
+}
+.bot-activity-wave > span {
+  animation: bot-activity-wave 1.2s ease-in-out infinite;
+}
+.bot-activity-wave > span:nth-child(2) { animation-delay: 0.2s; }
+.bot-activity-wave > span:nth-child(3) { animation-delay: 0.4s; }
+:root[data-reduced-motion="true"] .bot-activity-wave > span { animation: none; }
+:root[data-reduced-motion="true"] .bot-activity .thinking-shimmer { animation: none; background: none; color: var(--color-ink-secondary); }
+@media (prefers-reduced-motion: reduce) {
+  .bot-activity-wave > span { animation: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .animate-caret, .animate-msg-in, .animate-shimmer, .animate-pop-in, .animate-pop-out, .animate-call-dock-in, .animate-card-fade-in, .animate-card-fade-out { animation: none; }
   .animate-status-pulse { animation: none; opacity: 0.6; }
   .thinking-shimmer { background: none; color: var(--color-ink-secondary); }
   .ultracode-shimmer { background: none; color: var(--color-ultracode-ink); }
   .ultracode-sidebar-dot { animation: none; opacity: 0.85; }
-  .turn-presence.ultracode-active .turn-mascot-in > :first-child { filter: none; }
-  .turn-phrase-in { animation: none; }
-  .turn-phrase-out { display: none; }
+  .turn-presence.ultracode-active .bot-activity-dots,
+  .turn-presence.ultracode-active [data-presence-mascot] { filter: none; }
   .turn-mascot-in, .turn-mascot-out, .turn-answer { animation: none; }
   .animate-rise, .animate-spot-in { animation: none; }
   .animate-ripple, .animate-bolt { animation: none; }
@@ -3209,57 +3241,18 @@ button:disabled.bg-danger {
   -webkit-app-region: no-drag;
 }
 
-/* The Connect apps pill (Grok Bot's measurements, JC 2026-10-15). Its tiles
-   sit in a 1px ring the pill's own colour, so each one stands out from the
-   tile it overlaps; the ring follows the pill's hover colour. */
-.connect-apps-pill {
-  transition: background-color var(--transition-duration-moderate) var(--ease-out-quint), padding var(--transition-duration-moderate) var(--ease-out-quint);
+/* The foot's two tiles (the account pill and the Connect apps button) share one height:
+   36px, or 44px while the account pill carries a second line (the title and
+   points under the name). One property on the row, so they cannot differ. */
+[data-sidebar-account-row] {
+  --foot-tile-h: 2.25rem;
 }
-.connect-apps-pill [data-pill-tiles] {
-  background-color: inherit;
-  margin-inline-start: 6px;
-  max-width: 60px;
-  opacity: 1;
-  overflow: clip;
-  overflow-clip-margin: 5px;
-  transition: max-width var(--transition-duration-moderate) var(--ease-out-quint), opacity var(--transition-duration-moderate) var(--ease-out-quint), margin-inline-start var(--transition-duration-moderate) var(--ease-out-quint);
-}
-.connect-apps-pill [data-pill-tiles][data-hidden] {
-  margin-inline-start: 0;
-  max-width: 0;
-  opacity: 0;
-}
-.connect-apps-pill [data-pill-tile] {
-  background-color: inherit;
-}
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill [data-pill-tile] {
-    transition: transform 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
-    animation: connect-apps-tile-in 0.3s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
-  }
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill:is(:hover, :focus-visible) [data-pill-tile="start"] {
-    transform: translateX(-3px) rotate(-8deg);
-  }
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill:is(:hover, :focus-visible) [data-pill-tile="middle"] {
-    transform: translateY(-1px);
-  }
-  :root:not([data-reduced-motion="true"]) .connect-apps-pill:is(:hover, :focus-visible) [data-pill-tile="end"] {
-    transform: translateX(3px) rotate(8deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .connect-apps-pill,
-  .connect-apps-pill [data-pill-tiles] {
-    transition-property: background-color;
-  }
-}
-:root[data-reduced-motion="true"] .connect-apps-pill,
-:root[data-reduced-motion="true"] .connect-apps-pill [data-pill-tiles] {
-  transition-property: background-color;
+[data-sidebar-account-row]:has([data-account-pill-line]) {
+  --foot-tile-h: 2.75rem;
 }
 /* The foot's update button (SidebarUpdatePill): round, the avatar's size;
    hovered, focused or just landed, it widens to show its word and the
-   Connect apps pill beside it gives way. Reduced motion: no animation, the
+   Connect apps button beside it gives way. Reduced motion: no animation, the
    word simply shows. */
 .sidebar-update-pill [data-update-text] {
   max-width: 0;
@@ -3267,6 +3260,11 @@ button:disabled.bg-danger {
   padding-inline-end: 0;
   margin-inline-start: -4px;
   overflow: hidden;
+}
+.sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) {
+  /* the word needs the icon plus its text; the pill grows in the row, so
+     Connect apps shifts left rather than disappearing under it */
+  width: auto;
 }
 .sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) [data-update-text] {
   max-width: 11rem;
@@ -3278,7 +3276,7 @@ button:disabled.bg-danger {
     transition: max-width 240ms var(--ease-out-quint), opacity 200ms var(--ease-out-quint), padding-inline-end 240ms var(--ease-out-quint);
   }
   :root:not([data-reduced-motion="true"]) .sidebar-update-pill {
-    transition: filter 150ms ease-out;
+    transition: width 240ms var(--ease-out-quint), filter 150ms ease-out;
   }
   :root:not([data-reduced-motion="true"]) .sidebar-update-pill[data-sidebar-update-pill="ready"]:is(:hover, :focus-visible) [data-update-icon] svg {
     animation: sidebar-update-nudge 0.6s cubic-bezier(0.34, 1.4, 0.64, 1);
@@ -3288,10 +3286,6 @@ button:disabled.bg-danger {
   0% { transform: none; }
   40% { transform: translateY(2px); }
   100% { transform: none; }
-}
-@keyframes connect-apps-tile-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
 }
 
 /* The Approvals screen (src/components/approvals/): a new card slides in

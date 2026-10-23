@@ -40,6 +40,8 @@ import {
 import { WorkingDots } from "@/components/WorkingIndicator";
 import { TerminalChatEmbed } from "@/components/terminal/TerminalChatEmbed";
 import { RemoteSessionCard } from "@/components/remote-session/RemoteSessionCard";
+import { ResourceUsageCard } from "@/components/resource-usage/ResourceUsageCard";
+import { ConnectorSetupCard } from "@/components/connector-setup/ConnectorSetupCard";
 import { MessageBar, MessageMenuItem } from "./MessageBar";
 import { HOVER_ICON } from "./MessageHoverActions";
 import { messageActionClass } from "@/components/MessageActions";
@@ -86,7 +88,7 @@ import { BotHeaderPill, botPillActions } from "./BotHeaderPill";
 import { TurnPresence } from "./TurnPresence";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
-import { showToolCallRows } from "@/lib/tool-activity-rows";
+import { isAppleMobileWebClient, showToolCallRows } from "@/lib/tool-activity-rows";
 import { normalizeState, stateForBot } from "@/lib/mascot";
 import { mascotRowAnimated } from "@/lib/mascot-animate";
 import { peerLine, peerRequest, type PeerLine } from "@/lib/peer-message";
@@ -115,15 +117,16 @@ import { ThreadRefText } from "./ThreadRefs";
 import { optionsCardRow } from "./OptionsCardRow";
 import { MessageBoundary, UnknownMessageCard, isUnknownMessageKind } from "./MessageBoundary";
 import { WidgetMessage } from "./widget/WidgetMessage";
+import { AppMessage } from "./AppMessage";
 import { PagePublishCard } from "./PublishedPages";
+import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
 import { BackgroundEffectLayer, useBackgroundEffectShown } from "./BackgroundEffectLayer";
-import { ChatErrorBanner, ChatNotice, ChatStaleBanner, SavedMessagesNotice } from "./ChatErrorBanner";
+import { ChatErrorBanner, ChatNotice, ChatStaleBanner } from "./ChatErrorBanner";
 import { WeeklyLimitNotice } from "./ChatUsageNotices";
 import { ChatFindBar } from "./ChatFindBar";
 import { ReplyQuote } from "./ReplyQuote";
-import { ConnectorCard } from "./ConnectorCard";
 import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { CallRecordRow } from "./CallRecordRow";
@@ -135,7 +138,7 @@ import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
 import { BotConversationLine, conversationAnchors } from "./BotConversations";
-import { BotActivityPicker, TaskPicker, ThreadReturnLink, ThreadsOffReturnLink } from "./TaskPicker";
+import { TaskPicker, ThreadReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
 import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
@@ -175,7 +178,6 @@ import { unreadMessageIds } from "@/lib/unread-divider";
 import { appendComposerDraft, appendDraftAttachments, useReplyDraft } from "@/lib/drafts";
 import { OtherAuthorLabel } from "./MessageAuthor";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
-import { ConversationConnectApps } from "./ConnectAppsPill";
 import { AccessCard } from "./AccessCard";
 import { transcriptLookups, type TranscriptLookups } from "@/lib/transcript-derivations";
 import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
@@ -578,7 +580,8 @@ const Bubble = memo(function Bubble({
   const speaking = speech.messageId === message.id && speech.status !== "idle";
   // a quiet model/effort line once the pointer rests on a bot reply
   const dwell = useHoverDwell(!user && !peer && Boolean(message.turnRun));
-  const rawText = peer ? peer.body : (message.text ?? "");
+  // a sign-in card's text is only the fallback for clients without the card
+  const rawText = peer ? peer.body : message.connectorSetup && message.role !== "user" ? "" : (message.text ?? "");
   // a bot's leaked internal system lines never reach the reader
   const text = user ? rawText : stripLeakedSystemHarnessMessages(rawText);
   const wideBubble = useMemo(() => !user && Boolean(text) && prefersWideBubble(text), [user, text]);
@@ -605,7 +608,11 @@ const Bubble = memo(function Bubble({
   // A message that is only attachments is just the files: no bubble around them.
   const attachmentsOnly = !webhookView && !replyTarget && !visibleText.trim() &&
     (user ? hasAttachments : generatedPaths.length + linkedFiles.length > 0);
-  const remoteCard = !user && Boolean(message.remoteSession);
+  const remoteCard = !user && Boolean(message.remoteSession || message.resourceUsage || message.connectorSetup);
+  // A plain bot answer draws flat like Grok Bot (no card). A person's message,
+  // a webhook card, a remote/resource card and an attachments-only line keep
+  // their own treatment just below.
+  const flatBot = !user && !webhookView && !remoteCard && !attachmentsOnly;
   const collapsible =
     user && !webhookView && !expanded && (visibleText.length > USER_COLLAPSE_CHARS || visibleText.split("\n").length > USER_COLLAPSE_LINES);
   useEffect(() => {
@@ -683,18 +690,26 @@ const Bubble = memo(function Bubble({
         <div
           data-chat-bubble
           className={cn(
-            "rounded-[18px] text-[13px] leading-5",
-            CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: !user && Boolean(message.terminalEmbed), wide: wideBubble || remoteCard })],
+            "text-[13px] leading-5",
             emerging && "turn-answer",
-            user && webhookView
-              ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
-              : remoteCard && !visibleText.trim()
-                ? "text-ink"
-              : attachmentsOnly
-                ? "text-ink"
-                : user
-                  ? "bg-bubble-user px-3 py-[7px] whitespace-pre-wrap text-ink"
-                  : "bg-card px-3 py-[7px] text-ink",
+            flatBot
+              // A bot answer reads flat like Grok Bot: no card, no bubble shape,
+              // the column's measure, aligned to the rail. Only the person's own
+              // message keeps a bubble. Cards (webhook, remote) stay carded below.
+              ? "w-full max-w-[calc(100%-82px)] text-ink"
+              : cn(
+                  "rounded-[18px]",
+                  CHAT_BUBBLE_WIDTH_CLASS[chatBubbleWidth({ terminal: !user && Boolean(message.terminalEmbed), wide: wideBubble || remoteCard })],
+                  user && webhookView
+                    ? "overflow-hidden border border-accent/25 bg-card text-ink shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+                    : remoteCard && !visibleText.trim()
+                      ? "text-ink"
+                    : attachmentsOnly
+                      ? "text-ink"
+                      : user
+                        ? "bg-bubble-user px-3 py-[7px] whitespace-pre-wrap text-ink"
+                        : "bg-card px-3 py-[7px] text-ink",
+                ),
           )}
           title={new Date(message.at).toLocaleString()}
         >
@@ -777,6 +792,8 @@ const Bubble = memo(function Bubble({
                 </div>
               )}
               {message.remoteSession && <RemoteSessionCard botId={botId} threadId={threadId} view={message.remoteSession} />}
+              {!user && message.resourceUsage && <ResourceUsageCard view={message.resourceUsage} />}
+              {!user && message.connectorSetup && <ConnectorSetupCard threadId={threadId} view={message.connectorSetup} />}
               {message.terminalEmbed && <TerminalChatEmbed embed={message.terminalEmbed} />}
               {!group && <AttachmentGallery images={generatedPaths} files={linkedFiles} message={{ threadId, messageId: message.id }} className={text ? undefined : "mb-0"} eager={eagerAttachments} />}
               {viewRaw && text ? (
@@ -1053,6 +1070,7 @@ const MessagesList = memo(function MessagesList({
   const getState = useStoreGetter();
   const { botId, threadId, botName, busy, hasMore, bots, focus, showToolCalls, locale, dispatch } = useChatRows();
   const showThreads = useShowThreads();
+  const appleMobileWeb = isAppleMobileWebClient();
   const selfColor = bots.find((candidate) => candidate.id === botId)?.color;
   const owners = useMemo(() => ({ bots: storeBots, groups: storeGroups }), [storeBots, storeGroups]);
   // Bot-to-bot lines become one chip per run first, so a tool fold never
@@ -1069,7 +1087,13 @@ const MessagesList = memo(function MessagesList({
     const seen = new Set<string>();
     // A stop the person asked for leaves no row, stored ones included.
     // Nor does the "On your computer" line, so it never splits a bot exchange.
-    const shown = withoutDeadThreadChips(messages, owners).filter((message) => !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message));
+    // Threads off (the threads toggle): the single stream carries no thread
+    // receipt, so a lone chip never renders and a run of them never folds
+    // into a "N conversations" group (JC 2026-10-22). ThreadChip also hides
+    // each one; dropping them here keeps the go-to grouping clean.
+    const shown = withoutDeadThreadChips(messages, owners).filter((message) =>
+      !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message)
+      && (showThreads || !(message.threadRef && message.tool)));
     const collapsed = collapseBotExchanges(shown, {
       selfBotId: botId,
       self: { id: botId, name: botName, color: selfColor },
@@ -1099,7 +1123,7 @@ const MessagesList = memo(function MessagesList({
     flush();
     // Two or more "Go to conversation" lines in a row become one chip.
     return collapseGotoLines(listed, (item) => silentChatItem(item, showToolCalls)) as ListedItem[];
-  }, [messages, transcript, botId, botName, selfColor, locale, owners, showToolCalls]);
+  }, [messages, transcript, botId, botName, selfColor, locale, owners, showToolCalls, showThreads]);
   const windowIds = useMemo(() => new Set(messages.map((message) => message.id)), [messages]);
   const newestMessageId = messages.at(-1)?.id;
   let newestUserMessageId: string | undefined;
@@ -1257,6 +1281,7 @@ const MessagesList = memo(function MessagesList({
                 <ActivityRun
                   messages={shown}
                   elapsedMs={item.elapsedMs}
+                  bare={!showToolCalls}
                   focusedId={focusedId}
                   nameOf={botNames(bots)}
                   renderStep={(step) => (
@@ -1300,6 +1325,10 @@ const MessagesList = memo(function MessagesList({
           if (m.pagePublish && m.role === "bot") {
             return <MessageBoundary fallbackText={m.text ?? ""}><PagePublishCard message={m} /></MessageBoundary>;
           }
+          // a phone call or a purchase on its card (src/components/OutboundCard.tsx)
+          if (m.outbound && m.role === "bot") {
+            return <MessageBoundary fallbackText={m.text ?? ""}><OutboundCard message={m} /></MessageBoundary>;
+          }
           // a widget row whose tree never arrived still reads as its text
           switch (m.kind === "widget" && !m.widget ? "text" : m.kind) {
             case "access":
@@ -1312,13 +1341,14 @@ const MessagesList = memo(function MessagesList({
               ) : null;
             case "secret":
               return m.secret ? <SecretRequestCard botId={botId} threadId={threadId} message={m} /> : null;
-            case "connector":
-              return m.connector ? <ConnectorCard botId={botId} threadId={threadId} message={m} /> : null;
             case "options":
               return optionsCardRow({ message: m, transcript, botId, botName, threadId });
             case "widget":
               // bot-authored and persisted: one that throws while drawing falls back to its text
               return <MessageBoundary fallbackText={m.text ?? ""}><WidgetMessage botId={botId} threadId={threadId} message={m} /></MessageBoundary>;
+            case "app":
+              // a bot-authored live HTML surface, drawn in the sandboxed app frame
+              return <MessageBoundary fallbackText={m.text ?? ""}><AppMessage message={m} /></MessageBoundary>;
             case "routine.run":
               return <RoutineRunRow message={m} botId={botId} />;
             case "routines":
@@ -1355,7 +1385,14 @@ const MessagesList = memo(function MessagesList({
                   </>
                 );
               }
-              if (!showToolCalls && !m.comm && !m.threadRef && !m.dataResult && !m.inputRequest) return null;
+              // Tool calls (the details toggle) off: a plain step goes, and
+              // so does a bot-to-bot comm chip — verbose detail, not the
+              // clean chat (JC 2026-10-22). A thread receipt (ThreadChip, on
+              // the threads toggle), a Data receipt and an input request stay.
+              // A comm chip stays on Apple mobile web (the only trace there a
+              // teammate was consulted) and whenever the send failed.
+              const keepComm = Boolean(m.comm) && (appleMobileWeb || m.tool?.ok === false);
+              if (!showToolCalls && !m.threadRef && !m.dataResult && !m.inputRequest && !keepComm) return null;
               return <ActivityChip message={m} place={place} />;
             }
             case "digest":
@@ -1482,12 +1519,16 @@ export type SideChat = { header: ReactNode; label: string };
 
 const noop = () => {};
 
-/** The line that opens a topic of the single stream. */
+/** The line that opens a topic of the single stream. Like Grok Bot, it is one
+ * quiet "New topic" marker, the same label the fresh-topic divider carries:
+ * the topic's own title and time are not stamped on the stream (they stayed
+ * on the "Show the previous topic" pill and in search); the title rides along
+ * as the hover tooltip so it is still reachable without crowding the line. */
 function TopicDivider({ task }: { task: Pick<Task, "threadId" | "title" | "createdAt"> }) {
   return (
     <div className="my-2 flex items-center gap-3 text-[11.5px] text-ink-tertiary" role="separator" data-topic-divider={task.threadId}>
       <span className="h-px flex-1 bg-hairline/60" />
-      <span className="max-w-[70%] truncate" title={task.title}>{t("stream.divider", { title: task.title })} · {formatTime(task.createdAt)}</span>
+      <span className="truncate" title={task.title}>{t("stream.newTopic")}</span>
       <span className="h-px flex-1 bg-hairline/60" />
     </div>
   );
@@ -1775,22 +1816,6 @@ function useStreamAnchor(
   }, [scrollRef, wrapperRef, followRef, active]);
 }
 
-/** An earlier topic of the stream has something new (a late answer, a card):
- * one pill that brings it on screen and reads it. */
-function EarlierTopicActivity({ bot, onReach, includeCurrent = false }: { bot: Bot; onReach: (threadId: string) => void; includeCurrent?: boolean }) {
-  const current = includeCurrent ? bot.tasks?.find((task) => task.threadId === bot.threadId) : undefined;
-  const above = current ? [current, ...segmentsAbove(bot.tasks, bot.threadId)] : segmentsAbove(bot.tasks, bot.threadId);
-  const active = above.find((task) => task.unread || task.activity === "waiting-on-you");
-  if (!active) return null;
-  return (
-    <div className="mx-5 mb-2 flex justify-center" data-earlier-topic-activity={active.threadId}>
-      <button type="button" onClick={() => onReach(active.threadId)} className="ui-pill max-w-full truncate">
-        {t("stream.newActivity", { title: active.title })}
-      </button>
-    </div>
-  );
-}
-
 export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   "use memo";
   const showInspector = useShowInspectorButton();
@@ -2011,16 +2036,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const streamFocus = useStoreSelector((current) => current.focusMessage);
   const streamFocusEarlier = streamHasEarlier && Boolean(streamFocus && !streamFocus.consumed && segmentsAbove(bot.tasks, bot.threadId).some((task) => task.threadId === streamFocus.threadId));
   const [streamShownFor, setStreamShownFor] = useState<string | null>(null);
-  const reachEarlierTopic = useCallback((threadId: string) => {
-    // Under a fresh topic, the activity it points at is shown as it is.
-    dispatch({ type: "freshTopic", botId: bot.id, threadId: null });
-    if (threadId === bot.threadId) {
-      api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
-      return;
-    }
-    setStreamReach((current) => ({ threadId, nonce: (current?.nonce ?? 0) + 1 }));
-    api(`/api/bots/${bot.id}/read`, { method: "POST", body: JSON.stringify({ threadId }) }).catch(() => {});
-  }, [bot.id, bot.threadId, dispatch]);
   // Reply on an earlier topic's message quotes it into the live composer.
   const quoteEarlier = useCallback((message: Message, threadId: string) => {
     const text = (message.text ?? "").trim();
@@ -2079,12 +2094,12 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     return cited.citations.length > 0 || attached.images.length > 0 || attached.files.length > 0;
   }, [lastUserMessage]);
 
-  // Mascot while the turn works. Streaming stays invisible — when the reply
-  // is finished, the whole bubble pops in above the mascot.
+  // The activity line while the turn works (TurnPresence): thinking, then
+  // typing once answer text streams. The text itself stays invisible — when
+  // the reply is finished, the whole bubble pops in where the line was.
   // The working line reads the last real message: a finished call's record
   // (and a turn's receipts) can trail a turn that is still working.
   const lastMessage = lastNonReceipt(messages);
-  const toolInFlight = lastMessage?.kind === "activity" && lastMessage.tool?.ok === undefined;
   const activity = liveActivityPhrases(lastMessage);
   const waiting = Boolean(
     bot.busy &&
@@ -2238,16 +2253,18 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           the name chip; collapsed it keeps its own small row, expanded its
           card hangs over the thread */}
       <VoiceCallDock bot={bot} />
-      {!side && <>
-      <BotActivityPicker bot={bot} />
-      <ThreadsOffReturnLink bot={bot} />
-      {streamOn && <EarlierTopicActivity bot={bot} onReach={reachEarlierTopic} includeCurrent={fresh} />}
-      <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />
-      </>}
+      {/* Threads off = one unified conversation (JC 2026-10-22): no
+          cross-thread chrome at the top. The "Other activity" dropdown, the
+          "New activity on an earlier topic" pill and the "Back to
+          conversation" links all belonged to the thread-off escape hatches;
+          they are gone now. The conversation's own topics still stream in
+          place below (PreviousTopicsLine / StreamEarlierTopics) and the New
+          topic feature keeps its own Resume (FreshTopicDivider). The thread
+          return link stays only while threads are on. */}
+      {!side && showThreads && <ThreadReturnLink ownerId={bot.id} threadId={bot.threadId} />}
       {privateHint && <p data-private-conversation-hint className="mx-5 mb-2 text-[11.5px] text-ink-secondary">{t("chat.privateConversation")}</p>}
       {findOpen && <ChatFindBar threadId={bot.threadId} {...(streamOn ? { threadIds: [bot.threadId, ...segmentsAbove(bot.tasks, bot.threadId).map((task) => task.threadId)] } : {})} onClose={() => setFindOpen(false)} />}
 
-      <SavedMessagesNotice threadId={bot.threadId} archived={bot.tasks?.some((task) => task.threadId === bot.threadId && task.archivedAt != null) === true} />
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
       {!side && <ChatStaleBanner />}
@@ -2353,9 +2370,6 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               </button>
             </div>
           )}
-          {/* The latest turn needed an app that is not connected
-              (src/lib/connect-apps-signal.ts): Connect apps, on those apps. */}
-          <ConversationConnectApps botId={bot.id} messages={messages} busy={Boolean(bot.busy)} />
           </>}
           {computerStarting && (
             <div className="flex justify-start">
@@ -2367,24 +2381,13 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           )}
           <TurnPresence
             ultracode={ultracodeFromSelection(bot.modelSelection)}
-            avatar={
-              // BotAvatar, not a bare MausAvatar: an uploaded profile image
-              // (and a chosen mascot body) must match the sidebar row.
-              <BotAvatar
-                bot={bot}
-                state={toolInFlight ? "working" : "thinking"}
-                size={36}
-                forward={false}
-                lookAround={1}
-                trackPointer={false}
-              />
-            }
+            bot={bot}
+            streamThreadId={bot.threadId}
             visible={presenceVisible}
             phrases={activity.phrases}
             phase={activity.phase}
             seed={`${bot.id}:${bot.threadId ?? ""}:${busySince ?? ""}`}
             answering={popping !== null}
-            since={busySince}
           />
         </div>
       </div>

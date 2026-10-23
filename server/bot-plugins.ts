@@ -40,7 +40,7 @@ import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { capturePluginHooks, type LifecycleHook } from "./lifecycle-hooks.ts";
-import type { PluginMarketplaces } from "./plugin-marketplaces.ts";
+import type { MarketplaceViewer, MarketplaceVisibility, PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
 import { githubGitEnvironment } from "./github-connect.ts";
 import { WORKSPACE_TOKEN_KEY } from "./marketplace-tokens.ts";
@@ -218,6 +218,10 @@ export interface MarketplaceListing {
   source: string;
   /** A token is saved for this marketplace (never the token). */
   hasToken: boolean;
+  /** "private" (the person who added it) or "org" (shared with everyone) */
+  visibility: MarketplaceVisibility;
+  /** this viewer added it, so may change its visibility */
+  mine: boolean;
   description?: string;
   addedAt: number;
   updatedAt: number;
@@ -553,12 +557,18 @@ export class BotPlugins {
     }
   }
 
-  /** The installation's marketplaces, with what this bot has from each. */
-  listMarketplaces(botId: string): MarketplaceListing[] {
+  /** Whether this viewer may see and use a marketplace of the one list. */
+  canAccessMarketplace(name: string, viewer?: MarketplaceViewer): boolean {
+    return this.options.marketplaces.canAccess(name, viewer);
+  }
+
+  /** The installation's marketplaces this `viewer` may see, with what this
+   * bot has from each. A private marketplace is listed to its author only. */
+  listMarketplaces(botId: string, viewer?: MarketplaceViewer): MarketplaceListing[] {
     const state = this.read(botId);
     let tokenSources = new Set<string>();
     try { tokenSources = this.options.tokens?.sourcesFor(botId) ?? new Set(); } catch { /* listed without the flag */ }
-    return this.options.marketplaces.list().map((market) => {
+    return this.options.marketplaces.list(viewer).map((market) => {
       let plugins: MarketplaceListing["plugins"] = [];
       try {
         const repo = this.options.marketplaces.repoPath(market.name);
@@ -593,6 +603,7 @@ export class BotPlugins {
       }
       return {
         name: market.name, source: market.source, hasToken: tokenSources.has(market.source),
+        visibility: market.visibility, mine: market.mine,
         ...(market.description ? { description: market.description } : {}), addedAt: market.addedAt, updatedAt: market.updatedAt, plugins,
       };
     });
@@ -634,11 +645,13 @@ export class BotPlugins {
    * tried first and saved for this bot and marketplace once the clone
    * works), then the person's GitHub connection, then the organization's
    * tokens (`cloneEnvironment`). */
-  async addMarketplace(botId: string, input: { source: string; ref?: string; token?: string }, actor: string | undefined): Promise<MarketplaceListing> {
+  async addMarketplace(botId: string, input: { source: string; ref?: string; token?: string; visibility?: MarketplaceVisibility }, actor: string | undefined): Promise<MarketplaceListing> {
     this.root(botId);
     if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
     let cloned: GitSource | undefined;
     const added = await this.options.marketplaces.add({ source: input.source, ...(input.ref ? { ref: input.ref } : {}) }, actor, {
+      ...(input.visibility ? { visibility: input.visibility } : {}),
+      ...(actor ? { viewer: { principal: actor } } : {}),
       environment: async (source) => {
         const env = await this.cloneEnvironment(botId, source, actor, input.token ? { token: input.token } : {});
         cloned = source;
@@ -997,10 +1010,11 @@ export class BotPlugins {
 
   /** Add (or fetch again) a marketplace for everyone; a `token` sent here
    * is tried first and kept for the installation once the clone works. */
-  async addWorkspaceMarketplace(input: { source: string; ref?: string; token?: string }, actor: string | undefined) {
+  async addWorkspaceMarketplace(input: { source: string; ref?: string; token?: string; visibility?: MarketplaceVisibility }, actor: string | undefined) {
     if (input.token && !this.options.tokens) throw new BotPluginError("This server cannot keep marketplace tokens.", "tokens_unavailable", 503);
     let cloned = false;
     const added = await this.options.marketplaces.add({ source: input.source, ...(input.ref ? { ref: input.ref } : {}) }, actor, {
+      ...(input.visibility ? { visibility: input.visibility } : {}),
       environment: async (source) => {
         const env = await this.workspaceEnvironment(source, actor, input.token);
         cloned = true;

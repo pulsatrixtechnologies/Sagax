@@ -18,8 +18,6 @@ import {
   computerPrompt,
   resolveComputerPromptKind,
   mentionPrompt,
-  COMPOSIO_PROMPT,
-  composioSystemPrompt,
   customMcpPrompt,
   CREDENTIAL_PROMPT,
   LEARN_PROMPT,
@@ -255,10 +253,16 @@ describe("computerPrompt", () => {
 
 describe("shared sentences", () => {
   it("each begins with one space so they concatenate onto the persona line", () => {
-    for (const sentence of [COMPOSIO_PROMPT, CREDENTIAL_PROMPT, ROUTINE_PROMPT, ROUTINE_EXECUTION_PROMPT, LEARN_PROMPT, WEBHOOK_PROMPT, PROFILE_PROMPT, PROFILE_CREATOR_PROMPT, SIGN_IN_PROMPT]) {
+    for (const sentence of [CREDENTIAL_PROMPT, ROUTINE_PROMPT, ROUTINE_EXECUTION_PROMPT, LEARN_PROMPT, WEBHOOK_PROMPT, PROFILE_PROMPT, PROFILE_CREATOR_PROMPT, SIGN_IN_PROMPT]) {
       expect(sentence.startsWith(" ")).toBe(true);
       expect(sentence.startsWith("  ")).toBe(false);
     }
+  });
+
+  it("tells a routine run it works in the background and how to say nothing to report (JC 2026-10-22)", () => {
+    expect(ROUTINE_EXECUTION_PROMPT).toContain("the person does not see this conversation");
+    expect(ROUTINE_EXECUTION_PROMPT).toContain("Never restate or quote the routine's instructions");
+    expect(ROUTINE_EXECUTION_PROMPT).toContain("end your final message with the line NOTHING_TO_REPORT on its own");
   });
 
   it("tells a bot offered create_bot that its person's own request may create one bot (2026-10-17)", () => {
@@ -298,36 +302,6 @@ describe("shared sentences", () => {
     expect(LEARN_PROMPT).toContain("only when the user explicitly asks to revise that exact name");
     expect(CREDENTIAL_PROMPT).toContain("secure credential request");
     expect(CREDENTIAL_PROMPT).not.toContain("applied immediately");
-  });
-});
-
-describe("composioSystemPrompt", () => {
-  it("keeps the generic all-tools sentence for legacy bots", () => {
-    expect(composioSystemPrompt(undefined)).toBe(COMPOSIO_PROMPT);
-  });
-
-  it("is absent when no tools are granted", () => {
-    expect(composioSystemPrompt({})).toBe("");
-  });
-
-  it("names exactly the granted services for a partial grant", () => {
-    const prompt = composioSystemPrompt({
-      gmail: { tools: ["GMAIL_SEND_EMAIL"] },
-      google_calendar: { tools: "*" },
-    });
-    expect(prompt).toContain("(Gmail, Google Calendar)");
-    expect(prompt).toContain("COMPOSIO_SEARCH_TOOLS");
-    expect(prompt).toContain("COMPOSIO_MULTI_EXECUTE_TOOL");
-    expect(prompt).toContain("Only the tools this bot was granted will run");
-    // a partial-grant prompt never advertises services the bot lacks
-    expect(prompt).not.toContain("Slack");
-    expect(prompt).not.toContain("Notion");
-  });
-
-  it("starts with exactly one space like every shared sentence", () => {
-    const prompt = composioSystemPrompt({ gmail: { tools: "*" } });
-    expect(prompt.startsWith(" ")).toBe(true);
-    expect(prompt.startsWith("  ")).toBe(false);
   });
 });
 

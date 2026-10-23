@@ -56,6 +56,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("teamsetup:list", "read", "list_team_setup"),
   p("computers:list", "read", "list_shared_computers"),
   p("terminal:list", "read", "list_terminal_resources"),
+  p("resources:usage", "read", "resource_usage"),
+  // a sign-in card for the speaker's own connector (shared/connector-setup.ts)
+  p("connectors:setup", "read", "open_connector_setup"),
   p("delegation:check", "read", "check_delegation"),
   p("delegation:wait", "read", "wait_delegation"),
   p("sessions:search", "read", "session_search"),
@@ -89,11 +92,14 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("help:read", "read", "sagax_help"),
   p("widgets:show", "own", "show_widget"),
   p("widgets:update", "own", "update_widget"),
+  p("apps:show", "own", "show_html"),
+  p("apps:update", "own", "update_html"),
   p("artifacts:save", "own", "save_artifact"),
   p("artifacts:update", "own", "update_artifact"),
   p("artifacts:list", "read", "list_artifacts"),
   p("artifacts:delete", "own", "delete_artifact"),
   p("pages:propose", "own", "propose_page"),
+  p("phone:call", "own", "place_phone_call"),
   p("cards:options", "own", "create_options_card"),
   p("rooms:react", "own", "react_to_message"),
   p("rooms:unreact", "own", "remove_reaction"),
@@ -108,6 +114,9 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("routines:propose.action", "own", "propose_routine_action"),
   p("terminal:offer", "own", "offer_shell_terminal"),
   p("remote:publish", "own", "publish_remote_session"),
+  // the person's own connected Tailcat session (owner and bot checked by the service)
+  p("remote:snapshot", "own", "remote_session_snapshot"),
+  p("remote:exec", "own", "remote_session_exec"),
   p("meetings:join", "own", "join_meeting"),
   // 2026-10-19 (member admin audit, docs/member-admin-audit.md): the
   // person's own data or destinations, never an admin's.

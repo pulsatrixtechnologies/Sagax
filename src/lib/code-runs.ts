@@ -61,11 +61,12 @@ export function resetCodeStatusCache() {
   statusCache = null;
 }
 
-/** The sidebar's Code row: hidden while the status loads and whenever this
- * Perspicax does not serve the agents API yet. A solo server keeps it (its
- * page says Code needs Sagax Business). */
-export function codeRowVisible(status: CodeStatus | null): boolean {
-  return status !== null && (status.available || status.reason !== "not_available");
+/** The address that opens the Code section (`#code`, or `#code/<run>` for
+ * one run): the menus no longer list it. Never `#code=…`, a pairing link. */
+export function codeHashTarget(hash: string): { runId?: string } | null {
+  const match = /^#code(?:\/([A-Za-z0-9_-]{1,128}))?$/.exec(hash);
+  if (!match) return null;
+  return match[1] ? { runId: match[1] } : {};
 }
 
 export function useCodeStatus(): CodeStatus | null {

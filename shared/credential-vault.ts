@@ -32,6 +32,9 @@ export type VaultGrantMode = (typeof VAULT_GRANT_MODES)[number];
 
 /** How long a "once" grant lasts in the conversation that asked. */
 export const VAULT_ONCE_GRANT_MS = 15 * 60_000;
+/** 2026-10-21 (review of #954): a 1Password item allowed once is one
+ * sign-in: its grant ends this long after its first fill. */
+export const VAULT_SINGLE_USE_MS = 60_000;
 
 export const MAX_VAULT_ITEMS = 500;
 export const MAX_VAULT_DOMAINS = 10;
@@ -87,6 +90,9 @@ export interface VaultRequestCardData {
   principalId: string;
   /** The person signed in themselves in the bot's browser instead. */
   signedInSelf?: boolean;
+  /** 2026-10-21 (parité R10, ligne 82): the login chosen is a 1Password
+   * item, read from 1Password at fill time. */
+  onePassword?: boolean;
 }
 
 const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
@@ -231,3 +237,8 @@ export function vaultSiteOf(domain: string): string | null {
   if (SHARED_HOSTING.has(three)) return labels.length >= 4 ? labels.slice(-4).join(".") : null;
   return labels.length >= 3 ? three : null;
 }
+
+/** 2026-10-21 (parité R10, ligne 82): the status row a fill writes while it
+ * reads 1Password (1Password may ask the person to approve first). The app
+ * draws it in the reader's language (src/lib/activity-runs.ts). */
+export const ONE_PASSWORD_WAITING = "notice: Waiting for 1Password: approve the request in 1Password on your computer.";

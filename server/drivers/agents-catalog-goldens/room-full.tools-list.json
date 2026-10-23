@@ -307,6 +307,14 @@
               "local_vm"
             ],
             "description": "Optional, on yourself, when your Workspace is Auto: where that thread works (this_computer = their files and apps, browser = web only, cloud = keeps running while they are away, local_vm = isolated). A place not allowed or offline falls back."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "On yourself: read-only (starts in Ask)."
+          },
+          "thread_id": {
+            "type": "string",
+            "description": "On yourself: resume your earlier thread by id."
           }
         },
         "required": [
@@ -416,6 +424,53 @@
         "required": [
           "widget_id",
           "widget"
+        ]
+      }
+    },
+    {
+      "name": "show_html",
+      "description": "Show a live interactive app in this chat: a small HTML page that runs on its own and that you can update live. Reach for it when the person asks for a dashboard, a live status, a data view, a calculator or a small interactive tool, and a declarative widget (show_widget) is not enough because you need your own layout, styling or scripted behaviour. The page runs in a locked sandbox: your scripts run, but it has an opaque origin, no network of any kind, and cannot read this app, its storage or any secret. So put every value inline in the page, never fetch anything, and never put a password, token or key in it. `html` is a complete fragment: your markup, with optional <style> and <script>; the chat wraps it in the current light or dark theme and keeps it to the chat column's width, so keep it focused. Replace it later in place with update_html to show new data. Not available in rooms.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "html": {
+            "type": "string",
+            "description": "The app's complete HTML fragment, with optional <style> and <script>. Self-contained: no network requests, no secrets."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional short human title for the app's header (plain words, no id)."
+          }
+        },
+        "required": [
+          "html"
+        ]
+      }
+    },
+    {
+      "name": "update_html",
+      "description": "Replace a live app you showed earlier in this chat, in place, so it shows new data: a number moving, new rows, a finished state. `app_id` is the id show_html returned. Send the whole page again; it replaces what was there without adding a new row.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "The id show_html returned."
+          },
+          "html": {
+            "type": "string",
+            "description": "The app's new complete HTML fragment. Self-contained: no network requests, no secrets."
+          },
+          "title": {
+            "type": "string",
+            "description": "Optional short human title for the app's header."
+          }
+        },
+        "required": [
+          "app_id",
+          "html"
         ]
       }
     },
@@ -1168,6 +1223,40 @@
       }
     },
     {
+      "name": "open_connector_setup",
+      "description": "When the person asks to connect a connector (Microsoft Teams, Outlook, Gmail, Google Drive, OneDrive, SharePoint, Salesforce, X, ...): one call posts a card whose button opens the right sign-in page in their browser (grok.com or claude.ai for this engine's own connectors, else Sagax's Connect apps). Sagax detects the connection. Then answer in one short sentence in their language; no steps, no settings tour.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "connector": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "The app, as the person named it."
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "grok",
+              "claude"
+            ],
+            "description": "Only when the person named where."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "fr",
+              "en"
+            ],
+            "description": "The person's language."
+          }
+        },
+        "required": [
+          "connector"
+        ]
+      }
+    },
+    {
       "name": "send_voice_note",
       "description": "Send the user a voice note: a short spoken message synthesized with your configured voice, stored as audio, and attached to your reply when the turn ends. Write the note as speakable words, exactly as it should be said — no lists, links or markdown meant for screens. The same text becomes the note's visible caption and transcript, so the person can read or listen. Use it for warmth, tone or emphasis a written line cannot carry; use ordinary text otherwise.",
       "inputSchema": {
@@ -1222,8 +1311,41 @@
       }
     },
     {
+      "name": "resource_usage",
+      "description": "Live usage card (CPU, memory, disks, network; last minute) for a computer the person reaches, with its first sample. Only when they ask to see usage. Read-only, no approval.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "this_computer",
+              "sagax_server",
+              "host",
+              "remote_session",
+              "bot_computer"
+            ]
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "A server host's name (list_terminal_resources)."
+          },
+          "session": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Tailcat session code or computer name; default: this conversation's."
+          }
+        },
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
       "name": "publish_remote_session",
-      "description": "Post the connected Tailcat remote-support session into this chat. Call it as soon as the end user connects. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
+      "description": "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1286,6 +1408,46 @@
           "os",
           "rights",
           "end_at"
+        ]
+      }
+    },
+    {
+      "name": "remote_session_snapshot",
+      "description": "Read the connected Tailcat remote computer in one call: OS, uptime, CPU, memory, disks, top processes. No card.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "Support code; default: this chat's session."
+          }
+        }
+      }
+    },
+    {
+      "name": "remote_session_exec",
+      "description": "Run one command on the connected Tailcat remote computer (sh on macOS/Linux, PowerShell on Windows); returns exit code and output. A read-only command runs at once, any other asks the person.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "session": {
+            "type": "string",
+            "description": "Support code; default: this chat's session."
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 120
+          }
+        },
+        "required": [
+          "command"
         ]
       }
     },
@@ -2337,7 +2499,7 @@
     },
     {
       "name": "propose_team_memory",
-      "description": "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a workspace admin to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
+      "description": "Propose something every bot on the team should know: who a person is (person), where something lives (place), what was decided (decision), or what a name means (term). Every addition or replacement waits for a member of this team, or an organization admin, to confirm its card before entering shared prompts. End the turn and do not claim it is remembered before confirmation; accepted facts stay unchanged until then.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,

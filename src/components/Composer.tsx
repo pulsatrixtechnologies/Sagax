@@ -1,9 +1,9 @@
 import { track } from "@/lib/analytics";
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
-import { ArrowUp, Clock, Square, Target, Users, Wand2, X } from "lucide-react";
+import { ArrowUp, Clock, Target, Users, X } from "lucide-react";
 import { useStoreDispatch, useStoreGetter, useStoreSelector } from "@/state/store-selector";
 import { api, visibleMessages, currentTaskBot, type Bot, type Group, type Message } from "@/state/store";
-import { fullAccessNeedsConfirmation, orgFullAccessFor } from "@/lib/full-access";
+import { orgFullAccessFor } from "@/lib/full-access";
 import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { MENTION_ALL, roomAllowsMentionAll, roomMentionPeople, type RoomMentionPerson } from "@/lib/person-mentions";
 import { viewerActorId } from "@/lib/viewer";
@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
 import { composerPlaceholder } from "@/lib/composer-placeholder";
+import { pendingQuestions } from "@/lib/pending-question";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -44,13 +45,12 @@ import { splitTranscriptCitations, type CitationAttachment } from "@/lib/citatio
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { effectivePlace } from "@/lib/place";
 import { FullAccessWarning } from "./FullAccessWarning";
-import { ApprovalModeSelector } from "./ApprovalModeSelector";
-import { ModelPicker, type ComposerModelChip, type ComposerModelMenuControl } from "./ModelPicker";
+import { ModelPicker, type ComposerModelMenuControl } from "./ModelPicker";
 import { CallButton } from "./CallView";
 import { GroupCallButton } from "./GroupCallView";
 import { NudgeButton } from "./NudgeButton";
 import { CommandAllowlistDialog } from "./CommandAllowlistDialog";
-import { approvalModeFor, type ApprovalMode } from "../../shared/approval-mode";
+import { isStopIntent } from "../../shared/stop-intent";
 import {
   appendPastedText,
   handoffAttachmentImagePreview,
@@ -114,7 +114,7 @@ import {
 import { useGroupHarnessCommands, useHarnessCommands } from "@/lib/harness-commands";
 import { ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerNoticeBand, WorkplaceNotice } from "./WorkplaceNotice";
-import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerModelRow, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VOICE_NOTE_ICON, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
+import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark, VoiceNoteChip, type PlusMenuItem } from "./ComposerControls";
 import { useComposerDictation } from "./useComposerDictation";
 import { useVoiceNoteRecorder } from "./useVoiceNoteRecorder";
 import { dictationEngine, isDictationHold, joinDictated } from "@/lib/composer-dictation";
@@ -216,6 +216,10 @@ export function Composer({
   const parallelApprovals = useParallelApprovals(group ? undefined : bot);
   const approvals = [...pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []), ...parallelApprovals];
   const approval = approvals[0];
+  // A bot's question waits in the chat; the composer stays free. Writing
+  // about something else leaves it open (JC: the bot never picks for the
+  // person, and there is no X on a waiting question, #885).
+  const openQuestions = pendingQuestions(group ? group.messages : bot ? visibleMessages(bot) : []);
   const approvalBotFor = (pending: Pending) => group
     ? members?.find((member) => member.id === pending.message.from?.botId) ??
       members?.find((member) => member.id === groupBusyBotId)
@@ -695,10 +699,9 @@ export function Composer({
     return () => window.clearTimeout(timeout);
   }, [busy, pendingCount, steering]);
   const fileInput = useRef<HTMLInputElement>(null);
-  // The model menu lives in the + menu (JC, 2026-10-18): a headless picker
-  // stays mounted here and its Model row opens it beside the + menu.
+  // A headless model picker stays mounted here: the desktop mascot's model
+  // chip opens it (the + menu has no Model row, as in the reference design).
   const modelMenu = useRef<ComposerModelMenuControl | null>(null);
-  const [modelChip, setModelChip] = useState<ComposerModelChip | null>(null);
   const composerRowRef = useRef<HTMLDivElement>(null);
   // the desktop mascot's clip (its balloon's composer row): the app comes forward and this composer picks files
   const attachBotId = bot?.id;
@@ -719,9 +722,6 @@ export function Composer({
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string; threadId: string } | null>(null);
   // Approval mode belongs to one bot; a room has several, each with its own.
   const modeBot = group ? undefined : bot;
-  const approvalEngine = modeBot
-    ? instances.find((instance) => instance.instanceId === modeBot.modelSelection.instanceId)
-    : undefined;
   const trustedThreadAccess = Boolean(!remoteClient && window.ogb?.approvals && capabilities.host.packaged);
   // Organization server: the bot's owner grants Full over HTTP while the
   // organization allows it (src/lib/full-access.ts, server/org-full-access.ts).
@@ -772,47 +772,6 @@ export function Composer({
     // continue in the draft without another click
     refocusInput();
   };
-  const setApprovalMode = (mode: ApprovalMode) => {
-    if (!modeBot || modeBot.busy || mode === approvalModeFor(modeBot)) return;
-    if (mode === "custom" && !trustedThreadAccess) return;
-    if (mode === "full" && !fullAccessAvailable) return;
-    if (mode === "full") {
-      // The warning is confirmed once per bot; later choices go straight in.
-      if (fullAccessNeedsConfirmation(modeBot, viewerId, Boolean(perspicaxOrg))) {
-        setApprovalWarning({ mode, botId: modeBot.id, threadId: modeBot.threadId });
-        return;
-      }
-      dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId,
-        patch: { approvalMode: "full", confirmFullAccess: !perspicaxOrg, ...(perspicaxOrg ? { organizationFullAccess: true } : {}) } });
-      return;
-    }
-    // Safe Auto still needs its dedicated warning when it can drive the host.
-    if (mode === "auto" && modeBot.computer === "local") {
-      setApprovalWarning({ mode: "auto", botId: modeBot.id, threadId: modeBot.threadId });
-      return;
-    }
-    dispatch({ type: "updateTask", botId: modeBot.id, threadId: modeBot.threadId, patch: { approvalMode: mode } });
-  };
-  // A row of the + menu. Its menu, beside it, holds this conversation's
-  // level (the bot settings hold the bot's default): two choices in Simple,
-  // the five levels in Advanced (ApprovalModeSelector).
-  const approvalControlRow = (close: () => void) => modeBot && approvalEngine && !remoteClient ? (
-    <ApprovalModeSelector
-      variant="row"
-      onDone={close}
-      approvalMode={modeBot.approvalMode}
-      autoApprove={modeBot.autoApprove}
-      providerName={approvalEngine.displayName}
-      driverKind={approvalEngine.driverKind}
-      onSelect={setApprovalMode}
-      align="left"
-      disabled={Boolean(modeBot.busy)}
-      trustedModesAvailable={trustedThreadAccess}
-      orgFullAccess={orgFullAccess}
-      onManageCommandAllowlist={ownerOrAdmin === true ? () => setCommandAllowlistTarget({ botId: modeBot.id, botName: modeBot.name, threadId: modeBot.threadId }) : undefined}
-    />
-  ) : null;
-
   const hasContent = Boolean(effectiveText.trim()) || attachments.length > 0;
   const sendLabelFor = () => busy && canSteer ? t("composer.send.steer") : busy ? t("composer.send.queue") : t("composer.send.message");
   const sendTitleFor = () => busy && canSteer ? t("composer.send.steer") : busy ? t("composer.send.queueHint") : `${t("chat.send")} (${sendLabel})`;
@@ -875,6 +834,13 @@ export function Composer({
       const block = goalSubcommandBlock(typedGoalSub, goalStatus);
       if (block) dispatch({ type: "error", message: t(`composer.goal.block.${block}`) });
       else runGoalSubcommand(typedGoalSub);
+      return;
+    }
+    // "stop", "arrête", "cancel" alone while the turn runs: stop it now,
+    // like Escape (the server reads the same intent for other clients)
+    if (busy && attachments.length === 0 && isStopIntent(text)) {
+      interruptTurn();
+      setText("");
       return;
     }
     if (
@@ -1134,9 +1100,9 @@ export function Composer({
     }
     setChannelMode("chat");
   };
-  // The + menu in groups (JC, 2026-10-16, after Grok Bot and Cursor): add
-  // (files, teach a task), then the modes (a room's goal, a bot's setup),
-  // then this conversation's settings (the rows below).
+  // The + menu, as in the reference design: attach files and teach a task,
+  // then a room's goal mode. The model and the approval level live in the
+  // bot's settings; typing /setup still sets the bot up.
   const plusItems: PlusMenuItem[] = [
     { id: "attach", group: "add", label: t("composer.plus.attach"), icon: ATTACH_ICON, onSelect: () => fileInput.current?.click() },
     ...(learnAvailable || browserTeach ? [{
@@ -1149,8 +1115,6 @@ export function Composer({
       // browser, a choice between that and showing it there
       onSelect: () => browserTeach ? learnAvailable ? setTeachChooser(true) : showInBrowser() : startDraftWith("/learn "),
     }] : []),
-    // a voice note adds to the message like a file (2026-10-16)
-    { id: "voiceNote", group: "add", label: t("composer.plus.voiceNote"), icon: VOICE_NOTE_ICON, disabled: dictating || voiceNoting || locked, onSelect: () => void voiceNote.start() },
     ...(group && !group.dm ? [{
       id: "goal",
       group: "modes" as const,
@@ -1168,28 +1132,7 @@ export function Composer({
         requestAnimationFrame(() => inputRef.current?.focus());
       },
     }] : []),
-    ...(!group && supportsAgents(bot) ? [{
-      id: "setup",
-      group: "modes" as const,
-      label: t("composer.plus.setup"),
-      icon: <Wand2 size={15} aria-hidden="true" />,
-      // the same as picking /setup in the "/" menu; no "/setup" hint beside
-      // it (JC 2026-10-18), typing /setup still works
-      onSelect: () => startDraftWith("/setup "),
-    }] : []),
   ];
-  // No Workspace row (JC 2026-10-18): the bot always works on Auto and
-  // picks where each task runs, so nobody chooses a place here.
-  const showModelRow = Boolean(bot && !group && !remoteClient && modelChip);
-  const plusRows = (close: () => void) => (showModelRow || approvalControlRow(close)) ? (
-    <>
-      {showModelRow && modelChip && (
-        <ComposerModelRow chip={modelChip} onOpen={(row) => modelMenu.current?.toggle(row, close)} />
-      )}
-      {approvalControlRow(close)}
-    </>
-  ) : null;
-
   return (
     <div className="pointer-events-none relative overflow-x-clip px-[max(16px,calc((100%-960px)/2))] pb-4">
       {/* No fill or hairline on this wrapper — those were the black frame
@@ -1372,7 +1315,7 @@ export function Composer({
                   (goal, setup), then this conversation's model and approval
                   level as rows that open beside it (JC, 2026-10-15/16; the
                   model since 2026-10-18, no workspace row since #743). */}
-              <ComposerPlusMenu items={plusItems} rows={plusRows} onOpenChange={(open) => { if (!open) modelMenu.current?.close(); }} />
+              <ComposerPlusMenu items={plusItems} />
               {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={showInBrowser} onDescribe={() => startDraftWith("/learn ")} onClose={() => setTeachChooser(false)} />}
               {/* /goal or the + menu's Goal mode starts it; the chip appears
                   only while it is on, says so, and turns it off (JC,
@@ -1479,6 +1422,13 @@ export function Composer({
               onClearReply();
               return;
             }
+            // Escape in an empty composer stops the running turn (there is no
+            // Stop button: typing "stop" works too)
+            if (e.key === "Escape" && busy && !locked && !recording && !hasContent) {
+              e.preventDefault();
+              interruptTurn();
+              return;
+            }
             // an empty composer + ArrowUp = edit your last message (like a chat app)
             if (e.key === "ArrowUp" && !hasContent && onEditLast) {
               e.preventDefault();
@@ -1511,6 +1461,7 @@ export function Composer({
           aria-busy={bot?.awaitingThreadSnapshot || undefined}
           placeholder={composerPlaceholder({
             approval: Boolean(approval),
+            question: openQuestions.length > 0,
             attachmentPending,
             recording,
             busy,
@@ -1524,23 +1475,13 @@ export function Composer({
           />
           <div data-composer-actions className="composer-band flex items-center gap-1 @max-[30rem]/composer:ml-auto">
           {bot && !group && !remoteClient && (
-            // no chip (JC, 2026-10-18): the + menu's Model row opens its menu
+            // no chip: the mascot's model chip opens its menu
             <ModelPicker inComposer headless key={bot.threadId} bot={bot} threadId={threadId}
-              menuControl={modelMenu} onChip={setModelChip}
+              menuControl={modelMenu}
               fallbackAnchor={() => composerRowRef.current?.querySelector<HTMLElement>("[data-composer-plus]") ?? null} />
           )}
-          {/* Stop stays a stop. Stop-then-steer is named beside the queued
-              message above, where its effect is visible before activation. */}
-          {busy && !locked && (
-          <button
-            onClick={interruptTurn}
-            aria-label={t("chat.stopTurn")}
-            className="flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink"
-            title={t("chat.stop")}
-          >
-            <Square size={14} className="fill-current" />
-          </button>
-        )}
+          {/* No Stop button: Escape in the empty field, or a message that
+              only says "stop", ends the running turn. */}
         {!locked && (
           <ComposerMicButton
             onClick={clickMic}

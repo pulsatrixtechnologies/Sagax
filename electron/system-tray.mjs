@@ -254,6 +254,11 @@ export function createSystemTray({ Tray, Menu, nativeImage, iconPath, getWindow,
     hide(win) { hidden = true; win.setSkipTaskbar(true); win.hide(); },
     isHidden() { return hidden; },
     windowShown(win) { hidden = false; win.setSkipTaskbar(false); },
+    /** The person's custom app icon (Windows notification area). */
+    setIcon(image) {
+      if (mac || tray.isDestroyed() || !image || image.isEmpty?.()) return;
+      tray.setImage(image.resize({ width: 20, height: 20 }));
+    },
     destroy() { if (!tray.isDestroyed()) tray.destroy(); },
   };
 }

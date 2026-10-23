@@ -13,6 +13,7 @@ vi.mock("../../../electron/script-pty.mjs", () => ({
 }));
 
 import { createTailcatAdapter } from "./tailcat.ts";
+import { readTunnel } from "../../remote-session-probe.ts";
 
 const ADDRESS = "tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd";
 const ID = "0123456789ab";
@@ -52,9 +53,13 @@ describe("tailcat terminal adapter", () => {
     delete process.env.SAGAX_TAILCAT_PATH;
     delete process.env.SAGAX_DATA_DIR;
 
+    const asked: string[] = [];
     const adapter = createTailcatAdapter({
-      home: () => home,
-      targets: () => [{ id: ID, hostLabel: "GOXP103", label: "Session à distance" }],
+      targets: () => [{ id: ID, hostLabel: "POSTE-01", label: "Session à distance" }],
+      tunnel: (principalId, botId, id) => {
+        asked.push(`${principalId}/${botId}/${id}`);
+        return readTunnel(home, { id });
+      },
     });
     const opened = await adapter.open(ID, {
       auth: { principalId: "person-1" } as never,
@@ -72,6 +77,8 @@ describe("tailcat terminal adapter", () => {
     expect(argv[2]).toBe("--key");
     expect(JSON.stringify(opened)).not.toContain(ADDRESS);
     expect(JSON.stringify(opened)).not.toContain("nodekey:");
+    // the tunnel is asked for this person's session on this bot
+    expect(asked).toEqual([`person-1/bot-1/${ID}`]);
 
     await expect(adapter.open("ffffffffffff", {
       auth: { principalId: "person-1" } as never,
@@ -81,5 +88,21 @@ describe("tailcat terminal adapter", () => {
       cols: 80,
       rows: 24,
     })).rejects.toThrow("This remote computer is not connected from here.");
+  });
+  it("says the server has no ssh client instead of opening a shell nobody can type in", async () => {
+    const adapter = createTailcatAdapter({
+      targets: () => [{ id: ID, hostLabel: "POSTE-01", label: "Session à distance" }],
+      tunnel: () => ({ keyPath: "/k/client.private.json", address: ADDRESS }),
+      systemSsh: () => null,
+    });
+    await expect(adapter.open(ID, {
+      auth: { principalId: "person-1" } as never,
+      principalId: "person-1",
+      botId: "bot-1",
+      sessionId: "term-3",
+      cols: 80,
+      rows: 24,
+    })).rejects.toThrow("This Sagax server has no ssh client, so the remote shell cannot open. Install openssh-client on the server.");
+    expect(captured.argv).toHaveLength(0);
   });
 });

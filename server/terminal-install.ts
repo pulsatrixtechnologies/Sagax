@@ -40,7 +40,7 @@ function sshArgv(dataDir: string, alias: string) {
   return { command: "ssh", args, env: { ...process.env, PATH: ssh.path } };
 }
 
-function configuredHosts(cfg: AppConfig): { ssh: SshAliasTerminalHost[]; unraid: SshAliasTerminalHost[] } {
+export function configuredHosts(cfg: AppConfig): { ssh: SshAliasTerminalHost[]; unraid: SshAliasTerminalHost[] } {
   const ssh: SshAliasTerminalHost[] = [];
   const unraid: SshAliasTerminalHost[] = [];
   const raw = cfg.terminalShell?.hosts;

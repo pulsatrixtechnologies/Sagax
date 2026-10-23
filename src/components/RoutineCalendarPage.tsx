@@ -1,5 +1,5 @@
 import { boatCapableEngine } from "@/lib/remote-desktop";
-import { boatComputerEnabled } from "@/lib/feature-flags";
+import { boatComputerEnabled, routinesInConversationEnabled } from "@/lib/feature-flags";
 import {
   useCallback,
   useEffect,
@@ -23,6 +23,7 @@ import {
   CircleAlert,
   Clock3,
   Cloud,
+  Copy,
   ExternalLink,
   FileText,
   Laptop,
@@ -95,7 +96,7 @@ import {
   toLocalTimeInput,
   type RoutineCalendarItem,
 } from "@/lib/routine-calendar";
-import { DAY_NAMES, durationLabel, intervalLabel, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-label";
+import { DAY_NAMES, durationLabel, intervalLabel, niceDate, niceTime, scheduleLabel, scheduleRawCron } from "@/lib/schedule-label";
 import { Switch } from "./SettingsPrimitives";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import {
@@ -389,6 +390,9 @@ function EventEditor({
   const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
+  // Post results in the conversation (JC 2026-10-22): the routine's own
+  // choice, else the installation default. Off keeps a run in the background.
+  const [postResults, setPostResults] = useState(existingRoutine?.postResults ?? routinesInConversationEnabled(state.config));
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
   const initialTiming = readTiming(schedule);
   const [timingMode, setTimingMode] = useState<"exact" | "flexible">(initialTiming.mode);
@@ -581,6 +585,7 @@ function EventEditor({
           // Room goals can't carry a report yet, and a one-time run has no next run.
           continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
           onlyWhenPresent,
+          postResults: routineTarget === "bot" ? postResults : undefined,
           attachments: routineTarget === "room-goal" ? [] : attachments as RoutineContextAttachment[],
           ...(routineTarget === "bot" ? { resultsThreadId } : {}),
           // Sent only when the person was changed in the dropdown.
@@ -969,6 +974,15 @@ function EventEditor({
               <span>
                 <span className="block text-[12.5px] font-medium text-ink">{t("routines.away.onlyLabel")}</span>
                 <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.away.onlyHelp")}</span>
+              </span>
+            </label>
+          )}
+          {kind === "routine" && !isRoomGoal && (
+            <label data-routine-post-results className="ml-8 flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
+              <input type="checkbox" aria-label={t("routines.postResults.label")} checked={postResults} onChange={(event) => setPostResults(event.target.checked)} className="mt-0.5 accent-accent" />
+              <span>
+                <span className="block text-[12.5px] font-medium text-ink">{t("routines.postResults.label")}</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.postResults.help")}</span>
               </span>
             </label>
           )}
@@ -1620,7 +1634,10 @@ export function EventDetails({
             <div className="text-[12.5px] text-ink-secondary">
               {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` - ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
             </div>
-            {(routine || call) && <div className="mt-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>}
+            {(routine || call) && <div className="mt-1 flex items-start gap-1.5">
+              <div data-schedule-label title={scheduleRawCron((routine ?? call)!.schedule) ?? undefined} className="min-w-0 flex-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>
+              {routine?.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { void navigator.clipboard?.writeText(routine.schedule.type === "cron" ? routine.schedule.expression : "").catch(() => {}); }} className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} /></button>}
+            </div>}
             {routine?.schedule.type === "cron" && <div className="mt-3"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
           </div>
           <div className="flex items-start gap-3">

@@ -268,6 +268,10 @@ export function autoVerdict(
      * and the person's own rules, never for a sandbox widening, a call a
      * security key protects, or while standing grants are off. */
     recipientsAllowed?: boolean;
+    /** The engine's driver read the ask as outward-facing (an engine
+     * connector call that is not plainly a read, review of #943): held by
+     * the outbound guard like a send, never answered as read-only. */
+    outbound?: boolean;
     /** The call is one of Sagax's own tools that must never answer itself:
      * a rule change (rules_update and the like, "rule-change" class). */
     ruleChange?: boolean;
@@ -305,7 +309,8 @@ export function autoVerdict(
   // keeps the card even under Full access or a saved command.
   if (context?.customRule?.behavior === "deny") return { approve: null, source: "custom-rule-deny" };
   if (context?.customRule?.behavior === "ask") return { approve: null, source: "custom-rule-ask" };
-  if (context?.safetyAllow) return { approve: `approved ${tool} (read-only)`, source: "safety-read" };
+  const outward = isOutboundTool(tool) || context?.outbound === true || (context?.toolName !== undefined && isOutboundTool(context.toolName));
+  if (context?.safetyAllow && !outward) return { approve: `approved ${tool} (read-only)`, source: "safety-read" };
   if (context?.widgetApproved) return { approve: `approved ${tool} (approved in the ConnectWise widget)`, source: "widget-approval" };
   // An allow rule never answers a sandbox widening (only Full may), and its
   // risk scope was checked against the call before it got here.
@@ -327,7 +332,7 @@ export function autoVerdict(
   // protects with a security key (the card then needs the key), or a rule
   // change. A Grok gate card is answered too: the gate holds these calls and
   // routes them here (grok-approval-gate.ts), so the same rules apply.
-  const sendsOut = isOutboundTool(tool) || (context?.toolName !== undefined && isOutboundTool(context.toolName));
+  const sendsOut = outward;
   const selfAnswerable = !context?.requiresExplicitApproval && !sendsOut && !(context?.stepUpRequired?.length);
   if (context?.sagaxInternal && selfAnswerable && !context.ruleChange) {
     return { approve: `approved ${tool} (Sagax tool)`, source: "sagax-internal" };
@@ -360,7 +365,7 @@ export function autoVerdict(
   if (context?.sagaxGate) return { approve: null, source: mode === "auto" || mode === "custom" ? "native-approval" : "no-grant" };
   if (mode === "full") return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.requiresExplicitApproval) return { approve: null, source: "explicit-approval-block" };
-  if (isOutboundTool(tool) || ((context?.sagaxInternal || context?.ownEnvironment) && sendsOut)) return { approve: null, source: "outbound-guard" };
+  if (isOutboundTool(tool) || context?.outbound === true || ((context?.sagaxInternal || context?.ownEnvironment) && sendsOut)) return { approve: null, source: "outbound-guard" };
   if (context?.commandAllowed) return { approve: `approved ${tool} (saved command)`, source: "command-allowlist" };
   // The one action the app itself grants. A fetch of an arbitrary URL is not
   // a search and stays a prompt, in this mode and every other.
@@ -386,6 +391,7 @@ export const HELD_NOTE = {
   "approval.held.undeliveredFull": "Full access couldn't deliver this approval.",
   "approval.held.undelivered": "Approve for me couldn't answer this one.",
   "approval.held.customRule": "Your rule asks you first for this.",
+  "approval.held.connectorNoDetails": "Grok did not share this call's details. Allow it only if you asked for it.",
 } as const;
 
 export type HeldNoteKey = keyof typeof HELD_NOTE;

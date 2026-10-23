@@ -130,7 +130,9 @@ bot working in its owner's environment without a card,
 the server (shell, files, fetch: `docs/user-sandbox.md`), so what reaches
 Sagax is a Sagax tool, routed per tool: a card that would act on the shared
 server or beyond the owner's own rights still goes to an organization admin
-(an admin card, answered once and never remembered, whatever the level).
+(an admin card, whatever the level; since 2026-10-21 its Always allow keeps
+the program of a shell line for that bot only, which the bot's owner or an
+admin removes in the bot's Approval rules: `docs/member-admin-audit.md`).
 
 ### Organization rules and "Always allow" off (2026-10-21)
 
@@ -244,6 +246,17 @@ reach Sagax's approval path, so neither the limits above, nor the security
 keys, nor the person's own rules apply to them; only what that reviewer
 leaves to Sagax does. Use **Ask** or **Auto-accept edits** to have every
 such call go through Sagax.
+
+The same holds for Codex (`approvalsReviewer: auto_review`), Qwen
+(`--approval-mode auto`) and Cursor (`--auto-review`) on **Approve for me**:
+their own reviewer decides first. Grok Bot has a single reviewer, so a bot
+can be switched to one reviewer (Grok Bot parity A13,
+`server/drivers/sagax-reviewer.ts`): with `DATA_DIR/sagax-reviewer.json`
+`{"bots": ["<botId>"]}` (or `{"bots": "all"}`), Approve for me on those
+engines starts Qwen at `auto-edit` and Codex and Cursor with the person as
+reviewer, so every other call reaches Sagax's approval path, where the
+person's rules and saved commands still answer without a card. Off by
+default until each engine is benched; read at each turn, no deploy needed.
 
 ### A Primary Bot's level covers the work it delegates
 
