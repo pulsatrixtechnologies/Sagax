@@ -493,7 +493,7 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
-import { autoNewBotSelection, memberNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
@@ -5922,13 +5922,21 @@ async function defaultSelection(saved: ModelSelection | null = cfg.defaultModelS
   });
 }
 /** The model an organization member's new bot starts on when they named
- * none (#1060): the organization's default for new bots, else the server's,
- * else an engine that can run now (memberNewBotSelection). */
-async function memberDefaultSelection(): Promise<ModelSelection> {
+ * none (#1060, #1074): the person's own (a model they starred), else the
+ * organization's default for new bots, else the server's, else an engine
+ * that can run now (memberNewBotSelection). */
+async function memberDefaultSelection(principalId: string | null | undefined): Promise<ModelSelection> {
   const organization = cfg.newBotDefaults?.profile.modelSelection ?? null;
-  if (hostedModels) return hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
+  let person: ModelSelection[] = [];
+  try {
+    if (IDENTITY.kind === "perspicax" && principalId) person = starredModelSelections(userPreferenceStore.get(principalId).preferences["sagax.modelFavorites.v1"]);
+  } catch { /* no preference of their own: the organization's level decides */ }
+  if (hostedModels) {
+    const own = person.find((candidate) => hostedModels!.allows(candidate));
+    return own ?? hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
+  }
   return memberNewBotSelection(selectableInstances<SelectableInstance>(await registry.describe()),
-    { organization, server: cfg.defaultModelSelection ?? null }, selectionContext);
+    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContext);
 }
 /** Engines that are not the person's own: a Company one. A working engine
  * of their own wins over it; the organization's engine policy applies. */
@@ -43114,9 +43122,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       let selection: ModelSelection;
       if (body.modelSelection === undefined) {
-        // A member's bot is not built from the admin's template, but the
-        // organization's default model still applies to it (#1060).
-        selection = memberCreate ? await memberDefaultSelection() : await defaultSelection();
+        // A member's bot is not built from the admin's template: the
+        // person's own model first, then the organization's (#1074, #1060).
+        selection = memberCreate ? await memberDefaultSelection(sessionPrincipal(auth)) : await defaultSelection();
       } else {
         const checked = checkedModelSelection(body.modelSelection, undefined, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });

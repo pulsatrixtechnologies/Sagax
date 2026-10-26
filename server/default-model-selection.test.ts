@@ -3,7 +3,7 @@ import { transpileTs } from "./testing/transpile.ts";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EngineAccess, ModelCatalog, ModelSelection, ProviderSnapshot } from "./contracts.ts";
-import { autoNewBotSelection, memberNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, memberNewBotSelection, readyToRun, selectDefaultModelSelection, starredModelSelections, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { ManagedDesktopPolicy } from "./managed-policy.ts";
 
 const codex = {
@@ -343,8 +343,30 @@ describe("POST /api/bots for an organization member (#1060)", () => {
   it("resolves the member's model through the organization's default, not the bare server default", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
     const route = source.slice(source.indexOf('if (method === "POST" && path === "/api/bots") {'));
-    expect(route.slice(0, route.indexOf("store.createBot("))).toContain("memberCreate ? await memberDefaultSelection() : await defaultSelection()");
+    expect(route.slice(0, route.indexOf("store.createBot("))).toContain("memberCreate ? await memberDefaultSelection(sessionPrincipal(auth)) : await defaultSelection()");
     const helper = source.slice(source.indexOf("async function memberDefaultSelection("));
     expect(helper.slice(0, helper.indexOf("\n}\n"))).toContain("cfg.newBotDefaults?.profile.modelSelection");
+  });
+});
+
+describe("a member's own model first (#1074)", () => {
+  it("starts on the first model the person starred that runs here, before the organization's", () => {
+    const person = starredModelSelections(JSON.stringify([["gone", "x"], ["codex", "selected-model"], ["claude", "claude-default"]]));
+    expect(memberNewBotSelection([claude, codex], { person, organization: { instanceId: "claude", model: "claude-default" } }))
+      .toEqual({ instanceId: "codex", model: "selected-model" });
+  });
+  it("falls back to the organization's default when none of the person's runs here", () => {
+    const person = starredModelSelections(JSON.stringify([["gone", "x"]]));
+    expect(memberNewBotSelection([claude, codex], { person, organization: { instanceId: "claude", model: "claude-default" } }))
+      .toEqual({ instanceId: "claude", model: "claude-default" });
+  });
+  it("reads only well-formed starred models", () => {
+    expect(starredModelSelections("not json")).toEqual([]);
+    expect(starredModelSelections(JSON.stringify([["codex"], ["", "m"], [1, 2], ["codex", "m"]]))).toEqual([{ instanceId: "codex", model: "m" }]);
+  });
+  it("reads the person's starred models for a member's new bot", () => {
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const helper = source.slice(source.indexOf("async function memberDefaultSelection("));
+    expect(helper.slice(0, helper.indexOf("\n}\n"))).toContain('preferences["sagax.modelFavorites.v1"]');
   });
 });

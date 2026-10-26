@@ -111,9 +111,31 @@ export function withNewBotEffort(
   return { ...selection, effort };
 }
 
+/** The models a person starred (`sagax.modelFavorites.v1`, their own
+ * preference kept on the organization server: `[[instanceId, modelId], ...]`,
+ * src/lib/model-favorites.ts), in the order they were starred. Anything
+ * malformed is dropped. */
+export function starredModelSelections(raw: string | null | undefined): ModelSelection[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  const out: ModelSelection[] = [];
+  for (const entry of parsed) {
+    if (!Array.isArray(entry) || entry.length !== 2) continue;
+    const [instanceId, model] = entry as unknown[];
+    if (typeof instanceId !== "string" || typeof model !== "string" || !instanceId.trim() || !model.trim()) continue;
+    if (instanceId.length > 200 || model.length > 200) continue;
+    out.push({ instanceId, model });
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+
 /** What an organization member's new bot starts on when the request names
- * no model (#1060). Each level is tried in order and the first one that can
- * run here wins: the organization's default for new bots
+ * no model (#1060, #1074). Each level is tried in order and the first one
+ * that can run here wins: the person's own (the first model they starred
+ * that runs here), then the organization's default for new bots
  * (`newBotDefaults.profile.modelSelection`, the console's setting), then the
  * server's default (`defaultModelSelection`), then an engine that can run a
  * turn now, on Auto. A saved choice that cannot run (engine gone, signed
@@ -122,10 +144,10 @@ export function withNewBotEffort(
  * at all is available here. */
 export function memberNewBotSelection(
   instances: readonly SelectableInstance[],
-  levels: { organization?: ModelSelection | null; server?: ModelSelection | null },
+  levels: { person?: readonly ModelSelection[]; organization?: ModelSelection | null; server?: ModelSelection | null },
   context: DefaultSelectionContext = {},
 ): ModelSelection {
-  for (const preferred of [levels.organization, levels.server]) {
+  for (const preferred of [...(levels.person ?? []), levels.organization, levels.server]) {
     if (!preferred?.instanceId?.trim() || !preferred.model?.trim()) continue;
     const picked = selectDefaultModelSelection(instances, preferred, context);
     if (picked.instanceId && picked.model) return picked;
