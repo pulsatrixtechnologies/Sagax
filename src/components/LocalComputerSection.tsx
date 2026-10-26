@@ -18,7 +18,7 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { Card, CommandLine, DANGER_PILL, DescribedRow, SettingsGroup, cardCount } from "./SettingsPrimitives";
+import { Card, CommandLine, DANGER_PILL, DescribedRow, PillSelect, SettingsGroup, cardCount } from "./SettingsPrimitives";
 import { SettingsText } from "./SettingsLink";
 import { MacLocalControl } from "./MacLocalControl";
 import { MessagesSettings } from "./MessagesSettings";
@@ -448,7 +448,7 @@ export function VpsComputersCard({
         </button>
       </div>
 
-      {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
+      {error && <p role="alert" className="mt-2 text-[12px] leading-4 text-danger">{error}</p>}
 
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {loading
@@ -588,7 +588,7 @@ export function CloudComputersCard({
         </button>
       </div>
 
-      {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
+      {error && <p role="alert" className="mt-2 text-[12px] leading-4 text-danger">{error}</p>}
 
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {loading
@@ -739,7 +739,7 @@ export function LocalVmInventoryCard({
         </button>
       </div>
 
-      {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
+      {error && <p role="alert" className="mt-2 text-[12px] leading-4 text-danger">{error}</p>}
 
       <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {loading
@@ -1656,7 +1656,7 @@ export function LocalComputerSection() {
                   onEnsure={() => void ensureVm()}
                   onReset={() => void resetVm()}
                 />
-                {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
+                {error && <p role="alert" className="mt-2 text-[12px] leading-4 text-danger">{error}</p>}
               </>
             )}
           >
@@ -1720,15 +1720,13 @@ export function LocalComputerSection() {
               <div className="text-[13px] text-ink">{t("vm.isolation.max")}</div>
               <div className="text-[11.5px] text-ink-secondary">{t("vm.isolation.maxDetail")}</div>
             </div>
-            <select
-              aria-label={t("vm.isolation.maxAria")}
-              value={status?.max_instances ?? 2}
+            <PillSelect
+              ariaLabel={t("vm.isolation.maxAria")}
+              value={String(status?.max_instances ?? 2)}
               disabled={!status || policyPending}
-              onChange={(event) => void savePolicy(status?.mode ?? "shared", Number(event.target.value))}
-              className="rounded-lg border border-hairline/40 bg-control px-2.5 py-1.5 text-[13px] text-ink disabled:opacity-50"
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((value) => <option key={value} value={value}>{value}</option>)}
-            </select>
+              onChange={(next) => void savePolicy(status?.mode ?? "shared", Number(next))}
+              options={[1, 2, 3, 4, 5, 6, 7, 8].map((value) => ({ value: String(value), label: String(value) }))}
+            />
           </div>
         )}
         <LocalVmIdleTimeoutSetting

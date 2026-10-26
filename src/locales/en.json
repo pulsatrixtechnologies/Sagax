@@ -9899,6 +9899,7 @@
   "orgSecrets.env": "Env name (SHOP_TOKEN)",
   "orgSecrets.value": "Secret value",
   "orgSecrets.bot": "Team bot",
+  "orgSecrets.new": "Add a secret",
   "orgSecrets.add": "Add secret",
   "orgSecrets.remove": "Remove",
   "orgSecrets.empty": "No team secret yet.",

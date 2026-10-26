@@ -22,7 +22,7 @@ import {
   type VaultDuplicateMode,
   type VaultExportFormat,
 } from "../../../shared/credential-vault-transfer";
-import { FIELD, PILL, PillSelect, PRIMARY_PILL } from "../SettingsPrimitives";
+import { EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL, SwitchRow } from "../SettingsPrimitives";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const inputClass = FIELD;
@@ -196,10 +196,20 @@ export function ExportPanel({ onCancel }: { onCancel: () => void }) {
     }
   };
   return (
-    <div className="flex flex-col gap-2.5 px-3.5 py-2.5 text-[13px]" data-credential-export>
-      <div className="text-ink">{t("vault.transfer.exportTitle")}</div>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[12.5px] text-ink-secondary">{t("vault.transfer.exportFormat")}</span>
+    <EditorBox
+      label={t("vault.transfer.exportTitle")}
+      className="mx-3.5 my-1.5"
+      data-credential-export=""
+      actions={(
+        <>
+          {reauth?.path && <button type="button" className={PILL} onClick={() => { rememberSettingsReturn("credentials"); location.assign(reauth.path!); }} data-credential-export-sign-in="">{t("security.reauth.button")}</button>}
+          <button type="button" className={PILL} disabled={busy} onClick={onCancel}>{done ? t("vault.transfer.close") : t("vault.settings.cancel")}</button>
+          <button type="button" className={PRIMARY_PILL} disabled={busy || !ready} onClick={() => void run()} data-credential-export-run="">{t("vault.transfer.exportRun")}</button>
+        </>
+      )}
+    >
+      <p className="px-3 py-1.5 text-[13px] leading-[18px] text-ink">{t("vault.transfer.exportTitle")}</p>
+      <EditorField label={t("vault.transfer.exportFormat")} hint={t(format === "chrome-csv" ? "vault.transfer.exportChromeHint" : "vault.transfer.exportBitwardenHint")} menu>
         <PillSelect<VaultExportFormat>
           value={format}
           ariaLabel={t("vault.transfer.exportFormat")}
@@ -211,27 +221,16 @@ export function ExportPanel({ onCancel }: { onCancel: () => void }) {
             { value: "bitwarden-json", label: t("vault.transfer.exportBitwardenJson") },
           ]}
         />
-      </div>
-      <p className="text-[12px] leading-relaxed text-ink-secondary">{t(format === "chrome-csv" ? "vault.transfer.exportChromeHint" : "vault.transfer.exportBitwardenHint")}</p>
-      <p role="note" className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] leading-relaxed text-danger" data-credential-export-warning>{t("vault.transfer.exportWarning")}</p>
-      <label className="flex items-start gap-2 text-[12.5px] text-ink">
-        <input type="checkbox" className="mt-0.5" checked={understood} disabled={busy} onChange={(event) => setUnderstood(event.target.checked)} />
-        <span>{t("vault.transfer.exportUnderstand")}</span>
-      </label>
-      <label className="flex flex-col gap-1 text-[12.5px] text-ink-secondary">
-        <span>{t("vault.transfer.exportType", { word })}</span>
+      </EditorField>
+      <p role="note" className="px-3 py-1.5 text-[12px] leading-4 text-danger" data-credential-export-warning>{t("vault.transfer.exportWarning")}</p>
+      <SwitchRow className="px-3 py-1.5" label={t("vault.transfer.exportUnderstand")} checked={understood} disabled={busy} onChange={setUnderstood} />
+      <EditorField label={t("vault.transfer.exportType", { word })} hint={t("vault.transfer.exportStepUp")}>
         <input className={inputClass} value={typed} disabled={busy} autoComplete="off" spellCheck={false} onChange={(event) => setTyped(event.target.value)} aria-label={t("vault.transfer.exportType", { word })} />
-      </label>
-      <p className="text-[12px] text-ink-tertiary">{t("vault.transfer.exportStepUp")}</p>
-      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      {reauth && <p role="alert" className="text-[12px] text-danger" data-credential-export-reauth="">{reauth.path ? t("vault.transfer.reauthPulsatrix") : t("vault.transfer.reauthUnavailable")}</p>}
-      {done && <p role="status" className="text-[12px] text-ink-secondary">{done}</p>}
-      <div className="flex flex-wrap justify-end gap-2">
-        {reauth?.path && <button type="button" className={PILL} onClick={() => { rememberSettingsReturn("credentials"); location.assign(reauth.path!); }} data-credential-export-sign-in="">{t("security.reauth.button")}</button>}
-        <button type="button" className={PRIMARY_PILL} disabled={busy || !ready} onClick={() => void run()} data-credential-export-run="">{t("vault.transfer.exportRun")}</button>
-        <button type="button" className={PILL} disabled={busy} onClick={onCancel}>{done ? t("vault.transfer.close") : t("vault.settings.cancel")}</button>
-      </div>
-    </div>
+      </EditorField>
+      {error && <p role="alert" className="px-3 py-1.5 text-[12px] text-danger">{error}</p>}
+      {reauth && <p role="alert" className="px-3 py-1.5 text-[12px] text-danger" data-credential-export-reauth="">{reauth.path ? t("vault.transfer.reauthPulsatrix") : t("vault.transfer.reauthUnavailable")}</p>}
+      {done && <p role="status" className="px-3 py-1.5 text-[12px] text-ink-secondary">{done}</p>}
+    </EditorBox>
   );
 }
 

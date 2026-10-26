@@ -2,10 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/lib/i18n";
 import { settingsSectionLabel } from "@/lib/settings-link";
 import { Laptop, Loader2, Unplug } from "lucide-react";
-import { Card } from "./SettingsPrimitives";
+import { Card, FIELD, PILL, PillSelect, PRIMARY_PILL } from "./SettingsPrimitives";
 
-const inputClass =
-  "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink placeholder:text-ink-secondary focus:outline-none";
+const inputClass = FIELD;
 
 function errorText(error: unknown): string {
   return String((error as { message?: string })?.message ?? error).replace(
@@ -106,21 +105,22 @@ export function RemoteComputerSection({ embedded = false }: { embedded?: boolean
     return (
         <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); void pair(); }}>
           {environments && bridge ? (
-            <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">
-              {t("remote.client.connectionType")}
-              <select
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[13px] leading-[18px] text-ink">{t("remote.client.connectionType")}</span>
+              <PillSelect<"server" | "companion">
+                ariaLabel={t("remote.client.connectionType")}
                 value={connection}
                 disabled={busy}
-                onChange={(event) => {
-                  setConnection(event.target.value as "server" | "companion");
+                onChange={(next) => {
+                  setConnection(next);
                   setError("");
                 }}
-                className={inputClass}
-              >
-                <option value="server">{t("remote.client.server.option")}</option>
-                <option value="companion">{t("remote.client.companion.option")}</option>
-              </select>
-            </label>
+                options={[
+                  { value: "server", label: t("remote.client.server.option") },
+                  { value: "companion", label: t("remote.client.companion.option") },
+                ]}
+              />
+            </div>
           ) : null}
           {serverMode ? (
             <>
@@ -184,9 +184,9 @@ export function RemoteComputerSection({ embedded = false }: { embedded?: boolean
           <button
             type="submit"
             disabled={busy || (serverMode ? !serverLink.trim() : endpoint.trim() === "" || code.length !== 6)}
-            className="flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110 disabled:opacity-50"
+            className={`${PRIMARY_PILL} inline-flex w-fit items-center gap-1.5`}
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Laptop size={14} />}
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Laptop size={13} />}
             {serverMode ? t("remote.client.server.connect") : t("remote.client.pair")}
           </button>
           <p className="text-[11.5px] leading-relaxed text-ink-secondary">
@@ -214,10 +214,10 @@ export function RemoteComputerSection({ embedded = false }: { embedded?: boolean
         <p className="text-[13px] text-ink-secondary">{t("remote.client.desktopOnly")}</p>
       ) : state.active ? (
         <div className="flex flex-col gap-4">
-          <div className="flex items-start gap-3 rounded-lg border border-accent/25 bg-accent/10 px-3 py-3">
-            <Laptop size={18} className="mt-0.5 shrink-0 text-accent-text" />
+          <div className="flex items-start gap-2">
+            <Laptop size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-ink-secondary" />
             <div className="min-w-0">
-              <div className="text-[14px] font-medium text-ink">
+              <div className="text-[13px] leading-[18px] text-ink">
                 {t("remote.client.connected", { name: state.serverName || t("remote.client.fallbackName") })}
               </div>
               <div className="mt-1 break-all text-[12px] text-ink-secondary">{state.endpoint}</div>
@@ -230,9 +230,9 @@ export function RemoteComputerSection({ embedded = false }: { embedded?: boolean
             type="button"
             disabled={busy}
             onClick={() => void disconnect()}
-            className="flex w-fit items-center gap-2 rounded-lg border border-danger/30 px-3 py-2 text-[13px] text-danger hover:bg-danger/10 disabled:opacity-50"
+            className={`${PILL} inline-flex w-fit items-center gap-1.5 text-danger`}
           >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Unplug size={14} />}
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Unplug size={13} />}
             {t("remote.client.disconnect")}
           </button>
         </div>

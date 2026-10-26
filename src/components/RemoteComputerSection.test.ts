@@ -50,8 +50,9 @@ describe("remote connection Settings", () => {
 
   it("defaults to server pairing and explains how to obtain a fresh full link", () => {
     const html = render({ environments, remoteClient: { active: false } });
-    expect(html).toContain('<option value="server" selected="">Self-hosted server</option>');
-    expect(html).toContain('<option value="companion">Desktop companion</option>');
+    // the Settings menu (PillSelect), not a native <select>; it opens on Self-hosted server
+    expect(html).toMatch(/<button[^>]*aria-label="Connection type"[^>]*title="Self-hosted server"[^>]*data-pill-select=""/);
+    expect(html).not.toContain("<select");
     expect(html).toContain("Server pairing link");
     expect(html).toContain("pnpm omb pair --client");
     expect(html).toContain("12-character code");
