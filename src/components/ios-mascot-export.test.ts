@@ -67,9 +67,11 @@ import {
 } from "../../shared/mascot-look";
 import { LEGACY_OWL_SKINS, MASCOT_SKIN_IDS, botMascotSkin } from "../../shared/mascot-skins";
 import { MASCOT_COLOR_GROUPS, MASCOT_COLOR_HEX, MASCOT_COLOR_PALETTES } from "../../shared/mascot-colors";
-import { expressionForMood, type ShapeMood } from "./ShapeMascot";
-import { BLINK, blinkSchedule, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, EYE_FADE, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
+import { expressionForMood, IDLE_FRAME_S, uprightPose, type ShapeMood } from "./ShapeMascot";
+import { BLINK, blinkSchedule, gazeFrame, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, EYE_FADE, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
 import { MOVE_TIMING, ORBIT_RINGS, SHAPE_MOVES, SWIRL_RINGS, type RingSpec } from "./shape-moves";
+import { BODY_3D, EYE_DOME, EYE_INK, EYE_INK_ON_DARK, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, POSE, poseMatrices, REST_POSE, SHAPE_FIT, styledEyes, TURN_SQUASH, VOLUME_SIZES, warpPath, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
+import { BASE_DROP, GLANCE, MOTION_BLEND, MOTION_MOODS, MOTIONS, motionForMood, POKE, ROLL_LIMIT, ShapeMotion, TURN_TOWARD, type MotionSpec } from "./shape-motion";
 import { BODY, MOVE_RADII, RADII_COUNT, SHAPE_RADII } from "./shape-art";
 import { legOps, SHIBA_ART, SHIBA_BUST, SHIBA_BUST_MAX, SHIBA_EXPRESSIONS, SHIBA_HIPS, SHIBA_LEGS, SHIBA_PIVOTS, SHIBA_ROLES, shibaOutline, shibaParts, STANCE_HEAD, MOUTHS, mouthOps, type ShibaOp, type ShibaStance } from "./shiba-art";
 import { blendPose, restPose, SHIBA_MOVE_TIMING, shibaMoveAt } from "./shiba-moves";
@@ -83,12 +85,16 @@ import { FROG_BUST, FROG_BUST_MAX, FROG_EXPRESSIONS, FROG_MOUTHS, FROG_PIVOTS, F
 import { FLY_AT, FROG_TRACKS, frogMoveAt, THROAT_TOP, type FrogMove } from "./frog-moves";
 import { frogSkinPaint } from "./skin-fx/frog-skins";
 import { crabSkinPaint } from "./skin-fx/crab-skins";
+import { HD_LOOP_MIN_PX, HD_LOOPS, HD_MASCOTS, HD_STATE_MAP, HD_STILLS } from "./hd-mascots/manifest";
 
 const ROOT = join(__dirname, "..", "..");
 const FIXTURE = join(ROOT, "ios/Tests/CompanionCoreTests/Fixtures/mascot-looks.json");
 const SWIFT_ART = join(ROOT, "ios/Sources/CompanionCore/ShapeStillArt.swift");
 const SWIFT_SHAPE_ENGINE = join(ROOT, "ios/Sources/CompanionCore/ShapeEngineData.swift");
 const SHAPE_FRAMES = join(ROOT, "ios/Tests/CompanionCoreTests/Fixtures/shape-frames.json");
+const SWIFT_SHAPE_VOLUME = join(ROOT, "ios/Sources/CompanionCore/ShapeVolumeData.swift");
+const SHAPE_VOLUME = join(ROOT, "ios/Tests/CompanionCoreTests/Fixtures/shape-volume.json");
+const SWIFT_HD = join(ROOT, "ios/Sources/CompanionCore/HdMascotData.swift");
 const SWIFT_SHIBA = join(ROOT, "ios/Sources/CompanionCore/ShibaStillArt.swift");
 const OGRE_ART_SWIFT = join(ROOT, "ios/Sources/CompanionCore/OgreStillArt.swift");
 const SWIFT_FROG = join(ROOT, "ios/Sources/CompanionCore/FrogStillArt.swift");
@@ -383,7 +389,7 @@ function frogSwift(): string {
   return lines.join("\n");
 }
 
-const MOODS: ShapeMood[] = ["idle", "thinking", "working", "happy", "sleeping"];
+const MOODS: ShapeMood[] = ["idle", "thinking", "working", "streaming", "happy", "blocked", "sleeping"];
 
 function swiftArt(): string {
   const lines: string[] = [
@@ -504,8 +510,8 @@ function shapeEngineSwift(): string {
 }
 
 /** Frames the desktop's engine draws, for ShapeEngineTests: still faces, every move at a few moments, the idle loop, a morph. */
-/** A frame as the phone reads it: the phone draws the body flat, without the desktop's slices, so it has no depth. */
-const phoneFrame = ({ depth: _depth, ...frame }: ShapeFrame) => frame;
+/** A frame as the phone reads it: all of it, its depth included (the phone draws the same slices, shape-volume.ts). */
+const phoneFrame = (frame: ShapeFrame) => frame;
 
 function shapeFrames() {
   const shapes = Object.keys(SHAPE_RADII) as (keyof typeof SHAPE_RADII)[];
@@ -530,6 +536,168 @@ function shapeFrames() {
   live.push({ name: "morph", shape: "circle", expression: "neutral", color: "#3b93f0", seed, now: 2.2, set: { at: 2, shape: "cloud", expression: "happy", color: "#f0b429" }, frame: phoneFrame(morph.frame(2.2)) });
   const blinks = { seed, until: 30, times: blinkSchedule(seed, 30) };
   return { still: still.map((e) => ({ shape: e.shape, expression: e.expression, body: e.frame.body, eyes: e.frame.eyes })), live, blinks };
+}
+
+/* ------------------------------------------------- Shapes volume, motion */
+
+const swiftPose = (p: Pose) => `ShapePose(yaw: ${lit(p.yaw)}, pitch: ${lit(p.pitch)}, roll: ${lit(p.roll)}, scale: ${lit(p.scale)}, lift: ${lit(p.lift)})`;
+const triple = (t: { yaw: number; pitch: number; roll: number }) => `(yaw: ${lit(t.yaw)}, pitch: ${lit(t.pitch)}, roll: ${lit(t.roll)})`;
+const swiftMotion = (m: MotionSpec) =>
+  `ShapeMotionSpec(sway: ${triple(m.sway)}, period: ${triple(m.period)}, lean: ${triple(m.lean)}, breath: (amount: ${lit(m.breath.amount)}, period: ${lit(m.breath.period)}), bob: (amount: ${lit(m.bob.amount)}, period: ${lit(m.bob.period)}), settle: ${lit(m.settle)})`;
+
+/** The volume and motion numbers (shape-volume.ts, shape-motion.ts) the phone's ShapeVolume.swift and ShapeMotion.swift use. */
+function shapeVolumeSwift(): string {
+  const lines: string[] = [
+    "// GENERATED by src/components/ios-mascot-export.test.ts from the desktop's",
+    "// Shapes volume and motion (src/components/shape-volume.ts, shape-motion.ts,",
+    "// ShapeMascot.tsx): every number ShapeVolume.swift and ShapeMotion.swift",
+    "// pose, slice and move a shape with. Do not edit; regenerate with",
+    "// `UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`.",
+    "",
+    "/// The motion library's moods (`MOTION_MOODS`).",
+    "public enum ShapeMotionMood: String, CaseIterable, Sendable {",
+    ...MOTION_MOODS.map((id) => `    case ${id}`),
+    "}",
+    "",
+    "public enum ShapeVolumeData {",
+    "    /// The resting pose (`POSE`).",
+    `    public static let rest = ${swiftPose(REST_POSE)}`,
+    "    /// The body's half thickness (box units), how its edge rounds and how many slices each detail draws (`BODY_3D`).",
+    `    public static let depth: Double = ${lit(BODY_3D.depth)}`,
+    `    public static let core: Double = ${lit(BODY_3D.core)}`,
+    `    public static let slices: [ShapeVolumeDetail: Int] = [.tiny: ${BODY_3D.slices.tiny}, .small: ${BODY_3D.slices.small}, .full: ${BODY_3D.slices.full}]`,
+    "    /// Below `small` pt the hairline is thicker; from `full` pt every slice draws (`VOLUME_SIZES`).",
+    `    public static let sizes: (small: Double, full: Double) = (small: ${lit(VOLUME_SIZES.small)}, full: ${lit(VOLUME_SIZES.full)})`,
+    "    /// How far the eyes stand in front of the face, how much a turn narrows the body, the out-of-plane bend (`EYE_DOME`, `TURN_SQUASH`, `OUT_OF_PLANE`).",
+    `    public static let eyeDome: Double = ${lit(EYE_DOME)}`,
+    `    public static let turnSquash: Double = ${lit(TURN_SQUASH)}`,
+    `    public static let outOfPlane: (perspective: Double, narrow: Double) = (perspective: ${lit(OUT_OF_PLANE.perspective)}, narrow: ${lit(OUT_OF_PLANE.narrow)})`,
+    "    /// The eyes' two inks (`EYE_INK`, `EYE_INK_ON_DARK`).",
+    `    public static let eyeInk = "${EYE_INK}"`,
+    `    public static let eyeInkOnDark = "${EYE_INK_ON_DARK}"`,
+    "    /// Each shape's size in the frame (`SHAPE_FIT`).",
+    "    public static let fit: [MascotShape: Double] = [",
+    ...Object.entries(SHAPE_FIT).map(([shape, fit]) => `        .${SWIFT_SHAPE[shape]}: ${lit(fit)},`),
+    "    ]",
+    "",
+    "    /// The motion library (`MOTIONS`).",
+    "    public static let motions: [ShapeMotionMood: ShapeMotionSpec] = [",
+    ...MOTION_MOODS.map((id) => `        .${id}: ${swiftMotion(MOTIONS[id])},`),
+    "    ]",
+    `    /// The roll's soft limits, the base's drop, the glances, a mood change's slide, the turn toward a pointer and a poke (\`ROLL_LIMIT\`, \`BASE_DROP\`, \`GLANCE\`, \`MOTION_BLEND\`, \`TURN_TOWARD\`, \`POKE\`).`,
+    `    public static let rollLimit: (min: Double, max: Double) = (min: ${lit(ROLL_LIMIT.min)}, max: ${lit(ROLL_LIMIT.max)})`,
+    `    public static let baseDrop: Double = ${lit(BASE_DROP)}`,
+    `    public static let glance: (holdMin: Double, holdMax: Double, move: Double) = (holdMin: ${lit(GLANCE.hold.min)}, holdMax: ${lit(GLANCE.hold.max)}, move: ${lit(GLANCE.move)})`,
+    `    public static let motionBlend: Double = ${lit(MOTION_BLEND)}`,
+    `    public static let turnToward: (yaw: Double, pitch: Double, settle: Double) = (yaw: ${lit(TURN_TOWARD.yaw)}, pitch: ${lit(TURN_TOWARD.pitch)}, settle: ${lit(TURN_TOWARD.settle)})`,
+    `    public static let poke: (length: Double, squash: Double, hop: Double, spin: Double) = (length: ${lit(POKE.length)}, squash: ${lit(POKE.squash)}, hop: ${lit(POKE.hop)}, spin: ${lit(POKE.spin)})`,
+    `    /// The live loop's pace at rest, s per frame (\`IDLE_FRAME_S\`).`,
+    `    public static let idleFrame: Double = ${lit(IDLE_FRAME_S)}`,
+    "",
+    "    /// Each shape mood's motion (`motionForMood`) and eyes (`eyeStyleFor`).",
+    "    public static let moodMotion: [ShapeMood: ShapeMotionMood] = [",
+    ...MOODS.map((mood) => `        .${mood}: .${motionForMood(mood)},`),
+    "    ]",
+    "    public static let moodEyes: [ShapeMood: ShapeEyeStyle] = [",
+    ...MOODS.map((mood) => `        .${mood}: .${eyeStyleFor(mood)},`),
+    "    ]",
+    "}",
+    "",
+  ];
+  return lines.join("\n");
+}
+
+const POSES: Record<string, Pose> = {
+  rest: REST_POSE,
+  turned: { ...REST_POSE, yaw: 28, pitch: 18, roll: 8 },
+  away: { yaw: -22, pitch: -6, roll: -14, scale: 0.79, lift: -3.1 },
+};
+
+/** What the desktop's volume draws, for ShapeVolumeTests: matrices, bent outlines and eyes, inks, the ground, motion over time. */
+function shapeVolume() {
+  const details: VolumeDetail[] = ["tiny", "small", "full"];
+  const matrices = details.flatMap((detail) =>
+    Object.entries(POSES).flatMap(([pose, p]) => [1, 0.62, 0.2, 0].map((depth) => ({ detail, pose, depth, ...poseMatrices(detail, p, depth) }))),
+  );
+  const styles: EyeStyle[] = ["capsule", "oval", "arc"];
+  const shapes = Object.keys(SHAPE_RADII) as (keyof typeof SHAPE_RADII)[];
+  const warps = shapes.flatMap((shape, i) =>
+    Object.entries(POSES).map(([pose, p], k) => {
+      const expression = k === 2 ? "neutral" : (SHAPE_EXPRESSIONS[(i + k) % SHAPE_EXPRESSIONS.length] as ShapeExpression);
+      const open = k === 2 ? 0.4 : 1;
+      const frame = gazeFrame({ shape, expression, color: "#000000" }, 0, 0, {}, { left: open, right: open });
+      const style = styles[(i + k) % styles.length];
+      return { shape, expression, open, pose, style, sourceBody: frame.body, sourceEyes: frame.eyes, body: warpPath(frame.body, p), eyes: styledEyes(warpPath(frame.eyes, p), style), flatEyes: styledEyes(frame.eyes, style) };
+    }),
+  );
+  const ground = Object.fromEntries(shapes.map((shape) => [shape, groundLift(shape)]));
+  const inks = ["#3b93f0", "#F4F4F4", "#ffffff", "#111111", "#000000", "#e8483f", "#f0b429", "#0b0b0e", "#2a2a2a"].map((hex) => ({ hex, ...inkPaint(hex) }));
+  const upright = uprightPose(POSES.away);
+  const motion = MOTION_MOODS.map((mood, i) => {
+    const seed = 3.7 + i;
+    const run = new ShapeMotion(mood, seed, 0);
+    const poses: { t: number; pose: Pose }[] = [];
+    for (let k = 0; k <= 60; k += 1) {
+      const t = k * 0.2;
+      if (k === 20) run.setMood(mood === "working" ? "idle" : "working", t);
+      if (k === 30) run.pointer({ x: 0.8, y: -0.5 });
+      if (k === 40) run.pointer(null);
+      if (k === 45) run.pokeAt(t);
+      poses.push({ t, pose: run.pose(t) });
+    }
+    return { mood, seed, poses };
+  });
+  return { matrices, warps, ground, inks, upright, motion };
+}
+
+/* ------------------------------------------------------------ HD mascots */
+
+/** The file an asset URL names (the app bundles src/assets/mascots/<character>/ as it is). */
+const assetFile = (url: string) => {
+  const name = url.split("/").pop()!.split("?")[0];
+  return name.replace(/\.webp$/, "");
+};
+
+/** The HD manifests (hd-mascots/manifest.ts, shiba-hd.ts) the phone's HdMascotView draws. */
+function hdSwift(): string {
+  const lines: string[] = [
+    "// GENERATED by src/components/ios-mascot-export.test.ts from the desktop's",
+    "// HD mascots (src/components/hd-mascots/manifest.ts and each character's",
+    "// manifest): the loops, the stills, the files in the app bundle (the",
+    "// desktop's own src/assets/mascots/<character>/ folder) and how the app's",
+    "// states map onto them. Do not edit; regenerate with",
+    "// `UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`.",
+    "",
+    "/// The looping clips a character can ship (`HD_LOOPS`).",
+    "public enum HdLoop: String, CaseIterable, Sendable {",
+    ...HD_LOOPS.map((id) => `    case ${id}`),
+    "}",
+    "",
+    "/// The still poses a character can ship (`HD_STILLS`).",
+    "public enum HdStill: String, CaseIterable, Sendable {",
+    ...HD_STILLS.map((id) => `    case ${id}`),
+    "}",
+    "",
+    "public enum HdMascotData {",
+    `    /// Below this box size a loop is not worth decoding: the still shows (\`HD_LOOP_MIN_PX\`).`,
+    `    public static let loopMinSize: Double = ${HD_LOOP_MIN_PX}`,
+    "    /// Each character's art: its bundle folder, its files and the still behind each loop.",
+    "    public static let manifests: [MascotCharacter: HdManifest] = [",
+  ];
+  for (const [character, m] of Object.entries(HD_MASCOTS)) {
+    if (!m) continue;
+    lines.push(`        .${character}: HdManifest(`);
+    lines.push(`            folder: "${character}",`);
+    lines.push(`            px: ${m.px},`);
+    lines.push(`            loops: [${HD_LOOPS.map((id) => `.${id}: "${assetFile(m.loops[id])}"`).join(", ")}],`);
+    lines.push(`            stills: [${HD_STILLS.map((id) => `.${id}: "${assetFile(m.stills[id])}"`).join(", ")}],`);
+    lines.push(`            loopStill: [${HD_LOOPS.map((id) => `.${id}: .${m.loopStill[id]}`).join(", ")}]`);
+    lines.push("        ),");
+  }
+  lines.push("    ]", "", "    /// The app's states onto the art (`HD_STATE_MAP`).", "    public static let stateMap: [String: HdKey] = [");
+  for (const [state, key] of Object.entries(HD_STATE_MAP)) lines.push(`        "${state}": ${"loop" in key ? `.loop(.${key.loop})` : `.still(.${key.still})`},`);
+  lines.push("    ]", "}", "");
+  return lines.join("\n");
 }
 
 /* -------------------------------------------------------------- Grump */
@@ -745,6 +913,15 @@ describe("the phone's copy of the mascot looks", () => {
   it("carries the Shapes engine's numbers and frames it draws, every face and every move", () => {
     check(SWIFT_SHAPE_ENGINE, shapeEngineSwift());
     check(SHAPE_FRAMES, `${JSON.stringify(shapeFrames(), null, 1)}\n`);
+  });
+
+  it("carries the Shapes volume and motion: the slices, the bend, the eyes, the inks, the ground and the moves over time", () => {
+    check(SWIFT_SHAPE_VOLUME, shapeVolumeSwift());
+    check(SHAPE_VOLUME, `${JSON.stringify(shapeVolume(), null, 1)}\n`);
+  });
+
+  it("carries the HD mascots' manifests and state map", () => {
+    check(SWIFT_HD, hdSwift());
   });
 
   it("carries Shiba's parts, faces, pivots and walk cycle as the desktop draws them", () => {

@@ -27,6 +27,7 @@ struct MascotGalleryView: View {
                 switch page {
                 case "shape": shapes
                 case "shape-moves": ShapeMovesGallery()
+                case "shape-volume": ShapeVolumeGallery()
                 case "trombi": trombis
                 case "shiba": shibas
                 case "frog": frogs
@@ -56,8 +57,8 @@ struct MascotGalleryView: View {
         }
     }
 
-    private func character(_ look: CompleteMascotLook, _ color: String, _ skin: MascotSkin = .none, _ size: CGFloat, _ state: MausState = .idle) -> some View {
-        MascotCharacterView(look: look, color: color, skin: skin, size: size, state: state)
+    private func character(_ look: CompleteMascotLook, _ color: String, _ skin: MascotSkin = .none, _ size: CGFloat, _ state: MausState = .idle, hd: Bool = false, animated: Bool = false) -> some View {
+        MascotCharacterView(look: look, color: color, skin: skin, size: size, state: state, animated: animated, hd: hd)
     }
 
     // MARK: pages
@@ -124,6 +125,13 @@ struct MascotGalleryView: View {
 
     private var shibas: some View {
         VStack(alignment: .leading, spacing: 10) {
+            row("HD: idle (loop), thinking, sleeping, 42 pt bust") {
+                let look = CompleteMascotLook(character: .shiba)
+                character(look, "orange", .none, 85, .idle, hd: true, animated: true)
+                character(look, "orange", .none, 60, .thinking, hd: true)
+                character(look, "orange", .none, 60, .sleeping, hd: true)
+                character(look, "orange", .none, 42, .happy, hd: true)
+            }
             ForEach(ShibaSkin.allCases, id: \.self) { skin in
                 row(skin.rawValue) {
                     let look = CompleteMascotLook(character: .shiba, shibaSkin: skin)
@@ -273,6 +281,55 @@ private struct ShapeMovesGallery: View {
 
     private func play() {
         for (index, move) in ShapeMove.allCases.enumerated() { handles[index].shape(move) }
+    }
+}
+
+/// `-mascotGallery shape-volume`: the shapes in volume, live at rest and in
+/// each mood, then the moves that shrink the body frozen at their middle
+/// (the depth fix of #1106: a dot, a bar or a speck stays one body).
+private struct ShapeVolumeGallery: View {
+    private static let shrinking: [ShapeMove] = [.thinking, .sleep, .alert, .exclaim, .burst, .comet]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: "live, at rest").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+            HStack(spacing: 2) {
+                ForEach(MascotShape.allCases, id: \.self) { shape in
+                    ShapeMascotView(shape: shape, color: ["tomato", "jade", "violet", "honey", "cobalt", "white", "black", "teal"][MascotShape.allCases.firstIndex(of: shape)! % 8], size: 40, animated: true)
+                        .frame(width: 44, height: 46)
+                }
+            }
+            Text(verbatim: "moods: idle, thinking, working, streaming, happy, blocked, sleeping").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(84), spacing: 2), count: 4), alignment: .leading, spacing: 4) {
+                ForEach(ShapeMood.allCases, id: \.self) { mood in
+                    ShapeMascotView(shape: .blob, color: "cobalt", size: 72, mood: mood, animated: true)
+                        .frame(width: 84, height: 80)
+                }
+            }
+            Text(verbatim: "moves that shrink the body, at their middle: 24, 44, 96 pt").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+            ForEach(Self.shrinking, id: \.self) { move in
+                HStack(spacing: 6) {
+                    Text(verbatim: move.rawValue).font(.system(size: 9)).foregroundStyle(.white.opacity(0.6)).frame(width: 44, alignment: .leading)
+                    ForEach([MascotShape.pill, .blob], id: \.self) { shape in
+                        frozen(shape, move, 24)
+                        frozen(shape, move, 44)
+                    }
+                    frozen(.pill, move, 96)
+                }
+            }
+        }
+    }
+
+    private func frozen(_ shape: MascotShape, _ move: ShapeMove, _ size: CGFloat) -> some View {
+        let run = ShapeEngine(ShapeEngineState(shape: shape, expression: .neutral, color: "#F4F4F4"), now: 0, seed: 1)
+        run.play(move, now: 0)
+        let timing = ShapeEngineData.moveTiming[move]!
+        let frame = run.frame(min(timing.duration, timing.morph + 0.6))
+        let pose = ShapeVolume.grounded(ShapePose(yaw: 28, pitch: 18, roll: 8, scale: ShapeVolumeData.rest.scale, lift: ShapeVolumeData.rest.lift), shape)
+        return Canvas { context, canvas in
+            ShapeRenderer.draw(in: &context, canvas: canvas, box: size, frame: frame, pose: pose, shape: shape, skin: .plain, hex: "#F4F4F4")
+        }
+        .frame(width: size * 1.2, height: size * 1.2)
     }
 }
 

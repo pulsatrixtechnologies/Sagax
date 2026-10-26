@@ -1,6 +1,72 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Mascots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascottes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotes"
+          }
+        }
+      }
+    },
+    "HD mascots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HD mascots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascottes HD"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotes HD"
+          }
+        }
+      }
+    },
+    "Detailed art for the characters that have it. Colors and skins apply to the classic look.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed art for the characters that have it. Colors and skins apply to the classic look."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Illustrations détaillées pour les personnages qui en ont. Les couleurs et les styles s'appliquent à l'apparence classique."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arte detalhada para os personagens que a têm. Cores e estilos valem para a aparência clássica."
+          }
+        }
+      }
+    },
     "Pairing code %@ %@: your computer's form shows the same when it is the one asking.": {
       "localizations": {
         "en": {

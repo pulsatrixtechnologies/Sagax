@@ -11,6 +11,7 @@ struct AppearanceSettingsView: View {
     @EnvironmentObject private var session: Session
     @ObservedObject private var themes = ThemeStore.shared
     @AppStorage(RunCardPreference.key) private var showRunCard = true
+    @AppStorage(HdMascots.preferenceKey) private var hdMascots = "on"
 
     /// The skin in effect (a DEBUG launch override included).
     private var selection: ThemeSelection { themes.effective }
@@ -59,6 +60,19 @@ struct AppearanceSettingsView: View {
 
             // list density, activity and home chrome (this phone's display)
             DisplaySettingsCard()
+
+            // HD mascots (#968): painted art for the characters that have some, shown while one does
+            if !HdMascots.characters.isEmpty {
+                SettingsSectionLabel(text: "Mascots")
+                SettingsCard {
+                    SettingsRow(
+                        title: "HD mascots",
+                        subtitle: "Detailed art for the characters that have it. Colors and skins apply to the classic look.",
+                        accessory: .toggle(Binding(get: { HdMascots.enabled(hdMascots) }, set: { hdMascots = $0 ? "on" : "off" })),
+                        identifier: "settings.hdMascots"
+                    )
+                }
+            }
 
             // the run card above the composer (ST4, SettingsModal RunCardRow)
             SettingsSectionLabel(text: "Chat")
