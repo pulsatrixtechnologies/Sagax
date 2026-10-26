@@ -1,0 +1,176 @@
+// @vitest-environment happy-dom
+// The wizard's screen: the two mode cards, the draft made on the server, the
+// mode switch that keeps everything, skipping a step, the Primary Bot's
+// guided conversation, and Finish.
+import { act, createElement } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { applyWizardPatch, newWizardDraft, type WizardDraft } from "../../../shared/bot-wizard";
+
+const fixture = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
+  dispatch: vi.fn(),
+  lib: {
+    listWizardDrafts: vi.fn(),
+    readWizardDraft: vi.fn(),
+    startWizardDraft: vi.fn(),
+    patchWizardDraft: vi.fn(),
+    createWizardBot: vi.fn(),
+    openWizardThread: vi.fn(),
+    sendWizardMessage: vi.fn(),
+    finishWizard: vi.fn(),
+    deleteWizardDraft: vi.fn(),
+  },
+}));
+vi.mock("@/state/store", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/state/store")>(),
+  useStore: () => ({ state: fixture.state, dispatch: fixture.dispatch }),
+}));
+vi.mock("@/lib/bot-wizard", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/bot-wizard")>(), ...fixture.lib }));
+vi.mock("./WizardSteps", () => ({
+  stepTitle: (step: string) => `title:${step}`,
+  stepIntro: (step: string) => `intro:${step}`,
+  StepBody: ({ step }: { step: string }) => createElement("div", { "data-stub-step": step }),
+}));
+vi.mock("./WizardConversation", () => ({
+  WizardConversation: ({ botId, threadId }: { botId: string; threadId: string }) => createElement("div", { "data-stub-chat": `${botId}:${threadId}` }),
+}));
+vi.mock("../Avatar", () => ({ BotAvatar: () => null }));
+
+const { BotWizard } = await import("./BotWizard");
+
+const newBot = { id: "bot-new", name: "Nova", title: "", description: "", color: "green", messages: [], threadId: "t-new", modelSelection: { instanceId: "", model: "" } };
+const primary = { id: "bot-primary", name: "Chef", chiefOfStaff: true, title: "", description: "", color: "blue", messages: [], threadId: "t-p", modelSelection: { instanceId: "", model: "" } };
+
+let server: WizardDraft | null;
+let root: Root;
+let container: HTMLDivElement;
+beforeEach(() => {
+  server = null;
+  fixture.dispatch.mockReset();
+  fixture.state = { bots: [primary], botWizard: { botId: null } };
+  for (const fn of Object.values(fixture.lib)) fn.mockReset();
+  fixture.lib.listWizardDrafts.mockResolvedValue([]);
+  fixture.lib.createWizardBot.mockImplementation(async () => {
+    fixture.state = { ...fixture.state, bots: [primary, newBot] };
+    return newBot;
+  });
+  fixture.lib.startWizardDraft.mockImplementation(async (botId: string, body: { origin: "new" | "redo"; mode: "guided" | "manual" }) => {
+    server = newWizardDraft({ botId, owner: "pr_me", origin: body.origin, mode: body.mode, now: 1 });
+    return server;
+  });
+  fixture.lib.patchWizardDraft.mockImplementation(async (_botId: string, patch: Parameters<typeof applyWizardPatch>[1]) => {
+    server = applyWizardPatch(server!, patch, (server?.updatedAt ?? 1) + 1);
+    return server;
+  });
+  fixture.lib.readWizardDraft.mockImplementation(async () => ({ draft: server, suggestions: { rules: [], routines: [], tools: [], apps: [] } }));
+  fixture.lib.openWizardThread.mockResolvedValue("thread-guided");
+  fixture.lib.sendWizardMessage.mockResolvedValue(undefined);
+  fixture.lib.finishWizard.mockImplementation(async (draft: WizardDraft) => ({ draft: { ...draft, status: "done" }, failed: [] }));
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+});
+
+const click = async (selector: string) => {
+  const target = container.querySelector<HTMLButtonElement>(selector);
+  expect(target, selector).not.toBeNull();
+  await act(async () => { target!.click(); });
+};
+const render = async () => { await act(async () => { root.render(createElement(BotWizard)); }); };
+const rerender = render;
+
+describe("the bot creation wizard", () => {
+  it("opens on the two mode cards, then creates the bot and its draft in manual mode", async () => {
+    await render();
+    expect(container.querySelector('[data-wizard-choose="guided"]')?.textContent).toContain("Chef");
+    expect(container.querySelector('[data-wizard-choose="manual"]')).not.toBeNull();
+    await click('[data-wizard-choose="manual"]');
+    expect(fixture.lib.createWizardBot).toHaveBeenCalledTimes(1);
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "botAdded", bot: newBot, preserveSelection: true });
+    expect(fixture.lib.startWizardDraft).toHaveBeenCalledWith("bot-new", { origin: "new", mode: "manual" });
+    await rerender();
+    expect(container.querySelector('[data-stub-step="identity"]')).not.toBeNull();
+    expect(container.querySelector("[data-wizard-guided-chat]")).toBeNull();
+    // guided mode never opened: no conversation with the Primary Bot yet
+    expect(fixture.lib.openWizardThread).not.toHaveBeenCalled();
+  });
+
+  it("skips a step, goes back, and switching mode keeps the draft and opens the guided conversation", async () => {
+    await render();
+    await click('[data-wizard-choose="manual"]');
+    await rerender();
+    await click("[data-wizard-skip]");
+    expect(fixture.lib.patchWizardDraft).toHaveBeenLastCalledWith("bot-new", { skip: "identity" });
+    expect(container.querySelector('[data-stub-step="soul"]')).not.toBeNull();
+    await click("[data-wizard-next]");
+    expect(container.querySelector('[data-stub-step="rules"]')).not.toBeNull();
+
+    await click('[data-wizard-mode="guided"]');
+    expect(fixture.lib.patchWizardDraft).toHaveBeenCalledWith("bot-new", { mode: "guided" });
+    // the same draft: still on Rules, Identity still skipped
+    expect(server).toMatchObject({ mode: "guided", step: "rules", skipped: ["identity"] });
+    expect(fixture.lib.openWizardThread).toHaveBeenCalledWith("bot-primary", expect.any(String));
+    expect(fixture.lib.sendWizardMessage).toHaveBeenCalledWith("bot-primary", "thread-guided", expect.stringContaining("Nova"));
+    expect(server).toMatchObject({ guidedBotId: "bot-primary", guidedThreadId: "thread-guided" });
+    await rerender();
+    expect(container.querySelector('[data-stub-chat="bot-primary:thread-guided"]')).not.toBeNull();
+    expect(container.querySelector('[data-stub-step="rules"]')).not.toBeNull();
+
+    await click('[data-wizard-mode="manual"]');
+    expect(server).toMatchObject({ mode: "manual", step: "rules", guidedThreadId: "thread-guided" });
+    // back to guided later: the same conversation, never a second one
+    await click('[data-wizard-mode="guided"]');
+    expect(fixture.lib.openWizardThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("the guided card starts with the Primary Bot's conversation", async () => {
+    await render();
+    await click('[data-wizard-choose="guided"]');
+    expect(fixture.lib.startWizardDraft).toHaveBeenCalledWith("bot-new", { origin: "new", mode: "guided" });
+    expect(fixture.lib.sendWizardMessage).toHaveBeenCalledTimes(1);
+    await rerender();
+    expect(container.querySelector("[data-wizard-guided-chat]")).not.toBeNull();
+  });
+
+  it("resumes an open draft of a bot straight on its step and mode", async () => {
+    fixture.state = { bots: [primary, newBot], botWizard: { botId: "bot-new" } };
+    server = applyWizardPatch(newWizardDraft({ botId: "bot-new", owner: "pr_me", origin: "new", mode: "manual", now: 1 }), { step: "routines" }, 2);
+    await render();
+    expect(container.querySelector('[data-stub-step="routines"]')).not.toBeNull();
+    expect(fixture.lib.createWizardBot).not.toHaveBeenCalled();
+  });
+
+  it("Redo opens the mode choice on the existing bot, never a new bot", async () => {
+    fixture.state = { bots: [primary, newBot], botWizard: { botId: "bot-new", redo: true } };
+    fixture.lib.readWizardDraft.mockRejectedValue(new Error("none"));
+    await render();
+    expect(container.querySelector("[data-wizard-mode-choice]")?.textContent).toContain("Nova");
+    await click('[data-wizard-choose="manual"]');
+    expect(fixture.lib.createWizardBot).not.toHaveBeenCalled();
+    expect(fixture.lib.startWizardDraft).toHaveBeenCalledWith("bot-new", { origin: "redo", mode: "manual", restart: true });
+  });
+
+  it("finishes from the recap and opens the bot", async () => {
+    fixture.state = { bots: [primary, newBot], botWizard: { botId: "bot-new" } };
+    server = applyWizardPatch(newWizardDraft({ botId: "bot-new", owner: "pr_me", origin: "new", mode: "manual", now: 1 }), { step: "recap", routines: ["morning-brief"] }, 2);
+    await render();
+    await click("[data-wizard-finish]");
+    expect(fixture.lib.finishWizard).toHaveBeenCalledWith(expect.objectContaining({ botId: "bot-new", routines: ["morning-brief"] }), expect.any(String));
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "closeBotWizard" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "select", id: "bot-new" });
+  });
+
+  it("Later closes and keeps the draft", async () => {
+    await render();
+    await click('[data-wizard-choose="manual"]');
+    await click("[data-wizard-later]");
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "closeBotWizard" });
+    expect(fixture.lib.deleteWizardDraft).not.toHaveBeenCalled();
+  });
+});

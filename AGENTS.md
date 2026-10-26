@@ -388,6 +388,33 @@ routines at once, no card, several bots in one order (one call per bot):
 - Without the person's request (a tool, a page, a teammate) the quote fails
   and the proposal stays a card. Test: `server/primary-applies.e2e.test.ts`.
 
+## Bot creation wizard (2026-10-26)
+
+Decision: a guided wizard beside New bot's quick dialog (kept), same look as
+the guided first run (#1035). Desktop `src/components/bot-wizard/`, iOS
+`ios/App/BotWizard/`, one server draft for both:
+
+- Draft: `server/bot-wizard-store.ts` (`bot-wizard-drafts.json`, 0600, one
+  per bot), routes `server/routes/bot-wizard.ts` (`/api/bot-wizard`, kits,
+  start/resume, patch, `soul` "Write it for me" by the bot's one-shot with
+  the answers as fallback, `finish`). Pure model `shared/bot-wizard.ts`
+  (six steps, role kits: answers, rules, routines, tools). Rights: the bot's
+  owner (`ownerOrAdminOf`); a member runs it alone, never an admin gate.
+- The bot is a real bot from the first step (Auto defaults, as New bot); it
+  stays a draft until Finish. Its fields go through its own routes (PATCH,
+  `/primary`), ticked rules are custom rules at once (`/api/custom-rules`),
+  picked routines are created at Finish (`/api/routines`).
+- Guided mode: a topic with the person's Primary Bot (else their first other
+  bot) opened by the person's own message naming the bot; the Primary Bot
+  fills the bot with `sagax_settings` and the wizard's own fields with the
+  `bot.wizard` key (rules marked `pending` are made by the app with the
+  person's session). The panel reads the draft back every 2.5 s.
+- Mode switch, skip and resume never lose anything (one field of the draft).
+  Entries: the creation menu (ComposeToPicker, iOS "+"), New bot's Wizard
+  button, the bot panel's "Redo the wizard" (resumes an open draft).
+- Captures: `node --experimental-strip-types scripts/testing/capture-bot-wizard.ts <outDir> [skin] [lang]`
+  (headless; `SAGAX_CAPTURE_CHROME` names another headless shell).
+
 ## Bots know Sagax and Perspicax: sagax_help (2026-10-19)
 
 Decision: the bots know everything Sagax and Perspicax can do, kept up to date,

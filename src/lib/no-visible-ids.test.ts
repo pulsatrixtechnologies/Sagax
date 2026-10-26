@@ -38,6 +38,8 @@ const { NET_FIXTURES } = await import("../../shared/net-tools/fixtures");
 const { RoutineChangeLine } = await import("@/components/RoutineToggleLine");
 const { BotEmailAddressCard } = await import("@/components/bot-settings/BotEmailAddress");
 const { BotMailAddressLine } = await import("@/components/TypedTriggers");
+const { ModeChoice } = await import("@/components/bot-wizard/BotWizard");
+const { newWizardDraft } = await import("../../shared/bot-wizard");
 
 const BOT_ID = "5752d21c-e77c-4a83-84f0-66048216a5df";
 const THREAD_ID = "d4eb1f10-ceef-428a-afdd-d53d1194c2e7";
@@ -171,6 +173,14 @@ describe("no UUID on screen", () => {
     expect(visibleText(createElement(OutboundCard, { message: call }))).toContain("Ne pas appeler");
     expect(visibleText(createElement(OutboundCard, { message: pay }))).toMatch(/3 articles achetés · 45,20\s\$/);
     setLocale("en");
+  });
+
+  it("the wizard's drafts to resume name the bot, or a plain word, never its id", () => {
+    const draft = (botName: string) => ({ ...newWizardDraft({ botId: BOT_ID, owner: PERSON_ID, origin: "new", mode: "manual", now: 1 }), botName, guidedThreadId: THREAD_ID });
+    const text = visibleText(createElement(ModeChoice, { busy: null, guideName: "Chef", drafts: [draft("Nova"), draft("")], onChoose: () => {}, onResume: () => {}, onDiscard: () => {} }));
+    expect(text).toContain("Nova");
+    expect(text).toContain(t("botWizard.unnamed"));
+    expect(containsUuid(text)).toBe(false);
   });
 
   it("a routine change line names the routine, never its id", () => {

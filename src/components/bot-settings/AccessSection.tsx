@@ -211,9 +211,12 @@ function McpServersCard({ bot, patch }: {
 export function AccessSection({
   bot,
   derived,
+  part = "all",
 }: {
   bot: Bot;
   derived: ReturnType<typeof useBotSettingsDerived>;
+  /** One card alone (the bot creation wizard's Tools step, 2026-10-26). */
+  part?: "all" | "mcp" | "browser";
 }) {
   const { draft } = useBotEditor();
   const { state } = useStore();
@@ -242,7 +245,7 @@ export function AccessSection({
     <div className="flex flex-col gap-5">
       {/* Boat or VPS is which cloud computer Auto and Cloud use. It is not
           a second Works on: that control is More > Computer. */}
-      {!organization && (!bot.computer || bot.computer === "cloud") && cloudComputersOffered(state.config) && (
+      {part === "all" && !organization && (!bot.computer || bot.computer === "cloud") && cloudComputersOffered(state.config) && (
         <PaneSection data-cloud-backend="">
           {!bot.computer && (
             <div className="rounded-lg bg-inset px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-secondary">
@@ -276,9 +279,9 @@ export function AccessSection({
         </PaneSection>
       )}
 
-      <McpServersCard bot={bot} patch={patch} />
+      {(part === "all" || part === "mcp") && <McpServersCard bot={bot} patch={patch} />}
 
-      {browserFeature && <PaneSection title={<>{t("botPanel.access.browser")}<ProposalStatus bot={bot} /></>}>
+      {(part === "all" || part === "browser") && browserFeature && <PaneSection title={<>{t("botPanel.access.browser")}<ProposalStatus bot={bot} /></>}>
         <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-[13px] text-ink-secondary">
@@ -313,7 +316,7 @@ export function AccessSection({
 
       {/* The working folder, the tool list, webhooks and the commands
           always allowed: folded, one click away. */}
-      <AdvancedFold id="access">
+      {part === "all" && <AdvancedFold id="access">
         <WorkingFolder bot={bot} />
         <ToolSelectionCard key={bot.id} bot={bot} engineKind={derived.engine?.driverKind} />
         {!draft && <BotWebhooks bot={bot} />}
@@ -338,7 +341,7 @@ export function AccessSection({
             </div>
           )}
         </PaneSection>}
-      </AdvancedFold>
+      </AdvancedFold>}
     </div>
   );
 }

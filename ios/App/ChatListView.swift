@@ -208,6 +208,12 @@ struct ChatListView: View {
                 sidebarPrefs.seedIfNeeded(session)
             }
             .roomActionsPresenter(roomActions)
+            // a finished bot creation wizard opens the bot it made
+            .onReceive(BotWizardPresenter.shared.$finishedBotId) { id in
+                guard let id, let bot = session.state.bot(id) else { return }
+                BotWizardPresenter.shared.finishedBotId = nil
+                path.append(Chat.bot(bot))
+            }
             .onValueChange(of: threadActions.created?.threadId) { threadId in
                 guard let created = threadActions.created, threadId != nil else { return }
                 threadActions.created = nil
@@ -832,6 +838,8 @@ struct ChatListView: View {
         case .createBot:
             createBotSection = nil
             showingCreateBot = true
+        case .createBotWizard:
+            BotWizardPresenter.shared.open()
         case .createGroup:
             showingNewGroup = true
         case let .bot(id):

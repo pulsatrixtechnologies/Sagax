@@ -289,7 +289,8 @@ private struct PhoneBotPanelContent: View {
         let plan = BotActionsMenuPlan(
             gate: gate, bot: current, viewerId: viewerId, editable: !sections.isEmpty,
             zipExport: gate.scope != .sidecar && (session.canAdminister || PrimaryBotRules.viewerOwns(current, viewerId: session.roomViewer.actorId)),
-            activeBotCount: session.state.bots.filter { $0.hidden != true }.count
+            activeBotCount: session.state.bots.filter { $0.hidden != true }.count,
+            wizard: true
         )
         var out: [GlassMenuItem] = []
         for (groupIndex, group) in plan.groups.enumerated() {
@@ -317,6 +318,10 @@ private struct PhoneBotPanelContent: View {
         switch item {
         case .editBot:
             return GlassMenuItem(id: "edit-bot", title: Text("Edit bot"), systemImage: "person.crop.circle.badge.pencil", dividerBefore: divider, heading: heading) { openPersona() }
+        case .redoWizard:
+            return GlassMenuItem(id: "redo-wizard", title: Text("Redo the wizard"), systemImage: "wand.and.stars", dividerBefore: divider, heading: heading) {
+                BotWizardPresenter.shared.open(botId: current.id)
+            }
         case .rename:
             return GlassMenuItem(id: "rename", title: Text("Rename the bot"), systemImage: "pencil", dividerBefore: divider, heading: heading) {
                 renameDraft = current.name
