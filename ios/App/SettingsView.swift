@@ -210,6 +210,11 @@ private struct SettingsRootPage: View {
             SettingsRow(title: "Language", accessory: .valueChevron(AppLanguage.resolved(language).shortLabel), height: 43.33, identifier: "settings-language") { navigator.push(.language) }
             CardHairline(leadingInset: SettingsMetrics.rowInset)
             SettingsRow(title: "Haptics", accessory: .valueChevron(haptics ? String(localized: "On") : String(localized: "Off")), height: 43.67, identifier: "settings-haptics") { navigator.push(.haptics) }
+            // What General held (2026-10-26): quick replies and the call voice, in the list.
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Quick Replies", accessory: .chevron, height: 43.67, identifier: "settings-quick-replies") { navigator.sheet = .quickReplies }
+            CardHairline(leadingInset: SettingsMetrics.rowInset)
+            SettingsRow(title: "Call voice", accessory: .chevron, height: 43.67, identifier: "settings-walkie-voice") { navigator.sheet = .walkieVoice }
         }
         // General is out of the list (2026-10-26, as on the desktop).
         let more = sections.filter { [.organization, .experimental].contains($0) }

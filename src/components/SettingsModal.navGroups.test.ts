@@ -47,7 +47,7 @@ describe("Settings nav groups", () => {
     expect(at.every((value) => value >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(SECTIONS.map((entry) => entry.id)).toEqual([
-      "account", "general", "appearance", "notifications",
+      "account", "appearance", "notifications",
       "engines",
       "organization", "computer", "usage", "backups", "import",
       "updates", "experimental",
@@ -97,8 +97,13 @@ describe("Settings nav groups", () => {
     for (const query of ["security key", "clé de sécurité", "passkey", "yubikey", "vault", "coffre", "identifiants", "1password"]) {
       expect(sectionMatches(account, query), query).toBe(true);
     }
-    // General is not searchable in the rail
-    expect(SECTIONS.find((entry) => entry.id === "general")?.navHidden).toBe(true);
+    // what General held is found on Account; the microphone on Models and voice
+    for (const query of ["language", "langue", "time zone", "fuseau", "server", "serveur", "tour", "diagnostic", "tool access"]) {
+      expect(sectionMatches(account, query), query).toBe(true);
+    }
+    expect(sectionMatches(account, "microphone")).toBe(false);
+    expect(sectionMatches(SECTIONS.find((entry) => entry.id === "engines")!, "microphone")).toBe(true);
+    expect(SECTIONS.some((entry) => entry.id === ("general" as string))).toBe(false);
   });
 
   it("groups the small-screen menu the same way", () => {

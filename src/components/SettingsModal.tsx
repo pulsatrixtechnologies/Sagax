@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Archive, Bell, Check, Coins, Download, FileText, FlaskConical, Import, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Coins, Download, FileText, FlaskConical, Import, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection } from "@/state/store";
 import { decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -89,9 +89,6 @@ export const SECTIONS: Array<{
   group: SettingsNavGroup;
   icon: typeof User;
   keywords: string[];
-  /** Still a page that can open (a deep link to one of its cards), but no
-   * entry of the navigation: General is hidden since 2026-10-26. */
-  navHidden?: boolean;
 }> = [
   // 2026-10-16: in the order of their nav groups (NAV_GROUPS), as Cursor
   // Settings groups its rail: you, AI, the workspace, this app last.
@@ -99,8 +96,7 @@ export const SECTIONS: Array<{
   // System); Updates is a page of its own, as there.
   // 2026-10-26: Account comes first. Security keys and the credential vault
   // (they were pages of their own) sit under the account row.
-  { id: "account", group: "you", labelKey: "settings.section.account", icon: User, keywords: ["account", "compte", "profile", "profil", "name", "email", "copy email", "sign out", "label", "about me", "about", "security", "sécurité", "security key", "security keys", "clé de sécurité", "clés de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations", "always allow", "always deny", "credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage"] },
-  { id: "general", group: "you", navHidden: true, labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  { id: "account", group: "you", labelKey: "settings.section.account", icon: User, keywords: ["account", "compte", "profile", "profil", "name", "email", "copy email", "sign out", "label", "about me", "about", "security", "sécurité", "security key", "security keys", "clé de sécurité", "clés de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations", "always allow", "always deny", "credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage", "profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "thème", "variant", "variante", "light", "clair", "dark", "sombre", "auto", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "accessibility", "accessibilité", "reduce motion", "motion", "animations", "contrast", "contraste", "text size", "taille du texte", "zoom", "hardware acceleration", "accélération matérielle", "gpu", "spell check", "spellcheck", "orthographe", "correcteur", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
   { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "notification sound", "son de notification", "tick", "tic", "carillon", "chime a", "chime b", "blip", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "app icon", "icône", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
@@ -215,7 +211,7 @@ export function sectionMatches(section: (typeof SECTIONS)[number], query: string
  * the section they belong to, their title and their page. */
 const SUB_PAGES: Record<string, { section: AppSettingsSection; titleKey: LocaleKey; render: () => React.ReactNode }> = {
   "general.aboutMe": { section: "account", titleKey: "settings.profile.aboutMe", render: () => <AboutMeEditor /> },
-  "general.advanced": { section: "general", titleKey: "settings.advancedPage.title", render: () => <GeneralAdvancedSettings /> },
+  "general.advanced": { section: "account", titleKey: "settings.advancedPage.title", render: () => <GeneralAdvancedSettings /> },
 };
 
 /** This app's updates, which download by themselves. Shown once the desktop
@@ -409,50 +405,6 @@ function LanguageRow() {
   );
 }
 
-type MicStatus = "granted" | "denied" | "restricted" | "not-determined" | string;
-
-/** General > System > Microphone: the desktop app's own permission, as the
- * welcome flow asks it (PermissionsBeat). Desktop only. */
-function MicrophoneRow() {
-  const status = window.ogb?.permStatus;
-  const [mic, setMic] = useState<MicStatus | null>(null);
-  useEffect(() => {
-    if (!status) return;
-    let live = true;
-    const read = () => status().then((perms) => { if (live) setMic(perms?.mic ?? null); }).catch(() => {});
-    read();
-    // Back from System Settings: read it again.
-    window.addEventListener("focus", read);
-    return () => { live = false; window.removeEventListener("focus", read); };
-  }, [status]);
-  if (!status) return null;
-  const granted = mic === "granted";
-  const denied = mic === "denied" || mic === "restricted";
-  return (
-    <CompactRow label={t("settings.microphone.title")} rowId="microphone">
-      {mic === null ? null : granted ? (
-        <span className="inline-flex items-center gap-1.5 text-[13px] text-ink-secondary" data-mic-status="granted">
-          <Check size={14} aria-hidden="true" className="text-success" />
-          {t("settings.microphone.allowed")}
-        </span>
-      ) : denied ? (
-        <button type="button" onClick={() => void window.ogb?.permOpenSettings?.("mic")} className="ui-button" data-mic-status="denied">
-          {t("onboarding.perms.openSettings")}
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => void window.ogb?.permRequestMic?.().then(() => status().then((perms) => setMic(perms?.mic ?? null))).catch(() => {})}
-          className="ui-button"
-          data-mic-status="ask"
-        >
-          {t("onboarding.perms.enable")}
-        </button>
-      )}
-    </CompactRow>
-  );
-}
-
 export function SettingsModal() {
   const { state, dispatch } = useStore();
   const advanced = useAdvancedMode();
@@ -535,10 +487,10 @@ export function SettingsModal() {
   useEffect(() => {
     if (!soloDesktop || memoryShown || state.appSettingsSection !== "organization") return;
     if (isMovedOrganizationCard(takeRequestedSettingsCard())) {
-      dispatch({ type: "toggleAppSettings", open: true, section: "general", subPage: "general.advanced" });
+      dispatch({ type: "toggleAppSettings", open: true, section: "account", subPage: "general.advanced" });
       return;
     }
-    dispatch({ type: "toggleAppSettings", open: false, section: "general" });
+    dispatch({ type: "toggleAppSettings", open: false, section: "account" });
     dispatch({ type: "toggleLaunch", open: true, mode: "server" });
   }, [soloDesktop, memoryShown, state.appSettingsSection, dispatch]);
   // A page shows when it is allowed, or when one of the cards it holds is.
@@ -546,7 +498,7 @@ export function SettingsModal() {
   // A page this viewer cannot see (an old link to Email where People is not
   // shown, a hidden page) draws the first page they can, at once.
   const section: AppSettingsSection = availableSections.some((entry) => entry.id === requested) ? requested : availableSections[0]?.id ?? requested;
-  const visibleSections = availableSections.filter((entry) => !entry.navHidden && sectionMatches(entry, q, soloDesktop && entry.id === "general" ? ORGANIZATION_ADVANCED_KEYWORDS : []));
+  const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q, soloDesktop && entry.id === "account" ? ORGANIZATION_ADVANCED_KEYWORDS : []));
   const pagesHit = Boolean(q) && publishedPagesMatch(q);
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
@@ -563,9 +515,7 @@ export function SettingsModal() {
       });
     }
   }, [dispatch, section, state.appSettingsSubPage]);
-  // General is out of the navigation, but a deep link to one of its cards still opens it.
-  const hiddenPageOpen = !q && availableSections.some((entry) => entry.id === section && entry.navHidden);
-  const nextVisibleSection = hiddenPageOpen || visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
+  const nextVisibleSection = visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
 
   useEffect(() => {
     for (const id of cardsMatching(q)) requestSettingsCard(id);
@@ -782,7 +732,7 @@ export function SettingsModal() {
               className="w-full min-w-0 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none sm:hidden"
             >
               {NAV_GROUPS.map((group) => {
-                const entries = availableSections.filter((entry) => entry.group === group.id && (!entry.navHidden || entry.id === section));
+                const entries = availableSections.filter((entry) => entry.group === group.id);
                 return entries.length === 0 ? null : (
                   <optgroup key={group.id} label={t(group.labelKey)}>
                     {entries.map(({ id, labelKey }) => (
@@ -825,8 +775,10 @@ export function SettingsModal() {
             )}
             {section === "account" && (
               <>
-                {/* The account first; Security keys and the credential vault
-                    (2026-10-26) sit under it, in this order. */}
+                {/* The account first; then the person's language and time zone,
+                    Security keys and the credential vault (2026-10-26). What
+                    General held (server, default bot, guided tours, Advanced)
+                    is at the bottom, the microphone is in Models and voice. */}
                 <SettingsGroup title={t("settings.group.account")} groupId="account">
                   {/* 2026-10-15: one account row (who, label, Sign out) */}
                   <AccountCard lockedServer={lockedServer} />
@@ -841,29 +793,19 @@ export function SettingsModal() {
                     />
                   )}
                 </SettingsGroup>
-                <SecurityKeySettings />
-                {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
-                <MyApprovalRules />
-                <CredentialsSettings />
-              </>
-            )}
-            {section === "general" && (
-              <>
-                {/* 0.5.6: the reference design's General. Grey headings outside
-                    the cards, compact rows: label at the left, control at
-                    the right, no help text. */}
                 <SettingsGroup title={t("settings.group.appearance")} groupId="appearance">
-                  {/* the skin, its variant and Light, Dark or Auto are chosen in
-                      one place: Appearance > Skin (2026-10-19) */}
                   <LanguageRow />
                   {/* the person's own time zone (parity 2E) */}
                   <TimeZoneRows />
                 </SettingsGroup>
+                <SecurityKeySettings />
+                {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
+                <MyApprovalRules />
+                <CredentialsSettings />
                 <SettingsGroup title={t("settings.group.system")} groupId="system">
-                  <MicrophoneRow />
-                  {!remoteActive && <GuidedToursRow />}
                   {!remoteActive && <ServerRow />}
                   {advanced && editConfig && <DefaultBotSettings />}
+                  {!remoteActive && <GuidedToursRow />}
                   {/* General > Advanced: people's tool access, conversation
                       cleanup and diagnostics on one sub-page (tool access,
                       parallel conversations and recovery are each bot's own

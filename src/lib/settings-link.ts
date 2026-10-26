@@ -11,7 +11,7 @@ export { currentSettingsSection, mergedSettingsCard };
 
 const SECTION_LABEL = {
   account: "settings.section.account",
-  general: "settings.section.general",
+  general: "settings.section.account",
   organization: "settings.section.organization",
   appearance: "settings.section.appearance",
   experimental: "settings.section.experimental",

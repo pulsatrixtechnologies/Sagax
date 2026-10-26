@@ -45,7 +45,7 @@ describe("settings links", () => {
     expect(currentSettingsSection("activity")).toBe("account");
     expect(currentSettingsSection("security")).toBe("account");
     expect(currentSettingsSection("credentials")).toBe("account");
-    expect(currentSettingsSection("general")).toBe("general");
+    expect(currentSettingsSection("general")).toBe("account");
     expect(mergedSettingsCard("security")).toBe("security");
     expect(mergedSettingsCard("credentials")).toBe("credentials.items");
     expect(currentSettingsSection("usage")).toBe("usage");

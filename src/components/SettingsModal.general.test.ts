@@ -10,7 +10,7 @@ import type { AppSettingsSection } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
 
 const fixture = vi.hoisted(() => ({
-  section: "general" as AppSettingsSection,
+  section: "account" as AppSettingsSection,
   config: { rooms: { turnTimeoutMinutes: 5 } } as Record<string, unknown> | undefined,
   advanced: true,
 }));
@@ -29,7 +29,7 @@ const render = () => renderToStaticMarkup(createElement(SettingsModal));
 const updater = { check: vi.fn(), install: vi.fn(), onState: vi.fn(), setPrereleases: vi.fn() };
 
 beforeEach(() => {
-  fixture.section = "general";
+  fixture.section = "account";
   fixture.config = { rooms: { turnTimeoutMinutes: 5 } };
   fixture.advanced = true;
   setLocale("en");
@@ -44,11 +44,11 @@ afterEach(() => {
 describe("Settings > General, the reference design's layout", () => {
   it("draws Appearance and System as grey headings over their cards, in that order (Account moved to its own page)", () => {
     const html = render();
-    const order = ['data-settings-group="appearance"', 'data-settings-group="system"'];
+    const order = ['data-settings-group="account"', 'data-settings-group="appearance"', 'data-settings-group="system"'];
     const at = order.map((text) => html.indexOf(text));
     expect(at.every((value) => value >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
-    expect(html).not.toContain('data-settings-group="account"');
+    expect(html).toContain('data-settings-group="account"');
     expect(html).toMatch(/<h3[^>]*text-ink-secondary[^>]*>Appearance<\/h3>/);
     expect(html).toMatch(/<h3[^>]*text-ink-secondary[^>]*>System<\/h3>/);
   });
@@ -76,10 +76,13 @@ describe("Settings > General, the reference design's layout", () => {
     expect(html).not.toContain("The first-run walkthrough");
   });
 
-  it("Microphone shows on the desktop app only, with the permission's state", () => {
-    expect(render()).not.toContain('data-settings-row="microphone"');
+  it("Microphone permission is no longer on Account: it is in Models and voice > Audio, desktop app only", async () => {
     vi.stubGlobal("window", { ogb: { permStatus: vi.fn(async () => ({ mic: "granted" })) } });
-    expect(render()).toContain('data-settings-row="microphone"');
+    expect(render()).not.toContain('data-settings-row="microphoneAccess"');
+    const { MicrophonePermissionRow } = await import("./settings/MicrophoneSettings");
+    expect(renderToStaticMarkup(createElement(MicrophonePermissionRow))).toContain('data-settings-row="microphoneAccess"');
+    vi.stubGlobal("window", { ogb: {} });
+    expect(renderToStaticMarkup(createElement(MicrophonePermissionRow))).toBe("");
   });
 
   it("Updates leave General for a page of their own, where the desktop app answers", () => {
@@ -122,16 +125,16 @@ describe("Settings search after the move", () => {
   it("finds updates and pre-releases on Updates, not on General", () => {
     for (const query of ["update", "prerelease", "pre-release", "beta", "mise à jour"]) {
       expect(sectionMatches(section("updates"), query), query).toBe(true);
-      expect(sectionMatches(section("general"), query), query).toBe(false);
+      expect(sectionMatches(section("account"), query), query).toBe(false);
     }
   });
   it("finds the rows General holds now", () => {
     for (const query of ["theme", "thème", "dark", "sombre", "variante"]) {
       expect(sectionMatches(section("appearance"), query), query).toBe(true);
-      expect(sectionMatches(section("general"), query), query).toBe(false);
+      expect(sectionMatches(section("account"), query), query).toBe(false);
     }
-    for (const query of ["language", "langue", "micro", "tour", "account", "copy email", "diagnostic", "tool access"]) {
-      expect(sectionMatches(section("general"), query), query).toBe(true);
+    for (const query of ["language", "langue", "tour", "account", "copy email", "diagnostic", "tool access", "server"]) {
+      expect(sectionMatches(section("account"), query), query).toBe(true);
     }
   });
 });

@@ -53,7 +53,7 @@ const render = async () => {
 describe("sub-page navigation", () => {
   it("opens from the row, keeps its section, and any other navigation clears it", () => {
     const open = reducer(initialState, { type: "toggleAppSettings", open: true, section: "general", subPage: "general.aboutMe" });
-    expect(open.appSettingsSection).toBe("general");
+    expect(open.appSettingsSection).toBe("account");
     expect(open.appSettingsSubPage).toBe("general.aboutMe");
     // back: the section again, no page
     expect(reducer(open, { type: "toggleAppSettings", open: true, section: "general" }).appSettingsSubPage).toBeNull();

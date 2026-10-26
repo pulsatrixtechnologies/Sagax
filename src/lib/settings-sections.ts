@@ -33,6 +33,8 @@ const HIDDEN: Partial<Record<AppSettingsSection, AppSettingsSection>> = {
   workspaces: "account",
   // Published pages moved to Connect apps > Manage; openSettings opens it there.
   pages: "account",
+  // General is gone (2026-10-26): what it held is in Account and Models and voice.
+  general: "account",
 };
 
 /** Cards of General > Advanced that moved to Organization (2026-10-15):

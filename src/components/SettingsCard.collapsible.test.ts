@@ -213,9 +213,8 @@ describe("Settings → Account and General, compact", () => {
     device();
     const { SettingsModal, GeneralAdvancedSettings } = await import("./SettingsModal");
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
-    // 2026-10-26: Settings opens on Account; the General > Advanced row is on the
-    // hidden General page (SettingsModal.general.test.ts draws it)
-    expect(html).not.toContain('data-settings-card="general.advanced"');
+    // 2026-10-26: General is gone; its Advanced row is at the bottom of Account
+    expect(html).toContain('data-settings-card="general.advanced" data-settings-subpage-row');
     for (const id of ["general.threadCleanup", "general.roomTurns", "general.mcpCalls"]) {
       expect(html).not.toContain(`data-settings-card="${id}"`);
     }
