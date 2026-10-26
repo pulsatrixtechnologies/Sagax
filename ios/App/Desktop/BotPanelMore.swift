@@ -124,7 +124,7 @@ struct BotPanelMore: View {
 
     @State private var query = ""
 
-    private var sections: [DesktopPanelSection] { DesktopPanelSection.visible(gate: session.surfaceGate, slack: slackURL != nil) }
+    private var sections: [DesktopPanelSection] { DesktopPanelSection.visible(gate: session.surfaceGate, slack: slackURL != nil, bot: bot) }
 
     var body: some View {
         if let section = model.panelSection, sections.contains(section) {
@@ -320,7 +320,7 @@ private struct BotPanelOverview: View {
         .task(id: bot.id) {
             overview = await session.botOverview(for: bot)
             loaded = true
-            if session.surfaceGate.allows(.advancedBotPanel), let client = session.profileClient {
+            if session.surfaceGate.allows(.promptPreview), let client = session.profileClient {
                 do { prompt = try await client.systemPrompt(botId: bot.id) } catch { promptFailed = true }
             }
         }
@@ -345,7 +345,7 @@ private struct BotPanelOverview: View {
 
     @ViewBuilder
     private var promptCard: some View {
-        if session.surfaceGate.allows(.advancedBotPanel) {
+        if session.surfaceGate.allows(.promptPreview) {
             PanelCard {
                 Button { withAnimation(.easeOut(duration: 0.15)) { promptOpen.toggle() } } label: {
                     HStack(spacing: 12) {
@@ -394,7 +394,7 @@ private struct BotPanelOverview: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Recent changes").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
                 Spacer(minLength: 12)
-                if session.surfaceGate.allows(.advancedBotPanel) {
+                if session.surfaceGate.allows(.advancedBotPanel, bot: bot) {
                     Button { model.panelSection = .history } label: {
                         Text("View all →").font(theme.font(12)).foregroundStyle(theme.inkSecondary)
                     }
@@ -473,7 +473,7 @@ private struct BotPanelSoul: View {
     private var bytes: Int { draft.utf8.count }
     private var limit: Int { soul?.limit ?? 24_000 }
     private var dirty: Bool { soul.map { $0.soul != draft } ?? false }
-    private var canEdit: Bool { session.surfaceGate.allows(.advancedBotPanel) }
+    private var canEdit: Bool { session.surfaceGate.allows(.advancedBotPanel, bot: bot) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -719,7 +719,7 @@ private struct BotPanelMemory: View {
 
     private var enabled: Bool { bot.memoryEnabled != false }
     private var upkeep: Bool { bot.memoryUpkeep != false }
-    private var canEdit: Bool { session.surfaceGate.allows(.advancedBotPanel) }
+    private var canEdit: Bool { session.surfaceGate.allows(.advancedBotPanel, bot: bot) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

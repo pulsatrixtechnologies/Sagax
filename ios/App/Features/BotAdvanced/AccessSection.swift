@@ -1,9 +1,9 @@
 // Access (BA6, bot-settings/AccessSection.tsx): the working folder,
-// MCP servers, the built-in browser and the always-allowed tools. The sidecar
-// and a client session refuse every one of these fields (where the bot runs
-// and what it may reach stay on the computer), so the phone reads them; an
-// admin session also gets the desktop's switches. Webhooks and where the bot
-// works are set up on the computer.
+// MCP servers, the built-in browser and the always-allowed tools. An admin
+// session gets the desktop's switches, and so does the bot's owner on an
+// organization server for each field the server lets them change
+// (`canEditBotField`, 2026-10-26); everyone else reads them. Webhooks and
+// where the bot works are set up on the computer.
 import CompanionCore
 import SwiftUI
 
@@ -16,7 +16,10 @@ struct BotAccessSection: View {
     @State private var saving = false
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
-    private var editable: Bool { session.surfaceGate.allows(.botAccessEdit) }
+    private var editable: Bool { session.surfaceGate.allows(.botAccessEdit, bot: current) }
+    private var editsServers: Bool { editable && session.canEditBotField(current, "mcpServers") }
+    private var editsBrowser: Bool { editable && session.canEditBotField(current, "browser") }
+    private var editsAlwaysAllow: Bool { editable && session.canEditBotField(current, "alwaysAllow") }
 
     var body: some View {
         Section {
@@ -49,7 +52,7 @@ struct BotAccessSection: View {
                             }
                         }
                         Spacer(minLength: 8)
-                        if editable {
+                        if editsServers {
                             Toggle(isOn: Binding(get: { mounted.contains(server.name) }, set: { _ in
                                 save(BotAccessPatch(mcpServers: AccessRules.toggledMcp(servers, own: current.mcpServers, name: server.name)))
                             })) { EmptyView() }
@@ -64,11 +67,11 @@ struct BotAccessSection: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("access-mcp.\(server.name)")
                 }
-                if editable, current.mcpServers != nil, !servers.isEmpty {
+                if editsServers, current.mcpServers != nil, !servers.isEmpty {
                     Button(String(localized: "Use every enabled server")) { save(BotAccessPatch(mcpServers: nil), clearMcp: true) }
                         .disabled(current.busy == true || saving)
                 }
-                if editable, current.busy == true {
+                if editsServers, current.busy == true {
                     Text(String(localized: "Wait until this bot finishes all active tasks before changing its MCP servers."))
                         .font(.footnote).foregroundStyle(Theme.textSecondary)
                 }
@@ -84,7 +87,7 @@ struct BotAccessSection: View {
         }
 
         Section {
-            switchRow(String(localized: "Browser"), on: current.browser != false && current.computer != "off", id: "access-browser") { value in
+            switchRow(String(localized: "Browser"), on: current.browser != false && current.computer != "off", id: "access-browser", editable: editsBrowser) { value in
                 BotAccessPatch(browser: value)
             }
             .disabled(current.computer == "off")
@@ -105,7 +108,7 @@ struct BotAccessSection: View {
                 HStack {
                     Text(verbatim: entry).font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.textPrimary).lineLimit(1)
                     Spacer(minLength: 8)
-                    if editable {
+                    if editsAlwaysAllow {
                         Button(String(localized: "Remove")) { save(BotAccessPatch(alwaysAllow: always.filter { $0 != entry })) }
                             .buttonStyle(.borderless)
                             .disabled(saving)
@@ -130,7 +133,7 @@ struct BotAccessSection: View {
     }
 
     @ViewBuilder
-    private func switchRow(_ title: String, on: Bool, id: String, patch: @escaping (Bool) -> BotAccessPatch) -> some View {
+    private func switchRow(_ title: String, on: Bool, id: String, editable: Bool, patch: @escaping (Bool) -> BotAccessPatch) -> some View {
         if editable {
             Toggle(isOn: Binding(get: { on }, set: { save(patch($0)) })) {
                 Text(verbatim: title).foregroundStyle(Theme.textPrimary)

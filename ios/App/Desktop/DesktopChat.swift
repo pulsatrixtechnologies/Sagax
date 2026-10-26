@@ -372,8 +372,9 @@ struct DesktopChatHeader: View {
                         DesktopRoundButton(systemImage: "sidebar.squares.right", label: "devPods.toggle.show", active: devPodsOpen, action: devPods)
                             .accessibilityIdentifier("desktop-dev-pods-toggle")
                     }
-                    if chat.isBot {
-                        if showInspector && session.surfaceGate.allows(.inspector) {
+                    if case let .bot(chatBot) = chat {
+                        // an admin's, or the bot's owner on an organization server
+                        if showInspector && session.surfaceGate.allows(.inspector, bot: session.state.bot(chatBot.id) ?? chatBot) {
                             DesktopRoundButton(systemImage: "ladybug", label: "Inspector", active: chrome.inspectorOpen, lucide: DesktopInspectorPanel.bug, action: chrome.toggleInspector)
                                 .accessibilityIdentifier("desktop-inspector-toggle")
                         }

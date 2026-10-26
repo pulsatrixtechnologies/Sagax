@@ -83,8 +83,20 @@ final class Session: ObservableObject {
     /// views ask before drawing a feature the computer may refuse.
     var surfaceGate: SurfaceGate {
         guard let connection else { return .unpaired }
-        return SurfaceGate(connection: connection, account: account)
+        return SurfaceGate(connection: connection, account: account, viewer: viewer)
     }
+    /// Who is asking, as `/api/config` last named them (principal, role,
+    /// permissions): the bot owner's rights in `surfaceGate` read it.
+    @Published private(set) var viewer: ConfigViewer?
+    /// `canEditBotField` for this pairing: the owner of the bot on an
+    /// organization server, an admin session, or the owner's sidecar.
+    func canEditBotField(_ bot: Bot, _ field: String) -> Bool {
+        surfaceGate.canEditBotField(bot, field)
+    }
+    /// Who answers a card for the shared server (`adminApproval`) and saves
+    /// a command rule: an admin session, or a person an admin gave
+    /// host.shell (server `adminApprovalCheck`, `canManageCommandAllowlist`).
+    var answersServerCards: Bool { canAdminister || surfaceGate.can("host.shell") }
     @Published private(set) var status: Status = .unpaired
     /// Transient, user-facing failures from an action they just took.
     @Published var actionError: String?
@@ -2280,6 +2292,7 @@ final class Session: ObservableObject {
         guard let client, let connectionID = connection?.id else { return }
         guard let session = try? await client.authSession(), connection?.id == connectionID else { return }
         account = session
+        if let config = try? await client.config(), connection?.id == connectionID { viewer = config.viewer }
         await refreshAccountPhoto(session.avatar, connectionID: connectionID)
     }
 
@@ -2289,6 +2302,7 @@ final class Session: ObservableObject {
         guard connectionID != accountConnectionID || connectionID == nil else { return }
         accountConnectionID = connectionID
         account = nil
+        viewer = nil
         accountPhoto = AccountPhotoStore.shared.image(for: connectionID)
     }
 
@@ -2972,7 +2986,11 @@ final class Session: ObservableObject {
 
     func configStatus() async -> ConfigStatus? {
         guard let client else { return nil }
-        return try? await client.config()
+        let connectionID = connection?.id
+        let config = try? await client.config()
+        // keep the viewer the gate reads in step with each read
+        if let config, connection?.id == connectionID, config.viewer != viewer { viewer = config.viewer }
+        return config
     }
 
     /// New bot's presets (NB2). Nothing when the pairing may not read them or

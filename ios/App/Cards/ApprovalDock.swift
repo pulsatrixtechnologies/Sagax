@@ -156,7 +156,7 @@ struct ApprovalDock: View {
         let proposal = ApprovalDockRules.isProposal(card)
         let actions = ApprovalDockRules.actions(
             for: pending,
-            ownerOrAdmin: session.canAdminister,
+            ownerOrAdmin: session.answersServerCards,
             hasBot: session.askingBotId(pending, in: chat) != nil
         )
         let readOnly = ApprovalDockRules.readOnly(approvals)
@@ -400,7 +400,7 @@ struct ApprovalDock: View {
     private func actions(_ pending: PendingApproval) -> some View {
         let actions = ApprovalDockRules.actions(
             for: pending,
-            ownerOrAdmin: session.canAdminister,
+            ownerOrAdmin: session.answersServerCards,
             hasBot: session.askingBotId(pending, in: chat) != nil
         )
         VStack(alignment: .leading, spacing: 8) {

@@ -31,8 +31,8 @@ public enum DesktopPanelTab: String, CaseIterable, Hashable, Sendable {
 public enum DesktopPersonaEditor {
     /// Whether the panel offers "Edit persona": one of its sections is
     /// reachable on this pairing.
-    public static func offered(gate: SurfaceGate, slack: Bool = false) -> Bool {
-        !DesktopPanelSection.visible(gate: gate, slack: slack).isEmpty
+    public static func offered(gate: SurfaceGate, slack: Bool = false, bot: Bot? = nil) -> Bool {
+        !DesktopPanelSection.visible(gate: gate, slack: slack, bot: bot).isEmpty
     }
 }
 
@@ -64,27 +64,29 @@ public enum DesktopPanelSection: String, CaseIterable, Hashable, Sendable {
     }
 
     /// Whether this pairing reaches the section. `slack`: the server
-    /// answered a link to the bot's Slack app.
-    public func reachable(gate: SurfaceGate, slack: Bool) -> Bool {
+    /// answered a link to the bot's Slack app. `bot`: the bot the editor is
+    /// for; its owner on an organization server reaches what the server
+    /// lets them change (2026-10-26).
+    public func reachable(gate: SurfaceGate, slack: Bool, bot: Bot? = nil) -> Bool {
         switch self {
-        case .overview: gate.allows(.botOverview)
+        case .overview: gate.allows(.botOverview, bot: bot)
         case .slack: gate.allows(.botSlack) && slack
         case .soul, .skills, .memory, .access, .model, .permissions, .history:
-            gate.allows(.advancedBotPanel)
+            gate.allows(.advancedBotPanel, bot: bot)
         case .voice: true
         case .visibility: gate.allows(.botVisibility)
         case .sharing: gate.allows(.botSharing)
         case .perspicax: gate.allows(.botPerspicax)
         // its own item on a server signed in with Perspicax only (Access
         // holds it everywhere else)
-        case .worksOn: gate.allows(.botPerspicax) && gate.allows(.advancedBotPanel)
+        case .worksOn: gate.allows(.botPerspicax) && gate.allows(.advancedBotPanel, bot: bot)
         case .usage: gate.allows(.botUsage)
         }
     }
 
     /// The persona editor's list for this pairing, in the desktop's order.
-    public static func visible(gate: SurfaceGate, slack: Bool = false) -> [DesktopPanelSection] {
-        allCases.filter { $0.reachable(gate: gate, slack: slack) }
+    public static func visible(gate: SurfaceGate, slack: Bool = false, bot: Bot? = nil) -> [DesktopPanelSection] {
+        allCases.filter { $0.reachable(gate: gate, slack: slack, bot: bot) }
     }
 
     /// The list's search (`sectionMatches`): the label or a keyword holds
@@ -708,8 +710,8 @@ public enum BotPanelAction: String, CaseIterable, Hashable, Sendable {
             case nil: break
             }
         }
-        // D4: an owner's or an admin's, not a client session's
-        if gate.allows(.botOwnerExtras) { out.append(.delete) }
+        // D4: an owner's or an admin's, never another person's bot
+        if gate.allows(.botOwnerExtras, bot: bot) { out.append(.delete) }
         return out
     }
 }
@@ -790,11 +792,11 @@ public struct BotActionsMenuPlan: Hashable, Sendable {
         if zipExport { export.append(.exportZip) }
         var last: [BotActionsMenuItem] = []
         var block: BotArchiveBlock?
-        if gate.allows(.archiveBot) {
+        if gate.allows(.archiveBot, bot: bot) {
             last.append(.archive)
             if bot.chiefOfStaff == true { block = .primary } else if activeBotCount <= 1 { block = .lastActive }
         }
-        if inspector, gate.allows(.inspector) { last.append(.inspector) }
+        if inspector, gate.allows(.inspector, bot: bot) { last.append(.inspector) }
         groups = [first, export, last].filter { !$0.isEmpty }
         archiveBlock = block
     }

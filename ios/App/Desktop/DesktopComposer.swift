@@ -110,7 +110,8 @@ struct DesktopComposerPill: View {
     @ViewBuilder
     private var chips: some View {
         attach
-        if let bot, session.canAdminister {
+        // an admin, or the bot's owner on an organization server (2026-10-26)
+        if let bot, session.canAdminister || session.canEditBotField(bot, "approvalMode") {
             DesktopApprovalButton(bot: bot, open: menuBinding(.approval), openAllowlist: openAllowlist)
             // No place chip (JC 2026-10-18): Workspace is always Auto and
             // the bot picks where each task runs.
@@ -252,7 +253,8 @@ struct DesktopComposerPill: View {
 
     /// The bot's model by its catalogue label ("Claude Sonnet 5").
     private func loadModelLabel() async {
-        guard let selection = bot?.currentTaskModelSelection, session.canAdminister else { modelLabel = nil; return }
+        guard let bot, session.canAdminister || session.canEditBotField(bot, "modelSelection") else { modelLabel = nil; return }
+        let selection = bot.currentTaskModelSelection
         let instances = await DesktopModelCatalog.shared.instances(session)
         let instance = instances.first { $0.instanceId == selection.instanceId }
         let modelId = selection.model.isEmpty ? (instance?.models.default ?? "") : selection.model

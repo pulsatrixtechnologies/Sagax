@@ -383,7 +383,8 @@ private struct DesktopTeamCanvas: View {
     }
 
     private func loadModelLabels() async {
-        guard session.canAdminister else { return }
+        // an organization member reads the server's engines too (/api/instances, a member's copy)
+        guard session.canAdminister || session.surfaceGate.isOrgMemberSession else { return }
         let instances = await DesktopModelCatalog.shared.instances(session)
         var labels: [String: String] = [:]
         for bot in session.state.bots {

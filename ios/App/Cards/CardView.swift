@@ -236,7 +236,7 @@ struct CardView: View {
     }
 
     private func waitingLine(_ card: OptionCard) -> String {
-        if card.adminApproval == true && !session.canAdminister {
+        if card.adminApproval == true && !session.answersServerCards {
             return String(localized: "This command runs on the server: waiting for an admin to approve it.")
         }
         return ApprovalDockRules.isProposal(card)
