@@ -74,6 +74,12 @@ export interface PerspicaxMcpLink {
 export interface PerspicaxMcpOptions {
   /** SAGAX_PERSPICAX_ISSUER; a speaker's subject must come from it. */
   issuer: string;
+  /** 2026-10-26: the GO a Perspicax server guard asks for during a call (MCP
+   * elicitation, `elicitation/create`, the Flow guard's dry run, GO, read
+   * back), shown to the person as an approval card on the turn's thread.
+   * Only "allow" is a GO. Set: every session declares the `elicitation`
+   * capability. Unset: none is declared and Perspicax refuses the write. */
+  askGo?(input: { threadId: string; botId: string; profileId: string; message: string }): Promise<"allow" | "deny" | "timeout">;
   /** The link client, or null while this server is not linked (solo mode, no
    * link file): nothing mounts then. */
   link(): PerspicaxMcpLink | null;
@@ -250,14 +256,40 @@ export function parseMcpBody(text: string, id: unknown): unknown {
   return frames.findLast((frame) => frame.id === id) ?? frames.at(-1) ?? null;
 }
 
-async function readBounded(response: Response, max: number): Promise<string> {
+/** The `elicitation` capability added to a client's own (2026-10-26). */
+export function withElicitation(capabilities: unknown): Json {
+  const caps = isObject(capabilities) ? { ...capabilities } : {};
+  const current = isObject(caps.elicitation) ? caps.elicitation : {};
+  caps.elicitation = { ...current, form: isObject(current.form) ? current.form : {} };
+  return caps;
+}
+
+/** The approval form of a Perspicax GO: a `decision` of allow or deny. */
+export function isGoForm(schema: unknown): boolean {
+  if (!isObject(schema) || !isObject(schema.properties)) return false;
+  const decision = schema.properties.decision;
+  if (!isObject(decision)) return false;
+  const values = [
+    ...(Array.isArray(decision.oneOf) ? decision.oneOf.map((o) => (isObject(o) ? o.const : undefined)) : []),
+    ...(Array.isArray(decision.enum) ? decision.enum : []),
+  ];
+  return values.includes("allow") && values.includes("deny");
+}
+
+/** The body of an answer, bounded. On an SSE stream, each request the server
+ * sends (`method` and `id`) is handed to `onRequest` as it arrives, so a
+ * call that waits on the client's answer can go on. */
+async function readBounded(response: Response, max: number, onRequest?: (request: Json) => Promise<void>): Promise<string> {
   const declared = Number(response.headers.get("content-length") ?? "0");
   if (declared > max) throw new Error("the Perspicax answer is too large");
   if (!response.body) return "";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  const stream = onRequest !== undefined && (response.headers.get("content-type") ?? "").includes("text/event-stream");
   let size = 0;
   let text = "";
+  let scanned = 0;
+  const pending: Promise<void>[] = [];
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -267,7 +299,21 @@ async function readBounded(response: Response, max: number): Promise<string> {
       throw new Error("the Perspicax answer is too large");
     }
     text += decoder.decode(value, { stream: true });
+    if (!stream) continue;
+    // every complete line since the last read
+    const end = text.lastIndexOf("\n");
+    if (end < scanned) continue;
+    for (const line of text.slice(scanned, end).split(/\r?\n/)) {
+      if (!line.startsWith("data:")) continue;
+      let frame: unknown;
+      try { frame = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (isObject(frame) && typeof frame.method === "string" && (typeof frame.id === "string" || typeof frame.id === "number")) {
+        pending.push(onRequest(frame).catch(() => {}));
+      }
+    }
+    scanned = end + 1;
   }
+  await Promise.all(pending);
   return text + decoder.decode();
 }
 
@@ -495,6 +541,7 @@ export class PerspicaxMcp {
     if (frame.method === "initialize") {
       const params = isObject(frame.params) ? { ...frame.params } : {};
       params.clientInfo = { name: `Pulsa Bot (${input.botId})`, version: this.options.version };
+      if (this.options.askGo) params.capabilities = withElicitation(params.capabilities);
       frame.params = params;
       this.rememberInit(entry, params);
     }
@@ -653,9 +700,53 @@ export class PerspicaxMcp {
     const session = response.headers.get("mcp-session-id");
     if (session && session.length <= 256) entry.mcpSessionId = session;
     try {
-      return { response, text: await readBounded(response, PERSPICAX_RELAY_MAX_BYTES) };
+      const onRequest = this.options.askGo ? (request: Json) => this.answerServerRequest(link, entry, request) : undefined;
+      return { response, text: await readBounded(response, PERSPICAX_RELAY_MAX_BYTES, onRequest) };
     } catch {
       return "unreachable";
+    }
+  }
+
+  /** A request Perspicax sends on a call's stream. `elicitation/create` with
+   * the approval form (`decision`: allow or deny) is the Flow guard's GO:
+   * an approval card for the person, then the answer on the session. Any
+   * other request, or another form, is declined. */
+  private async answerServerRequest(link: PerspicaxMcpLink, entry: Entry, request: Json): Promise<void> {
+    const params = isObject(request.params) ? request.params : {};
+    if (request.method === "ping") {
+      await this.postAnswer(link, entry, { jsonrpc: "2.0", id: request.id, result: {} });
+      return;
+    }
+    if (request.method !== "elicitation/create") {
+      await this.postAnswer(link, entry, { jsonrpc: "2.0", id: request.id, error: { code: -32601, message: "Method not supported by this client" } });
+      return;
+    }
+    const message = typeof params.message === "string" ? params.message.trim() : "";
+    let result: Json;
+    if (!isGoForm(params.requestedSchema) || !message || !this.options.askGo) {
+      result = { action: "decline" };
+    } else {
+      let answer: "allow" | "deny" | "timeout";
+      try {
+        answer = await this.options.askGo({ threadId: entry.threadId, botId: entry.botId, profileId: entry.profileId, message: message.slice(0, 2000) });
+      } catch {
+        answer = "deny";
+      }
+      result = answer === "allow"
+        ? { action: "accept", content: { decision: "allow" } }
+        : answer === "timeout" ? { action: "cancel" } : { action: "decline" };
+    }
+    await this.postAnswer(link, entry, { jsonrpc: "2.0", id: request.id, result });
+  }
+
+  /** A client response on the entry's session (Perspicax answers 202). */
+  private async postAnswer(link: PerspicaxMcpLink, entry: Entry, frame: Json): Promise<void> {
+    if (entry.ended) return;
+    try {
+      const response = await this.post(link.mcpEndpoint(), entry, frame);
+      void response.body?.cancel().catch(() => {});
+    } catch {
+      this.log(`perspicax mcp: an answer to Perspicax for profile ${entry.profileId} could not be sent`);
     }
   }
 
@@ -671,7 +762,7 @@ export class PerspicaxMcp {
     entry.mcpSessionId = undefined;
     const params = this.initParams.get(initKey(entry.threadId, entry.profileId)) ?? {
       protocolVersion: PERSPICAX_PROTOCOL_VERSION,
-      capabilities: {},
+      capabilities: this.options.askGo ? withElicitation({}) : {},
       clientInfo: { name: `Pulsa Bot (${entry.botId})`, version: this.options.version },
     };
     const opened = await this.send(link, entry, { jsonrpc: "2.0", id: `sagax-reopen-${++this.reopens}`, method: "initialize", params });

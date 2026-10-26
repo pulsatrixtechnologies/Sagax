@@ -139,6 +139,7 @@
   "sidebar.nav.connectedApps": "Apps conectadas",
   "sidebar.appSettings": "Ajustes de la app",
   "sidebar.tools": "Herramientas",
+  "sidebar.account.tools": "Herramientas",
   "sidebar.section.expand": "Expandir {name}",
   "sidebar.section.collapse": "Contraer {name}",
   "sidebar.section.expandReorder": "Expandir {name}. Alt+Arriba/Abajo lo reordena.",

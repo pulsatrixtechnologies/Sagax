@@ -169,12 +169,36 @@ const teamSchema = z.object({
   managers: z.array(z.string().max(255)).max(100_000),
   members: z.array(z.string().max(255)).max(100_000),
 });
+const FLOW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const FLOW_VERSION = /^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}$/;
+/** Perspicax 2026-10-19 (its flow_marketplace.rs): Pulsatrix Flow for every
+ * member, from the private marketplace Perspicax serves behind each person's
+ * identity (server/org-flow-plugins.ts). Names, versions, the manifest URL
+ * and the token audience only, never a secret. */
+export const flowPluginsSchema = z.object({
+  enabled: z.boolean(),
+  /** Perspicax 2026-10-26: `enforce` while its Flow server guard runs the
+   * pack's own hook on every write a member can make. Anything else, or
+   * absent, and Sagax installs nothing (server/org-flow-plugins.ts). */
+  guard: z.string().max(32).optional(),
+  /** Why Perspicax holds the install back (`flow_guard_not_enforced`, ...). */
+  reason: z.string().max(64).optional(),
+  name: z.string().regex(FLOW_NAME),
+  url: z.string().url().max(2048),
+  resource: z.string().url().max(2048),
+  pack: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
+  plugins: z.array(z.object({ name: z.string().regex(FLOW_NAME), version: z.string().regex(FLOW_VERSION), tenant: z.boolean() })).max(10),
+});
+export type FlowPluginsDeclaration = z.infer<typeof flowPluginsSchema>;
+
 export const directorySchema = z.object({
   server_id: z.string().min(1).max(64),
   people: z.array(personSchema).max(100_000),
   teams: z.array(teamSchema).max(100_000),
   /** Slice 5: every MCP profile of the organization (catalog). */
   profiles: z.array(profileSchema).max(10_000).optional(),
+  /** Absent from an older Perspicax; malformed is read as absent. */
+  flow_plugins: flowPluginsSchema.optional().catch(undefined),
 });
 export type DirectoryProfile = z.infer<typeof profileSchema>;
 export type DirectoryPerson = z.infer<typeof personSchema>;
@@ -354,6 +378,8 @@ export interface PerspicaxDirectoryOptions {
    * right stays the same. The new right is passed in: `integrationRights`
    * still reads the previous directory until this answer is stored. */
   onIntegrationRights?: (principalId: string, rights: "manage" | "off") => void;
+  /** A new directory body was applied (not called on 304). */
+  onDirectory?: (directory: Directory) => void;
   /** Pulsa Bot's version, sent as X-Pulsabot-Version. */
   version: string;
   /** Slice 7: the link file was loaded, changed to another server id, or
@@ -475,6 +501,12 @@ export class PerspicaxDirectory {
     return this.data;
   }
 
+  /** Pulsatrix Flow's default plugins from the last directory; undefined
+   * when it sent none (an older Perspicax, or before the first answer). */
+  flowPlugins(): FlowPluginsDeclaration | undefined {
+    return this.data?.flow_plugins ?? undefined;
+  }
+
   people(): DirectoryPerson[] {
     return this.data ? [...this.data.people] : [];
   }
@@ -565,13 +597,30 @@ export class PerspicaxDirectory {
    * other than the ok one. */
   async exchangeToken(subjectToken: string, profileId: string): Promise<ExchangeResult> {
     if (!PROFILE_ID.test(profileId)) return { ok: false, error: "not_held" };
+    return this.exchange(subjectToken, `${trimSlash(this.options.issuer)}/mcp?profile=${profileId}`);
+  }
+
+  /** The audience of the Flow marketplace token (Perspicax 2026-10-19). */
+  flowMarketplaceResource(): string {
+    return `${trimSlash(this.options.issuer)}/flow/marketplace`;
+  }
+
+  /** 2026-10-19: exchange a person's sign-in access token for a short token
+   * of the Flow marketplace Perspicax serves (no profile, no scope; it opens
+   * `/flow/marketplace/*` only). Same rules as exchangeToken: never logged,
+   * only in the ok result. */
+  async exchangeMarketplaceToken(subjectToken: string): Promise<ExchangeResult> {
+    return this.exchange(subjectToken, this.flowMarketplaceResource());
+  }
+
+  private async exchange(subjectToken: string, resource: string): Promise<ExchangeResult> {
     let link = this.link ?? this.readLink();
     if (!link) return { ok: false, error: "link" };
     const body = new URLSearchParams({
       grant_type: TOKEN_EXCHANGE_GRANT,
       subject_token: subjectToken,
       subject_token_type: ACCESS_TOKEN_TYPE,
-      resource: `${trimSlash(this.options.issuer)}/mcp?profile=${profileId}`,
+      resource,
     }).toString();
     const call = (current: PerspicaxLink) => this.fetcher(`${this.options.serverBase.replace(/\/+$/, "")}/oauth/token`, {
       method: "POST",
@@ -1294,6 +1343,11 @@ export class PerspicaxDirectory {
     }
     this.apply(parsed, fetchStartedAt);
     this.data = parsed;
+    try {
+      this.options.onDirectory?.(parsed);
+    } catch (error) {
+      this.log(`perspicax directory: a listener failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
     this.loggedUnknownPermissions.clear();
     this.reportDelegations(parsed, fetchStartedAt);
     const etag = response.headers.get("etag");

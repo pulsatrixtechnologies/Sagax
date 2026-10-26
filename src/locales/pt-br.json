@@ -2347,6 +2347,7 @@
   "sidebar.teamImportedMany": "{count} bots adicionados · os bots e as conversas atuais foram mantidos",
   "sidebar.teamImportedOne": "1 bot adicionado · os bots e as conversas atuais foram mantidos",
   "sidebar.tools": "Ferramentas",
+  "sidebar.account.tools": "Ferramentas",
   "sidebar.update.check": "Verificar atualizações",
   "sidebar.update.checking": "Verificando atualizações…",
   "sidebar.update.downloading": "Baixando… {percent}%",

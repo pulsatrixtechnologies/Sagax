@@ -11,7 +11,7 @@ import { ArrowRight, Check, Copy, ExternalLink, KeyRound, Loader2, Pencil, Rotat
 import { BotAvatar } from "@/components/Avatar";
 import { cn } from "@/lib/cn";
 import { copyText } from "@/lib/copy-text";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
   GRAPH_SUBSCRIPTION_SCOPES,
@@ -217,7 +217,7 @@ export function draftFromConfig(config: TriggerSourceConfig): TypedDraft {
 export function automationText(status: TriggerAutomationStatus | undefined): { text: string; tone: "ok" | "error" | "pending" } | null {
   if (!status) return null;
   const code = status.code ?? status.state;
-  const when = status.expiresAt ? new Date(status.expiresAt).toLocaleString() : "";
+  const when = status.expiresAt ? new Date(status.expiresAt).toLocaleString(activeLocale()) : "";
   const known = AUTOMATION_CODES[status.kind].includes(code.replace(/-/g, "_"));
   const key = (known ? `triggers.automation.${status.kind}.${code.replace(/-/g, "_")}` : `triggers.automation.${status.state}`) as LocaleKey;
   return { text: t(key, { when }), tone: status.state };

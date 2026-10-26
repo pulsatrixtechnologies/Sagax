@@ -139,6 +139,7 @@
   "sidebar.nav.connectedApps": "已连接应用",
   "sidebar.appSettings": "应用设置",
   "sidebar.tools": "工具",
+  "sidebar.account.tools": "工具",
   "sidebar.section.expand": "展开 {name}",
   "sidebar.section.collapse": "收起 {name}",
   "sidebar.section.expandReorder": "展开 {name}。Alt+上/下可调整顺序。",

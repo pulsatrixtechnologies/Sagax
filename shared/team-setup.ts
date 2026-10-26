@@ -45,3 +45,8 @@ export interface TeamSetupRequest {
   result?: TeamSetupResult;
   resumed?: boolean;
 }
+
+/** 2026-10-26 (#1058): why "Apply setup" was refused, read by the app in
+ * its own language (src/lib/team-setup-error-text.ts). */
+export const TEAM_SETUP_ADMIN_REQUIRED = "team_setup_admin_required";
+export const TEAM_SETUP_DESKTOP_ONLY = "team_setup_desktop_only";

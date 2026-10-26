@@ -3,7 +3,7 @@
 // that asks first. The server never sends a token (server/org-person-connections.ts).
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { ConfirmDialog } from "./ConfirmDialog";
 
@@ -60,7 +60,7 @@ function connectionKind(connection: OrgConnection): string {
 
 function formatWhen(ms: number): string {
   try {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(ms);
+    return new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(ms);
   } catch {
     return new Date(ms).toISOString();
   }

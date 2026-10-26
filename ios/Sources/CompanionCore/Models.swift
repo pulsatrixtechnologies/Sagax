@@ -67,6 +67,8 @@ public struct ApprovalPlainWords: Codable, Hashable, Sendable {
 /// The rule a permission card can keep (`OptionCardData.ownerRule`).
 public struct OwnerRuleCandidate: Codable, Hashable, Sendable {
     public var description: String
+    /// A folder rule that also covers changing files (write, delete).
+    public var writes: Bool? = nil
     public var from: String? = nil
 }
 
@@ -123,6 +125,10 @@ public struct OptionCard: Codable, Hashable, Sendable {
     /// allow": this bot, this kind of action or this program). Nil on older
     /// servers.
     public var ownerRule: OwnerRuleCandidate? = nil
+    /// 2026-10-26 (#1065): the second "Always allow", every file of the
+    /// folder of the one this card reads (and its subfolders). Nil when the
+    /// server offers only the exact path.
+    public var ownerRuleFolder: OwnerRuleCandidate? = nil
     /// Organization server: a server command of a member's bot that only an
     /// organization admin answers. Never remembered.
     public var adminApproval: Bool? = nil

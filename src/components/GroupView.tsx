@@ -3,7 +3,7 @@
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { ArrowDown, ChevronDown, FolderOpen, Pin, X } from "lucide-react";
 import {
@@ -327,7 +327,7 @@ function RoomTextMessage({
                   runCorners(mine ? "end" : "start", joinsAbove, joinsBelow),
                 ),
           )}
-          title={new Date(m.at).toLocaleString()}
+          title={new Date(m.at).toLocaleString(activeLocale())}
         >
           {m.replyToId && (() => {
             const target = transcript.find((candidate) => candidate.id === m.replyToId);

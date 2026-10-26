@@ -225,6 +225,7 @@
   "sidebar.nav.connectedApps": "已連線的應用程式",
   "sidebar.appSettings": "應用程式設定",
   "sidebar.tools": "工具",
+  "sidebar.account.tools": "工具",
   "sidebar.section.expand": "展開 {name}",
   "sidebar.section.collapse": "收合 {name}",
   "sidebar.section.expandReorder": "展開 {name}。按 Alt+上／下鍵可調整順序。",

@@ -139,6 +139,7 @@
   "sidebar.nav.connectedApps": "जुड़े हुए ऐप",
   "sidebar.appSettings": "ऐप सेटिंग्स",
   "sidebar.tools": "टूल",
+  "sidebar.account.tools": "टूल",
   "sidebar.section.expand": "{name} खोलें",
   "sidebar.section.collapse": "{name} समेटें",
   "sidebar.section.expandReorder": "{name} खोलें। Alt+ऊपर/नीचे से क्रम बदलें।",

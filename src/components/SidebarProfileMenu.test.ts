@@ -188,15 +188,24 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     ...patch,
   });
 
-  it("is Usage, Help, Settings, Automations, Remote sessions and Achievements, in that order", () => {
-    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "routines", "remote-sessions", "achievements"]);
+  const toolsOf = (menu: ReturnType<typeof items>) => menu.find((entry) => entry.key === "tools")!;
+
+  it("is Usage, Help, Settings, then Tools, in that order", () => {
+    expect(items().map((entry) => entry.key)).toEqual(["usage", "help", "settings", "tools"]);
   });
 
-  it("opens the Remote sessions page next to Automations", () => {
+  it("puts Automations, Remote sessions and Achievements under Tools, in that order", () => {
+    const tools = toolsOf(items());
+    expect(tools.label).toBe("Tools");
+    expect(tools.submenu!.map((entry) => entry.key)).toEqual(["routines", "remote-sessions", "achievements"]);
+    expect(toolsOf(items({ achievementsLabel: null })).submenu!.map((entry) => entry.key)).toEqual(["routines", "remote-sessions"]);
+  });
+
+  it("opens the Remote sessions page from Tools", () => {
     let opened = 0;
-    const entry = items({ handlers: { ...handlers, onRemoteSessions: () => { opened += 1; } } }).find((item) => item.key === "remote-sessions")!;
+    const entry = toolsOf(items({ handlers: { ...handlers, onRemoteSessions: () => { opened += 1; } } })).submenu!.find((item) => item.key === "remote-sessions")!;
     expect(entry).toBeTruthy();
-    entry.onSelect();
+    entry.onSelect!();
     expect(opened).toBe(1);
   });
 
@@ -212,15 +221,30 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     expect(items().some((entry) => entry.key === "team-map" || entry.label === "Team map")).toBe(false);
   });
 
-  it("opens Automations from the menu and keeps the tour anchor, with no dot (JC, 2026-10-18)", () => {
+  it("opens Automations from Tools and keeps the tour anchor, with no dot (JC, 2026-10-18)", () => {
     let opened = 0;
-    const entry = items({ handlers: { ...handlers, onAutomations: () => { opened += 1; } } }).find((item) => item.key === "routines")!;
+    const tools = toolsOf(items({
+      automationsActive: true,
+      handlers: { ...handlers, onAutomations: () => { opened += 1; } },
+    }));
+    const entry = tools.submenu!.find((item) => item.key === "routines")!;
     expect(entry.label).toBe("Automations");
     expect(entry.tourId).toBe("nav-automations");
-    expect(entry.attention).toBeFalsy();
-    expect(entry.attentionTone).toBeUndefined();
-    entry.onSelect();
+    expect(entry.active).toBe(true);
+    expect(tools.active).toBe(true);
+    expect(tools.attention).toBeFalsy();
+    expect(tools.attentionTone).toBeUndefined();
+    entry.onSelect!();
     expect(opened).toBe(1);
+  });
+
+  it("names Tools Outils in French", () => {
+    setLocale("fr");
+    try {
+      expect(toolsOf(items()).label).toBe("Outils");
+    } finally {
+      setLocale("en");
+    }
   });
 
   it("leaves Browse bots, Check for updates, Keyboard shortcuts and About out of the first level", () => {
@@ -271,6 +295,50 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
       ["switch:local", true], ["switch:acme", false], ["add-organization", false],
     ]);
     expect(items().some((entry) => entry.separatorBefore)).toBe(false);
+  });
+
+  it("opens Switch account on the accounts it was given, the current one checked", () => {
+    let switched = "";
+    const menu = items({
+      accounts: [
+        { id: "local", name: "This computer", local: true, active: false, switchable: true },
+        { id: "north", name: "North office", local: false, active: true, switchable: false },
+      ],
+      signOut: true,
+      handlers: { ...handlers, onSwitch: (id) => { switched = id; } },
+    });
+    expect(menu.map((entry) => entry.key).slice(-2)).toEqual(["switch-account", "sign-out"]);
+    expect(menu.some((entry) => entry.key === "switch-organization")).toBe(false);
+    const row = menu.find((entry) => entry.key === "switch-account")!;
+    expect(row.label).toBe("Switch account");
+    expect(row.submenu).toBeTruthy();
+    expect(row.separatorBefore).toBe(true);
+    expect(row.submenu!.map((entry) => [entry.key, entry.label, entry.checked ?? false])).toEqual([
+      ["switch:local", "This computer", false],
+      ["switch:north", "North office", true],
+    ]);
+    row.submenu![0]!.onSelect!();
+    expect(switched).toBe("local");
+    expect(row.submenu![1]!.onSelect).toBeUndefined();
+  });
+
+  it("keeps the current account in the submenu when it is the only one, in French", () => {
+    setLocale("fr");
+    try {
+      const menu = items({
+        accounts: [{ id: "current", name: "North office", local: false, active: true, switchable: false }],
+        signOut: true,
+      });
+      const row = menu.find((entry) => entry.key === "switch-account")!;
+      expect(row.label).toBe("Changer de compte");
+      expect(row.submenu).toEqual([expect.objectContaining({
+        key: "switch:current", label: "North office", checked: true,
+      })]);
+      expect(row.submenu![0]!.onSelect).toBeUndefined();
+      expect(menu.some((entry) => entry.key === "add-organization" || entry.submenu?.some((entry) => entry.key === "add-organization"))).toBe(false);
+    } finally {
+      setLocale("en");
+    }
   });
 });
 

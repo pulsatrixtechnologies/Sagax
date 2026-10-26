@@ -15,7 +15,7 @@ const CATALOG = [
   { id: "P2", slug: "billing", name: "Billing", description: "" },
 ];
 
-function harness(options: { held?: Record<string, string[]>; mcp?: (request: { headers: Record<string, string>; body: any; method: string }) => Response | Promise<Response>; onCall?: Set<string>; guard?: PerspicaxMcpOptions["permissionGuard"]; remoteSupport?: PerspicaxMcpOptions["onRemoteSupport"] } = {}) {
+function harness(options: { held?: Record<string, string[]>; mcp?: (request: { headers: Record<string, string>; body: any; method: string }) => Response | Promise<Response>; onCall?: Set<string>; guard?: PerspicaxMcpOptions["permissionGuard"]; remoteSupport?: PerspicaxMcpOptions["onRemoteSupport"]; askGo?: PerspicaxMcpOptions["askGo"] } = {}) {
   let clock = 1_000_000;
   const held = options.held ?? { A: ["P1", "P2"], B: ["P1"], C: [] };
   const subjects: Record<string, { iss: string; sub: string; disabled: boolean }> = {
@@ -90,6 +90,7 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
     version: "0.1.89",
     ...(options.guard ? { permissionGuard: options.guard } : {}),
     ...(options.remoteSupport ? { onRemoteSupport: options.remoteSupport } : {}),
+    ...(options.askGo ? { askGo: options.askGo } : {}),
     fetch: fetcher,
     now: () => clock,
     log: (line) => logs.push(line),
@@ -105,6 +106,84 @@ function harness(options: { held?: Record<string, string[]>; mcp?: (request: { h
 
 const bot = { id: "x", perspicax: { profiles: ["P1"] } };
 const turn = { threadId: "t1", generation: "g1" };
+
+/** The approval form of the Flow guard's GO (Perspicax approval_schema). */
+const GO_SCHEMA = { type: "object", properties: { decision: { type: "string", oneOf: [{ const: "allow", title: "Allow once" }, { const: "deny", title: "Deny" }] } }, required: ["decision"] };
+
+/** A fake Perspicax whose tools/call asks for a GO on its stream
+ * (`elicitation/create`) and answers once the client's response is posted. */
+function goServer(schema: unknown = GO_SCHEMA) {
+  const answers: any[] = [];
+  let answered: (value: any) => void = () => {};
+  const mcp = ({ body }: { body: any }): Response => {
+    if (body.id === undefined) return new Response(null, { status: 202 });
+    if (body.method === "initialize") {
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-06-18", capabilities: {} } }), { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "sess-1" } });
+    }
+    if (body.method === undefined) {
+      // the client's answer to the elicitation
+      answers.push(body);
+      answered(body);
+      return new Response(null, { status: 202 });
+    }
+    const enc = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(enc.encode(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: 0, method: "elicitation/create", params: { mode: "form", message: "Flow: update ticket 42 (dry run done). GO?", requestedSchema: schema } })}\n\n`));
+        void new Promise<any>((resolve) => { answered = resolve; }).then((answer) => {
+          const go = answer.result?.content?.decision === "allow";
+          controller.enqueue(enc.encode(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: go ? "written" : "refused: flow_guard_declined" }], isError: !go } })}\n\n`));
+          controller.close();
+        });
+      },
+    });
+    return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream", "mcp-session-id": "sess-1" } });
+  };
+  return { mcp, answers };
+}
+
+describe("PerspicaxMcp: the Flow guard's GO (elicitation)", () => {
+  it("declares elicitation, shows the GO as a card and sends the person's answer", async () => {
+    const server = goServer();
+    const asked: Array<{ threadId: string; botId: string; profileId: string; message: string }> = [];
+    const h = harness({ mcp: server.mcp, askGo: async (input) => { asked.push(input); return "allow"; } });
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: { roots: {} }, clientInfo: { name: "engine", version: "1" } } } });
+    expect(h.mcpCalls[0]!.body.params.capabilities).toEqual({ roots: {}, elicitation: { form: {} } });
+    const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "cw_psa__update_ticket", arguments: {} } } });
+    expect(asked).toEqual([{ threadId: "t1", botId: "x", profileId: "P1", message: "Flow: update ticket 42 (dry run done). GO?" }]);
+    expect(server.answers).toEqual([{ jsonrpc: "2.0", id: 0, result: { action: "accept", content: { decision: "allow" } } }]);
+    expect(answer).toEqual({ status: 200, body: { jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: "written" }], isError: false } } });
+    // the answer went on the same session, with the person's token
+    const posted = h.mcpCalls.find((c) => c.body?.id === 0 && c.body?.method === undefined)!;
+    expect(posted.headers).toMatchObject({ "mcp-session-id": "sess-1", authorization: "Bearer pxlo1.B.mcp-P1-1" });
+  });
+
+  it("a denial or no answer is never a GO, and another form is declined unasked", async () => {
+    for (const [reply, action] of [["deny", "decline"], ["timeout", "cancel"]] as const) {
+      const server = goServer();
+      const h = harness({ mcp: server.mcp, askGo: async () => reply });
+      await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+      const answer = await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "w", arguments: {} } } });
+      expect(server.answers).toEqual([{ jsonrpc: "2.0", id: 0, result: { action } }]);
+      expect((answer.body as any).result.isError).toBe(true);
+    }
+    const other = goServer({ type: "object", properties: { email: { type: "string" } } });
+    const asked: unknown[] = [];
+    const h = harness({ mcp: other.mcp, askGo: async (input) => { asked.push(input); return "allow"; } });
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "w", arguments: {} } } });
+    expect(asked).toEqual([]);
+    expect(other.answers).toEqual([{ jsonrpc: "2.0", id: 0, result: { action: "decline" } }]);
+  });
+
+  it("declares nothing without askGo", async () => {
+    const h = harness();
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    await h.mcp.relay({ ...turn, botId: "x", profileId: "P1", frame: { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "engine", version: "1" } } } });
+    expect(h.mcpCalls[0]!.body.params.capabilities).toEqual({});
+  });
+});
 
 describe("PerspicaxMcp", () => {
   it("exchanges the speaker's own sign-in, never the owner's", async () => {

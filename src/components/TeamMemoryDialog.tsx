@@ -9,7 +9,7 @@ import { Brain, Check, Loader2, Plus, Trash2, X } from "lucide-react";
 
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { CompactRow, ConfirmPill, FIELD, FieldRow, FoldRow, HelpTip, PillSelect, PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
 
@@ -217,7 +217,7 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
                               className={`${FIELD} mt-1`}
                             />
                             <span className="mt-0.5 block text-[12px] text-ink-secondary">
-                              {entry.source.botName || t("teamMemory.you")} · {new Date(entry.updatedAt).toLocaleDateString()}
+                              {entry.source.botName || t("teamMemory.you")} · {new Date(entry.updatedAt).toLocaleDateString(activeLocale())}
                             </span>
                           </span>
                           <ConfirmPill

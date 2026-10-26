@@ -9,7 +9,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Keyb
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, Clock, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { widgetNumber, widgetString, type WidgetNode } from "../../../shared/widget";
 import { useWidgetField, WIDGET_BARE, WIDGET_FIELD, WIDGET_FIELD_ACTION } from "./WidgetControls";
 
@@ -51,14 +51,15 @@ export function widgetTimeSlots(node: WidgetNode, held = ""): string[] {
   return slots;
 }
 
-let format: Intl.DateTimeFormat | undefined;
+let format: { locale: string; format: Intl.DateTimeFormat } | undefined;
 
 /** A time as the person writes one: "9:30 AM", "09:30", "9:30 am", by their locale. */
 export function widgetTimeLabel(time: string): string {
   const minutes = minutesOf(time);
   if (minutes === undefined) return time;
-  format ??= new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
-  return format.format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60));
+  const locale = activeLocale();
+  if (format?.locale !== locale) format = { locale, format: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }) };
+  return format.format.format(new Date(2000, 0, 1, Math.floor(minutes / 60), minutes % 60));
 }
 
 /** Where the list opens before anything is picked: at the first time from now on. */

@@ -2,7 +2,7 @@
 // (shared/bot-activity.ts, server/routes/bot-activity.ts): fetches, labels,
 // times, and how the list splits between the two sections.
 import type { LocaleKey } from "@/locales";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import {
   activityStatusActive,
   type BotActivityDetail,
@@ -227,7 +227,7 @@ export function codeWorkWhen(at: number, now: number): string {
   const days = Math.round(seconds / 86_400);
   if (days === 1) return t("task.updated.yesterday");
   if (seconds < 7 * 86_400) return t("task.updated.days", { count: days });
-  return new Date(at).toLocaleDateString([], { month: "short", day: "numeric" });
+  return new Date(at).toLocaleDateString(activeLocale(), { month: "short", day: "numeric" });
 }
 
 function uniqueItems(items: readonly BotActivityItem[]): BotActivityItem[] {

@@ -5,7 +5,7 @@
 // off. The value is a comma list in week order ("mon,tue"), "" for none.
 import { useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { WIDGET_WEEKDAYS, type WidgetNode } from "../../../shared/widget";
 import { useWidgetField } from "./WidgetControls";
 
@@ -15,7 +15,7 @@ let names: { narrow: string[]; short: string[]; long: string[] } | undefined;
 export function widgetDayNames(): { narrow: string[]; short: string[]; long: string[] } {
   if (names) return names;
   const days = WIDGET_WEEKDAYS.map((_, index) => new Date(2024, 0, 1 + index));
-  const name = (weekday: "narrow" | "short" | "long") => days.map((day) => new Intl.DateTimeFormat(undefined, { weekday }).format(day));
+  const name = (weekday: "narrow" | "short" | "long") => days.map((day) => new Intl.DateTimeFormat(activeLocale(), { weekday }).format(day));
   names = { narrow: name("narrow"), short: name("short"), long: name("long") };
   return names;
 }

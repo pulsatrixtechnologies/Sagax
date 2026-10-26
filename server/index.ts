@@ -343,7 +343,9 @@ import { blockedTarget, buildSpendNotification, deliverableNotification, quietFo
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
 import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
-import { cardRuleCandidate, matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { proposalReplacements } from "./proposal-budget.ts";
+import { memberTeamSetupRefusal, TEAM_SETUP_DESKTOP_MESSAGE, TEAM_SETUP_DESKTOP_ONLY } from "./team-setup-review.ts";
+import { cardRuleCandidate, folderRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -356,6 +358,7 @@ import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-dr
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
+import { personLanguageOf } from "./person-language.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -493,7 +496,7 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
-import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
@@ -604,6 +607,7 @@ import {
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
+import { greetingLanguage } from "./new-bot-greeting.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -890,6 +894,7 @@ import { isLoginDriver, LOGIN_MARKER, loginCliFor, PrincipalEngineLogins } from 
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
+import { OrgFlowPlugins } from "./org-flow-plugins.ts";
 import { applyIdentityMigration, principalIdFor, rewritePeopleForAttach } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
@@ -945,7 +950,7 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
-import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, firstUnseenPerson, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
@@ -5921,6 +5926,23 @@ async function defaultSelection(saved: ModelSelection | null = cfg.defaultModelS
     refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
   });
 }
+/** The model an organization member's new bot starts on when they named
+ * none (#1060, #1074): the person's own (a model they starred), else the
+ * organization's default for new bots, else the server's, else an engine
+ * that can run now (memberNewBotSelection). */
+async function memberDefaultSelection(principalId: string | null | undefined): Promise<ModelSelection> {
+  const organization = cfg.newBotDefaults?.profile.modelSelection ?? null;
+  let person: ModelSelection[] = [];
+  try {
+    if (IDENTITY.kind === "perspicax" && principalId) person = starredModelSelections(userPreferenceStore.get(principalId).preferences["sagax.modelFavorites.v1"]);
+  } catch { /* no preference of their own: the organization's level decides */ }
+  if (hostedModels) {
+    const own = person.find((candidate) => hostedModels!.allows(candidate));
+    return own ?? hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
+  }
+  return memberNewBotSelection(selectableInstances<SelectableInstance>(await registry.describe()),
+    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContext);
+}
 /** Engines that are not the person's own: a Company one. A working engine
  * of their own wins over it; the organization's engine policy applies. */
 const selectionContext = {
@@ -6459,6 +6481,7 @@ const store = new Store(
   () => bootSelection,
   (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
   newBotApprovalMode,
+  newBotGreetingLanguage,
 );
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
@@ -7090,6 +7113,57 @@ const botPlugins = new BotPlugins({
   tokens: marketplaceTokens,
   policy: pluginMarketplacePolicy,
 });
+// Pulsatrix Flow for every member of the organization
+// (server/org-flow-plugins.ts): Perspicax declares its private marketplace in
+// the directory; Claude Code installs it here with a member's marketplace
+// token, and the copy loads on the Claude turns of a member's bots.
+const orgFlowPlugins = new OrgFlowPlugins({
+  dataDir: DATA_DIR,
+  issuer: IDENTITY.kind === "perspicax" ? IDENTITY.issuer : "",
+  declaration: () => (IDENTITY.kind === "perspicax" ? perspicaxDirectory?.flowPlugins() : undefined),
+  cli: () => {
+    for (const [instanceId, entry] of Object.entries(instanceConfigs(cfg))) {
+      if (entry.driver !== "claudeAgent") continue;
+      const configured = (entry.config as { cli?: unknown } | undefined)?.cli;
+      const cli = loginCliFor(entry.driver, configured, registry.cliTarget(instanceId)?.cli);
+      if (cli) return cli;
+    }
+    return undefined;
+  },
+  token: (preferred) => flowMarketplaceToken(preferred),
+  isMember: (principalId) => orgMemberActive(principalId),
+});
+/** A member's Flow marketplace token (a short exchange of a live sign-in):
+ * `preferred` first, then any active member with a live session. Never
+ * logged; undefined when nobody is signed in. */
+async function flowMarketplaceToken(preferred?: string): Promise<string | undefined> {
+  if (IDENTITY.kind !== "perspicax" || !perspicaxDirectory || !idpSessions) return undefined;
+  const directory = perspicaxDirectory;
+  const sessions = idpSessions;
+  const candidates = [
+    ...(preferred ? [preferred] : []),
+    ...directory.people().filter((entry) => entry.status === "active").map((entry) => principals.bySubject(IDENTITY.issuer, entry.sub)?.id).filter((id): id is string => typeof id === "string"),
+  ];
+  for (const principalId of [...new Set(candidates)].slice(0, 25)) {
+    if (!orgMemberActive(principalId)) continue;
+    const person = principals.byId(principalId);
+    if (!person?.subject) continue;
+    const subject = await sessions.subjectToken({ iss: person.subject.iss, sub: person.subject.sub });
+    if (!subject.ok) continue;
+    const exchanged = await directory.exchangeMarketplaceToken(subject.token);
+    if (exchanged.ok) return exchanged.token;
+  }
+  return undefined;
+}
+/** An active member of the organization now: a principal the last Perspicax
+ * directory lists as active (never on a solo server). */
+function orgMemberActive(principalId: string): boolean {
+  if (IDENTITY.kind !== "perspicax" || !isPrincipalId(principalId)) return false;
+  const person = principals.byId(principalId);
+  if (!person || person.disabledAt !== undefined || person.subject?.iss !== IDENTITY.issuer) return false;
+  const sub = person.subject.sub;
+  return perspicaxDirectory?.people().some((entry) => entry.sub === sub && entry.status === "active") === true;
+}
 {
   const migrated = migrateBotMarketplaces(DATA_DIR, pluginMarketplaces);
   if (migrated.bots || migrated.failed.length) {
@@ -7444,7 +7518,13 @@ function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boole
 }
 /** Enabled plugin folders for a Claude turn (`--plugin-dir`). Empty for every other engine, and when that person's integrations are off. */
 function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }): { pluginDirs?: string[] } {
-  const dirs = claudePluginDirs(instance.driverKind, personIntegrationsOff(effectiveBotOwner(bot)), botPlugins.pluginDirs(bot.id));
+  const owner = effectiveBotOwner(bot);
+  const own = claudePluginDirs(instance.driverKind, personIntegrationsOff(owner), botPlugins.pluginDirs(bot.id));
+  // The organization's Flow plugins (an admin's choice in Perspicax, so they
+  // load even when an admin manages this person's integrations), after the
+  // bot's own and never twice.
+  const org = instance.driverKind === "claudeAgent" ? orgFlowPlugins.dirsFor(owner, own) : [];
+  const dirs = [...own, ...org];
   return dirs.length ? { pluginDirs: dirs } : {};
 }
 /** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead, and integrations off lists nothing. */
@@ -14987,6 +15067,9 @@ bus.subscribe((event: RuntimeEvent) => {
           personMustAnswer: safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true,
           stepUpRequired: ownerStepUp.length > 0,
           autonomyRefused: ownerOriginRefused,
+          // #1065: the owner's real computer from their own turn on their
+          // own bot, which Bypass answers (never another origin or person)
+          ownComputerOwnTurn: Boolean(ownDestination && !ownEnvironment && destination?.byOwner && destinationOrigin === "owner"),
           crossPerson: foreignDestination,
         })
         : null;
@@ -15020,15 +15103,10 @@ bus.subscribe((event: RuntimeEvent) => {
         });
         break;
       }
-      const ownerVerdict = owner?.kind === "allow" && baseVerdict?.source !== "custom-rule-ask"
-        ? {
-          approve: owner.source === "owner-rule"
-            ? `approved ${event.tool} (your rule)`
-            : owner.source === "owner-auto" ? `approved ${event.tool} (automatic approval)` : `approved ${event.tool} (bypass)`,
-          source: owner.source,
-          ...(owner.rule ? { rule: owner.rule.id } : {}),
-        }
-        : baseVerdict;
+      // An organization rule (Refuser, Demander d'abord) or the person's own
+      // deny/ask rule always wins over the owner's mode (owner-approval.ts
+      // ownerVerdictOver, #1065).
+      const ownerVerdict = ownerVerdictOver(baseVerdict, owner, event.tool);
       // The person's allow rule, when nothing answered and the owner's own
       // rules did not hold the card (an owner ask rule or an admin card win).
       const customAllow = permission && asker && event.requestId && !ownerVerdict?.approve && customDecision?.kind === "allow"
@@ -15071,6 +15149,15 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(event.command?.command ? { command: event.command.command } : {}),
           ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
           ...(offeredApp && !strictCall ? { app: offeredApp } : {}),
+        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(languageOfPerson(cardAnswerer)))
+        : undefined;
+      // 2026-10-26 (#1065): the second "Toujours permettre", the whole
+      // folder of the file this card reads, beside the exact path
+      const ownerRuleFolderCandidate = ownerRuleCandidate && !strictCall
+        ? folderRuleCandidate({
+          tool: ownerTool,
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+          ...(event.command?.command ? { command: event.command.command } : {}),
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -15164,7 +15251,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const questions = event.questions?.length ? event.questions : undefined;
       // One generator for the card and its push (shared/approval-describe.ts):
       // "Allow the bot to run a command?" and one plain line, never a raw id.
-      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(cfg.language)) : undefined;
+      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(languageOfPerson(cardAnswerer))) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
       // answers in time instead of holding the turn forever.
@@ -15213,6 +15300,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(plain ? { plain: { title: plain.title, line: plain.line, ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(ownerRuleCandidate ? { ownerRule: ownerRuleCandidate } : {}),
+          ...(ownerRuleFolderCandidate ? { ownerRuleFolder: ownerRuleFolderCandidate } : {}),
           // the rule notice: an ask rule held this card, or an allow rule
           // matched without covering its risk class
           ...(permission && customNotice && (customNotice.outcome === "held" || customNotice.outcome === "risk") ? { customRule: customNotice } : {}),
@@ -15220,7 +15308,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // turn, a safety hold, a sandbox widening or under an ask rule
           ...(permission && customReview && !adminApproval && !guestDriven && safetyEffect?.kind !== "hold" && !event.requiresExplicitApproval && customDecision?.kind !== "ask"
             ? (() => {
-              const candidate = customRuleCandidate(customReview.facts, cfg.language);
+              const candidate = customRuleCandidate(customReview.facts, languageOfPerson(cardAnswerer));
               return candidate ? { customRuleCandidate: candidate } : {};
             })()
             : {}),
@@ -20550,7 +20638,7 @@ async function startTurn(
       }
       if (!warmOnly) turnTrace(threadId, "send");
       // Each picture within the model's limits: a scaled copy for a large one.
-      const modelImages = await fitTurnImagesForModel(turnImages, { language: cfg.language });
+      const modelImages = await fitTurnImagesForModel(turnImages, { language: languageOfPerson(turnPlace.principal) });
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -21230,6 +21318,12 @@ function routineAwayVerdict(principalId: string | undefined): AwayVerdict {
   return localRoutineAway.verdict(Date.now());
 }
 routines = new RoutineManager({
+  languageFor: (routine) => {
+    const person = IDENTITY.kind === "perspicax" && routine.botId
+      ? effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) })
+      : undefined;
+    return languageOfPerson(person && isPrincipalId(person) ? person : undefined);
+  },
   timeZoneFor: (routine) => {
     if (IDENTITY.kind !== "perspicax" || !routine.botId) return undefined;
     const person = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) });
@@ -22204,10 +22298,36 @@ function drainTeamSetupResumes(): void {
     dispatchTeamSetupResume(entry);
   }
 }
-async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: string; threadId: string; requestId: string; behavior: string }, ownerReview: boolean): Promise<boolean> {
+/** Who may apply a team setup from this request (#1058): the desktop app
+ * or an idle local browser on loopback, an organization admin, or on an
+ * organization server the member a member-sized plan belongs to
+ * (server/team-setup-review.ts). Null: allowed; else the 403 body. */
+function teamSetupApplyRefusal(auth: RequestAuth, req: IncomingMessage) {
+  return (request: TeamSetupRequest): Record<string, unknown> | null => {
+    if (auth.kind === "loopback") {
+      const trusted = DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id));
+      return trusted ? null : { error: TEAM_SETUP_DESKTOP_MESSAGE, code: TEAM_SETUP_DESKTOP_ONLY };
+    }
+    if (auth.scopes.includes("admin")) return null;
+    if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return { error: TEAM_SETUP_DESKTOP_MESSAGE, code: TEAM_SETUP_DESKTOP_ONLY };
+    const caller = approvalCallerUserId(auth).trim().toLowerCase();
+    const refusal = memberTeamSetupRefusal(request, {
+      callerId: caller,
+      ownerOf: (botId) => { const bot = store.bot(botId); return bot ? effectiveBotOwner(bot).trim().toLowerCase() : undefined; },
+      sectionOf: (botId) => { const bot = store.bot(botId); return bot ? sectionKey(bot.section) : undefined; },
+      mayCreateBots: botCreationAllowed(auth),
+      can: (permission) => callerCan(auth, permission),
+      // applyTeamSetup starts a new bot on Auto
+      newBotAutoRefused: memberAutoRefused({ ownerUserId: caller }, ["ask"], "auto"),
+    });
+    return refusal ? { ...refusal } : null;
+  };
+}
+async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: string; threadId: string; requestId: string; behavior: string }, applyRefusal: (request: TeamSetupRequest) => Record<string, unknown> | null): Promise<boolean> {
   const card = store.messagesFor(args.threadId).find((item) => item.card?.requestId === args.requestId && item.card.teamSetupRequest)?.card;
   if (!card) return false;
-  if (args.behavior === "allow" && !ownerReview) { json(res, 403, { error: "Approve team setup or deletion from the desktop app or a paired Full-access device. In a local browser, wait until every bot is idle." }); return true; }
+  const refused = args.behavior === "allow" ? applyRefusal(card.teamSetupRequest!) : null;
+  if (refused) { json(res, 403, refused); return true; }
   if (args.behavior === "allow" && !card.answered && !card.dismissed && !card.expired) {
     // Confirmed Primary Bot setup can move bots without the ordinary PATCH route.
     // Keep that atomic Store operation behind the same shared-machine fence.
@@ -23825,7 +23945,7 @@ async function runGroupMemberTurn(
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
-        images: await fitTurnImagesForModel(turnImages, { language: cfg.language }),
+        images: await fitTurnImagesForModel(turnImages, { language: languageOfPerson(roomSpeakerId) }),
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
@@ -25111,13 +25231,15 @@ function proposalPersistence(botId: string, threadId: string, opensCard = true) 
       !message.card.answered &&
       !message.card.dismissed && !message.card.expired,
   );
-  // 2026-10-20 a waiting proposal never blocks a new one. Past the
-  // budget the oldest waiting cards are replaced: closed as expired, nothing
-  // applied, journaled. A card under a safety hold is never replaced.
-  const replaceable = openRequests.filter((message) => !(message.card?.requestId && safetyIsArmed(message.card.requestId)));
-  const surplus = Math.max(0, openRequests.length - 7);
-  if (replaceable.length < surplus) return { ok: false as const, status: 429, error: "confirm or cancel an existing proposal first" };
-  for (const message of replaceable.slice(0, surplus)) {
+  // server/proposal-budget.ts: past the budget the oldest waiting cards are
+  // replaced, never one under a safety hold nor a team setup card (#1059).
+  const plan = proposalReplacements(openRequests.map((message) => ({
+    message,
+    held: Boolean(message.card?.requestId && safetyIsArmed(message.card.requestId)),
+    teamSetup: Boolean(message.card?.teamSetupRequest),
+  })));
+  if (!plan.ok) return { ok: false as const, status: 429, error: plan.error };
+  for (const { message } of plan.replace) {
     store.patchMessage(threadId, message.id, { card: { ...message.card!, answered: "deny", expired: true, options: [], held: "Replaced by a newer proposal. Nothing was applied." } });
     appendDecision(DATA_DIR, { threadId, requestId: message.card!.requestId ?? message.id, botId, tool: "proposal", summary: message.card!.title ?? "proposal", decision: "auto-denied", source: "expired" });
   }
@@ -28252,7 +28374,7 @@ ROUTES.push(createOwnerApprovalRoutes({
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot) : null;
   },
-  describeLegacy: (key) => describeAllowRule(key, serverApprovalWords(cfg.language), (id) => store.bot(id)?.name ?? store.groups.find((group) => group.id === id)?.name),
+  describeLegacy: (key, personId) => describeAllowRule(key, serverApprovalWords(languageOfPerson(personId)), (id) => store.bot(id)?.name ?? store.groups.find((group) => group.id === id)?.name),
   revokeLegacy: (botId, key) => {
     const bot = store.bot(botId);
     if (bot) revokeLegacyKey(bot, key);
@@ -30039,6 +30161,16 @@ async function settleBotActCard(
 
 const cwActionPasses = createCwActionPasses();
 
+/** The language to word a text for the person behind this request: their own
+ * `omb-language`, else the server's default (server/person-language.ts). */
+function languageOfPerson(person: string | null | undefined): string {
+  return personLanguageOf(person, (id) => userPreferenceStore.get(id).preferences, cfg.language);
+}
+
+function languageOfRequest(auth: RequestAuth): string {
+  return languageOfPerson(actorPrincipalId(auth));
+}
+
 function cwActionActor(auth: RequestAuth): PerformActor | null {
   if (auth.kind === "session") {
     return { kind: "person", sessionId: auth.session.id, personKey: personKey(auth.session), scopes: [...auth.session.scopes] };
@@ -30077,13 +30209,14 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
   if (!cwActionActor(auth) || approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) {
     return { status: 403, body: { error: "Only the bot owner can approve a ConnectWise change.", code: "cw_action_owner_only" } };
   }
-  const language = cwActionLanguage(cfg.language);
+  const personal = languageOfRequest(auth);
+  const language = cwActionLanguage(personal);
   const card = cwActionCard(action, language, actorPrincipalId(auth));
-  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(cfg.language));
+  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(personal));
   // 2026-10-19 ("Toujours permettre" on every card): what Always allow
   // keeps here (this bot, this kind of ConnectWise change), and whether the
   // person already kept it (no security key of theirs protecting the write)
-  const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(cfg.language));
+  const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(personal));
   const candidate = { ...described, tool: CW_WIDGET_RULE_TOOL };
   const answerer = approvalOwnerId(bot, threadId);
   const stepUp = autoAnswerStepUp(bot, threadId, { tool: "cw_psa__write", input: card.toolInput, summary: card.summary });
@@ -30116,7 +30249,7 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
       threadId, requestId: card.requestId, botId: bot.id, botName: bot.name, tool: "cw_psa__write", summary: card.summary,
       decision: "auto-approved", source: "owner-rule", rule: kept.id,
     });
-    const done = await allowCwAction(actor, threadId, message.id, { ...message.card!, ruleSaved: { id: kept.id, behavior: kept.behavior, description: kept.description } }, bot, action);
+    const done = await allowCwAction(actor, threadId, message.id, { ...message.card!, ruleSaved: { id: kept.id, behavior: kept.behavior, description: kept.description } }, bot, action, languageOfRequest(auth));
     return done.status < 400
       ? { status: 201, body: { requestId: card.requestId, messageId: message.id, allowedByRule: true } }
       : done;
@@ -30158,7 +30291,7 @@ async function resolveAndSendCwAction(
     json(res, 409, { error: "This bot is no longer here." });
     return true;
   }
-  const done = await allowCwAction(actor, threadId, message.id, card, bot, action);
+  const done = await allowCwAction(actor, threadId, message.id, card, bot, action, languageOfRequest(auth));
   json(res, done.status, done.body);
   return true;
 }
@@ -30172,10 +30305,11 @@ async function allowCwAction(
   card: NonNullable<Message["card"]>,
   bot: BotRecord,
   action: NonNullable<ReturnType<typeof parseCwAction>>,
+  language: string | undefined = cfg.language,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   store.patchMessage(threadId, messageId, { card: { ...card, answered: "allow" } });
   cwActionPasses.grant(threadId, action);
-  const text = cwActionInstruction(action, cwActionLanguage(cfg.language));
+  const text = cwActionInstruction(action, cwActionLanguage(language));
   const group = store.groupByThread(threadId);
   const sent = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
@@ -30280,7 +30414,7 @@ async function settleConfidentialMemoryCard(auth: RequestAuth, threadId: string,
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow" } });
   confidentialMemoryPasses.grant(threadId, pending.digest);
-  const french = cwActionLanguage(cfg.language) === "fr";
+  const french = cwActionLanguage(languageOfRequest(auth)) === "fr";
   // the owner allowed it in person: the follow-up posts into exactly this
   // thread, never as an on-behalf request (which a confidential thread refuses)
   const sent = await performBotActRoute(actor, {
@@ -30328,9 +30462,9 @@ function emailDraftBot(auth: RequestAuth, threadId: string, botIdHint: unknown):
 
 /** Where a draft can be sent from: the bot's own mail connectors first (the
  * person's mailbox), then the server's mail when it is set up. */
-function emailConnectorsFor(bot: BotRecord): EmailConnector[] {
+function emailConnectorsFor(bot: BotRecord, language: string | undefined = cfg.language): EmailConnector[] {
   const connectors = mailConnectorsOf(bot);
-  if (mailer()) connectors.push({ kind: "smtp", label: cfg.language?.toLowerCase().startsWith("fr") ? "le courriel du serveur" : "the server's mail" });
+  if (mailer()) connectors.push({ kind: "smtp", label: language?.toLowerCase().startsWith("fr") ? "le courriel du serveur" : "the server's mail" });
   return connectors;
 }
 
@@ -30349,7 +30483,7 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
   if (normalized.draft.bcc.length && store.groupByThread(threadId)) {
     return { status: 400, body: { error: "Bcc is not available in a room: everyone in it would see the hidden recipients.", code: "bcc_in_room" } };
   }
-  const connectors = emailConnectorsFor(bot);
+  const connectors = emailConnectorsFor(bot, languageOfRequest(auth));
   const wanted = body.connector && typeof body.connector === "object" ? body.connector as { kind?: unknown; id?: unknown } : undefined;
   const connector = wanted
     ? connectors.find((candidate) => candidate.kind === wanted.kind && (candidate.id ?? null) === (typeof wanted.id === "string" ? wanted.id : null))
@@ -30364,7 +30498,7 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
     .find((row) => row.card?.emailSendRequest?.draftKey === draftKey && JSON.stringify(row.card.emailSendRequest.draft) === sameDraft)?.card?.emailSendRequest;
   const sentTo = earlier?.status === "failed" && earlier.sentTo?.length && earlier.connector.kind === connector.kind ? earlier.sentTo : undefined;
   const request = { ...emailSendCard({ draft: normalized.draft, draftKey, connector, by: actorPrincipalId(auth) }), ...(sentTo ? { sentTo } : {}) };
-  const summary = emailSendSummary(normalized.draft, connector, cfg.language);
+  const summary = emailSendSummary(normalized.draft, connector, languageOfRequest(auth));
   // the card's arguments never list Bcc addresses, only how many
   const toolInput = JSON.stringify({
     to: normalized.draft.to, cc: normalized.draft.cc,
@@ -30432,7 +30566,7 @@ function emailDraftStatus(auth: RequestAuth, threadId: string, draftKey: string)
   if (message.card?.answered === "deny" && status === "pending") status = "denied";
   if (status === "handed-off" && !emailSendPasses.waiting(threadId, request.id)) {
     status = "failed";
-    error = cfg.language?.toLowerCase().startsWith("fr")
+    error = languageOfRequest(auth).toLowerCase().startsWith("fr")
       ? "Le robot n'a pas envoyé ce courriel à temps. Réessayez."
       : "The bot did not send this email in time. Try again.";
   }
@@ -30521,7 +30655,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", emailSendRequest: { ...request, status: "handed-off" } } });
   emailSendPasses.grant(threadId, bot.id, requestId, request.draft, request.connector);
-  const text = emailSendInstruction(request.draft, request.connector, cfg.language);
+  const text = emailSendInstruction(request.draft, request.connector, languageOfRequest(auth));
   const group = store.groupByThread(threadId);
   const asked = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
@@ -30530,7 +30664,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
     emailSendPasses.revoke(threadId, requestId);
     patchEmailSend(threadId, requestId, {
       status: "failed",
-      error: cfg.language?.toLowerCase().startsWith("fr") ? "Le robot n'a pas pu recevoir la demande d'envoi. Réessayez." : "The bot could not be asked to send it. Try again.",
+      error: languageOfRequest(auth).toLowerCase().startsWith("fr") ? "Le robot n'a pas pu recevoir la demande d'envoi. Réessayez." : "The bot could not be asked to send it. Try again.",
     });
     json(res, 502, { error: "The bot could not be asked to send this email. Try again." });
     return true;
@@ -31441,13 +31575,21 @@ function strictRuleOwnerName(personId: string): string {
 /** "Always allow" or "Always deny" on a card: save the owner's rule before
  * the answer goes out, so the bot's next ask already meets it. Null when
  * the body asks for no rule; otherwise the refusal. */
-function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: string, rule: unknown, behavior: string): { status: 400 | 403 | 404 | 409 | 500 | 503; error: string } | null {
+function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: string, rule: unknown, behavior: string, ruleScope?: unknown): { status: 400 | 403 | 404 | 409 | 500 | 503; error: string } | null {
   if (rule === undefined || rule === null) return null;
   if (rule !== "allow" && rule !== "deny") return { status: 400, error: "rule must be allow or deny" };
   if (rule !== behavior) return { status: 400, error: "Always allow allows and Always deny denies." };
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
   const card = message?.card;
   if (!message || !card) return { status: 404, error: "No such approval." };
+  if (ruleScope !== undefined && ruleScope !== null && ruleScope !== "exact" && ruleScope !== "folder") return { status: 400, error: "ruleScope must be exact or folder" };
+  // 2026-10-26 (#1065): "folder" keeps the card's folder rule (every file
+  // of the folder and its subfolders), only an allow, only where the card
+  // offered it; never an admin's or a held card (none offers it)
+  const wholeFolder = ruleScope === "folder";
+  if (wholeFolder && (rule !== "allow" || !card.ownerRuleFolder || card.ownerRule?.from !== undefined)) {
+    return { status: 409, error: "This approval cannot be remembered for the whole folder." };
+  }
   if (!card.ownerRule || card.answered || card.dismissed || card.expired) {
     return { status: 409, error: "This approval cannot be remembered as a rule." };
   }
@@ -31470,7 +31612,7 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   }
   const ownerId = strict ? caller! : cardAnswererId(bot, threadId, card);
   if (!caller || caller.toLowerCase() !== ownerId.toLowerCase()) return { status: 403, error: "Only the bot owner can save a rule." };
-  const candidate = card.ownerRule;
+  const candidate: NonNullable<typeof card.ownerRule> = wholeFolder ? card.ownerRuleFolder! : card.ownerRule;
   // 2026-10-21 (review of #938): an empty scope is the whole tool, and the
   // fingerprint of no arguments every such call: never saved from a card
   // ("any target" stays an explicit edit of one's own rule)
@@ -31524,6 +31666,16 @@ function bypassRefusal(auth: RequestAuth): string | null {
 /** 2026-10-11: the level a new bot starts on. A solo server keeps Approve
  * for me; an organization server follows its policy (`defaults.approvalMode`)
  * and starts on Ask when it names none. */
+/** The language a new bot greets its person in (#1075): on an organization
+ * server the owner's own language preference (kept per person), then the
+ * server's language, the same default the app falls back to. */
+function newBotGreetingLanguage(ownerUserId: string | undefined): "fr" | "en" {
+  let person = "";
+  try {
+    if (IDENTITY.kind === "perspicax" && ownerUserId) person = userPreferenceStore.get(ownerUserId).preferences["omb-language"] ?? "";
+  } catch { /* no preference of their own */ }
+  return greetingLanguage([person, cfg.language]);
+}
 function newBotApprovalMode(): "ask" | "auto" {
   return IDENTITY.kind === "perspicax" ? orgNewBotApprovalMode(cfg.newBotDefaults?.profile.approvalMode) : "auto";
 }
@@ -31604,6 +31756,7 @@ function orgSettings(): OrgSettings {
     memberAutoApproval: memberAutoApprovalAllowed(cfg.organization),
     allowVaultExport: vaultExportAllowed(),
     pluginMarketplaces: pluginMarketplacePolicy() ?? { mode: "any" },
+    ...(IDENTITY.kind === "perspicax" ? { flowPlugins: orgFlowPlugins.status() } : {}),
     github: { clientId: githubClientId() ?? null, fromEnvironment: !cfg.organization?.githubClientId && Boolean(process.env.SAGAX_GITHUB_CLIENT_ID?.trim()) },
     ...(IDENTITY.kind === "perspicax"
       ? { interimAttach: { until: interimWindowUntil(cfg.organization?.interimAttach, Date.now()), people: principals.listInterim().length } }
@@ -32566,8 +32719,15 @@ function botUserName(bot: { ownerUserId?: unknown }): string {
  * needs humanIds). An explicit humanIds list is kept as sent. */
 function withCreatorListed(auth: RequestAuth, body: unknown): unknown {
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return body;
-  if (!body || typeof body !== "object" || Array.isArray(body) || Object.prototype.hasOwnProperty.call(body, "humanIds")) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const principalId = auth.session.principalId?.trim();
+  if (Object.prototype.hasOwnProperty.call(body, "humanIds")) {
+    // A member naming coworkers stays in the room they create.
+    const named = (body as { humanIds?: unknown }).humanIds;
+    if (channelActorRole(auth) !== "member" || !principalId || !Array.isArray(named)) return body;
+    const listed = named.some((id) => typeof id === "string" && id.trim().toLowerCase() === principalId.toLowerCase());
+    return listed ? body : { ...(body as Record<string, unknown>), humanIds: [principalId, ...named] };
+  }
   return principalId ? { ...(body as Record<string, unknown>), humanIds: [principalId] } : body;
 }
 
@@ -32606,6 +32766,12 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       const id = entry.slice(5);
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
+  }
+  // A member who owns the room adds only people the organization directory
+  // lists as active; never a team entry (those stay with admins).
+  if (ownerChecked && IDENTITY.kind === "perspicax" && Array.isArray(after) && channelActorRole(auth) === "member") {
+    const unseen = firstUnseenPerson({ actorId: channelActorId(auth), before, after, visible: (id) => resolveOrgGrantee(id).ok });
+    if (unseen !== null) return "unknown person: choose someone from the organization directory";
   }
   // Organization server: the group's owner rule already decided (group-ownership.ts).
   if (ownerChecked) return null;
@@ -32715,6 +32881,8 @@ if (IDENTITY.kind === "perspicax") {
     onChanged: (id) => {
       const bot = store.bot(id);
       if (bot) broadcast({ kind: "bot", bot: wireBot(bot) });
+      // a profile added is also a trigger of the organization's Flow plugins
+      void orgFlowPlugins.sync("profile").catch(() => undefined);
     },
   }));
   // D14: the bots whose sharing the caller administers, with their grants,
@@ -34065,9 +34233,16 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
       const connection = personGithub(principalId);
       if (connection) void syncGithubToSandbox(principalId, connection);
     },
+    // Membership is the trigger of the Flow plugins: the first directory,
+    // an invitation accepted, a declaration changed in Perspicax.
+    onDirectory: () => { void orgFlowPlugins.sync("directory").catch(() => undefined); },
     version,
   });
   perspicaxDirectory.start(intervalMs);
+  // a newer Flow version: the sync fetches the marketplaces again when due
+  setInterval(() => { void orgFlowPlugins.sync("schedule").catch(() => undefined); }, 30 * 60_000).unref();
+  // at start: what is missing or older than the last directory read
+  setTimeout(() => { void orgFlowPlugins.sync("start").catch(() => undefined); }, 15_000).unref();
   // Slice 5: per-turn MCP tokens for the person who speaks.
   const directory = perspicaxDirectory;
   perspicaxMemory = new PerspicaxMemory({ link: () => directory });
@@ -34079,6 +34254,10 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     writeOnceScope: ({ threadId }) => activeRoutineRunForThread(threadId) || internalTurnThreads.has(threadId) ? "unattended" : null,
     // a live call keeps its Perspicax tools mounted from turn to turn
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
+    // 2026-10-26: a Perspicax server guard's GO (Flow: dry run, GO, read
+    // back) is an approval card on the thread; Full access and Approve for
+    // me never answer it, only the person (confirmHeldCard).
+    askGo: ({ threadId, botId, message }) => confirmHeldCard({ threadId, botId, tool: "perspicax", summary: message }),
     // remote_support_open / status / close: the session shows in Sagax (server/remote-session-register.ts)
     onRemoteSupport: (call) => {
       const principalId = call.principalId || remoteSessionSpeaker(call.threadId);
@@ -34156,6 +34335,9 @@ const oidcLogin = IDENTITY.kind === "perspicax" && oidcRp && idpSessions
       // 2026-10-08: the routine delegation comes with the sign-in.
       signedIn: ({ principalId, accessToken, accessExpiresAt }) => {
         void routineConsents?.keepAlive(principalId, accessToken ? { token: accessToken, ...(accessExpiresAt !== undefined ? { expiresAt: accessExpiresAt } : {}) } : undefined);
+        // Pulsatrix Flow with this person's own token (installs what is
+        // missing or older; silent when up to date).
+        void orgFlowPlugins.sync("sign-in", { principalId }).catch(() => undefined);
       },
     },
     openPairing: (input) => sessions.openPairing(input),
@@ -36006,7 +36188,7 @@ const agentApi = createAgentApi({
     }));
   },
   turnState: agentTurnState,
-  async conversation(caller, agentId) {
+  async conversation(caller, agentId, options) {
     const target = store.bot(agentId);
     if (!target) return agentRefuse(404, "unknown_agent", "No such agent.");
     const newest = (tasks: TaskRecord[]) => tasks.filter((task) => task.hidden === true && task.archivedAt === undefined && !task.closedBy)
@@ -36016,7 +36198,9 @@ const agentApi = createAgentApi({
       // 2026-10-19 (owner setup): never a conversation a bot opened (an
       // "@Name · agent" thread): the person's words landed there under that
       // bot's name and their bots took them for another agent's relay.
-      const existing = newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true && !task.openedBy?.botId));
+      // `fresh` (send_prompt without thread_id): never reuse, so the engine
+      // does not read the whole earlier history again on every ping.
+      const existing = options?.fresh ? undefined : newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true && !task.openedBy?.botId));
       if (existing) return { threadId: existing.threadId };
       const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/tasks`, body: { hidden: true, title: "AI client", confidential: false } });
       const threadId = (created.body as { task?: { threadId?: unknown } })?.task?.threadId;
@@ -41862,8 +42046,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set());
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      // On an organization server the creator owns the new room, so a member
+      // may name coworkers they can see in the directory (#1061).
+      const memberCreates = IDENTITY.kind === "perspicax" && auth.kind === "session" && channelActorRole(auth) === "member";
+      const humans = refuseHumanEdit(auth, body, [], memberCreates);
+      if (humans) { const bad = humans.startsWith("unknown team") || humans.startsWith("unknown person"); return json(res, bad ? 400 : 403, bad ? { error: humans } : { error: humans, code: "not_channel_editor" }); }
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -42449,7 +42636,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
       // A paired phone's companion edits a room like a member session does.
       if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         // The owner of an organization group also picks its default responder,
@@ -43052,7 +43239,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (Object.hasOwn(settings, "computer")) settings.computer = requestedWorksOn(settings.computer) ?? undefined;
       body = { ...body, ...settings, name: settings.name };
       if (settings.approvalMode === "full" || settings.approvalMode === "custom") {
-        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation." });
+        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation.", code: "approval_desktop_required" });
       }
       if (namedThisComputer && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
         return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });
@@ -43105,7 +43292,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       let selection: ModelSelection;
       if (body.modelSelection === undefined) {
-        selection = await defaultSelection();
+        // A member's bot is not built from the admin's template: the
+        // person's own model first, then the organization's (#1074, #1060).
+        selection = memberCreate ? await memberDefaultSelection(sessionPrincipal(auth)) : await defaultSelection();
       } else {
         const checked = checkedModelSelection(body.modelSelection, undefined, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
@@ -45382,7 +45571,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = commandRememberRefusal(auth, bot.threadId, String(body.requestId), behavior);
         if (refusal) return json(res, 403, { error: refusal });
       }
-      const ruleRefusal = saveOwnerRuleFromCard(auth, bot.threadId, String(body.requestId), body.rule, behavior);
+      const ruleRefusal = saveOwnerRuleFromCard(auth, bot.threadId, String(body.requestId), body.rule, behavior, body.ruleScope);
       if (ruleRefusal) return json(res, ruleRefusal.status, { error: ruleRefusal.error });
       return await answeringCardAs(auth, bot.threadId, String(body.requestId), async () => {
         if (resolveAndSendTrust(res, bot.threadId, String(body.requestId), behavior)) return;
@@ -45391,7 +45580,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (await resolveImessageCard(res, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendTeamSetup(res, {
           botId: bot.id, threadId: bot.threadId, requestId: String(body.requestId), behavior,
-        }, auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
+        }, teamSetupApplyRefusal(auth, req))) return;
         if (resolveAndSendRoutine(res, {
           botId: bot.id,
           botName: bot.name,
@@ -45505,7 +45694,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = commandRememberRefusal(auth, threadId, requestId, behavior);
         if (refusal) return json(res, 403, { error: refusal });
       }
-      const ruleRefusal = saveOwnerRuleFromCard(auth, threadId, requestId, body.rule, behavior);
+      const ruleRefusal = saveOwnerRuleFromCard(auth, threadId, requestId, body.rule, behavior, body.ruleScope);
       if (ruleRefusal) return json(res, ruleRefusal.status, { error: ruleRefusal.error });
       return await answeringCardAs(auth, threadId, requestId, async () => {
         if (resolveAndSendTrust(res, threadId, requestId, behavior)) return;
@@ -45566,8 +45755,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (setupCard) {
           const setupBotId = setupCard.from?.botId ?? store.botByThread(threadId)?.id;
           if (!setupBotId) return json(res, 400, { error: "This team setup has no valid owner" });
-          if (await resolveAndSendTeamSetup(res, { botId: setupBotId, threadId, requestId, behavior },
-            auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
+          if (await resolveAndSendTeamSetup(res, { botId: setupBotId, threadId, requestId, behavior }, teamSetupApplyRefusal(auth, req))) return;
         }
         const profileCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.profileRequest,

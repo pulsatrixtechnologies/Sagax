@@ -5,7 +5,7 @@
 // (server/routes/bot-runtime-settings.ts, docs/tool-policy.md).
 import { useCallback, useEffect, useState } from "react";
 
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { botToolGrantsPath } from "@/lib/bot-runtime-settings";
 import { botGrantRequest, grantTier, sortGrants, type GrantDraft, type ToolGrantRow } from "@/lib/tool-grants";
 import { api, type Bot } from "@/state/store";
@@ -65,7 +65,7 @@ export function BotToolAccess({ bot }: { bot: Bot }) {
                         <div className="text-[13px] font-medium text-ink"><code>{row.scope}</code></div>
                         <div className="text-[12px] text-ink-secondary">
                           {t(STATE_KEY[row.state])}
-                          {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString() })}` : ""}
+                          {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString(activeLocale()) })}` : ""}
                         </div>
                         {grantTier(row.scope) === "admin" && row.state === "active" && (
                           <div className="text-[12px] text-danger">{t("settings.toolAccess.adminWarning")}</div>

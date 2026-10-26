@@ -30,3 +30,23 @@ export function applyHumanIds(input: { dm?: boolean; humanIds: string[] }): { ok
   if (input.dm) return { ok: false, error: "dm-has-no-humans" };
   return { ok: true, humanIds: input.humanIds };
 }
+
+/** A member who owns a room adds only people the organization directory shows
+ * them (`visible` answers for a principal id), never a team entry: those stay
+ * with admins. Returns the first refused entry, or null. Entries already in
+ * the room and the actor themself pass. */
+export function firstUnseenPerson(input: {
+  actorId: string;
+  before: readonly string[];
+  after: readonly unknown[];
+  visible: (principalId: string) => boolean;
+}): string | null {
+  const actor = input.actorId.trim().toLowerCase();
+  const already = new Set(input.before.map((entry) => entry.trim().toLowerCase()));
+  for (const entry of input.after) {
+    const id = typeof entry === "string" ? entry.trim().toLowerCase() : "";
+    if (!id || id === actor || already.has(id)) continue;
+    if (id.startsWith("team:") || !input.visible(id)) return id || String(entry);
+  }
+  return null;
+}

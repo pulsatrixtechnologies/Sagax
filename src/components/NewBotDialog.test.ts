@@ -111,7 +111,7 @@ describe("bot draft dialog", () => {
     expect(html).toContain("Create bot");
     const create = nodes(tree).filter(node => node.type === "button").at(-1)!;
     create.props.onClick!();
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newBot", onCreated: expect.any(Function) });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "newBot", settings: {}, onCreated: expect.any(Function) });
     expect(fixture.api).not.toHaveBeenCalled();
   });
   it("opens immediately on one page, without a section menu, and no creation request", () => {

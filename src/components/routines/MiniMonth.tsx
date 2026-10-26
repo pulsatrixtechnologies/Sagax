@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
+import { activeLocale } from "@/lib/i18n";
 const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 
 function startOfMonth(value: number | Date) {
@@ -47,7 +48,7 @@ export function MiniMonth({ anchor, onSelect }: MiniMonthProps) {
 
   const selected = new Date(anchor);
   const today = new Date();
-  const monthLabel = visibleMonth.toLocaleDateString(undefined, {
+  const monthLabel = visibleMonth.toLocaleDateString(activeLocale(), {
     month: "long",
     year: "numeric",
   });
@@ -92,7 +93,7 @@ export function MiniMonth({ anchor, onSelect }: MiniMonthProps) {
           const isSelected = sameDay(date, selected);
           const isToday = sameDay(date, today);
           const isOutsideMonth = date.getMonth() !== visibleMonth.getMonth();
-          const label = date.toLocaleDateString(undefined, {
+          const label = date.toLocaleDateString(activeLocale(), {
             weekday: "long",
             month: "long",
             day: "numeric",

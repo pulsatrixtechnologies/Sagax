@@ -40,6 +40,21 @@ export function composePeople(people: Iterable<OrgDirectoryPerson>, viewer: stri
     (!query || `${person.name} ${person.login} ${person.email ?? ""}`.toLowerCase().includes(query)));
 }
 
+/** A picked person is stored in the group's picked set under this prefix, so a
+ * bot id and a principal id never collide. */
+const PERSON_PICK = "person:";
+
+/** The two lists a group create request carries from the picked set. */
+export function splitPicked(picked: Iterable<string>): { memberIds: string[]; humanIds: string[] } {
+  const memberIds: string[] = [];
+  const humanIds: string[] = [];
+  for (const id of picked) {
+    if (id.startsWith(PERSON_PICK)) humanIds.push(id.slice(PERSON_PICK.length));
+    else memberIds.push(id);
+  }
+  return { memberIds, humanIds };
+}
+
 /** At most this many results (bots and people together) under the create rows. */
 export const COMPOSE_RESULT_LIMIT = 6;
 
@@ -63,7 +78,7 @@ function matchRank(name: string, query: string): number {
 export function composeRows(mode: ComposeMode, bots: Bot[], canCreateBots = true, people: OrgDirectoryPerson[] = [], query = ""): ComposeRow[] {
   const results: ComposeRow[] = [
     ...bots.map((bot): ComposeRow => ({ kind: "bot", bot })),
-    ...(mode === "browse" ? people.map((person): ComposeRow => ({ kind: "person", person })) : []),
+    ...people.map((person): ComposeRow => ({ kind: "person", person })),
   ];
   const q = query.trim().toLowerCase();
   const ranked = q
@@ -150,10 +165,17 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
         setQuery("");
         return;
       }
-      if (!picked.size) return;
-      dispatch({ type: "createGroup", memberIds: [...picked] });
+      // A group always holds at least one bot; people come on top of it.
+      const { memberIds, humanIds } = splitPicked(picked);
+      if (!memberIds.length) return;
+      dispatch({ type: "createGroup", memberIds, ...(humanIds.length ? { humanIds } : {}) });
       track("room_created", { members: picked.size, context: false });
       onCloseRef.current();
+      return;
+    }
+    if (row.kind === "person" && mode === "group") {
+      togglePicked(PERSON_PICK + row.person.principalId);
+      setCursor(0);
       return;
     }
     if (row.kind === "person") {
@@ -232,6 +254,25 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
         <span className="shrink-0 text-[15px] text-ink-secondary" style={noDragStyle}>{t("compose.to")}</span>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5" style={noDragStyle}>
           {mode === "group" && [...picked].map((id) => {
+            if (id.startsWith(PERSON_PICK)) {
+              const person = orgPeople.get(id.slice(PERSON_PICK.length));
+              const label = person?.name || person?.login || "";
+              if (!label) return null;
+              return (
+                <span key={id} className="flex max-w-full items-center gap-1 rounded-full bg-raised py-0.5 pl-1 pr-1 text-[13px]">
+                  <PersonAvatar avatarUrl={personAvatarSrc(person?.avatarUrl)} initials={personInitials(label)} size={18} />
+                  <span className="max-w-[8rem] truncate">{label}</span>
+                  <button
+                    type="button"
+                    aria-label={`${t("compose.remove")} ${label}`}
+                    onClick={() => togglePicked(id)}
+                    className="flex size-5 items-center justify-center rounded-full text-ink-secondary hover:bg-app hover:text-ink"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              );
+            }
             const bot = state.bots.find((item) => item.id === id);
             if (!bot) return null;
             return (
@@ -253,8 +294,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={mode === "group" ? t("compose.placeholderGroup") : t("compose.placeholder")}
-            aria-label={mode === "group" ? t("compose.groupAria") : t("compose.placeholder")}
+            placeholder={mode === "group" ? t(orgPeople.size ? "compose.placeholderGroupPeople" : "compose.placeholderGroup") : t("compose.placeholder")}
+            aria-label={mode === "group" ? t(orgPeople.size ? "compose.groupAriaPeople" : "compose.groupAria") : t("compose.placeholder")}
             aria-controls="compose-to-list"
             aria-activedescendant={rows[active] ? `compose-row-${active}` : undefined}
             role="combobox"
@@ -311,7 +352,7 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
               );
             }
             if (row.kind === "create-group") {
-              const disabled = mode === "group" && picked.size === 0;
+              const disabled = mode === "group" && splitPicked(picked).memberIds.length === 0;
               return (
                 <button
                   key="create-group"
@@ -337,6 +378,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
             }
             if (row.kind === "person") {
               const person = row.person;
+              const pickedPerson = mode === "group" && picked.has(PERSON_PICK + person.principalId);
+              const personHint = mode === "group" ? (pickedPerson ? t("compose.remove") : t("compose.add")) : t("compose.directMessage");
               return (
                 <button
                   key={`person:${person.principalId}`}
@@ -344,7 +387,7 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                   ref={selected ? activeRef : undefined}
                   type="button"
                   role="option"
-                  aria-selected={selected}
+                  aria-selected={selected || pickedPerson}
                   data-compose-person={person.principalId}
                   onMouseEnter={() => setCursor(index)}
                   onClick={() => activate(row)}
@@ -355,7 +398,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                 >
                   <PersonAvatar avatarUrl={personAvatarSrc(person.avatarUrl)} initials={personInitials(person.name || person.login)} size={28} presenceId={person.principalId} />
                   <span className="flex min-w-0 flex-1 items-center gap-1.5"><span className="min-w-0 truncate">{person.name || person.login}</span><PersonLabelTag principalId={person.principalId} tone="surface" className="max-w-[46%] shrink" /></span>
-                  <span className={cn("shrink-0 text-[13px] text-ink-secondary", selected ? "inline" : "hidden group-hover:inline")}>{t("compose.directMessage")}</span>
+                  {pickedPerson && !selected && <Check size={14} className="shrink-0 text-ink-secondary group-hover:hidden" />}
+                  <span className={cn("shrink-0 text-[13px] text-ink-secondary", selected ? "inline" : "hidden group-hover:inline")}>{personHint}</span>
                   {shortcut && (
                     <span className={cn(selected ? "hidden" : "group-hover:hidden")}>
                       <KeyHint n={shortcut} />

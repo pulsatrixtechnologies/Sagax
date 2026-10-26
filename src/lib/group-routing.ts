@@ -68,6 +68,18 @@ export function openTaskWorking(group: Pick<Group, "threadId" | "working" | "tas
   return task ? Boolean(task.working) : Boolean(group.working);
 }
 
+/** Whether every bot that will answer can open an image. A person-to-person
+ * chat has no bot to answer: the image goes to the other person, so it is
+ * always allowed there (#1067). */
+export function roomTakesImages<T>(
+  group: Pick<Group, "peopleDm">,
+  responders: readonly T[],
+  supportsImages: (responder: T) => boolean,
+): boolean {
+  if (group.peopleDm) return true;
+  return responders.length > 0 && responders.every(supportsImages);
+}
+
 export function roomRespondersForComposer<T extends { id: string; name: string; hidden?: boolean }>(
   text: string,
   members: T[],

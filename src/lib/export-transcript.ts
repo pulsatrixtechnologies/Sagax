@@ -1,5 +1,6 @@
 import type { Message } from "@/state/store";
 import { splitTranscriptAttachments } from "./composer-attachments";
+import { activeLocale } from "@/lib/i18n";
 import { copyText } from "./copy-text";
 
 export interface ExportTranscriptOptions {
@@ -23,7 +24,7 @@ export interface ExportTranscriptOptions {
 /** Format a Date object into a readable export date string. */
 export function formatExportDate(date: Date): string {
   try {
-    return date.toLocaleString("en-US", {
+    return date.toLocaleString(activeLocale(), {
       dateStyle: "long",
       timeStyle: "short",
     });
@@ -35,7 +36,7 @@ export function formatExportDate(date: Date): string {
 /** Format message timestamp into a readable time string (e.g. "3:45 PM"). */
 export function formatMessageTime(timestamp: number): string {
   try {
-    return new Date(timestamp).toLocaleTimeString("en-US", {
+    return new Date(timestamp).toLocaleTimeString(activeLocale(), {
       hour: "numeric",
       minute: "2-digit",
     });

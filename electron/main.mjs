@@ -99,6 +99,7 @@ import { buildApplicationMenu } from "./menu.mjs";
 import { createComputerSharing, validateSharedFolders } from "./computer-sharing.mjs";
 import { createDesktopBridge } from "./desktop-bridge.mjs";
 import { applyAppIcon, createAppIconStore, parseAppIconRequest, windowIconImage } from "./app-icon.mjs";
+import { WINDOWS_APP_USER_MODEL_ID, shortcutFolders, updateShortcutIcons } from "./windows-shortcuts.mjs";
 import { createProxyCredentialStore, createProxyCredentials, proxyPasswordAnswerScript, proxyPasswordPage } from "./proxy-credentials.mjs";
 import { createLocalModelKeyStore } from "./local-model-keys.mjs";
 import { createLocalVm } from "./local-vm.mjs";
@@ -168,7 +169,21 @@ function savedAppIcon() {
 function currentWindowIcon() {
   return process.platform === "darwin" ? APP_ICON : windowIconImage(savedAppIcon(), process.platform, nativeImage, APP_ICON);
 }
+// Windows: the taskbar draws the icon stored in the shortcut that owns the
+// window's AppUserModelId, which a runtime setIcon cannot change (#1004).
+function updateWindowsShortcutIcons(saved) {
+  if (process.platform !== "win32" || !app.isPackaged) return;
+  try {
+    updateShortcutIcons({
+      shell,
+      folders: shortcutFolders({ appData: app.getPath("appData"), desktop: app.getPath("desktop") }),
+      exePath: process.execPath,
+      iconPath: saved?.ico ?? null,
+    });
+  } catch (error) { console.warn("[app-icon] shortcut update failed", error); }
+}
 function showAppIcon(saved) {
+  updateWindowsShortcutIcons(saved);
   return applyAppIcon(saved, {
     platform: process.platform,
     app,
@@ -291,6 +306,9 @@ try {
 // One instance per user: without this lock a second launch forks a second
 // harness server on a fallback port and splits data dirs in two. The loser
 // exits before any child or window exists; the winner surfaces itself.
+// Windows: the install's AppUserModelId, so the shortcuts and taskbar pins
+// the installer made are the same app as the running window (#1004).
+if (process.platform === "win32") app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
 if (!app.requestSingleInstanceLock()) {
   console.log("[desktop] Sagax is already running — focusing that window");
   process.exit(0);

@@ -241,6 +241,7 @@ const CARD_CONTENT_FIELDS = [
   "allowKey",
   "allowSession",
   "ownerRule",
+  "ownerRuleFolder",
   "commandAllowlist",
   "approvalScope",
   "adminApproval",

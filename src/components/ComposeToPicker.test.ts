@@ -2,7 +2,7 @@ import { Children, createElement, isValidElement, type ReactElement, type ReactN
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { initialState, type Bot, type ConfigStatus } from "@/state/store";
-import { composeRows } from "./ComposeToPicker";
+import { composeRows, splitPicked } from "./ComposeToPicker";
 
 const fixture = vi.hoisted(() => ({ dispatch: vi.fn(), bots: [] as Bot[], config: null as ConfigStatus | null, showThreads: true }));
 vi.mock("@/lib/thread-preferences", () => ({ useShowThreads: () => fixture.showThreads }));
@@ -163,5 +163,13 @@ describe("ComposeToPicker", () => {
     expect(composeRows("browse", bots).map((row) => row.kind === "bot" ? row.bot.id : row.kind)).toEqual(["create-bot", "create-group", "a", "b"]);
     expect(composeRows("group", bots).map((row) => row.kind === "bot" ? row.bot.id : row.kind)).toEqual(["create-group", "a", "b"]);
     expect(initialState.newBotOpen).toBe(false);
+  });
+});
+
+describe("group mode people (#1061)", () => {
+  it("lists people beside bots and splits the picked set", () => {
+    const person = { principalId: "usr_1", name: "Ada", login: "ada" } as never;
+    expect(composeRows("group", [], true, [person]).map((row) => row.kind)).toEqual(["create-group", "person"]);
+    expect(splitPicked(["aurora", "person:usr_1"])).toEqual({ memberIds: ["aurora"], humanIds: ["usr_1"] });
   });
 });

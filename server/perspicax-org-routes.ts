@@ -26,6 +26,7 @@ import type { OrgBotSecretPublic } from "../shared/org-bot-secrets.ts";
 import type { DirectoryPerson, DirectoryState } from "./perspicax-link.ts";
 import { OrgBotSecretsError, parseOrgBotSecretChange, type OrgBotSecretChange } from "./org-bot-secrets.ts";
 import { OrgGithubTokensError, parseOrgGithubTokenChange, type OrgGithubTokenChange } from "./org-github-tokens.ts";
+import type { OrgFlowPluginsStatus } from "./org-flow-plugins.ts";
 import type { Principal } from "./principals.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
@@ -60,6 +61,9 @@ export interface OrgSettings {
   /** Where bots' Claude Code plugins may come from (server/bot-plugins.ts):
    * any marketplace by default, or the admin's list. */
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
+  /** 2026-10-18: Pulsatrix Flow's default plugins as this server installed
+   * them (server/org-flow-plugins.ts); read only, declared in Perspicax. */
+  flowPlugins?: OrgFlowPluginsStatus;
   /** The organization's GitHub OAuth App for "Connecter GitHub" (a public
    * client id; null: people paste a token). `fromEnvironment` when it comes
    * from SAGAX_GITHUB_CLIENT_ID. */

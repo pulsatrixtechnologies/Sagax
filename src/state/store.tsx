@@ -77,12 +77,14 @@ import { isEarlierSegment, isStreamSegment, streamHomeThread } from "@/lib/singl
 import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreenBot } from "@/lib/fresh-topic";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { teamMemorySettled } from "@/lib/team-memory-settled";
 import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-up-client";
 import type { StepUpTarget } from "../../shared/step-up";
 import { permissionMissingMessage } from "@/lib/permissions";
 import { engineErrorMessage } from "@/lib/engine-error-text";
+import { teamSetupErrorMessage } from "@/lib/team-setup-error-text";
+import { serverErrorMessage } from "@/lib/server-error-text";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
@@ -171,6 +173,8 @@ export interface OptionCardData {
    * "Always deny" would save for the bot's owner: the tool, its target
    * read from the arguments, the destructive kind and plain words. */
   ownerRule?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; from?: "admin" | "hold" | "origin" };
+  /** 2026-10-26 (#1065): the second "Always allow", the whole folder of the file this card reads (and its subfolders). */
+  ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; writes?: boolean };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule saved when this card was answered (server/index.ts) */
@@ -1575,7 +1579,7 @@ export type Action =
   | { type: "routineRunsRemoved"; ids: string[] }
   | { type: "groupPatched"; group: Partial<Group> & { id: string } }
   | { type: "groupDeleted"; groupId: string }
-  | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
+  | { type: "createGroup"; memberIds: string[]; humanIds?: string[]; name?: string; section?: string }
   /** Open (or create) the direct conversation with another person of the
    * organization (server/people-dms.ts). */
   | { type: "openPeopleDm"; principalId: string }
@@ -1676,6 +1680,9 @@ export type Action =
       /** 2026-10-14: save the card's ownerRule as the owner's rule (Always
        * allow / Always deny), atomically with the answer. */
       rule?: "allow" | "deny";
+      /** 2026-10-26 (#1065): "folder" keeps the card's folder rule (every
+       * file of the folder and its subfolders) instead of the exact path. */
+      ruleScope?: "folder";
       /** Local UI recovery hook for voice flows. Never sent to the server. */
       onError?: (message: string) => void;
     }
@@ -1693,7 +1700,7 @@ export type Action =
   /** Name the thread again from its conversation; the new title arrives with the bot event. */
   | { type: "regenerateTaskTitle"; botId: string; threadId: string; onSettled?: (ok: boolean) => void }
   | { type: "deleteTask"; botId: string; threadId: string }
-  | { type: "newBot"; role?: BotRole; visibility?: BotVisibility; section?: string; preserveSelection?: boolean; onCreated?: (bot: Bot) => void; onError?: (message: string) => void }
+  | { type: "newBot"; role?: BotRole; visibility?: BotVisibility; section?: string; settings?: Record<string, unknown>; preserveSelection?: boolean; onCreated?: (bot: Bot) => void; onError?: (message: string) => void }
   | { type: "botCreationPending"; on: boolean }
   | { type: "updateTask"; botId: string; threadId: string; patch: TaskUpdatePatch }
   /** The server confirmed a thread is now confidential. */
@@ -3615,7 +3622,7 @@ export class ApiError extends Error {
 /** Keep the created bot reachable even when applying its optional preset fails.
  * A restricted `visibility` rides the create itself, so the bot is never
  * announced to people who should not see it. */
-export async function createBotWithRole(role?: BotRole, request: typeof api = api, visibility?: BotVisibility, section?: string): Promise<{ bot: Bot; profileError?: string }> {
+export async function createBotWithRole(role?: BotRole, request: typeof api = api, visibility?: BotVisibility, section?: string, settings?: Record<string, unknown>): Promise<{ bot: Bot; profileError?: string }> {
   const restricted = visibility && visibility !== "everyone" ? { visibility } : {};
   const fields = { ...(role ? { name: role.name, title: role.title, description: role.description } : {}), ...restricted,
     ...(section !== undefined ? { section } : {}) };
@@ -3623,10 +3630,12 @@ export async function createBotWithRole(role?: BotRole, request: typeof api = ap
     method: "POST",
     ...(Object.keys(fields).length ? { body: JSON.stringify(fields) } : {}),
   });
-  if (!role) return { bot };
+  const chosen = settings && Object.keys(settings).length ? settings : undefined;
+  if (!role && !chosen) return { bot };
   try {
+    // Settings the person's permissions open (#1076) ride the follow-up patch.
     const { bot: patched } = await request(`/api/bots/${bot.id}`, {
-      method: "PATCH", body: JSON.stringify(roleProfilePatch(role)),
+      method: "PATCH", body: JSON.stringify({ ...(role ? roleProfilePatch(role) : {}), ...chosen }),
     });
     return { bot: { ...bot, ...patched, messages: bot.messages } };
   } catch (error) {
@@ -3675,7 +3684,9 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
     }
     const error = body?.error;
     const message = permissionMissingMessage(body)
+      ?? teamSetupErrorMessage(body)
       ?? engineErrorMessage(body)
+      ?? serverErrorMessage(body)
       ?? (typeof error === "string" ? error : typeof error?.message === "string" ? error.message : `${res.status} ${res.statusText}`);
     throw new ApiError(message, res.status, body);
   }
@@ -4589,6 +4600,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 always: action.always,
                 rememberCommand: action.rememberCommand,
                 rule: action.rule,
+                ...(action.ruleScope ? { ruleScope: action.ruleScope } : {}),
               }),
             });
           void waitForExecutionSettings(executionBotsBeforeAction, action.threadId)
@@ -4702,7 +4714,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (creatingBot) break;
           creatingBot = true;
           rawDispatch({ type: "botCreationPending", on: true });
-          void createBotWithRole(action.role, api, action.visibility, action.section)
+          void createBotWithRole(action.role, api, action.visibility, action.section, action.settings)
             .then(({ bot, profileError }) => {
               rawDispatch({ type: "botAdded", bot, preserveSelection: action.preserveSelection });
               action.onCreated?.(bot);
@@ -4808,6 +4820,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             method: "POST",
             body: JSON.stringify({
               memberIds: action.memberIds,
+              ...(action.humanIds?.length ? { humanIds: action.humanIds } : {}),
               name: action.name,
               section: action.section,
               ...(window.ogb?.remoteClient?.active
@@ -5783,13 +5796,18 @@ export function BotEditorStore({ value, children }: { value: ReturnType<typeof u
 }
 
 // Building a formatter costs far more than formatting with one, and every
-// row shows a time: build it once. No locale given, as before: times follow
-// the system's clock style, not the app language.
-const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+// row shows a time: build it once per app language (the person's choice in
+// Settings, not the system's, #1077).
+let timeFormat: { locale: string; format: Intl.DateTimeFormat } | undefined;
+function timeFormatter(): Intl.DateTimeFormat {
+  const locale = activeLocale();
+  if (timeFormat?.locale !== locale) timeFormat = { locale, format: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }) };
+  return timeFormat.format;
+}
 
 export function formatTime(at: number) {
   const date = new Date(at);
   // what toLocaleTimeString says, where a formatter would throw
-  return Number.isNaN(date.getTime()) ? "Invalid Date" : TIME_FORMAT.format(date);
+  return Number.isNaN(date.getTime()) ? "Invalid Date" : timeFormatter().format(date);
 }
 

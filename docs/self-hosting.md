@@ -1388,6 +1388,46 @@ marketplaces (Connect apps > Manage > Organization sources and access; any by de
 `SAGAX_CLAUDE_ALLOW` rules for `claude plugin ...` are therefore not needed
 there.
 
+### Pulsatrix Flow for every member (organization server)
+
+On a server linked to Perspicax, the Claude Code plugins of Pulsatrix Flow
+come by default with membership (`server/org-flow-plugins.ts`). Perspicax
+declares them in the directory (`flow_plugins`): its own private marketplace
+(`<issuer>/flow/marketplace/marketplace.json`, built from its active signed
+Flow pack: the product `pulsatrix-flow` and the organization's configuration
+plugin), the token audience (`<issuer>/flow/marketplace`) and the plugins with
+their versions. Nothing comes from GitHub.
+
+- Install: the server runs Claude Code's own plugin commands in a folder of
+  its own (`<data>/org-flow-plugins/claude`, `CLAUDE_CONFIG_DIR` of those
+  commands only). The marketplace is declared by URL with a `headersHelper`
+  that prints the token from the command's environment; the token is a
+  member's short marketplace token (RFC 8693 exchange of a live sign-in, at
+  most 15 minutes), never written to disk. Claude Code checks each archive
+  against the SHA-256 of the manifest.
+- Load: each installed plugin is copied the way a plugin "For this bot" is
+  (no hooks, MCP, LSP or bin on the host) and that copy loads with
+  `--plugin-dir` on the Claude turns of a bot whose owner is an active
+  member, after the bot's own plugins and never twice.
+- Guard: the copy has no hooks, so the Flow guard runs in Perspicax (its
+  server guard runs the pack's own PreToolUse hook on every call of a
+  Flow-linked profile: dry run, the person's GO, read back). Perspicax
+  declares `guard: "enforce"` only while that guard enforces and every
+  profile that can write is linked to Flow. Without it (an older Perspicax,
+  the guard off or in shadow, or `enabled: false` with a `reason` such as
+  `flow_guard_uncovered`) the server installs nothing, takes its copy out,
+  and no turn loads it.
+- Triggers: a directory that changed, a person's sign-in (their own token),
+  a Perspicax profile added to a bot, the start of the server and a check
+  every 30 minutes. Each is idempotent and silent when the copy matches.
+- Off: the Perspicax admin sets `flow_plugins_default` to `off` (its Flow
+  page); the next directory takes the copy out. A plugin someone installed
+  on a bot by hand stays.
+- Status: `GET /api/org` (`settings.flowPlugins`), never a token.
+- Other engines: Codex, Grok and the rest have no Claude Code plugin system;
+  they reach Flow through the Perspicax profiles of the turn (`flow` and
+  `flow_action`), under the same server guard.
+
 An allow rule never overrides a denial. Rules only go into
 `permissions.allow`; they never remove a tool from `--disallowedTools` or from
 a deny list, and in Claude Code a deny always wins over an allow. On an

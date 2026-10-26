@@ -19,7 +19,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ExternalLink, FileText, Loader2, Send, Square } from "lucide-react";
 
 import { api, useStore } from "@/state/store";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { engineLabel } from "@/lib/human-label";
 import {
   activityStatusActive,
@@ -48,7 +48,7 @@ export type ActivityView = "summary" | "steps" | "conversation";
 export type ConversationTarget = { botId: string; threadId: string; title: string };
 
 function formatTime(at: number): string {
-  return new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return new Date(at).toLocaleString(activeLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {

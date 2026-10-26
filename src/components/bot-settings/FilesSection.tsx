@@ -80,7 +80,7 @@ function formatWhen(at: number): string {
   try {
     return new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(at);
   } catch {
-    return new Date(at).toLocaleString();
+    return new Date(at).toLocaleString(activeLocale());
   }
 }
 

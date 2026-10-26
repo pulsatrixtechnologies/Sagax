@@ -32,7 +32,7 @@ import {
 import { usePopoverDismiss } from "@/hooks/use-popover-dismiss";
 import { cn } from "@/lib/cn";
 import { copyText } from "@/lib/copy-text";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import type { Message } from "@/state/store";
 import type { GroupGoalRunCardData, GroupGoalRunStatus } from "../../shared/group-goal-run";
@@ -117,7 +117,7 @@ export function goalRunTurnsLabel(run: Pick<GroupGoalRunCardData, "status" | "tu
 
 function time(at: number): string {
   try {
-    return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
   } catch {
     return new Date(at).toISOString();
   }
