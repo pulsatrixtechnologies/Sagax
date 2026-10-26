@@ -195,11 +195,14 @@ public struct PersonSheetModel: Hashable, Sendable {
     public var sharedBots: [Bot]
     /// The direct conversation, when there is one.
     public var directRoom: Room?
+    /// Message: off for yourself, a disabled or service account, and while
+    /// the sheet was opened from inside their direct conversation (it would
+    /// only reopen it, JC 2026-10-26). From a group or a list it stays.
     public var canMessage: Bool
     /// "Manage in Perspicax": an admin only, http(s) only.
     public var manageURL: URL?
 
-    public init(personId: String, directory: OrgDirectory?, state: CompanionState, viewerId: String, viewerIsAdmin: Bool) {
+    public init(personId: String, directory: OrgDirectory?, state: CompanionState, viewerId: String, viewerIsAdmin: Bool, openedFromRoomId: String? = nil) {
         let id = People.norm(personId)
         let person = directory?.person(personId)
         self.personId = personId
@@ -217,7 +220,8 @@ public struct PersonSheetModel: Hashable, Sendable {
         directRoom = state.rooms.first { room in
             room.peopleDm == true && (room.humanIds ?? []).contains { People.norm($0) == id }
         }
-        if let person {
+        let inTheirRoom = directRoom.map { room in openedFromRoomId == room.id } ?? false
+        if let person, !inTheirRoom {
             canMessage = person.disabled != true && person.service != true && People.norm(person.principalId) != People.norm(viewerId)
         } else {
             canMessage = false

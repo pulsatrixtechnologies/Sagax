@@ -223,7 +223,7 @@ extension ChatView {
         if case let .room(room) = current, room.peopleDm == true {
             // WP15 (RM21): a conversation with a person opens their sheet
             if let peer = PeopleDirectory.shared.peer(room, session: session) {
-                Button { PeopleDirectory.shared.showPerson(peer.id) } label: {
+                Button { PeopleDirectory.shared.showPerson(peer.id, fromRoomId: room.id) } label: {
                     Label(String(localized: "View profile"), systemImage: "person.crop.circle")
                 }
             }
@@ -248,7 +248,7 @@ extension ChatView {
             // way the desktop's header name does.
             if case let .room(room) = current, room.peopleDm == true,
                let peer = PeopleDirectory.shared.peer(room, session: session) {
-                PeopleDirectory.shared.showPerson(peer.id)
+                PeopleDirectory.shared.showPerson(peer.id, fromRoomId: room.id)
             // A team room opens its Room info (RM6); Threads is a row there.
             } else if case let .room(room) = current, room.dm != true {
                 showingRoomInfo = true

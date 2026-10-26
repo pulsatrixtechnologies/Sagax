@@ -214,6 +214,17 @@ final class TeamMapPeopleTests: XCTestCase {
         XCTAssertFalse(unknown.canMessage)
     }
 
+    func testThePersonSheetOffersNoMessageInsideTheirConversation() {
+        var state = CompanionState()
+        state.rooms = [room("dm", humans: ["pr_me", "pr_sam"], peopleDm: true), room("team", humans: ["pr_me", "pr_sam"])]
+        func sheet(from roomId: String?) -> PersonSheetModel {
+            PersonSheetModel(personId: "pr_sam", directory: directory, state: state, viewerId: "pr_me", viewerIsAdmin: false, openedFromRoomId: roomId)
+        }
+        XCTAssertFalse(sheet(from: "dm").canMessage)
+        XCTAssertTrue(sheet(from: "team").canMessage)
+        XCTAssertTrue(sheet(from: nil).canMessage)
+    }
+
     func testTheDirectoryDecodesTeamsAndTheNewFields() throws {
         let decoded = try JSONDecoder().decode(OrgDirectory.self, from: Data("""
         {"people":[{"principalId":"p1","name":"A","login":"a","role":"admin","disabled":false,"service":true,

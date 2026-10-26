@@ -3864,6 +3864,11 @@
       "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "fr": {
+      "achievements.panel.all": "e2adb0c3b5f28a7c9d5bdac240382201b39376dd11671aedc93e8a73b6468f19",
+      "achievements.panel.points": "b97032ae39c127aa5497bfdb7598db43b231478a0a001498444e2e4a3c24a179",
+      "achievements.panel.toUnlock": "1431a1bf3021245c5962234ac71151586a72256bc7f2918358e2f7dc9fd22eaa",
+      "achievements.panel.unlockedOn": "874cc8ed3eb3aa04634cd8ba5ea19f03b0c5f2b351edaa7f1cb7423bf53c0a42",
+      "achievements.panel.viewAll": "30a64216eaeac5d3a328c11bf5e3269d10a3ca0d50aa7a8b99337ab429b73cb2",
       "access.addKey": "8a9f02fd9bdb83ac02d3240dcade949d6f3ffa2fc0b3df528e348bb4d29ae639",
       "access.engineMissing": "ed0d34e37647c1cf65fcbce8339c33eabc515b4ca7ed8c6f1806c3bbe03abf38",
       "access.engineMissing.owner": "83a6d7f7088c39f0b5856a79a521a00777c5f1305c17497f1d1e3664e804e8e2",
@@ -20354,6 +20359,11 @@
       "chat.presence.someone": "ede4fcf9ae34dceac304de725b9e9f34e8aeff4cec3064e6e64fe2fc78090b85"
     },
     "pt-br": {
+      "achievements.panel.all": "e2adb0c3b5f28a7c9d5bdac240382201b39376dd11671aedc93e8a73b6468f19",
+      "achievements.panel.points": "b97032ae39c127aa5497bfdb7598db43b231478a0a001498444e2e4a3c24a179",
+      "achievements.panel.toUnlock": "1431a1bf3021245c5962234ac71151586a72256bc7f2918358e2f7dc9fd22eaa",
+      "achievements.panel.unlockedOn": "874cc8ed3eb3aa04634cd8ba5ea19f03b0c5f2b351edaa7f1cb7423bf53c0a42",
+      "achievements.panel.viewAll": "30a64216eaeac5d3a328c11bf5e3269d10a3ca0d50aa7a8b99337ab429b73cb2",
       "access.routineDelegation.reason.no_right": "ac5fc48626b20107ca2c65df67b3c5abe42acd2044cdb994e0c73821b3cbb71b",
       "access.routineDelegation.reason.person_out": "c7dedc3fd7d01ce846f1c66532cdbbfe5601878c061c3badde019d122ae33111",
       "access.routinePaused": "24b860bce771f30254ceac0b1a1f011a9d0752c90caad3305730970dcb7c9c9f",

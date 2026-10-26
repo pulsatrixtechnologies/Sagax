@@ -12,12 +12,13 @@ import SwiftUI
 
 struct PersonSheet: View {
     let personId: String
+    var openedFromRoomId: String? = nil
     var openChat: (Chat) -> Void
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            PersonSheetContent(personId: personId, openChat: openChat)
+            PersonSheetContent(personId: personId, openedFromRoomId: openedFromRoomId, openChat: openChat)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -32,6 +33,8 @@ struct PersonSheet: View {
 struct PersonSheetContent: View {
     @Environment(\.themePalette) var themePalette
     let personId: String
+    /// The conversation the sheet was opened from (no Message inside theirs).
+    var openedFromRoomId: String? = nil
     var openChat: (Chat) -> Void
     @EnvironmentObject private var session: Session
     @ObservedObject private var people = PeopleDirectory.shared
@@ -45,7 +48,8 @@ struct PersonSheetContent: View {
     private var model: PersonSheetModel {
         PersonSheetModel(
             personId: personId, directory: people.directory, state: session.state,
-            viewerId: session.roomViewer.actorId, viewerIsAdmin: people.viewerIsAdmin
+            viewerId: session.roomViewer.actorId, viewerIsAdmin: people.viewerIsAdmin,
+            openedFromRoomId: openedFromRoomId
         )
     }
 
