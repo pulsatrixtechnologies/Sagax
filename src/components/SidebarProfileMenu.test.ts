@@ -272,6 +272,50 @@ describe("profileMenuItems (Grok Bot's account menu, 2026-10-16)", () => {
     ]);
     expect(items().some((entry) => entry.separatorBefore)).toBe(false);
   });
+
+  it("opens Switch account on the accounts it was given, the current one checked", () => {
+    let switched = "";
+    const menu = items({
+      accounts: [
+        { id: "local", name: "This computer", local: true, active: false, switchable: true },
+        { id: "north", name: "North office", local: false, active: true, switchable: false },
+      ],
+      signOut: true,
+      handlers: { ...handlers, onSwitch: (id) => { switched = id; } },
+    });
+    expect(menu.map((entry) => entry.key).slice(-2)).toEqual(["switch-account", "sign-out"]);
+    expect(menu.some((entry) => entry.key === "switch-organization")).toBe(false);
+    const row = menu.find((entry) => entry.key === "switch-account")!;
+    expect(row.label).toBe("Switch account");
+    expect(row.submenu).toBeTruthy();
+    expect(row.separatorBefore).toBe(true);
+    expect(row.submenu!.map((entry) => [entry.key, entry.label, entry.checked ?? false])).toEqual([
+      ["switch:local", "This computer", false],
+      ["switch:north", "North office", true],
+    ]);
+    row.submenu![0]!.onSelect!();
+    expect(switched).toBe("local");
+    expect(row.submenu![1]!.onSelect).toBeUndefined();
+  });
+
+  it("keeps the current account in the submenu when it is the only one, in French", () => {
+    setLocale("fr");
+    try {
+      const menu = items({
+        accounts: [{ id: "current", name: "North office", local: false, active: true, switchable: false }],
+        signOut: true,
+      });
+      const row = menu.find((entry) => entry.key === "switch-account")!;
+      expect(row.label).toBe("Changer de compte");
+      expect(row.submenu).toEqual([expect.objectContaining({
+        key: "switch:current", label: "North office", checked: true,
+      })]);
+      expect(row.submenu![0]!.onSelect).toBeUndefined();
+      expect(menu.some((entry) => entry.key === "add-organization" || entry.submenu?.some((entry) => entry.key === "add-organization"))).toBe(false);
+    } finally {
+      setLocale("en");
+    }
+  });
 });
 
 describe("footerMenuItems", () => {

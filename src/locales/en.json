@@ -8457,6 +8457,7 @@
   "sidebar.account.mobile": "Get Sagax on mobile",
   "sidebar.account.help": "Help",
   "sidebar.account.switchOrganization": "Switch organization",
+  "sidebar.account.switchAccount": "Switch account",
   "sidebar.account.addOrganization": "Add an organization",
   "sidebar.account.solo": "This computer (solo)",
   "shortcuts.item.searchEverything": "Search conversations and messages",

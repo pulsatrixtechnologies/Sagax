@@ -8444,6 +8444,7 @@
   "sidebar.account.mobile": "Obtenir Sagax sur mobile",
   "sidebar.account.help": "Aide",
   "sidebar.account.switchOrganization": "Changer d'organisation",
+  "sidebar.account.switchAccount": "Changer de compte",
   "sidebar.account.addOrganization": "Ajouter une organisation",
   "sidebar.account.solo": "Cet ordinateur (solo)",
   "shortcuts.item.searchEverything": "Rechercher dans les conversations et les messages",

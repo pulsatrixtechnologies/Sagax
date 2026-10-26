@@ -7,6 +7,8 @@
 //   Automations, Achievements (Team map: the Automations header and ⌘K)
 //   ──────────
 //   Switch organization ›  (this computer and the saved organization servers)
+//   Switch account ›       (a business session: the account in use, then any
+//                           saved personal or organization account)
 //   Sign out               (an organization server only)
 //
 // Browse bots left for Connect apps' header, Automations for Settings, and
@@ -71,6 +73,69 @@ export interface SwitchTarget {
   /** this computer's own server (solo) */
   local: boolean;
   active: boolean;
+}
+
+/** The account this page is signed into, when it is not one of the saved
+ * servers. The menu shows its name; the id stays off the screen. */
+export const CURRENT_ACCOUNT_ID = "current";
+
+export interface AccountChoice {
+  id: string;
+  name: string;
+  local: boolean;
+  active: boolean;
+  /** The desktop can open this saved server. The account in use, when it
+   * is not one of those servers, is shown and checked, and picking it
+   * does nothing. */
+  switchable: boolean;
+}
+
+/** The account a business session is signed into: the desktop's locked
+ * server when it names one, otherwise the organization's own name. */
+export function businessAccount(
+  server: { active: true; id: string; name: string } | { active: false } | null,
+  organizationName: string | null | undefined,
+): { id: string; name: string; local: false } | null {
+  if (server?.active) {
+    const id = server.id.trim();
+    const name = server.name.trim();
+    if (id && name) return { id, name, local: false };
+  }
+  const name = organizationName?.trim() ?? "";
+  if (!name) return null;
+  return { id: CURRENT_ACCOUNT_ID, name, local: false };
+}
+
+/** Switch account ›: the saved personal and organization accounts, with the
+ * one in use checked. A current account the saved list does not already
+ * name is added, still checked, and is not a switch target. */
+export function accountChoices(
+  saved: readonly SwitchTarget[],
+  current: { id: string; name: string; local?: boolean } | null,
+): AccountChoice[] {
+  const rows: AccountChoice[] = saved
+    .filter((entry) => entry.id.trim().length > 0 && entry.name.trim().length > 0)
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name.trim(),
+      local: entry.local,
+      active: entry.active,
+      switchable: true,
+    }));
+  const id = current?.id.trim() ?? "";
+  const name = current?.name.trim() ?? "";
+  if (!id || !name) return rows;
+  const known = rows.findIndex((entry) => entry.id === id);
+  if (known >= 0) return rows.map((entry, index) => ({ ...entry, active: index === known }));
+  if (id === CURRENT_ACCOUNT_ID) {
+    const byName = rows.findIndex((entry) => entry.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0);
+    if (byName >= 0) return rows.map((entry, index) => ({ ...entry, active: index === byName }));
+    if (rows.some((entry) => entry.active)) return rows;
+  }
+  return [
+    ...rows.map((entry) => ({ ...entry, active: false })),
+    { id, name, local: current?.local === true, active: true, switchable: false },
+  ];
 }
 
 /** Switch organization ›: this computer first, then the organization

@@ -61,7 +61,7 @@ import { AboutDialog } from "./AboutDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem, type SidebarSubmenuEntry } from "./SidebarPopoverMenu";
 import { useServerMode } from "./ServerModeSettings";
 import { api } from "@/state/store";
-import { SAGAX_MOBILE_URL, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
+import { accountChoices, businessAccount, SAGAX_MOBILE_URL, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type AccountChoice, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
 import { connectedPlanRows, type PlanRow, type PlanUsageReport } from "@/lib/plan-usage";
 import { costOf, formatCost, personalUsagePeriods, usageQuery, type PersonalUsageSummary } from "@/lib/usage-personal";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
@@ -296,10 +296,10 @@ export interface ProfileMenuHandlers {
 
 /** Grok Bot's account menu (JC, 2026-10-16; src/lib/account-menu.ts):
  * Usage ›, Get Sagax on mobile, Help ›, Settings, Automations, Achievements,
- * a hairline, Switch organization ›, Sign out. Automations came back here
- * from the settings nav (JC, 2026-10-16). Team map left the menu (JC,
- * 2026-10-18: one option, one place): it opens from the Automations header
- * and the command palette. */
+ * a hairline, Switch organization › (a business session: Switch account ›),
+ * Sign out. Automations came back here from the settings nav (JC,
+ * 2026-10-16). Team map left the menu (JC, 2026-10-18: one option, one
+ * place): it opens from the Automations header and the command palette. */
 export function profileMenuItems(input: {
   /** null: no plan reports a window, so Usage carries no percent */
   usagePercent: number | null;
@@ -315,6 +315,8 @@ export function profileMenuItems(input: {
   updateItem: SidebarMenuItem | null;
   /** Switch organization ›: empty where this app has no saved servers */
   switchTargets: SwitchTarget[];
+  /** Business mode: Switch account ›. Null keeps Switch organization ›. */
+  accounts?: AccountChoice[] | null;
   canAddOrganization: boolean;
   /** Sign out: an organization server only */
   signOut: boolean;
@@ -352,16 +354,34 @@ export function profileMenuItems(input: {
       onSelect: input.handlers.onAddOrganization,
     }] : []),
   ];
+  const accountEntries: SidebarSubmenuEntry[] = (input.accounts ?? []).map((account) => ({
+    key: `switch:${account.id}`,
+    label: account.name,
+    icon: account.local ? <Laptop size={16} /> : <Building2 size={16} />,
+    checked: account.active,
+    onSelect: account.active || !account.switchable ? undefined : () => input.handlers.onSwitch(account.id),
+  }));
+  const accountMenu = input.accounts != null;
   const lower: SidebarMenuItem[] = [
-    ...(switching.length > 0 ? [{
-      key: "switch-organization",
-      label: t("sidebar.account.switchOrganization"),
-      icon: <ArrowLeftRight size={18} />,
-      submenu: switching,
-      submenuAlign: "bottom" as const,
-      submenuWidth: 228,
-      onSelect: () => {},
-    }] : []),
+    ...(accountMenu
+      ? (accountEntries.length > 0 ? [{
+          key: "switch-account",
+          label: t("sidebar.account.switchAccount"),
+          icon: <ArrowLeftRight size={18} />,
+          submenu: accountEntries,
+          submenuAlign: "bottom" as const,
+          submenuWidth: 228,
+          onSelect: () => {},
+        }] : [])
+      : (switching.length > 0 ? [{
+          key: "switch-organization",
+          label: t("sidebar.account.switchOrganization"),
+          icon: <ArrowLeftRight size={18} />,
+          submenu: switching,
+          submenuAlign: "bottom" as const,
+          submenuWidth: 228,
+          onSelect: () => {},
+        }] : [])),
     ...(input.signOut ? [{
       key: "sign-out",
       label: t("settings.serverMode.signOut"),
@@ -518,7 +538,8 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const showLine = Boolean(titleName || pointsText);
   // Organization admins: the approvals waiting for an admin, live
   // (org.approvals frames); the count opens Settings > Organization.
-  const orgAdmin = usePerspicaxOrg()?.viewerRole === "admin";
+  const perspicaxOrg = usePerspicaxOrg();
+  const orgAdmin = perspicaxOrg?.viewerRole === "admin";
   const adminApprovals = useOrgApprovalsCount(orgAdmin);
   const openAdminApprovals = () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" });
 
@@ -538,6 +559,19 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   const account = useAccountMenuData(menuOpened);
   const serverMode = useServerMode();
   const lockedServer = serverMode?.active === true;
+  // A business session is an organization server (Perspicax) or the desktop
+  // locked to one. Its page is not given the saved-server list, and the
+  // desktop refuses to leave that server except by signing out, so the
+  // submenu names the account in use and any saved account the bridge
+  // actually handed over.
+  const business = lockedServer || perspicaxOrg !== null || viewer?.profileManagedBy === "perspicax";
+  const canSwitch = !lockedServer && Boolean(window.ogb?.environments?.switch);
+  const accounts = business
+    ? accountChoices(account.targets, businessAccount(serverMode, perspicaxOrg?.org.name)).map((entry) => ({
+        ...entry,
+        switchable: canSwitch && entry.switchable,
+      }))
+    : null;
   const profileItems = profileMenuItems({
     usagePercent: account.percent,
     usageLines: account.lines,
@@ -548,8 +582,9 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     remoteSessionsActive: state.activeView === "remote-sessions",
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
-    switchTargets: lockedServer ? [] : account.targets,
-    canAddOrganization: !lockedServer && Boolean(window.ogb?.environments),
+    switchTargets: business ? [] : account.targets,
+    accounts,
+    canAddOrganization: !business && Boolean(window.ogb?.environments),
     signOut: lockedServer,
     handlers: {
       onAutomations: () => dispatch({ type: "showRoutines" }),

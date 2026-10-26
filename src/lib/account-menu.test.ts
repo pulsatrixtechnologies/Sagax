@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SAGAX_MOBILE_URL, switchTargets, usageLines, usagePercent } from "./account-menu";
+import { accountChoices, businessAccount, CURRENT_ACCOUNT_ID, SAGAX_MOBILE_URL, switchTargets, usageLines, usagePercent } from "./account-menu";
 import type { PlanRow, PlanWindow } from "./plan-usage";
 
 const closed: PlanWindow = { available: false, remainingPercent: null, usedPercent: null, resetsAt: null };
@@ -51,6 +51,49 @@ describe("the avatar menu's Switch organization", () => {
 
   it("is empty where the app has no server list", () => {
     expect(switchTargets(null, "solo")).toEqual([]);
+  });
+});
+
+const saved = [
+  { id: "local", name: "This computer", local: true, active: false },
+  { id: "north", name: "North office", local: false, active: true },
+];
+
+describe("the avatar menu's Switch account", () => {
+  it("names the locked server, and otherwise the organization", () => {
+    expect(businessAccount({ active: true, id: "north", name: " North office " }, "Other")).toEqual({
+      id: "north", name: "North office", local: false,
+    });
+    expect(businessAccount({ active: false }, " North office ")).toEqual({
+      id: CURRENT_ACCOUNT_ID, name: "North office", local: false,
+    });
+    expect(businessAccount(null, "  ")).toBeNull();
+    expect(businessAccount({ active: true, id: " ", name: " " }, null)).toBeNull();
+  });
+
+  it("checks the account in use and keeps a saved personal account switchable", () => {
+    expect(accountChoices(saved, { id: "north", name: "North office" })).toEqual([
+      { id: "local", name: "This computer", local: true, active: false, switchable: true },
+      { id: "north", name: "North office", local: false, active: true, switchable: true },
+    ]);
+  });
+
+  it("still lists the current account when it is the only one", () => {
+    expect(accountChoices([], { id: CURRENT_ACCOUNT_ID, name: "North office" })).toEqual([
+      { id: CURRENT_ACCOUNT_ID, name: "North office", local: false, active: true, switchable: false },
+    ]);
+  });
+
+  it("adds a current account the saved list does not name, and does not duplicate one it does", () => {
+    expect(accountChoices(saved, { id: "east", name: "East office" })).toEqual([
+      { id: "local", name: "This computer", local: true, active: false, switchable: true },
+      { id: "north", name: "North office", local: false, active: false, switchable: true },
+      { id: "east", name: "East office", local: false, active: true, switchable: false },
+    ]);
+    expect(accountChoices(saved, { id: CURRENT_ACCOUNT_ID, name: "north office" }).map((entry) => [entry.id, entry.active])).toEqual([
+      ["local", false], ["north", true],
+    ]);
+    expect(accountChoices([], null)).toEqual([]);
   });
 });
 
