@@ -388,7 +388,7 @@ export function PendingApprovalActions({
   // "Toujours permettre ceci": a custom rule in the person's words, saved
   // from this card, then this request allowed (2026-10-16)
   const candidate = !durableRequest && !pending.message.card?.adminApproval ? pending.message.card?.customRuleCandidate : undefined;
-  const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false, rule?: "allow" | "deny") => {
+  const decide = (behavior: "allow" | "deny", always = false, rememberCommand = false, rule?: "allow" | "deny", ruleScope?: "folder") => {
     onDecided?.(behavior);
     dispatch({
       type: "decideRequest",
@@ -403,6 +403,7 @@ export function PendingApprovalActions({
       always: always && !pending.allowKey && pending.allowSession ? true : undefined,
       rememberCommand: rememberCommand || undefined,
       rule,
+      ...(ruleScope ? { ruleScope } : {}),
       ...(onDecideFailed ? { onError: () => onDecideFailed() } : {}),
     });
   };
@@ -450,6 +451,9 @@ export function PendingApprovalActions({
       : bot && pending.allowKey ? { run: () => decide("allow", true), hint: t("approval.action.stopAsking", { name: bot.name, key: pending.allowKey }) }
         : canRememberCommand && pending.commandAllowlist ? { run: () => decide("allow", false, true), hint: t("approval.action.alwaysAllowCommandHint", { cwd: pending.commandAllowlist.cwd }) }
           : undefined;
+  // 2026-10-26 (#1065): a card of a file or a folder offers two choices,
+  // this file (the exact path) and the whole folder (and its subfolders)
+  const ownerRuleFolder = ownerRule && !durableRequest ? pending.message.card?.ownerRuleFolder : undefined;
   const widening = !orgPolicy.alwaysAllow && !durableRequest ? (
     <span className="text-[11.5px] text-ink-tertiary" data-org-always-allow-off="">{t("approval.orgOnce")}</span>
   ) : recipientKeys && bot ? (
@@ -459,6 +463,29 @@ export function PendingApprovalActions({
       className={secondary}
       onSaved={() => decide("allow")}
     />
+  ) : alwaysAllow && ownerRuleFolder ? (
+    <>
+      <button
+        type="button"
+        onClick={alwaysAllow.run}
+        title={alwaysAllow.hint}
+        className={secondary}
+        data-always-allow=""
+        data-owner-rule="allow"
+      >
+        {t("approval.action.alwaysAllowFile")}
+      </button>
+      <button
+        type="button"
+        onClick={() => decide("allow", false, false, "allow", "folder")}
+        title={t("approval.action.alwaysAllowRuleHint", { name: bot?.name ?? t("approval.someone"), rule: ownerRuleFolder.description })}
+        className={secondary}
+        data-always-allow-folder=""
+        data-owner-rule="allow"
+      >
+        {t("approval.action.alwaysAllowFolder")}
+      </button>
+    </>
   ) : alwaysAllow ? (
     <button
       type="button"

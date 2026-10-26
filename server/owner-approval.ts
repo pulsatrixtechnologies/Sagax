@@ -32,6 +32,7 @@ import { readShell } from "../shared/custom-rules.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
 import { screenAppTarget, type ScreenAppIdentity } from "../shared/computer-app.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
+import { sensitiveReadPath } from "./sensitive-path.ts";
 
 export const BOT_PERMISSION_MODES = ["approval", "auto", "bypass"] as const;
 export type BotPermissionMode = (typeof BOT_PERMISSION_MODES)[number];
@@ -194,6 +195,57 @@ const EXACT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEYS, "cwd"]);
  * call that has them. A rule on `npm test` never covers it in another
  * folder, a rule for one recipient never covers a message with a Bcc. */
 const STRICT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEY_SET, "to", "cc", "bcc"]);
+/** 2026-10-26 (#1065, "Toujours permettre" : ce fichier ou tout le dossier):
+ * the argument keys that name one file or folder, and the scope key of a
+ * rule kept for a whole folder tree. `path_in` holds the folder, lexically
+ * normalized (normalizeFolderPath); it covers a call whose only target is a
+ * path inside that folder or its subfolders, never a path with `..`, never a
+ * sensitive one (a dotfile, a credential, /proc: server/sensitive-path.ts),
+ * and never a call that carries any other exact argument (a command, a
+ * folder it runs in). Only an allow rule for a read-only call is offered. */
+export const PATH_KEYS = ["path", "file_path", "filePath", "notebook_path"] as const;
+export const FOLDER_KEY = "path_in";
+
+/** A path as text that can be compared by prefix: slashes, no `.` part, no
+ * trailing slash; a path on a drive letter compares without case.
+ * Undefined when it holds a `..` part (never resolved here). */
+export function normalizeFolderPath(path: string): string | undefined {
+  const flat = path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (!flat) return undefined;
+  const parts = flat.split("/");
+  if (parts.some((part) => part === "..")) return undefined;
+  const kept = parts.filter((part) => part !== ".");
+  const text = kept.join("/").replace(/(.)\/+$/, "$1");
+  return /^[a-z]:(\/|$)/i.test(text) ? text.toLowerCase() : text;
+}
+
+/** Tools whose path argument is itself a folder (a listing, a search). */
+const FOLDER_TARGET_TOOL = /(^|[_.:-])(list|search|find|glob|grep|tree|dir|ls)([_.:-]|$)/i;
+
+/** The folder a folder rule would cover for a call of `tool` on `path`: the
+ * folder itself for a listing or a search, the file's parent otherwise;
+ * never the root, a drive, the home folder itself or a sensitive name. */
+export function folderOfPath(path: string, tool = ""): string | undefined {
+  const normal = normalizeFolderPath(path);
+  if (!normal) return undefined;
+  let folder = normal;
+  if (!FOLDER_TARGET_TOOL.test(parseToolId(tool).name)) {
+    const cut = normal.lastIndexOf("/");
+    if (cut <= 0) return undefined;
+    folder = normal.slice(0, cut);
+  }
+  if (!folder || folder === "~" || /^[a-z]:\/?$/i.test(folder) || /^\/+$/.test(folder) || folder.length > MAX_EXACT_VALUE) return undefined;
+  if (sensitiveReadPath(folder)) return undefined;
+  return folder;
+}
+
+/** Whether `path` is the folder or lies under it. */
+export function pathInFolder(path: string, folder: string): boolean {
+  const normal = normalizeFolderPath(path);
+  if (!normal || !folder) return false;
+  return normal === folder || normal.startsWith(`${folder}/`);
+}
+
 /** The scope key that binds a rule to the whole call (every argument), for
  * the cards that never had a rule before (an admin's card, a held card, a
  * turn that is not the person's own): only that very request passes again. */
@@ -311,12 +363,24 @@ export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScop
     // an app rule: a screen action whose app the server read, that same app
     if (!APP_KEYS.every((key) => key in rule.scope) || !call.app || !screenAppTarget(call.tool, call.input)) return false;
   } else if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
+  const folder = rule.scope[FOLDER_KEY];
+  if (folder !== undefined) {
+    // a folder rule: the call's one target is a path inside it, never a
+    // sensitive one (an allow only: a deny or ask rule still reads it)
+    const named = PATH_KEYS.filter((key) => key in callScope);
+    if (named.length !== 1) return false;
+    const target = callScope[named[0]!];
+    if (target === undefined || target === EXACT_TOO_LONG || !pathInFolder(target, folder)) return false;
+    if (rule.behavior === "allow" && sensitiveReadPath(target)) return false;
+  }
   if (rule.behavior === "allow" && Object.keys(rule.scope).length) {
     for (const key of Object.keys(callScope)) {
+      if (folder !== undefined && (PATH_KEYS as readonly string[]).includes(key)) continue;
       if (STRICT_KEY_SET.has(key) && !(key in rule.scope) && !(PROGRAM_KEY in rule.scope && (key === "command" || key === "cmd"))) return false;
     }
   }
   for (const [key, value] of Object.entries(rule.scope)) {
+    if (key === FOLDER_KEY) continue;
     if (key === WHOLE_CALL_KEY) {
       if (wholeCallDigest(call.input) !== value) return false;
       continue;
@@ -575,6 +639,40 @@ export function cardRuleCandidate(
   });
   if (!scopeKeepable(candidate.scope) || !scopeRemembers(candidate.scope)) return undefined;
   return { ...candidate, ...(situation.from ? { from: situation.from } : {}) };
+}
+
+/** 2026-10-26 (#1065): the second choice of "Toujours permettre", every
+ * file of the folder of the one this card reads (and its subfolders), or
+ * undefined when it is not offered: only an ordinary card (no `from`, not
+ * held), a call that only reads, whose one target is a file path with a
+ * folder that is not the root, a drive or the home folder, and that holds no
+ * sensitive name. Same bot, same tool, the same rights otherwise. */
+export function folderRuleCandidate(
+  call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
+  situation: { from?: RuleSituation; held?: boolean },
+  words: ApprovalWords = ENGLISH_WORDS,
+): RuleCandidate | undefined {
+  if (situation.held === true || situation.from !== undefined || call.app) return undefined;
+  if (call.command?.trim()) return undefined;
+  const input = ruleInputFor(call.input, call.command);
+  if (!input) return undefined;
+  if (destructiveKindOf({ tool: call.tool, input })) return undefined;
+  if (describeApproval(call.tool, input).risk !== "read") return undefined;
+  const scope = callScopeFor({ input });
+  const keys = Object.keys(scope);
+  if (keys.length !== 1 || !(PATH_KEYS as readonly string[]).includes(keys[0]!)) return undefined;
+  const target = scope[keys[0]!]!;
+  if (target === EXACT_TOO_LONG || sensitiveReadPath(target)) return undefined;
+  const folder = folderOfPath(target, call.tool);
+  if (!folder) return undefined;
+  const key = "approval.rule.folder";
+  const worded = words.t(key, { action: approvalAction(call.tool, input, undefined, words), folder });
+  const action = capitalize(approvalAction(call.tool, input, undefined, words));
+  return {
+    tool: normalizeRuleTool(call.tool),
+    scope: { [FOLDER_KEY]: folder },
+    description: (worded === key ? `${action} in ${folder} and its subfolders` : worded).slice(0, 500),
+  };
 }
 
 /** The rule "Toujours permettre" keeps for one app of this computer. */

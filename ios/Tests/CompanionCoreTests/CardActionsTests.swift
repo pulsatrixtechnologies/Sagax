@@ -129,6 +129,24 @@ final class CardActionsTests: XCTestCase {
         XCTAssertNil(ApprovalDockRules.decision(.allowOnce, for: pending).rule)
     }
 
+    /// 2026-10-26 (#1065): a file card offers this file and the whole
+    /// folder; the folder answer asks the server for the folder rule.
+    func testFolderRuleIsASecondAlwaysAllow() throws {
+        let pending = try XCTUnwrap(ApprovalDockRules.pendingApprovals([try ask("a", tool: "Read", extra: #","ownerRule":{"description":"Read files (a/b.md)"},"ownerRuleFolder":{"description":"Read files in a and its subfolders"}"#)]).first)
+        let actions = ApprovalDockRules.actions(for: pending, ownerOrAdmin: true, hasBot: true)
+        XCTAssertTrue(actions.alwaysAllowRule)
+        XCTAssertTrue(actions.alwaysAllowFolder)
+        let exact = ApprovalDockRules.decision(.alwaysAllowRule, for: pending)
+        XCTAssertEqual(exact.rule, "allow")
+        XCTAssertNil(exact.ruleScope)
+        let folder = ApprovalDockRules.decision(.alwaysAllowFolder, for: pending)
+        XCTAssertEqual(folder.rule, "allow")
+        XCTAssertEqual(folder.ruleScope, "folder")
+        let plain = try XCTUnwrap(ApprovalDockRules.pendingApprovals([try ask("b", tool: "Read", extra: #","ownerRule":{"description":"Read files (a/b.md)"}"#)]).first)
+        XCTAssertFalse(ApprovalDockRules.actions(for: plain, ownerOrAdmin: true, hasBot: true).alwaysAllowFolder)
+        XCTAssertNil(ApprovalDockRules.decision(.alwaysAllowFolder, for: plain).ruleScope)
+    }
+
     func testActionsForAProviderAskOfferTheSessionAllow() throws {
         let pending = try XCTUnwrap(ApprovalDockRules.pendingApprovals([try ask("a", tool: "Read", extra: #","allowSession":true"#)]).first)
         let actions = ApprovalDockRules.actions(for: pending, ownerOrAdmin: true, hasBot: true)

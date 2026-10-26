@@ -48,9 +48,8 @@
 // (Claude), `<server>__<tool>` (ACP titles, Codex, chat engines' mcpTool).
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 import { DESKTOP_BRIDGE_MCP_NAME } from "../shared/bot-workplace.ts";
-import { sagaxFolder } from "../shared/human-id.ts";
 import type { TurnSpeaker } from "./engine-access.ts";
-import { sensitiveEnvironmentPath } from "./sensitive-path.ts";
+import { sensitiveReadPath } from "./sensitive-path.ts";
 import { USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 
 /** The server environment's tools (server/user-sandbox-tools.ts). */
@@ -117,9 +116,7 @@ export function ownEnvironmentSensitiveRead(input: string | undefined): boolean 
   // unasked and it never surfaces a card. Only a credential path BELOW the
   // workspace root still cards; .ssh, .env, .aws and every real secret
   // elsewhere stay sensitive (sensitiveEnvironmentPath, unchanged).
-  const made = sagaxFolder(path);
-  if (made) return made.rest.length > 0 && sensitiveEnvironmentPath(made.rest.join("/"));
-  return sensitiveEnvironmentPath(path);
+  return sensitiveReadPath(path);
 }
 
 /** Whose turn a permission request comes from, for the owner's own

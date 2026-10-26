@@ -19139,6 +19139,38 @@
         }
       }
     },
+    "Always allow this file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow this file"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre ce fichier"
+          }
+        }
+      }
+    },
+    "Always allow the whole folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow the whole folder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre tout le dossier"
+          }
+        }
+      }
+    },
     "Always allow": {
       "localizations": {
         "en": {

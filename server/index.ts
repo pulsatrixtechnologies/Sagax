@@ -345,7 +345,7 @@ import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
 import { proposalReplacements } from "./proposal-budget.ts";
 import { memberTeamSetupRefusal, TEAM_SETUP_DESKTOP_MESSAGE, TEAM_SETUP_DESKTOP_ONLY } from "./team-setup-review.ts";
-import { cardRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { cardRuleCandidate, folderRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -15093,6 +15093,15 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(offeredApp && !strictCall ? { app: offeredApp } : {}),
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
+      // 2026-10-26 (#1065): the second "Toujours permettre", the whole
+      // folder of the file this card reads, beside the exact path
+      const ownerRuleFolderCandidate = ownerRuleCandidate && !strictCall
+        ? folderRuleCandidate({
+          tool: ownerTool,
+          ...(typeof event.input === "string" ? { input: event.input } : {}),
+          ...(event.command?.command ? { command: event.command.command } : {}),
+        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
+        : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
       // auto` for any model and starts in Manual without a word when auto is
       // unavailable (Haiku 4.5, Sonnet 4.5, an org that disabled it), so the
@@ -15233,6 +15242,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(plain ? { plain: { title: plain.title, line: plain.line, ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(ownerRuleCandidate ? { ownerRule: ownerRuleCandidate } : {}),
+          ...(ownerRuleFolderCandidate ? { ownerRuleFolder: ownerRuleFolderCandidate } : {}),
           // the rule notice: an ask rule held this card, or an allow rule
           // matched without covering its risk class
           ...(permission && customNotice && (customNotice.outcome === "held" || customNotice.outcome === "risk") ? { customRule: customNotice } : {}),
@@ -31505,13 +31515,21 @@ function strictRuleOwnerName(personId: string): string {
 /** "Always allow" or "Always deny" on a card: save the owner's rule before
  * the answer goes out, so the bot's next ask already meets it. Null when
  * the body asks for no rule; otherwise the refusal. */
-function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: string, rule: unknown, behavior: string): { status: 400 | 403 | 404 | 409 | 500 | 503; error: string } | null {
+function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: string, rule: unknown, behavior: string, ruleScope?: unknown): { status: 400 | 403 | 404 | 409 | 500 | 503; error: string } | null {
   if (rule === undefined || rule === null) return null;
   if (rule !== "allow" && rule !== "deny") return { status: 400, error: "rule must be allow or deny" };
   if (rule !== behavior) return { status: 400, error: "Always allow allows and Always deny denies." };
   const message = store.messagesFor(threadId).find((row) => row.card?.requestId === requestId);
   const card = message?.card;
   if (!message || !card) return { status: 404, error: "No such approval." };
+  if (ruleScope !== undefined && ruleScope !== null && ruleScope !== "exact" && ruleScope !== "folder") return { status: 400, error: "ruleScope must be exact or folder" };
+  // 2026-10-26 (#1065): "folder" keeps the card's folder rule (every file
+  // of the folder and its subfolders), only an allow, only where the card
+  // offered it; never an admin's or a held card (none offers it)
+  const wholeFolder = ruleScope === "folder";
+  if (wholeFolder && (rule !== "allow" || !card.ownerRuleFolder || card.ownerRule?.from !== undefined)) {
+    return { status: 409, error: "This approval cannot be remembered for the whole folder." };
+  }
   if (!card.ownerRule || card.answered || card.dismissed || card.expired) {
     return { status: 409, error: "This approval cannot be remembered as a rule." };
   }
@@ -31534,7 +31552,7 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   }
   const ownerId = strict ? caller! : cardAnswererId(bot, threadId, card);
   if (!caller || caller.toLowerCase() !== ownerId.toLowerCase()) return { status: 403, error: "Only the bot owner can save a rule." };
-  const candidate = card.ownerRule;
+  const candidate: NonNullable<typeof card.ownerRule> = wholeFolder ? card.ownerRuleFolder! : card.ownerRule;
   // 2026-10-21 (review of #938): an empty scope is the whole tool, and the
   // fingerprint of no arguments every such call: never saved from a card
   // ("any target" stays an explicit edit of one's own rule)
@@ -45476,7 +45494,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = commandRememberRefusal(auth, bot.threadId, String(body.requestId), behavior);
         if (refusal) return json(res, 403, { error: refusal });
       }
-      const ruleRefusal = saveOwnerRuleFromCard(auth, bot.threadId, String(body.requestId), body.rule, behavior);
+      const ruleRefusal = saveOwnerRuleFromCard(auth, bot.threadId, String(body.requestId), body.rule, behavior, body.ruleScope);
       if (ruleRefusal) return json(res, ruleRefusal.status, { error: ruleRefusal.error });
       return await answeringCardAs(auth, bot.threadId, String(body.requestId), async () => {
         if (resolveAndSendTrust(res, bot.threadId, String(body.requestId), behavior)) return;
@@ -45599,7 +45617,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusal = commandRememberRefusal(auth, threadId, requestId, behavior);
         if (refusal) return json(res, 403, { error: refusal });
       }
-      const ruleRefusal = saveOwnerRuleFromCard(auth, threadId, requestId, body.rule, behavior);
+      const ruleRefusal = saveOwnerRuleFromCard(auth, threadId, requestId, body.rule, behavior, body.ruleScope);
       if (ruleRefusal) return json(res, ruleRefusal.status, { error: ruleRefusal.error });
       return await answeringCardAs(auth, threadId, requestId, async () => {
         if (resolveAndSendTrust(res, threadId, requestId, behavior)) return;

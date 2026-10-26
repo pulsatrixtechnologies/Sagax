@@ -28,6 +28,8 @@
 // no-new-privileges, the runtime's seccomp profile): the only mounts are the
 // provisioner's own (docs/user-sandbox.md).
 
+import { sagaxFolder } from "../shared/human-id.ts";
+
 /** A file name that holds credentials even without a leading dot. */
 export const CREDENTIAL_NAME = /^(?:credentials?(?:\.[a-z]+)?|hosts\.yml|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|authorized_keys|known_hosts|[^/]*\.(?:pem|key|p12|pfx|kdbx|keychain(?:-db)?)|kubeconfig|secrets?(?:\.[a-z]+)?|token(?:s)?(?:\.[a-z]+)?)$/i;
 
@@ -124,4 +126,15 @@ export function resolvedReadRefusal(requested: string, resolved: ResolvedEnviron
     }
   }
   return null;
+}
+
+/** Whether a read of this path in the owner's own environment is a
+ * sensitive one (member-environment.ts ownEnvironmentSensitiveRead reads
+ * the same way): the bot's own Sagax-made workspace root is not a
+ * credential (its data folder begins with a dot), only a credential path
+ * below it is. */
+export function sensitiveReadPath(path: string): boolean {
+  const made = sagaxFolder(path);
+  if (made) return made.rest.length > 0 && sensitiveEnvironmentPath(made.rest.join("/"));
+  return sensitiveEnvironmentPath(path);
 }

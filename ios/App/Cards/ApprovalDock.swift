@@ -221,8 +221,13 @@ struct ApprovalDock: View {
                         await session.decide(.deny, on: pending, in: chat)
                     }
                     if actions.alwaysAllowRule {
-                        desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
+                        desktopPill(actions.alwaysAllowFolder ? String(localized: "Always allow this file") : String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
                             await session.decide(.alwaysAllowRule, on: pending, in: chat)
+                        }
+                        if actions.alwaysAllowFolder {
+                            desktopPill(String(localized: "Always allow the whole folder"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow-folder") {
+                                await session.decide(.alwaysAllowFolder, on: pending, in: chat)
+                            }
                         }
                     } else if actions.alwaysAllowTool {
                         desktopPill(String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
@@ -421,8 +426,13 @@ struct ApprovalDock: View {
     @ViewBuilder
     private func remember(_ actions: ApprovalDockActions, _ pending: PendingApproval) -> some View {
         if actions.alwaysAllowRule {
-            quietButton(String(localized: "Always allow"), id: "approval-always-allow") {
+            quietButton(actions.alwaysAllowFolder ? String(localized: "Always allow this file") : String(localized: "Always allow"), id: "approval-always-allow") {
                 await session.decide(.alwaysAllowRule, on: pending, in: chat)
+            }
+            if actions.alwaysAllowFolder {
+                quietButton(String(localized: "Always allow the whole folder"), id: "approval-always-allow-folder") {
+                    await session.decide(.alwaysAllowFolder, on: pending, in: chat)
+                }
             }
         } else if actions.alwaysAllowTool {
             quietButton(String(localized: "Always allow"), id: "approval-always-allow") {

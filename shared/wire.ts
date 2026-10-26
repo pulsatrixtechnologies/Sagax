@@ -952,6 +952,10 @@ export interface OptionCardData {
      * an admin's card, a held card, a turn that is not the person's own. */
     from?: "admin" | "hold" | "origin";
   };
+  /** 2026-10-26 (#1065): the second choice of "Toujours permettre", every
+   * file of the folder of the one this card reads (and its subfolders),
+   * offered only on an ordinary read-only card of a file or a folder. */
+  ownerRuleFolder?: { tool: string; scope: Record<string, string>; description: string };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule (an allowKey) the person saved when answering this card:
