@@ -1371,6 +1371,25 @@ repositories, the whole lifecycle, auto included), `src/lib/org-memory.test.ts`,
 `server/perspicax-memory-sync-token.test.ts`. Not done yet: a file watcher
 (the sync runs on its timer).
 
+## Perspicax GO requests as approval cards (2026-10-26)
+
+A Perspicax server guard (the Flow guard: dry run, GO, read back) asks the
+person for a GO during a `tools/call` with MCP elicitation
+(`elicitation/create` on the call's SSE stream). The harness relay
+(`server/perspicax-mcp.ts`) declares the `elicitation` capability on every
+Perspicax session (`withElicitation`), reads the call's stream as it comes
+(`readBounded` with `onRequest`) and shows the GO as an approval card on the
+turn's thread (`askGo`, `confirmHeldCard` in `server/index.ts`: Full access and
+Approve for me never answer it). Keep these rules, covered by
+`server/perspicax-mcp.test.ts` ("the Flow guard's GO"):
+
+- Only the person's Allow is a GO (`accept` with `decision: allow`); Deny is
+  `decline`, no answer in time is `cancel`. The model never answers it.
+- Only the approval form (`decision` allow or deny, `isGoForm`) opens a card;
+  any other form is declined unasked, any other server request but `ping`
+  gets -32601.
+- The answer goes on the same session with the speaker's own token.
+
 ## Pulsatrix Flow compute (sagax-flow, 2026-10-14)
 
 `flow` and `flow_action` are Perspicax's tools, relayed through the
