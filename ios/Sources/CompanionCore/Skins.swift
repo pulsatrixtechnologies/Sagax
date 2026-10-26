@@ -138,9 +138,14 @@ public enum SkinID: String, CaseIterable, Identifiable, Sendable, Codable {
 
     /// The skins a picker lists on iOS: the public ones. Hibou 98 is a
     /// desktop-only easter egg, never listed here, even unlocked or worn.
+    /// The legacy skins (Graphite, Linen, Dusk, Lagoon) are worn as a base
+    /// skin and a colour now (SkinVariants.legacy), so they are not listed.
     public static func visible(retroUnlocked: Bool, active: SkinID? = nil) -> [SkinID] {
-        allCases.filter { !$0.secret }
+        allCases.filter { !$0.secret && !$0.isLegacy }
     }
+
+    /// A skin no desktop variant lists any more (LEGACY_SKINS).
+    public var isLegacy: Bool { SkinVariants.legacy[rawValue] != nil }
 }
 
 /// How the interface font is chosen (`omb-font`, `src/lib/fonts.ts`). The
@@ -194,6 +199,13 @@ public struct SkinPalette: Equatable, Sendable {
     public var typeface: SkinTypeface = .system
     /// Square corners and bevels (Hibou 98).
     public var bevelled = false
+    /// The variant laid over the base skin (SkinVariants.swift); nil for the family's own look.
+    public var tint: SkinTint? = nil
+    public var depth: SkinDepth = .accent
+    /// The texture over the ground of the chat and the list (none under Hibou 98).
+    public var texture: SkinTexture = .none
+    /// The accent's gradient stops where it is filled (duo-tones, moods); empty for a flat accent.
+    public var accentGradient: [SkinColor] = []
 
     // surfaces
     public var bg, card, cardRaised, hairline, tabHairline: SkinColor
@@ -369,27 +381,7 @@ public struct SkinPalette: Equatable, Sendable {
 /// when it is reachable, so the two cannot drift silently.
 public enum DesktopSkins {
     public static func tokens(_ id: SkinID) -> DesktopSkinTokens? {
-        guard let raw = table[id.rawValue] else { return nil }
-        func c(_ key: String) -> SkinColor {
-            var value = raw[key] ?? "#ff00ff"
-            // `var(--color-x)`: that block's own x
-            if value.hasPrefix("var(--color-"), value.hasSuffix(")") {
-                value = raw[String(value.dropFirst("var(--color-".count).dropLast())] ?? "#ff00ff"
-            }
-            return SkinColor(css: value) ?? SkinColor(0xFF00FF)
-        }
-        return DesktopSkinTokens(
-            app: c("app"), panel: c("panel"), raised: c("raised"), raisedHover: c("raised-hover"),
-            card: c("card"), menu: c("menu"), inset: c("inset"), control: c("control"), hairline: c("hairline"),
-            ink: c("ink"), inkSecondary: c("ink-secondary"), inkTertiary: c("ink-tertiary"),
-            accent: c("accent"), accentBorder: c("accent-border"), accentText: c("accent-text"),
-            focus: c("focus"), accentInk: c("accent-ink"),
-            bubbleUser: c("bubble-user"), bubbleUserInk: c("bubble-user-ink"),
-            success: c("success"), danger: c("danger"), dangerInk: c("danger-ink"),
-            successInk: c("success-ink"), warning: c("warning"), composer: c("composer"),
-            unread: c("unread"),
-            dark: raw["code-scheme"] == "dark"
-        )
+        table[id.rawValue].flatMap(tokens(from:))
     }
 
     /// The token names read from each `[data-skin]` block.
@@ -526,6 +518,16 @@ public struct ThemeSelection: Equatable, Sendable {
     /// The computer's choice, as last read (computer mode).
     public var computerSkin: SkinID?
     public var computerFont: SkinFontChoice?
+    /// The variant laid over this phone's skin (fixed and system modes): a
+    /// colour, a duo-tone, a mood or a Windows edition (`omb-skin-tint` on
+    /// the computer). One tint for the pair, as the desktop's Auto.
+    public var tint: SkinTint?
+    public var depth: SkinDepth
+    public var texture: SkinTexture
+    /// The computer's tint, intensity and texture, as last read (computer mode).
+    public var computerTint: SkinTint?
+    public var computerDepth: SkinDepth?
+    public var computerTexture: SkinTexture?
 
     /// The default pair is Black twice: "System · Black", the reference look,
     /// whatever the phone's own appearance. A light skin for a light phone is
@@ -542,7 +544,13 @@ public struct ThemeSelection: Equatable, Sendable {
         darkSkin: SkinID = ThemeSelection.defaultDark,
         font: SkinFontChoice = .skin,
         computerSkin: SkinID? = nil,
-        computerFont: SkinFontChoice? = nil
+        computerFont: SkinFontChoice? = nil,
+        tint: SkinTint? = nil,
+        depth: SkinDepth = .accent,
+        texture: SkinTexture = .none,
+        computerTint: SkinTint? = nil,
+        computerDepth: SkinDepth? = nil,
+        computerTexture: SkinTexture? = nil
     ) {
         self.mode = mode
         self.fixedSkin = fixedSkin
@@ -551,6 +559,23 @@ public struct ThemeSelection: Equatable, Sendable {
         self.font = font
         self.computerSkin = computerSkin
         self.computerFont = computerFont
+        self.tint = tint
+        self.depth = depth
+        self.texture = texture
+        self.computerTint = computerTint
+        self.computerDepth = computerDepth
+        self.computerTexture = computerTexture
+    }
+
+    /// The look worn when the phone is in `deviceDark` appearance: the skin
+    /// with its tint, intensity and texture, normalized (a legacy skin as its
+    /// base and colour, a tint the skin lacks dropped).
+    public func look(deviceDark: Bool) -> SkinLook {
+        let skin = skin(deviceDark: deviceDark)
+        if mode == .computer, computerSkin != nil {
+            return SkinLook(skin: skin, tint: computerTint, depth: computerDepth ?? .accent, texture: computerTexture ?? .none).normalized
+        }
+        return SkinLook(skin: skin, tint: tint, depth: depth, texture: texture).normalized
     }
 
     /// The skin worn when the phone is in `deviceDark` appearance.
@@ -597,6 +622,12 @@ public enum DesktopAppearanceKeys {
     /// "auto": the computer follows its system between a variant's light
     /// and dark skins (src/lib/skin-families.ts); `skin` is the one worn now.
     public static let skinMode = "omb-skin-mode"
+    /// The colour or Windows edition laid over `skin`; absent for the family's own look.
+    public static let skinTint = "omb-skin-tint"
+    /// "full": the colour reaches every surface; absent for the accent only.
+    public static let skinDepth = "omb-skin-depth"
+    /// A texture over the ground; absent for none.
+    public static let skinTexture = "omb-skin-texture"
     public static let retroOn = "omb.retro98.on"
     public static let retroUnlocked = "omb.retro98.unlocked"
 }
@@ -609,20 +640,38 @@ public struct ComputerAppearance: Equatable, Sendable {
     public var retroUnlocked: Bool
     /// The computer's skin follows its system (Auto).
     public var auto: Bool
+    public var tint: SkinTint?
+    public var depth: SkinDepth
+    public var texture: SkinTexture
 
-    public init(skin: SkinID?, font: SkinFontChoice?, retroUnlocked: Bool, auto: Bool = false) {
+    public init(skin: SkinID?, font: SkinFontChoice?, retroUnlocked: Bool, auto: Bool = false,
+                tint: SkinTint? = nil, depth: SkinDepth = .accent, texture: SkinTexture = .none) {
         self.skin = skin
         self.font = font
         self.retroUnlocked = retroUnlocked
         self.auto = auto
+        self.tint = tint
+        self.depth = depth
+        self.texture = texture
     }
 
     /// From the desktop's string preferences. An unknown or absent skin is
     /// the desktop's default (Pulsatrix), as the desktop itself reads it.
     public init(preferences: [String: String]) {
-        let rawSkin = preferences[DesktopAppearanceKeys.skin]
-        let skin = rawSkin.flatMap(SkinID.init(rawValue:)).flatMap { $0.phoneOnly ? nil : $0 } ?? .pulsatrix
-        self.skin = skin
+        // a legacy skin (Meadow, Graphite…) is its base and colour, as the desktop wears it
+        let read = SkinVariants.read(skin: preferences[DesktopAppearanceKeys.skin], tint: preferences[DesktopAppearanceKeys.skinTint])
+        let worn = read.flatMap { $0.skin.phoneOnly ? nil : $0 }
+        let look = SkinLook(
+            skin: worn?.skin ?? .pulsatrix,
+            tint: worn?.tint,
+            depth: preferences[DesktopAppearanceKeys.skinDepth].flatMap(SkinDepth.init(rawValue:)) ?? .accent,
+            texture: preferences[DesktopAppearanceKeys.skinTexture].flatMap(SkinTexture.init(rawValue:)) ?? .none
+        ).normalized
+        self.skin = look.skin
+        self.tint = look.tint
+        // kept as the computer stored them: Full and a texture are choices of their own there
+        self.depth = preferences[DesktopAppearanceKeys.skinDepth] == SkinDepth.full.rawValue ? .full : .accent
+        self.texture = preferences[DesktopAppearanceKeys.skinTexture].flatMap(SkinTexture.init(rawValue:)) ?? .none
         self.font = preferences[DesktopAppearanceKeys.font].flatMap(SkinFontChoice.init(rawValue:)) ?? .skin
         self.retroUnlocked = preferences[DesktopAppearanceKeys.retroUnlocked] == "1" || preferences[DesktopAppearanceKeys.retroOn] == "1"
         self.auto = preferences[DesktopAppearanceKeys.skinMode] == "auto"
@@ -633,10 +682,16 @@ public struct ComputerAppearance: Equatable, Sendable {
     /// for Black and Graphite for Dim, the nearest the desktop has.
     /// `auto` keeps the computer's Auto (a font change); a skin picked on the
     /// phone is a fixed choice, so it is written without it.
-    public static func preferences(skin: SkinID, font: SkinFontChoice, retroUnlocked: Bool, auto: Bool = false) -> [String: String] {
+    /// The tint, Full and the texture are written as the desktop stores them:
+    /// absent for the family's own look, the accent only and no texture.
+    public static func preferences(skin: SkinID, font: SkinFontChoice, retroUnlocked: Bool, auto: Bool = false,
+                                   tint: SkinTint? = nil, depth: SkinDepth = .accent, texture: SkinTexture = .none) -> [String: String] {
         let desktop: SkinID = skin == .black ? .midnight : skin == .dim ? .graphite : skin
         var out = [DesktopAppearanceKeys.skin: desktop.rawValue, DesktopAppearanceKeys.font: font.rawValue]
         if auto { out[DesktopAppearanceKeys.skinMode] = "auto" }
+        if !skin.phoneOnly, let tint, SkinVariants.offers(desktop, tint) { out[DesktopAppearanceKeys.skinTint] = tint.rawValue }
+        if depth == .full { out[DesktopAppearanceKeys.skinDepth] = SkinDepth.full.rawValue }
+        if texture != .none { out[DesktopAppearanceKeys.skinTexture] = texture.rawValue }
         if retroUnlocked { out[DesktopAppearanceKeys.retroUnlocked] = "1" }
         out[DesktopAppearanceKeys.retroOn] = skin == .retro98 ? "1" : nil
         return out
@@ -653,6 +708,20 @@ public enum SharedThemeKeys {
     public static let light = "theme.light"
     public static let dark = "theme.dark"
     public static let font = "theme.font"
+    public static let tint = "theme.tint"
+    public static let depth = "theme.depth"
+    public static let texture = "theme.texture"
+
+    /// The look to draw with: the skin, with the app's tint and intensity.
+    public static func look(in defaults: UserDefaults?, deviceDark: Bool) -> SkinLook {
+        let skin = skin(in: defaults, deviceDark: deviceDark)
+        return SkinLook(
+            skin: skin,
+            tint: defaults?.string(forKey: Self.tint).flatMap(SkinTint.init(rawValue:)),
+            depth: defaults?.string(forKey: Self.depth).flatMap(SkinDepth.init(rawValue:)) ?? .accent,
+            texture: defaults?.string(forKey: Self.texture).flatMap(SkinTexture.init(rawValue:)) ?? .none
+        ).normalized
+    }
 
     /// The skin to draw with, from the shared defaults and the drawing
     /// context's appearance.
@@ -671,6 +740,10 @@ public enum SharedThemeKeys {
         defaults.set(selection.lightSkin.rawValue, forKey: Self.light)
         defaults.set(selection.darkSkin.rawValue, forKey: Self.dark)
         defaults.set(selection.fontChoice().rawValue, forKey: Self.font)
+        let worn = selection.mode == .computer && selection.computerSkin != nil
+        defaults.set((worn ? selection.computerTint : selection.tint)?.rawValue, forKey: Self.tint)
+        defaults.set((worn ? selection.computerDepth ?? .accent : selection.depth).rawValue, forKey: Self.depth)
+        defaults.set((worn ? selection.computerTexture ?? .none : selection.texture).rawValue, forKey: Self.texture)
     }
 }
 

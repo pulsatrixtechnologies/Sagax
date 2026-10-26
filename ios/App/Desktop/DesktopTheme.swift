@@ -23,6 +23,14 @@ struct DesktopTheme: Equatable {
 
     var skin: SkinID
     var dark: Bool
+    /// The variant laid over the skin (SkinVariants.swift), its intensity and texture.
+    var tint: SkinTint? = nil
+    var depth: SkinDepth = .accent
+    var texture: SkinTexture = .none
+    /// The accent's gradient where it is filled (duo-tones, moods); empty for a flat accent.
+    var accentGradient: [Color] = []
+    /// The glows' own colours (a duo-tone's two ends); nil: both in the accent.
+    var glowColors: (Color, Color)? = nil
 
     // surfaces
     var app, panel, raised, raisedHover, card, menu, inset, control, composer: Color
@@ -59,7 +67,9 @@ struct DesktopTheme: Equatable {
     var radiusXl: CGFloat
     var face: Face
 
-    static func == (a: DesktopTheme, b: DesktopTheme) -> Bool { a.skin == b.skin }
+    static func == (a: DesktopTheme, b: DesktopTheme) -> Bool {
+        a.skin == b.skin && a.tint == b.tint && a.depth == b.depth && a.texture == b.texture
+    }
 
     /// The sidebar is dark (Pulsatrix Light paints it navy): which brand mark
     /// it carries (`PulsatrixMark.tsx`, on-dark / on-light).
@@ -89,6 +99,36 @@ struct DesktopTheme: Equatable {
     }
 
     // MARK: Per skin
+
+    /// The worn look: the skin's tokens with its variant's block laid over
+    /// them (the sidebar set included), as the desktop's CSS does.
+    static func of(_ palette: SkinPalette) -> DesktopTheme {
+        var theme = of(palette.id)
+        theme.texture = palette.texture
+        let look = SkinLook(skin: palette.id, tint: palette.tint, depth: palette.depth, texture: palette.texture)
+        guard let tint = palette.tint, let raw = SkinVariants.tokens(look), let tokens = DesktopSkins.tokens(from: raw),
+              var extra = extras[palette.id] else { return theme }
+        // the sidebar tokens a variant block declares (the base table has none)
+        if let value = raw["sidebar"] { extra.sidebar = value }
+        if let value = raw["sidebar-ink"] { extra.sidebarInk = value }
+        if let value = raw["sidebar-ink-secondary"] { extra.sidebarInkSecondary = value }
+        if let value = raw["sidebar-hover"] { extra.sidebarHover = value }
+        if let value = raw["sidebar-selected"] { extra.sidebarSelected = value }
+        if let value = raw["sidebar-hairline"] { extra.sidebarHairline = value }
+        if let value = raw["composer-ring"] { extra.composerRing = value }
+        var glowColors: (Color, Color)?
+        if let lit = SkinVariants.glow(look) {
+            extra.glow = (lit.first?.1 ?? 0, lit.dropFirst().first?.1 ?? 0)
+            if let first = lit.first { glowColors = (first.0.color, (lit.dropFirst().first?.0 ?? first.0).color) }
+        }
+        theme = DesktopTheme(skin: palette.id, tokens: tokens, extra: extra)
+        theme.tint = tint
+        theme.depth = palette.depth
+        theme.texture = palette.texture
+        theme.accentGradient = palette.accentGradient.map(\.color)
+        theme.glowColors = glowColors
+        return theme
+    }
 
     static func of(_ skin: SkinID) -> DesktopTheme {
         if let tokens = DesktopSkins.tokens(skin), let extra = extras[skin] {

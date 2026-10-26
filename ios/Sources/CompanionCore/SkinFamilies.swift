@@ -1,5 +1,5 @@
 // Skin families on the phone, the desktop's model (src/lib/skin-families.ts,
-// JC 2026-10-19): the skins that only differed by a tint or by light and
+// 2026-10-19): the skins that only differed by a tint or by light and
 // dark are the variants of one family, chosen with a swatch, and the mode
 // is Light, Dark or Auto (follows the phone).
 //
@@ -22,12 +22,25 @@ public enum SkinModeChoice: String, CaseIterable, Identifiable, Sendable {
 }
 
 public struct SkinVariant: Equatable, Hashable, Identifiable, Sendable {
-    /// The desktop's variant id where the desktop has it (`blue`, `neutral`…).
+    /// The desktop's variant id (`basic`, `red`, `aurore`, `xp`…), or the phone's own (`black`, `dim`).
     public let id: String
     /// English name; the app localizes it.
     public let name: String
     public let light: SkinID?
     public let dark: SkinID?
+    /// Laid over the skin; nil on the family's own look.
+    public let tint: SkinTint?
+    /// The picker row it sits in.
+    public let group: SkinVariantGroup
+
+    public init(id: String, name: String, light: SkinID?, dark: SkinID?, tint: SkinTint? = nil, group: SkinVariantGroup = .color) {
+        self.id = id
+        self.name = name
+        self.light = light
+        self.dark = dark
+        self.tint = tint
+        self.group = group
+    }
 
     public var schemes: [SkinScheme] {
         var out: [SkinScheme] = []
@@ -39,10 +52,18 @@ public struct SkinVariant: Equatable, Hashable, Identifiable, Sendable {
     /// True when the variant has a light and a dark skin, so Auto can follow the phone.
     public var followsSystem: Bool { light != nil && dark != nil }
 
+    /// Intensity (Accent or Full) reaches the plain colours only; the moods and duo-tones colour everything already.
+    public var hasDepth: Bool { group == .color && tint != nil }
+
     /// The variant's skin for a scheme, or the one scheme it has.
     public func skin(_ scheme: SkinScheme) -> SkinID {
         // every variant declares at least one (SkinFamiliesTests)
         (scheme == .light ? light : dark) ?? light ?? dark ?? .black
+    }
+
+    /// The variant's look in a scheme, with this phone's intensity and texture.
+    public func look(_ scheme: SkinScheme, depth: SkinDepth = .accent, texture: SkinTexture = .none) -> SkinLook {
+        SkinLook(skin: skin(scheme), tint: tint, depth: hasDepth ? depth : .accent, texture: texture).normalized
     }
 }
 
@@ -57,50 +78,40 @@ public struct SkinFamily: Equatable, Identifiable, Sendable {
     /// One line, English; the app localizes it.
     public let tagline: String
     public let variants: [SkinVariant]
-    /// Hibou 98: listed only while worn (the computer's choice) or, for the
-    /// computer, once unlocked; the phone never offers it for itself.
+    /// Hibou 98: listed only while worn (the computer's choice or the
+    /// composer's hidden line); the phone never offers it for itself.
     public var secret: Bool { id == .retro98 }
 
-    /// The phone's families: the phone's own Black and Dim are one, Hibou 98
-    /// (secret, the computer's choice only) another. Meadow is not on the
-    /// phone yet.
-    public static let all: [SkinFamily] = [
-        SkinFamily(
+    /// The phone's families: the phone's own Black and Dim, then the
+    /// desktop's families with every variant (SkinVariantsData.swift,
+    /// generated from src/lib/skin-families.ts): its own look, the colours,
+    /// the duo-tones and the moods, and Hibou 98's Windows editions.
+    public static let all: [SkinFamily] = {
+        let phone = SkinFamily(
             id: .phone, name: "Black", tagline: "The phone's own look. Near-black, quiet greys.",
             variants: [
                 SkinVariant(id: "black", name: "Black", light: nil, dark: .black),
                 SkinVariant(id: "dim", name: "Dim", light: nil, dark: .dim),
             ]
-        ),
-        SkinFamily(
-            id: .pulsatrix, name: "Pulsatrix", tagline: "Perspicax's own look: navy chrome, Geist and a soft glow from the top.",
-            variants: [SkinVariant(id: "blue", name: "Blue", light: .pulsatrixLight, dark: .pulsatrix)]
-        ),
-        SkinFamily(
-            id: .studio, name: "Studio", tagline: "Flat and neutral with monochrome buttons. In light, your own messages are inverted.",
-            variants: [
-                SkinVariant(id: "neutral", name: "Neutral", light: .daylight, dark: .midnight),
-                SkinVariant(id: "slate", name: "Slate", light: .linen, dark: .graphite),
-                SkinVariant(id: "plum", name: "Plum", light: nil, dark: .dusk),
-            ]
-        ),
-        SkinFamily(
-            id: .atelier, name: "Atelier", tagline: "Paper and brass: a tinted ground where cards get brighter as they rise.",
-            variants: [
-                SkinVariant(id: "brass", name: "Brass", light: .atelier, dark: .foundry),
-                SkinVariant(id: "lagoon", name: "Lagoon", light: .lagoon, dark: nil),
-            ]
-        ),
-        SkinFamily(
-            id: .retro98, name: "Hibou 98", tagline: "Bevelled grey windows on a teal desktop, straight out of the late 90s.",
-            variants: [SkinVariant(id: "classic", name: "Classic", light: .retro98, dark: nil)]
-        ),
-    ]
+        )
+        let desktop = DesktopSkinVariantData.families.compactMap { family -> SkinFamily? in
+            guard let id = SkinFamilyID(rawValue: family.id) else { return nil }
+            let variants = family.variants.map { v in
+                SkinVariant(
+                    id: v.id, name: DesktopSkinVariantData.variantNames[v.id] ?? v.id,
+                    light: v.light.flatMap(SkinID.init(rawValue:)), dark: v.dark.flatMap(SkinID.init(rawValue:)),
+                    tint: v.tint, group: v.group
+                )
+            }
+            return SkinFamily(id: id, name: family.name, tagline: family.tagline, variants: variants)
+        }
+        return [phone] + desktop
+    }()
 
     /// The variants the picker offers for the scheme worn now: those with a
-    /// skin in it (Plum and Black are dark only, Lagoon and Classic light
-    /// only), so a dark phone never lists a light look and the reverse.
-    /// `keeping` is the variant worn now, always listed.
+    /// skin in it (Cyberpunk and Black are dark only, Candy and the Windows
+    /// editions light only), so a dark phone never lists a light look and the
+    /// reverse. `keeping` is the variant worn now, always listed.
     public func variants(for scheme: SkinScheme, keeping worn: SkinVariant? = nil) -> [SkinVariant] {
         variants.filter { $0 == worn || $0.schemes.contains(scheme) }
     }
@@ -110,31 +121,35 @@ public struct SkinFamily: Equatable, Identifiable, Sendable {
     }
 }
 
-/// Where a skin sits: its family, its variant and its scheme.
+/// Where a look sits: its family, its variant and its scheme.
 public struct SkinPlace: Equatable, Sendable {
     public let family: SkinFamily
     public let variant: SkinVariant
     public let scheme: SkinScheme
 
-    /// Every skin has one place (Hibou 98 in its own secret family).
-    public static func of(_ skin: SkinID) -> SkinPlace {
+    /// Every skin has one place (Hibou 98 in its own secret family). A
+    /// legacy skin sits at its mapped base and colour; a tint the family
+    /// lacks is ignored.
+    public static func of(_ skin: SkinID, tint: SkinTint? = nil) -> SkinPlace {
+        let worn = SkinLook(skin: skin, tint: tint).normalized
         for family in SkinFamily.all {
-            for variant in family.variants {
-                if variant.light == skin { return SkinPlace(family: family, variant: variant, scheme: .light) }
-                if variant.dark == skin { return SkinPlace(family: family, variant: variant, scheme: .dark) }
+            for variant in family.variants where variant.tint == worn.tint {
+                if variant.light == worn.skin { return SkinPlace(family: family, variant: variant, scheme: .light) }
+                if variant.dark == worn.skin { return SkinPlace(family: family, variant: variant, scheme: .dark) }
             }
         }
         let pulsatrix = SkinFamily.of(.pulsatrix)
         return SkinPlace(family: pulsatrix, variant: pulsatrix.variants[0], scheme: .light)
     }
+
+    public static func of(_ look: SkinLook) -> SkinPlace { of(look.skin, tint: look.tint) }
 }
 
 public extension ThemeSelection {
     /// The picker's state for a phone in `deviceDark` appearance: the place
     /// of the skin worn now, and Auto when the pair is that variant's own.
     func skinChoice(deviceDark: Bool) -> (place: SkinPlace, mode: SkinModeChoice) {
-        let worn = skin(deviceDark: deviceDark)
-        let place = SkinPlace.of(worn)
+        let place = SkinPlace.of(look(deviceDark: deviceDark))
         if mode == .system, place.variant.followsSystem, lightSkin == place.variant.light, darkSkin == place.variant.dark {
             return (place, .auto)
         }
@@ -146,6 +161,7 @@ public extension ThemeSelection {
     /// variant lacks falls to the one it has.
     func choosing(_ variant: SkinVariant, mode choice: SkinModeChoice) -> ThemeSelection {
         var next = self
+        next.tint = variant.tint
         if choice == .auto, variant.followsSystem, let light = variant.light, let dark = variant.dark {
             next.mode = .system
             next.lightSkin = light

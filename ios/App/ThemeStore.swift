@@ -2,7 +2,8 @@
 // that applies it everywhere (`ThemeRoot`).
 //
 // The choice is per device (UserDefaults). "Same as my computer" reads the
-// computer's omb-skin and omb-font (CompanionClient.computerAppearance) and,
+// computer's omb-skin, omb-skin-tint, omb-skin-depth, omb-skin-texture and
+// omb-font (CompanionClient.computerAppearance) and,
 // while it is on, a skin picked here is written back to the computer.
 import SwiftUI
 import UIKit
@@ -41,6 +42,14 @@ extension PrefKey {
     static let themeFont = "companion.prefs.theme.font"
     static let themeComputerSkin = "companion.prefs.theme.computerSkin"
     static let themeComputerFont = "companion.prefs.theme.computerFont"
+    /// The variant over this phone's skin (fixed and system modes), its intensity and texture.
+    static let themeTint = "companion.prefs.theme.tint"
+    static let themeDepth = "companion.prefs.theme.depth"
+    static let themeTexture = "companion.prefs.theme.texture"
+    /// The computer's, as last read (computer mode).
+    static let themeComputerTint = "companion.prefs.theme.computerTint"
+    static let themeComputerDepth = "companion.prefs.theme.computerDepth"
+    static let themeComputerTexture = "companion.prefs.theme.computerTexture"
     /// Hibou 98 found on this phone (or on the computer).
     static let themeRetroUnlocked = "companion.prefs.theme.retroUnlocked"
 }
@@ -72,7 +81,13 @@ final class ThemeStore: ObservableObject {
                 darkSkin: skin(PrefKey.themeDark) ?? ThemeSelection.defaultDark,
                 font: defaults.string(forKey: PrefKey.themeFont).flatMap(SkinFontChoice.init(rawValue:)) ?? .skin,
                 computerSkin: skin(PrefKey.themeComputerSkin),
-                computerFont: defaults.string(forKey: PrefKey.themeComputerFont).flatMap(SkinFontChoice.init(rawValue:))
+                computerFont: defaults.string(forKey: PrefKey.themeComputerFont).flatMap(SkinFontChoice.init(rawValue:)),
+                tint: defaults.string(forKey: PrefKey.themeTint).flatMap(SkinTint.init(rawValue:)),
+                depth: defaults.string(forKey: PrefKey.themeDepth).flatMap(SkinDepth.init(rawValue:)) ?? .accent,
+                texture: defaults.string(forKey: PrefKey.themeTexture).flatMap(SkinTexture.init(rawValue:)) ?? .none,
+                computerTint: defaults.string(forKey: PrefKey.themeComputerTint).flatMap(SkinTint.init(rawValue:)),
+                computerDepth: defaults.string(forKey: PrefKey.themeComputerDepth).flatMap(SkinDepth.init(rawValue:)),
+                computerTexture: defaults.string(forKey: PrefKey.themeComputerTexture).flatMap(SkinTexture.init(rawValue:))
             )
         } else if UIDevice.current.userInterfaceIdiom == .pad,
                   defaults.string(forKey: PrefKey.appearanceMode) == nil,
@@ -99,6 +114,23 @@ final class ThemeStore: ObservableObject {
                 if skin.secret { retroUnlocked = true }
             }
         }
+        // `-paritySkinTint red`, `-paritySkinDepth full`, `-paritySkinTexture grid`: the variant over it
+        func argument(_ name: String) -> String? {
+            guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
+            return arguments[index + 1]
+        }
+        if let tint = argument("-paritySkinTint").flatMap(SkinTint.init(rawValue:)) {
+            launchOverride = launchOverride ?? selection
+            launchOverride?.tint = tint
+        }
+        if let depth = argument("-paritySkinDepth").flatMap(SkinDepth.init(rawValue:)) {
+            launchOverride = launchOverride ?? selection
+            launchOverride?.depth = depth
+        }
+        if let texture = argument("-paritySkinTexture").flatMap(SkinTexture.init(rawValue:)) {
+            launchOverride = launchOverride ?? selection
+            launchOverride?.texture = texture
+        }
         #endif
         writeShared(reload: false)
     }
@@ -106,7 +138,7 @@ final class ThemeStore: ObservableObject {
     /// What decides the look now (a launch override wins in DEBUG).
     var effective: ThemeSelection { launchOverride ?? selection }
 
-    func palette(deviceDark: Bool) -> SkinPalette { effective.skin(deviceDark: deviceDark).palette }
+    func palette(deviceDark: Bool) -> SkinPalette { effective.look(deviceDark: deviceDark).palette }
 
     func typeface(deviceDark: Bool) -> SkinTypeface {
         SkinTypeface.resolve(skin: effective.skin(deviceDark: deviceDark), font: effective.fontChoice())
@@ -128,13 +160,14 @@ final class ThemeStore: ObservableObject {
     }
 
     /// Picks the skin for a slot. With "Same as my computer" on, the choice
-    /// becomes the computer's too.
-    func choose(_ skin: SkinID, client: CompanionClient?) {
+    /// becomes the computer's too. `tint` is the variant laid over it (nil:
+    /// the family's own look).
+    func choose(_ skin: SkinID, tint: SkinTint? = nil, client: CompanionClient?) {
         switch selection.mode {
-        case .fixed: update { $0.fixedSkin = skin }
-        case .system: update { skin.isDark ? ($0.darkSkin = skin) : ($0.lightSkin = skin) }
+        case .fixed: update { $0.fixedSkin = skin; $0.tint = tint }
+        case .system: update { skin.isDark ? ($0.darkSkin = skin) : ($0.lightSkin = skin); $0.tint = tint }
         case .computer:
-            update { $0.computerSkin = skin }
+            update { $0.computerSkin = skin; $0.computerTint = tint }
             // a skin picked here is a fixed choice on the computer: its Auto ends
             computerAuto = false
             writeBack(client: client)
@@ -148,6 +181,26 @@ final class ThemeStore: ObservableObject {
             writeBack(client: client)
         } else {
             update { $0.font = font }
+        }
+    }
+
+    /// Intensity (Accent or Full). With "Same as my computer" on, it is the computer's too.
+    func chooseDepth(_ depth: SkinDepth, client: CompanionClient?) {
+        if selection.mode == .computer {
+            update { $0.computerDepth = depth }
+            writeBack(client: client)
+        } else {
+            update { $0.depth = depth }
+        }
+    }
+
+    /// The texture over the ground. With "Same as my computer" on, it is the computer's too.
+    func chooseTexture(_ texture: SkinTexture, client: CompanionClient?) {
+        if selection.mode == .computer {
+            update { $0.computerTexture = texture }
+            writeBack(client: client)
+        } else {
+            update { $0.texture = texture }
         }
     }
 
@@ -191,6 +244,9 @@ final class ThemeStore: ObservableObject {
                 update {
                     $0.computerSkin = record.appearance.skin
                     $0.computerFont = record.appearance.font
+                    $0.computerTint = record.appearance.tint
+                    $0.computerDepth = record.appearance.depth
+                    $0.computerTexture = record.appearance.texture
                 }
             }
         } catch {
@@ -200,7 +256,10 @@ final class ThemeStore: ObservableObject {
 
     private func writeBack(client: CompanionClient?) {
         guard let client, let source = computerSource, let skin = selection.computerSkin else { return }
-        let values = ComputerAppearance.preferences(skin: skin, font: selection.computerFont ?? .skin, retroUnlocked: retroUnlocked, auto: computerAuto)
+        let values = ComputerAppearance.preferences(
+            skin: skin, font: selection.computerFont ?? .skin, retroUnlocked: retroUnlocked, auto: computerAuto,
+            tint: selection.computerTint, depth: selection.computerDepth ?? .accent, texture: selection.computerTexture ?? .none
+        )
         Task {
             do { try await client.saveComputerAppearance(values, to: source) } catch {
                 computerError = String(localized: "Could not save the appearance on the computer.")
@@ -219,6 +278,12 @@ final class ThemeStore: ObservableObject {
         defaults.set(s.font.rawValue, forKey: PrefKey.themeFont)
         defaults.set(s.computerSkin?.rawValue, forKey: PrefKey.themeComputerSkin)
         defaults.set(s.computerFont?.rawValue, forKey: PrefKey.themeComputerFont)
+        defaults.set(s.tint?.rawValue, forKey: PrefKey.themeTint)
+        defaults.set(s.depth.rawValue, forKey: PrefKey.themeDepth)
+        defaults.set(s.texture.rawValue, forKey: PrefKey.themeTexture)
+        defaults.set(s.computerTint?.rawValue, forKey: PrefKey.themeComputerTint)
+        defaults.set(s.computerDepth?.rawValue, forKey: PrefKey.themeComputerDepth)
+        defaults.set(s.computerTexture?.rawValue, forKey: PrefKey.themeComputerTexture)
         writeShared()
     }
 
