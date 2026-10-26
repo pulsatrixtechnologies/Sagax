@@ -288,8 +288,8 @@ describe("userHome / harnessHome", () => {
 });
 
 // Windows CLI resolution — spawn(cli) alone finds nothing on Windows (no
-// PATHEXT in libuv, no #!, and a .cmd throws outright since Node's
-// CVE-2024-27980 fix). Fixtures are the two real npm shim shapes.
+// PATHEXT in libuv, no #!, and a .cmd throws outright when spawned
+// without shell:true). Fixtures are the two real npm shim shapes.
 const winOnly = describe.skipIf(process.platform !== "win32");
 
 // the exact bytes npm writes for a CLI whose bin is a native binary
