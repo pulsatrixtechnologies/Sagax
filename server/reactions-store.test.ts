@@ -11,7 +11,7 @@ import type { ModelSelection } from "./contracts.ts";
 import type { ReactionActor } from "../shared/reactions.ts";
 
 const selection = (): ModelSelection => ({ instanceId: "claude", model: "claude-sonnet-5" });
-const ZACH: ReactionActor = { id: "pr_zach", kind: "person", name: "Sam Taylor" };
+const MORGAN: ReactionActor = { id: "pr_morgan", kind: "person", name: "Sam Taylor" };
 const QUASAR: ReactionActor = { id: "bot:quasar", kind: "bot", name: "Quasar" };
 
 describe("Store.reactToMessage", () => {
@@ -28,21 +28,21 @@ describe("Store.reactToMessage", () => {
     const changes: StoreChange[] = [];
     store.onChange((change) => changes.push(change));
 
-    const added = store.reactToMessage(bot.threadId, line.id, "🎉", ZACH, { now: 100 });
+    const added = store.reactToMessage(bot.threadId, line.id, "🎉", MORGAN, { now: 100 });
     expect(added).toMatchObject({ changed: true, added: true });
-    expect(added!.message.reactions).toEqual([{ emoji: "🎉", actors: [ZACH], at: 100 }]);
-    expect(store.reactToMessage(bot.threadId, line.id, "🎉", ZACH, { mode: "add" })!.changed).toBe(false);
+    expect(added!.message.reactions).toEqual([{ emoji: "🎉", actors: [MORGAN], at: 100 }]);
+    expect(store.reactToMessage(bot.threadId, line.id, "🎉", MORGAN, { mode: "add" })!.changed).toBe(false);
     store.reactToMessage(bot.threadId, line.id, "🎉", QUASAR, { mode: "add", now: 200 });
     expect(changes.map((change) => change.type)).toEqual(["message.patch", "message.patch"]);
-    expect(store.reactToMessage(bot.threadId, "missing", "🎉", ZACH)).toBeNull();
+    expect(store.reactToMessage(bot.threadId, "missing", "🎉", MORGAN)).toBeNull();
 
     // a fresh process reads it back from SQLite
     closeMessageDb();
     const reloaded = new Store(selection);
     expect(reloaded.messagesFor(bot.threadId).find((m) => m.id === line.id)!.reactions)
-      .toEqual([{ emoji: "🎉", actors: [ZACH, QUASAR], at: 100 }]);
+      .toEqual([{ emoji: "🎉", actors: [MORGAN, QUASAR], at: 100 }]);
     // the last one out removes the field
-    reloaded.reactToMessage(bot.threadId, line.id, "🎉", ZACH);
+    reloaded.reactToMessage(bot.threadId, line.id, "🎉", MORGAN);
     reloaded.reactToMessage(bot.threadId, line.id, "🎉", QUASAR);
     expect(reloaded.messagesFor(bot.threadId).find((m) => m.id === line.id)!.reactions).toBeUndefined();
   });
@@ -52,8 +52,8 @@ describe("Store.reactToMessage", () => {
     const bot = store.createBot({ name: "Quasar" });
     const line = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "old" });
     store.patchMessage(bot.threadId, line.id, { reactions: [{ emoji: "👍", by: "user" }] as never });
-    const result = store.reactToMessage(bot.threadId, line.id, "👍", ZACH, { legacyUser: ZACH });
-    // the legacy "user" was Zach: his press takes it back
+    const result = store.reactToMessage(bot.threadId, line.id, "👍", MORGAN, { legacyUser: MORGAN });
+    // the legacy "user" was Morgan: his press takes it back
     expect(result).toMatchObject({ changed: true, added: false });
     expect(result!.message.reactions).toBeUndefined();
   });

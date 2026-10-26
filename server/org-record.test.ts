@@ -16,11 +16,11 @@ describe("org record", () => {
     expect(() => createOrg({ name: "  ", ownerUserId: JC, host: { kind: "server", url: "https://server.example.com" } })).toThrow(/name/);
   });
   it("issues a single-use invite that expires in 7 days", () => {
-    expect(issueInvite({ email: "zachary@example.test", now: 50, token: "tok" }).expiresAt).toBe(50 + INVITE_TTL_MS);
+    expect(issueInvite({ email: "morgan@example.test", now: 50, token: "tok" }).expiresAt).toBe(50 + INVITE_TTL_MS);
   });
   it("returns an existing member without a second row", () => {
-    expect(memberListsAfterAccept({ members: ["zachary@example.test"], email: "zachary@example.test" })).toEqual({
-      members: ["zachary@example.test"],
+    expect(memberListsAfterAccept({ members: ["morgan@example.test"], email: "morgan@example.test" })).toEqual({
+      members: ["morgan@example.test"],
       alreadyMember: true,
     });
   });

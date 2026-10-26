@@ -31,12 +31,12 @@ const nameOf = (id: string) => bots.find((bot) => bot.id === id)?.name;
 type Tool = NonNullable<Message["tool"]>;
 const coordinate: Tool = {
   name: "agents_coordinate_bots", ok: true, durationMs: 1_200,
-  input: JSON.stringify({ bot_ids: ["wren", "olive"], message: "Wren : vérifie les billets ouverts de GECKO. Olive : prépare le résumé des ententes." }),
+  input: JSON.stringify({ bot_ids: ["wren", "olive"], message: "Wren : vérifie les billets ouverts de ACME. Olive : prépare le résumé des ententes." }),
   output: JSON.stringify({ ok: true, requests: [{ bot: "Wren", status: "queued" }, { bot: "Olive", status: "queued" }] }),
 };
 const tickets: Tool = {
   name: "mcp__claude_ai_Pulsatrix_Perspicax__cw_psa__find_tickets", ok: true, durationMs: 2_400,
-  input: JSON.stringify({ conditions: "company/identifier='GECKO' and closedFlag=false", fields: ["id", "summary", "status"], limit: 25 }),
+  input: JSON.stringify({ conditions: "company/identifier='ACME' and closedFlag=false", fields: ["id", "summary", "status"], limit: 25 }),
   output: "[{\"id\":297048,\"summary\":\"Imprimante 2e étage\",\"status\":\"Nouveau\"},{\"id\":297112,\"summary\":\"VPN lent\",\"status\":\"En cours\"},{\"id\":297130,\"summary\":\"Compte Teams\",\"status\":\"Nouveau\"}]",
 };
 const web: Tool = { name: "WebSearch", ok: true, durationMs: 3_100, input: JSON.stringify({ query: "SentinelOne agent 24.2 release notes" }), output: "5 résultats" };
@@ -76,7 +76,7 @@ const digest: Message = {
   digest: {
     turnId: "t", botId: "b", threadId: "th", at: 5, durationMs: 14_000,
     tools: [{ name: "Read", count: 1, failed: 0 }, { name: "Bash", count: 1, failed: 1 }, { name: "WebSearch", count: 1, failed: 0 }],
-    toolCalls: 3, files: { changed: ["docs/gecko/ententes.md"], added: [], deleted: [] },
+    toolCalls: 3, files: { changed: ["docs/acme/ententes.md"], added: [], deleted: [] },
     memory: [], reply: "", hookCoverage: "preview",
   },
 };

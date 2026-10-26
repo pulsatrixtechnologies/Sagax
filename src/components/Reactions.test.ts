@@ -95,7 +95,7 @@ describe("ReactionChips", () => {
   const ME = "pr_me";
   const quasar = { id: "quasar", name: "Quasar", color: "green", threadId: "t", messages: [] } as unknown as Bot;
   const reactions = [
-    { emoji: "👍", actors: [{ id: "pr_zach", kind: "person", name: "Sam Taylor" }, { id: ME, kind: "person", name: "Me" }], at: 1 },
+    { emoji: "👍", actors: [{ id: "pr_morgan", kind: "person", name: "Sam Taylor" }, { id: ME, kind: "person", name: "Me" }], at: 1 },
     { emoji: "✅", actors: [{ id: "bot:quasar", kind: "bot", name: "Quasar" }], at: 2 },
   ];
   async function renderChips(onToggle = vi.fn(), end = false) {

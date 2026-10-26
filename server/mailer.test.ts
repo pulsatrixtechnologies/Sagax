@@ -9,11 +9,11 @@ describe("mailer", () => {
   it("sends through SendGrid's HTTP API", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
     const mailer = createMailer({ provider: "sendgrid", from: "pulsa@example.com", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
-    await mailer.send({ to: "zach@example.com", subject: "Code", text: "12345678" });
+    await mailer.send({ to: "morgan@example.com", subject: "Code", text: "12345678" });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.sendgrid.com/v3/mail/send");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer SG.k");
-    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@example.com" }, personalizations: [{ to: [{ email: "zach@example.com" }] }], subject: "Code" });
+    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@example.com" }, personalizations: [{ to: [{ email: "morgan@example.com" }] }], subject: "Code" });
   });
 
   it("reports a SendGrid refusal without leaking the key", async () => {
@@ -26,7 +26,7 @@ describe("mailer", () => {
   it("sends through the Twilio Email API with Basic auth", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ operationId: "op-fake", operationLocation: "https://comms.twilio.com/v1/Emails/Operations/op-fake" }), { status: 202 }));
     const mailer = createMailer({ provider: "twilio", from: "Sagax <pulsa@example.com>", twilio: { apiKeySid: "SKfakesid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
-    await mailer.send({ to: "zach@example.com", subject: "Code", text: "Your code: 12345678\n<ignore>" });
+    await mailer.send({ to: "morgan@example.com", subject: "Code", text: "Your code: 12345678\n<ignore>" });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://comms.twilio.com/v1/Emails");
     expect(init.method).toBe("POST");
@@ -35,7 +35,7 @@ describe("mailer", () => {
     expect(headers["content-type"]).toBe("application/json");
     expect(JSON.parse(String(init.body))).toEqual({
       from: { address: "pulsa@example.com", name: "Sagax" },
-      to: [{ address: "zach@example.com" }],
+      to: [{ address: "morgan@example.com" }],
       content: { subject: "Code", html: "Your code: 12345678<br>\n&lt;ignore&gt;", text: "Your code: 12345678\n<ignore>" },
     });
   });

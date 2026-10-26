@@ -22,7 +22,7 @@ const disabled = {
   routines: [
     { id: "r1", name: "[Daily] Sagax & Perspicax daily dev + Connector memory watch" },
     { id: "r2", name: "[Fleet] Weekly review of Ember's routines" },
-    { id: "r3", name: "[Daily] Revue des billets GECKO ouverts depuis plus de 5 jours" },
+    { id: "r3", name: "[Daily] Revue des billets ACME ouverts depuis plus de 5 jours" },
     { id: "r4", name: "Résumé du matin" },
     { id: "r5", name: "Vérification des factures" },
   ],

@@ -93,7 +93,7 @@ describe("the routines line", () => {
   });
 });
 
-const GECKO_ID = "0b8c7f9a-1d2e-4c3b-9a8f-1234567890ab";
+const ACME_ID = "0b8c7f9a-1d2e-4c3b-9a8f-1234567890ab";
 function renderChange(event: RoutineToggleEvent, onOpen = vi.fn(), canOpen = () => true) {
   const container = document.createElement("div");
   document.body.append(container);
@@ -105,16 +105,16 @@ const changeEl = (container: HTMLElement) => container.querySelector<HTMLElement
 
 describe("the routine change line", () => {
   const made = (action: RoutineToggleEvent["action"]): RoutineToggleEvent =>
-    ({ action, turnKey: "u1", routines: [{ id: GECKO_ID, name: "Revue des billets GECKO", botId: "bot-a" }] });
+    ({ action, turnKey: "u1", routines: [{ id: ACME_ID, name: "Revue des billets ACME", botId: "bot-a" }] });
 
   it("reads Created/Updated/Deleted routine · <name> with the clock, never the id", () => {
     for (const [action, label] of [["created", "Created routine"], ["updated", "Updated routine"], ["deleted", "Deleted routine"]] as const) {
       const container = renderChange(made(action));
       const el = changeEl(container);
-      expect(el.textContent).toBe(`${label}·Revue des billets GECKO`);
+      expect(el.textContent).toBe(`${label}·Revue des billets ACME`);
       expect(el.querySelector("svg")).not.toBeNull();
-      expect(container.textContent).not.toContain(GECKO_ID);
-      expect(container.innerHTML).not.toContain(GECKO_ID);
+      expect(container.textContent).not.toContain(ACME_ID);
+      expect(container.innerHTML).not.toContain(ACME_ID);
       root?.unmount();
       root = null;
     }
@@ -134,9 +134,9 @@ describe("the routine change line", () => {
 
   it("reads in French", () => {
     setLocale("fr");
-    expect(changeEl(renderChange(made("created"))).textContent).toBe("Routine créée·Revue des billets GECKO");
+    expect(changeEl(renderChange(made("created"))).textContent).toBe("Routine créée·Revue des billets ACME");
     root?.unmount();
     root = null;
-    expect(changeEl(renderChange(made("deleted"))).textContent).toBe("Routine supprimée·Revue des billets GECKO");
+    expect(changeEl(renderChange(made("deleted"))).textContent).toBe("Routine supprimée·Revue des billets ACME");
   });
 });

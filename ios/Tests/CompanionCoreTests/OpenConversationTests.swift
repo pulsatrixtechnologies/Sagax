@@ -13,14 +13,14 @@ final class OpenConversationTests: XCTestCase {
         return try JSONDecoder().decode(Fleet.self, from: try Data(contentsOf: url))
     }
 
-    private func dmWithGreg() throws -> Room {
+    private func dmWithGaby() throws -> Room {
         var room = try XCTUnwrap(try fleet().groups.first)
-        room.id = "dm-greg"; room.dm = nil; room.peopleDm = true; room.humanIds = ["pr_me", "pr_Greg"]
+        room.id = "dm-gaby"; room.dm = nil; room.peopleDm = true; room.humanIds = ["pr_me", "pr_Greg"]
         return room
     }
 
     func testARoomDeletedWhileOpenIsNoLongerPresent() throws {
-        let room = try dmWithGreg()
+        let room = try dmWithGaby()
         var state = CompanionState()
         state.rooms = [room]
         XCTAssertTrue(OpenConversation.present(.room(room), in: state))
@@ -38,8 +38,8 @@ final class OpenConversationTests: XCTestCase {
     }
 
     func testClosingTheOpenDirectConversationLeavesIt() throws {
-        let room = try dmWithGreg()
-        let closed = SidebarHidden.default.hiding(.person, "pr_greg", at: 1)
+        let room = try dmWithGaby()
+        let closed = SidebarHidden.default.hiding(.person, "pr_gaby", at: 1)
         XCTAssertTrue(OpenConversation.newlyHidden(.room(room), previous: .default, next: closed))
         // already closed (an explicit pick from search): another change keeps it
         let more = closed.hiding(.group, "other", at: 2)
@@ -49,10 +49,10 @@ final class OpenConversationTests: XCTestCase {
     }
 
     func testHidingTheOpenRoomOrBotLeavesIt() throws {
-        var room = try dmWithGreg()
+        var room = try dmWithGaby()
         room.peopleDm = nil
         XCTAssertTrue(OpenConversation.newlyHidden(.room(room), previous: .default, next: SidebarHidden.default.hiding(.group, room.id, at: 1)))
-        XCTAssertFalse(OpenConversation.newlyHidden(.room(room), previous: .default, next: SidebarHidden.default.hiding(.person, "pr_greg", at: 1)),
+        XCTAssertFalse(OpenConversation.newlyHidden(.room(room), previous: .default, next: SidebarHidden.default.hiding(.person, "pr_gaby", at: 1)),
                        "a person key only closes a direct conversation")
         let bot = try XCTUnwrap(try fleet().bots.first)
         XCTAssertTrue(OpenConversation.newlyHidden(.bot(bot), previous: .default, next: SidebarHidden.default.hiding(.bot, bot.id, at: 1)))

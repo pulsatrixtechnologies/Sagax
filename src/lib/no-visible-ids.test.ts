@@ -184,7 +184,7 @@ describe("no UUID on screen", () => {
   });
 
   it("a routine change line names the routine, never its id", () => {
-    const event = { action: "updated" as const, turnKey: "u1", routines: [{ id: THREAD_ID, name: "Revue des billets GECKO", botId: BOT_ID }] };
+    const event = { action: "updated" as const, turnKey: "u1", routines: [{ id: THREAD_ID, name: "Revue des billets ACME", botId: BOT_ID }] };
     for (const action of ["created", "updated", "deleted"] as const) {
       expectNoUuid(visibleText(createElement(RoutineChangeLine, { event: { ...event, action }, canOpen: () => true, onOpen: () => {} })));
     }

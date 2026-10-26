@@ -13,9 +13,9 @@ describe("identity migration", () => {
     const local = registry.localOperator("jc@example.com");
     expect(principalIdFor("local-owner", registry)).toBe(local.id);
     expect(principalIdFor("JC@example.com", registry)).toBe(local.id);
-    const zach = principalIdFor("zach@example.com", registry);
-    expect(zach).toMatch(/^pr_/);
-    expect(principalIdFor(zach, registry)).toBe(zach);
+    const morgan = principalIdFor("morgan@example.com", registry);
+    expect(morgan).toMatch(/^pr_/);
+    expect(principalIdFor(morgan, registry)).toBe(morgan);
   });
 
   it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
@@ -23,23 +23,23 @@ describe("identity migration", () => {
     const local = registry.localOperator("jc@example.com");
     const input = {
       org: { ownerUserId: "jc@example.com" },
-      groups: [{ id: "g1", humanIds: ["jc@example.com", "zach@example.com"] }, { id: "g2" }],
-      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@example.com"] }, { id: "b2" }],
+      groups: [{ id: "g1", humanIds: ["jc@example.com", "morgan@example.com"] }, { id: "g2" }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["morgan@example.com"] }, { id: "b2" }],
       sessions: [
         { id: "s-phone", scopes: ["admin", "client"] },
         { id: "s-kiosk", scopes: ["client"] },
-        { id: "s-zach", email: "zach@example.com", userId: "cp_7", scopes: ["client"] },
+        { id: "s-morgan", email: "morgan@example.com", userId: "cp_7", scopes: ["client"] },
       ],
       registry,
     };
     const out = migrateIdentityRefs(input);
-    const zach = registry.byEmail("zach@example.com")!.id;
+    const morgan = registry.byEmail("morgan@example.com")!.id;
     expect(out.orgOwner).toBe(local.id);
-    expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, zach] }]);
-    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
-    expect(out.sessions).toEqual([{ id: "s-phone", principalId: local.id }, { id: "s-zach", principalId: zach }]);
+    expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, morgan] }]);
+    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [morgan] }]);
+    expect(out.sessions).toEqual([{ id: "s-phone", principalId: local.id }, { id: "s-morgan", principalId: morgan }]);
     expect(out.promoted).toEqual([{ id: "s-phone" }]);
-    expect(registry.byId(zach)?.controlPlaneUserId).toBe("cp_7");
+    expect(registry.byId(morgan)?.controlPlaneUserId).toBe("cp_7");
     // A chat-only device from before accounts is nobody: it gets no principal.
     expect(out.sessions.some((s) => s.id === "s-kiosk")).toBe(false);
 
@@ -47,8 +47,8 @@ describe("identity migration", () => {
     const again = migrateIdentityRefs({
       org: { ownerUserId: out.orgOwner! },
       groups: [{ id: "g1", humanIds: out.groups[0]!.humanIds }, { id: "g2" }],
-      bots: [{ id: "b1", ownerUserId: local.id, directGrants: [zach] }, { id: "b2" }],
-      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@example.com", principalId: zach }],
+      bots: [{ id: "b1", ownerUserId: local.id, directGrants: [morgan] }, { id: "b2" }],
+      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-morgan", email: "morgan@example.com", principalId: morgan }],
       registry,
     });
     expect(again).toEqual({ groups: [], bots: [], sessions: [], promoted: [] });
@@ -80,14 +80,14 @@ describe("identity migration", () => {
     expect(principalIdFor("Local-Owner", registry)).toBe(local.id);
     const out = migrateIdentityRefs({
       org: null,
-      groups: [{ id: "g1", humanIds: ["", "  ", "zach@example.com"] }],
-      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["", "zach@example.com", " "] }],
+      groups: [{ id: "g1", humanIds: ["", "  ", "morgan@example.com"] }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["", "morgan@example.com", " "] }],
       sessions: [],
       registry,
     });
-    const zach = registry.byEmail("zach@example.com")!.id;
-    expect(out.groups).toEqual([{ id: "g1", humanIds: [zach] }]);
-    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
+    const morgan = registry.byEmail("morgan@example.com")!.id;
+    expect(out.groups).toEqual([{ id: "g1", humanIds: [morgan] }]);
+    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [morgan] }]);
   });
 
   it("creates no principal for a ref that is not an account email", () => {

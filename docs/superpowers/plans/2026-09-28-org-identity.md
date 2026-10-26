@@ -64,9 +64,9 @@ function registry() {
 describe("principal registry", () => {
   it("creates one principal per account and finds it again", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "Zach@example.com", controlPlaneUserId: "cp_1" });
-    expect(a).toMatchObject({ kind: "human", email: "zach@example.com", controlPlaneUserId: "cp_1" });
-    expect(reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_1" }).id).toBe(a.id);
+    const a = reg.forAccount({ email: "Morgan@example.com", controlPlaneUserId: "cp_1" });
+    expect(a).toMatchObject({ kind: "human", email: "morgan@example.com", controlPlaneUserId: "cp_1" });
+    expect(reg.forAccount({ email: "morgan@example.com", controlPlaneUserId: "cp_1" }).id).toBe(a.id);
     expect(reg.list()).toHaveLength(1);
   });
 
@@ -81,8 +81,8 @@ describe("principal registry", () => {
 
   it("links an email-only principal to its account on first sign-in", () => {
     const { reg } = registry();
-    const a = reg.forAccount({ email: "zach@example.com" });
-    const b = reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_9" });
+    const a = reg.forAccount({ email: "morgan@example.com" });
+    const b = reg.forAccount({ email: "morgan@example.com", controlPlaneUserId: "cp_9" });
     expect(b.id).toBe(a.id);
     expect(b.controlPlaneUserId).toBe("cp_9");
   });
@@ -98,15 +98,15 @@ describe("principal registry", () => {
 
   it("persists across instances", () => {
     const { path, reg } = registry();
-    const a = reg.forAccount({ email: "zach@example.com", controlPlaneUserId: "cp_1" });
+    const a = reg.forAccount({ email: "morgan@example.com", controlPlaneUserId: "cp_1" });
     const again = new PrincipalRegistry({ path });
-    expect(again.byId(a.id)).toMatchObject({ email: "zach@example.com" });
+    expect(again.byId(a.id)).toMatchObject({ email: "morgan@example.com" });
     expect(JSON.parse(readFileSync(path, "utf8")).version).toBe(1);
   });
 
   it("recognizes principal ids", () => {
     expect(isPrincipalId("pr_00000000-0000-4000-8000-000000000000")).toBe(true);
-    expect(isPrincipalId("zach@example.com")).toBe(false);
+    expect(isPrincipalId("morgan@example.com")).toBe(false);
     expect(isPrincipalId("local-owner")).toBe(false);
   });
 });
@@ -280,9 +280,9 @@ describe("identity migration", () => {
     const local = registry.localOperator("jc@example.com");
     expect(principalIdFor("local-owner", registry)).toBe(local.id);
     expect(principalIdFor("JC@example.com", registry)).toBe(local.id);
-    const zach = principalIdFor("zach@example.com", registry);
-    expect(zach).toMatch(/^pr_/);
-    expect(principalIdFor(zach, registry)).toBe(zach);
+    const morgan = principalIdFor("morgan@example.com", registry);
+    expect(morgan).toMatch(/^pr_/);
+    expect(principalIdFor(morgan, registry)).toBe(morgan);
   });
 
   it("rewrites org owner, humanIds, bot owners, grants and pairing sessions once", () => {
@@ -290,25 +290,25 @@ describe("identity migration", () => {
     const local = registry.localOperator("jc@example.com");
     const input = {
       org: { ownerUserId: "jc@example.com" },
-      groups: [{ id: "g1", humanIds: ["jc@example.com", "zach@example.com"] }, { id: "g2" }],
-      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["zach@example.com"] }, { id: "b2" }],
-      sessions: [{ id: "s-phone" }, { id: "s-zach", email: "zach@example.com", userId: "cp_7" }],
+      groups: [{ id: "g1", humanIds: ["jc@example.com", "morgan@example.com"] }, { id: "g2" }],
+      bots: [{ id: "b1", ownerUserId: "local-owner", directGrants: ["morgan@example.com"] }, { id: "b2" }],
+      sessions: [{ id: "s-phone" }, { id: "s-morgan", email: "morgan@example.com", userId: "cp_7" }],
       registry,
     };
     const out = migrateIdentityRefs(input);
-    const zach = registry.byEmail("zach@example.com")!.id;
+    const morgan = registry.byEmail("morgan@example.com")!.id;
     expect(out.orgOwner).toBe(local.id);
-    expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, zach] }]);
-    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [zach] }]);
-    expect(out.sessions).toEqual([{ id: "s-phone", principalId: local.id }, { id: "s-zach", principalId: zach }]);
-    expect(registry.byId(zach)?.controlPlaneUserId).toBe("cp_7");
+    expect(out.groups).toEqual([{ id: "g1", humanIds: [local.id, morgan] }]);
+    expect(out.bots).toEqual([{ id: "b1", ownerUserId: local.id, directGrants: [morgan] }]);
+    expect(out.sessions).toEqual([{ id: "s-phone", principalId: local.id }, { id: "s-morgan", principalId: morgan }]);
+    expect(registry.byId(morgan)?.controlPlaneUserId).toBe("cp_7");
 
     // Applying the result and running again changes nothing.
     const again = migrateIdentityRefs({
       org: { ownerUserId: out.orgOwner! },
       groups: [{ id: "g1", humanIds: out.groups[0]!.humanIds }, { id: "g2" }],
-      bots: [{ id: "b1", ownerUserId: local.id, directGrants: [zach] }, { id: "b2" }],
-      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-zach", email: "zach@example.com", principalId: zach }],
+      bots: [{ id: "b1", ownerUserId: local.id, directGrants: [morgan] }, { id: "b2" }],
+      sessions: [{ id: "s-phone", principalId: local.id }, { id: "s-morgan", email: "morgan@example.com", principalId: morgan }],
       registry,
     });
     expect(again).toEqual({ groups: [], bots: [], sessions: [] });
@@ -437,7 +437,7 @@ describe("sessions carry a principal", () => {
 
   it("stores the principal of an account sign-in", () => {
     const sessions = registry;
-    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "zach@example.com", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
+    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "morgan@example.com", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
     expect(sessions.authenticate(issued.token)?.principalId).toBe("pr_22222222-2222-4222-8222-222222222222");
   });
 
@@ -538,11 +538,11 @@ Add to `server/org-directory.test.ts`:
 import { roleOf } from "./org-directory.ts";
 
 describe("roles by principal", () => {
-  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@example.com"], members: ["zach@example.com", "@client.com"] };
+  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@example.com"], members: ["morgan@example.com", "@client.com"] };
   it("finds the owner by principal id and others by email", () => {
     expect(roleOf({ ...lists, userId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).toBe("owner");
     expect(roleOf({ ...lists, userId: "pr_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", email: "Ana@example.com" })).toBe("admin");
-    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "zach@example.com" })).toBe("member");
+    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "morgan@example.com" })).toBe("member");
     expect(roleOf({ ...lists, userId: "pr_dddddddd-dddd-4ddd-8ddd-dddddddddddd", email: "stranger@example.com" })).toBeNull();
   });
   it("never makes someone owner because of their email", () => {

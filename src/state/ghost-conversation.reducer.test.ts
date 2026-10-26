@@ -6,17 +6,17 @@ import { mainConversation } from "@/lib/main-view";
 import { initialState, reducer, type AppState, type Bot, type Group } from "./store";
 
 const me = "pr_me";
-const greg = "pr_greg";
-const dmWithGreg = {
-  id: "dm-greg", threadId: "t-dm-greg", name: "Gregory Jeanne", memberIds: [], humanIds: [me, greg], peopleDm: true,
+const gaby = "pr_gaby";
+const dmWithGaby = {
+  id: "dm-gaby", threadId: "t-dm-gaby", name: "Gaby Pelletier", memberIds: [], humanIds: [me, gaby], peopleDm: true,
   defaultResponder: { kind: "everyone" }, bulletin: "", unread: false, createdAt: 1, messages: [],
 } as unknown as Group;
-const room = { ...dmWithGreg, id: "room", threadId: "t-room", name: "Planning", humanIds: [me], peopleDm: undefined } as unknown as Group;
+const room = { ...dmWithGaby, id: "room", threadId: "t-room", name: "Planning", humanIds: [me], peopleDm: undefined } as unknown as Group;
 const bot = (id: string, extra: Partial<Bot> = {}): Bot => ({
   id, threadId: `t-${id}`, name: id, title: "", description: "", notifications: true, color: "green", unread: false,
   modelSelection: { instanceId: "fake", model: "test" }, messages: [], ...extra,
 });
-const closedGreg = new Set([`person:${greg}`]);
+const closedGaby = new Set([`person:${gaby}`]);
 const hydrate = (state: AppState, bots: Bot[], groups: Group[], resumeId?: string) =>
   reducer(state, { type: "hydrate", bots, groups, sections: [], computerControl: {}, ...(resumeId ? { resumeId } : {}) });
 const withHidden = (keys: Set<string>): AppState => ({ ...initialState, sidebarHiddenKeys: keys });
@@ -24,19 +24,19 @@ const shown = (state: AppState) => mainConversation(state.bots, state.groups, st
 
 describe("launch: a closed direct conversation is never restored nor fallen back on", () => {
   it("leaves nothing selected and the empty state when the only conversation is closed", () => {
-    const next = hydrate(withHidden(closedGreg), [], [dmWithGreg], dmWithGreg.id);
+    const next = hydrate(withHidden(closedGaby), [], [dmWithGaby], dmWithGaby.id);
     expect(next.selectedId).toBe("");
     expect(shown(next)).toEqual({});
   });
 
   it("does not fall back on it either when nothing was remembered", () => {
-    const next = hydrate(withHidden(closedGreg), [], [dmWithGreg]);
+    const next = hydrate(withHidden(closedGaby), [], [dmWithGaby]);
     expect(next.selectedId).toBe("");
     expect(shown(next)).toEqual({});
   });
 
   it("falls back on a listed room instead", () => {
-    const next = hydrate(withHidden(closedGreg), [], [dmWithGreg, room], dmWithGreg.id);
+    const next = hydrate(withHidden(closedGaby), [], [dmWithGaby, room], dmWithGaby.id);
     expect(next.selectedId).toBe("room");
     expect(shown(next).group?.id).toBe("room");
   });
@@ -48,48 +48,48 @@ describe("launch: a closed direct conversation is never restored nor fallen back
   });
 
   it("still restores an open direct conversation", () => {
-    expect(hydrate(initialState, [], [dmWithGreg], dmWithGreg.id).selectedId).toBe(dmWithGreg.id);
+    expect(hydrate(initialState, [], [dmWithGaby], dmWithGaby.id).selectedId).toBe(dmWithGaby.id);
   });
 });
 
 describe("the main column with nothing selected", () => {
   it("does not render a closed direct conversation, a hidden bot or a bot's own chat group", () => {
     const dmGroup = { ...room, id: "bot-dm", dm: true } as Group;
-    expect(mainConversation([], [dmWithGreg, dmGroup], "", closedGreg)).toEqual({});
+    expect(mainConversation([], [dmWithGaby, dmGroup], "", closedGaby)).toEqual({});
     expect(mainConversation([bot("a", { hidden: true })], [], "", new Set())).toEqual({});
     expect(mainConversation([], [], "gone", new Set())).toEqual({});
   });
 
   it("still renders an explicit pick of a hidden entry (search, person panel)", () => {
-    expect(mainConversation([], [dmWithGreg], dmWithGreg.id, closedGreg).group?.id).toBe(dmWithGreg.id);
+    expect(mainConversation([], [dmWithGaby], dmWithGaby.id, closedGaby).group?.id).toBe(dmWithGaby.id);
   });
 });
 
 describe("the open conversation disappears", () => {
   it("empties the page when the open direct conversation is deleted and nothing else is listed", () => {
-    const open = hydrate(initialState, [], [dmWithGreg], dmWithGreg.id);
-    expect(open.selectedId).toBe(dmWithGreg.id);
-    const next = reducer(open, { type: "groupDeleted", groupId: dmWithGreg.id });
+    const open = hydrate(initialState, [], [dmWithGaby], dmWithGaby.id);
+    expect(open.selectedId).toBe(dmWithGaby.id);
+    const next = reducer(open, { type: "groupDeleted", groupId: dmWithGaby.id });
     expect(next.selectedId).toBe("");
     expect(shown(next)).toEqual({});
   });
 
   it("empties the page when the person closes it (or the closed list arrives from another device)", () => {
-    const open = hydrate(initialState, [], [dmWithGreg], dmWithGreg.id);
-    const next = reducer(open, { type: "sidebarHidden", keys: closedGreg });
+    const open = hydrate(initialState, [], [dmWithGaby], dmWithGaby.id);
+    const next = reducer(open, { type: "sidebarHidden", keys: closedGaby });
     expect(next.selectedId).toBe("");
     expect(shown(next)).toEqual({});
   });
 
   it("moves to the next listed conversation when there is one", () => {
-    const open = hydrate(initialState, [], [dmWithGreg, room], dmWithGreg.id);
-    expect(reducer(open, { type: "sidebarHidden", keys: closedGreg }).selectedId).toBe("room");
+    const open = hydrate(initialState, [], [dmWithGaby, room], dmWithGaby.id);
+    expect(reducer(open, { type: "sidebarHidden", keys: closedGaby }).selectedId).toBe("room");
   });
 
   it("keeps an explicit pick of a hidden entry when another entry is hidden", () => {
-    const picked = reducer(hydrate(withHidden(closedGreg), [], [dmWithGreg, room]), { type: "select", id: dmWithGreg.id });
-    expect(picked.selectedId).toBe(dmWithGreg.id);
-    expect(reducer(picked, { type: "sidebarHidden", keys: new Set([...closedGreg, "group:room"]) }).selectedId).toBe(dmWithGreg.id);
+    const picked = reducer(hydrate(withHidden(closedGaby), [], [dmWithGaby, room]), { type: "select", id: dmWithGaby.id });
+    expect(picked.selectedId).toBe(dmWithGaby.id);
+    expect(reducer(picked, { type: "sidebarHidden", keys: new Set([...closedGaby, "group:room"]) }).selectedId).toBe(dmWithGaby.id);
   });
 
   it("falls back past a hidden bot when the open bot is deleted", () => {

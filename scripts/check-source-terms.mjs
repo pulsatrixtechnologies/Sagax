@@ -9,7 +9,17 @@
 //
 //   node scripts/check-source-terms.mjs
 //
-// Tests and fixtures are not shipped and are not scanned. The list of given
+// Tests and fixtures are not shipped, so the hashed tables above do not
+// cover them. They are covered by a second pass, with the list of terms read
+// from the environment exactly as the term-guard CI job reads it
+// (FORBIDDEN_TERMS, newline-separated, never committed): every tracked text
+// file outside third_party/ and the generated name lists (tests, fixtures,
+// galleries, docs, iOS and Android sources) is scanned for those terms as
+// whole words, case-insensitively. Without FORBIDDEN_TERMS that pass is
+// skipped with a notice (the CI term-guard job still enforces it on a PR).
+//
+//   FORBIDDEN_TERMS="$(cat private-terms.txt)" node scripts/check-source-terms.mjs
+//
 // The allowlist names built files, so a source file is scanned under the
 // path it has in the package (dist-server/ for server/ and shared/).
 import { execFileSync } from "node:child_process";
@@ -41,8 +51,40 @@ for (const file of files) {
     console.error(`${file}: ${hit.term} in ...${hit.context.replace(/\s+/g, " ")}...`);
   }
 }
+// Second pass: every tracked text file, terms from the environment.
+const envTerms = (process.env.FORBIDDEN_TERMS ?? "")
+  .split(/\r?\n/)
+  .map((term) => term.trim())
+  .filter(Boolean);
+const EVERYWHERE_SKIPPED = /(?:^|\/)(?:third_party|node_modules)\/|^pnpm-lock\.yaml$|^src\/data\/given-names\/|\.(?:png|jpe?g|gif|webp|ico|icns|woff2?|ttf|otf|wasm|zip|gz|mp[34]|mov|pdf|bin|onnx|gguf|p8)$/i;
+const escapeRegExp = (term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+let everywhere = 0;
+if (envTerms.length) {
+  const word = new RegExp(`(?<![\\p{L}\\p{N}])(?:${envTerms.map(escapeRegExp).join("|")})(?![\\p{L}\\p{N}])`, "giu");
+  const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8", maxBuffer: 1 << 28 })
+    .split("\0")
+    .filter((file) => file && !EVERYWHERE_SKIPPED.test(file));
+  for (const file of tracked) {
+    let text;
+    try {
+      text = readFileSync(join(root, file), "utf8");
+    } catch {
+      continue;
+    }
+    if (text.includes("\0")) continue;
+    for (const match of text.matchAll(word)) {
+      everywhere++;
+      const line = text.slice(0, match.index).split("\n").length;
+      // Only the place is printed, never the term.
+      console.error(`${file}:${line}: forbidden term (FORBIDDEN_TERMS), also in tests and fixtures`);
+    }
+  }
+} else {
+  console.log("FORBIDDEN_TERMS not set: tests and fixtures scan skipped");
+}
+blocked += everywhere;
 if (blocked) {
   console.error(`source term scan: ${blocked} forbidden term(s); neutralize the source or justify them in scripts/npm-package-allowlist.json`);
   process.exit(1);
 }
-console.log(`source term scan clean (${files.length} files)`);
+console.log(`source term scan clean (${files.length} shipped files${envTerms.length ? ", every tracked text file for the environment terms" : ""})`);

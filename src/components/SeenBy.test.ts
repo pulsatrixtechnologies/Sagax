@@ -50,9 +50,9 @@ describe("SeenByRow: each reader", () => {
     const { setLocale } = await import("@/lib/i18n");
     setLocale("fr");
     try {
-      const markup = renderToStaticMarkup(createElement(SeenByRow, { faces: [face("pr_z", "Zachary", 6)], end: true, time: () => "14 h 46" }));
+      const markup = renderToStaticMarkup(createElement(SeenByRow, { faces: [face("pr_z", "Morgan", 6)], end: true, time: () => "14 h 46" }));
       expect(markup).toMatch(/data-seen-label[^>]*>Vu par</);
-      expect(markup).toContain('aria-label="Zachary · 14 h 46"');
+      expect(markup).toContain('aria-label="Morgan · 14 h 46"');
     } finally {
       setLocale("en");
     }

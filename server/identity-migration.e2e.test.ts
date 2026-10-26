@@ -126,8 +126,8 @@ posixOnly("identity migration at boot", () => {
     config.org = { name: "Example", host: { kind: "server", url: "https://server.example.com" }, ownerUserId: "jc@example.com" };
     config.profile = { name: "JC", email: "jc@example.com" };
     write("config.json", config);
-    write("bots.json", (read("bots.json") as any[]).map((b) => (b.id === botId ? { ...b, ownerUserId: "local-owner", directGrants: ["zach@example.com"] } : b)));
-    write("groups.json", (read("groups.json") as any[]).map((g) => (g.id === channelId ? { ...g, humanIds: ["jc@example.com", "zach@example.com"] } : g)));
+    write("bots.json", (read("bots.json") as any[]).map((b) => (b.id === botId ? { ...b, ownerUserId: "local-owner", directGrants: ["morgan@example.com"] } : b)));
+    write("groups.json", (read("groups.json") as any[]).map((g) => (g.id === channelId ? { ...g, humanIds: ["jc@example.com", "morgan@example.com"] } : g)));
     rmSync(join(data, "sessions.json"), { force: true });
     const registry = new SessionRegistry({ file: join(data, "sessions.json") });
     const admin = registry.issue({ label: "JC's old phone", scopes: ["admin", "client"] });
@@ -157,15 +157,15 @@ posixOnly("identity migration at boot", () => {
     expect(local[0]!.email).toBe("jc@example.com");
     const emails = principals.map((p) => p.email).filter(Boolean);
     expect(new Set(emails).size).toBe(emails.length);
-    const zach = principals.find((p) => p.email === "zach@example.com")!;
-    expect(zach.id).toMatch(/^pr_/);
+    const morgan = principals.find((p) => p.email === "morgan@example.com")!;
+    expect(morgan.id).toMatch(/^pr_/);
     expect(principals).toHaveLength(2);
 
     // Slice 8: the interim organization is gone; its old key is left as it
     // was (ignored), never rewritten.
     expect(first.orgOwner).toBe("jc@example.com");
-    expect(first.bot).toEqual({ ownerUserId: localId, directGrants: [zach.id] });
-    expect(first.humanIds).toEqual([localId, zach.id]);
+    expect(first.bot).toEqual({ ownerUserId: localId, directGrants: [morgan.id] });
+    expect(first.humanIds).toEqual([localId, morgan.id]);
     const byId = new Map(first.sessions.map((s) => [s.id, s.principalId]));
     expect(byId.get(adminSessionId)).toBe(localId);
     expect(byId.get(kioskSessionId)).toBeUndefined();

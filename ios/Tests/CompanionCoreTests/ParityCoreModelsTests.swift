@@ -145,14 +145,14 @@ final class ParityCoreModelsTests: XCTestCase {
     func testDecodesReactionsWithActors() throws {
         let message = try decode(Message.self, #"""
         {"id":"m9","role":"user","kind":"text","at":9,"text":"shipped",
-         "reactions":[{"emoji":"👍","actors":[{"id":"pr_zach","kind":"person","name":"Sam Taylor"},
+         "reactions":[{"emoji":"👍","actors":[{"id":"pr_morgan","kind":"person","name":"Sam Taylor"},
          {"id":"bot:quasar","kind":"bot","name":"Quasar"}],"at":12}]}
         """#)
         let reaction = try XCTUnwrap(message.reactions?.first)
         XCTAssertNil(reaction.by)
         XCTAssertEqual(reaction.count, 2)
         XCTAssertEqual(reaction.actors?.last?.kind, "bot")
-        XCTAssertTrue(reaction.includes("PR_ZACH"))
+        XCTAssertTrue(reaction.includes("PR_MORGAN"))
         XCTAssertFalse(reaction.includes(nil))
         XCTAssertEqual(try roundTrip(message), message)
     }
