@@ -3282,16 +3282,29 @@ button:disabled.bg-danger {
 [data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps],
 [data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps][data-expanded] {
   flex-grow: 1;
-  gap: 0.5rem;
-  padding-inline: 0.75rem;
 }
-/* with the update circle beside it the row can run short: the words give
-   way (an ellipsis) before the circle is pushed out of the row */
-[data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps] { flex-shrink: 1; min-width: 0; }
-[data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps] [data-connect-apps-label] {
+/* the label is never cut (#1105): the pill takes the whole row (the avatar
+   alone at the left, the label, the logos at the right); the room comes from
+   the pill's padding and gaps, the logos overlapping more and, while an update
+   waits, its circle stepping aside for the length of the hover */
+[data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps] {
   flex-shrink: 1;
+  min-width: max-content;
+  gap: 0.25rem;
+  padding-inline: 0.625rem 0.5rem;
+}
+[data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps] [data-connect-apps-label] {
+  flex-shrink: 0;
+  overflow: visible;
+}
+[data-sidebar-account-row][data-foot-hot="apps"] [data-connected-app]:not(:last-child) { margin-inline-end: -10px; }
+[data-sidebar-account-row][data-foot-hot="apps"] [data-connected-apps-stack] { margin-inline-start: auto; }
+[data-sidebar-account-row][data-foot-hot="apps"] .sidebar-update-pill {
+  width: 0;
   min-width: 0;
-  text-overflow: ellipsis;
+  margin-inline-start: -0.375rem;
+  opacity: 0;
+  pointer-events: none;
 }
 /* the update button hovered takes the row (its right edge stays under the
    pointer, so the hover holds while the profile folds) */
@@ -3360,7 +3373,7 @@ button:disabled.bg-danger {
     transition: max-width 240ms var(--ease-out-quint), opacity 200ms var(--ease-out-quint), padding-inline-end 240ms var(--ease-out-quint);
   }
   :root:not([data-reduced-motion="true"]) .sidebar-update-pill {
-    transition: width 240ms var(--ease-out-quint), flex-grow var(--transition-duration-moderate) ease, filter 150ms ease-out;
+    transition: width 240ms var(--ease-out-quint), flex-grow var(--transition-duration-moderate) ease, margin var(--transition-duration-moderate) ease, opacity var(--transition-duration-moderate) ease, filter 150ms ease-out;
   }
   :root:not([data-reduced-motion="true"]) .sidebar-update-pill[data-sidebar-update-pill="ready"]:is(:hover, :focus-visible) [data-update-icon] svg {
     animation: sidebar-update-nudge 0.6s cubic-bezier(0.34, 1.4, 0.64, 1);
