@@ -10031,6 +10031,8 @@
   "approval.rule.computerApp": "Use {app} on this computer (see it, click and type in it)",
   "approval.action.alwaysAllowFile": "Always allow this file",
   "approval.action.alwaysAllowFolder": "Always allow the whole folder",
+  "approval.action.alwaysAllowFileWrite": "Always allow changes to this file",
+  "approval.action.alwaysAllowFolderWrite": "Always allow changes in the whole folder",
   "approval.rule.folder": "{action} in {folder} and its subfolders",
   "approval.computerApp.line": "{name} can see {app}, click and type in it on this computer.",
   "resourceUsage.label": "Usage of {host}",

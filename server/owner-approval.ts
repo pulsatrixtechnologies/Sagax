@@ -202,7 +202,8 @@ const STRICT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEY_SET, "to", "cc
  * path inside that folder or its subfolders, never a path with `..`, never a
  * sensitive one (a dotfile, a credential, /proc: server/sensitive-path.ts),
  * and never a call that carries any other exact argument (a command, a
- * folder it runs in). Only an allow rule for a read-only call is offered. */
+ * folder it runs in). Only an allow rule is offered, for a read or a file
+ * write (create, change, rename's single path, delete of one path). */
 export const PATH_KEYS = ["path", "file_path", "filePath", "notebook_path"] as const;
 export const FOLDER_KEY = "path_in";
 
@@ -642,22 +643,29 @@ export function cardRuleCandidate(
 }
 
 /** 2026-10-26 (#1065): the second choice of "Toujours permettre", every
- * file of the folder of the one this card reads (and its subfolders), or
- * undefined when it is not offered: only an ordinary card (no `from`, not
- * held), a call that only reads, whose one target is a file path with a
- * folder that is not the root, a drive or the home folder, and that holds no
- * sensitive name. Same bot, same tool, the same rights otherwise. */
+ * file of the folder of the one this card reads or writes (and its
+ * subfolders), or undefined when it is not offered: only an ordinary card
+ * (no `from`, not held), a call that reads, writes or deletes one path,
+ * whose one target is a file path with a folder that is not the root, a
+ * drive or the home folder, and that holds no sensitive name. A delete keeps
+ * its destructive kind (the rule covers deletes only because it was made on
+ * a delete card, as for the exact path); a recursive or bulk delete, a
+ * command or an outward send is never offered. Same bot, same tool. */
 export function folderRuleCandidate(
   call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
   situation: { from?: RuleSituation; held?: boolean },
   words: ApprovalWords = ENGLISH_WORDS,
-): RuleCandidate | undefined {
+): (RuleCandidate & { writes?: true }) | undefined {
   if (situation.held === true || situation.from !== undefined || call.app) return undefined;
   if (call.command?.trim()) return undefined;
   const input = ruleInputFor(call.input, call.command);
   if (!input) return undefined;
-  if (destructiveKindOf({ tool: call.tool, input })) return undefined;
-  if (describeApproval(call.tool, input).risk !== "read") return undefined;
+  const destructive = destructiveKindOf({ tool: call.tool, input });
+  if (destructive && destructive !== "delete") return undefined;
+  const args = parseArgs(input);
+  if (args && (args.recursive === true || args.recursive === "true" || args.force === true)) return undefined;
+  const risk = describeApproval(call.tool, input).risk;
+  if (risk !== "read" && risk !== "write" && !(destructive === "delete" && risk === "destructive")) return undefined;
   const scope = callScopeFor({ input });
   const keys = Object.keys(scope);
   if (keys.length !== 1 || !(PATH_KEYS as readonly string[]).includes(keys[0]!)) return undefined;
@@ -671,6 +679,8 @@ export function folderRuleCandidate(
   return {
     tool: normalizeRuleTool(call.tool),
     scope: { [FOLDER_KEY]: folder },
+    ...(destructive ? { destructive } : {}),
+    ...(risk !== "read" ? { writes: true as const } : {}),
     description: (worded === key ? `${action} in ${folder} and its subfolders` : worded).slice(0, 500),
   };
 }

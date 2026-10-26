@@ -89,6 +89,13 @@ describe("owner rule buttons", () => {
     expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "allow", rule: "allow", ruleScope: "folder" }));
   });
 
+  it("says the folder covers changes when the card is a write", () => {
+    const result = view({ ownerRuleFolder: { tool: ownerRule.tool, scope: { path_in: "/repo/docs" }, description: "Write files in /repo/docs and its subfolders", writes: true } });
+    expect(result.buttons.map((button) => button.props.children)).toEqual(["Deny", "Always allow changes to this file", "Always allow changes in the whole folder", "Allow once"]);
+    click(result, "Always allow changes in the whole folder");
+    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ rule: "allow", ruleScope: "folder" }));
+  });
+
   it("offers no folder choice when the organization turned Always allow off", () => {
     fixture.alwaysAllow = false;
     const result = view({ ownerRuleFolder: { tool: ownerRule.tool, scope: { path_in: "/repo/docs" }, description: "x" } });

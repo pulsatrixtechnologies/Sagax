@@ -221,11 +221,11 @@ struct ApprovalDock: View {
                         await session.decide(.deny, on: pending, in: chat)
                     }
                     if actions.alwaysAllowRule {
-                        desktopPill(actions.alwaysAllowFolder ? String(localized: "Always allow this file") : String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
+                        desktopPill(actions.alwaysAllowFolder ? (actions.alwaysAllowFolderWrites ? String(localized: "Always allow changes to this file") : String(localized: "Always allow this file")) : String(localized: "Always allow"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow") {
                             await session.decide(.alwaysAllowRule, on: pending, in: chat)
                         }
                         if actions.alwaysAllowFolder {
-                            desktopPill(String(localized: "Always allow the whole folder"), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow-folder") {
+                            desktopPill((actions.alwaysAllowFolderWrites ? String(localized: "Always allow changes in the whole folder") : String(localized: "Always allow the whole folder")), theme: theme, ink: theme.ink, ring: theme.hairline.opacity(0.5), id: "approval-always-allow-folder") {
                                 await session.decide(.alwaysAllowFolder, on: pending, in: chat)
                             }
                         }
@@ -426,11 +426,11 @@ struct ApprovalDock: View {
     @ViewBuilder
     private func remember(_ actions: ApprovalDockActions, _ pending: PendingApproval) -> some View {
         if actions.alwaysAllowRule {
-            quietButton(actions.alwaysAllowFolder ? String(localized: "Always allow this file") : String(localized: "Always allow"), id: "approval-always-allow") {
+            quietButton(actions.alwaysAllowFolder ? (actions.alwaysAllowFolderWrites ? String(localized: "Always allow changes to this file") : String(localized: "Always allow this file")) : String(localized: "Always allow"), id: "approval-always-allow") {
                 await session.decide(.alwaysAllowRule, on: pending, in: chat)
             }
             if actions.alwaysAllowFolder {
-                quietButton(String(localized: "Always allow the whole folder"), id: "approval-always-allow-folder") {
+                quietButton((actions.alwaysAllowFolderWrites ? String(localized: "Always allow changes in the whole folder") : String(localized: "Always allow the whole folder")), id: "approval-always-allow-folder") {
                     await session.decide(.alwaysAllowFolder, on: pending, in: chat)
                 }
             }

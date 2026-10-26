@@ -708,12 +708,53 @@ describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
     expect(folderRuleCandidate({ tool: DESKTOP_LIST, input: read(".github") }, {})).toBeUndefined();
   });
 
-  it("is not offered for a write, a delete, a command, a held card or another situation", () => {
-    expect(folderRuleCandidate({ tool: DESKTOP_WRITE, input: JSON.stringify({ path: "/repo/docs/x.md", content: "x" }) }, {})).toBeUndefined();
+  it("is not offered for a command, a recursive or bulk delete, a held card or another situation", () => {
     expect(folderRuleCandidate({ tool: "Bash", input: JSON.stringify({ command: "ls /repo/docs" }), command: "ls /repo/docs" }, {})).toBeUndefined();
+    const del = JSON.stringify({ path: "/repo/docs/old", recursive: true });
+    expect(folderRuleCandidate({ tool: "mcp__sagax-desktop__delete_file", input: del }, {})).toBeUndefined();
     const input = read("/repo/docs/TODO.md");
     expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { held: true })).toBeUndefined();
     for (const from of ["admin", "hold", "origin"] as const) expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { from })).toBeUndefined();
+  });
+
+  const write = (path: string) => JSON.stringify({ path, content: "x" });
+
+  it("covers file writes in the folder and its subfolders, flagged as writes on the card", () => {
+    const candidate = folderRuleCandidate({ tool: DESKTOP_WRITE, input: write("/repo/docs/new.md") }, {})!;
+    expect(candidate.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
+    expect(candidate.writes).toBe(true);
+    expect(folderRuleCandidate({ tool: DESKTOP_READ, input: read("/repo/docs/a.md") }, {})?.writes).toBeUndefined();
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    for (const path of ["/repo/docs/new.md", "/repo/docs/a/b/c.md"]) {
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_WRITE, write(path)) }), path).toMatchObject({ kind: "allow", source: "owner-rule" });
+    }
+    for (const path of ["/repo/src/x.ts", "/repo/docs-old/x.md", "/repo/docs/../src/x.ts"]) {
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_WRITE, write(path)) }), path).toMatchObject({ kind: "card" });
+    }
+    // a write rule never answers a read, and a read rule never a write
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/repo/docs/a.md")))).toBeUndefined();
+    expect(matchOwnerRule([folderRule("/repo/docs/a.md")], desktop(DESKTOP_WRITE, write("/repo/docs/a.md")))).toBeUndefined();
+  });
+
+  it("a write to a sensitive path inside the folder keeps its card", () => {
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    for (const path of ["/repo/docs/.env", "/repo/docs/.git/hooks/pre-commit", "/repo/docs/id_rsa", "/repo/docs/server.key", "/repo/docs/.ssh/authorized_keys"]) {
+      expect(matchOwnerRule([rule], desktop(DESKTOP_WRITE, write(path))), path).toBeUndefined();
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_WRITE, write(path)) }), path).toMatchObject({ kind: "card", reason: "no-rule" });
+    }
+    expect(folderRuleCandidate({ tool: DESKTOP_WRITE, input: write("/repo/.ssh/config") }, {})).toBeUndefined();
+  });
+
+  it("a delete keeps the destructive rule: only a rule made on a delete card covers it", () => {
+    const DELETE = "mcp__sagax-desktop__delete_file";
+    const del = JSON.stringify({ path: "/repo/docs/old.md" });
+    const writeRule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    expect(ownerDecision({ mode: "auto", rules: [{ ...writeRule, tool: "sagax-desktop__delete_file" }], call: desktop(DELETE, del) })).toMatchObject({ kind: "card", reason: "destructive" });
+    const candidate = folderRuleCandidate({ tool: DELETE, input: del }, {})!;
+    expect(candidate.destructive).toBe("delete");
+    const deleteRule = { ...writeRule, tool: candidate.tool, scope: candidate.scope, destructive: candidate.destructive };
+    expect(ownerDecision({ mode: "approval", rules: [deleteRule], call: desktop(DELETE, JSON.stringify({ path: "/repo/docs/deep/x.md" })) })).toMatchObject({ kind: "allow" });
+    expect(ownerDecision({ mode: "approval", rules: [deleteRule], call: desktop(DELETE, JSON.stringify({ path: "/repo/docs/.env" })) })).toMatchObject({ kind: "card" });
   });
 
   it("an owner Refuser or Demander d'abord rule wins over the folder allow", () => {

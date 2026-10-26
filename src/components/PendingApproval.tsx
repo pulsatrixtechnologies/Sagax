@@ -473,7 +473,7 @@ export function PendingApprovalActions({
         data-always-allow=""
         data-owner-rule="allow"
       >
-        {t("approval.action.alwaysAllowFile")}
+        {t(ownerRuleFolder.writes ? "approval.action.alwaysAllowFileWrite" : "approval.action.alwaysAllowFile")}
       </button>
       <button
         type="button"
@@ -483,7 +483,7 @@ export function PendingApprovalActions({
         data-always-allow-folder=""
         data-owner-rule="allow"
       >
-        {t("approval.action.alwaysAllowFolder")}
+        {t(ownerRuleFolder.writes ? "approval.action.alwaysAllowFolderWrite" : "approval.action.alwaysAllowFolder")}
       </button>
     </>
   ) : alwaysAllow ? (

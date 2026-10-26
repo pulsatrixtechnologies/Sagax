@@ -10031,6 +10031,8 @@
   "approval.rule.computerApp": "Utiliser {app} sur cet ordinateur (voir, cliquer et saisir du texte)",
   "approval.action.alwaysAllowFile": "Toujours permettre ce fichier",
   "approval.action.alwaysAllowFolder": "Toujours permettre tout le dossier",
+  "approval.action.alwaysAllowFileWrite": "Toujours permettre les modifications de ce fichier",
+  "approval.action.alwaysAllowFolderWrite": "Toujours permettre les modifications dans tout le dossier",
   "approval.rule.folder": "{action} dans {folder} et ses sous-dossiers",
   "approval.computerApp.line": "{name} peut voir {app}, y cliquer et y saisir du texte sur cet ordinateur.",
   "resourceUsage.label": "Consommation de {host}",

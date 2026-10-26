@@ -19139,6 +19139,38 @@
         }
       }
     },
+    "Always allow changes to this file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow changes to this file"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre les modifications de ce fichier"
+          }
+        }
+      }
+    },
+    "Always allow changes in the whole folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow changes in the whole folder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre les modifications dans tout le dossier"
+          }
+        }
+      }
+    },
     "Always allow this file": {
       "localizations": {
         "en": {

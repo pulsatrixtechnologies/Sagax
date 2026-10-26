@@ -67,6 +67,8 @@ public struct ApprovalPlainWords: Codable, Hashable, Sendable {
 /// The rule a permission card can keep (`OptionCardData.ownerRule`).
 public struct OwnerRuleCandidate: Codable, Hashable, Sendable {
     public var description: String
+    /// A folder rule that also covers changing files (write, delete).
+    public var writes: Bool? = nil
     public var from: String? = nil
 }
 

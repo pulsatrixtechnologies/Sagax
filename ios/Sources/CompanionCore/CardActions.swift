@@ -227,6 +227,8 @@ public struct ApprovalDockActions: Hashable, Sendable {
     /// 2026-10-26 (#1065): also keep the whole folder (`ownerRuleFolder`);
     /// the Always allow of the exact file then reads "this file".
     public var alwaysAllowFolder = false
+    /// The folder rule covers changing files, not only reading: the labels say so.
+    public var alwaysAllowFolderWrites = false
     /// The provider keeps the allow for its session.
     public var alwaysAllowSession = false
     /// Remember the exact command ("Always allow this command").
@@ -333,6 +335,7 @@ public enum ApprovalDockRules {
         // rule first (every card since #855), then the older grants
         actions.alwaysAllowRule = card.ownerRule != nil
         actions.alwaysAllowFolder = card.ownerRule != nil && card.ownerRuleFolder != nil && !durable
+        actions.alwaysAllowFolderWrites = actions.alwaysAllowFolder && card.ownerRuleFolder?.writes == true
         actions.alwaysAllowTool = !actions.alwaysAllowRule && !durable && hasBot && card.allowKey != nil
         actions.alwaysAllowSession = !actions.alwaysAllowRule && !durable && card.allowKey == nil && !canRememberCommand && card.allowSession == true
         actions.alwaysAllowCommand = !actions.alwaysAllowRule && canRememberCommand

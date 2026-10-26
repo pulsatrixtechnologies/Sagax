@@ -13718,6 +13718,8 @@
       "approval.rule.computerApp": "283492c1a34c668f52d375d8db3e39a33613d47cecd07045cab2dba40b609911",
       "approval.action.alwaysAllowFile": "c55f891112682c9c3db82bb5f8ce9ee8d78370b83ef5c12f5a269cc9d91968ef",
       "approval.action.alwaysAllowFolder": "82df49eb488190bcbd0f675b7636b9d9642cd86f96b9a08af21c4f3c5093a61c",
+      "approval.action.alwaysAllowFileWrite": "3b0bfe4af3d28a039edfc68a208ec81a35c7eb848c955f8810134465b3b21b2a",
+      "approval.action.alwaysAllowFolderWrite": "adadc5c74d29e150de0152581224a41a8256c614913d53a1a5ac468126db6cad",
       "approval.rule.folder": "d700434d51e434123a8e8ee705cf4691ef7a270d435afbd203a458f29a9cc2a4",
       "approval.computerApp.line": "f29fac4e2225c4eec0b3a4774c6ed7640972a624e67c8999400eb2eecadc0aa6",
       "resourceUsage.label": "370e184e8f7d22062a83804d180e485f790d7dc09d461e24e536be864e80b351",
