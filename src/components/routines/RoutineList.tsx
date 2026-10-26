@@ -2,7 +2,7 @@ import { Loader2, Repeat2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
-import { scheduleLabel, scheduleRawCron } from "@/lib/schedule-label";
+import { scheduleLabelCompact, scheduleRawCron } from "@/lib/schedule-label";
 import { routineNextRunPhrase, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
 import type { Bot } from "@/state/store";
 import { BotAvatar } from "@/components/Avatar";
@@ -80,7 +80,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           // paused: with a switch, the switch says it is off (the state stays
           // in the tooltip). A finished one-shot keeps its word.
           const pausedWithSwitch = toggle && !upcoming && !routine.enabled && routineScheduleState(routine) === t("routines.pausedSchedule");
-          const whenLine = pausedWithSwitch ? scheduleLabel(routine.schedule) : when;
+          const whenLine = upcoming ? when : routine.schedule.type !== "once" || routine.enabled || routine.nextRunAt != null ? scheduleLabelCompact(routine.schedule) : when;
           const whenTitle = [pausedWithSwitch ? routineWhenLabel(routine) : when, rawCron].filter(Boolean).join("\n");
           return (
             <div key={routine.id} data-routine-row className={grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-1.5") : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover"}>

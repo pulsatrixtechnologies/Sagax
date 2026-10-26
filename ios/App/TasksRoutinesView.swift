@@ -683,9 +683,10 @@ private struct RoutineRow: View {
             else { Image(systemName: "calendar.badge.exclamationmark").frame(width: 34, height: 34) }
             VStack(alignment: .leading, spacing: 1) {
                 Text(routine.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                ((bot.map { Text(verbatim: $0.name) } ?? routine.bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
-                    + Text(verbatim: " · \(RoutineWording.schedule(routine.schedule)) · ")
-                    + Text(LocalizedStringKey(routine.isTeamGoal ? "Team goal" : routine.runLocation.label)))
+                // the short schedule; the agent and where it runs stay in the
+                // accessibility label and the editor
+                Text(verbatim: RoutineWording.compact(routine.schedule))
+                    .accessibilityLabel(Text(verbatim: "\(bot?.name ?? routine.bot?.name ?? String(localized: "Deleted agent")) · \(RoutineWording.schedule(routine.schedule))"))
                     .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 // AU20: someone else's routine names its owner
                 if let owner = routine.foreignOwnerName {

@@ -1,6 +1,70 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Weekdays around %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekdays around %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En semaine vers %@"
+          }
+        }
+      }
+    },
+    "Every day around %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every day around %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les jours vers %@"
+          }
+        }
+      }
+    },
+    "Every %@ around %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every %@ around %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque %@ vers %@"
+          }
+        }
+      }
+    },
+    "Once %@ at %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once %@ at %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une fois le %@ à %@"
+          }
+        }
+      }
+    },
     "Discover": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Discover" } },

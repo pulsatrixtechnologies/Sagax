@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
 import { cronScheduleLabel } from "../../shared/cron-label";
-import { intervalLabel, scheduleLabel, scheduleSentence, whenLabel } from "./schedule-label";
+import { intervalLabel, scheduleLabel, scheduleLabelCompact, scheduleSentence, whenLabel } from "./schedule-label";
 
 describe("schedule labels", () => {
   it.each([
@@ -114,5 +114,38 @@ describe("cron wording in French and English", () => {
     } finally {
       setLocale("en");
     }
+  });
+});
+
+describe("compact schedule label", () => {
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const cron = (expression: string, timeZone = local) => ({ type: "cron" as const, expression, timeZone });
+  it("says the schedule in a short line, 12 h in English", () => {
+    setLocale("en");
+    expect(scheduleLabelCompact(cron("30 8 * * 1-5"))).toBe("Weekdays around 8:30 AM");
+    expect(scheduleLabelCompact(cron("6 8 * * 1"))).toBe("Every Monday around 8:06 AM");
+    expect(scheduleLabelCompact(cron("0 17 * * 5"))).toBe("Every Friday around 5:00 PM");
+    expect(scheduleLabelCompact(cron("0 9 * * *"))).toBe("Every day around 9:00 AM");
+    expect(scheduleLabelCompact({ type: "interval", everyMinutes: 60, anchorAt: 0 })).toBe("Every hour");
+    expect(scheduleLabelCompact({ type: "webhook" } as never)).toBe("When a webhook fires");
+    expect(scheduleLabelCompact({ type: "event" } as never)).toBe("When email arrives");
+    const at = new Date(new Date().getFullYear(), 9, 29, 17, 57).getTime();
+    expect(scheduleLabelCompact({ type: "once", at })).toBe("Once October 29 at 5:57 PM");
+  });
+  it("shows the zone only when it differs from the person's own", () => {
+    setLocale("en");
+    const other = local === "Asia/Kolkata" ? "Pacific/Auckland" : "Asia/Kolkata";
+    expect(scheduleLabelCompact(cron("30 8 * * 1-5", other))).toBe(`Weekdays around 8:30 AM · ${other}`);
+    expect(scheduleLabel(cron("30 8 * * 1-5", local))).toContain(local);
+  });
+  it("uses 24 h in French", () => {
+    setLocale("fr");
+    expect(scheduleLabelCompact(cron("0 17 * * 5"))).toMatch(/^Chaque vendredi vers 17\D+00$/);
+    expect(scheduleLabelCompact(cron("30 8 * * 1-5"))).toMatch(/^En semaine vers 8\D+30$/);
+    setLocale("en");
+  });
+  it("keeps the full label for what does not reduce", () => {
+    setLocale("en");
+    expect(scheduleLabelCompact(cron("0 9 1 * 1"))).toBe(scheduleLabel(cron("0 9 1 * 1")));
   });
 });
