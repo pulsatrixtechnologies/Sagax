@@ -2863,6 +2863,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             // read only when the turn fails (claudeUsageLimit, `result`)
             if (session.turn) session.turn.limit = claudeLimitRefusal(o.rate_limit_info);
             break;
+          case "tool_progress":
+            // Claude Code 2.1.306 sends one every 30 s while a tool runs:
+            // proof the turn is alive, so the stall watchdog keeps waiting.
+            emit({ ...base(threadId, currentTurnId()), type: "item.updated", itemType: "tool" });
+            break;
           case "result": {
             // A synthetic background completion is not the result of the
             // submitted user turn. Settling it would revoke browser access
