@@ -514,8 +514,8 @@ final class ApprovalPlainWordsTests: XCTestCase {
     }
 
     func testServerPlainTitleOnEnglishPhones() throws {
-        let ask = try card(#"{"title":"Approval needed","subtitle":"{\"command\":\"echo hi\"}","options":["Allow","Deny"],"requestId":"r1","tool":"other","plain":{"title":"Allow Cryptic to run a command?","line":"Runs an action.","risk":"execute"},"expiresAt":1760000000000}"#)
-        XCTAssertEqual(ApprovalHeading.plainTitle(ask, language: "en-CA"), "Allow Cryptic to run a command?")
+        let ask = try card(#"{"title":"Approval needed","subtitle":"{\"command\":\"echo hi\"}","options":["Allow","Deny"],"requestId":"r1","tool":"other","plain":{"title":"Allow Quasar to run a command?","line":"Runs an action.","risk":"execute"},"expiresAt":1760000000000}"#)
+        XCTAssertEqual(ApprovalHeading.plainTitle(ask, language: "en-CA"), "Allow Quasar to run a command?")
         XCTAssertEqual(ApprovalHeading.plainLine(ask, language: "en"), "Runs an action.")
         XCTAssertEqual(ask.expiresAt, 1760000000000)
         // English words never land in a French sentence

@@ -171,7 +171,7 @@ export interface WireTask {
   routineResults?: true;
   /** A hidden conversation: an AI client (the Perspicax MCP `sagax_send`,
    * the member API) works with the bot here on the person's behalf, the way
-   * Grok Bot keeps its subagents' conversations out of the chat (#291). Never
+   * the reference design keeps its subagents' conversations out of the chat (#291). Never
    * in the sidebar, previews, typing dots, unread or notifications; reached
    * from the bot's Activity panel or a thread link. Only `true` is stored. */
   hidden?: true;
@@ -608,7 +608,7 @@ export const ROUTINE_CONVERSATION_HEADER = "x-sagax-conversation";
 /** WireMessage.routineToggle: a routine change this turn made, as one quiet
  * line in the conversation. `enabled`/`disabled` group every routine a turn
  * turned on or off into one count line ("Disabled · 5 routines"). `created`/
- * `updated`/`deleted` (2026-10-21, JC) are a bot touching a routine's
+ * `updated`/`deleted` (2026-10-21) are a bot touching a routine's
  * definition: one named line each ("Updated routine · <name>"), the name never
  * a UUID (shared/human-id.ts). */
 export interface RoutineToggleEvent {
@@ -840,7 +840,7 @@ export interface WireMessage {
    * reviews and publishes it from. `text` is the fallback line. */
   pagePublish?: { pageId: string; version: number; title: string };
   /** An outward action that costs money or reaches a real person, on its
-   * approval card (parité Grok Bot V4, 59, 83): a phone call
+   * approval card (parité the reference design V4, 59, 83): a phone call
    * (server/outbound-calls.ts) or a purchase (server/credential-vault.ts).
    * `text` is the fallback line. */
   outbound?: OutboundCard;
@@ -867,6 +867,38 @@ export interface WireMessage {
   /** "Connect Microsoft Teams" (shared/connector-setup.ts): a sign-in page on
    * grok.com or claude.ai, opened by the person. The row's text is its fallback. */
   connectorSetup?: ConnectorSetupView;
+}
+
+const threadStamp = (task: { updatedAt?: number; createdAt?: number }): number =>
+  typeof task.updatedAt === "number" && Number.isFinite(task.updatedAt) ? task.updatedAt
+    : typeof task.createdAt === "number" && Number.isFinite(task.createdAt) ? task.createdAt : 0;
+
+/** Pin, then newest update. Equal stamps keep the caller's order. */
+export function orderedThreadList<T extends { pinned?: boolean; updatedAt?: number; createdAt?: number }>(tasks: readonly T[]): T[] {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((a, b) => {
+      const pin = Number(b.task.pinned === true) - Number(a.task.pinned === true);
+      if (pin) return pin;
+      const recency = threadStamp(b.task) - threadStamp(a.task);
+      if (recency) return recency;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.task);
+}
+
+/** 0 is the "until new activity" sentinel. The event stream never drops an expired snooze, so check the clock too. */
+export const isSnoozed = (task: Pick<WireTask, "snoozedUntil">, now = Date.now()): boolean =>
+  task.snoozedUntil !== undefined && (task.snoozedUntil === 0 || task.snoozedUntil > now);
+
+type OpenThreadCandidate = Pick<WireTask, "routineRunId" | "archivedAt" | "closedBy" | "openedBy" | "snoozedUntil" | "pinned" | "updatedAt" | "createdAt">;
+
+/** The top row of the bot's thread list, so deleting the open thread never pulls a hidden one into view. */
+export function nextOpenThread<T extends OpenThreadCandidate>(tasks: readonly T[], now = Date.now()): T | undefined {
+  const own = tasks.filter((task) => !task.routineRunId);
+  const open = own.filter((task) => task.archivedAt === undefined);
+  const listed = open.filter((task) => task.pinned === true || !(task.closedBy || task.openedBy || isSnoozed(task, now)));
+  return [listed, open, own].map((candidates) => orderedThreadList(candidates)[0]).find((task) => task !== undefined);
 }
 
 export interface OptionCardData {
@@ -899,7 +931,7 @@ export interface OptionCardData {
   /** Catalog key for held when it is one of the fixed notes. */
   heldCode?: string;
   /** A permission card in plain words, made by shared/approval-describe.ts
-   * (the same generator writes the push): "Allow Cryptic to run a
+   * (the same generator writes the push): "Allow Nova to run a
    * command?" and one line under it. Clients without a catalog show these. */
   plain?: { title: string; line: string; risk?: "read" | "write" | "destructive" | "execute" };
   /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
@@ -915,7 +947,7 @@ export interface OptionCardData {
    * read from the arguments, the destructive kind and plain words. */
   ownerRule?: {
     tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string;
-    /** 2026-10-19 (JC: "Toujours permettre" on every card): the card's
+    /** 2026-10-19 ("Toujours permettre" on every card): the card's
      * situation the rule also answers (server/owner-approval.ts `from`):
      * an admin's card, a held card, a turn that is not the person's own. */
     from?: "admin" | "hold" | "origin";
@@ -1166,7 +1198,7 @@ export interface WireGroup {
   createdBy?: string;
   /** Organization server: who owns the room's settings (its creator, else
    * the first person listed; null when its organization admins do). Only
-   * the owner changes them (server/group-ownership.ts). Absent on a solo
+   * The owner changes them (server/group-ownership.ts). Absent on a solo
    * server. */
   ownerId?: string | null;
   /** true for auto-created bot-bot channels. */

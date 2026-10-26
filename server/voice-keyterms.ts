@@ -3,7 +3,7 @@
 // xAI's grok-voice-transcribe-2.0 takes up to 100 `keyterm` values (50
 // characters each) on both the streaming socket and POST /v1/stt
 // (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text).
-// Without them a bot called "Cryptic" is heard as "critique", a client's
+// Without them a bot called "Nova" is heard as "critique", a client's
 // name as two common words and "CrowdStrike" as "crowd strike". The terms
 // come from what the call is about: the bot, the person, the other bots,
 // the organization's own list (SAGAX_VOICE_KEYTERMS) and the proper nouns

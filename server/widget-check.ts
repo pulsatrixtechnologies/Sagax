@@ -1,4 +1,4 @@
-// The widget self-check (JC, 2026-10-19): "the bot must check its own widget
+// The widget self-check (2026-10-19): "the bot must check its own widget
 // and fix it while it builds it". A bot hands the HTML of a ```widget fence to
 // check_widget; this file renders it the way the chat does (the same document
 // from src/lib/rich-blocks.ts, in an iframe sandboxed to allow-scripts) at a

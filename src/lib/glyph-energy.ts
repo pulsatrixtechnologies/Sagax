@@ -3,7 +3,7 @@
 // (src/lib/glyph-ripple.ts), drawn by WebGL2 when the machine has it: a click
 // sends energy through the glyph grid, per glyph, never a shape over the page.
 //
-// What a wave looks like (JC, 2026-10-17: "real looking weaves of energies"):
+// What a wave looks like (2026-10-17: "real looking weaves of energies"):
 // - a front that runs outward and slows down, its edge torn by noise (fbm),
 //   so the lit region is organic, never a circle;
 // - behind the front, a body brightest near the click with a soft falloff,
@@ -15,7 +15,7 @@
 //   (a ping-pong energy texture), so the wave leaves a trail;
 // - a faint glow follows the pointer over the conversation.
 //
-// Cost rules (kept from the 2D ring, JC 2026-10-16):
+// Cost rules (kept from the 2D ring, 2026-10-16):
 // - one canvas, pointer-events none, sized to devicePixelRatio;
 // - the energy is computed ONCE PER GLYPH CELL (a cols x rows texture, a few
 //   tens of thousands of texels), then a full-screen pass only reads

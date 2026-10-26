@@ -1,6 +1,6 @@
 // A request that needs a mail, calendar, Teams or SharePoint connector the
 // bot's engine lacks runs, for that request only, on another engine of the
-// same person that has it (JC 2026-10-21, review of #943): same bot, same
+// same person that has it (2026-10-21, review of #943): same bot, same
 // thread, one line "Passé à Claude pour Gmail". The candidates are the
 // engines this turn's payer may use (index.ts autoEnginesFor: allowed
 // engines and models, approval level), never a model that costs more than

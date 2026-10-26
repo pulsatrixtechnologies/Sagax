@@ -1,4 +1,4 @@
-// Grok Bot's sidebar portrait fills its box: a shape mascot, whose body uses
+// The reference design's sidebar portrait fills its box: a shape mascot, whose body uses
 // about 62% of its frame, is drawn larger there; photos and the other
 // characters, which already reach the box's edges, are left as they are.
 import { createElement } from "react";

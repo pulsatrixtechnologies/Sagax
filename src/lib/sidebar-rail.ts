@@ -1,4 +1,4 @@
-// The compact sidebar (icons density, the collapsed rail): Grok Bot's
+// The compact sidebar (icons density, the collapsed rail): the reference design's
 // "compact sidebar". Its avatars are one column, so the arrow keys move
 // between them like a list (Up, Down, Home, End), on top of Tab.
 

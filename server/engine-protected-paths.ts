@@ -5,7 +5,7 @@
 // their filesystem. Tool withholding already keeps the built-in engines away;
 // these deny rules are the second layer, and the only one on a solo desktop.
 // The robust fix (keep the key off the engine host entirely) is tracked as a
-// JC decision in the PR body; this closes the read path meanwhile.
+// decision in the PR body; this closes the read path meanwhile.
 import { join } from "node:path";
 
 import { DATA_DIR } from "./config.ts";

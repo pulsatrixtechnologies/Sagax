@@ -209,7 +209,7 @@ struct CardView: View {
         }
     }
 
-    /// A kept Always-allowed card reads as the dock did ("Cryptic wants to
+    /// A kept Always-allowed card reads as the dock did ("Quasar wants to
     /// run a command", in the app's language); every other card its title.
     private func cardTitle(_ card: OptionCard) -> String {
         guard let rule = AllowRuleText.savedRule(card) else { return card.title }

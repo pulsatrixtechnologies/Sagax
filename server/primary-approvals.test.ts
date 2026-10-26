@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { cardRef, createPrimaryApprovals, primaryAnswerable, type PrimaryCard, type PrimaryTurn } from "./primary-approvals.ts";
 
-const TURN: PrimaryTurn = { botId: "cryptic", botName: "Cryptic", person: "pr_jc", message: { id: "m1", text: "Oui vas-y, approuve-la. Toujours permettre pour Katarina.", at: 20_000 } };
+const TURN: PrimaryTurn = { botId: "quasar", botName: "Quasar", person: "pr_jc", message: { id: "m1", text: "Oui vas-y, approuve-la. Toujours permettre pour Ottoline.", at: 20_000 } };
 const card = (over: Partial<PrimaryCard> = {}): PrimaryCard => ({
-  threadId: "t-kat", requestId: "r1", botId: "katarina", botName: "Katarina", at: 1_000,
-  title: "Allow Katarina to run a command?", line: "npm test", kind: "permission", needsKey: false,
+  threadId: "t-kat", requestId: "r1", botId: "ottoline", botName: "Ottoline", at: 1_000,
+  title: "Allow Ottoline to run a command?", line: "npm test", kind: "permission", needsKey: false,
   options: ["allow", "deny", "always_allow"], always: "rule", alwaysScope: "the command npm test", ...over,
 });
 
@@ -22,7 +22,7 @@ function harness(cards: PrimaryCard[], gate: PrimaryTurn | { status: number; cod
     audit: (_turn, _card, decision) => audits.push(decision),
     now: () => 21_000,
   });
-  const run = (args: Record<string, unknown>) => service.handle({ args, botId: "cryptic", threadId: "t-main", generation: "g" });
+  const run = (args: Record<string, unknown>) => service.handle({ args, botId: "quasar", threadId: "t-main", generation: "g" });
   return { run, calls, audits };
 }
 
@@ -33,7 +33,7 @@ describe("sagax_approvals", () => {
     expect(listed.status).toBe(200);
     const text = String(listed.body.text);
     expect(text).toContain(cardRef("t-kat", "r1"));
-    expect(text).toContain("Allow Katarina to run a command?");
+    expect(text).toContain("Allow Ottoline to run a command?");
     expect(text).not.toContain("t-kat");
     expect(text).not.toContain("r1 ");
   });
@@ -44,8 +44,8 @@ describe("sagax_approvals", () => {
     expect(done.status).toBe(200);
     expect(calls).toEqual([{ kind: "respond", body: { behavior: "allow" } }]);
     expect(audits).toEqual(["allow"]);
-    expect(String(done.body.text)).toContain("via Cryptic");
-    const always = await run({ action: "answer", decision: "always_allow", quote: "Toujours permettre pour Katarina" });
+    expect(String(done.body.text)).toContain("via Quasar");
+    const always = await run({ action: "answer", decision: "always_allow", quote: "Toujours permettre pour Ottoline" });
     expect(always.status).toBe(200);
     expect(calls.at(-1)).toEqual({ kind: "respond", body: { behavior: "allow", rule: "allow" } });
   });
@@ -74,7 +74,7 @@ describe("sagax_approvals", () => {
   });
 
   it("answers a payment card on request like any other", async () => {
-    const { run, calls } = harness([card({ title: "Allow Katarina to pay an invoice?", line: "stripe charge 120 $" })]);
+    const { run, calls } = harness([card({ title: "Allow Ottoline to pay an invoice?", line: "stripe charge 120 $" })]);
     expect((await run({ action: "answer", decision: "allow", quote: "approuve-la" })).status).toBe(200);
     expect(calls).toEqual([{ kind: "respond", body: { behavior: "allow" } }]);
   });
@@ -90,7 +90,7 @@ describe("sagax_approvals", () => {
     const long = harness([card()], { ...TURN, message: { ...TURN.message, text: "Oui vas-y, je te fais confiance, approuve celle qui attend depuis tantôt." } });
     const answered = await long.run({ action: "answer", decision: "allow", quote: "Oui vas-y" });
     expect(answered.status).toBe(200);
-    expect(String(answered.body.text)).toContain("Allow Katarina to run a command?");
+    expect(String(answered.body.text)).toContain("Allow Ottoline to run a command?");
     expect(long.calls).toEqual([{ kind: "respond", body: { behavior: "allow" } }]);
     // a refusal is still a refusal, whatever the length
     const no = harness([card()], { ...TURN, message: { ...TURN.message, text: "Non, ne l'approuve pas, je veux d'abord relire la commande au complet." } });
@@ -99,7 +99,7 @@ describe("sagax_approvals", () => {
   });
 
   it("a yes for an older card that the message does not name is refused; a bot's name covers one card of it only", async () => {
-    const twice = harness([card(), card({ requestId: "r2", at: 5_000 })], { ...TURN, message: { ...TURN.message, text: "Katarina, approuve." } });
+    const twice = harness([card(), card({ requestId: "r2", at: 5_000 })], { ...TURN, message: { ...TURN.message, text: "Ottoline, approuve." } });
     expect((await twice.run({ action: "answer", card: cardRef("t-kat", "r1"), decision: "allow", quote: "approuve" })).body.code).toBe("card_not_named");
     expect(twice.calls).toEqual([]);
     expect((await twice.run({ action: "answer", card: cardRef("t-kat", "r2"), decision: "allow", quote: "approuve" })).status).toBe(200);
@@ -120,7 +120,7 @@ describe("sagax_approvals", () => {
   });
 
   it("lists and answers a confidential thread's card without its words", async () => {
-    const secret = card({ confidential: true, line: "cat secret-plan.md", title: "Allow Katarina to read secret-plan.md?" });
+    const secret = card({ confidential: true, line: "cat secret-plan.md", title: "Allow Ottoline to read secret-plan.md?" });
     const { run, calls } = harness([secret], { ...TURN, message: { ...TURN.message, text: "oui" } });
     const listed = String((await run({ action: "list" })).body.text);
     expect(listed).toContain("confidential conversation");
@@ -141,7 +141,7 @@ describe("sagax_approvals", () => {
 
   it("Always allow this saves the custom rule, then allows", async () => {
     const { run, calls } = harness([card({ options: ["allow", "deny", "always_allow_this"] })]);
-    expect((await run({ action: "answer", decision: "always_allow_this", quote: "Toujours permettre pour Katarina" })).status).toBe(200);
+    expect((await run({ action: "answer", decision: "always_allow_this", quote: "Toujours permettre pour Ottoline" })).status).toBe(200);
     expect(calls).toEqual([{ kind: "rule" }, { kind: "respond", body: { behavior: "allow" } }]);
   });
 
@@ -156,8 +156,8 @@ describe("sagax_approvals", () => {
     const other = harness([card(), card({ requestId: "r2", botName: "Helper", at: 5_000 })], { ...TURN, message: { ...TURN.message, text: "Oui vas-y, approuve-la." } });
     expect((await other.run({ action: "answer", card: cardRef("t-kat", "r1"), decision: "allow", quote: "approuve-la" })).body.code).toBe("card_not_named");
     expect(other.calls).toEqual([]);
-    const named = harness([card(), card({ requestId: "r2", botName: "Helper" })], { ...TURN, message: { ...TURN.message, text: "Oui, approuve celle de Katarina." } });
-    expect((await named.run({ action: "answer", card: cardRef("t-kat", "r1"), decision: "allow", quote: "approuve celle de Katarina" })).status).toBe(200);
+    const named = harness([card(), card({ requestId: "r2", botName: "Helper" })], { ...TURN, message: { ...TURN.message, text: "Oui, approuve celle de Ottoline." } });
+    expect((await named.run({ action: "answer", card: cardRef("t-kat", "r1"), decision: "allow", quote: "approuve celle de Ottoline" })).status).toBe(200);
     const lacking = harness([card(), card({ requestId: "r2", botName: "Helper", options: ["allow", "deny"] })], { ...TURN, message: { ...TURN.message, text: "Toujours permettre pour Helper." } });
     expect((await lacking.run({ action: "answer", card: cardRef("t-kat", "r2"), decision: "always_allow", quote: "Toujours permettre" })).body.code).toBe("option_unknown");
   });

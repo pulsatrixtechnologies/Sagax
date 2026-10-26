@@ -18,12 +18,12 @@ import { pendingApprovals, PendingApprovalActions } from "./PendingApproval";
 import { approvalPill } from "./ApprovalCard";
 
 const bot = { id: "bot-1", name: "Cora" } as Bot;
-const ownerRule = { tool: "perspicax_gox__cw_psa__write", scope: { resource: "service/tickets", operation: "update" }, description: "Update tickets in ConnectWise PSA (service/tickets, update)" };
+const ownerRule = { tool: "perspicax_quasar__cw_psa__write", scope: { resource: "service/tickets", operation: "update" }, description: "Update tickets in ConnectWise PSA (service/tickets, update)" };
 function message(extra: Partial<NonNullable<Message["card"]>> = {}): Message {
   return {
     id: "approval-1", at: 1, role: "bot", kind: "options",
-    card: { title: "Approval needed", subtitle: "{}", options: ["Allow", "Deny"], tool: "mcp__perspicax_gox__cw_psa__write",
-      requestId: "request-1", allowKey: "mcp:perspicax_gox__cw_psa__write", ownerRule, ...extra },
+    card: { title: "Approval needed", subtitle: "{}", options: ["Allow", "Deny"], tool: "mcp__perspicax_quasar__cw_psa__write",
+      requestId: "request-1", allowKey: "mcp:perspicax_quasar__cw_psa__write", ownerRule, ...extra },
   };
 }
 type Node = ReactElement<{ children?: ReactNode; onClick?: () => void }>;
@@ -51,7 +51,7 @@ describe("owner rule buttons", () => {
     expect(result.html).toContain("data-org-always-allow-off");
   });
 
-  // 2026-10-20 (JC, after Grok Bot): Deny, Always allow, Allow once; Always
+  // 2026-10-20 (JC, after the reference design): Deny, Always allow, Allow once; Always
   // deny and the rule's scope live in Settings > Security
   it("offers exactly Deny, Always allow and Allow once", () => {
     const result = view();

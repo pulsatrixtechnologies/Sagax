@@ -56,7 +56,7 @@ describe("Settings → General", () => {
     const fr = await renderSettings();
     expect(fr).toContain(">Réglages<");
     expect(fr).toContain("Accès des personnes aux outils, nettoyage des conversations");
-    // General is grouped as Grok Bot's: grey headings over the cards
+    // General is grouped as the reference design's: grey headings over the cards
     expect(fr).toContain(">Compte</h3>");
     expect(fr).toContain(">Apparence</h3>");
     expect(fr).toContain(">Système</h3>");

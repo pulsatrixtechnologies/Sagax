@@ -47,8 +47,11 @@
 //                     fully silent forever — a wedged agent mid-answer; the
 //                     driver's prompt idle guard must fail the turn on its own)
 //                   | slow-tool (start a tool call and send nothing while it
-//                     "runs" for FAKE_ACP_TOOL_MS, default 600 — a quiet
+//                     "runs" for FAKE_ACP_TOOL_MS, default 600, or until the
+//                     file FAKE_ACP_TOOL_GATE exists when set — a quiet
 //                     `sleep` or build — then finish it and answer)
+//                   | finished-tools (tool_call frames that arrive already
+//                     completed or failed, one of them updated again)
 //                   | stall-after-tool (finish a tool call, then go fully
 //                     silent forever: the guard must still fire once no tool
 //                     is running)
@@ -157,6 +160,9 @@
 //                        the first, silently) and records it; session/load
 //                        reports the recorded model, whatever the new profile
 //                        or -m asks for
+//   FAKE_ACP_CURSOR_FAST=1  a `fast` select ("true") once initialize declares
+//                        _meta.parameterizedModelPicker, as Cursor CLI 2026.10.01;
+//                        =stuck acknowledges set_config_option but keeps "true"
 //   FAKE_ACP_GROK_CONFIG_MODELS=1  also offer every [model.<slug>] block of
 //                        $GROK_HOME/config.toml (else $HOME/.grok), as Grok
 //                        lists the blocks Sagax writes for local models
@@ -213,6 +219,7 @@ const variantValues = (entries: any[]): string[] => entries.flatMap((entry) => (
 ));
 const modes = (process.env.FAKE_ACP_MODES ?? "").split(",").filter(Boolean);
 let currentMode: string | null = modes[0] ?? null;
+let currentFast: string | null = null;
 // task id captured from the last delegate_bot reply, for a later
 // check_delegation call. Each turn is a fresh process, so the id is passed
 // through a file (same state-passing pattern as FAKE_ACP_GATE_FILE).
@@ -271,6 +278,13 @@ const configOptions = () => {
       type: "select",
       currentValue: currentMode,
       options: modes.map((value) => ({ value, name: value })),
+    }] : []),
+    ...(currentFast ? [{
+      id: "fast",
+      name: "Fast",
+      type: "select",
+      currentValue: currentFast,
+      options: [{ value: "true", name: "On" }, { value: "false", name: "Off" }],
     }] : []),
   ];
   return options.length ? options : null;
@@ -771,6 +785,9 @@ function handle(msg: any) {
   switch (msg.method) {
     case "initialize": {
       if (failRpc(msg)) break;
+      if (["1", "stuck"].includes(process.env.FAKE_ACP_CURSOR_FAST ?? "") && msg.params?.clientCapabilities?._meta?.parameterizedModelPicker === true) {
+        currentFast = "true";
+      }
       if (mode === "hang-initialize") {
         setInterval(() => {}, 1_000);
         return;
@@ -938,6 +955,15 @@ function handle(msg: any) {
           writeFileSync(`${process.env.FAKE_ACP_DUMP}.config.json`, JSON.stringify(configCalls, null, 2));
         }
         resultAndConfigUpdates(msg.id, process.env.FAKE_ACP_EMPTY_VARIANT_ACK ? {} : { configOptions: configOptions() }, "effort", msg.params.sessionId);
+        break;
+      }
+      if (configId === "fast" && currentFast && (value === "true" || value === "false")) {
+        if (process.env.FAKE_ACP_CURSOR_FAST !== "stuck") currentFast = value;
+        configCalls.push({ method: msg.method, params: msg.params });
+        if (process.env.FAKE_ACP_DUMP) {
+          writeFileSync(`${process.env.FAKE_ACP_DUMP}.config.json`, JSON.stringify(configCalls, null, 2));
+        }
+        result(msg.id, { configOptions: configOptions() });
         break;
       }
       if (configId === "mode" && modes.includes(value)) {
@@ -1150,11 +1176,39 @@ function handle(msg: any) {
           hangKeepAlive = setInterval(() => {}, 1_000);
           return;
         }
-        setTimeout(() => {
+        const answer = () => {
           finish();
           out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: "done" } } } });
           complete();
-        }, Number(process.env.FAKE_ACP_TOOL_MS ?? 600));
+        };
+        const gate = process.env.FAKE_ACP_TOOL_GATE;
+        if (gate) {
+          const held = setInterval(() => {
+            if (!existsSync(gate)) return;
+            clearInterval(held);
+            answer();
+          }, 20);
+          return;
+        }
+        setTimeout(answer, Number(process.env.FAKE_ACP_TOOL_MS ?? 600));
+        return;
+      }
+      if (mode === "finished-tools") {
+        const update = (u: Record<string, unknown>) => out({ jsonrpc: "2.0", method: "session/update", params: { update: u } });
+        // An unkeyed call left running, so an unkeyed finished one must not take its place in the queue.
+        update({ sessionUpdate: "tool_call", title: "build", rawInput: { command: "make" } });
+        update({ sessionUpdate: "tool_call", toolCallId: "tc-done", status: "completed", title: "read", rawOutput: { output: "ok" } });
+        update({ sessionUpdate: "tool_call", toolCallId: "tc-denied", status: "failed", title: "rm -rf build",
+          content: [{ type: "content", content: { type: "text", text: "Permission denied" } }] });
+        update({ sessionUpdate: "tool_call", status: "completed", title: "echo", rawOutput: { output: "unkeyed" } });
+        update({ sessionUpdate: "tool_call", status: "failed", title: "screenshot",
+          content: [{ type: "image", data: ONE_PIXEL_PNG, mimeType: "image/png" }] });
+        update({ sessionUpdate: "tool_call_update", status: "completed", rawOutput: { output: "built" } });
+        // ACP v1 lets an update name a tool call that already finished.
+        update({ sessionUpdate: "tool_call_update", toolCallId: "tc-done", status: "completed",
+          content: [{ type: "image", data: ONE_PIXEL_PNG, mimeType: "image/png" }] });
+        update({ sessionUpdate: "agent_message_chunk", content: { text: "done" } });
+        complete();
         return;
       }
       if (mode === "unkeyed-tool") {

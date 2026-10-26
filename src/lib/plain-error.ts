@@ -6,6 +6,7 @@
 // line, and the caller keeps the original under a Details disclosure.
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { requestTooLargeModel } from "../../shared/request-too-large";
 
 /** The browser's own words when a request never reached the server. */
 const UNREACHABLE = /^(?:TypeError:\s*)?(?:Failed to fetch|NetworkError when attempting to fetch resource\.?|Load failed|fetch failed)$/i;
@@ -69,6 +70,9 @@ const REASON_PHRASE = /^(?:[A-Z][a-z]+ ?){1,4}\.?$/;
  * status code ("API Error: 400 Claude Code 2.1.268 does not support this
  * model…") keeps its words without the code: they are the precise cause. */
 export function plainErrorLine(raw: string): string | undefined {
+  // A provider refused the message's size even after one smaller resend (server/drivers/chat-size-limit.ts).
+  const tooLargeFor = requestTooLargeModel(raw);
+  if (tooLargeFor) return t("chat.error.requestTooLarge", { model: tooLargeFor });
   if (!isTechnicalError(raw)) return undefined;
   const text = raw.trim();
   const rest = text.replace(STATUS_PREFIX, "").trim();

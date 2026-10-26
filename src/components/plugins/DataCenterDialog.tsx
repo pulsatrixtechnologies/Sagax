@@ -1,4 +1,4 @@
-// "Choose your {connector} data center" (2026-10-21, parity with Grok Bot):
+// "Choose your {connector} data center" (2026-10-21, parity with the reference design):
 // a provider that serves each region at its own address (shared/plugin-
 // catalog.ts regions, or a registry remote with a {region} choice) asks
 // where the account lives before Add connects it. The choice goes to

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { isViewersPrimaryBot, primaryBotChoices, viewerOwnsBot, withPrimaryBot, type PrimaryBotCandidate } from "./primary-bot";
 
 const bots: PrimaryBotCandidate[] = [
-  { id: "cryptic", name: "Cryptic", chiefOfStaff: true },
+  { id: "quasar", name: "Quasar", chiefOfStaff: true },
   { id: "atlas", name: "Atlas" },
   { id: "zed", name: "Zed", title: "Researcher" },
   { id: "archived", name: "Archived", hidden: true },
@@ -27,16 +27,16 @@ describe("Primary Bot rules in the app", () => {
   });
 
   it("offers the viewer's own visible bots, never the current one, by name and search", () => {
-    expect(primaryBotChoices(bots, "pr_me", "cryptic").map((bot) => bot.id)).toEqual(["atlas", "zed"]);
-    expect(primaryBotChoices(bots, "pr_me", "cryptic", "research").map((bot) => bot.id)).toEqual(["zed"]);
-    expect(primaryBotChoices(bots, "pr_me", "cryptic", "nobody")).toEqual([]);
+    expect(primaryBotChoices(bots, "pr_me", "quasar").map((bot) => bot.id)).toEqual(["atlas", "zed"]);
+    expect(primaryBotChoices(bots, "pr_me", "quasar", "research").map((bot) => bot.id)).toEqual(["zed"]);
+    expect(primaryBotChoices(bots, "pr_me", "quasar", "nobody")).toEqual([]);
     // Unrecorded owners read as the viewer's, like the sidebar; the server decides.
-    expect(primaryBotChoices(bots, "ada", "adas-primary").map((bot) => bot.id)).toEqual(["adas", "atlas", "cryptic", "zed"]);
+    expect(primaryBotChoices(bots, "ada", "adas-primary").map((bot) => bot.id)).toEqual(["adas", "atlas", "quasar", "zed"]);
   });
 
   it("keeps one Primary Bot per person in the window, leaving other people's alone", () => {
     const next = withPrimaryBot(bots, { ...bots[1]!, chiefOfStaff: true });
-    expect(next.find((bot) => bot.id === "cryptic")?.chiefOfStaff).toBe(false);
+    expect(next.find((bot) => bot.id === "quasar")?.chiefOfStaff).toBe(false);
     expect(next.find((bot) => bot.id === "adas-primary")?.chiefOfStaff).toBe(true);
   });
 });

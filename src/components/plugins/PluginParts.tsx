@@ -115,7 +115,7 @@ export function PluginPageHeader({ title, trail, onBack, titleId, plainBack = fa
   trail?: readonly Crumb[];
   onBack: () => void;
   titleId: string;
-  /** Grok Bot's manage page: a chevron and the parent name, then the title.
+  /** The reference design's manage page: a chevron and the parent name, then the title.
    * No crumb for the current page. */
   plainBack?: boolean;
 }) {

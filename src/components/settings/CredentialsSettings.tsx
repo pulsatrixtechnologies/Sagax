@@ -4,7 +4,7 @@
 // added here or from a bot's request card, edited, deleted; a bot is
 // allowed always or revoked. Optional 1Password: a read-only picker when the
 // op CLI or 1Password Connect is present (server/onepassword.ts).
-// 2026-10-18 (JC): drawn as the other pages (grey headings over cards of
+// 2026-10-18 : drawn as the other pages (grey headings over cards of
 // rows, the page's intro level with its title, SettingsPrimitives). Import
 // and Export move items from and to other password managers
 // (CredentialsTransfer.tsx).

@@ -1,6 +1,6 @@
 // How a phone reaches this server, read from the connection itself (review
 // of #960: never from a field the client sends). Phone tools and the card
-// scan run only over a protected transport (JC 2026-10-21): HTTPS (a TLS
+// scan run only over a protected transport (2026-10-21): HTTPS (a TLS
 // socket, a tunnel's IPC listener, a proxy that says https) or Tailscale
 // (WireGuard, a tailnet address). Plain local Wi-Fi is "local": the answers
 // would cross the network in clear. The companion sidecar classifies its own

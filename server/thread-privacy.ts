@@ -1,6 +1,6 @@
 // Private conversations with a bot on an organization server.
 //
-// JC: "When talking to a shared bot, we should not be able to use the same
+// Decision: "When talking to a shared bot, we should not be able to use the same
 // thread. Being multiple in the same chat should be reserved for group
 // chats." So every thread of a bot (a task, a 1:1 conversation) belongs to
 // one person, its owner principal:
@@ -19,7 +19,7 @@
 // it in their own threads; it never opens anyone else's. Edit and manage
 // change the bot's settings, never its conversations. Organization admins
 // and team managers get no exception (spec section 3, T7: an admin never
-// reads a private Direct without a right; JC: a manager never reads a Direct
+// reads a private Direct without a right; Decision: a manager never reads a Direct
 // unasked); they see audit metadata only.
 //
 // Group chats (rooms: their people and their bots) are the only

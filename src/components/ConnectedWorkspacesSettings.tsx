@@ -151,7 +151,7 @@ export function ConnectedWorkspacesSettings() {
         </button>
       </form>
     </Card>}
-    {/* 0.5.6 (JC): one Grok-style row per server (name, address in grey,
+    {/* 0.5.6: one Grok-style row per server (name, address in grey,
         Switch and Forget at the right) under the page's Servers heading. */}
     <div data-settings-card="organization.servers" className="flex flex-col rounded-xl border-[0.5px] border-border bg-elevated py-1.5">
       {!saved ? (

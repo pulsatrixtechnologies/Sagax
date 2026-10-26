@@ -6,7 +6,7 @@
 import Foundation
 
 public enum SidebarBotPinning: Sendable {
-    /// Trailing swipe distance that reveals Pin / Unpin, like Grok Bot.
+    /// Trailing swipe distance that reveals Pin / Unpin, like the reference design.
     public static let revealDistance: Double = 72
 
     /// Electron `bot.pinned`: only `true` is a pin; omitted or false is not.

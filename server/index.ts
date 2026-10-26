@@ -122,7 +122,7 @@ import { configuredAccountDirectory, assertSeparateClaudeAccount, claudeAccountI
 import { providerIconPatchSchema, withInstanceIcon } from "./provider-icon.ts";
 import { providerIconError } from "../shared/provider-icon.ts";
 import {
-  BrowserCleanupCoordinator, BrowserSweep, browserIdleMs,
+  BrowserCleanupCoordinator, BrowserSweep, browserIdleMs, engineBrowsers,
   finalizeBrowserCleanupMutation,
   requireBrowserCleanupAcknowledged,
   type BrowserCleanupRequest,
@@ -544,7 +544,7 @@ import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnse
 import { extractTurnImages } from "./turn-images.ts";
 import { fitTurnImagesForModel, modelImageCopyPath } from "./model-image.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
-import { TurnWatchdog } from "./turn-watchdog.ts";
+import { stallLimitMs, TurnWatchdog } from "./turn-watchdog.ts";
 import { TurnResources, type TurnOwner } from "./turn-resources.ts";
 import {
   ensureWorkspace,
@@ -935,7 +935,7 @@ import {
 import { serviceThreadViewer, serviceViewerClosed } from "./service-viewer.ts";
 import { browserNavigationRefusal } from "./browser-navigation.ts";
 import { describeBrand, loadBrand } from "./brand.ts";
-import { deliverSseFrame } from "./sse-fanout.ts";
+import { deliverSseFrame, openSseHeartbeat } from "./sse-fanout.ts";
 import {
   PHONE_SECRET_PROTOCOL_VERSION,
   PhoneSecretBridge,
@@ -1807,7 +1807,7 @@ const customDomainVerifier = createCustomDomainVerifier({ environmentId: ENVIRON
 const emailOtp = new EmailOtpStore();
 const mailResolved = () => resolveMailSettings({ file: cfg.mail, env: process.env });
 // SAGAX_TEST_FIXED_WORKSPACE=1 (test/e2e seam only): Workspace is always
-// Auto (JC 2026-10-18), so a Works on or a conversation pin naming a place
+// Auto (2026-10-18), so a Works on or a conversation pin naming a place
 // reads as Auto and the start sweep moves saved ones back to Auto. The
 // dispatch still knows fixed places (Off, team-backup's quarantine), and the
 // suites that drive it through the HTTP API keep them with this seam. Same
@@ -2031,7 +2031,7 @@ const NOTHING_TO_ADD = /\b(?:no (?:further|more|other) (?:text|reply|response|wo
  * message it answers: nothing but that emoji ("👍" after 👍), or an aside
  * such as "*(no further text needed)*" that some models write when told
  * to end with no text. The reaction says it, so the text is not written
- * (JC, 2026-10-18: never a reaction and a message that say the same
+ * (2026-10-18: never a reaction and a message that say the same
  * thing). A real sentence, or a reaction from an earlier turn, keeps it. */
 function echoesOwnReaction(threadId: string, botId: string, text: string): boolean {
   const reply = text.trim();
@@ -2745,7 +2745,7 @@ function configAddressField(value: unknown, prefix = "", depth = 0): string | un
   }
   return undefined;
 }
-/** 2026-10-19 (JC): the first provider key or token (`key`, `apiKey`,
+/** 2026-10-19 the first provider key or token (`key`, `apiKey`,
  * `fishKey`, `token`, `providerKeys`...) anywhere in a config patch, as a
  * dotted path. Provider keys of the server are an admin's. */
 function configProviderKeyField(value: unknown, prefix = "", depth = 0): string | undefined {
@@ -3761,7 +3761,7 @@ const computerSelectionTurns = new Map<string, {
 }>();
 /** Where select_computer moved a direct request (solo), held for that
  * request only: its continuation and the card continuations under it. Never
- * written to the conversation (Auto remembers no place, JC 2026-10-16), and
+ * written to the conversation (Auto remembers no place 2026-10-16), and
  * dropped at the thread's next fresh request, a person's pin, or a failure. */
 const computerSelectionMoves = new Map<string, Surface>();
 // A bot can also run outside this server — a Telegram gateway, a Slack bot,
@@ -4283,13 +4283,15 @@ const directRequestOwners = new Map<string, {
 }>();
 // Stop revokes credentials before completion, but the receipt must retain its
 // exact provider-turn owner until that completion or explicit failure cleanup.
-type DirectTurnOutcome = { ok: boolean; text: string };
+/** `stalled`: the stall watchdog stopped the turn, so its work fails as
+ * stalled, not as a provider error (port de OpenMausBot #3325). */
+type DirectTurnOutcome = { ok: boolean; text: string; stalled?: boolean };
 const directFollowupTurns = new ProviderTurnGenerationRegistry<DirectTurnOutcome>();
 const directFollowupSettlers = new Map<string, { threadId: string; settle?: () => void }>();
 const directCoordinationSettlers = new Map<string, (outcome: DirectTurnOutcome) => void>();
 function settleDirectCoordination(generation: string | undefined, outcome: DirectTurnOutcome) {
   if (!generation) return;
-  coordinator.sourceSettled(generation, outcome.ok);
+  coordinator.sourceSettled(generation, outcome.ok, outcome.stalled === true);
   const settle = directCoordinationSettlers.get(generation);
   directCoordinationSettlers.delete(generation);
   settle?.(outcome);
@@ -4487,7 +4489,11 @@ function parksBehindCoordination(botId: string, threadId: string): boolean {
   return (store.projectBotForTask(botId, threadId) ?? store.bot(botId))?.parkDirectMessages === true;
 }
 
-function botAtThreadCapacity(botId: string): boolean {
+/** `personThreadId`: the thread a person's own message lands on. The bot's
+ * main chat is never at capacity for it: the person always gets
+ * an answer there, however many task threads and routines hold the slots. */
+function botAtThreadCapacity(botId: string, personThreadId?: string): boolean {
+  if (personThreadId && personThreadId === botMainThread(botId)) return false;
   // Setup/dispatch reservations still occupy a slot even if an early
   // completion event has already cleared the stored busy flag.
   return store.tasks(botId).filter((task) => threadBusy(botId, task.threadId)).length >= botMaxConcurrentThreads(store.bot(botId), cfg);
@@ -4686,6 +4692,8 @@ function purgeTurnAttachmentsForThread(threadId: string): void {
 
 function markCancelledProviderHandshake(threadId: string, ownerId: string): void {
   pendingCancelledProviderHandshakes.mark(threadId, ownerId);
+  // The quarantined events include any tool's end: the teardown gets the plain silence limit.
+  watchdog.eventsDiscarded(threadId);
 }
 
 function clearCancelledProviderHandshake(threadId: string, ownerId: string): void {
@@ -6589,7 +6597,7 @@ if (IDENTITY.kind === "perspicax") {
       },
     });
   });
-  // 2026-10-20 (JC): a Primary Bot covers every bot its person owns or may
+  // 2026-10-20 a Primary Bot covers every bot its person owns or may
   // manage, whatever the team (peer-roster.ts primaryCovers)
   setPrimaryCover((from, target) => {
     const fromBot = store.bot(from.id);
@@ -6755,7 +6763,7 @@ const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
 // a value. 1Password is an optional read-only source (server/onepassword.ts),
 // off on an organization server.
 const credentialVault = new CredentialVault(DATA_DIR, vaultKeySource);
-// R13 (parité Grok Bot V4, 59, 83): phone call and purchase cards
+// R13 (parité the reference design V4, 59, 83): phone call and purchase cards
 // (server/outbound-wiring.ts); every outward action keeps its card.
 const outbound = outboundWiring({
   dataDir: DATA_DIR,
@@ -7878,7 +7886,7 @@ function appliesDirectly(botId: string, threadId: string, targetBotId: string): 
   });
 }
 
-/** 2026-10-20 (JC: "le bot principal fait tout"): a proposal the person's own
+/** 2026-10-20 ("le bot principal fait tout"): a proposal the person's own
  * Primary Bot makes because the person asked for it in this turn's message
  * applies at once, without a card: the submit gets `primaryAsked`, passed
  * down explicitly (never a shared flag another call could read). */
@@ -9276,17 +9284,20 @@ const coordinator: Coordinator = createCoordinator({
       // result): this review answers, from a clean stream.
       if (resumed && relayShown.delete(node.threadId)) clearRelayedStream(node.threadId);
       if (resumed && !group) {
-        const settledFrom = [...new Set(coordinator.children(node.id)
-          .map(child => store.bot(child.botId)?.name ?? "Teammate"))];
+        // A teammate's question resumes it while other work is still out:
+        // named as a question, and no "results in" notification.
+        const asking = composed.asked ?? [];
+        const settledFrom = [...new Set((asking.length ? asking : coordinator.children(node.id).map(child => child.botId))
+          .map(botId => store.bot(botId)?.name ?? "Teammate"))];
         const who = settledFrom.length ? settledFrom.join(", ") : "delegated work";
         store.appendMessage(node.threadId, {
           role: "bot", kind: "activity",
-          tool: { name: `Resumed with ${who} results${node.restart ? " after a restart" : ""}, reviewing`, ok: true },
+          tool: { name: `${asking.length ? `Resumed with a question from ${who}` : `Resumed with ${who} results`}${node.restart ? " after a restart" : ""}, reviewing`, ok: true },
         });
         // A cut resume running again already sent its notification, and a
         // quiet report's review stays quiet (turnAnswers).
         const quiet = turnAnswers(node.threadId, { cardContinuation: true, coordination: node }).quiet;
-        if (node.restart !== "rerun" && !quiet) {
+        if (node.restart !== "rerun" && !quiet && asking.length === 0) {
           notify(deliverableNotification("delegation-settled", bot, node.threadId, `Results in from ${who}`, { avatarUrl: bot.avatarUrl }));
         }
         if (!node.parentId && !quiet) reviewAnswerThreads.add(node.threadId);
@@ -9309,9 +9320,9 @@ const coordinator: Coordinator = createCoordinator({
         ![...relayStreams.values()].some(stream => stream.to === parent.threadId) ? parent.threadId : undefined;
       const relayStream = relayTo ? { to: relayTo, full: "", sent: "", shown: false } : undefined;
       if (relayStream) relayStreams.set(node.threadId, relayStream);
-      if (!group) return new Promise<{ ok: boolean; text: string }>(resolve => {
+      if (!group) return new Promise<DirectTurnOutcome>(resolve => {
         let done = false;
-        const finish = (outcome: { ok: boolean; text: string }) => {
+        const finish = (outcome: DirectTurnOutcome) => {
           if (done) return;
           done = true; signal.removeEventListener("abort", abort);
           if (relayStream && relayStreams.get(node.threadId) === relayStream) {
@@ -9370,7 +9381,8 @@ const coordinator: Coordinator = createCoordinator({
       });
       groupQueues.set(node.threadId, tracked.catch(() => {}));
       await tracked;
-      return { ok: result.outcome === "settled", text: result.stopReason || result.replyText || result.outcome || "The addressed agent could not run" };
+      return { ok: result.outcome === "settled", ...(result.outcome === "stalled" ? { stalled: true } : {}),
+        text: result.stopReason || result.replyText || result.outcome || "The addressed agent could not run" };
     },
     // ── runtime-only hooks (docs/runtime-contract.md §4, §8) ──
     // Display names for the envelope. The person is named only when the
@@ -10233,6 +10245,9 @@ interface SseClient {
   presence?: boolean;
   /** APNs token this phone sent on the stream (`x-sagax-push-token`). */
   pushToken?: string;
+  /** Stops the heartbeat and leaves `sseClients` before ending the response;
+   * every way a stream ends goes through it (sse-fanout.ts openSseHeartbeat). */
+  close: () => void;
 }
 const sseClients = new Set<SseClient>();
 
@@ -10245,13 +10260,7 @@ let audienceChangedAt = 0;
 function audienceChanged(): void {
   audienceChangedAt = lastSeq;
   for (const client of sseClients) {
-    if (client.viewer.kind !== "member") continue;
-    sseClients.delete(client);
-    try {
-      client.res.end();
-    } catch {
-      /* already gone */
-    }
+    if (client.viewer.kind === "member") client.close();
   }
 }
 // The person drives their server environment desktop: bots' clicks there wait.
@@ -10310,7 +10319,7 @@ function terminalPrincipalId(auth: RequestAuth): string | undefined {
  * Sagax app (organization server, server/desktop-terminal.ts). */
 const desktopTerminals = new DesktopTerminals((person, operation) => desktopBridges.request(person, operation, () => true));
 /** What `principalId` may open in the in-chat terminal for `botId`
- * (2026-10-15, JC; 2026-10-19): the server's hosts are an organization
+ * (2026-10-15; 2026-10-19): the server's hosts are an organization
  * admin's or a holder of host.commands'; a person's own environments are
  * always theirs (terminal-resources/registry.ts). */
 function terminalAccessFor(principalId: string, botId: string): TerminalAccess {
@@ -10325,7 +10334,7 @@ function terminalAccessFor(principalId: string, botId: string): TerminalAccess {
   const admin = record?.local === true || record?.orgRole === "admin";
   const bot = store.bot(botId);
   const ownsBot = Boolean(bot && person && effectiveBotOwner(bot).trim().toLowerCase() === person);
-  // 2026-10-19 (JC): the server's hosts also open for a person an admin
+  // 2026-10-19 the server's hosts also open for a person an admin
   // gave host.commands to in Perspicax (a person or a team).
   const serverHosts = !admin && Boolean(record) && record?.disabledAt === undefined && principalCan(person, "host.commands");
   return { organization, admin, ownsBot, serverHosts };
@@ -10398,7 +10407,7 @@ const terminalFeature = installTerminalFeature({
   },
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
   openRemoteShell: (args) => openRemoteShell(args),
-  // 2026-10-19 (JC: "Toujours permettre" on every card): a terminal is
+  // 2026-10-19 ("Toujours permettre" on every card): a terminal is
   // destructive and irreversible; a key the person chose for those asks
   keptRule: (principalId, botId, candidate, threadId) => {
     // 2026-10-20 (security review): never on a guest's turn, nor on a turn
@@ -10603,13 +10612,7 @@ function closeSessionStreams(sessionId: string): void {
   browserNetworkDebug.clearOwner(sessionId);
   desktopViewer.closeForOwner(sessionId);
   for (const client of sseClients) {
-    if (client.sessionId !== sessionId) continue;
-    sseClients.delete(client);
-    try {
-      client.res.end();
-    } catch {
-      /* already gone */
-    }
+    if (client.sessionId === sessionId) client.close();
   }
 }
 sessions.onSessionRevoked((sessionId) => {
@@ -10707,9 +10710,7 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
     if (out === null) continue;
     // Screen frames are replaceable and durable events are not: see
     // ./sse-fanout.ts for the backpressure/bound decision this makes.
-    if (deliverSseFrame(client, kind, out) === "disconnected") {
-      sseClients.delete(client);
-    }
+    if (deliverSseFrame(client, kind, out) === "disconnected") client.close();
   }
   if (kind === "bot" && payload.bot && typeof payload.bot === "object") {
     const id = (payload.bot as { id?: unknown }).id;
@@ -11097,7 +11098,7 @@ const WEBHOOK_SERVER_TARGET_ADMIN_ONLY = {
   error: "Only an organization admin can create a webhook that runs on the organization's server. A webhook on this bot's own computer needs no admin.",
   code: "server_target_admin_only",
 } as const;
-/** 2026-10-22 (JC): a member bot's command would run on the shared
+/** 2026-10-22 a member bot's command would run on the shared
  * organization server (admin only), but the bot has its own computer: it runs
  * there instead, never in a wait-for-an-admin dead end. */
 const EXEC_USE_BOT_COMPUTER =
@@ -12379,7 +12380,7 @@ function limitClockText(at: number): string {
 }
 bus.subscribe((event: RuntimeEvent) => {
   if (shouldIgnoreProviderEvent(event)) return;
-  if (event.type === "runtime.error") limitFailover.noteError(event.threadId, event.message, event.limitResetsAt);
+  if (event.type === "runtime.error") limitFailover.noteError(event.threadId, event.message, event.limitResetsAt, event.limitScope);
   else if (event.type === "turn.completed" && event.ok) limitFailover.turnSucceeded(event.threadId);
 });
 /** Threads whose running turn a client abort ended (the abort sentence as
@@ -12529,10 +12530,14 @@ const repeats = new RepeatDetector({ thresholds: [5, 10, 20], maxKeysPerThread: 
 // configurable absolute ceiling. The main 1:1 path had none, so a wedged CLI
 // left its bot busy forever. The watchdog stops a turn whose thread has emitted NOTHING for stallMs —
 // activity-based, so an hour-long turn that keeps streaming is never
-// touched, and turns parked on a human approval are exempt.
-const TURN_STALL_MS = Math.max(60_000, Number(process.env.SAGAX_TURN_STALL_MS) || 20 * 60_000);
-/** The watchdog's words for a turn it stopped, as its thread and requester read them. */
-const STALL_CAUSE = `no activity for ${Math.round(TURN_STALL_MS / 60_000)} minutes — the turn was stopped`;
+// touched, and turns parked on a human approval are exempt. Engines report a
+// tool only when it starts and ends, so while one of the turn's tools runs (a
+// long build or test suite) the turn may stay silent for TOOL_STALL_MS, a hard
+// bound of its own so a tool that truly hangs still ends the turn.
+const TURN_STALL_MS = Math.max(60_000, stallLimitMs(process.env.SAGAX_TURN_STALL_MS, 20 * 60_000));
+const TOOL_STALL_MS = Math.max(TURN_STALL_MS, stallLimitMs(process.env.SAGAX_TOOL_STALL_MS, 2 * 60 * 60_000));
+/** The watchdog's words for a turn it stopped after `silentMs` of silence, as its thread and requester read them. */
+const stallCause = (silentMs: number) => `no activity for ${Math.round(silentMs / 60_000)} minutes — the turn was stopped`;
 /** How long ask_bot waits synchronously before the ask is converted into a
  * delegation claim ticket (the peer's turn keeps running either way). */
 const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.SAGAX_ASK_BOT_TIMEOUT_MS) || 15_000);
@@ -12570,9 +12575,9 @@ function stoppedTurnText(threadId: string, turnId: string | undefined, cause?: s
   });
 }
 const watchdog = new TurnWatchdog({
-  stallMs: TURN_STALL_MS,
+  stallMs: TURN_STALL_MS, toolStallMs: TOOL_STALL_MS,
   checkMs: 60_000,
-  onStall: (turn) => {
+  onStall: (turn, silentMs) => {
     const stalledResourceOwner = turnResourceOwners.get(turn.threadId);
     const stalledGeneration = directTurnGenerationByThread.get(turn.threadId);
     const stalledProviderTurn = directRequestOwners.get(turn.threadId);
@@ -12582,9 +12587,21 @@ const watchdog = new TurnWatchdog({
     repeats.settle(turn.threadId);
     const bot = botForThread(turn.botId, turn.threadId);
     const routineRun = activeRoutineRunForThread(turn.threadId);
-    void runningTurnInstance(bot, turn.threadId)?.adapter.interruptTurn(turn.threadId).catch(() => {});
-    const minutes = Math.round(TURN_STALL_MS / 60_000);
-    const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), STALL_CAUSE);
+    // The stopped process can never answer the approvals it raised: close
+    // them as Stop does (durable question cards and proposals stay, and keep
+    // their own expiry), once the interrupt settled and only while no
+    // replacement turn took the thread (port de OpenMausBot #3325).
+    const stillStalledTurn = () => {
+      const generation = directTurnGenerationByThread.get(turn.threadId);
+      const owner = turnResourceOwners.get(turn.threadId);
+      return (!generation || generation === stalledGeneration) &&
+        (!owner || !stalledResourceOwner || owner.generation === stalledResourceOwner.generation);
+    };
+    void Promise.resolve(runningTurnInstance(bot, turn.threadId)?.adapter.interruptTurn(turn.threadId))
+      .catch(() => {})
+      .then(() => { if (stillStalledTurn()) closeOpenApprovals(turn.threadId); });
+    const minutes = Math.round(silentMs / 60_000), cause = stallCause(silentMs);
+    const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), cause);
     if (routineRun?.target === "bot") {
       routines?.failThread(turn.threadId, `No activity for ${minutes} minutes — the routine was stopped`, { cause: "stalled" });
       pendingDelegationWakes.delete(turn.threadId);
@@ -12593,17 +12610,17 @@ const watchdog = new TurnWatchdog({
     store.appendMessage(turn.threadId, {
       role: "bot",
       kind: "activity",
-      tool: failedTurnTool(STALL_CAUSE),
+      tool: failedTurnTool(cause),
     });
     // a routine's stall reports through its own failure path
     if (bot && routineRun?.target !== "bot") {
-      reportIncident({ kind: "stalled", bot, threadId: turn.threadId, detail: STALL_CAUSE });
+      reportIncident({ kind: "stalled", bot, threadId: turn.threadId, detail: cause });
     }
-    settleDirectFollowup(stalledGeneration, { ok: false, text: stalled });
+    settleDirectFollowup(stalledGeneration, { ok: false, text: stalled, stalled: true });
     finalizeDelegationWatch(turn.threadId, false, "", `Delegated turn did not finish — ${stalled}`);
     turnUsage.delete(turn.threadId);
     turnContext.delete(turn.threadId);
-    roomStallCompletions.stall(turn.threadId);
+    roomStallCompletions.stall(turn.threadId, cause);
     // ACP interruption settles within five seconds; other adapters settle
     // sooner. Keep ownership during that grace period so another turn cannot
     // overlap the process we are stopping. The normal turn.completed fold
@@ -12685,7 +12702,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
     }
   } else if (event.type !== "session.exited") {
-    watchdog.touch(event.threadId);
+    watchdog.observe(event);
     coordinator.progress(event.threadId);
   }
 });
@@ -12723,7 +12740,8 @@ async function holdBootEngineSlot(threadId: string, label: string, instance: Pro
     // usage falls back (server/engine-memory-guard.ts); a person's own
     // turn never waits here.
     if (memoryWatch.current() === "critical") console.log(`[memory] routine ${label} waits: memory critical`);
-    await memoryWatch.whenBelowCritical(ROUTINE_MEMORY_WAIT_MS);
+    // A bot that will start its browser also waits for room for it.
+    await memoryWatch.whenRoom(threadId, ROUTINE_MEMORY_WAIT_MS);
     turnTrace(threadId, "memory-guard");
     // During boot the boot gate; after it, the steady routine limit.
     const gate = engineStartGate.booting ? engineStartGate : routineEngineGate;
@@ -13960,6 +13978,23 @@ const memoryWatch = new MemoryWatch({
   childOomScoreAdj: memoryGuard.childOomScoreAdj,
   liveEngines: () => runningTurnEngines.size,
 });
+// The bots' browsers count too (server/browser-lifecycle-cleanup.ts engineBrowsers).
+memoryWatch.useBrowsers(engineBrowsers({
+  threadBrowser: (threadId) => {
+    const bot = store.botByThread(threadId);
+    if (!bot || bot.browser === false || !builtInBrowserEnabled(cfg) || browserEngineAttachCdpUrl(cfg)) return null;
+    const confidential = store.isConfidentialThread(threadId);
+    const profile = effectiveBrowserProfile(bot.id, bot.browserProfile);
+    if (!confidential && profile === MY_CHROME_PROFILE) return null;
+    // A temporary or confidential browser is never created here, only looked up.
+    const session = confidential ? confidentialBrowserSessions.get(threadId)
+      : profile === "guest" ? temporaryBrowserSessions.get(bot.id) : currentBrowserSession(bot.id, profile, threadId);
+    return { session, spec: session === undefined ? undefined : usedBrowserSessions.get(session) };
+  },
+  sessions: () => usedBrowserSessions,
+  held: (session) => !turnResources.free(`browser:${session}`),
+  closeUnused: (session, spec) => browserRuntime.closeUnused(session, spec),
+}));
 memoryWatch.start();
 function runningTurnInstance(bot: BotRecord | null | undefined, threadId: string): ReturnType<typeof registry.get> {
   // A turn always runs on the bot's own engine, wherever it works.
@@ -14652,7 +14687,7 @@ bus.subscribe((event: RuntimeEvent) => {
           summary: event.summary,
         })
         : [];
-      // 2026-10-19 (JC): a call on the owner's own destination (their server
+      // 2026-10-19 a call on the owner's own destination (their server
       // environment, their own computer or its Local VM) is the owner's card
       // at their own level, never an admin's; and an owner who holds
       // host.commands (given in Perspicax) answers the server commands of
@@ -14715,7 +14750,7 @@ bus.subscribe((event: RuntimeEvent) => {
         input: typeof event.input === "string" ? event.input : undefined,
         roots: ownAttachmentRoots(asker, event.threadId),
       }));
-      // 2026-10-20 (JC): a command that only reads (ls, cat, grep, git
+      // 2026-10-20 a command that only reads (ls, cat, grep, git
       // status...) on the person's own computer (their PC, its Local VM,
       // their cloud computer) never asks, whatever the engine, the level or
       // the bot that asked; deny and ask rules, a safety hold and a security
@@ -14754,7 +14789,7 @@ bus.subscribe((event: RuntimeEvent) => {
         });
         break;
       }
-      // 2026-10-22 (JC): a member bot runs on its OWN computer by default, and
+      // 2026-10-22 a member bot runs on its OWN computer by default, and
       // only an admin targets the shared organization server. This covers the
       // engine's native host shell (event.command: a Bash/shell call on the
       // shared server), never the bot's own-computer tools (sagax-environment,
@@ -14924,7 +14959,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // computer, or their server environment while the organization turned
       // autonomy off) is never answered by the owner's mode or rules either:
       // the card shows (a read of their own attachments excepted).
-      // 2026-10-19 (JC: "Toujours permettre" on every card): someone else's
+      // 2026-10-19 ("Toujours permettre" on every card): someone else's
       // environment stays apart (crossPerson: no rule of anyone answers it
       // and none is offered); the rest is answered only by an allow rule the
       // person saved from such a card (owner-approval.ts `from`).
@@ -14955,7 +14990,7 @@ bus.subscribe((event: RuntimeEvent) => {
           crossPerson: foreignDestination,
         })
         : null;
-      // 2026-10-19 (JC): an admin's card of a member's bot (or a holder's
+      // 2026-10-19 an admin's card of a member's bot (or a holder's
       // server command) is answered by an allow rule a person who answers
       // such cards saved on one of them, for this bot, while that person
       // still holds the right and no security key of theirs protects the
@@ -15013,7 +15048,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // What "Always allow" or "Always deny" would remember on this card.
       // Never on a card a rule could not answer (a security key class, a
       // turn that is not the owner's own).
-      // 2026-10-19 (JC: "On doit avoir des cartes, mais avoir la possibilité
+      // 2026-10-19 ("On doit avoir des cartes, mais avoir la possibilité
       // de faire TOUJOURS le Toujours permettre"): every permission card
       // offers one to the person who answers it, with the exact scope the
       // card shows (this bot, this tool, this target or exact command), never
@@ -15028,7 +15063,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // owner-approval.ts cardRuleCandidate: a card that never had a rule
       // keeps the whole request; an engine's own shell line on an admin's
       // card that is not held keeps its program for this bot (2026-10-21,
-      // JC); a call with no readable arguments offers nothing
+      // ); a call with no readable arguments offers nothing
       const ownerRuleCandidate = (owner?.kind === "card" && owner.reason !== "admin" && owner.reason !== "cross-person") || (strictCall && !baseVerdict?.approve)
         ? cardRuleCandidate({
           tool: ownerTool,
@@ -15128,7 +15163,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // model's own options. The card carries them so the person can choose.
       const questions = event.questions?.length ? event.questions : undefined;
       // One generator for the card and its push (shared/approval-describe.ts):
-      // "Allow Cryptic to run a command?" and one plain line, never a raw id.
+      // "Allow the bot to run a command?" and one plain line, never a raw id.
       const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(cfg.language)) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
@@ -15226,7 +15261,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // Notify from HERE, not from a separate subscriber on request.opened:
       // this is the branch where a card actually reached a human. Anything
       // Full access answered took the early return above and never buzzes.
-      // 2026-10-21 (Grok Bot parity A1, extended by A1b, JC: comme Grok): a
+      // 2026-10-21 (the reference design parity A1, extended by A1b: comme Grok): a
       // card the matcher left is judged by the model reviewer, including a
       // routine, a webhook and another bot. The action stays untrusted
       // data. A guest, an admin card, a hold, a sandbox widening, a
@@ -15800,7 +15835,7 @@ function delegatorOf(threadId: string): { threadId: string; botId?: string } | u
   return parent ? { threadId: parent.threadId, botId: parent.botId } : undefined;
 }
 
-// MOCA-274: a delegated teammate's card used to live only in its own thread,
+// an earlier note: a delegated teammate's card used to live only in its own thread,
 // so the person talking to the Chief never saw that work was waiting on them.
 // A chip in the delegating conversation points at the card until it settles.
 const waitingOnPersonChips = new Map<string, { threadId: string; messageId: string; name: string; kind: string }>();
@@ -15871,7 +15906,7 @@ function principalMayRunRoutine(principalId: string, run: { botId: string; targe
   return true;
 }
 /** Slice 6 (D4): an organization routine run needs its person, their right
- * to run the bot, and a live routine delegation. Since 2026-10-08 (JC) the
+ * to run the bot, and a live routine delegation. Since 2026-10-08 the
  * delegation is issued automatically: one Perspicax cannot issue or renew
  * only skips the run, it never pauses the routine; only a person put out
  * (disabled, deleted, signed out by Perspicax) or without `run` pauses it. */
@@ -16037,7 +16072,7 @@ function auditRoutineRunAs(auth: RequestAuth, routine: Routine, before: string |
     actor: orgAuditActor(auth),
   });
 }
-/** Run now (JC, 2026-10-08): on an organization server, the bot's owner,
+/** Run now (2026-10-08): on an organization server, the bot's owner,
  * the person the routine runs as, or an admin. A solo server, the operator
  * and the loopback keep the bot-level rule (`run`). */
 function mayRunRoutineNow(auth: RequestAuth, routine: Routine): boolean {
@@ -16574,7 +16609,7 @@ async function compactConversation(input: {
   });
   const history = selected.transcript.filter(entry => entry.id);
   if (!history.length) return;
-  // A stale engine session (JC 2026-10-20) is not resumed: fold now so the
+  // A stale engine session (2026-10-20) is not resumed: fold now so the
   // turn starts a new one from the summary and the latest turns. The
   // summary is the deterministic one: no model call on the person's wait.
   const stale = manual ? null : staleEngineSession(threadId, task, instance, messages, excludedIds);
@@ -17348,7 +17383,9 @@ function drainQueuedSends() {
     // intact until that exact handshake releases its runtime-only claim.
     // Team incidents reports never park behind handed-on work (admission's
     // "incident" surface says why).
-    (botId, threadId, head) => threadBusy(botId, threadId) || botAtThreadCapacity(botId) || Boolean(activeGroupTurnForBot(botId))
+    // A person's queued words in the main chat never wait for a slot.
+    (botId, threadId, head) => threadBusy(botId, threadId) || botAtThreadCapacity(botId, head.peerAsk ? undefined : threadId)
+      || Boolean(activeGroupTurnForBot(botId))
       || (!head.peerAsk?.incident && parksBehindCoordination(botId, threadId)) || parallelTaskBlocked(botId, threadId),
   );
   // Asides always drain after person follow-ups (see drainAsideLane): the
@@ -17566,8 +17603,9 @@ async function startOrQueueDirectMessageNow(botId: string, threadId: string, tex
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
-    // here rather than bounce off startTurn's 409.
-    atCapacity: botAtThreadCapacity(botId),
+    // here rather than bounce off startTurn's 409. The main chat never
+    // queues for capacity.
+    atCapacity: botAtThreadCapacity(botId, threadId),
     threadBusy: threadBusy(botId, threadId),
     groupTurn: Boolean(activeGroupTurnForBot(botId)),
     parksBehindCoordination: parksBehindCoordination(botId, threadId),
@@ -18026,7 +18064,7 @@ function safetyReviewer(botId: string): ((prompt: string, signal?: AbortSignal) 
   return (prompt, signal) => review.call(instance, prompt, signal);
 }
 
-/** 2026-10-21 (Grok Bot parity A1): the model reviewer of custom rules
+/** 2026-10-21 (the reference design parity A1): the model reviewer of custom rules
  * (server/custom-rules-model.ts). It answers a card like the person would,
  * through the engine that asked, and says so on the card and in the
  * decision log (`source: auto-review`, the rule, the reason). */
@@ -18100,7 +18138,7 @@ async function confirmHeldCard(request: { threadId?: string; botId?: string; too
   if (!threadId) return "deny";
   const bot = (request.botId ? store.bot(request.botId) : undefined) ?? store.botByThread(threadId);
   const summary = request.summary.replace(/\s+/g, " ").trim().slice(0, 500);
-  // 2026-10-19 (JC: "Toujours permettre" on every card): Always allow keeps
+  // 2026-10-19 ("Toujours permettre" on every card): Always allow keeps
   // this exact held action (its fingerprint) for this bot; kept, it passes
   // and the journal names the rule
   const candidate = { tool: `safety:${request.tool ?? "action"}`, scope: { action: request.fingerprint ?? "" }, description: summary || "This exact action" };
@@ -18751,7 +18789,7 @@ async function startTurn(
     automaticRecoveryIndex?: number;
     /** Queue receipts outlive the dispatch acknowledgment until this exact turn settles. */
     onTurnSettled?: () => void;
-    coordination?: { id: string; resumed: boolean; settle: (outcome: { ok: boolean; text: string }) => void };
+    coordination?: { id: string; resumed: boolean; settle: (outcome: DirectTurnOutcome) => void };
     /** Start the engine for a call that was just accepted. No transcript
      * row, no turn, no model prompt. The first spoken turn joins it. */
     warmOnly?: boolean;
@@ -18944,7 +18982,7 @@ async function startTurn(
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
   }
-  if (botAtThreadCapacity(botId)) {
+  if (botAtThreadCapacity(botId, threadId)) {
     throw Object.assign(new Error(`this bot has reached its limit of ${botMaxConcurrentThreads(store.bot(botId), cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
   }
   // Steering is never a cancel. A message sent while teammates are working
@@ -19181,7 +19219,7 @@ async function startTurn(
     speakerPrincipalId: orgSpeakerPrincipal(bot, speaker),
   });
   const turnPersonAsked = !routineLineage(speaker) && Boolean(orgSpeakerPrincipal(bot, speaker));
-  // Auto (JC 2026-10-15): the person's computer when it is connected (a
+  // Auto (2026-10-15): the person's computer when it is connected (a
   // routine only when they allowed it), else the cloud; a thread opened
   // with a workspace starts there when allowed (server/auto-computer.ts).
   const turnAutoWanted = turnWorks.auto ? autoWorkspaceWanted(bot, threadId) : null;
@@ -20320,7 +20358,7 @@ async function startTurn(
           };
         }
       }
-      // Auto remembers no place (JC 2026-10-16): where this turn works, the
+      // Auto remembers no place (2026-10-16): where this turn works, the
       // built-in browser or a computer it claims, is never written to the
       // conversation. The next message decides again; only the person's own
       // pin holds a place (honouredPin).
@@ -21000,7 +21038,7 @@ function routineRunNeedsPerson(run: RoutineRun): boolean {
 }
 
 /** Whether this run's routine posts its completed results in the conversation
- * (JC 2026-10-22): the routine's own choice, else the installation default
+ * (2026-10-22): the routine's own choice, else the installation default
  * (features.routinesInConversation). A deleted routine falls back to the
  * default. Approvals, questions and errors surface regardless. */
 function routineEffectivePostResults(run: Pick<RoutineRun, "routineId">): boolean {
@@ -21008,7 +21046,7 @@ function routineEffectivePostResults(run: Pick<RoutineRun, "routineId">): boolea
   return own ?? routinesInConversationEnabled(cfg);
 }
 
-/** 2026-10-22 (JC): a run works in the background, in its own hidden task.
+/** 2026-10-22 a run works in the background, in its own hidden task.
  * Nothing reaches the person's conversation while it is queued or running,
  * nor when it ends with nothing to report (server/routine-report.ts): no
  * card, no unread, no sidebar bump; the bot's status shows the work and
@@ -21253,10 +21291,10 @@ routines = new RoutineManager({
     // The store's frame announces it. A run's task that stays in the
     // background leaves the open thread alone, so that frame carries no
     // transcript: a whole thread on every scheduled run once passed the phone
-    // sidecar's 4 MiB event ceiling and ended the stream (MOCA-179).
+    // sidecar's 4 MiB event ceiling and ended the stream (an earlier note).
     return task;
   },
-  // 2026-10-19 (GOX): wake the person's server environment before a
+  // 2026-10-19wake the person's server environment before a
   // scheduled bot run (PREWAKE_LEAD_MS, server/routines.ts), so the run does
   // not spend its first ten minutes on a stopped cluster and give up.
   prewake: (routine) => {
@@ -21297,7 +21335,7 @@ routines = new RoutineManager({
     }, PREWARM_ENGINE_LEAD_MS + 3 * 60_000);
     if (outcome === "started") console.log(`[prewarm] routine ${routine.id}: engine warming`);
   },
-  // 2026-10-22 (JC): no joinConversation. A run never works in the
+  // 2026-10-22 no joinConversation. A run never works in the
   // person's conversation (its instructions would show there as their
   // message): it runs in its own hidden task and reports at the end, only
   // when it has something for them (syncRoutineRunToSource). The old
@@ -21322,7 +21360,7 @@ routines = new RoutineManager({
       },
     });
   },
-  // 2026-10-21 (JC): "Created/Updated/Deleted routine · <name>" in the
+  // 2026-10-21 "Created/Updated/Deleted routine · <name>" in the
   // conversation a bot's routine change came from (server/routine-chat-events.ts).
   onRoutineChanged: (routine, change) => {
     if (!threadStillExists(change.threadId)) return;
@@ -21361,7 +21399,7 @@ routines = new RoutineManager({
     // On a Cloud home a routine reports only where its writer may write: a
     // guest's (or nobody's) keeps a results conversation opened as theirs.
     const opener = CLOUD_HOME ? routineOpener(routine.id) : undefined;
-    // 2026-10-22 (JC: "everything should be unified in a single chat
+    // 2026-10-22 ("everything should be unified in a single chat
     // page"): a run for a person reports into their own conversation with
     // the bot, the one they last wrote in, not a "<name> · Results" thread.
     // A person with no conversation with this bot yet gets theirs, as
@@ -21926,7 +21964,7 @@ const chiefPeerTargetRule = (noun: string) => (proposerBotId: string, targetBotI
   const target = store.bot(targetBotId);
   if (!target) return "that bot no longer exists";
   if (!proposer?.chiefOfStaff) return "only a Primary Bot can change another bot's " + noun;
-  // 2026-10-20 (JC): every bot the person owns is their Primary Bot's to
+  // 2026-10-20 every bot the person owns is their Primary Bot's to
   // change; managed teams only widen what it coordinates
   if (!primaryBotSameOwner(proposer, target)) return "that bot belongs to someone else; a Primary Bot changes only its own person's bots";
   return null;
@@ -22580,7 +22618,7 @@ const webhooks = new WebhookManager({
   // live selection the way POST /api/bots/:id/tasks does), reused forever
   // after via trigger.resultsThreadId.
   resolvePostThread: (trigger, forceNew) => {
-    if (!forceNew && trigger.resultsThreadId) return trigger.resultsThreadId;
+    if (!forceNew && trigger.resultsThreadId && store.taskByThread(trigger.botId, trigger.resultsThreadId)) return trigger.resultsThreadId;
     return store.createTask(trigger.botId, "Updates", false)?.threadId;
   },
 });
@@ -23012,7 +23050,7 @@ async function runGroupMemberTurn(
   let retainRoomVmLease = false;
   let roomSpeaker: { botId: string; name: string; color: string } | undefined;
   let providerDispatched = false;
-  let setupStalled = false;
+  let setupStallCause: string | undefined;
   let unregisterSetupStall = () => {};
   // The speaker's own This computer / Cloud mount, and what it must give back.
   let roomComputerKind: "local" | "vps" | "box" | null = null;
@@ -23033,6 +23071,8 @@ async function runGroupMemberTurn(
     releaseTurnResources(resourceOwner);
   };
   let roomHandoffSourceSucceeded = false;
+  /** The stall watchdog stopped this room turn, during its setup or after. */
+  let roomHandoffSourceStalled = false;
   try {
   // A workspace at its monthly spend limit rechecks the cap at execution time
   // for every room, goal, queued, calendar, and chained-mention turn.
@@ -23268,9 +23308,9 @@ async function runGroupMemberTurn(
   // wedge — so the dispatch site completes the turn instead of launching a
   // provider turn the person was already told was stopped. The finally
   // below unregisters the latch on every other exit.
-  setupStalled = false;
-  unregisterSetupStall = roomStallCompletions.register(threadId, () => {
-    setupStalled = true;
+  setupStallCause = undefined;
+  unregisterSetupStall = roomStallCompletions.register(threadId, (cause) => {
+    setupStallCause = cause;
   });
   // Watch from claim, not provider dispatch: room setup (connected-app
   // discovery, browser, boat, and VM mounts) can wedge before any provider
@@ -23725,7 +23765,8 @@ async function runGroupMemberTurn(
     // provider turn: the stopped message is already on the thread, and the
     // watchdog's bounded cleanup owns releasing the claim.
     unregisterSetupStall();
-    if (setupStalled) {
+    if (setupStallCause !== undefined) {
+      if (orchestration) orchestration.result.stopReason = stoppedTurnText(threadId, undefined, setupStallCause);
       // No provider turn was launched, so there is no ambiguous event
       // window to quarantine: marking a cancelled handshake here would
       // strand the next turn behind its TTL for no benefit. The readiness
@@ -23733,8 +23774,8 @@ async function runGroupMemberTurn(
       finish("stalled");
       return;
     }
-    unregisterStall = roomStallCompletions.register(threadId, () => {
-      if (orchestration) orchestration.result.stopReason = stoppedTurnText(threadId, providerTurnId, STALL_CAUSE);
+    unregisterStall = roomStallCompletions.register(threadId, (cause) => {
+      if (orchestration) orchestration.result.stopReason = stoppedTurnText(threadId, providerTurnId, cause);
       abandonProviderTurn();
       finish("stalled");
     });
@@ -23862,6 +23903,7 @@ async function runGroupMemberTurn(
   retainRoomVmLease = outcome === "timed_out" || outcome === "stalled";
   if (!retainRoomVmLease) releaseRoomVmLease();
   roomHandoffSourceSucceeded = outcome === "settled";
+  roomHandoffSourceStalled = outcome === "stalled";
   if (orchestration) {
     orchestration.result.replyText = unansweredApprovals.annotate(threadId, providerTurnId, replyText.trim(), outcome === "settled");
     orchestration.result.outcome = outcome;
@@ -24060,7 +24102,7 @@ async function runGroupMemberTurn(
     // other early returns that never produce a provider terminal event.
     unregisterSetupStall();
     revokeInternalCapabilityGeneration(threadId, internalGeneration);
-    coordinator.sourceSettled(internalGeneration, roomHandoffSourceSucceeded);
+    coordinator.sourceSettled(internalGeneration, roomHandoffSourceSucceeded, roomHandoffSourceStalled || setupStallCause !== undefined);
     if (!retainRoomVmLease) releaseRoomVmLease();
     if (!providerDispatched && roomSpeaker && groupSpeakers.get(threadId) === roomSpeaker) {
       groupSpeakers.delete(threadId);
@@ -25069,7 +25111,7 @@ function proposalPersistence(botId: string, threadId: string, opensCard = true) 
       !message.card.answered &&
       !message.card.dismissed && !message.card.expired,
   );
-  // 2026-10-20 (JC): a waiting proposal never blocks a new one. Past the
+  // 2026-10-20 a waiting proposal never blocks a new one. Past the
   // budget the oldest waiting cards are replaced: closed as expired, nothing
   // applied, journaled. A card under a safety hold is never replaced.
   const replaceable = openRequests.filter((message) => !(message.card?.requestId && safetyIsArmed(message.card.requestId)));
@@ -26430,11 +26472,11 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     serverEngineAllowed: serverEngineAllowedFor,
   };
 }
-/** 2026-10-16 (JC): the people an organization's provided account serves.
+/** 2026-10-16 the people an organization's provided account serves.
  * An admin (and this server's own operator) runs every engine on it; a
  * member only the engine instances Perspicax lists on their person sheet
  * (`sagax_server_engines`). A Perspicax that does not send the list yet
- * gives none (JC's default for members), said once per person in the log.
+ * gives none (the default for members), said once per person in the log.
  * Their own subscription and keys never ask this. */
 const serverEnginesUnknownLogged = new Set<string>();
 function serverEngineAllowedFor(principalId: string, instanceId: string): boolean {
@@ -26838,7 +26880,7 @@ function catalogPrice(driverKind: string, model: string): number | undefined {
   const facts = autoCatalogLookup(driverKind, model);
   return facts?.costInput === undefined && facts?.costOutput === undefined ? undefined : (facts?.costInput ?? 0) + (facts?.costOutput ?? 0);
 }
-/** JC 2026-10-21 (review of #943): a request that needs a connector the
+/** 2026-10-21 (review of #943): a request that needs a connector the
  * bot's engine lacks runs on another engine this person may use that has
  * it (server/connector-switch.ts), or null. `personText` is only what the
  * person typed (never the prompt composed around it: page, mail or data
@@ -27667,7 +27709,7 @@ ROUTES.push(createBotInboundMailReadRoutes({
   bot: (id) => store.bot(id),
   organization: () => IDENTITY.kind === "perspicax" && Boolean(perspicaxDirectory),
   address: (botId) => botMailAddresses.forBot(botId),
-  // v2 (JC decision 4): the person acting owns the bot; their Perspicax id
+  // v2 (decision 4): the person acting owns the bot; their Perspicax id
   ownerSub: (auth, botId) => {
     const owner = botMailOwner(botId);
     const acting = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() : localPrincipalId();
@@ -27723,7 +27765,7 @@ const inboundMail = createBotInboundMailRoute({
     actor: { kind: "person", principalId: row.ownerPrincipalId, via: "perspicax-mail" },
   }),
 });
-// A shared Grok Bot's public card (port of OpenMausBot #3073).
+// An imported bot's public card (port of OpenMausBot #3073).
 ROUTES.push(createTeamLibraryGrokRoutes());
 ROUTES.push(createMyChromeRoutes({
   service: () => myChrome,
@@ -27986,7 +28028,7 @@ ROUTES.push(createThreadModelRoutes({
   reply: (botId) => publicBot(store.bot(botId)!),
 }));
 // Undo on the one-line receipt of a change that applied without a person.
-// Changes as a version history: restore a whole version (JC 2026-10-15).
+// Changes as a version history: restore a whole version (2026-10-15).
 ROUTES.push(createBotVersionRoutes({
   exists: (botId) => Boolean(store.bot(botId)),
   ownerOrAdmin: (auth, botId) => {
@@ -28186,7 +28228,7 @@ ROUTES.push(createOwnerApprovalRoutes({
   manager: ruleManager,
   ownedBots: botsOwnedBy,
   botName: (botId) => store.bot(botId)?.name,
-  // 2026-10-21 (JC): an Always allow kept on an admin's card of a member's
+  // 2026-10-21 an Always allow kept on an admin's card of a member's
   // bot is the bot's: its owner and a workspace admin see everyone's and may
   // remove them. Review of #938: a holder of host.shell who is neither
   // answers and saves such cards (strictRuleQualifies) and sees and removes
@@ -28569,7 +28611,7 @@ function marketplaceViewer(auth: RequestAuth): MarketplaceViewer {
   const principal = sessionPrincipal(auth);
   return principal ? { principal } : {};
 }
-/** Who may share a marketplace with the whole organization. Decision for JC
+/** Who may share a marketplace with the whole organization. Decision
  * (2026-10-22): ADMINS ONLY. A non-admin may add and manage marketplaces but
  * can only keep them private (the default); they cannot set visibility to
  * `org`. On a solo server the computer owner is the only person and may share. */
@@ -29678,7 +29720,7 @@ function botActs(): BotActService {
       });
       return { messageId: message.id };
     },
-    // 2026-10-19 (JC: "Toujours permettre" on every card): the person's own
+    // 2026-10-19 ("Toujours permettre" on every card): the person's own
     // rule for this bot, the very same setting or route (and value when it
     // is bound to one), while no security key of theirs protects the change
     actRule: ({ person, botId, candidate, classes }) => {
@@ -29843,7 +29885,7 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
     const actor = actorOf(turn);
     const confirmed = { personKey: actor.kind === "person" ? actor.personKey : null, classes: [] as string[], primary: { botId: turn.botId, botName: turn.botName, messageId: turn.message.id } satisfies PrimaryAnswer };
     const target = { kind: "route" as const, method, path, ...(body ? { body } : {}) };
-    // 2026-10-20 (JC): a card of the person's own confidential thread. The
+    // 2026-10-20 a card of the person's own confidential thread. The
     // replay carries a one-shot token for exactly this request on exactly
     // that thread, so it is the owner's own answer there (an on-behalf
     // request never reaches a confidential thread); the answer's text is
@@ -29894,7 +29936,7 @@ function primaryApprovals(): ReturnType<typeof createPrimaryApprovals> {
       const vaultPerson = IDENTITY.kind === "perspicax" ? turn.person.toLowerCase() : LOCAL_VAULT_PRINCIPAL;
       // a phone call: Call or Do not call, never an Always allow
       out.push(...outbound.primaryPending(vaultPerson, securityKeys.required(vaultPerson, ["money"]).length > 0));
-      // a purchase: allow this once or deny, never always (JC 2026-10-22)
+      // a purchase: allow this once or deny, never always (2026-10-22)
       for (const purchase of credentialVault.pendingPurchases(vaultPerson)) {
         out.push(primaryPurchaseCard(purchase, store.bot(purchase.botId)?.name || "Bot", securityKeys.required(vaultPerson, ["money"]).length > 0));
       }
@@ -30038,7 +30080,7 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
   const language = cwActionLanguage(cfg.language);
   const card = cwActionCard(action, language, actorPrincipalId(auth));
   const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(cfg.language));
-  // 2026-10-19 (JC: "Toujours permettre" on every card): what Always allow
+  // 2026-10-19 ("Toujours permettre" on every card): what Always allow
   // keeps here (this bot, this kind of ConnectWise change), and whether the
   // person already kept it (no security key of theirs protecting the write)
   const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(cfg.language));
@@ -30533,7 +30575,7 @@ const actConfirmedScope = new AsyncLocalStorage<ActConfirmation | null>();
 function actConfirmed(): ActConfirmation | null {
   return actConfirmedScope.getStore() ?? null;
 }
-/** 2026-10-20 (JC: "le bot principal doit pouvoir absolument tout faire"):
+/** 2026-10-20 ("le bot principal doit pouvoir absolument tout faire"):
  * this replay is a change the person asked their own Primary Bot for in
  * this turn (sagax_settings with quote, sagax_approvals). A level then
  * changes even while that bot works (the person's "mets-toi en Full"): the
@@ -30766,19 +30808,19 @@ function botOwnerOrgRole(bot: { ownerUserId?: unknown }): "admin" | "member" | u
   if (!owner) return undefined;
   return owner.local ? "admin" : owner.orgRole;
 }
-/** Slice 3 (D15, JC rule until per-owner containers): a bot whose owner is
+/** Slice 3 (D15 rule until per-owner containers): a bot whose owner is
  * not an organization admin never runs with full access, and its server
  * commands need an admin's approval. */
 function memberOwnedInOrg(bot: { ownerUserId?: unknown }): boolean {
   return memberOwnedBot({ identity: IDENTITY.kind, ownerOrgRole: botOwnerOrgRole(bot) });
 }
-/** 2026-10-22 (JC): an organization admin or the local operator. */
+/** 2026-10-22 an organization admin or the local operator. */
 function principalIsOrgAdmin(principalId: string | undefined | null): boolean {
   if (!principalId) return false;
   const record = principals.byId(principalId.trim().toLowerCase());
   return record?.local === true || record?.orgRole === "admin";
 }
-/** 2026-10-22 (JC): whether an admin (or the operator, or a person an admin
+/** 2026-10-22 whether an admin (or the operator, or a person an admin
  * gave host.shell) drives this turn, so the shared organization server is
  * theirs to target and the "runs on the server" card stays. */
 function turnDrivesOrgServer(threadId: string): boolean {
@@ -30788,7 +30830,7 @@ function turnDrivesOrgServer(threadId: string): boolean {
   if (principalIsOrgAdmin(principalId)) return true;
   return Boolean(principalId && principalCan(principalId.trim().toLowerCase(), "host.shell"));
 }
-/** 2026-10-22 (JC): whether this bot has a usable computer of its own this
+/** 2026-10-22 whether this bot has a usable computer of its own this
  * turn, so a command should run there rather than wait for the shared server
  * (server/exec-target.ts workplaceIsBotComputer): its owner's server
  * environment (always usable when configured), or its owner's own computer /
@@ -30815,7 +30857,7 @@ function ownEnvironmentRequest(bot: BotRecord, threadId: string, tool: string | 
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   });
 }
-/** 2026-10-19 (JC): whether a call acts on the bot owner's own destination
+/** 2026-10-19 whether a call acts on the bot owner's own destination
  * (their server environment, their own computer or its Local VM) that Sagax
  * mounted for this turn: the owner's card, never an admin's
  * (member-environment.ts ownDestinationCall). */
@@ -30831,7 +30873,7 @@ function ownDestinationRequest(bot: BotRecord, threadId: string, tool: string | 
     mountedServers: (mine && workplace.ownEnvironmentServers) || new Set<string>(),
   });
 }
-/** 2026-10-19 (JC, PR 3): whose own destination a call acts on. The bot's
+/** 2026-10-19 (PR 3): whose own destination a call acts on. The bot's
  * owner (ownDestinationRequest), or, on a bot someone else owns, the person
  * who speaks in their own conversation with it: the destination Sagax
  * mounted is theirs, so the card is THEIRS, never an admin's and never the
@@ -31262,7 +31304,7 @@ function settingsStepUpGate(person: string | null, action: StepUpSettingsAction,
   return settingsStepUp(securityKeys, person, action, detail, stepUp, required);
 }
 
-/** 2026-10-19 (JC: "Toujours permettre" on every card): whether this person
+/** 2026-10-19 ("Toujours permettre" on every card): whether this person
  * still answers this kind of strict card: an admin's card of a member's bot
  * for an organization admin or a holder of host.shell; a holder's server
  * command for the bot's current owner who still holds host.commands. */
@@ -31309,7 +31351,7 @@ function strictCardRule(
   return undefined;
 }
 
-/** 2026-10-19 (JC: "Toujours permettre" on every card): the Always allow
+/** 2026-10-19 ("Toujours permettre" on every card): the Always allow
  * the person who answers this bot's cards kept for a card that is not an
  * engine's own tool call (a held action, a send, a proposal), the very same
  * scope key for key; none while a security key of theirs protects one of
@@ -31412,7 +31454,7 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   const bot = botForApproval(threadId, message);
   if (!bot) return { status: 404, error: "No such approval." };
   const caller = ruleManager(auth);
-  // 2026-10-19 (JC): an admin's card is remembered by the person who answers
+  // 2026-10-19 an admin's card is remembered by the person who answers
   // it (an admin, a holder of host.shell, or the owner holding
   // host.commands for their own bot's server command), as their own rule
   // for this bot; an Always deny there answers nothing (the card stays).
@@ -31889,7 +31931,7 @@ function hideEarlierAgentThreads(): void {
 /** Once (marker `agent-threads-hidden.v2`): bot-to-bot threads still shown,
  * and the operator's `agent-threads-hide.list` (agent-threads.ts
  * planHiddenBotThreads). Counts only in the log. */
-/** Once (marker `bot-runtime-settings.v1`, JC 2026-10-15): the global
+/** Once (marker `bot-runtime-settings.v1` 2026-10-15): the global
  * parallel conversations and automatic recovery values become each existing
  * bot's own (server/bot-runtime-settings.ts). A bot with a value keeps it.
  * Counts only in the log. */
@@ -33526,7 +33568,7 @@ const voiceModeDeps: VoiceModeDeps = {
   },
   serverKey: () => cfg.xai?.key,
   hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
-  // 2026-10-16 (JC): the organization's xAI key gives voice only to the
+  // 2026-10-16 the organization's xAI key gives voice only to the
   // people Perspicax lists it for (an admin always).
   serverKeyAllowed: (speaker) => serverEngineAllowedFor(speaker.principalId, VOICE_SERVER_ENGINE),
   resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
@@ -33923,7 +33965,7 @@ if (oidcRp && idpVault) {
       routineAudit("routine_delegation.granted", principalId);
       routines?.resumeFor(principalId, (routine) => effectiveRunAs({ botId: routine.botId }));
     },
-    // 2026-10-08 (JC): issued from the person's sign-in, never asked.
+    // 2026-10-08 issued from the person's sign-in, never asked.
     issue: (token) => perspicaxDirectory
       ? perspicaxDirectory.issueRoutineDelegation(token)
       : Promise.resolve({ ok: false as const, error: "link" as const }),
@@ -35252,7 +35294,7 @@ function applyOrgEngineAllowList(): void {
     if (next) {
       store.applyModelDefault(id, next);
       console.log(`[org] bot=${id} engine ${bot.modelSelection.instanceId} is not allowed by the organization; now on Auto (${next.instanceId})`);
-      // 2026-10-18 (JC): the bot's conversation says so in one plain line
+      // 2026-10-18 the bot's conversation says so in one plain line
       // (a status notice, drawn in the reader's language from tool.engineMove,
       // src/lib/activity-runs.ts), never a raw error.
       const move = { from: orgEngineName(bot.modelSelection.instanceId), to: orgEngineName(next.instanceId) };
@@ -35450,7 +35492,7 @@ async function performAsMember(person: MemberPerson, request: MemberRequest): Pr
   }
 }
 // ── agent-to-agent API (docs/agent-api.md) ────────────────────────────
-// Ten tools with Grok Bot's semantics, for a bot (its agents MCP server,
+// Ten tools with the reference design's semantics, for a bot (its agents MCP server,
 // /api/internal/agent-api/<tool>) and for a person's AI client (the member
 // API, /api/org/member/agents/<tool>). Every send lands in a hidden
 // conversation (#291, #302) the caller owns. server/agent-api.ts is the core.
@@ -35762,7 +35804,7 @@ ROUTES.push(createToolGrantRoutes({
   }),
 }));
 // A bot's own parallel conversations, automatic recovery and tool access
-// (server/routes/bot-runtime-settings.ts, JC 2026-10-15): the bot's owner
+// (server/routes/bot-runtime-settings.ts 2026-10-15): the bot's owner
 // (with bots.behaviour / bots.tools on an organization server) or an admin.
 ROUTES.push(createBotRuntimeSettingsRoutes({
   bot: (id) => store.bot(id),
@@ -38470,7 +38512,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             ...(routineSafety.classKey ? { classKey: routineSafety.classKey } : {}),
           });
         }
-        // 2026-10-19 (JC: "Toujours permettre" on every card): never under a
+        // 2026-10-19 ("Toujours permettre" on every card): never under a
         // safety hold; otherwise the person's kept rule settles the card
         const byRule = proposed.state !== "applied" && routineSafety?.kind !== "hold"
           ? settleProposalByRule(from, fromThreadId, proposed, (args) => routineRequests.resolve(args))
@@ -38896,7 +38938,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if ("error" in staged) return json(res, 422, { error: staged.error });
         // a skill written from a conversation (/learn) counts its uses for Skill Smith
         if (staged.action === "create" && source === "conversation") recordMastery([{ person: achievementThreadPerson(fromThreadId) ?? "", fact: { kind: "skill.learned", skill: staged.name } }]);
-        // 2026-10-19 (JC: "Toujours permettre" on every card): Always allow on
+        // 2026-10-19 ("Toujours permettre" on every card): Always allow on
         // a skill card keeps this skill with this exact content (a skill is
         // instructions the bot reads: new content always shows its card)
         const skillRule = skillRuleCandidate(staged);
@@ -40732,7 +40774,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     let routineMatch = path.match(/^\/api\/routines\/([\w-]+)\/run$/);
     if (routineMatch && method === "POST") {
       if (routineNeedsRun(auth, routineBotId(routineMatch[1]))) return json(res, 403, NEEDS_RUN);
-      // Run now (JC, 2026-10-08): the bot's owner, the person it runs as or
+      // Run now (2026-10-08): the bot's owner, the person it runs as or
       // an admin; one run of a routine in flight at a time.
       const target = routines!.listRoutines().find((candidate) => candidate.id === routineMatch![1]);
       if (target && !mayRunRoutineNow(auth, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can run it now.", code: "run_now_not_allowed", permission: "routines.runNowAny" });
@@ -40916,7 +40958,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const body = await readBody(req);
       const webhookRefused = webhookDelegateRefusal(auth, [], body);
       if (webhookRefused) return json(res, 403, webhookRefused);
-      // 2026-10-22 (JC): a webhook runs on the bot's own computer (This
+      // 2026-10-22 a webhook runs on the bot's own computer (This
       // computer or its cloud computer) by default; only a run target on the
       // shared organization server is an admin's (server/exec-target.ts).
       const createRunOn = body && typeof body === "object" && !Array.isArray(body) ? (body as { runOn?: unknown }).runOn : undefined;
@@ -41057,6 +41099,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
+      // A person of the organization: this stream is one of their clients.
+      const presenceOf = presenceViewer(auth);
+      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
       const client: SseClient = {
         res,
         admin: auth.scopes.includes("admin"),
@@ -41069,6 +41114,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && listedBotVisible(bot, viewerId)).map((bot) => bot.id)),
           groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && groupVisible(group, viewerId)).map((group) => group.id)),
         },
+        // A comment keeps intermediaries from idling the connection, while a
+        // data frame is visible to EventSource clients and resets their own
+        // liveness watchdog. Heartbeats carry no id and never advance replay.
+        // An expired session's stream ends at the next heartbeat.
+        close: openSseHeartbeat(res, {
+          everyMs: SSE_HEARTBEAT_MS,
+          live: () => !client.sessionId || sessions.isLive(client.sessionId),
+          onBeat: () => { if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId); },
+          onClose: () => {
+            sseClients.delete(client);
+            presenceClose?.();
+          },
+        }),
       };
       if (auth.kind === "session") {
         client.sessionId = auth.session.id;
@@ -41078,9 +41136,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!(auth.kind === "loopback" && auth.trust === "service")) client.identity = () => viewerIdentity(auth);
       if (viewerId) client.viewerId = viewerId;
-      // A person of the organization: this stream is one of their clients.
-      const presenceOf = presenceViewer(auth);
-      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
       if (presenceOf.ok) client.presence = true;
       res.writeHead(200, {
         "content-type": "text/event-stream",
@@ -41130,29 +41185,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
 
-      sseClients.add(client);
+      // A stream that already failed (its close ran) never joins the fan-out.
+      if (!res.writableEnded && !res.destroyed) sseClients.add(client);
       // Keep this long-lived response out of socket idle-timeout handling
       // without weakening timeouts for every other API request.
       req.socket.setTimeout(0);
-      // A comment keeps intermediaries from idling the connection, while a
-      // data frame is visible to EventSource clients and resets their own
-      // liveness watchdog. Heartbeats carry no id and never advance replay.
-      const keepalive = setInterval(() => {
-        // an expired session's stream ends at the next heartbeat
-        if (client.sessionId && !sessions.isLive(client.sessionId)) {
-          res.end();
-          return;
-        }
-        try {
-          res.write(`: keepalive\n\ndata: ${JSON.stringify({ kind: "ping" })}\n\n`);
-          if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId);
-        } catch {}
-      }, SSE_HEARTBEAT_MS);
-      req.on("close", () => {
-        clearInterval(keepalive);
-        sseClients.delete(client);
-        presenceClose?.();
-      });
+      req.on("close", client.close);
       return;
     }
 
@@ -41303,8 +41341,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(200, {
         "content-type": message.mime ?? "image/png",
         "content-length": String(bytes.byteLength),
-        // a settled message's image never changes
-        "cache-control": "private, max-age=31536000, immutable",
+        // Never cached: a room's screen is shown only to the person whose
+        // turn holds the workplace, and access to a thread can be withdrawn;
+        // a browser cache would keep the image past both.
+        "cache-control": "private, no-store",
       });
       return res.end(bytes);
     }
@@ -41428,7 +41468,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ...(streamsMessageImage
           ? { "content-disposition": "inline" }
           : { "content-disposition": messageFileDisposition(messageFileDownloadName(downloadName, file.name)) }),
-        "cache-control": streamsMessageImage ? "private, max-age=3600" : "private, no-store",
+        // previews too: access to the thread can be withdrawn
+        "cache-control": "private, no-store",
         "cdn-cache-control": "no-store",
         "cloudflare-cdn-cache-control": "no-store",
         pragma: "no-cache",
@@ -41499,7 +41540,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         "content-disposition": preview
           ? "inline"
           : messageFileDisposition(messageFileDownloadName(ref.source === "upload" || ref.source === "attachment" ? ref.name : undefined, file.name)),
-        "cache-control": preview ? "private, max-age=3600" : "private, no-store",
+        // previews too: access to the thread can be withdrawn
+        "cache-control": "private, no-store",
         "cdn-cache-control": "no-store",
         "cloudflare-cdn-cache-control": "no-store",
         pragma: "no-cache",
@@ -43002,7 +43044,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const resolvedPreset = typeof body.preset === "string" ? presetStore.resolve(body.preset) : null;
       const preset = resolvedPreset && presetOffered(resolvedPreset.row, orgInstallStatuses()) ? resolvedPreset : null;
       if (body.preset !== undefined && !preset) return json(res, 404, { error: PRESET_UNAVAILABLE_MESSAGE });
-      // Workspace is always Auto (JC 2026-10-18): New bot defaults or a
+      // Workspace is always Auto (2026-10-18): New bot defaults or a
       // request naming a place create an Auto bot. Off stays.
       // A request that named This computer keeps its guards: the Approve
       // for me warning, and Ask as the starting level.
@@ -43600,7 +43642,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           typeof body.computer === "string" &&
           ["auto", "cloud", "vm", "local", "browser", "off"].includes(body.computer)
         ) {
-          // Workspace is always Auto (JC 2026-10-18): a place an older app
+          // Workspace is always Auto (2026-10-18): a place an older app
           // still sends reads as Auto, without an error. Off stays.
           requestedComputer = body.computer === "auto" ? undefined : requestedWorksOn(body.computer);
           patch.computer = requestedComputer;
@@ -45955,7 +45997,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         patch.linkAuto = link ? undefined : false;
       }
       if (body.surface !== undefined) {
-        // Workspace is always Auto (JC 2026-10-18): a conversation is never
+        // Workspace is always Auto (2026-10-18): a conversation is never
         // pinned to a place any more. An older app that still sends one gets
         // no error and no pin; the bot keeps choosing per task.
         if (body.surface !== null && !parseSurface(body.surface)) {
@@ -47405,7 +47447,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               : "Only an organization admin can change this part of the settings.",
           code: "admin_only_field", field,
         });
-        // 2026-10-22 (JC): the config write now opens to server.experimental
+        // 2026-10-22 the config write now opens to server.experimental
         // (request-auth.ts). A delegate who holds only that key, not
         // server.settings, may flip the experiments of Settings > Experimental
         // and nothing else: refuse any other field here (defense in depth; the
@@ -48521,7 +48563,7 @@ restoreSteeredMessages();
 restoreAsideMessages(store);
 restoreChannelMessages();
 
-// Auto remembers no place (JC 2026-10-16): the auto pins an older build
+// Auto remembers no place (2026-10-16): the auto pins an older build
 // recorded are cleared before dispatch starts, on every server, whatever the
 // bot's Works on. A person's pin and a legacy pin of unknown origin (it may be
 // theirs) stay. The sweep is idempotent.
@@ -48529,7 +48571,7 @@ restoreChannelMessages();
   let movedAutoPins = 0;
   for (const bot of store.bots) movedAutoPins += store.clearAutoSurfacePins(bot.id, undefined);
   if (movedAutoPins) console.log(`Auto: cleared ${movedAutoPins} auto-pinned thread(s); Auto picks where to work on each turn`);
-  // Workspace is always Auto (JC 2026-10-18): a fixed Works on and every
+  // Workspace is always Auto (2026-10-18): a fixed Works on and every
   // conversation pin an older build saved go back to Auto. Off stays.
   const retired = FIXED_WORKSPACE_SEAM ? { bots: 0, pins: 0, asked: 0 } : store.retireFixedWorkspaces();
   if (retired.bots || retired.pins) console.log(`Workspace: ${retired.bots} bot(s) and ${retired.pins} conversation(s) back on Auto; the bot picks where each task runs`);

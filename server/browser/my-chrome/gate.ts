@@ -1,6 +1,6 @@
 // My Chrome gate: the only way a bot's engine reaches the person's own Chrome.
 // Port of OpenMausBot #2706 (My Chrome) with the CDP layer of #2928 reduced to
-// what Sagax needs, under JC's rules (2026-10-19).
+// what Sagax needs, under the maintainer's rules (2026-10-19).
 //
 // agent-browser connects here as if this were Chrome (AGENT_BROWSER_CDP, a
 // loopback ws:// address with a random path per bot session). The gate holds

@@ -153,7 +153,7 @@ export function SkinPicker() {
 
   return (
     <div data-skin-picker="" className="flex flex-col gap-1">
-      {/* 0.5.6 (JC): Grok Bot's tiles inside the Appearance card: the picture,
+      {/* 0.5.6: the reference design's tiles inside the Appearance card: the picture,
           the name and a check. The tagline is the tile's tooltip and its
           accessible description, so the grid fits four across. */}
       <div role="group" aria-label={t("settings.skin.title")} data-skin-grid="" className="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] gap-2 px-2 py-1">

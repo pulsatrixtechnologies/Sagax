@@ -113,7 +113,7 @@ export function composeSkillMd(previous: string | null, fields: { name: string; 
 }
 
 /** One-line YAML scalar that parseSkillMd reads back unchanged: plain when
- * unambiguous, else double-quoted (from OpenMausBot, used by the Grok Bot
+ * unambiguous, else double-quoted (from OpenMausBot, used by the reference design
  * import, port of #3073). */
 export function yamlFrontmatterValue(value: string): string {
   const plain =

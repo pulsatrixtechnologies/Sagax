@@ -125,7 +125,7 @@ export class UserSandboxManager {
         throw error;
       }
     };
-    // 2026-10-19 (GOX): right after a cold start the provisioner answered,
+    // 2026-10-19 (production): right after a cold start the provisioner answered,
     // then the first exec waited for a pod on a node pool scaling 0 -> 1, was
     // cut at 90 s and taken for a provisioner gone: the routine gave up.
     // Now a `starting` refusal is sent again, bounded, and a call that only

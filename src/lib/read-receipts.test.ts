@@ -11,8 +11,8 @@ const time = (at: number) => `T${at}`;
 type Line = { id: string; role: "user" | "bot"; kind: string; from?: { botId: string }; sender?: { id?: string; name: string } };
 const room: Line[] = [
   { id: "m1", role: "user", kind: "text", sender: { id: ALICE, name: "Alice" } },
-  { id: "m2", role: "bot", kind: "text", from: { botId: "cryptic" } },
-  { id: "a1", role: "bot", kind: "activity", from: { botId: "cryptic" } },
+  { id: "m2", role: "bot", kind: "text", from: { botId: "quasar" } },
+  { id: "a1", role: "bot", kind: "activity", from: { botId: "quasar" } },
   { id: "m3", role: "user", kind: "text", sender: { id: BOB, name: "Bob" } },
 ];
 const byId = new Map(room.map((line) => [line.id, line]));
@@ -29,14 +29,14 @@ describe("seenRows", () => {
     const rows = seenRows({
       order: room,
       anchorable,
-      reads: { [BOB]: { messageId: "m2", at: 20 }, "bot:cryptic": { messageId: "m1", at: 10 }, [CAROL]: { messageId: "m2", at: 15 } },
+      reads: { [BOB]: { messageId: "m2", at: 20 }, "bot:quasar": { messageId: "m1", at: 10 }, [CAROL]: { messageId: "m2", at: 15 } },
       self: ALICE,
       authorOf,
     });
     expect([...rows.keys()]).toEqual(["m2", "m1"]);
     // two readers on the same line stack, the earlier first
     expect(rows.get("m2")).toEqual([{ participantId: CAROL, at: 15 }, { participantId: BOB, at: 20 }]);
-    expect(rows.get("m1")).toEqual([{ participantId: "bot:cryptic", at: 10 }]);
+    expect(rows.get("m1")).toEqual([{ participantId: "bot:quasar", at: 10 }]);
   });
 
   it("never draws the viewer, whatever the case of their id", () => {
@@ -49,7 +49,7 @@ describe("seenRows", () => {
     const past = seenRows({ order: room, anchorable, reads: { [CAROL]: { messageId: "a1", at: 5 } }, self: ALICE, authorOf });
     expect([...past.keys()]).toEqual(["m2"]);
     // ...and a bot whose position is its own reply sits under what it answered
-    const own = seenRows({ order: room, anchorable, reads: { "bot:cryptic": { messageId: "a1", at: 5 } }, self: ALICE, authorOf });
+    const own = seenRows({ order: room, anchorable, reads: { "bot:quasar": { messageId: "a1", at: 5 } }, self: ALICE, authorOf });
     expect([...own.keys()]).toEqual(["m1"]);
     // Bob at his own message sits under the line before it
     const bob = seenRows({ order: room, anchorable, reads: { [BOB]: { messageId: "m3", at: 5 } }, self: ALICE, authorOf });
@@ -69,22 +69,22 @@ describe("botSeenCaption", () => {
   ];
   const chatAuthor = (id: string) => {
     const line = chat.find((candidate) => candidate.id === id);
-    return line ? messageParticipant(line, "cryptic") : null;
+    return line ? messageParticipant(line, "quasar") : null;
   };
   const users = new Set(["u1", "u2"]);
 
   it("sits under the last message the bot consumed, until it answers", () => {
-    expect(botSeenCaption({ order: chat, anchorable: users, reads: { "bot:cryptic": { messageId: "u2", at: 9 } }, botId: "cryptic", authorOf: chatAuthor }))
+    expect(botSeenCaption({ order: chat, anchorable: users, reads: { "bot:quasar": { messageId: "u2", at: 9 } }, botId: "quasar", authorOf: chatAuthor }))
       .toEqual({ messageId: "u2", at: 9 });
     // the answer below u1 already says it was seen
-    expect(botSeenCaption({ order: chat, anchorable: users, reads: { "bot:cryptic": { messageId: "u1", at: 9 } }, botId: "cryptic", authorOf: chatAuthor })).toBeNull();
-    expect(botSeenCaption({ order: chat, anchorable: users, reads: {}, botId: "cryptic", authorOf: chatAuthor })).toBeNull();
+    expect(botSeenCaption({ order: chat, anchorable: users, reads: { "bot:quasar": { messageId: "u1", at: 9 } }, botId: "quasar", authorOf: chatAuthor })).toBeNull();
+    expect(botSeenCaption({ order: chat, anchorable: users, reads: {}, botId: "quasar", authorOf: chatAuthor })).toBeNull();
   });
 });
 
 describe("words", () => {
   it("names every reader with the time in the tooltip", () => {
-    expect(seenTooltip([{ name: "Alice", at: 1 }, { name: "Cryptic", at: 2 }], time)).toBe("Seen by Alice at T1, Cryptic at T2");
+    expect(seenTooltip([{ name: "Alice", at: 1 }, { name: "Quasar", at: 2 }], time)).toBe("Seen by Alice at T1, Quasar at T2");
     setLocale("fr");
     expect(seenTooltip([{ name: "Alice", at: 1 }], time)).toBe("Vu par Alice à T1");
   });

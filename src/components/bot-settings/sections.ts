@@ -6,7 +6,7 @@
 // "visibility" only to an admin in a browser (never in the desktop app), and
 // "sharing" only on a server signed in with Perspicax, where it replaces
 // "visibility"; "perspicax" (the MCP profiles the bot offers) only there too.
-// Works on is its own page, labelled Workspace (JC 2026-10-15).
+// Works on is its own page, labelled Workspace (2026-10-15).
 // "appearance" (the mascot gallery and the picture sources) is the persona
 // editor's second page, right after the identity (Overview). "summary" (What
 // it does) is the Profile group's last page.

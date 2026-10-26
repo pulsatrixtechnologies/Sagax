@@ -338,7 +338,7 @@ export function CommandLine({ command, copyLabel = "Copy command" }: { command: 
   );
 }
 
-/** A titled group of settings, as Grok Bot's settings pages draw them: a
+/** A titled group of settings, as the reference design's settings pages draw them: a
  * grey heading outside the card (Account, Appearance, System), then one
  * rounded card of compact rows. An empty group draws nothing. */
 export function SettingsGroup({
@@ -351,7 +351,7 @@ export function SettingsGroup({
   title: string;
   /** `data-settings-group`, for tests and deep links */
   groupId: string;
-  /** Shown after the heading, as Grok Bot's "Your computer · <name>". */
+  /** Shown after the heading, as the reference design's "Your computer · <name>". */
   accessory?: React.ReactNode;
   /** The children are cards of their own (forms with several fields): the
    * heading only, no card around them. */
@@ -414,7 +414,7 @@ export function SettingsTextRow({ tone = "neutral", live, children }: { tone?: k
   );
 }
 
-/** Grok Bot's count pill ("2 ⌄"): how many items a row holds, and the
+/** The reference design's count pill ("2 ⌄"): how many items a row holds, and the
  * button that unfolds them under the row. */
 export function CountPill({ count, open, onToggle, label, controls }: {
   /** Without a count the pill shows the chevron alone. */
@@ -505,7 +505,7 @@ export function UnitField({
   );
 }
 
-/** Grok Bot's grey pill button, 44 px tall on a touch screen. */
+/** The reference design's grey pill button, 44 px tall on a touch screen. */
 export const PILL = "ui-button min-h-[44px] disabled:opacity-50 md:min-h-0";
 
 /** `group` heads a run of options in the open list (a native <optgroup>):
@@ -513,7 +513,7 @@ export const PILL = "ui-button min-h-[44px] disabled:opacity-50 md:min-h-0";
  * choosable (an engine that is not ready, a saved value that is gone). */
 export type PillOption<T extends string> = { value: T; label: string; group?: string; disabled?: boolean };
 
-/** Grok Bot's borderless pill menu ("Follow System ⌄"): the current value
+/** The reference design's borderless pill menu ("Follow System ⌄"): the current value
  * and a chevron; the choices open in a small list under it. A listbox, so
  * arrows, Home/End, Enter and Escape work as in a native select. */
 export function PillSelect<T extends string>({
@@ -703,11 +703,11 @@ export function DescribedRow({
   );
 }
 
-/** Grok Bot's filled red pill, for a reset that erases. */
+/** The reference design's filled red pill, for a reset that erases. */
 export const DANGER_PILL = "ui-button bg-danger font-medium text-danger-ink enabled:hover:brightness-110 disabled:opacity-50";
 
 /** A row of a settings group that folds what it holds under a count pill
- * (Grok Bot's "Other computers 1 ⌄", a CountPill). `cardId` remembers the choice on this
+ * (the reference design's "Other computers 1 ⌄", a CountPill). `cardId` remembers the choice on this
  * device and lets a search or a link open it (requestSettingsCard). The body
  * stays mounted while folded, so drafts and saves are unaffected. */
 export function FoldRow({ cardId, defaultOpen = false, label, description, help, icon, count, toggleLabel, controls, children }: {
@@ -742,7 +742,7 @@ export function FoldRow({ cardId, defaultOpen = false, label, description, help,
   );
 }
 
-/** Grok Bot's filled pill for the one action a window is for ("Update",
+/** The reference design's filled pill for the one action a window is for ("Update",
  * "Call"), beside grey PILLs. */
 export const PRIMARY_PILL = `${PILL} ui-button-primary`;
 
@@ -760,11 +760,11 @@ export const SETTINGS_WINDOW = {
   frame: "flex h-[min(700px,calc(100dvh-96px))] w-[min(900px,calc(100vw-40px))] overflow-hidden rounded-[14px] border border-border bg-app outline-none transition-[opacity,scale] duration-base ease-out-quint starting:scale-98 starting:opacity-0 motion-reduce:transition-none",
 } as const;
 
-/** A window drawn like Settings (2026-10-16, JC: every window of the app
+/** A window drawn like Settings (2026-10-16: every window of the app
  * follows Settings): its frame (14 px corners, hairline border, the app
  * background), the title at the top left in the Settings heading type, the
  * round close button at the top right, a body of grey-headed groups and
- * the pills at the bottom right. The widths are Grok Bot's dialog steps
+ * the pills at the bottom right. The widths are the reference design's dialog steps
  * (400, 480) plus Settings' own column (`xl`, the release notes). */
 export const DIALOG = {
   backdrop: "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-6",
@@ -801,7 +801,7 @@ export function DialogCloseButton({ label, onClick, buttonRef, disabled }: {
   );
 }
 
-/** A window's backdrop, portalled to the end of <body> (2026-10-18, JC:
+/** A window's backdrop, portalled to the end of <body> (2026-10-18: 
  * the release notes' X only closed when clicked below it). Electron
  * resolves -webkit-app-region in DOM order: a dialog mounted inside the
  * shell before the chat header (`.content-topbar`, 56 px of drag) has its
@@ -942,7 +942,7 @@ export function FieldRow({ label, hint, hintId, children, rowId }: {
 }
 
 /** A destructive action asked twice, in place: a grey pill with red words,
- * then, once clicked, Grok Bot's filled red pill that does it. Leaving the
+ * then, once clicked, the reference design's filled red pill that does it. Leaving the
  * pill (Tab, a click elsewhere) or Escape disarms it. */
 export function ConfirmPill({ label, confirmLabel, ariaLabel, title, onConfirm, disabled, children }: {
   label: string;

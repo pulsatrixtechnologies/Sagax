@@ -7,7 +7,7 @@ export const BOTS_SECTION_ID = "builtin:bots";
 export const ATTENTION_SECTION_ID = "builtin:attention";
 export const PINNED_THREADS_SECTION_ID = "builtin:pinned-threads";
 export const TOOLS_SECTION_ID = "builtin:tools";
-/** Grok Bot's "Built-in" section: the bots the organization library put on
+/** The reference design's "Built-in" section: the bots the organization library put on
  * this computer (installedPackage.source "org") that the person has not
  * filed in a section of their own. */
 export const BUILT_IN_SECTION_ID = "builtin:integrated";
@@ -20,7 +20,7 @@ export function isBuiltInBot(bot: { section?: string; installedPackage?: { sourc
   return bot.installedPackage?.source === "org" && !bot.section;
 }
 
-/** "My team" is the name Grok Bot and earlier imports give the person's
+/** "My team" is the name the reference design and earlier imports give the person's
  * default team; it reads in the interface's language ("Mon équipe"). Any
  * other name stays exactly as typed. */
 export function isMyTeamSectionName(name: string): boolean {

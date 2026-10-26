@@ -1,4 +1,4 @@
-// 2026-10-19 (JC: "On doit avoir des cartes, mais avoir la possibilité de
+// 2026-10-19 ("On doit avoir des cartes, mais avoir la possibilité de
 // faire TOUJOURS le Toujours permettre"): which cards also offer Always deny.
 // Every card with a rule scope (`ownerRule`) offers Always allow; Always deny
 // is a rule of an engine's own tool calls only. An admin's card, an act or a

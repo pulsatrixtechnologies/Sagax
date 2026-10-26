@@ -1,4 +1,4 @@
-// Settings > Appearance, laid out as Grok Bot's settings pages (0.5.6, JC):
+// Settings > Appearance, laid out as the reference design's settings pages (0.5.6):
 // grey headings outside the cards, compact rows (label at the left, control
 // at the right), pill menus rather than native selects, no help text but a
 // short grey line where it avoids a mistake. The skin is chosen here only:
@@ -36,7 +36,7 @@ import { HD_CHARACTERS } from "../hd-mascots/manifest";
 import { AppIconPicker, appIconAvailable } from "./AppIconPicker";
 import { BackgroundEffectsPicker } from "./BackgroundEffectsPicker";
 
-/** Grok Bot's "1 ⌄" pill (Computer > Other computers, #576): what a row
+/** The reference design's "1 ⌄" pill (Computer > Other computers, #576): what a row
  * folds, opened in place. `children` is the pill's text (a count, a word). */
 export function DisclosurePill({ open, onToggle, label, children }: { open: boolean; onToggle: () => void; label: string; children: React.ReactNode }) {
   return (

@@ -20,8 +20,7 @@
 //     a token that also carries the RISC account purged event erases the
 //     person's data here and answers `{ purged: true, bots, threads }`);
 //   - signs the desktop app and the phones in through the system browser:
-//     /auth/oidc/start?client=desktop|phone ends on a sagax:// (phone) or
-//     openmausbot:// / sagax:// (desktop) link
+//     /auth/oidc/start?client=desktop|phone ends on a sagax:// link
 //     carrying a two-minute, single-use pairing credential bound to the
 //     person (slice 2); a phone that names `&return=sagax` gets the same
 //     invite on sagax://pair instead, and a refused sign-in on
@@ -86,19 +85,20 @@ export interface IdentityDescriptor {
   issuer: string;
   /** Same-origin path that starts the sign-in. */
   loginPath: string;
-  /** The start path takes `?client=desktop|phone` and ends on an
-   * openmausbot:// link (slice 2), so native apps may use the system browser. */
+  /** The start path takes `?client=desktop|phone` and ends on a
+   * sagax:// link (slice 2), so native apps may use the system browser. */
   nativeReturn: true;
   /** The desktop start also takes `&return=<loopback URL>` and ends there
    * (validLoopbackReturn), so the app that started the sign-in gets it back
-   * whichever app owns openmausbot://. */
+   * whichever app owns sagax://. */
   loopbackReturn: true;
-  /** Schemes a native return may use: openmausbot://auth by default,
-   * sagax://auth when the desktop start names `return=<sagaxReturnLink>`. */
-  nativeReturnSchemes: readonly ["sagax", "openmausbot"];
+  /** The scheme a native return uses: sagax://auth, with or without the
+   * desktop start naming `return=<sagaxReturnLink>`. */
+  nativeReturnSchemes: readonly ["sagax"];
   /** Schemes a phone start may name with `&return=`: `sagax` ends on
-   * sagax://pair (success and refusal alike); none keeps openmausbot://pair. */
-  phoneReturnSchemes: readonly ["sagax", "openmausbot"];
+   * sagax://pair (success and refusal alike), and a start without it ends
+   * there too. */
+  phoneReturnSchemes: readonly ["sagax"];
 }
 
 /** The `return` a phone sign-in names to come back on sagax://pair. */
@@ -148,7 +148,7 @@ export function identityConfigFromEnv(env: NodeJS.ProcessEnv = process.env): Ide
 }
 
 export function identityDescriptor(config: IdentityConfig): IdentityDescriptor | undefined {
-  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax", "openmausbot"], phoneReturnSchemes: ["sagax", "openmausbot"] } : undefined;
+  return config.kind === "perspicax" ? { kind: "perspicax", protocol: "oidc", issuer: config.issuer, loginPath: OIDC_START_PATH, nativeReturn: true, loopbackReturn: true, nativeReturnSchemes: ["sagax"], phoneReturnSchemes: ["sagax"] } : undefined;
 }
 
 /** Session scopes for a Perspicax role (spec section 3). No claim is an
@@ -321,12 +321,11 @@ export function sagaxReturnLink(publicOrigin: string): string {
 
 /** The link the desktop app receives from the system browser: its loopback
  * listener or sagax:// return when the sign-in named one, else
- * openmausbot://auth (a desktop that predates sagax://). The
- * credential always rides in the fragment. */
+ * sagax://auth. The credential always rides in the fragment. */
 export function desktopReturnLink(publicOrigin: string, outcome: { code: string } | { error: string }, returnTo?: string): string {
   const fragment = "code" in outcome ? `#code=${outcome.code}` : `#error=${encodeURIComponent(outcome.error)}`;
   if (returnTo) return `${returnTo}${fragment}`;
-  return `openmausbot://auth?origin=${encodeURIComponent(publicOrigin)}${fragment}`;
+  return `sagax://auth?origin=${encodeURIComponent(publicOrigin)}${fragment}`;
 }
 
 /** The link a phone's authentication sheet receives: the invite shape both

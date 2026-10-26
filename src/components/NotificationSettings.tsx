@@ -3,7 +3,7 @@
 // shell does it: electron/desktop-attention.mjs). Every switch is on by
 // default and kept on this computer only. Which bots may notify at all is
 // each bot's own setting, on the server.
-// 0.5.6 (JC): laid out as Grok Bot's Notifications group (grey heading,
+// 0.5.6: laid out as the reference design's Notifications group (grey heading,
 // compact rows, a switch each), with Privacy as the last group.
 import { t } from "@/lib/i18n";
 import {

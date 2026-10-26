@@ -27,7 +27,7 @@ describe("properNouns", () => {
     }
     expect(found.some((term) => /ghp/i.test(term))).toBe(false);
     expect(found).toEqual(expect.arrayContaining(["SRV-01", "Windows11", "Office365", "GPT4", "CrowdStrike"]));
-    const terms = voiceKeyterms({ botName: "Cryptic", configured: ["AKIAIOSFODNN7EXAMPLE", "CONTOSO"] });
+    const terms = voiceKeyterms({ botName: "Quasar", configured: ["AKIAIOSFODNN7EXAMPLE", "CONTOSO"] });
     expect(terms).toContain("CONTOSO");
     expect(terms).not.toContain("AKIAIOSFODNN7EXAMPLE");
   });
@@ -44,8 +44,8 @@ describe("properNouns", () => {
 
 describe("voiceKeyterms", () => {
   it("puts the bot, the person and their first name first", () => {
-    const terms = voiceKeyterms({ botName: "Cryptic", personName: "Marie-Ève Gagnon" });
-    expect(terms.slice(0, 3)).toEqual(["Cryptic", "Marie-Ève Gagnon", "Marie-Ève"]);
+    const terms = voiceKeyterms({ botName: "Quasar", personName: "Marie-Ève Gagnon" });
+    expect(terms.slice(0, 3)).toEqual(["Quasar", "Marie-Ève Gagnon", "Marie-Ève"]);
     expect(terms).toEqual(expect.arrayContaining(["Sagax", "Perspicax", "Pulsatrix"]));
   });
 
@@ -58,7 +58,7 @@ describe("voiceKeyterms", () => {
 
   it("ranks recent thread names by frequency and recency", () => {
     const terms = voiceKeyterms({
-      botName: "Cryptic",
+      botName: "Quasar",
       recentTexts: ["Old note about Zebulon.", "Le client Northwind appelle.", "Encore Northwind et Contoso.", "Contoso, Contoso."],
     });
     const thread = terms.slice(terms.indexOf("Pulsatrix") + 1);

@@ -1,9 +1,9 @@
-// "Connect Microsoft Teams" from the chat (JC 2026-10-22, after Sagax 0.7.2:
+// "Connect Microsoft Teams" from the chat (2026-10-22, after Sagax 0.7.2:
 // "peux tu le connecter" took 13 tool calls and ended in "I can't"). The
 // bot calls open_connector_setup once; Sagax posts a card whose one button
 // opens the page where the person signs in, in their own browser:
 //
-//   - a Grok bot on the person's own xAI account: grok.com/connectors (xAI
+// - the reference design on the person's own xAI account: grok.com/connectors (xAI
 //     documents no per-connector deep link: "New Connector", then the app);
 //   - a Claude bot on the person's own subscription: claude.ai Customize >
 //     Connectors.
@@ -98,7 +98,7 @@ export type ConnectorSetupRoute =
   | { refusal: "foreign" | "not_on_engine" | "no_route" };
 
 /** Where the person signs in: the engine's own connectors, on the person's
- * own engine account only (JC 2026-10-21). */
+ * own engine account only (2026-10-21). */
 export function chooseConnectorSetupRoute(input: {
   target: ConnectorSetupTarget;
   /** the engine the bot runs on */

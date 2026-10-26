@@ -43,7 +43,7 @@ const bridge = (): OrgMemoryBridge => ({
   showFolder: vi.fn(async () => true),
 });
 
-const render = (initial: OrgMemoryState, orgName: string | null = "GOX", initialOpenProblem: "not_installed" | "add_vault" | "failed" | null = null) =>
+const render = (initial: OrgMemoryState, orgName: string | null = "Acme", initialOpenProblem: "not_installed" | "add_vault" | "failed" | null = null) =>
   renderToStaticMarkup(createElement(OrgMemoryPanel, { bridge: bridge(), orgName, initial, initialOpenProblem }));
 
 describe("Settings > Memory", () => {
@@ -67,7 +67,7 @@ describe("Settings > Memory", () => {
 
   it("shows the synced organization, the last sync, a pending count and Open in Obsidian", () => {
     const html = render(state());
-    expect(html).toContain("Synced with GOX");
+    expect(html).toContain("Synced with Acme");
     expect(html).toContain("Last sync");
     expect(html).toContain("Waiting for a review");
     expect(html).toContain("1 pending");
@@ -88,10 +88,10 @@ describe("Settings > Memory", () => {
   });
 
   it("says why Obsidian did not open, with Show in Finder", () => {
-    const missing = render(state(), "GOX", "not_installed");
+    const missing = render(state(), "Acme", "not_installed");
     expect(missing).toContain("Obsidian is not installed");
     expect(missing).toContain("Show in Finder");
-    const chooser = render(state(), "GOX", "add_vault");
+    const chooser = render(state(), "Acme", "add_vault");
     expect(chooser).toContain("Open folder as vault");
     expect(chooser).toContain("Show in Finder");
     expect(render(state())).not.toContain("Show in Finder");
@@ -121,10 +121,10 @@ describe("Settings > Memory", () => {
 
   it("speaks French", () => {
     setLocale("fr");
-    expect(render(state())).toContain("Synchronisée avec GOX");
+    expect(render(state())).toContain("Synchronisée avec Acme");
     expect(render(state({ autoError: "unreachable" }))).toContain("Réessayer");
     expect(render(state())).toContain("En attente de revue");
-    expect(render(state(), "GOX", "add_vault")).toContain("Afficher dans le Finder");
+    expect(render(state(), "Acme", "add_vault")).toContain("Afficher dans le Finder");
   });
 
   it("warns when the vault sits in a cloud folder", () => {

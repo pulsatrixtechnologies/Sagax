@@ -41,7 +41,7 @@ import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOfferedInstances } from "@/lib/offered-instances";
 import { openModelKeysSettings } from "@/lib/settings-link";
 
-// New bot is one page (JC 2026-10-14): where to start from, the avatar, the
+// New bot is one page (2026-10-14): where to start from, the avatar, the
 // name, the description and the team. Every other setting sits under More
 // options, folded, one section at a time; all of them can also be changed
 // after the bot exists.
@@ -328,7 +328,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
       )}
     </div>
   ) : null;
-  return <div className={cn(DIALOG.backdrop, "z-[70]")}>
+  return <div className={cn(DIALOG.backdrop, "z-[70]")} hidden={!defaultsMode && parent.state.appSettingsOpen}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={title} aria-busy={saving} tabIndex={-1}
       className={`${DIALOG.frame} h-[min(760px,94dvh)] max-w-[720px]`}>
       <div className={DIALOG.header}>
@@ -626,7 +626,7 @@ export function DefaultBotSettings() {
   return <>
     <div className="flex items-center justify-between gap-4 px-3.5 py-2.5"><DefaultsTitle summary={summary} />
       <div className="flex shrink-0 gap-2">
-        {/* Grok Bot's pills, as the other rows of General > System (0.5.6) */}
+        {/* The reference design's pills, as the other rows of General > System (0.5.6) */}
         <button type="button" onClick={() => setSharing(true)} className="ui-button cursor-pointer bg-transparent text-ink-secondary hover:bg-hover hover:text-ink">{t("newBot.sharePreset")}</button>
         <button type="button" onClick={() => setOpen(true)} className="ui-button cursor-pointer">{t("newBot.edit")}</button>
       </div>

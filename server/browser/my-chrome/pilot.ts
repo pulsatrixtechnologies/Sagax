@@ -3,7 +3,7 @@
 // which takes everything it touches as dependencies (server/index.ts wires the
 // browser runtime, the gate and the approval card).
 //
-// Rules (JC, 2026-10-19):
+// Rules (2026-10-19):
 // - only the tools that drive a page; no script of the bot's own (eval), no
 //   cookies or saved state, no reading an address around the browser, and
 //   elements only by their @eN refs from a snapshot (so each click can be

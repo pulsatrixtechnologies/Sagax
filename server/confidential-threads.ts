@@ -1,4 +1,4 @@
-// Confidential threads ("Fil confidentiel", JC 2026-10-16).
+// Confidential threads ("Fil confidentiel", 2026-10-16).
 //
 // A person marks one of their 1:1 threads with a bot confidential, at
 // creation (New thread menu, or the organization's default) or later. Once

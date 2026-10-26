@@ -16,6 +16,14 @@ function sandboxChart(file) {
 }
 
 describe("production image sources", () => {
+  // The server reads SAGAX_DUCKDB_DIR (server/data/engine.ts); the old
+  // OMB_ name only worked through the boot bridge, with a deprecation warning.
+  it("names the DuckDB binding folder with the variable the server reads", () => {
+    const dockerfile = read("Dockerfile");
+    expect(dockerfile).toContain("SAGAX_DUCKDB_DIR=/app/duckdb");
+    expect(dockerfile).not.toContain("OMB_DUCKDB_DIR");
+  });
+
   // The bots' browsers (docs/browser-packaging.md, "Process hygiene"): an
   // init collects the browser processes whose parents exit, and Chrome gets
   // shared memory.

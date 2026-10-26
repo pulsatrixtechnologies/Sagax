@@ -1,4 +1,4 @@
-// Plugin lifecycle hooks (parity D3, JC 2026-10-21).
+// Plugin lifecycle hooks (parity D3, 2026-10-21).
 //
 // The ten events Grok's computer runs. Sagax keeps the hook commands out of
 // the folder Claude loads with --plugin-dir, and runs them only on the bot's

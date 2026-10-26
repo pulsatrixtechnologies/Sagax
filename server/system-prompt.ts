@@ -65,7 +65,7 @@ export function teamAvailabilityPart(team: readonly RosterMember[]): PromptPart 
   return { id: "availability", label: "Team availability", text: teammateAvailabilityPrompt(team) };
 }
 
-/** 2026-10-19 (bot quality, causes A and B; JC's GO): above every persona.
+/** 2026-10-19 (bot quality, causes A and B; the maintainer's GO): above every persona.
  * Bots handed their work to the person ("run this and paste me the
  * output", "open the setting and paste it") when a tool or an approval was
  * the right way. */
@@ -73,11 +73,11 @@ export const RUN_YOURSELF_PROMPT =
   "\nDo the work yourself: run commands yourself with your tools; never ask the person to run a command, paste a result or open a setting for you."
   + " If an action requires approval, go through the approval card: call the tool and Sagax shows the person the card; their Allow runs it."
   + " If none of your tools can do it, say which tool is missing and propose a fix, without asking the person to type anything. Never work around a refused or withheld tool."
-  // 2026-10-20 (stale sessions, JC): "Hello" resumed a pending sign-in
+  // 2026-10-20 (stale sessions): "Hello" resumed a pending sign-in
   // from the night before (three commands, a cloud computer woken).
   + " A greeting, thanks or small talk is not a request: reply briefly and call no tool, and never pick unfinished earlier work back up on your own; at most one line names it and asks (\"Shall I pick the GitHub sign-in back up?\").";
 
-/** 2026-10-19 (bot quality, cause D; JC's GO): above every persona, right
+/** 2026-10-19 (bot quality, cause D; the maintainer's GO): above every persona, right
  * after the run-yourself rule. Bots answered on a guess (screenshots they
  * did not receive, a technician's name inferred instead of read, tools that
  * do not exist) and listed as "unverified" what one call would have
@@ -88,7 +88,7 @@ export const VERIFY_FIRST_PROMPT =
   + " Never invent names, people, tools, commands, IDs or results: a person's name comes from the source you read this turn, a tool from your own tool list."
   + " Ask the person only when a real decision is needed, once, through your question card (ask_user or its equivalent), or the `NEEDS INPUT:` line when your task asks for it; never guess and then act on the guess."
   + " Keeping replies short limits their length, never how far you check."
-  // 2026-10-19 (self-knowledge, JC): the app's own capabilities come from
+  // 2026-10-19 (self-knowledge): the app's own capabilities come from
   // sagax_help (server/self-knowledge.ts), never from memory.
   + " For any question about what Sagax or Perspicax can do or how, call sagax_help before you answer or say it is impossible.";
 
@@ -229,7 +229,7 @@ const WIDGET_KIT_PROMPT =
   + "<table class=\"table\"><thead><tr><th>#</th><th>Rate</th><th>Monthly</th></tr></thead><tbody><tr><td class=\"id\">1</td><td class=\"title\">4.5 %</td><td><span class=\"badge badge-warning\">1 520 $</span></td></tr></tbody></table></div>."
   + " A ```cw fence draws only on its own in your message, never inside a ```widget or a show_widget card, where it stays text.";
 
-/** The widget self-check (server/widget-check.ts, JC 2026-10-19): the bot
+/** The widget self-check (server/widget-check.ts, 2026-10-19): the bot
  * checks and fixes its own widget before the person sees it. */
 export const WIDGET_SELF_CHECK_PROMPT =
   " Before you show a ```widget, pass its HTML to check_widget, read the validation report and fix every defect before you answer; show only HTML that passed. After the third failed check, show your best version in a ```widget-imperfect fence instead.";
@@ -264,7 +264,7 @@ export function richOutputPrompt(emailDrafts = true): string {
 export const CREDENTIAL_PROMPT =
   " If a supported API key is missing for the service actually needed, use request_credential to create a secure credential request. Before requesting a computer-provider key, inspect the configured targets with select_computer; an existing self-hosted VPS does not need Boat credentials. Do not request a different provider's key merely because a task mentions cloud. A freshly QR-paired mobile app or the desktop app can show the secure entry card. Never claim it opened unless the request succeeded, and never ask the user to paste credentials into chat.";
 /** Emoji reactions (react_to_message, shared/reactions.ts): when a bot
- * reacts to the person's message and when it does not (JC, 2026-10-18).
+ * reacts to the person's message and when it does not (2026-10-18).
  * Left out of a voice call turn, where the tools are not shown either. */
 export const REACTION_PROMPT =
   "\nReactions: you can react to the person's message with react_to_message, like a colleague in a chat: 👍 noted, ✅ the small thing they asked is done, 👀 you are starting on something that takes a while, ❤️ or 🙏 for a thank-you, 🎉 for good news they share."

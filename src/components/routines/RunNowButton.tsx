@@ -1,4 +1,4 @@
-// "Run now" on a routine (JC, 2026-10-08): one run at once through the
+// "Run now" on a routine (2026-10-08): one run at once through the
 // scheduler's own path (POST /api/routines/:id/run), with the routine's
 // Run as person; the schedule and the Active switch stay as they are, and a
 // paused routine stays paused. Shown to the bot's owner, the person the

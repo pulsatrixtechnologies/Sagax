@@ -298,24 +298,22 @@ export async function fetchEnvironmentDescriptor(origin, init = {}, fetchImpl = 
 
 // ── URL scheme ───────────────────────────────────────────────────────────
 //
-// The desktop registers both; links it makes use sagax://. Links made for
-// the phone apps (pair invites, the phone sign-in return) use sagax:// too:
-// the iOS app registers only sagax://, the Android app both.
+// sagax:// is the only scheme: the desktop, the iOS app and the Android app
+// register it, and every link the app makes (chat links, pair invites, the
+// sign-in returns) uses it.
 
 export const URL_SCHEME = "sagax";
-export const LEGACY_URL_SCHEME = "openmausbot";
-export const URL_SCHEMES = Object.freeze([URL_SCHEME, LEGACY_URL_SCHEME]);
 
-/** Whether `protocol` (a URL's, with its colon) is one of this app's schemes. */
+/** Whether `protocol` (a URL's, with its colon) is this app's scheme. */
 export function isAppProtocol(protocol) {
-  return typeof protocol === "string" && URL_SCHEMES.includes(protocol.replace(/:$/, "").toLowerCase());
+  return typeof protocol === "string" && protocol.replace(/:$/, "").toLowerCase() === URL_SCHEME;
 }
 
-/** Whether `url` is `<scheme>://<host>` for either scheme. */
+/** Whether `url` is `sagax://<host>`. */
 export function isAppLink(url, host) {
   if (typeof url !== "string") return false;
   const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^(?:${URL_SCHEMES.join("|")})://${escaped}(?:[/?#]|$)`, "i").test(url);
+  return new RegExp(`^${URL_SCHEME}://${escaped}(?:[/?#]|$)`, "i").test(url);
 }
 
 /** A link to this app: `appLink("cloud")` is sagax://cloud. */

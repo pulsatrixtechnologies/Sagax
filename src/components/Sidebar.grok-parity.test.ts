@@ -1,4 +1,4 @@
-// The desktop sidebar measured on Grok Bot (JC, 2026-10-15): one row per
+// The desktop sidebar measured on the reference design (JC, 2026-10-15): one row per
 // bot (portrait, name, role pill, last message), only its unread threads
 // under it, the Primary Bot at the top with its star and role, "My team" and
 // "Built-in" sections, and a foot of the avatar and the Connect apps pill.
@@ -109,7 +109,7 @@ describe("Primary Bot at the top", () => {
     expect(grid).toContain(">nova</span>");
     expect(grid).toContain('data-testid="primary-bot-badge"');
     expect(grid).toMatch(/data-bot-role-tag=""[^>]*><span[^>]*>Chef de cabinet</);
-    // Grok Bot's pinned tile: 95px, 10px corners, 12px name
+    // The reference design's pinned tile: 95px, 10px corners, 12px name
     expect(grid).toContain("w-[95px]");
     expect(grid).toContain("rounded-[10px]");
     expect(grid).toContain("text-[12px]");
@@ -118,7 +118,7 @@ describe("Primary Bot at the top", () => {
     expect(html).toContain('data-sidebar-bot-row="atlas"');
   });
 
-  it("draws the star as Grok Bot's corner: 16px at 60px, flush in the corner, an 8px star", () => {
+  it("draws the star as the reference design's corner: 16px at 60px, flush in the corner, an 8px star", () => {
     fixture.state = { bots: [bot("nova", { chiefOfStaff: true })], sections: [] };
     const badge = render().match(/<span data-testid="primary-bot-badge"[^>]*>[\s\S]*?<\/span>/)?.[0] ?? "";
     expect(badge).toContain("width:16px;height:16px;right:0;bottom:0");

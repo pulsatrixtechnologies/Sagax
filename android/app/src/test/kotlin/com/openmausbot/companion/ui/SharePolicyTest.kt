@@ -129,11 +129,11 @@ class SharePolicyTest {
             SharePolicy.routeLabel(Connection(id = "lan", name = "Lan", host = "10.0.0.2", port = 8810)),
         )
         assertEquals(
-            "This phone's pairing has expired. Open OpenMausBot and pair it again.",
+            "This phone's pairing has expired. Open Sagax and pair it again.",
             SharePolicy.friendlyMessage(APIError.Status(401, "revoked"), "Air"),
         )
         assertEquals(
-            "Couldn't reach Air. Keep OpenMausBot open and Phone access on, then try again.",
+            "Couldn't reach Air. Keep Sagax open and Phone access on, then try again.",
             SharePolicy.friendlyMessage(APIError.Transport("timeout"), "Air"),
         )
         assertEquals(

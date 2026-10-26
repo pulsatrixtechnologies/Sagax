@@ -29,12 +29,12 @@ export interface MessageReaction {
 export const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙏", "✅", "❌"] as const;
 
 /** The quick reactions of a message's hover row and "…" menu, in order
- * (the pill Grok Bot shows; JC, 2026-10-15). The full picker keeps
+ * (the pill the reference design shows; the maintainer, 2026-10-15). The full picker keeps
  * QUICK_REACTIONS first. */
 export const BAR_REACTIONS = ["👍", "👎", "❤️", "😂", "🎉"] as const;
 
 /** The emojis a bot may react with (react_to_message): a short set whose
- * meaning a reader gets at a glance (JC, 2026-10-18): 👍 noted, ✅ done,
+ * meaning a reader gets at a glance (2026-10-18): 👍 noted, ✅ done,
  * 👀 looking into it, ❤️ or 🙏 for a thanks, 🎉 for good news, 😂 for a
  * joke. A person's own picker is not limited. */
 export const BOT_REACTIONS = ["👍", "✅", "👀", "❤️", "🙏", "🎉", "😂"] as const;

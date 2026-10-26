@@ -1,13 +1,13 @@
-// A bot owner's own setup runs like it did on Grok Bot (JC, 2026-10-19).
+// A bot owner's own setup runs like it did on the reference design (2026-10-19).
 //
 // Since #797, Approve for me on Claude is Auto-accept edits plus a short
 // allowlist: every other call reaches Sagax as a card. Sagax then answered
 // only what an owner had set up by hand (an owner mode "auto" or a rule), so
 // a bot at Approve for me asked about every read of ConnectWise, every
 // `memory_recall`, every GitHub `get_me` and every command in the owner's
-// own cloud computer as soon as a teammate had handed it the work. Prod GOX,
-// 6 hours after 0.5.27: 104 cards for JC's own bots, 98 of them answered
-// Allow by JC, the one he left expired a dispatch lease (claim) and stopped
+// own cloud computer as soon as a teammate had handed it the work. In production,
+// 6 hours after 0.5.27: 104 cards for the maintainer's own bots, 98 of them answered
+// Allow by the maintainer, the one he left expired a dispatch lease (claim) and stopped
 // a routine. The Chief, whose owner mode was "auto", had none.
 //
 // Three rules, all bounded to the owner's own work. None of them answers an
@@ -162,7 +162,7 @@ const COMMAND_CREDENTIAL = /(?:^|[\s"'=@:/])(?:\.(?:ssh|gnupg|aws|azure|kube|doc
 
 /** Rule 2's bound for the owner's own environment: a call a hop or a
  * routine of the owner's own lineage may run unasked. Only the server
- * environment (the owner's cloud computer; the Local VM on their own
+ * environment (The owner's cloud computer; the Local VM on their own
  * computer keeps today's rule), and never a call that reaches a credential:
  * a read of a dotfile or a credential path (member-environment.ts
  * ownEnvironmentSensitiveRead), a command line that names one, or input that

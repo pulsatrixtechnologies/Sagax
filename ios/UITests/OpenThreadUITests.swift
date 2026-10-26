@@ -148,7 +148,7 @@ final class OpenThreadUITests: XCTestCase {
         return bots.first { $0["name"] as? String == name }?["id"] as? String
     }
 
-    /// JC's session on GOX: edits two bots, creates one from the phone, then
+    /// A real session on an organization server: edits two bots, creates one from the phone, then
     /// opens it from the home. Each open shows the chat and keeps it.
     @MainActor
     func testCreateEditThenOpenFromTheHome() throws {

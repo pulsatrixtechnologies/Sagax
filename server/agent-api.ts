@@ -1,6 +1,6 @@
 // The agent-to-agent API: twelve tools that let one agent (a Sagax bot, or a
 // person's AI client attached to Perspicax) find, create, prompt and read
-// other Sagax bots, with the semantics, parameters and limits of Grok Bot's
+// other Sagax bots, with the semantics, parameters and limits of the reference design's
 // own agent tools (docs/agent-api.md):
 //
 //   list_agents, find_agents, get_agent, create_agent, delete_agent,

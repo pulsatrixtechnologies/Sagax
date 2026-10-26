@@ -94,12 +94,12 @@ export function botSeenCaption(input: {
   return { messageId, at: read.at };
 }
 
-/** "Seen by Alice at 14:02, Cryptic at 14:03". */
+/** "Seen by Alice at 14:02, Quasar at 14:03". */
 export function seenTooltip(entries: ReadonlyArray<{ name: string; at: number }>, time: (at: number) => string): string {
   return t("seen.by", { list: entries.map((entry) => t("seen.entry", { name: entry.name, time: time(entry.at) })).join(", ") });
 }
 
-/** One reader as their avatar's tooltip says it: "Zachary Sellam · 2:46 PM". */
+/** One reader as their avatar's tooltip says it: "Sam Taylor · 2:46 PM". */
 export function seenFaceLabel(name: string, time: string): string {
   return t("seen.face", { name, time });
 }

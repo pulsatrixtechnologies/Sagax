@@ -144,7 +144,7 @@ export function UsageLayout({ cost, plan, rest }: { cost: ReactNode; plan: React
 }
 
 /** Every member sees this page (2026-10-15): it shows their own usage only.
- * 0.5.6: laid out as Grok Bot's Usage & Billing, grey headings outside
+ * 0.5.6: laid out as the reference design's Usage & Billing, grey headings outside
  * rounded cards, compact rows; the breakdown folds under a count pill. */
 export function UsageSection() {
   const { state } = useStore();

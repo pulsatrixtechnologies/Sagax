@@ -444,7 +444,7 @@ export function crabTransforms(pose: CrabPose): Record<CrabGroup, string> {
   // One rigid sprite: the whole group bobs (whole cells) and tilts on its
   // ground point, never stretches. Arms and legs never rotate or scale
   // apart from the body; a leg steps up one cell at most, an arm raises one
-  // cell, so nothing detaches (JC, 2026-10-12).
+  // cell, so nothing detaches (2026-10-12).
   const whole = `translate(${crabSnap(pose.x)} ${crabSnap(pose.y)}) rotate(${Math.max(-4, Math.min(4, pose.rot)).toFixed(2)} ${g})`;
   const arm = (rot: number) => `translate(0 ${Math.abs(rot) >= 30 ? -CRAB_PX : 0})`;
   const leg = (i: 0 | 1 | 2 | 3) => `translate(0 ${pose[`leg${i}`] <= -CRAB_PX / 2 ? -CRAB_PX : 0})`;

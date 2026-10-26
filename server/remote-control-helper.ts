@@ -37,7 +37,7 @@ function clampInt(value: number, min: number, max: number): number {
 
 /** True when live control is available for this OS. Windows only for now;
  * macOS and Linux would need a tool we do not ship, so the screen there stays
- * read-only (the signed helper app, a JC decision, will cover all three). */
+ * read-only (the signed helper app, a decision, will cover all three). */
 export function controlSupported(os: RemoteSessionOs): boolean {
   return os === "windows";
 }

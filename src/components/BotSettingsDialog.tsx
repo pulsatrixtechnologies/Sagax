@@ -149,7 +149,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
       >
         <DockedPanelResizeHandle label="Resize settings" panel={dockedPanel} />
         {(macInset || browser) && <div className="content-topbar-strip" />}
-        {/* Top bar: only the controls, the way Grok Bot's panel opens. On
+        {/* Top bar: only the controls, the way the reference design's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
         <div {...dragProps} className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
           <span />

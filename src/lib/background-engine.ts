@@ -3,7 +3,7 @@
 // src/lib/glyph-energy.ts). One canvas behind the transcript, one WebGL2
 // program per effect (src/lib/background-shaders.ts), a full-screen pass.
 //
-// Cost rules (the glyph field's, JC 2026-10-16, plus a budget for a pass that
+// Cost rules (the glyph field's, 2026-10-16, plus a budget for a pass that
 // runs on every pixel):
 // - the canvas is drawn at CSS resolution at most (never at the retina
 //   density) and under MAX_PIXELS, the browser scales it up: the effects

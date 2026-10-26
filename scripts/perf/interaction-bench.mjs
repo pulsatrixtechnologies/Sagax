@@ -267,7 +267,7 @@ const sagax = {
   bootScript: "",
   pageFilter: (t) => t.url.startsWith("http://127.0.0.1:18999/"),
   ready: `b.qa("[data-sidebar-bot-row], [aria-label^='Actions for ']").length >= 5 && !!b.q("textarea, [contenteditable=true]") && !b.q("[aria-busy=true][data-chat-loading]")`,
-  bots: ["Katarina", "Ember"],
+  bots: ["Ottoline", "Ember"],
   row: (name) => `span[aria-label="Rename ${name}"]`,
   botShown: (name) => `(() => { const s = b.qa("div.overflow-y-auto").find((e) => /Hello ${name}, what is on your plate/.test(b.text(e)) && e.getBoundingClientRect().left >= 250); return !!s && /${name}/.test(b.text(b.q("main") || document.body)); })()`,
   threads: { bot: "Harrie", picker: `button[aria-label="All threads"]`, a: "Second thread", aText: "Second thread question 6", b: "Hello Harrie", bText: "Hello Harrie, what is on your plate" },
@@ -307,8 +307,8 @@ const grok = {
   },
   bootScript: "",
   pageFilter: (t) => /renderer\/index\.html/.test(t.url),
-  ready: `b.qa("button[aria-label='Open account menu']").length === 1 && b.qa("button[aria-label='Katarina'],button[aria-label='Ember']").length === 2 && !!b.q("[aria-label=Prompt]") && b.qa(".ui-scroll-area__viewport").some((e) => b.text(e).length > 100)`,
-  bots: ["Katarina", "Ember"],
+  ready: `b.qa("button[aria-label='Open account menu']").length === 1 && b.qa("button[aria-label='Ottoline'],button[aria-label='Ember']").length === 2 && !!b.q("[aria-label=Prompt]") && b.qa(".ui-scroll-area__viewport").some((e) => b.text(e).length > 100)`,
+  bots: ["Ottoline", "Ember"],
   row: (name) => `button[aria-label="${name}"]`,
   // The row's own preview is the conversation's last message: it is on
   // screen once the conversation is rendered.

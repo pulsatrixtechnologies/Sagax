@@ -153,6 +153,7 @@ describe.skipIf(process.platform === "win32")("direct final-screen settlement", 
       { headers: { origin: session.info.url } });
     expect(image.status).toBe(200);
     expect(image.headers.get("content-type")).toBe("image/jpeg");
+    expect(image.headers.get("cache-control")).toBe("private, no-store");
     expect(Buffer.from(await image.arrayBuffer()).toString("base64"))
       .toBe("/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==");
   }, 30_000);

@@ -18,7 +18,7 @@
 // Every answer is metadata: no message text, no instructions, no memory, no
 // routine prompt, no credential (decision T7: admins administer without
 // reading private Directs). The one exception is the files routes
-// (org-admin-files.ts, JC 2026-10-08: "access to all features of every bot,
+// (org-admin-files.ts, 2026-10-08: "access to all features of every bot,
 // view their files"): a bot's files, for managers in reach and admins, each
 // read and download written to the admin activity log.
 import { MASCOT_CATALOG_FAMILIES, mascotCatalogue } from "../shared/mascot-catalog.ts";

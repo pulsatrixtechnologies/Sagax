@@ -48,8 +48,8 @@ const { conversationAnchors } = await import("./BotConversations");
 afterAll(() => vi.unstubAllGlobals());
 
 const message = (id: string, text: string, at: number, role: "user" | "bot" = "user"): Message => ({ id, role, kind: "text", text, at }) as Message;
-const katarina = (messages: Message[], botConversations: Bot["botConversations"]): Bot => ({
-  id: "kat", threadId: "kat-main", mainThreadId: "kat-main", name: "Katarina", title: "", description: "", color: "green",
+const ottoline = (messages: Message[], botConversations: Bot["botConversations"]): Bot => ({
+  id: "kat", threadId: "kat-main", mainThreadId: "kat-main", name: "Ottoline", title: "", description: "", color: "green",
   notifications: true, unread: false, busy: false, messages, botConversations,
   modelSelection: { instanceId: "test", model: "m" },
 });
@@ -63,7 +63,7 @@ describe("bot-to-bot conversations in the chat", () => {
   const messages = [message("a", "first question", T), message("b", "second question", T + 10 * MIN), message("c", "third question", T + 40 * MIN)];
 
   it("draws no card above the chat, only quiet lines placed by time", () => {
-    const self = katarina(messages, rows);
+    const self = ottoline(messages, rows);
     fixture.bots = [self, melonie];
     const markup = renderToStaticMarkup(createElement(ChatView, { bot: self }));
     expect(markup).not.toContain("data-bot-conversations");
@@ -77,7 +77,7 @@ describe("bot-to-bot conversations in the chat", () => {
 
   it("skips a conversation the transcript already links to, and shows nothing outside the main chat", () => {
     const linked = [...messages, { id: "r", role: "bot", kind: "activity", at: T + 6 * MIN, tool: { name: "Opened thread #x", ok: true }, threadRef: { botId: "mel", threadId: "w1", title: "x" } } as Message];
-    const self = katarina(linked, rows);
+    const self = ottoline(linked, rows);
     fixture.bots = [self, melonie];
     const markup = renderToStaticMarkup(createElement(ChatView, { bot: self }));
     expect(markup.match(/data-thread-chip="w1"/g)).toHaveLength(1);

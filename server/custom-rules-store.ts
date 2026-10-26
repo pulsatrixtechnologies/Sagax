@@ -6,7 +6,7 @@
 // process could not read is never overwritten: rules are ignored (no rule
 // allows anything) until it is repaired.
 //
-// 2026-10-21 (Grok Bot parity lot 1A, server/custom-rules-org.ts): the
+// 2026-10-21 (the reference design parity lot 1A, server/custom-rules-org.ts): the
 // organization's rules (ask or deny, by an admin, for everyone) and its
 // "Toujours permettre" switch live in the same file under `org`. `rulesOf`
 // is what the reviewer applies: the person's own rules (their allow rules

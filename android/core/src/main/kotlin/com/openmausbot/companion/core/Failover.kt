@@ -209,7 +209,7 @@ object ConnectionAdvice {
             ConnectionFailure.CANNOT_FIND_HOST ->
                 "“$host” didn't resolve. If that's a Tailscale name, this phone may not be on the tailnet."
             ConnectionFailure.CANNOT_CONNECT_TO_HOST ->
-                "Reached your computer, but Phone access isn't answering on port $port — open OpenMausBot → Settings → Phone."
+                "Reached your computer, but Phone access isn't answering on port $port — open Sagax → Settings → Phone."
             ConnectionFailure.TIMED_OUT ->
                 "No route to your computer at $host — different network, or a firewall."
             ConnectionFailure.NOT_CONNECTED_TO_INTERNET -> "You're offline."

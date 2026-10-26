@@ -1,5 +1,5 @@
 // Plugins, main view ("Connect Apps"): every app, MCP server, catalog plugin
-// and skill in one list. The chrome matches Grok Bot's Connect Apps: the
+// and skill in one list. The chrome matches the reference design's Connect Apps: the
 // title with "N connected" at its right, the search with Bot templates
 // beside it, All and the main categories, the rest under More, then the
 // sections in two columns. View all opens a section as its own page.
@@ -282,7 +282,7 @@ function ConnectedButton({ summary, onOpen }: { summary: ReturnType<typeof conne
   );
 }
 
-/** The categories that are not on the row, as Grok Bot's More chip. */
+/** The categories that are not on the row, as the reference design's More chip. */
 function MoreCategories({ pills, filter, onFilter, sourceLabel }: {
   pills: PluginFilter[];
   filter: PluginFilter;

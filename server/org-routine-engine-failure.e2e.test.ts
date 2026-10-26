@@ -139,7 +139,7 @@ async function start() {
 posixOnly("Perspicax organization: a routine whose engine fails says why", () => {
   let alice: Auth;
   let orion: { id: string; threadId: string };
-  let cryptic: { id: string; threadId: string };
+  let quasar: { id: string; threadId: string };
   let routineId = "";
 
   beforeAll(async () => {
@@ -185,11 +185,11 @@ posixOnly("Perspicax organization: a routine whose engine fails says why", () =>
     expect(made.status, made.text).toBe(201);
     orion = { id: made.body.bot.id, threadId: made.body.bot.threadId };
     expect((await api("PATCH", `/api/bots/${orion.id}`, alice, { modelSelection: { instanceId: "grok", model: "fake-acp-model" } })).status).toBe(200);
-    const chief = await api("POST", "/api/bots", alice, { name: "Cryptic" });
+    const chief = await api("POST", "/api/bots", alice, { name: "Quasar" });
     expect(chief.status, chief.text).toBe(201);
-    cryptic = { id: chief.body.bot.id, threadId: chief.body.bot.threadId };
-    expect((await api("PATCH", `/api/bots/${cryptic.id}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
-    const promoted = await api("PATCH", `/api/bots/${cryptic.id}`, alice, { chiefOfStaff: true });
+    quasar = { id: chief.body.bot.id, threadId: chief.body.bot.threadId };
+    expect((await api("PATCH", `/api/bots/${quasar.id}`, alice, { modelSelection: { instanceId: "claude", model: "fake-model" } })).status).toBe(200);
+    const promoted = await api("PATCH", `/api/bots/${quasar.id}`, alice, { chiefOfStaff: true });
     expect(promoted.status, promoted.text).toBe(200);
     const routine = await api("POST", "/api/routines", alice, { name: "Dispatch matin TN", botId: orion.id, prompt: "Run the morning dispatch.",
       schedule: { type: "once", at: Date.now() + 86_400_000 } });
@@ -226,8 +226,8 @@ posixOnly("Perspicax organization: a routine whose engine fails says why", () =>
   }, 90_000);
 
   it("the incident report reaches a Primary Bot thread pinned to an engine without credentials: it falls back, with a notice", async () => {
-    // the first failure opened "Team incidents" on Cryptic
-    const incidents = await waitFor(async () => (await tasksOf(alice, cryptic.id)).find((task) => task.title === "Team incidents"));
+    // the first failure opened "Team incidents" on Quasar
+    const incidents = await waitFor(async () => (await tasksOf(alice, quasar.id)).find((task) => task.title === "Team incidents"));
     // pin it to an engine alice has no credentials for on this server
     // (production: pi on a desktop local model; here pi, no key)
     await waitFor(async () => {
@@ -235,11 +235,11 @@ posixOnly("Perspicax organization: a routine whose engine fails says why", () =>
       return busy !== undefined;
     });
     const pinned = await waitFor(async () => {
-      const got = await api("PATCH", `/api/bots/${cryptic.id}/tasks/${incidents.threadId}`, alice, { modelSelection: { instanceId: "pi", model: "fake-model" } });
+      const got = await api("PATCH", `/api/bots/${quasar.id}/tasks/${incidents.threadId}`, alice, { modelSelection: { instanceId: "pi", model: "fake-model" } });
       return got.status === 200 ? got : null;
     }, 30_000);
     expect(pinned.status, pinned.text).toBe(200);
-    expect((await tasksOf(alice, cryptic.id)).find((task) => task.threadId === incidents.threadId)?.modelSelection?.instanceId).toBe("pi");
+    expect((await tasksOf(alice, quasar.id)).find((task) => task.threadId === incidents.threadId)?.modelSelection?.instanceId).toBe("pi");
     const before = (await messagesOf(alice, incidents.threadId)).length;
     writeFileSync(failureFile, JSON.stringify(GROK_402));
     const run = await runNow(alice, routineId);
@@ -248,15 +248,15 @@ posixOnly("Perspicax organization: a routine whose engine fails says why", () =>
       .find((message) => message.kind === "activity" && message.tool?.name.startsWith("notice: This thread's model") === true), 30_000);
     expect(notice.tool!.name).toContain("cannot run on this server");
     expect(notice.tool!.name).toContain("has no credentials here for Alice");
-    expect(notice.tool!.name).toContain("It now uses Cryptic's model");
-    // the report ran on Cryptic's own model: no no_credentials card, a reply
+    expect(notice.tool!.name).toContain("It now uses Quasar's model");
+    // the report ran on Quasar's own model: no no_credentials card, a reply
     const after = await waitFor(async () => {
       const messages = (await messagesOf(alice, incidents.threadId)).slice(before);
       return messages.some((message) => message.role === "bot" && message.kind === "text") ? messages : null;
     }, 30_000);
     expect(after.filter((message) => message.kind === "access" && message.access?.cause === "no_credentials")).toEqual([]);
-    expect(log).not.toContain(`bot=${cryptic.id} refused: no_access/no_credentials`);
-    expect((await tasksOf(alice, cryptic.id)).find((task) => task.threadId === incidents.threadId)?.modelSelection?.instanceId ?? "claude").toBe("claude");
+    expect(log).not.toContain(`bot=${quasar.id} refused: no_access/no_credentials`);
+    expect((await tasksOf(alice, quasar.id)).find((task) => task.threadId === incidents.threadId)?.modelSelection?.instanceId ?? "claude").toBe("claude");
     expect(existsSync(failureFile)).toBe(true);
   }, 120_000);
 });

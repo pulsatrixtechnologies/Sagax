@@ -1013,7 +1013,7 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
   if (name === "list_team_setup") {
     return { text: JSON.stringify(await api("/api/internal/team-setup-catalog")) };
   }
-  // 2026-10-20 (JC: "le bot principal fait tout"): asked now by the person,
+  // 2026-10-20 ("le bot principal fait tout"): asked now by the person,
   // a deletion or an archive is the screen's own (sagax_settings, quote)
   if ((name === "propose_bot_deletion" && typeof args.quote === "string") || name === "archive_bot") {
     if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };

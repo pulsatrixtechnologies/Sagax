@@ -14,8 +14,8 @@ const time = (at: number) => `14:0${at}`;
 
 describe("SeenByRow", () => {
   it("says Seen by, then stacks 16px avatars, overlapping, with every reader in the group's label", () => {
-    const markup = renderToStaticMarkup(createElement(SeenByRow, { faces: [face("pr_a", "Alice", 2), face("bot:c", "Cryptic", 3)], end: false, time }));
-    expect(markup).toContain('aria-label="Seen by Alice at 14:02, Cryptic at 14:03"');
+    const markup = renderToStaticMarkup(createElement(SeenByRow, { faces: [face("pr_a", "Alice", 2), face("bot:c", "Quasar", 3)], end: false, time }));
+    expect(markup).toContain('aria-label="Seen by Alice at 14:02, Quasar at 14:03"');
     expect(markup).toMatch(/data-seen-label[^>]*>Seen by</);
     expect(markup.match(/data-seen-by=/g)).toHaveLength(2);
     expect(markup).toContain("width:16px;height:16px");
@@ -32,9 +32,9 @@ describe("SeenByRow", () => {
 
 describe("SeenByRow: each reader", () => {
   it("is focusable, and its tooltip and aria-label say who and when", () => {
-    const markup = renderToStaticMarkup(createElement(SeenByRow, { faces: [face("pr_z", "Zachary Sellam", 6)], end: true, time: () => "2:46 PM" }));
-    expect(markup).toMatch(/data-seen-by="pr_z" role="img" tabindex="0" aria-label="Zachary Sellam · 2:46 PM"/);
-    expect(markup).toMatch(/data-seen-tip[^>]*>Zachary Sellam · 2:46 PM</);
+    const markup = renderToStaticMarkup(createElement(SeenByRow, { faces: [face("pr_z", "Sam Taylor", 6)], end: true, time: () => "2:46 PM" }));
+    expect(markup).toMatch(/data-seen-by="pr_z" role="img" tabindex="0" aria-label="Sam Taylor · 2:46 PM"/);
+    expect(markup).toMatch(/data-seen-tip[^>]*>Sam Taylor · 2:46 PM</);
   });
 
   it("draws five avatars, then +N with the others in its label", () => {
@@ -61,7 +61,7 @@ describe("SeenByRow: each reader", () => {
 
 describe("SeenCaption", () => {
   it("is one quiet line", () => {
-    const markup = renderToStaticMarkup(createElement(SeenCaption, { text: "Seen at 14:03", title: "Seen by Cryptic at 14:03" }));
+    const markup = renderToStaticMarkup(createElement(SeenCaption, { text: "Seen at 14:03", title: "Seen by Quasar at 14:03" }));
     expect(markup).toContain(">Seen at 14:03<");
     expect(markup).toContain('data-testid="seen-caption"');
   });

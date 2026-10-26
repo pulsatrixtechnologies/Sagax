@@ -1,4 +1,4 @@
-// Agents this bot launched (agent API), in one grouped card like Grok Bot's
+// Agents this bot launched (agent API), in one grouped card like the reference design's
 // panel: the coding ones under Details > Coding, the rest under Activity.
 import { ChevronRight } from "lucide-react";
 

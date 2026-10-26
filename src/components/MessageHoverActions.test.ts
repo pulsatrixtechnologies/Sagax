@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The tray beside a message, in Grok Bot's shapes (JC, 2026-10-15): the row
+// The tray beside a message, in the reference design's shapes (JC, 2026-10-15): the row
 // (react, reply, …), the quick reaction pill, and the … menu that starts with
 // the same reactions, then Reply, Copy, Copy request ID, then Sagax's own.
 import { act, createElement } from "react";

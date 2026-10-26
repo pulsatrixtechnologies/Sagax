@@ -1,4 +1,4 @@
-// Open topics on a live call (issue #292, Cryptic requirement 9).
+// Open topics on a live call (issue #292, Quasar requirement 9).
 // The call is an orchestrator: a long task can keep running as background
 // work while the person asks about something else. Barge-in cancels the
 // spoken reply, not that background work, unless they say stop.

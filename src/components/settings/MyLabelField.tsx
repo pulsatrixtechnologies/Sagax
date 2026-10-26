@@ -1,6 +1,6 @@
 // Settings > General, in the account card right under the person's name: their
 // own label (src/lib/person-labels.ts), edited in place as a bot's label is in
-// its panel. Discreet since 0.5.6 (Grok Bot's account row has no such line):
+// its panel. Discreet since 0.5.6 (the reference design's account row has no such line):
 // the placeholder reads as editable, the pencil shows on hover, focus and
 // touch. Sagax's
 // own field, on a solo server and on an organization server alike.

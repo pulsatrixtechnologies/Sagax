@@ -19,7 +19,7 @@ enum HomeMetrics {
     /// One pinned row, mascot top to the next block (149.3 to 281.7).
     static let pinnedRowHeight: CGFloat = 132.4
     static let pinnedLabelGap: CGFloat = 12
-    // Grok Bot iOS 1.14 (an iPhone capture of 2026-10-18, 602x1308 px for
+    // the reference design iOS 1.14 (an iPhone capture of 2026-10-18, 602x1308 px for
     // 402x874 pt, 1.4975 px/pt). A lone Primary Bot is centred on the screen
     // (shape centre x 200.3, y 191.7) and its shape spans 92x89 pt; the name
     // and the next header did not move (cap top 248.4, header cap 303.8).
@@ -54,7 +54,7 @@ enum HomeMetrics {
     /// The row's layout slot (x 23-65, measured on reference 01): the text
     /// column and the vertical centre hang on it.
     static let rowMascot: CGFloat = 42
-    /// What the row draws in that slot. Grok Bot iOS 1.14 draws its row
+    /// What the row draws in that slot. the reference design iOS 1.14 draws its row
     /// shapes 46.5 pt on average (40.7 to 49.4, centre x 44, unchanged); our
     /// shapes fill about 0.83 of their frame, hence 56 pt, centred on the
     /// same point so the name, chip and preview stay where they were.
@@ -160,7 +160,7 @@ struct HomeAccountButton: View {
                 .accessibilityIdentifier("admin-approvals-badge")
             }
         }
-        // No routines badge on the photo (JC, 2026-10-18: Grok Bot puts
+        // No routines badge on the photo (JC, 2026-10-18: the reference design puts
         // nothing there). The account menu's Automations entry keeps the
         // count (HomeAccountMenuItems).
     }
@@ -182,13 +182,13 @@ struct HomeAccountButton: View {
 /// A pinned bot or group: an 85 pt mascot (102 pt for the lead: the Primary
 /// Bot, or a lone pinned chat), its name centred
 /// beneath with the unread dot after it. The Primary Bot's star sits on the
-/// mascot's corner, as in Grok Bot iOS 1.14, not after the name.
+/// mascot's corner, as in the reference design iOS 1.14, not after the name.
 struct HomePinnedCell: View {
     @Environment(\.themePalette) var themePalette
     let chat: Chat
     var state: MausState = .idle
     /// The drawn mascot: 85 pt in the grid, `pinnedSoloMascot` for the lead
-    /// on its own centred row (Grok Bot's primary bot).
+    /// on its own centred row (the reference design's primary bot).
     var mascot: CGFloat = HomeMetrics.pinnedMascot
 
     private var overflow: CGFloat { max(0, (mascot - HomeMetrics.pinnedMascot) / 2) }
@@ -246,7 +246,7 @@ struct HomePinnedCell: View {
     }
 }
 
-/// The Primary Bot's star on a home mascot's lower right corner (Grok Bot
+/// The Primary Bot's star on a home mascot's lower right corner (the reference design
 /// iOS 1.14): an orange disc ringed with the background, scaled from the
 /// lone pinned mascot's measures. Same orange and star as `PrimaryBotBadge`.
 struct HomePrimaryBadge: View {
@@ -273,9 +273,9 @@ struct HomePrimaryBadge: View {
     }
 }
 
-/// A home section's title. "My team" is the name Grok Bot and earlier
+/// A home section's title. "My team" is the name the reference design and earlier
 /// imports give the person's default team: it reads in the app's language
-/// ("My Team", as Grok Bot and our "Group Chats" write it; "Mon équipe"),
+/// ("My Team", as the reference design and our "Group Chats" write it; "Mon équipe"),
 /// as on the desktop (`isMyTeamSectionName`, src/lib/sidebar-layout.ts).
 /// Any other name stays exactly as typed.
 enum HomeSectionTitle {
@@ -459,9 +459,9 @@ struct HomeChatRow: View {
                 .lineLimit(1)
             Spacer(minLength: 8)
             // Sagax only (threads listed in the sidebar): the thread count.
-            // Grok Bot's name line holds the time alone, so the count waits
+            // The reference design's name line holds the time alone, so the count waits
             // at the end of the preview line, in the time's colour, and the
-            // role chip keeps Grok Bot's room on the line above.
+            // role chip keeps the reference design's room on the line above.
             if status.threadCount >= 2 {
                 HStack(spacing: 2) {
                     Image(systemName: "square.stack")

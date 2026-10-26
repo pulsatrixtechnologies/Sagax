@@ -11,6 +11,7 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadAllowlist, scanPackage } from "./npm-package-terms.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const out = join(root, "release", "npm");
@@ -30,6 +31,20 @@ if (typeof version !== "string" || !EXACT_VERSION.test(version)) {
   console.error(`package.json forkVersion must be X.Y.Z (got ${JSON.stringify(version)})`);
   process.exit(1);
 }
+
+/** The packages the server requires at runtime and the bundle cannot hold
+ * (scripts/packaged-native-modules.test.mjs finds them in server/). */
+const NATIVE_DEPENDENCIES = ["@duckdb/node-api", "@resvg/resvg-js"];
+/** The app's own exact pin, so the package runs what the app was tested with. */
+function pinned(name) {
+  const range = app.dependencies?.[name];
+  if (typeof range !== "string" || !EXACT_VERSION.test(range.replace(/^v/, ""))) {
+    console.error(`package.json must pin ${name} to an exact version (got ${JSON.stringify(range)})`);
+    process.exit(1);
+  }
+  return range;
+}
+for (const name of NATIVE_DEPENDENCIES) pinned(name);
 
 for (const required of ["dist-server/index.js", "dist-server/openmausbot.js", "dist/index.html"]) {
   if (!existsSync(join(root, required))) {
@@ -65,6 +80,11 @@ writeFileSync(
       license: "SEE LICENSE IN LICENSE",
       type: "module",
       bin: { [BIN]: "cli.js" },
+      // Never bundled, so npm installs them beside the server: DuckDB (the
+      // Data engine) and resvg (chart and image rendering) are native addons
+      // npm picks per platform from their optional packages. The server
+      // loads them through nativeRequire (server/data/engine.ts).
+      dependencies: Object.fromEntries(NATIVE_DEPENDENCIES.map((name) => [name, pinned(name)])),
       files: ["cli.js", "dist-server", "dist", "skills", "LICENSE", "LICENSE-POLYFORM-NC.md", "LICENSE-APACHE", "NOTICE", "README.md"],
       engines: { node: ">=24" },
       repository: { type: "git", url: `git+${REPOSITORY}.git` },
@@ -164,4 +184,14 @@ it does not start the tunnel itself.
 · [Hosting guide](${REPOSITORY}/blob/main/docs/self-hosting.md)
 `,
 );
-console.log(`npm package assembled at ${out} (${NAME}@${version})`);
+// Nothing packed may name the company, a person or the reference design,
+// except the third-party names listed with a reason in the allowlist.
+const terms = scanPackage(out, loadAllowlist(join(root, "scripts", "npm-package-allowlist.json")));
+if (terms.blocked.length) {
+  for (const hit of terms.blocked.slice(0, 50)) {
+    console.error(`${hit.file}: ${hit.term} in ...${hit.context.replace(/\s+/g, " ")}...`);
+  }
+  console.error(`npm package refused: ${terms.blocked.length} forbidden term(s); fix the source or justify them in scripts/npm-package-allowlist.json`);
+  process.exit(1);
+}
+console.log(`npm package assembled at ${out} (${NAME}@${version}); term scan clean, ${terms.allowed.length} allowlisted interop name(s)`);

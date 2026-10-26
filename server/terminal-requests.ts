@@ -35,7 +35,7 @@ export interface TerminalRequestServiceDeps {
   /** Whose conversation this is when the task names nobody (a solo server's
    * operator): the bot's owner. */
   owner?(botId: string, threadId: string): string;
-  /** 2026-10-19 (JC: "Toujours permettre" on every card): the Always allow
+  /** 2026-10-19 ("Toujours permettre" on every card): the Always allow
    * this person kept for this bot and this destination, or null. */
   keptRule?(principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string): { id: string } | null;
   /** One journal row for an offer a kept rule opened. */

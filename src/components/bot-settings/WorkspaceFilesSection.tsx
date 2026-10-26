@@ -10,7 +10,7 @@
 // SOUL.md lives on the bot record and opens the Soul category. Documents in
 // docs/ can be created, uploaded (.md), renamed and deleted here.
 //
-// The Bot folder is also the memory's one interface (JC 2026-10-15): for a
+// The Bot folder is also the memory's one interface (2026-10-15): for a
 // viewer who may edit Memory, "Use memory" heads the page, "New" makes a
 // document or a memory topic (a file in memory/), memory files can be
 // deleted from their row, and the memory's options (tidying, the change log

@@ -60,7 +60,7 @@ function Row({ id, label, children }: { id: string; label: string; children: Rea
 }
 
 function Preview() {
-  const bot = { name: "Cryptic" };
+  const bot = { name: "Quasar" };
   return (
     <div className="min-h-screen bg-app text-ink">
       <div className="mx-auto flex max-w-[760px] flex-col">

@@ -153,11 +153,11 @@ describe("APNs payload", () => {
 describe("an approval push", () => {
   it("shows the bot as sender and, under it, what it would allow; the tap carries the request", () => {
     const request = buildApnsRequest({
-      message: message({ kind: "approval", prompt: "approval", title: "Allow Cryptic to run a command?", body: "Run echo hi.", senderName: "Cryptic", botId: "b1", requestId: "req-1" }),
+      message: message({ kind: "approval", prompt: "approval", title: "Allow Quasar to run a command?", body: "Run echo hi.", senderName: "Quasar", botId: "b1", requestId: "req-1" }),
       bundleId: "ca.pulsatrix.sagax", nowMs: 2_000_000,
     });
     const body = JSON.parse(request.body);
-    expect(body.aps.alert).toEqual({ title: "Cryptic", subtitle: "Allow Cryptic to run a command?", body: "Run echo hi." });
+    expect(body.aps.alert).toEqual({ title: "Quasar", subtitle: "Allow Quasar to run a command?", body: "Run echo hi." });
     expect(body.aps.category).toBe("SAGAX_APPROVAL");
     expect(body.aps.sound).toBe(APPROVAL_SOUND);
     expect(body.requestId).toBe("req-1");

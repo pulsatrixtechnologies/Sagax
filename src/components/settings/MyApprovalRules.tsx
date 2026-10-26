@@ -1,5 +1,5 @@
 // Every Always allow and Always deny the person saved, on any bot, in one
-// list they can revoke (2026-10-19, JC: members' "Always allow" on their own
+// list they can revoke (2026-10-19: members' "Always allow" on their own
 // destinations, their cloud computer and their Local VM). Rules are the
 // person's own: GET /api/approval-rules lists them, DELETE removes one. A
 // rule saved on a bot someone shared with them shows that bot's name; the

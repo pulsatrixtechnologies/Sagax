@@ -44,7 +44,7 @@ describe("threads location: one place at a time", () => {
     expect(header()).toContain('aria-label="All threads"');
   });
 
-  // Grok Bot's rows (JC, 2026-10-15): a bot's thread list no longer unfolds
+  // The reference design's rows (JC, 2026-10-15): a bot's thread list no longer unfolds
   // in the sidebar, whatever the setting; the header button is always its
   // place. Rooms and people keep the setting.
   it("In the sidebar location too, a bot's threads stay in the header and nothing unfolds under the bot", () => {

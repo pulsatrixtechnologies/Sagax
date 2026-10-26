@@ -1,4 +1,4 @@
-// Search (Grok Bot iOS reference search-ref.png, 2026-10-18; parity 19): a
+// Search (the reference design iOS reference search-ref.png, 2026-10-18; parity 19): a
 // full-height sheet 62 pt from the top with rounded top corners, an X, a
 // "Search" glass capsule with the caret already in it and a filter circle.
 // The keyboard opens at once with a blue Search return key. Empty, it lists

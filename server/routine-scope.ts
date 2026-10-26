@@ -1,4 +1,4 @@
-// The scope of the Automations page (2026-10-09, JC): which routines and
+// The scope of the Automations page (2026-10-09): which routines and
 // runs a caller may see beyond their own, with the filters of the page.
 // Pure: server/index.ts hands in who the caller is and the facts of each
 // routine (its bot's owner, its run-as person, their teams, the teams its

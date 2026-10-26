@@ -45,7 +45,7 @@ export type AppIconChoice = {
 
 /**
  * The default: the bundle's own icon, the Pulsatrix logo on night blue
- * (JC, 2026-10-14). Choosing it resets. The id predates the logo and stays,
+ * (2026-10-14). Choosing it resets. The id predates the logo and stays,
  * so a saved "sagax" choice still means "the default".
  */
 export const DEFAULT_APP_ICON_ID = "sagax";

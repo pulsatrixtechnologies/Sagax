@@ -22,7 +22,7 @@ export type TerminalProviderKind =
 
 export type TerminalResourceStatus = "online" | "offline" | "unknown";
 
-/** Who may open a resource (2026-10-15, JC):
+/** Who may open a resource (2026-10-15):
  * - "server": a host of the server (SSH, unRAID, VPS). An organization admin
  *   only, as before.
  * - "personal": the signed-in person's own environment (their cloud

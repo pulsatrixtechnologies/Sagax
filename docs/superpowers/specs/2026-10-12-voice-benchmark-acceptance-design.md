@@ -122,12 +122,12 @@ Markdown is derived from JSON and contains no independent calculations.
 
 ## Reference Recording
 
-`--reference <path>` accepts an optional Grok Bot recording plus an adjacent
+`--reference <path>` accepts an optional the reference design recording plus an adjacent
 JSON sidecar containing measured speech-end and first-audio markers. The
 harness validates the markers and reports the reference latency and delta from
 the Sagax run. If no reference is supplied, the report contains
 `reference.status = "not-provided"` and no numeric comparison. The harness
-never infers or fabricates Grok Bot timings from an unmarked audio file.
+never infers or fabricates the reference design timings from an unmarked audio file.
 
 ## Components
 

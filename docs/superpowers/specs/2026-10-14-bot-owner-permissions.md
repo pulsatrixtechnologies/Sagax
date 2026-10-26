@@ -126,7 +126,7 @@ route `owner`.
 
 ## 5. Règles par personne
 
-Comme Grok Bot : on commence ultra restrictif, chaque carte propose
+Comme the reference design : on commence ultra restrictif, chaque carte propose
 **Refuser**, **Toujours refuser**, **Toujours permettre**, **Permettre une
 fois**, et les règles rendent le bot plus permissif au fil du temps.
 
@@ -192,7 +192,7 @@ interface OwnerRule {
   Approbation automatique / Bypass, avec boîte d'avertissement avant Bypass ;
   visible au propriétaire, même sans `bots.approvalLevel`.
 - **Règles** (même section) : tableau à deux colonnes **Action** /
-  **Comportement**, comme Grok Bot. L'action est la description en langage
+  **Comportement**, comme la référence. L'action est la description en langage
   clair (« Afficher plus » au delà de deux lignes) ; le comportement :
   Permettre automatiquement, Demander chaque fois, Refuser. À droite :
   modifier (crayon : description, comportement, ce bot ou tous mes bots,

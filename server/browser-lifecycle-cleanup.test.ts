@@ -8,6 +8,7 @@ import {
   BrowserCleanupCoordinator,
   BrowserSweep,
   browserIdleMs,
+  engineBrowsers,
   finalizeBrowserCleanupMutation,
   requireBrowserCleanupAcknowledged,
 } from "./browser-lifecycle-cleanup.ts";
@@ -390,5 +391,60 @@ describe("closing this data dir's browsers nothing uses", () => {
   it("closes an unused browser after ten minutes unless config.json says otherwise", () => {
     expect(browserIdleMs({})).toBe(10 * 60_000);
     expect(browserIdleMs({ browserEngine: { idleTimeoutMinutes: 2 } })).toBe(2 * 60_000);
+  });
+});
+
+describe("engineBrowsers", () => {
+  const launch = { command: "agent-browser", env: {} };
+  function browsers(over: Partial<Parameters<typeof engineBrowsers>[0]> = {}) {
+    const runningSessions = new Set<string>(["bot-a", "bot-b"]);
+    const closeUnused = vi.fn(async (session: string) => { runningSessions.delete(session); return true; });
+    const held = new Set<string>();
+    const value = engineBrowsers({
+      threadBrowser: (threadId) => threadId === "mine" ? null
+        : threadId === "fresh" ? { session: undefined, spec: undefined }
+        : { session: `bot-${threadId}`, spec: launch },
+      sessions: () => [["bot-a", launch], ["bot-b", launch], ["bot-c", launch]],
+      held: (session) => held.has(session),
+      closeUnused,
+      running: (session) => runningSessions.has(session),
+      sleep: async () => {},
+      attempts: 3,
+      log: () => {},
+      ...over,
+    });
+    return { value, runningSessions, closeUnused, held };
+  }
+
+  it("says which turn will start a browser: not a running one, not the person's own Chrome", () => {
+    const { value } = browsers();
+    expect(value.starts("a")).toBe(false); // already running
+    expect(value.starts("c")).toBe(true);
+    expect(value.starts("fresh")).toBe(true); // a temporary browser before its first call
+    expect(value.starts("mine")).toBe(false); // My Chrome or a Chrome attached over CDP
+  });
+
+  it("closes a stopped thread's browser once its turn lets go of it, and gives up while one keeps it", async () => {
+    const turns = new Set<string>(["bot-a"]);
+    const sleep = vi.fn(async () => { turns.delete("bot-a"); });
+    const { value, closeUnused } = browsers({ sleep, held: (session) => turns.has(session) });
+    value.stopped("a");
+    await vi.waitFor(() => expect(closeUnused).toHaveBeenCalledWith("bot-a", launch));
+    expect(sleep).toHaveBeenCalledTimes(1);
+
+    const kept = browsers({ held: () => true });
+    kept.value.stopped("b");
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(kept.closeUnused).not.toHaveBeenCalled();
+    kept.value.stopped("mine");
+    expect(kept.closeUnused).not.toHaveBeenCalled();
+  });
+
+  it("closes every running browser nothing uses after an OOM kill", async () => {
+    const { value, closeUnused, held } = browsers();
+    held.add("bot-b");
+    expect(await value.closeUnused()).toBe(1);
+    expect(closeUnused).toHaveBeenCalledTimes(1);
+    expect(closeUnused).toHaveBeenCalledWith("bot-a", launch);
   });
 });

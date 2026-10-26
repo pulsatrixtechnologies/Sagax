@@ -1,4 +1,4 @@
-// A bot's allowed recipients (parité Grok Bot X3, JC 2026-10-21: « hors
+// A bot's allowed recipients (parité avec la référence X3, JC 2026-10-21: « hors
 // liste = carte, dans la liste = part sans carte »). Real server, scripted
 // fake engine:
 //

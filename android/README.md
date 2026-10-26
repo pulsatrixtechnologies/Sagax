@@ -5,7 +5,7 @@ running Sagax, then read and answer from the phone.
 
 - `applicationId` — `com.openmausbot.companion`
 - `minSdk` 26 (Android 8.0), `targetSdk` / `compileSdk` 37
-- Deep-link scheme — `openmausbot`
+- Deep-link scheme — `sagax`
 - Two modules: `:core` (protocol, ported from `ios/Sources/CompanionCore`) and
   `:app` (Compose UI, Android platform)
 
@@ -41,7 +41,7 @@ key, so no release signing material is needed. It installs beside the released
 app with separate pairing, preferences and messages; it does not update that app.
 
 Open Preview and pair using its QR scanner or manual address form. Preview does
-not register the release's `openmausbot://` pairing links or system share targets.
+not register the release's `sagax://` pairing links or system share targets.
 Its file-sharing provider uses the preview application ID too.
 
 Pull-request CI runs the core and debug UI unit tests, builds both APK variants,
@@ -126,11 +126,14 @@ keyPassword=…
 or the environment, for CI secrets:
 
 ```
-OPENMAUSBOT_KEYSTORE_FILE
-OPENMAUSBOT_KEYSTORE_PASSWORD
-OPENMAUSBOT_KEY_ALIAS
-OPENMAUSBOT_KEY_PASSWORD   # optional; PKCS12 reuses the store password
+SAGAX_KEYSTORE_FILE
+SAGAX_KEYSTORE_PASSWORD
+SAGAX_KEY_ALIAS
+SAGAX_KEY_PASSWORD   # optional; PKCS12 reuses the store password
 ```
+
+The older `OPENMAUSBOT_*` names with the same suffixes are still read for two
+releases when the `SAGAX_*` one is unset.
 
 Supply all of it or none of it. A build handed only part of the material stops
 and names what is missing, rather than quietly producing an unsigned APK that

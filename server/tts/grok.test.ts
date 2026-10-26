@@ -8,7 +8,7 @@ let contentType = "audio/mpeg";
 let audio = Buffer.from([0xff, 0xfb, 0x90, 0x00]);
 let voices: unknown = { voices: [{ voice_id: "ara", name: "Ara", description: "Warm" }] };
 const seen: Array<{ url: string; authorization?: string; body: string }> = [];
-// Since 2026-10-14 Grok voice runs on the xAI key, the one Grok bots use.
+// Since 2026-10-14 Grok voice runs on the xAI key, the one bots on Grok use.
 const config: AppConfig = { xai: { key: "fixture-voice-key" }, tts: { provider: "xai", voice: "ara" } };
 const voice = () => import("./index.ts");
 
@@ -128,7 +128,7 @@ describe("Grok voice", () => {
 
   it("voice mode: sends keyterms before the file, which xAI needs last", async () => {
     const grok = await import("./grok.ts");
-    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr", ["Cryptic", "CrowdStrike"]);
+    await grok.transcribe(new Uint8Array([82, 73, 70, 70]), "audio/wav", "fixture-xai-key", "fr", ["Quasar", "CrowdStrike"]);
     const body = seen[0]?.body ?? "";
     expect(body.match(/name="keyterm"/g)).toHaveLength(2);
     expect(body).toContain("CrowdStrike");
@@ -147,12 +147,12 @@ describe("Grok voice", () => {
       send() {}
       close() {}
     }
-    const stream = grok.openTranscriptionStream("fixture-xai-key", { language: "fr", keyterms: ["Cryptic", "Marie Tremblay"] }, {
+    const stream = grok.openTranscriptionStream("fixture-xai-key", { language: "fr", keyterms: ["Quasar", "Marie Tremblay"] }, {
       onTranscript() {}, onError() {}, onClose() {},
     }, FakeSocket as unknown as import("./grok.ts").HeaderWebSocket);
     stream.close();
     const query = new URL(urls[0]!).searchParams;
-    expect(query.getAll("keyterm")).toEqual(["Cryptic", "Marie Tremblay"]);
+    expect(query.getAll("keyterm")).toEqual(["Quasar", "Marie Tremblay"]);
     expect(query.get("language")).toBe("fr");
   });
 

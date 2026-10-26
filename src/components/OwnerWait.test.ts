@@ -5,8 +5,8 @@ import { OwnerSettled, OwnerWait } from "./OwnerWait";
 
 describe("OwnerWait", () => {
   it("shows the wait without an approve button", () => {
-    const html = renderToStaticMarkup(createElement(OwnerWait, { ownerName: "Jean-Christophe" }));
-    expect(html).toContain("En attente de Jean-Christophe");
+    const html = renderToStaticMarkup(createElement(OwnerWait, { ownerName: "Alex" }));
+    expect(html).toContain("En attente de Alex");
     expect(html).not.toContain("Approuver");
   });
 });

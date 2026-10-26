@@ -1,6 +1,6 @@
 // 2026-10-21 (parité R10, ligne 80): which app of this computer a screen
 // action acts on, read by the server itself (never the model's words), so
-// "Toujours permettre" can keep one app: "Cryptic peut voir Safari, y
+// "Toujours permettre" can keep one app: "the bot peut voir Safari, y
 // cliquer et y saisir du texte sur cet ordinateur".
 //
 // Only for the person's own Mac running this server (a desktop or a solo

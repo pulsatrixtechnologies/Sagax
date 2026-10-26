@@ -1,10 +1,10 @@
 # Réunions avec preneur de notes, mise à jour planifiée et économiseur de disque
 
-Date : 2026-10-16. Responsable : JC. Statut : vague 2 de la parité Grok Bot,
+Date : 2026-10-16. Responsable : JC. Statut : vague 2 de la parité avec la référence,
 paquet D. Deux PR, une par élément. La pause des routines pendant l'absence
 est déjà livrée (#609) et n'est pas reprise ici.
 
-Référence fonctionnelle : l'application de bureau Grok Bot (chaînes « Donne à
+Référence fonctionnelle : l'application de bureau the reference design (chaînes « Donne à
 ton Bot des liens pour rejoindre Google Meet ou Zoom », « Je vous ai envoyé
 une carte de consentement ci-dessous », « Économiseur de disque », « Échec de
 la mise à jour de l'ordinateur »). Aucun code n'en est repris.

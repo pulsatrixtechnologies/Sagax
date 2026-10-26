@@ -178,7 +178,7 @@ export function keyRowForEngine(driverKind: string, instanceId: string): KeyRowI
   return null;
 }
 
-/** One row per key, as Grok Bot's settings rows: the provider and its state
+/** One row per key, as the reference design's settings rows: the provider and its state
  * in a grey line at the left, one pill at the right. Rows of the Keys group
  * card (no frame of their own). */
 export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {

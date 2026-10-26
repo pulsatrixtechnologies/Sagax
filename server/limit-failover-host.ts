@@ -72,8 +72,9 @@ export interface LimitFailoverHostDeps {
 export interface LimitFailoverHost {
   /** Remember what a turn runs on, for its failure. */
   noteDispatch(threadId: string, dispatch: LimitDispatch): void;
-  /** A runtime.error: keeps the reset the engine said, if any. */
-  noteError(threadId: string, message: string, limitResetsAt?: number): void;
+  /** A runtime.error: keeps the reset the engine said, if any, and whether
+   * the refusal binds only the turn's model (`scope`), not the engine. */
+  noteError(threadId: string, message: string, limitResetsAt?: number, scope?: "model"): void;
   /** A failed turn. True when its failure is a usage limit this module
    * takes over (no incident: the turn continues, or waits for the reset). */
   turnFailed(input: {
@@ -81,7 +82,8 @@ export interface LimitFailoverHost {
     /** The routine run this failure just failed (RoutineManager.handleRuntimeEvent), if any. */
     routineRun?: { id: string; routineId: string } | null;
   }): boolean;
-  /** A turn that completed: nothing to keep for it. */
+  /** A turn that completed: nothing to keep for it, and its engine plainly
+   * has room again for its payer, so a stale hold on it ends. */
   turnSucceeded(threadId: string): void;
   /** Before a turn: back on the thread's engine after its reset (at once),
    * or onto a backup while its engine is known to be at its limit (the
@@ -110,7 +112,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
     return { cancel: () => clearTimeout(timer) };
   });
   const dispatches = new Map<string, LimitDispatch>();
-  const errors = new Map<string, { message: string; resetsAt?: number }>();
+  const errors = new Map<string, { message: string; resetsAt?: number; scope?: "model" }>();
   const pending = new Set<Promise<unknown>>();
   let timer: { cancel(): void } | null = null;
   let started = false;
@@ -199,13 +201,17 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
       errors.delete(threadId);
     },
 
-    noteError(threadId, message, limitResetsAt) {
-      errors.set(threadId, { message, ...(limitResetsAt !== undefined ? { resetsAt: limitResetsAt } : {}) });
+    noteError(threadId, message, limitResetsAt, scope) {
+      errors.set(threadId, { message, ...(limitResetsAt !== undefined ? { resetsAt: limitResetsAt } : {}), ...(scope ? { scope } : {}) });
     },
 
     turnSucceeded(threadId) {
+      const dispatch = dispatches.get(threadId);
       dispatches.delete(threadId);
       errors.delete(threadId);
+      // A reply on the engine proves the payer has room on it again (another
+      // model, plan or a reset come early): a hold left on it is stale.
+      if (dispatch) store.unblock(dispatch.payer, dispatch.engine.instanceId);
     },
 
     turnFailed({ threadId, turnId, cause, stopReason, routineRun }) {
@@ -220,8 +226,10 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
         const said = error?.resetsAt ?? limitResetFromText(cause, now) ?? limitResetFromText(error?.message, now);
         const { resetsAt } = limitResetOrEstimate(kind, said, now);
         // Known from now on, whatever happens to this turn: no other turn of
-        // this payer starts on it before the reset.
-        store.block(dispatch.payer, dispatch.engine.instanceId, resetsAt);
+        // this payer starts on it before the reset. A refusal that binds
+        // only this model (its extra-usage credits, its own weekly window)
+        // leaves the engine to the payer's other models.
+        if (error?.scope !== "model") store.block(dispatch.payer, dispatch.engine.instanceId, resetsAt);
         if (!deps.enabled()) return false;
         const current = deps.threadSelection(dispatch.botId, threadId);
         // Auto picks its own engine; a viewer's own model is theirs to change.

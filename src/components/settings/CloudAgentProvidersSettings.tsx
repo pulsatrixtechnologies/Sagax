@@ -63,7 +63,7 @@ export function CloudAgentProvidersSettings({ state }: { state: CloudAgentProvid
     );
   }
 
-  // 0.5.6: a folding row of the Keys group (Grok Bot's count pill), the
+  // 0.5.6: a folding row of the Keys group (the reference design's count pill), the
   // longer explanation behind its info button.
   return (
     <FoldRow

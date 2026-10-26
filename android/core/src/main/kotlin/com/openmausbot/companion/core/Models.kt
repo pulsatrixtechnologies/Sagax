@@ -1370,7 +1370,7 @@ data class ServerEnvironment(
     val identity: ServerIdentity? = null,
 ) {
     /** The server signs people in with Pulsatrix and returns to native apps
-     * (`/auth/oidc/start?client=phone` ends on an `openmausbot://pair` link). */
+     * (`/auth/oidc/start?client=phone` ends on a `sagax://pair` link). */
     val offersPulsatrixSignIn: Boolean
         get() = identity?.kind == "perspicax" && identity.nativeReturn == true
 }
@@ -1382,7 +1382,7 @@ data class ServerIdentity(
     val protocol: String? = null,
     val issuer: String? = null,
     val loginPath: String? = null,
-    /** The server ends a native sign-in on an `openmausbot://` link. */
+    /** The server ends a native sign-in on a `sagax://` link. */
     val nativeReturn: Boolean? = null,
 )
 
@@ -1390,7 +1390,7 @@ data class ServerIdentity(
  * "Sign in with Pulsatrix" from the phone: a Custom Tab opens this address on
  * the server, and the server's answer is the pairing invite link the app
  * already accepts from a QR code
- * (`openmausbot://pair?address=...&token=omb_pair_...&name=...`), which comes
+ * (`sagax://pair?address=...&token=omb_pair_...&name=...`), which comes
  * back through the existing intent filter.
  */
 object PulsatrixSignIn {

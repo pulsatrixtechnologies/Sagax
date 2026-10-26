@@ -11,7 +11,7 @@
 import type { InternalRouteHandler } from "./internal-route.ts";
 import { PASS } from "./table.ts";
 
-/** The Run now rule (JC, 2026-10-08), for a caller already known as a person
+/** The Run now rule (2026-10-08), for a caller already known as a person
  * or not. `organization` false (a solo server) or `person` false (the
  * operator, the loopback) keeps the bot-level rule: allowed. */
 export function routineRunNowAllowed(input: {

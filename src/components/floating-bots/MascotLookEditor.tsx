@@ -30,7 +30,7 @@
 //
 // An unlocked character saves at once when picked (as the avatar popover
 // did). A locked character previews only. Every skin of a character shows
-// (JC, 2026-10-14): a locked one greyed with its padlock, not selectable,
+// (2026-10-14): a locked one greyed with its padlock, not selectable,
 // its tooltip naming the achievement that unlocks it. Each character keeps
 // its own skin, so switching and back finds it again. Loaded lazily with
 // the pane.
@@ -578,7 +578,7 @@ export default function MascotLookEditor({ bot, disabled, onPatch: savePatch, on
   }, [look.character]);
   const shownOption = MASCOTS.find((option) => option.id === shown) ?? MASCOTS[0];
   const shownLock = lockOf(shown);
-  // a locked skin, or a skin of a locked character, picked to look at: the stage wears it, nothing saves (JC 2026-10-14)
+  // a locked skin, or a skin of a locked character, picked to look at: the stage wears it, nothing saves (2026-10-14)
   const [previewSkin, setPreviewSkin] = useState<string | null>(null);
   useEffect(() => setPreviewSkin(null), [shown]);
   const shownLook: MascotLook = previewSkin && shown !== "owl"

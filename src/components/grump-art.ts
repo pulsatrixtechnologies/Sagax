@@ -1,5 +1,5 @@
 // Grump's drawing, in a 0..100 box (src/components/GrumpMascot.tsx): the
-// grumpy cat of direction C, "aplat net", approved by JC on 2026-10-09 with
+// grumpy cat of direction C, "aplat net", approved by the maintainer on 2026-10-09 with
 // the Shiba (scratchpad others-c.mjs, export GRUMP). Two flat tones and a
 // shade crescent per part, one uniform outline, geometric shapes: a cream
 // body, dark markings (the mask with its light blaze, the ears, the tail)

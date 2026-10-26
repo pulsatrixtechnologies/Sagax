@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// "Disabled · 5 routines" in the conversation (2026-10-15, JC, after Grok
-// Bot): one quiet centered line per action and per turn, opening the list of
+// "Disabled · 5 routines" in the conversation (2026-10-15, JC, after the reference
+// design): one quiet centered line per action and per turn, opening the list of
 // the routines it names; a routine the person can open goes to its page.
 import { createElement } from "react";
 import { flushSync } from "react-dom";

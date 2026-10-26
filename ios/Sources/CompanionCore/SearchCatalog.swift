@@ -1,4 +1,4 @@
-// What the search sheet lists (iOS search, 2026-10-18; Grok Bot iOS
+// What the search sheet lists (iOS search, 2026-10-18; the reference design iOS
 // reference search-ref.png): the same sources as the desktop's sidebar
 // search (src/components/Sidebar.tsx filters bots and rooms by name, then
 // SearchResults.tsx asks `GET /api/search` for messages), plus the

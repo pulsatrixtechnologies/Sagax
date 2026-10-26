@@ -92,7 +92,7 @@ import { appendNative } from "../native.ts";
 import { acpPermissionCommand, permissionLaunchCwd } from "../permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../../tool-summary.ts";
 import { acpWrittenFiles, filesField } from "../../thread-files.ts";
-import { extractMcpImages } from "../../mcp-tool-images.ts";
+import { acpToolEndEvents } from "./tool-items.ts";
 import { redactSecretsInText } from "../../redact.ts";
 import { recoveryPromptFor } from "../../resume-recovery.ts";
 import { sessionIdlePolicy } from "../session-idle.ts";
@@ -234,6 +234,8 @@ interface AcpTurn {
    * its completion by `itemId` (the tool chip's result among them), so an
    * unkeyed call must still carry one stable id across both events. */
   unkeyedToolIds: string[];
+  /** Tool items already completed this turn: ACP v1 may name a finished call again, which must not end it twice. */
+  endedToolIds: Set<string>;
   interruptTimer: ReturnType<typeof setTimeout> | null;
   /** ends the quiet-status watch started with the prompt */
   stopQuietWatch: (() => void) | null;
@@ -460,6 +462,8 @@ export interface AcpSupport {
   warmSession?: boolean;
   /** Route workspace file access through ACP so edits retain approval cards. */
   clientFileSystem?: boolean;
+  /** Sent as `clientCapabilities._meta` on initialize, where agents read vendor capabilities. */
+  clientCapabilitiesMeta?: Record<string, unknown>;
   /** Do not retain stderr from providers that may place OAuth material there. */
   redactStderr?: boolean;
   /** The agent's own debug log for a native session, read while a prompt is
@@ -560,6 +564,8 @@ export interface AcpSupport {
     sessionModels: Array<{ modelId?: string; name?: string }>;
     /** Last model acknowledged by session/new/load/set_model, preserved for pooled turns. */
     currentModelId?: string;
+    /** session/new's or session/load's `configOptions`, verbatim. */
+    configOptions: Array<{ id?: unknown; currentValue?: unknown }>;
     /** Show the person one plain line (a runtime.notice) for this turn:
      * for instance that the session runs another model than the one picked.
      * Said once per conversation for the same message. */
@@ -1223,6 +1229,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         let notices = 0;
         let probing = false;
         let state: QuietState | null = null;
+        // A reused session's last inbound message may predate this prompt:
+        // idle time between turns is not the agent being quiet on this one.
+        const promptStartedAt = Date.now();
         const tick = async () => {
           if (probing || current.state.settled || session.current !== current) return;
           const now = Date.now();
@@ -1232,7 +1241,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             if (signal?.kind === "context") context = { tokens: signal.tokens, threshold: signal.threshold };
             else if (signal) logged = { signal, at: now };
           }
-          const quietMs = now - session.acp.lastInboundAt;
+          const quietMs = now - Math.max(promptStartedAt, session.acp.lastInboundAt);
           // A running tool or an open question is already on screen.
           if (quietMs < noticeAfterMs || current.asks.size || current.runningTools.size) {
             if (quietMs < noticeAfterMs) logged = null;
@@ -1749,6 +1758,23 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           }
           if (!current || !current.state.promptSent) return;
           const u = p.update ?? {};
+          const finished = u.status === "completed" || u.status === "failed";
+          // Ends one tool item once: its bookkeeping, its completion and the images its result carries.
+          const toolEnded = (itemId: string | undefined) => {
+            current.state.producedItem = true;
+            const keyed = typeof u.toolCallId === "string" && u.toolCallId ? u.toolCallId : undefined;
+            if (itemId !== undefined && current.endedToolIds.has(itemId)) return;
+            if (support.onToolCompleted && keyed) {
+              const rawInput = u.rawInput ?? current.toolInputs?.get(keyed);
+              current.toolInputs?.delete(keyed);
+              if (u.status === "completed" && rawInput !== undefined) {
+                try { support.onToolCompleted({ botId: current.turn.botId, rawInput }); } catch { /* bookkeeping only */ }
+              }
+            }
+            const fields = u.status === "completed" && keyed ? cwToolResult(current.cwToolNames?.get(keyed), u.rawOutput ?? u.content) : {};
+            if (keyed) current.cwToolNames?.delete(keyed);
+            for (const event of acpToolEndEvents(u, itemId, current.endedToolIds, fields)) emit({ ...base(threadId, current.turnId), ...event });
+          };
           switch (u.sessionUpdate) {
             case "agent_message_chunk": {
               const content = u.content;
@@ -1793,45 +1819,26 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               if (typeof u.toolCallId === "string" && toolTitle && isCwTool(toolTitle)) {
                 (current.cwToolNames ??= new Map()).set(u.toolCallId, toolTitle);
               }
+              // ACP can send a tool_call already marked completed or failed (a denied permission, say) with no
+              // tool_call_update after it: end it here, and keep an unkeyed one out of the queue running calls pair by.
+              const itemId = (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId
+                : finished ? `acp-tool-unkeyed-${++unkeyedToolSeq}` : nextUnkeyedToolId(current);
               emit({
                 ...base(threadId, current.turnId),
                 type: "item.started",
                 itemType: "tool",
-                itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : nextUnkeyedToolId(current),
+                itemId,
                 title: String(useTool?.id ?? u.rawInput?.command ?? u.title ?? "tool").slice(0, 80),
                 summary: commandSummary(useTool ? useTool.args : u.rawInput),
                 input: toolDetailPreview(useTool ? useTool.args : u.rawInput),
                 ...filesField(acpWrittenFiles(u)),
               });
+              if (finished) toolEnded(itemId);
               break;
             }
             case "tool_call_update": {
               trackRunningTool(current, u);
-              if (u.status === "completed" || u.status === "failed") {
-                current.state.producedItem = true;
-                if (support.onToolCompleted && typeof u.toolCallId === "string") {
-                  const rawInput = u.rawInput ?? current.toolInputs?.get(u.toolCallId);
-                  current.toolInputs?.delete(u.toolCallId);
-                  if (u.status === "completed" && rawInput !== undefined) {
-                    try { support.onToolCompleted({ botId: current.turn.botId, rawInput }); } catch { /* bookkeeping only */ }
-                  }
-                }
-                emit({
-                  ...base(threadId, current.turnId),
-                  type: "item.completed",
-                  itemType: "tool",
-                  itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : current.unkeyedToolIds.shift(),
-                  ok: u.status !== "failed",
-                  output: toolDetailPreview(u.rawOutput ?? u.content),
-                  ...(u.status === "completed" && typeof u.toolCallId === "string"
-                    ? cwToolResult(current.cwToolNames?.get(u.toolCallId), u.rawOutput ?? u.content)
-                    : {}),
-                });
-                if (typeof u.toolCallId === "string") current.cwToolNames?.delete(u.toolCallId);
-                for (const img of extractMcpImages(u.content ?? u.rawOutput)) {
-                  emit({ ...base(threadId, current.turnId), type: "item.completed", itemType: "assistant_image", data: img.data });
-                }
-              }
+              if (finished) toolEnded((typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : current.unkeyedToolIds.shift());
               break;
             }
             case "usage_update": {
@@ -2163,6 +2170,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 writeTextFile: support.clientFileSystem === true,
               },
               terminal: false,
+              ...(support.clientCapabilitiesMeta ? { _meta: support.clientCapabilitiesMeta } : {}),
             },
           },
           INIT_TIMEOUT,
@@ -2357,6 +2365,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           asks,
           runningTools: new Set(),
           unkeyedToolIds: [],
+          endedToolIds: new Set(),
           interruptTimer: null,
           stopQuietWatch: null,
           flushAssistantText,
@@ -2604,6 +2613,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     ? session.sessionConfigResult.models.availableModels
                     : [],
                   currentModelId: session.sessionConfigResult?.models?.currentModelId,
+                  configOptions: Array.isArray(session.sessionConfigResult?.configOptions)
+                    ? session.sessionConfigResult.configOptions
+                    : [],
                   notice: (message) => {
                     // once per conversation: a model switch opens a new
                     // process (a new session record), so the live session
@@ -3055,6 +3067,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             pickAuthMethod: (methods) => support.pickAuthMethod(methods, spawnEnv),
             authRequired: support.authFailure === "fail-request" ? "if-requested" : support.authFailure === "fail",
             loginNote: support.loginNote,
+            clientCapabilitiesMeta: support.clientCapabilitiesMeta,
             clientName,
             ...(support.configureSession ? {
               configure: ({ request, sessionId, session }) => support.configureSession!({
@@ -3065,6 +3078,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 turn,
                 sessionModels: Array.isArray(session?.models?.availableModels) ? session.models.availableModels : [],
                 currentModelId: session?.models?.currentModelId,
+                configOptions: Array.isArray(session?.configOptions) ? session.configOptions : [],
                 notice: () => undefined,
               }),
             } : {}),

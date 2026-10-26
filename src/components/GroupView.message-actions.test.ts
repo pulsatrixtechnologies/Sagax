@@ -71,7 +71,7 @@ describe("room message actions", () => {
     expect(html).toContain('data-testid="message-actions"');
     expect(html).toContain('aria-label="Add reaction"');
     expect(html).toContain("Reply to message");
-    // copy and copy request ID wait in the … menu, as in Grok Bot
+    // copy and copy request ID wait in the … menu, as in the reference design
     expect(html).not.toContain("Copy request ID");
     expect(html).toContain('aria-haspopup="menu"');
     // the rest waits in the more menu, as in a 1:1 chat

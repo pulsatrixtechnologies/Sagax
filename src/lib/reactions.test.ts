@@ -6,8 +6,8 @@ import { myReactions, reactionChips, reactionSelfIds, reactionTooltip } from "./
 import type { ConfigStatus } from "@/state/store";
 
 const stored = [
-  { emoji: "👍", actors: [{ id: "pr_zach", kind: "person", name: "Zachary Sellam" }, { id: "bot:cryptic", kind: "bot", name: "Cryptic" }, { id: "pr_me", kind: "person", name: "Me" }], at: 1 },
-  { emoji: "👀", actors: [{ id: "bot:cryptic", kind: "bot", name: "Cryptic" }], at: 2 },
+  { emoji: "👍", actors: [{ id: "pr_zach", kind: "person", name: "Sam Taylor" }, { id: "bot:quasar", kind: "bot", name: "Quasar" }, { id: "pr_me", kind: "person", name: "Me" }], at: 1 },
+  { emoji: "👀", actors: [{ id: "bot:quasar", kind: "bot", name: "Quasar" }], at: 2 },
 ];
 
 describe("reaction chips", () => {
@@ -19,11 +19,11 @@ describe("reaction chips", () => {
 
   it("lists who reacted, me as You, in English and French", () => {
     const [thumbs, eyes] = reactionChips(stored, ["pr_me"]);
-    expect(reactionTooltip(thumbs!, ["pr_me"])).toBe("Zachary Sellam, Cryptic and You reacted with 👍");
-    expect(reactionTooltip(eyes!, ["pr_me"])).toBe("Cryptic reacted with 👀");
+    expect(reactionTooltip(thumbs!, ["pr_me"])).toBe("Sam Taylor, Quasar and You reacted with 👍");
+    expect(reactionTooltip(eyes!, ["pr_me"])).toBe("Quasar reacted with 👀");
     setLocale("fr");
     try {
-      expect(reactionTooltip(thumbs!, ["pr_me"])).toBe("Réaction 👍 : Zachary Sellam, Cryptic et Vous");
+      expect(reactionTooltip(thumbs!, ["pr_me"])).toBe("Réaction 👍 : Sam Taylor, Quasar et Vous");
     } finally {
       setLocale("en");
     }

@@ -138,9 +138,9 @@ app.whenReady().then(async () => {
   check("signed in to the organization server", true, `role ${signed.role}`);
   await until("the app home", async () => new URL(win.webContents.getURL()).pathname === "/");
 
-  // A bot named Cryptic, opened in the app.
+  // A bot named Quasar, opened in the app.
   const created = await win.webContents.executeJavaScript(`fetch("/api/bots", { method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name: "Cryptic" }) }).then(async r => ({ status: r.status, body: await r.json() }))`);
+    body: JSON.stringify({ name: "Quasar" }) }).then(async r => ({ status: r.status, body: await r.json() }))`);
   const bot = created.body?.bot ?? created.body;
   check("a bot is created on the server", created.status < 300 && typeof bot?.id === "string", `HTTP ${created.status}`);
   await win.webContents.executeJavaScript(`location.href = ${jsLiteral(`/#thread=${bot.threadId}&bot=${bot.id}`)}; location.reload(); true`);
@@ -245,7 +245,7 @@ app.whenReady().then(async () => {
   await click("[data-voice-gear]");
   await click("[data-voice-mute]");
   const firstTurn = await until("the first spoken turn", async () => win.webContents.executeJavaScript(`window.__voiceTurns[0] ?? null`), 30_000).catch(() => null);
-  check("the person's first turn is heard (Silero VAD on this computer, streaming speech to text)", firstTurn?.text === "Hello Cryptic from voice mode", JSON.stringify(firstTurn));
+  check("the person's first turn is heard (Silero VAD on this computer, streaming speech to text)", firstTurn?.text === "Hello Quasar from voice mode", JSON.stringify(firstTurn));
   const models = await win.webContents.executeJavaScript(`document.querySelector("[data-voice-bar]")?.dataset.voiceModels ?? null`);
   check("the on-device models loaded from the app's bundle (no CDN)", models === "on-device", String(models));
   const socket = await until("xAI's streaming socket", async () => (await xaiRequests()).find((r) => r.websocket && r.path === "/v1/stt" && r.query?.language === "fr" && r.finalizes > 0) ?? null, 10_000).catch(() => null);
@@ -253,7 +253,7 @@ app.whenReady().then(async () => {
   const sent = await until("the spoken message on the thread", async () => {
     const page = await win.webContents.executeJavaScript(`fetch(${jsLiteral(`/api/threads/${bot.threadId}/messages`)}).then(r => r.json()).catch(() => null)`);
     const list = Array.isArray(page) ? page : page?.messages ?? [];
-    return list.find((message) => message.role === "user" && String(message.text ?? "").includes("Hello Cryptic from voice mode")) ?? null;
+    return list.find((message) => message.role === "user" && String(message.text ?? "").includes("Hello Quasar from voice mode")) ?? null;
   }, 20_000).catch(() => null);
   check("what was said reaches the bot's thread as the signed-in person (the normal send route)", Boolean(sent) && Boolean(sent.sender?.id), sent ? `sender ${sent.sender?.name ?? sent.sender?.id}` : "none");
   const latency = await until("the first audio of the answer", async () => win.webContents.executeJavaScript(`(() => {
@@ -261,7 +261,7 @@ app.whenReady().then(async () => {
     return bar?.dataset.voiceFirstAudioMs ? { firstAudio: Number(bar.dataset.voiceFirstAudioMs), sent: Number(bar.dataset.voiceSentMs), endpoint: Number(bar.dataset.voiceEndpointMs) } : null;
   })()`), 15_000).catch(() => null);
   check("first audio of the answer under 1.5 s after the person stopped talking (instant engine)", Boolean(latency) && latency.firstAudio < 1500, JSON.stringify(latency));
-  // Faster end of turn: "Hello Cryptic from voice mode" carries no
+  // Faster end of turn: "Hello Quasar from voice mode" carries no
   // punctuation; the recording's falling, fading end ends the turn on the
   // short confident window (352 ms) instead of the 560 to 1100 ms endpoint
   const firstMetrics = await win.webContents.executeJavaScript(`(() => { const m = window.__voiceMetrics.find((t) => t.sentAt !== undefined); return m ? { endpoint: Math.round(m.endedAt - m.stoppedAt), contour: m.contour ?? null, contourEnd: m.contourEnd ?? false, earlyEnd: m.earlyEnd ?? false } : null; })()`);
@@ -287,7 +287,7 @@ app.whenReady().then(async () => {
   })()`), 30_000).catch(() => null);
   check("talking over the bot ducks it at once and cuts it within 250 ms of the first voiced frame", Boolean(barge) && barge.duck <= 50 && barge.cancel <= 250, JSON.stringify(barge));
   const secondTurn = await until("the turn after the barge-in", async () => win.webContents.executeJavaScript(`window.__voiceTurns[1] ?? null`), 20_000).catch(() => null);
-  check("the words said over the bot become the next turn", secondTurn?.text === "Hello Cryptic from voice mode", JSON.stringify(secondTurn));
+  check("the words said over the bot become the next turn", secondTurn?.text === "Hello Quasar from voice mode", JSON.stringify(secondTurn));
   const afterCut = (await ttsSockets()).filter((r) => (r.utterances ?? []).length);
   const ttsAfter = afterCut.flatMap((r) => r.utterances ?? []).length + (await xaiRequests()).filter((r) => r.path === "/v1/tts" && !r.websocket && r.json?.output_format?.codec === "pcm").length;
   check("the rest of the cut answer was not synthesized again", ttsAfter <= 3, `${ttsAfter} sentence request(s)`);

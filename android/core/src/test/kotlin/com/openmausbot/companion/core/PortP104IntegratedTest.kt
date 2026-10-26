@@ -559,7 +559,7 @@ class PortP104IntegratedTest {
             "${legacyAddress.host}:${legacyAddress.port}",
             StandardCharsets.UTF_8,
         ).replace("+", "%20")
-        return "openmausbot://pair?address=$address&token=$QR_CREDENTIAL&endpoints=$encodedEndpoints"
+        return "sagax://pair?address=$address&token=$QR_CREDENTIAL&endpoints=$encodedEndpoints"
     }
 
     private fun pairResponse(endpoints: List<CompanionEndpoint>? = null): String {

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S node --experimental-strip-types
 // Builds the data folder the interaction bench (interaction-bench.mjs) runs
-// Sagax against: nine bots like a Grok Bot roster, a few threads, and one long
+// Sagax against: nine bots like a the reference design roster, a few threads, and one long
 // thread (rich markdown replies) for the scroll scenario. Everything goes
 // through the fake engine of the verification launcher: no user data, no
 // provider, no network.
@@ -18,7 +18,7 @@ if (!positionals[0]) throw new Error("usage: seed-fixture.ts <out-dir> [--turns 
 const turns = Number(values.turns);
 
 const ROSTER: Array<{ name: string; title: string; section?: string }> = [
-  { name: "Katarina", title: "ConnectWise Ops & MS 365", section: "My Team" },
+  { name: "Ottoline", title: "ConnectWise Ops & MS 365", section: "My Team" },
   { name: "Ember", title: "Full Stack, Dev Ops & ITSec", section: "My Team" },
   { name: "Harrie", title: "Verificator", section: "My Team" },
   { name: "Vanessa", title: "Legal and marketing", section: "My Team" },
@@ -32,7 +32,7 @@ function reply(i: number): string {
   const parts = [
     `## Lot ${i}: verification\n\nI checked the **${i}th** batch against the ledger. Three items match, one needs a second look:`,
     `- Ticket #${1000 + i}: notes are in order\n- Ticket #${2000 + i}: time entry is *0.75 h*, expected 0.5 h\n- Ticket #${3000 + i}: closed`,
-    "| Item | Status | Owner |\n|---|---|---|\n| Backup | ok | Ember |\n| Patch | pending | Harrie |\n| Report | ok | Katarina |",
+    "| Item | Status | Owner |\n|---|---|---|\n| Backup | ok | Ember |\n| Patch | pending | Harrie |\n| Report | ok | Ottoline |",
     "```ts\nexport function total(entries: number[]) {\n  return entries.reduce((sum, value) => sum + value, 0);\n}\n```",
     `The remaining step is the follow-up with \`client-${i}\`; I will report back once it is done. ${"Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(1 + (i % 4))}`,
   ];

@@ -70,7 +70,7 @@ banner when notification sounds and the chime are on.
 
 A push from a bot or a person is an iOS **communication notification**. The
 banner names the bot (or the person) as the sender and shows their avatar as
-the icon, the way Messages and Grok Bot look, instead of "Sagax" with the
+the icon, the way Messages and the reference design look, instead of "Sagax" with the
 app icon. The server sets `aps.mutable-content` to 1 and sends `senderName`,
 `senderId` and a relative `avatarUrl` (`/api/attachments/...` or
 `/api/people/<id>/avatar?v=...`). The Notification Service Extension

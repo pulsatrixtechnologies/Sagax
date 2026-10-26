@@ -51,7 +51,7 @@ class StandInSource {
 
 const live = { id: "live", name: "Assistant", browserProfile: "own" } as unknown as Bot;
 const closed = { id: "closed", name: "Assistant", browserProfile: "own" } as unknown as Bot;
-const machine = "Jean-Christophes-Macbook-Pro.local";
+const machine = "Alexs-MacBook-Pro.local";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <section data-gallery={title}><h1 className="mb-3 text-[13px] font-semibold text-ink-secondary">{title}</h1>{children}</section>;

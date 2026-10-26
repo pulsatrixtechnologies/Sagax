@@ -1,4 +1,4 @@
-// "Reset the history" of a bot (2026-10-21, parity with Grok Bot): the
+// "Reset the history" of a bot (2026-10-21, parity with the reference design): the
 // conversation starts again from nothing while the bot keeps its memory,
 // files, routines, skills and settings. Nothing is deleted: a new
 // conversation opens, then every open conversation of the person with that

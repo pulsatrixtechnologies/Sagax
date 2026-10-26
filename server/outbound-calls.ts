@@ -1,4 +1,4 @@
-// Outbound phone calls a bot places for the person (parité Grok Bot V4,
+// Outbound phone calls a bot places for the person (parité the reference design V4,
 // spec docs/specs/bot-telephony.md 4.4, 5.7 and 6.5; shared/outbound-call.ts).
 //
 // One approval places one call:

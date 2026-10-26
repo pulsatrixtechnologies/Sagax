@@ -12,5 +12,5 @@ it("smoke-mcp-tool-names passes on the dev gate", () => {
     cwd: ROOT, env: { ...process.env, SMOKE_GATE: join(ROOT, "server/mcp-gate.ts") }, encoding: "utf8", timeout: 60_000,
   });
   expect(out).toContain("smoke: OK");
-  expect(out).toMatch(/cw_psa__query registered as perspicax_profil_jean_christophe_limited__cw_psa_query/);
+  expect(out).toMatch(/cw_psa__query registered as perspicax_profil_ottoline_limited__cw_psa_query/);
 });

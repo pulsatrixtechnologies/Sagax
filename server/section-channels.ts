@@ -17,7 +17,7 @@
 //
 // A shared section opens only the bots whose owner consented: the ones the
 // section owner owns, and the ones placed through PUT .../bots by someone
-// who manages them (the owner, or a manage holder the owner chose), recorded
+// who manages them (The owner, or a manage holder the owner chose), recorded
 // with the owner at that time. A bot that sat in a section before this slice
 // and belongs to someone else stays closed until its owner places it again.
 // Rooms follow the same rule: a shared section opens its own conversation
@@ -28,7 +28,7 @@
 // stays with its own people.
 // "General" (no section) is personal: never shared, renamed or deleted.
 //
-// Sections are personal now (2026-10-02, JC: "a section should only be a
+// Sections are personal now (2026-10-02: "a section should only be a
 // section after all"). The sidebar keeps each person's own sections in
 // their preferences (src/lib/personal-sections.ts) and sharing is per bot
 // (its grants, the bot panel). This file stays to keep the records already

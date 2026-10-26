@@ -1,5 +1,5 @@
 // Ogre's drawing, in a 0..100 box (src/components/OgreMascot.tsx): the big
-// green ogre in direction C, "aplat net", approved by JC on 2026-10-09, the
+// green ogre in direction C, "aplat net", approved by the maintainer on 2026-10-09, the
 // same family as Shiba (shiba-art.ts). Two flat tones and one shade tone in
 // a crescent per part, one uniform outline, geometric shapes: a bald
 // inverted-pear head, trumpet ears, a heavy brow, a three-lobed nose, a wide

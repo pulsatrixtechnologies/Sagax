@@ -52,7 +52,7 @@ export function ServerModeComputerAccess() {
   const [open, setOpen] = useState(false);
   if (!serverMode?.active || !window.ogb?.computerSharing) return null;
   const offered = sharedComputersEnabled(state.config);
-  // 0.5.6 (JC): a Grok-style row of "This computer"; the access choices
+  // 0.5.6: a Grok-style row of "This computer"; the access choices
   // open under it.
   return (
     <div data-settings-card="organization.serverModeComputer">

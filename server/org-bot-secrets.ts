@@ -1,4 +1,4 @@
-// The organization's team secrets (decision JC, 2026-10-21): one encrypted
+// The organization's team secrets (the maintainer's decision, 2026-10-21): one encrypted
 // file, org-bot-secrets.enc, sealed with the same vault key as the GitHub
 // tokens. An admin of the Perspicax organization assigns each secret to a
 // team bot. list() never returns a value. connectorEnv() is for a connector

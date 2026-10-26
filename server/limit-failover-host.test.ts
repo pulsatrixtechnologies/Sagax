@@ -107,6 +107,31 @@ describe("a turn its engine's limit refused", () => {
     expect(w.state.lines[0]!.line).toMatchObject({ kind: "switched", resetsAt: w.clock.now + 5 * 60_000 });
   });
 
+  // port de OpenMausBot #3213: a model's extra-usage credits, or its own
+  // weekly window, do not hold the whole engine for the payer's other models.
+  it("takes the turn over without holding the engine when the refusal binds only its model", async () => {
+    const w = world();
+    w.dispatch();
+    w.host.noteError("thread", "Claude refused this turn because this model runs on extra usage for your account, and those credits are used up.", undefined, "model");
+    expect(w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: undefined, stopReason: "quota" })).toBe(true);
+    await w.host.idle();
+    expect(w.state.resent).toEqual([{ messageId: "m1", on: B }]);
+    expect(w.store.blockedUntil("server", "claude")).toBeNull();
+  });
+
+  it("ends a stale hold once a turn on the same engine works for the payer", async () => {
+    const w = world();
+    w.store.block("server", "claude", w.clock.now + 11 * 24 * 3_600_000);
+    w.store.block("server", "codex", w.clock.now + 3_600_000);
+    w.dispatch(A);
+    w.host.turnSucceeded("thread");
+    expect(w.store.blockedUntil("server", "claude")).toBeNull();
+    // another engine's hold, and a success with no turn noted, change nothing
+    expect(w.store.blockedUntil("server", "codex")).not.toBeNull();
+    w.host.turnSucceeded("thread");
+    expect(w.store.blockedUntil("server", "codex")).not.toBeNull();
+  });
+
   it("never takes an engine this speaker may not use", async () => {
     const w = world({ allowed: ["claude", "grok"], preferred: [{ instanceId: "forbidden", model: "x" }, { instanceId: "codex" }] });
     w.dispatch();

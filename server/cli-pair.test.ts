@@ -179,7 +179,7 @@ describe("the phone-app link `openmausbot pair` prints", () => {
   const printed = () => vi.mocked(console.log).mock.calls.map(([line]) => String(line)).join("\n");
 
   it("prints the server's own invite unchanged", async () => {
-    const serverInvite = `openmausbot://pair?address=${encodeURIComponent(advertisedOrigin)}&token=${credential}&name=Miguel's%20computer`;
+    const serverInvite = `sagax://pair?address=${encodeURIComponent(advertisedOrigin)}&token=${credential}&name=Miguel's%20computer`;
     pairingResponse({ url: `${advertisedOrigin}/pair#code=${code}`, inviteUrl: serverInvite });
     expect(await runPair({ ...options, label: "Pixel" })).toBe(0);
     expect(printed()).toContain(`phone app:     ${serverInvite}\n`);
@@ -188,7 +188,7 @@ describe("the phone-app link `openmausbot pair` prints", () => {
   it("builds the invite for --public-url from the server's credential and name", async () => {
     pairingResponse({
       url: `${advertisedOrigin}/pair#code=${code}`,
-      inviteUrl: `openmausbot://pair?address=${encodeURIComponent(advertisedOrigin)}&token=${credential}&name=Miguel's%20computer`,
+      inviteUrl: `sagax://pair?address=${encodeURIComponent(advertisedOrigin)}&token=${credential}&name=Miguel's%20computer`,
     });
     expect(await runPair({ ...options, label: "Pixel", publicUrl: explicitOrigin })).toBe(0);
     expect(printed()).toContain(

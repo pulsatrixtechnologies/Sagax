@@ -27,7 +27,7 @@ export function formatDictationTime(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
-/** The chip's level bars: five, like Grok Bot's 18 px meter (2 px bars, 2 px gaps). */
+/** The chip's level bars: five, like the reference design's 18 px meter (2 px bars, 2 px gaps). */
 export const DICTATION_BARS = 5;
 
 /** Bar heights (0..1) for the last frames' loudness, newest on the right. A

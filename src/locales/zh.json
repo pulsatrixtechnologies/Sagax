@@ -1600,7 +1600,7 @@
   "onboarding.reel.automations.title": "设置好就放着不管",
   "onboarding.reel.automations.body": "把机器人放到行事历上，它就会自行运行。给外部应用程序一个 webhook 地址，机器人就会在被调用时醒来。",
   "onboarding.reel.terminal.title": "也能从终端机运行",
-  "onboarding.reel.terminal.body": "输入 npx @pulsatrixtechnologies/sagax，选一个大脑，同一个应用程序就会在你的浏览器中打开。也可以配对手机，或把它放到服务器上。",
+  "onboarding.reel.terminal.body": "在仓库副本中运行 pnpm omb，选一个大脑，同一个应用程序就会在你的浏览器中打开。也可以配对手机，或把它放到服务器上。",
   "onboarding.back": "返回",
   "onboarding.progress": "第 {current} 步，共 {total} 步",
   "onboarding.dialog": "欢迎导览",

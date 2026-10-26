@@ -1,6 +1,6 @@
 // Automatic backup when an engine's usage limit refuses a turn (port of
 // OpenMausBot #3074 "continue on the backup engine" and #2754 "when an
-// engine runs out", adapted to JC's rule of 2026-10-19: no card, the turn
+// engine runs out", adapted to the rule of 2026-10-19: no card, the turn
 // continues at once on another engine the person really has).
 //
 //   - Which engines may take over is the host's (server/limit-failover-host.ts):
@@ -169,6 +169,15 @@ export class LimitFailoverStore {
     const earlier = this.state.blocks.find((row) => row.key === key);
     if (earlier && earlier.until >= until) return;
     this.state.blocks = [...this.state.blocks.filter((row) => row.key !== key), { key, until }].slice(-MAX_ROWS);
+    this.save();
+  }
+
+  /** A turn on this engine worked for this payer: its hold ends now. */
+  unblock(payer: string, instanceId: string): void {
+    const key = LimitFailoverStore.key(payer, instanceId);
+    const kept = this.state.blocks.filter((row) => row.key !== key);
+    if (kept.length === this.state.blocks.length) return;
+    this.state.blocks = kept;
     this.save();
   }
 

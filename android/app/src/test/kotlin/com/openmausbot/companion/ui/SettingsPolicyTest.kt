@@ -50,7 +50,7 @@ class SettingsPolicyTest {
     fun `the footers name the desktop section that exists`() {
         assertEquals(
             "Removes the pairing from this phone only. To stop it reaching the computer at all, " +
-                "remove the device in OpenMausBot → Settings → Phone.",
+                "remove the device in Sagax → Settings → Phone.",
             SettingsPolicy.UNPAIR_FOOTER,
         )
         assertEquals(

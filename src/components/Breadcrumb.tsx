@@ -1,7 +1,7 @@
 // The trail above a page title in a panel that opens pages inside its own
 // window (Connect apps > Browse Bots, Connect apps > Productivity): a round
-// back button, then the pages above as links and the current one, as Grok
-// Bot's thread breadcrumb (chevron-left, a crumb per level, chevron-right
+// back button, then the pages above as links and the current one, as the reference
+// design's thread breadcrumb (chevron-left, a crumb per level, chevron-right
 // between). Escape and Cmd/Ctrl+[ go back in the panels that show it.
 import { ChevronLeft, ChevronRight } from "lucide-react";
 

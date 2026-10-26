@@ -88,12 +88,12 @@ describe("welcomeViewer", () => {
 
   it("reads an organization server's managed profile, and nothing else as one", () => {
     const session = {
-      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Jean-Christophe", email: "jc@example.test",
+      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Alex", email: "jc@example.test",
       profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.example.test/console/me",
     };
     expect(welcomeViewer(session)).toEqual({
       hosted: false, canSave: true,
-      profileManaged: { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Jean-Christophe", email: "jc@example.test" },
+      profileManaged: { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" },
     });
     // a link that is not a web page is dropped; the note stays
     expect(welcomeViewer({ ...session, profileManageUrl: "javascript:alert(1)" }).profileManaged?.url).toBeNull();

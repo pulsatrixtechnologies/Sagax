@@ -86,8 +86,8 @@ export function ThreadLink({ target, ambiguous, children }: { target: ThreadLink
 }
 
 /** Open a chat link that came from outside the app (a browser or a
- * dashboard): the canonical openmausbot://thread/<id>?bot=<id> a chat's Copy
- * link makes, or openmausbot://bot/<id> for a bot's (or a room's) current
+ * dashboard): the canonical sagax://thread/<id>?bot=<id> a chat's Copy
+ * link makes, or sagax://bot/<id> for a bot's (or a room's) current
  * conversation, which a bot's row would open (openBot). Only navigates. A
  * chat that is not here, or not the named owner's, opens nothing and says
  * so where the person can see it. */

@@ -328,7 +328,7 @@ struct DesktopSidebarMenus {
         })
         out.append(pinBot(bot))
         if gate.scope == .sidecar {
-            // Sidecar keeps Pin (Grok Bot). Electron remoteClient omits it.
+            // Sidecar keeps Pin (the reference design). Electron remoteClient omits it.
             if let move = moveBot(bot) { out.append(move) }
             out.append(DesktopMenuEntry(id: "edit-profile", title: String(localized: "Edit profile"), icon: .pencil, kind: .action {
                 model.open(.bot(bot))

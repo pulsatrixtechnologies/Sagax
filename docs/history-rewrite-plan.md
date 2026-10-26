@@ -153,7 +153,7 @@ Support asks for a short list.
 
 ## 5. Freeze / force-push sequence (operator only; not this PR)
 
-1. Cryptic warns JC. Do not start without that.
+1. Nova warns the maintainer. Do not start without that.
 2. Confirm the private mirror exists, pull refs were dropped, and
    `for-each-ref` plus the release list were saved. Confirm
    `cursor/docker-image-cves-5d72` (or a recorded absence plus the Support

@@ -104,7 +104,7 @@ describe("bundledReleaseCatalog", () => {
     expect(catalog["0.5.25"]).toMatch(/Living mascots/);
     expect(catalog["0.5.25"]).toMatch(/Your destination, your card/);
     expect(catalog["0.6.6"]).toContain("## English");
-    expect(catalog["0.6.6"]).toMatch(/brings Sagax closer to Grok Bot/);
+    expect(catalog["0.6.6"]).toMatch(/brings Sagax closer to the reference design/);
     expect(catalog["0.6.7"]).toContain("## English");
     expect(catalog["0.7.0"]).toContain("## English");
     expect(catalog["0.7.0"]).toMatch(/Sessions à distance/);

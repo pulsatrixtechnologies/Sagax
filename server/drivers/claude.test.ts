@@ -908,6 +908,18 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect((settled[0] as any).text).toBe("hello from fake claude");
   });
 
+  it("passes on a running tool's heartbeat as tool activity, so a long tool is not taken for a stall", async () => {
+    await create("tool-heartbeat");
+    await instance.adapter.sendTurn({ threadId: "t-heartbeat", text: "hi" });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const types = recorder.events.map((e) => e.type);
+    const beat = types.indexOf("item.updated");
+    expect(recorder.events[beat]).toMatchObject({ itemType: "tool" });
+    expect(beat).toBeGreaterThan(types.indexOf("item.started"));
+    expect(beat).toBeLessThan(types.lastIndexOf("item.completed"));
+  });
+
   it("turns a signed-out CLI into a setup error, not a bot reply", async () => {
     // issue #674: the CLI answers a signed-out turn with "Please run /login",
     // a command this app has no terminal to run. Relaying it as assistant
@@ -993,6 +1005,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(errors[0]).not.toHaveProperty("claudeUpdate");
     expect(recorder.events.some((event) => event.type === "item.completed" && event.itemType === "assistant_text")).toBe(false);
     expect(recorder.events.some((event) => event.type === "content.delta")).toBe(false);
+    expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "quota" });
+  });
+
+  it("settles a turn whose model's extra-usage credits ran out as quota, without holding the engine", async () => {
+    const resetsAt = Math.floor(Date.now() / 1000) + 11 * 86_400;
+    const credits = { status: "rejected", resetsAt, overageDisabledReason: "out_of_credits", isUsingOverage: false, errorCode: "credits_required" };
+    await create("usage-limit", { FAKE_CLAUDE_RATE_LIMIT: JSON.stringify(credits) });
+    await instance.adapter.sendTurn({ threadId: "t-credits", text: "continue" });
+    await recorder.until((event) => event.type === "turn.completed");
+    const errors = recorder.events.filter((event) => event.type === "runtime.error");
+    expect(errors).toEqual([expect.objectContaining({ message: claudeLimitMessage({ window: null, resetsAt, credits: true }), limitScope: "model" })]);
+    expect((errors[0] as any).message).toContain("those credits are used up");
+    expect(errors[0]).not.toHaveProperty("limitResetsAt");
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "quota" });
   });
 
@@ -2526,8 +2551,13 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     });
     expect(seen.mcpConfig.mcpServers.hosted).toMatchObject({ type: "http", url: "https://example.test/mcp" });
     expect(seen.mcpConfig.mcpServers.ogb.args).not.toContain("evil");
-    // project servers ride the broker like any custom server: never pre-allowed
-    expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).not.toContain("mcp__shop");
+    // project servers ride the broker like any custom server: never pre-allowed,
+    // only the gate's own query over held results is
+    const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1].split(",");
+    expect(allowed).not.toContain("mcp__shop");
+    expect(allowed).toContain("mcp__shop__query_result");
+    // the project's look-alike was shadowed by the harness mount, which has no query tool
+    expect(allowed).not.toContain("mcp__ogb__query_result");
   });
 
   it("mounts a bot's own MCP server behind the result gate", async () => {
@@ -2557,6 +2587,10 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.stringify(seen.argv)).not.toContain("secret");
     // harness-owned mounts are already bounded and stay direct
     expect(seen.mcpConfig.mcpServers.ogb.args[0]).not.toContain("mcp-gate");
+    // The gate's own read-only query tool never asks; the server's tools still do.
+    const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1].split(",");
+    expect(allowed).toContain("mcp__shop__query_result");
+    expect(allowed).not.toContain("mcp__shop");
   });
 
   it("pre-allows computer_select, never the tools it routes to", async () => {
@@ -2575,9 +2609,11 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await recorder.until((e) => e.type === "turn.completed");
 
     const seen = JSON.parse(readFileSync(dump, "utf8"));
-    const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1] as string;
-    expect(allowed.split(",")).toContain("mcp__sagax-computer");
+    const allowed = (seen.argv[seen.argv.indexOf("--allowedTools") + 1] as string).split(",");
+    expect(allowed).toContain("mcp__sagax-computer");
     expect(allowed).not.toContain("mcp__sagax-desktop");
+    // only the gate's own read-only query over what that server returned
+    expect(allowed.filter((name) => name.startsWith("mcp__sagax-desktop"))).toEqual(["mcp__sagax-desktop__query_result"]);
   });
 
   it("mounts bot servers directly when the result budget is turned off", async () => {
@@ -2593,6 +2629,8 @@ describe("ClaudeDriver turns (fake CLI)", () => {
 
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     expect(seen.mcpConfig.mcpServers.shop).toMatchObject({ command: "npx", args: ["shop"] });
+    // no gate, so no query tool to pre-allow
+    expect(seen.argv[seen.argv.indexOf("--allowedTools") + 1]).not.toContain("query_result");
   });
 
   it("leaves an http project server unmounted by the gate rather than mangling it", async () => {
@@ -2709,10 +2747,12 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.parse(seen.mcpConfig.mcpServers.constructor.env.SAGAX_GATE_UPSTREAM)).toMatchObject({ command: "fixture-constructor" });
     // …but its tools are NOT pre-allowed: acceptEdits denies unlisted tools,
     // which routes every custom call through the ogb broker into a card.
-    const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1];
+    const allowed = seen.argv[seen.argv.indexOf("--allowedTools") + 1].split(",");
     expect(allowed).toContain("mcp__agents");
     expect(allowed).not.toContain("mcp__notes");
     expect(allowed).not.toContain("mcp__constructor");
+    // only the gate's own query over held results is pre-allowed
+    expect(allowed.filter((name: string) => name.startsWith("mcp__notes"))).toEqual(["mcp__notes__query_result"]);
     // and its credential value stays out of argv
     expect(JSON.stringify(seen.argv)).not.toContain("tok-notes");
   });

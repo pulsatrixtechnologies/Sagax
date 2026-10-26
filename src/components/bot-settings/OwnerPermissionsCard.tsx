@@ -1,6 +1,6 @@
-// The owner's own permissions for a bot (2026-10-14, JC): the bot's
+// The owner's own permissions for a bot (2026-10-14): the bot's
 // permission mode (Approval, Automatic approval, Bypass) and the owner's
-// rules, a two-column Action / Behavior table like Grok Bot's, each row a
+// rules, a two-column Action / Behavior table like the reference design's, each row a
 // plain-language rule with edit and delete. Spec:
 // docs/superpowers/specs/2026-10-14-bot-owner-permissions.md.
 //
@@ -240,7 +240,7 @@ export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "
 
   return (
     <>
-      {/* 2026-10-16 (JC): drawn like Settings: the mode in a pill menu
+      {/* 2026-10-16: drawn like Settings: the mode in a pill menu
           with its one grey line, the rules as rows folded under their
           count once the list is long. */}
       {(leading || mode !== null) && <SettingsGroup title={groupTitle} groupId="approvals">

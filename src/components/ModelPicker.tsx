@@ -577,7 +577,7 @@ export function ModelEngineRail({ instances, selectedInstance, claudeInstance, o
         {renderGroup(t("model.rail.apiKeys"), api)}
         {renderGroup(t("model.rail.local"), local)}
         {/* Add a provider ends the rail, under every group: it opens Model
-            providers and accounts, which is more than API keys (JC,
+            providers and accounts, which is more than API keys (the maintainer,
             2026-10-16) */}
         {onAddApiKeys && (
           <button type="button" data-rail-add-api-key onClick={onAddApiKeys}
@@ -676,7 +676,7 @@ export function ModelPicker({
   windowOnly?: boolean;
   onWindowClose?: () => void;
   /** With `inComposer`: no chip. The composer's + menu has a Model row
-   * that opens this menu through `menuControl` (JC, 2026-10-18). */
+   * that opens this menu through `menuControl` (2026-10-18). */
   headless?: boolean;
   menuControl?: { current: ComposerModelMenuControl | null };
   /** The chip's label and state, for the + menu's Model row (null once unmounted). */
@@ -747,7 +747,7 @@ export function ModelPicker({
   // Organization server: only the providers offered to this person
   // (shared/offered-engines.ts, the server's answer too): one the admin hid
   // in Perspicax (allowedEngines) is listed nowhere, even once connected
-  // (2026-10-18, JC); one the organization pays for but has not given them,
+  // (2026-10-18); one the organization pays for but has not given them,
   // that nothing of their own serves, is not offered (2026-10-16).
   const offerContext = engineOfferContext(state.config, orgMode, myEngines);
   const notAllowed = (instance: InstanceInfo) => engineOffer(offerContext, instance.instanceId) === "notAllowed";
@@ -1008,7 +1008,7 @@ export function ModelPicker({
     dispatch({ type: "setModel", botId: bot.id, threadId: threadId ?? bot.threadId, updateBotDefault: false, selection: profile.modelSelection });
   };
 
-  // One mode (JC, 2026-10-09): a model chosen here runs this thread and
+  // One mode (2026-10-09): a model chosen here runs this thread and
   // becomes the bot's model, in one request (PATCH the thread with
   // updateBotDefault). Groups and new threads use the bot's model; existing
   // threads that follow the bot move with it, a thread on its own model
@@ -1196,13 +1196,13 @@ export function ModelPicker({
   const currentEngineHidden = autoOn || follows === true ? [] : selectable.filter((instance) =>
     instance.instanceId === selection.instanceId && !menuInstances.includes(instance) && !engineRuns(instance, health));
   // Models that run on this computer get their own section, whatever engine
-  // runs them (JC 2026-10-14): never mixed into "Claude" or another provider.
+  // runs them (2026-10-14): never mixed into "Claude" or another provider.
   const LOCAL_SECTION_KEY = "local:this-computer";
   // Every engine offers the same local models (DwarfStar through Claude, Grok,
   // Codex, pi...): list each model once. Rows come in engine order with the
   // bot's own engine first, so the first one kept is the engine already in use.
   // The provider prefix ("DwarfStar: ") moves to the detail and the "Local"
-  // tag goes: the section already says both (JC 2026-10-14).
+  // tag goes: the section already says both (2026-10-14).
   const uniqueLocalRows = (rows: readonly ModelMenuRow[]): ModelMenuRow[] => {
     const seen = new Map<string, ModelMenuRow>();
     for (const row of rows) {
@@ -1235,7 +1235,7 @@ export function ModelPicker({
   };
   const allSections = sectionsOf(false);
   // The composer's menu lists only the models that can run a turn now
-  // (src/lib/model-health.ts, JC 2026-10-14): a provider left with none
+  // (src/lib/model-health.ts, 2026-10-14): a provider left with none
   // goes. The model in use stays, checked, saying it does not respond.
   const menuLocalRows: ModelMenuRow[] = [];
   const menuSections: ModelMenuSection[] = [
@@ -1593,14 +1593,14 @@ export function ModelPicker({
   );
 
   // Effort applies to the model this bot runs on now (its active engine,
-  // not the provider being browsed). JC, 2026-10-14: one Effort per path.
+  // not the provider being browsed). The maintainer, 2026-10-14: one Effort per path.
   // The composer's menu has Effort › (Advanced) and the bot settings have
   // their EffortRow card, so the window keeps none.
   const effortTitle = active?.capabilities?.modelVariants ? t("model.reasoning") : t("model.effort");
 
-  // The settings of the model in use, under the composer's list (JC,
+  // The settings of the model in use, under the composer's list (the maintainer,
   // 2026-10-13, Cursor's second panel): Fast when it has a fast twin and
-  // Effort › with only the levels it takes. JC, 2026-10-14: Model › (the
+  // Effort › with only the levels it takes. The maintainer, 2026-10-14: Model › (the
   // provider submenus list the same models) and the Context line are gone.
   // On Auto the model changes per turn: only the effort stays.
   const activeOptions = active?.models.options ?? [];
@@ -1720,10 +1720,10 @@ export function ModelPicker({
     </div>
   );
 
-  // The composer's menu (2026-10-12, JC: like Cursor's): search, Auto, every
+  // The composer's menu (2026-10-12: like Cursor's): search, Auto, every
   // engine's models, the effort, and Edit… for the whole window. The
   // providers sit behind one "Provider ›" row under Auto, the bot's model
-  // and the favorites (Simple since 2026-10-14, every mode since JC
+  // and the favorites (Simple since 2026-10-14, every mode since the maintainer
   // 2026-10-18); the search still lists every provider's models flat. The
   // effort stays Advanced.
   const menuPanel = (

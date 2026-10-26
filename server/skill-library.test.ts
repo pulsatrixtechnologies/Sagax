@@ -41,7 +41,7 @@ describe("bundled skill library", () => {
   });
 
   it("loads a user skill without letting a broken sibling disable it", () => {
-    const root = mkdtempSync(join(tmpdir(), "openmausbot-skills-"));
+    const root = mkdtempSync(join(tmpdir(), "sagax-skills-"));
     const valid = join(root, "file-expense");
     mkdirSync(valid);
     writeFileSync(join(valid, "manifest.json"), JSON.stringify({
@@ -62,7 +62,7 @@ describe("bundled skill library", () => {
   });
 
   it("treats a non-directory user skill root as empty", () => {
-    const root = mkdtempSync(join(tmpdir(), "openmausbot-skills-root-"));
+    const root = mkdtempSync(join(tmpdir(), "sagax-skills-root-"));
     const file = join(root, "not-a-directory");
     writeFileSync(file, "nope");
     expect(loadUserSkills(file)).toEqual([]);

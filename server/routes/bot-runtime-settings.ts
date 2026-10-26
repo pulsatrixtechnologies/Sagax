@@ -1,4 +1,4 @@
-// A bot's own runtime settings and tool access (JC 2026-10-15), edited in the
+// A bot's own runtime settings and tool access (2026-10-15), edited in the
 // bot editor instead of Settings > General > Advanced
 // (server/bot-runtime-settings.ts says what each field does).
 //

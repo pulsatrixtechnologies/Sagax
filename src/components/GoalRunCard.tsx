@@ -1,5 +1,5 @@
 // The goal.run card of a room's transcript (/goal), laid out like Grok
-// Build's goal status and grouped like Grok Bot's task cards (JC,
+// Build's goal status and grouped like the reference design's task cards (the maintainer,
 // 2026-10-16):
 //
 // - one compact card: status, the goal, turns against the budget, the last

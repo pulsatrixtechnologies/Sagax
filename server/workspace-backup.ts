@@ -6,7 +6,7 @@ import {
   fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync,
   readSync, realpathSync, renameSync, rmSync, writeFileSync, writeSync,
 } from "node:fs";
-import { isAbsolute, join, parse, posix, relative, resolve, win32 } from "node:path";
+import { isAbsolute, join, parse, posix, relative, resolve, sep, win32 } from "node:path";
 import { homedir } from "node:os";
 import { backup, DatabaseSync } from "node:sqlite";
 import { pipeline } from "node:stream/promises";
@@ -65,7 +65,7 @@ const EXCLUDED = new Set([
   // machine's own, kept in place by a restore, which settles what it brought.
   "cloud-owner.json",
 ]);
-// JC 2026-10-18 15:55 « Exclure tout » (workspace-backup-policy.ts savedSignInPath)
+// 2026-10-18 15:55 « Exclure tout » (workspace-backup-policy.ts savedSignInPath)
 const NO_SECRET_NOTE = "No secret is included: engine sign-ins and API keys, provider keys, personal connections, the credential vault, MCP sign-ins, headers and environment values, GitHub tokens, cloud agent keys, trigger secrets, phone push registrations and signing keys. Settings are included. After a restore, reconnect what the reconnect list names; this device keeps its own.";
 const EXCLUSION_NOTES = [
   "Device pairing, server identity, live leases and runtime files (existing destination identities are preserved).",
@@ -576,6 +576,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
   let skippedLinks = 0;
   let skippedDependencies = 0;
   let skippedWorkLinks = 0;
+  let copiedLinks = 0;
   let skippedEngineStores = 0;
   let skippedEngineSettings = 0;
   // what the reconnect list names, by category (counts only)
@@ -616,13 +617,13 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
       if (name === "messages.db") confidentialAttachments = stripConfidentialMessages(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
       if (name === "runtime.db") stripConfidentialRuntime(join(snapshot, snapshotName), new Set(confidential.keys()), forgotten);
     }
-    const walk = (directory: string, prefix = "") => {
+    const walk = (directory: string, prefix = "", chain: string[] = [root]) => {
       for (const name of readdirSync(directory).sort()) {
         if (!prefix && excluded(name)) { reconnect.path(name); continue; }
         const path = prefix ? `${prefix}/${name}` : name;
         if (excludedWorkspaceAuthPath(path)) { reconnect.path(path); continue; }
         if (ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path) || confidentialDataScopePath(path)) continue;
-        // no secret in a backup (JC 2026-10-18 « Exclure tout »): an engine's
+        // no secret in a backup (2026-10-18, « Exclure tout »): an engine's
         // saved sign-in, a person's sealed stores, the workspace's keys, the
         // phones' push registrations; whoever restores reconnects them
         if (savedSignInPath(path)) { tallySecret(reconnect, join(directory, name), path); continue; }
@@ -633,8 +634,8 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
         if (confidentialBackupPath(path, confidential, confidentialAttachments)) continue;
         if (confidentialEngineSessionPath(path, engineKeys)) continue;
         if (!validRelative(path)) throw new Error("A workspace filename cannot be safely restored on supported platforms.");
-        const source = join(directory, name);
-        const stat = lstatSync(source);
+        let source = join(directory, name);
+        let stat = lstatSync(source);
         // an engine database is copied as a scrubbed snapshot (below), which
         // already holds what its journal committed
         const sidecarOf = engineKeys.size || forgotten ? databaseSidecarOf(path) : null;
@@ -661,21 +662,33 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
           if (rel === ".." || rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) || isAbsolute(rel)) {
             throw new Error(`Cannot back up symbolic link outside the workspace: ${path}`);
           }
+          const portableRel = rel.replaceAll("\\", "/");
           // Only the app's disposable native-discovery links may be omitted.
-          // An arbitrary user link represents user data, even inside the root.
-          if (!/^workspaces\/[^/]+\/\.(?:claude|agents|grok)\/skills\/[^/]+$/.test(path) ||
-            !rel.replaceAll("\\", "/").startsWith(`workspaces/${path.split("/")[1]}/skills/`)) {
+          if (/^workspaces\/[^/]+\/\.(?:claude|agents|grok)\/skills\/[^/]+$/.test(path) &&
+            portableRel.startsWith(`workspaces/${path.split("/")[1]}/skills/`)) {
+            skippedLinks++;
+            continue;
+          }
+          // A link a person made to something inside the same workspace is user
+          // data: save what it points to. A link to another workspace, or to a
+          // folder that contains it, is still refused.
+          const workspace = /^workspaces\/[^/]+\//.exec(path)?.[0];
+          if (!workspace || !portableRel.startsWith(workspace)) {
             throw new Error(`Cannot back up user-created symbolic link; replace it with regular files first: ${path}`);
           }
-          skippedLinks++;
-          continue;
+          if (chain.some((folder) => folder === target || folder.startsWith(`${target}${sep}`))) {
+            throw new Error(`Cannot back up a symbolic link to the folder that contains it: ${path}`);
+          }
+          source = target;
+          stat = lstatSync(source);
+          copiedLinks++;
         }
         if (entries.length >= MAX_WORKSPACE_BACKUP_FILES) throw new Error("The workspace exceeds the 100,000-entry backup limit.");
         const destination = join(snapshot, "data", path);
         if (stat.isDirectory()) {
           folder(destination);
           entries.push({ path, type: "directory", size: 0, mode: 0o700 });
-          walk(source, path);
+          walk(source, path, [...chain, source]);
         } else if (stat.isFile()) {
           let copied: { size: number; mode: number; sha256: string };
           // an engine home's own stores (server/engine-transcripts.ts): its
@@ -765,6 +778,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
     if (skippedDependencies) warnings.push(`${skippedDependencies} installed dependency folder(s) (node_modules) were omitted; reinstall them in the project after restoring.`);
     if (skippedEngineStores) warnings.push(`${skippedEngineStores} engine history, log or database file(s) could not be copied without a confidential thread's entries and were omitted.`);
     if (skippedEngineSettings) warnings.push(`${skippedEngineSettings} engine settings file(s) could not be copied without their sign-in and were omitted.`);
+    if (copiedLinks) warnings.push(`${copiedLinks} symbolic link(s) inside a workspace were saved as copies of what they point to; restoring creates regular files and folders there.`);
     if (skippedWorkLinks) warnings.push(`${skippedWorkLinks} symbolic link(s) in conversation work folders were omitted; what they point to is outside this backup.`);
     const summary: WorkspaceBackupSummary = {
       format: "openmaus.workspace-backup", version: 1, id: job.id, createdAt: new Date().toISOString(),

@@ -1,4 +1,4 @@
-// A voice note the person records in the composer (Grok Bot's "Record a
+// A voice note the person records in the composer (the reference design's "Record a
 // voice message"). The clip is a 16 kHz mono WAV uploaded through the
 // ordinary attachment store (`/api/files`), so it travels as an
 // `<attached-file>` like any audio file. The words go through the same

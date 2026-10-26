@@ -46,7 +46,7 @@ export const DEFAULT_MCP_CALL_TIMEOUT_MINUTES = 10;
 export const MIN_MCP_CALL_TIMEOUT_MINUTES = 1;
 export const MAX_MCP_CALL_TIMEOUT_MINUTES = 60;
 export const DEFAULT_MAX_CONCURRENT_BOT_THREADS = 3;
-export const MAX_CONCURRENT_BOT_THREADS = 10;
+export const MAX_CONCURRENT_BOT_THREADS = 16;
 /** Bounds for threads.eventLogMaxBytes: the floor keeps the kept tail large
  * enough to still serve the event inspector's recent-line window; the
  * ceiling just rejects absurd hand edits. */
@@ -455,12 +455,12 @@ const appConfigSchema = z.object({
      * (server/org-full-access.ts). Absent means allowed; an admin turns it
      * off in Settings > Organization. */
     allowFullAccess: z.boolean().optional(),
-    /** 2026-10-16 (JC): a bot a member owns runs its commands in its owner's
+    /** 2026-10-16: a bot a member owns runs its commands in its owner's
      * own isolated environment (their server environment, their Local VM)
      * without an approval card (server/member-environment.ts). Absent means
      * on; an admin turns it off in Settings > Organization. */
     memberEnvironmentAutonomy: z.boolean().optional(),
-    /** 2026-10-16 (JC): new threads start confidential unless the person
+    /** 2026-10-16: new threads start confidential unless the person
      * says otherwise (server/confidential-threads.ts). Absent means off; an
      * admin turns it on in Settings > Organization. */
     confidentialThreadsByDefault: z.boolean().optional(),
@@ -1302,7 +1302,7 @@ export type GrokVoiceKeyFold = "moved" | "dropped" | null;
 
 export function grokVoiceKeyFoldMessage(fold: Exclude<GrokVoiceKeyFold, null>): string {
   return fold === "moved"
-    ? "[config] the Grok voice key is now the xAI key (Grok voice and Grok bots share one key)"
+    ? "[config] the Grok voice key is now the xAI key (Grok voice and bots on Grok share one key)"
     : "[config] Grok voice key not kept: an xAI key is already saved and Grok voice uses it";
 }
 

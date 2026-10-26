@@ -11,11 +11,13 @@
 export interface SseFanoutClient {
   res: {
     write(chunk: string): boolean;
-    end(): void;
     writableLength: number;
     once(event: "drain", listener: () => void): unknown;
   };
   backpressured: boolean;
+  /** The client's one, idempotent way out: it leaves the fan-out and stops
+   * the heartbeat before the response ends (openSseHeartbeat). */
+  close(): void;
 }
 
 /** Past this many buffered bytes, the client isn't draining on any useful
@@ -39,11 +41,7 @@ export type SseFanoutOutcome = "sent" | "dropped" | "disconnected";
  * missed instead of silently losing it. */
 export function deliverSseFrame(client: SseFanoutClient, kind: string, frame: string): SseFanoutOutcome {
   if (client.res.writableLength > SSE_MAX_BUFFERED_BYTES) {
-    try {
-      client.res.end();
-    } catch {
-      /* already gone */
-    }
+    client.close();
     return "disconnected";
   }
   if (client.backpressured && kind === "screen") return "dropped";
@@ -64,4 +62,56 @@ export function deliverSseFrame(client: SseFanoutClient, kind: string, frame: st
   } catch {
     return "disconnected";
   }
+}
+
+/** What the heartbeat needs from a response (a ServerResponse in practice). */
+export interface SseHeartbeatStream {
+  write(chunk: string): boolean;
+  end(): void;
+  writableEnded: boolean;
+  destroyed: boolean;
+  on(event: "error", listener: (error: Error) => void): unknown;
+}
+
+const SSE_HEARTBEAT_FRAME = `: keepalive\n\ndata: ${JSON.stringify({ kind: "ping" })}\n\n`;
+
+/** Heartbeat `res` every `everyMs` while `live()` holds; `onBeat` runs after
+ * each frame written. The returned close stops the heartbeat and runs
+ * `onClose` once, before the response ends; it also runs by itself when the
+ * response ends, errors, or stops being live.
+ *
+ * Node reports a failed write (one after end(), say) as an asynchronous
+ * `error` event on the response. Without a listener that event is an
+ * uncaught exception and the whole server exits, so the stream listens for
+ * it here, once, and treats it as the end of the stream. */
+export function openSseHeartbeat(
+  res: SseHeartbeatStream,
+  options: { everyMs: number; live: () => boolean; onClose: () => void; onBeat?: () => void },
+): () => void {
+  let open = true;
+  const close = () => {
+    if (!open) return;
+    open = false;
+    clearInterval(timer);
+    options.onClose();
+    if (!res.writableEnded && !res.destroyed) {
+      try {
+        res.end();
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+  const timer = setInterval(() => {
+    if (res.writableEnded || res.destroyed || !options.live()) return close();
+    try {
+      res.write(SSE_HEARTBEAT_FRAME);
+      options.onBeat?.();
+    } catch {
+      close();
+    }
+  }, options.everyMs);
+  timer.unref?.();
+  res.on("error", close);
+  return close;
 }

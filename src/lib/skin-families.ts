@@ -1,4 +1,4 @@
-// Skin families (JC, 2026-10-19): "chaque skin devrait avoir ses propres
+// Skin families (2026-10-19): "chaque skin devrait avoir ses propres
 // variantes au lieu d'avoir des skins très proches visuellement". The twelve
 // skins of src/lib/skins.ts are grouped into a few families, each with its
 // own identity (type, radii, how the rail and the bubbles are drawn); the
@@ -13,7 +13,7 @@
 // system. A family, a variant and a mode are therefore always derived from
 // the worn skin, so every saved choice, old or new, maps to itself.
 //
-// Colour variants (JC, 2026-10-19): « des variantes pour chacun : la couleur de
+// Colour variants (2026-10-19): « des variantes pour chacun : la couleur de
 // base, rouge, rose, bleu, vert, jaune ; pour Hibou 98, Windows XP, Vista, 7,
 // 8, 8.1, 10 et 11 ». A variant is now a base skin plus an optional TINT:
 // `data-skin` keeps the base skin's id (so the Windows caption overlay, the
@@ -34,7 +34,7 @@ export type SkinFamilyId = (typeof SKIN_FAMILY_IDS)[number];
 
 /** The colours laid over the Pulsatrix, Studio and Atelier families. */
 export const SKIN_COLOR_TINTS = ["red", "pink", "blue", "green", "yellow"] as const;
-/** Two-colour gradients over the same families (JC, 2026-10-19: « des variantes plus complexes »). */
+/** Two-colour gradients over the same families (2026-10-19: « des variantes plus complexes »). */
 export const SKIN_DUO_TINTS = ["aurore", "ocean", "neon", "foret"] as const;
 /** Themed moods: a whole palette, its gradients and its own glow over the family's shapes. */
 export const SKIN_AMBIANCE_TINTS = ["cyberpunk", "sunset", "nordic", "candy"] as const;
@@ -115,7 +115,7 @@ export const SKIN_FAMILIES: readonly SkinFamily[] = [
   // Perspicax's own look: Geist, navy chrome, the soft glow from the top. Its
   // own colour is already blue, so it has no separate Blue variant.
   { id: "pulsatrix", name: "Pulsatrix", variants: colorVariants("pulsatrix-light", "pulsatrix", ["blue"]) },
-  // Grok Bot's flat neutral look: Inter, monochrome buttons, inverted bubbles in light.
+  // The reference design's flat neutral look: Inter, monochrome buttons, inverted bubbles in light.
   { id: "studio", name: "Studio", variants: colorVariants("daylight", "midnight") },
   // Paper: a tinted ground where surfaces get brighter as they rise.
   { id: "atelier", name: "Atelier", variants: colorVariants("atelier", "foundry") },

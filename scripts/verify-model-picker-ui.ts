@@ -88,7 +88,7 @@ try {
         if (path === "/api/instances" && req.method === "GET") return json({ instances });
         if (path?.startsWith("/api/instances/")) return json({ instances });
         // The preview bot lives only in the page: its model changes are accepted and dropped.
-        if (path?.startsWith("/api/bots/preview-cryptic")) {
+        if (path?.startsWith("/api/bots/preview-quasar")) {
           void drain(req).then(() => json({ ok: true }));
           return;
         }

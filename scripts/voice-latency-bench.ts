@@ -495,7 +495,7 @@ const ESTABLISH = new Set(["session/load", "session/resume", "session/new"]);
 
 export type RealBenchQuestion = { text: string; lang: "en" | "fr" };
 
-/** 20 real turns: English and Québec French, short and long. Cryptic: no
+/** 20 real turns: English and Québec French, short and long. Quasar: no
  * p50 claim from fewer than 20. */
 export const REAL_QUESTIONS: RealBenchQuestion[] = [
   { text: "What time is it?", lang: "en" },

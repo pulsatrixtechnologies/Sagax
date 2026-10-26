@@ -1,6 +1,6 @@
 // Memory guard for the engine processes a server keeps.
 //
-// Incident 2026-10-19 (GOX organization server, 5 GiB container): the kernel
+// Incident 2026-10-19 (an organization server, 5 GiB container): the kernel
 // OOM-killed the container four times in three hours. The kernel's task
 // lists at each kill read the same: 11 to 15 `claude` CLIs (about 125 MiB
 // anonymous each) and 133 to 174 small Node processes (about 21 MiB each:
@@ -13,7 +13,7 @@
 // The kernel then picked the largest single process, the server, and every
 // session, turn and routine of the organization went with it.
 //
-// Three guards, none of which ever stops a turn that is running:
+// Four guards, none of which ever stops a turn that is running:
 //   1. IdleEnginePool: at most `maxIdle` finished sessions stay warm; the
 //      oldest idle one is closed when another finishes (LRU).
 //   2. MemoryWatch: reads the container's cgroup every `intervalMs`. At the
@@ -23,6 +23,15 @@
 //   3. Child OOM priority: engine processes and their descendants get a
 //      raised oom_score_adj, so a kernel OOM kill takes one engine (one
 //      turn) instead of the server.
+//   4. Bots' browsers (EngineBrowsers): a bot's browser (agent-browser's
+//      daemon and its Chrome, 270 to 390 MB on a page or two) runs outside
+//      the engine and starts during the turn, after the reading that let the
+//      turn in. A routine turn whose bot will start one waits until its
+//      BROWSER_BYTES fit below the critical mark on top of the browsers
+//      already starting, so a burst of browser bots starts one after another
+//      instead of all at once. An idle engine closed for memory closes its
+//      bot's browser too once nothing uses it, and a kernel OOM kill closes
+//      every browser nothing uses.
 //
 // Env: SAGAX_MAX_IDLE_ENGINE_SESSIONS (default 4 on Linux, unbounded
 // elsewhere; 0 = close each session as its turn ends), SAGAX_MEMORY_WATCH_MS (default 15000, 0 = off),
@@ -30,6 +39,25 @@
 // SAGAX_CHILD_OOM_SCORE_ADJ (default 500, 0 = off; Linux only).
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+
+/** One bot's browser (agent-browser's daemon and its Chrome) on a page or
+ * two: 270 to 390 MB per bot, measured on an 8 GB server. It runs outside the
+ * engine's process tree as the cgroup sees it start, so a turn's admission
+ * holds this much for it until it has run a while. */
+export const BROWSER_BYTES = 400 * 1024 * 1024;
+/** A browser's share is held at most this long after its turn was let in,
+ * and this long once it runs (it grows as it loads its first pages). */
+const BROWSER_RESERVE_MS = 90_000, BROWSER_SETTLED_MS = 30_000;
+
+/** The bots' browsers, which start during a turn rather than with its engine. */
+export interface EngineBrowsers {
+  /** Whether this thread's bot may browse and its browser is not running yet. */
+  starts(threadId: string): boolean;
+  /** This thread's engine was closed for memory: its browser can close too once no turn holds it. */
+  stopped(threadId: string): void;
+  /** Close every browser no turn, call, person or view uses. Resolves to how many closed. */
+  closeUnused(): Promise<number>;
+}
 
 export type MemoryLevel = "ok" | "high" | "critical" | "unknown";
 
@@ -163,13 +191,18 @@ export class IdleEnginePool {
 
   /** Close every idle process (memory pressure). Returns how many. */
   releaseAll(why: string): number {
+    return this.releaseIdle(why).length;
+  }
+
+  /** Close every idle process (memory pressure). Returns their threads. */
+  releaseIdle(why: string): string[] {
     this.prune();
-    let closed = 0;
+    const closed: string[] = [];
     for (const threadId of Array.from(this.idle.keys())) {
       if (this.exempt(threadId)) continue;
-      if (this.evict(threadId)) closed += 1;
+      if (this.evict(threadId)) closed.push(threadId);
     }
-    if (closed) this.log(`[memory] closed ${closed} idle engine session(s): ${why}`);
+    if (closed.length) this.log(`[memory] closed ${closed.length} idle engine session(s): ${why}`);
     return closed;
   }
 
@@ -293,6 +326,8 @@ export interface MemoryWatchOptions {
   sweep?: (adj: number) => number;
   /** Live engine processes, for the summary line. */
   liveEngines?: () => number;
+  /** The bots' browsers; useBrowsers() can set them later. */
+  browsers?: EngineBrowsers;
   summaryEveryMs?: number;
   now?: () => number;
   log?: (line: string) => void;
@@ -302,13 +337,16 @@ export interface MemoryWatchOptions {
 const MIB = 1024 * 1024;
 
 export class MemoryWatch {
-  private readonly options: Required<Omit<MemoryWatchOptions, "liveEngines">> & Pick<MemoryWatchOptions, "liveEngines">;
+  private readonly options: Required<Omit<MemoryWatchOptions, "liveEngines" | "browsers">> & Pick<MemoryWatchOptions, "liveEngines">;
   private timer: ReturnType<typeof setInterval> | null = null;
   private level: MemoryLevel = "unknown";
   private last: CgroupMemory | null = null;
   private lastSummary = 0;
   private lastOomKills: number | null = null;
-  private waiters: Array<() => void> = [];
+  private waiters: Array<{ threadId?: string; admit: () => void }> = [];
+  private browsers: EngineBrowsers | null = null;
+  /** Threads let in to start a browser: when, and since when it runs. */
+  private readonly browserReserved = new Map<string, { at: number; since?: number }>();
 
   constructor(options: MemoryWatchOptions) {
     this.options = {
@@ -320,6 +358,11 @@ export class MemoryWatch {
       warn: (line) => console.error(line),
       ...options,
     };
+    this.browsers = options.browsers ?? null;
+  }
+
+  useBrowsers(browsers: EngineBrowsers): void {
+    this.browsers = browsers;
   }
 
   start(): void {
@@ -333,7 +376,7 @@ export class MemoryWatch {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.flushWaiters();
+    for (const waiter of this.waiters.splice(0)) waiter.admit();
   }
 
   /** One reading; exported for tests and for a check before a spawn. */
@@ -353,10 +396,14 @@ export class MemoryWatch {
     if (memory?.oomKills != null) {
       if (this.lastOomKills !== null && memory.oomKills > this.lastOomKills) {
         this.options.warn(`[memory] ALERT kernel OOM-killed ${memory.oomKills - this.lastOomKills} process(es) in this container (${this.describe()})`);
+        // The killed engine's browser no longer has a turn: every browser nothing uses closes.
+        void this.browsers?.closeUnused().catch(() => 0);
       }
       this.lastOomKills = memory.oomKills;
     }
-    if (next === "high" || next === "critical") this.options.pool.releaseAll(`memory ${next} (${this.describe()})`);
+    if (next === "high" || next === "critical") {
+      for (const threadId of this.options.pool.releaseIdle(`memory ${next} (${this.describe()})`)) this.browsers?.stopped(threadId);
+    }
     if (next === "critical" && previous !== "critical") {
       this.options.warn(`[memory] ALERT critical: ${this.describe()}; idle engines closed, new routine turns held`);
     } else if (next === "high" && previous === "ok") {
@@ -364,7 +411,7 @@ export class MemoryWatch {
     } else if (next === "ok" && (previous === "high" || previous === "critical")) {
       this.options.log(`[memory] back to normal: ${this.describe()}`);
     }
-    if (next !== "critical") this.flushWaiters();
+    this.admitWaiters();
     const now = this.options.now();
     if (memory && now - this.lastSummary >= this.options.summaryEveryMs) {
       this.lastSummary = now;
@@ -391,24 +438,84 @@ export class MemoryWatch {
   /** Resolves once memory is below the critical mark, or after `maxWaitMs`
    * (a stuck reading must never hold work forever). */
   whenBelowCritical(maxWaitMs: number): Promise<void> {
-    if (this.level !== "critical" || !this.timer) return Promise.resolve();
+    return this.whenRoom(undefined, maxWaitMs);
+  }
+
+  /** Resolves once this thread's turn fits: memory below the critical mark
+   * and, when its bot will start a browser, BROWSER_BYTES more on top of the
+   * browsers still starting stays below it too. First come, first let in; after
+   * `maxWaitMs` it starts anyway (a stuck reading must never hold work forever). */
+  whenRoom(threadId: string | undefined, maxWaitMs: number): Promise<void> {
+    if (!this.timer) return Promise.resolve();
+    // A turn that starts no browser never queues behind one that does.
+    if (this.room(threadId) && (!this.startsBrowser(threadId) || !this.waiters.some((w) => this.startsBrowser(w.threadId)))) {
+      this.reserveBrowser(threadId);
+      return Promise.resolve();
+    }
     return new Promise((resolve) => {
-      const done = () => {
-        clearTimeout(timer);
-        this.waiters = this.waiters.filter((w) => w !== done);
-        resolve();
+      const waiter = {
+        threadId,
+        admit: () => {
+          clearTimeout(timer);
+          this.waiters = this.waiters.filter((w) => w !== waiter);
+          resolve();
+        },
       };
       const timer = setTimeout(() => {
         this.options.warn(`[memory] a routine waited ${Math.round(maxWaitMs / 60_000)} min for memory and starts anyway (${this.describe()})`);
-        done();
+        this.reserveBrowser(threadId);
+        waiter.admit();
       }, Math.max(0, maxWaitMs));
       timer.unref?.();
-      this.waiters.push(done);
+      this.waiters.push(waiter);
     });
   }
 
-  private flushWaiters(): void {
-    for (const waiter of this.waiters.splice(0)) waiter();
+  /** Bytes held for browsers let in that have not settled yet. */
+  browserHeldBytes(): number {
+    const at = this.options.now();
+    let held = 0;
+    for (const [threadId, reserved] of this.browserReserved) {
+      if (at - reserved.at >= BROWSER_RESERVE_MS) { this.browserReserved.delete(threadId); continue; }
+      if (this.browsers?.starts(threadId) === false) reserved.since ??= at;
+      if (reserved.since !== undefined && at - reserved.since >= BROWSER_SETTLED_MS) { this.browserReserved.delete(threadId); continue; }
+      held += BROWSER_BYTES;
+    }
+    return held;
+  }
+
+  private startsBrowser(threadId: string | undefined): boolean {
+    if (threadId === undefined || !this.browsers) return false;
+    try { return this.browsers.starts(threadId); } catch { return false; }
+  }
+
+  private room(threadId: string | undefined): boolean {
+    if (this.level === "critical") return false;
+    if (!this.startsBrowser(threadId)) return true;
+    const memory = this.last;
+    if (!memory?.max) return true;
+    return memory.current + this.browserHeldBytes() + BROWSER_BYTES < memory.max * this.options.criticalRatio;
+  }
+
+  private reserveBrowser(threadId: string | undefined): void {
+    if (threadId !== undefined && this.startsBrowser(threadId)) this.browserReserved.set(threadId, { at: this.options.now() });
+  }
+
+  /** Let waiters in below the critical mark. Browser starts go oldest first
+   * while each one fits: one that does not holds the browser starts behind it,
+   * so a burst starts one after another. A turn with no browser to start goes. */
+  private admitWaiters(): void {
+    let browserHeld = false;
+    // admit() replaces this.waiters with a new array: this loop reads the one it started on.
+    for (const waiter of this.waiters) {
+      if (this.level === "critical") return;
+      if (this.startsBrowser(waiter.threadId)) {
+        if (browserHeld) continue;
+        if (!this.room(waiter.threadId)) { browserHeld = true; continue; }
+        this.reserveBrowser(waiter.threadId);
+      }
+      waiter.admit();
+    }
   }
 
   private describe(): string {
@@ -417,8 +524,9 @@ export class MemoryWatch {
     const pct = m.max ? ` (${Math.round((m.current / m.max) * 100)}%)` : "";
     const peak = m.peak ? `, peak ${Math.round(m.peak / MIB)} MiB` : "";
     const live = this.options.liveEngines ? `, engines running ${this.options.liveEngines()}` : "";
+    const starting = this.browserReserved.size ? `, browsers starting ${this.browserReserved.size}` : "";
     const pool = this.options.pool.stats();
-    return `used ${Math.round(m.current / MIB)}/${m.max ? Math.round(m.max / MIB) : "unlimited"} MiB${pct}${peak}${live}, idle warm ${pool.idle}/${pool.maxIdle}`;
+    return `used ${Math.round(m.current / MIB)}/${m.max ? Math.round(m.max / MIB) : "unlimited"} MiB${pct}${peak}${live}${starting}, idle warm ${pool.idle}/${pool.maxIdle}`;
   }
 }
 

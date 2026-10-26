@@ -1,4 +1,4 @@
-// Allowed recipients (parité Grok Bot X3, JC 2026-10-21): the people and bots
+// Allowed recipients (parité avec la référence X3, 2026-10-21): the people and bots
 // this bot writes to without a card. An email address, a phone number
 // (Messages, texts) or another of the person's bots. Anyone else keeps the
 // card. Saved on the bot (`allowedRecipients`, shared/allowed-recipients.ts);

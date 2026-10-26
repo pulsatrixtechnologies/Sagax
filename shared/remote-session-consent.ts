@@ -6,10 +6,10 @@
 // its validation, and whether it is still active. It keeps no secret: the
 // control node key the agent binds to is referenced by presence only, never
 // shown. Loi 25: the deploying organization is the data controller and informs
-// its own users; Sagax / GOX is the processor.
+// its own users; Sagax is the processor.
 
 /** How long unattended access lasts by default before it must be renewed.
- * Never infinite by default (JC). */
+ * Never infinite by default. */
 export const DEFAULT_UNATTENDED_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** The furthest ahead an expiry may be set at install: two years. */
