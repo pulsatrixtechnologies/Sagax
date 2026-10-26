@@ -3,13 +3,14 @@ import { cn } from "@/lib/cn";
 import { nextCronRuns, type RoutineCronSchedule } from "../../../shared/routine-schedule";
 import type { CronChoice, CronDraft } from "./cron-editor";
 
+import { activeLocale } from "@/lib/i18n";
 const fieldClass = "min-w-0 rounded-lg border border-hairline/50 bg-inset px-3 py-2 text-[12.5px] text-ink outline-none focus:border-accent [color-scheme:dark]";
 const MONTHS = Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2024, index, 1))));
 const TIME_ZONES = ["UTC", ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [])];
 
 export function CronRunDates({ runs, timeZone, paused = false }: { runs: number[]; timeZone: string; paused?: boolean }) {
   if (!runs.length) return null;
-  const format = new Intl.DateTimeFormat(undefined, { timeZone, weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  const format = new Intl.DateTimeFormat(activeLocale(), { timeZone, weekday: "short", year: "numeric", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   return <div className="space-y-1 text-[11px] leading-relaxed text-ink-secondary" aria-label={paused ? "Paused schedule preview" : "Next scheduled runs"}>
     <div className="font-medium">{paused ? "Paused — schedule preview" : "Next runs"} · {timeZone}</div>
     {runs.map((at) => <div key={at}><time dateTime={new Date(at).toISOString()}>{format.format(at)}</time></div>)}

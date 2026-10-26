@@ -3,7 +3,7 @@ import { Download, Loader2, Upload } from "lucide-react";
 import { WORKSPACE_BACKUP_RECONNECT, type WorkspaceBackupReconnect, type WorkspaceBackupSummary } from "../../shared/workspace-backup";
 import { api, useStore } from "@/state/store";
 import { canManageBackups } from "@/lib/viewer";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { DANGER_PILL, DescribedRow, HelpTip, PILL, SettingsGroup } from "./SettingsPrimitives";
 import { applyWorkspaceClientState, collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
 
@@ -57,7 +57,7 @@ export function WorkspaceBackupSummaryView({ summary }: { summary: WorkspaceBack
   return <div className="rounded-lg border border-hairline/50 bg-inset p-3">
     <h3 className="text-[14px] font-medium text-ink">{t("backup.preview")}</h3>
     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px]">
-      <dt className="text-ink-secondary">{t("backup.date")}</dt><dd className="break-words text-ink">{new Date(summary.createdAt).toLocaleString()}</dd>
+      <dt className="text-ink-secondary">{t("backup.date")}</dt><dd className="break-words text-ink">{new Date(summary.createdAt).toLocaleString(activeLocale())}</dd>
       <dt className="text-ink-secondary">{t("backup.version")}</dt><dd className="text-ink">{summary.appVersion}</dd>
       <dt className="text-ink-secondary">{t("backup.bots")}</dt><dd className="text-ink">{summary.bots}</dd>
       <dt className="text-ink-secondary">{t("backup.groups")}</dt><dd className="text-ink">{summary.groups}</dd>

@@ -10,3 +10,19 @@ export function personLanguage(preference: unknown, serverDefault: string | unde
   if (typeof preference === "string" && preference.trim()) return preference.trim();
   return serverDefault ?? "";
 }
+
+/** The language of a person named by id: their saved `omb-language`, read
+ * through `preferences`, else the server default. A store that throws or a
+ * missing person gives the default too. Used for a push and for the rule
+ * text after "Always allow", which a phone shows as the server sent it. */
+export function personLanguageOf(
+  person: string | null | undefined,
+  preferences: (person: string) => Record<string, unknown> | undefined,
+  serverDefault: string | undefined,
+): string {
+  let preference: unknown;
+  try {
+    if (person) preference = preferences(person)?.["omb-language"];
+  } catch { /* the server default */ }
+  return personLanguage(preference, serverDefault);
+}

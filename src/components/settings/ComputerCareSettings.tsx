@@ -70,7 +70,7 @@ function whenLabel(at: number): string {
   try {
     return new Intl.DateTimeFormat(activeLocale(), { weekday: "long", hour: "numeric", minute: "2-digit", day: "numeric", month: "short" }).format(new Date(at));
   } catch {
-    return new Date(at).toLocaleString();
+    return new Date(at).toLocaleString(activeLocale());
   }
 }
 

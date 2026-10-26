@@ -11,6 +11,7 @@ import { scheduleLabel } from "@/lib/schedule-label";
 import { api, ApiError, useStore, type Bot } from "@/state/store";
 import { RoutineEditor } from "./RoutinesPage";
 
+import { activeLocale } from "@/lib/i18n";
 function viewerAddress(raw: unknown): string {
   if (typeof raw !== "string" || !raw) throw new Error("The host did not return a live desktop link");
   if (raw.startsWith("/vps-viewer/")) return new URL(raw, window.location.origin).toString();
@@ -20,7 +21,7 @@ function viewerAddress(raw: unknown): string {
 function routineScheduleLabel(routine: Routine) {
   if (routine.schedule.type === "cron") return scheduleLabel(routine.schedule);
   if (routine.schedule.type === "once") {
-    return new Date(routine.schedule.at).toLocaleString([], {
+    return new Date(routine.schedule.at).toLocaleString(activeLocale(), {
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -33,7 +34,7 @@ function routineScheduleLabel(routine: Routine) {
     const cadence = routine.schedule.everyMinutes % 60 === 0
       ? `Every ${routine.schedule.everyMinutes / 60} hr`
       : `Every ${routine.schedule.everyMinutes} min`;
-    return `${cadence} · starting ${new Date(routine.schedule.anchorAt).toLocaleString([], {
+    return `${cadence} · starting ${new Date(routine.schedule.anchorAt).toLocaleString(activeLocale(), {
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -48,7 +49,7 @@ function routineScheduleLabel(routine: Routine) {
         ? "Weekdays"
         : days.map((day) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day]).join(", ");
   const [hour, minute] = routine.schedule.time.split(":").map(Number);
-  return `${cadence} · ${new Date(2000, 0, 1, hour, minute).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  return `${cadence} · ${new Date(2000, 0, 1, hour, minute).toLocaleTimeString(activeLocale(), { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function nextRunLabel(at: number | null) {
@@ -56,7 +57,7 @@ function nextRunLabel(at: number | null) {
   const date = new Date(at);
   const today = new Date();
   const sameDay = date.toDateString() === today.toDateString();
-  return `${sameDay ? "Today" : date.toLocaleDateString([], { month: "short", day: "numeric" })}, ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  return `${sameDay ? "Today" : date.toLocaleDateString(activeLocale(), { month: "short", day: "numeric" })}, ${date.toLocaleTimeString(activeLocale(), { hour: "numeric", minute: "2-digit" })}`;
 }
 
 export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
