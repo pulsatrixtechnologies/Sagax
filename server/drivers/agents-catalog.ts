@@ -349,11 +349,12 @@ const toolDefinitions = (externalRuntime: boolean) => [
   },
   {
     name: "send_to_bot",
-    description: "Send work one way to another bot in a fresh thread. This is cross-bot only: use start_thread to send independent work to yourself. The recipient owns the new thread; its results, failures and questions stay there and never resume you. Use coordinate_bots when you need the result returned here.",
+    description: "Send work one way to another bot in a fresh thread. This is cross-bot only: use start_thread to send independent work to yourself. The recipient owns the new thread; its results, failures and questions stay there and never resume you. Use coordinate_bots when you need the result returned here. Optional priority now wakes an idle recipient immediately or moves the message to the front of its queue, and never interrupts a running turn. The answer includes {threadId, handle} for await_turn.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       bot_id: { type: "string", description: "One reachable teammate id from list_bots or list_room_targets." },
       title: { type: "string", description: "A short one-line title, at most 80 characters." },
       message: { type: "string", description: "Complete instructions; the recipient does not inherit this conversation." },
+      priority: { type: "string", enum: ["now", "normal"], description: "now wakes an idle recipient at once or moves this to the front of its queue. It never interrupts a running turn. Default normal. At most 10 now sends per sender per hour; past that it is delivered as normal." },
     }, required: ["bot_id", "title", "message"] },
   },
   {
@@ -1568,19 +1569,20 @@ const AGENT_API_TOOLS = [
   },
   {
     name: "send_prompt",
-    description: "Send a prompt to an agent in your own hidden conversation with it. mode fire_and_forget (default) and async return a handle once accepted (async also tells you when the turn ends); blocking waits up to timeout_ms. After a timeout, resume with await_turn and the handle: never re-send. An empty reply with finished=true means the agent said nothing. on_busy: queue (default) waits its turn, reject refuses, supersede stops its running turn (and any approval it waits on).",
+    description: "Send a prompt to an agent in your own hidden conversation with it. mode fire_and_forget (default) and async return a handle once accepted (async also tells you when the turn ends); blocking waits up to timeout_ms. After a timeout, resume with await_turn and the handle: never re-send. An empty reply with finished=true means the agent said nothing. on_busy: queue (default) waits its turn, reject refuses, supersede stops its running turn (and any approval it waits on). Optional priority now wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn; past 10 now sends an hour it is delivered as normal.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       agent_id: AGENT_ID,
       prompt: { type: "string", minLength: 1, maxLength: 32000 },
       mode: { type: "string", enum: ["fire_and_forget", "blocking", "async"] },
       timeout_ms: { type: "integer", minimum: 1000, maximum: 600000, description: "Blocking wait; default 120000." },
       on_busy: { type: "string", enum: ["supersede", "reject", "queue"] },
+      priority: { type: "string", enum: ["now", "normal"], description: "now wakes an idle recipient at once or moves this to the front of its queue. It never interrupts a running turn. Default normal. At most 10 now sends per sender per hour; past that it is delivered as normal." },
       files: { type: "array", maxItems: 8, items: { type: "string" }, description: "Workspace-relative paths, 25 MiB each; copied to the agent's workspace." },
     }, required: ["agent_id", "prompt"] },
   },
   {
     name: "await_turn",
-    description: "Wait for an agent's turn: with the handle send_prompt gave, that turn; without one, the in-flight turn of your conversation, else its last message. Never re-send the prompt.",
+    description: "Wait for an agent's turn: with the handle send_prompt or send_to_bot gave, that turn; without one, the in-flight turn of your conversation, else its last message. Never re-send the prompt.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       agent_id: AGENT_ID,
       handle: { type: "string" },

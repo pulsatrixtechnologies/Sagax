@@ -2597,6 +2597,52 @@ describe("coordinate_bots arguments (room turn)", () => {
     expect(lastThreadBody).toBeNull();
   });
 
+  it("forwards priority now and returns a handle when the send starts at once", async () => {
+    const previous = threadResponse;
+    threadResponse = {
+      threadId: "thread-sent", title: "Ship it", botId: "bot-helper", botName: "Helper",
+      self: false, state: "running", priority: "now", handle: "turn_example",
+    };
+    try {
+      const result = await roomRpc("tools/call", { name: "send_to_bot", arguments: {
+        bot_id: "bot-helper", title: "Ship it", message: "Ship the reviewed patch.", priority: "now",
+      } });
+      expect(result.result.isError).toBeFalsy();
+      expect(lastThreadBody).toMatchObject({ priority: "now", oneWay: true });
+      const text = result.result.content[0].text as string;
+      expect(text).toContain("started now");
+      expect(text).toContain(JSON.stringify({ threadId: "thread-sent", handle: "turn_example" }));
+    } finally {
+      threadResponse = previous;
+    }
+  });
+
+  it("says when a priority-now send was delivered as normal", async () => {
+    const previous = threadResponse;
+    threadResponse = {
+      threadId: "thread-sent", title: "Ship it", botId: "bot-helper", botName: "Helper",
+      self: false, downgraded: true, priority: "normal", handle: "turn_example",
+    };
+    try {
+      const result = await roomRpc("tools/call", { name: "send_to_bot", arguments: {
+        bot_id: "bot-helper", title: "Ship it", message: "Ship the reviewed patch.", priority: "now",
+      } });
+      expect(result.result.content[0].text).toContain("past this sender's 10 per hour");
+    } finally {
+      threadResponse = previous;
+    }
+  });
+
+  it("refuses a priority that is not now or normal without posting", async () => {
+    lastThreadBody = null;
+    const result = await roomRpc("tools/call", { name: "send_to_bot", arguments: {
+      bot_id: "bot-helper", title: "Ship it", message: "Ship the reviewed patch.", priority: "urgent",
+    } });
+    expect(result.result.isError).toBe(true);
+    expect(result.result.content[0].text).toContain("priority is now or normal");
+    expect(lastThreadBody).toBeNull();
+  });
+
   it("keeps the documented snake_case key when both spellings arrive", async () => {
     const res = await roomRpc("tools/call", { name: "coordinate_bots", arguments: {
       bot_ids: ["bot-helper"], botIds: ["bot-other"], group_id: "room-right", groupId: "room-wrong",

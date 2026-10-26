@@ -161,7 +161,7 @@
     },
     {
       "name": "send_to_bot",
-      "description": "Send work one way to another bot in a fresh thread. This is cross-bot only: use start_thread to send independent work to yourself. The recipient owns the new thread; its results, failures and questions stay there and never resume you. Use coordinate_bots when you need the result returned here.",
+      "description": "Send work one way to another bot in a fresh thread. This is cross-bot only: use start_thread to send independent work to yourself. The recipient owns the new thread; its results, failures and questions stay there and never resume you. Use coordinate_bots when you need the result returned here. Optional priority now wakes an idle recipient immediately or moves the message to the front of its queue, and never interrupts a running turn. The answer includes {threadId, handle} for await_turn.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -177,6 +177,14 @@
           "message": {
             "type": "string",
             "description": "Complete instructions; the recipient does not inherit this conversation."
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "now",
+              "normal"
+            ],
+            "description": "now wakes an idle recipient at once or moves this to the front of its queue. It never interrupts a running turn. Default normal. At most 10 now sends per sender per hour; past that it is delivered as normal."
           }
         },
         "required": [
