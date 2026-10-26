@@ -92,7 +92,7 @@ import { appendNative } from "../native.ts";
 import { acpPermissionCommand, permissionLaunchCwd } from "../permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../../tool-summary.ts";
 import { acpWrittenFiles, filesField } from "../../thread-files.ts";
-import { extractMcpImages } from "../../mcp-tool-images.ts";
+import { acpToolEndEvents } from "./tool-items.ts";
 import { redactSecretsInText } from "../../redact.ts";
 import { recoveryPromptFor } from "../../resume-recovery.ts";
 import { sessionIdlePolicy } from "../session-idle.ts";
@@ -234,6 +234,8 @@ interface AcpTurn {
    * its completion by `itemId` (the tool chip's result among them), so an
    * unkeyed call must still carry one stable id across both events. */
   unkeyedToolIds: string[];
+  /** Tool items already completed this turn: ACP v1 may name a finished call again, which must not end it twice. */
+  endedToolIds: Set<string>;
   interruptTimer: ReturnType<typeof setTimeout> | null;
   /** ends the quiet-status watch started with the prompt */
   stopQuietWatch: (() => void) | null;
@@ -1749,6 +1751,23 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           }
           if (!current || !current.state.promptSent) return;
           const u = p.update ?? {};
+          const finished = u.status === "completed" || u.status === "failed";
+          // Ends one tool item once: its bookkeeping, its completion and the images its result carries.
+          const toolEnded = (itemId: string | undefined) => {
+            current.state.producedItem = true;
+            const keyed = typeof u.toolCallId === "string" && u.toolCallId ? u.toolCallId : undefined;
+            if (itemId !== undefined && current.endedToolIds.has(itemId)) return;
+            if (support.onToolCompleted && keyed) {
+              const rawInput = u.rawInput ?? current.toolInputs?.get(keyed);
+              current.toolInputs?.delete(keyed);
+              if (u.status === "completed" && rawInput !== undefined) {
+                try { support.onToolCompleted({ botId: current.turn.botId, rawInput }); } catch { /* bookkeeping only */ }
+              }
+            }
+            const fields = u.status === "completed" && keyed ? cwToolResult(current.cwToolNames?.get(keyed), u.rawOutput ?? u.content) : {};
+            if (keyed) current.cwToolNames?.delete(keyed);
+            for (const event of acpToolEndEvents(u, itemId, current.endedToolIds, fields)) emit({ ...base(threadId, current.turnId), ...event });
+          };
           switch (u.sessionUpdate) {
             case "agent_message_chunk": {
               const content = u.content;
@@ -1793,45 +1812,26 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               if (typeof u.toolCallId === "string" && toolTitle && isCwTool(toolTitle)) {
                 (current.cwToolNames ??= new Map()).set(u.toolCallId, toolTitle);
               }
+              // ACP can send a tool_call already marked completed or failed (a denied permission, say) with no
+              // tool_call_update after it: end it here, and keep an unkeyed one out of the queue running calls pair by.
+              const itemId = (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId
+                : finished ? `acp-tool-unkeyed-${++unkeyedToolSeq}` : nextUnkeyedToolId(current);
               emit({
                 ...base(threadId, current.turnId),
                 type: "item.started",
                 itemType: "tool",
-                itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : nextUnkeyedToolId(current),
+                itemId,
                 title: String(useTool?.id ?? u.rawInput?.command ?? u.title ?? "tool").slice(0, 80),
                 summary: commandSummary(useTool ? useTool.args : u.rawInput),
                 input: toolDetailPreview(useTool ? useTool.args : u.rawInput),
                 ...filesField(acpWrittenFiles(u)),
               });
+              if (finished) toolEnded(itemId);
               break;
             }
             case "tool_call_update": {
               trackRunningTool(current, u);
-              if (u.status === "completed" || u.status === "failed") {
-                current.state.producedItem = true;
-                if (support.onToolCompleted && typeof u.toolCallId === "string") {
-                  const rawInput = u.rawInput ?? current.toolInputs?.get(u.toolCallId);
-                  current.toolInputs?.delete(u.toolCallId);
-                  if (u.status === "completed" && rawInput !== undefined) {
-                    try { support.onToolCompleted({ botId: current.turn.botId, rawInput }); } catch { /* bookkeeping only */ }
-                  }
-                }
-                emit({
-                  ...base(threadId, current.turnId),
-                  type: "item.completed",
-                  itemType: "tool",
-                  itemId: (typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : current.unkeyedToolIds.shift(),
-                  ok: u.status !== "failed",
-                  output: toolDetailPreview(u.rawOutput ?? u.content),
-                  ...(u.status === "completed" && typeof u.toolCallId === "string"
-                    ? cwToolResult(current.cwToolNames?.get(u.toolCallId), u.rawOutput ?? u.content)
-                    : {}),
-                });
-                if (typeof u.toolCallId === "string") current.cwToolNames?.delete(u.toolCallId);
-                for (const img of extractMcpImages(u.content ?? u.rawOutput)) {
-                  emit({ ...base(threadId, current.turnId), type: "item.completed", itemType: "assistant_image", data: img.data });
-                }
-              }
+              if (finished) toolEnded((typeof u.toolCallId === "string" && u.toolCallId) ? u.toolCallId : current.unkeyedToolIds.shift());
               break;
             }
             case "usage_update": {
@@ -2357,6 +2357,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           asks,
           runningTools: new Set(),
           unkeyedToolIds: [],
+          endedToolIds: new Set(),
           interruptTimer: null,
           stopQuietWatch: null,
           flushAssistantText,

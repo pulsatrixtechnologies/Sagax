@@ -365,6 +365,10 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
      * it before its next completion. Kept out of messages[] until then:
      * a parked item must never look like delivered input. */
     asides: string[];
+    /** Set once the turn stops taking rounds: a later steer is refused so the
+     * harness sends it as the next turn instead of parking it where no round
+     * will ever read it. */
+    ending: boolean;
   }>();
   /** Models whose endpoint rejected an echoed `reasoning_content`. In memory
    * only: later rounds and turns omit the field instead of failing again. */
@@ -768,7 +772,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     });
     let resolveDone!: () => void;
     const done = new Promise<void>((resolve) => { resolveDone = resolve; });
-    const turnEntry = { abort, turnId, done, approval, asides: [] as string[] };
+    const turnEntry = { abort, turnId, done, approval, asides: [] as string[], ending: false };
     active.set(turn.threadId, turnEntry);
     emit({ ...base(turn.threadId, turnId), type: "turn.started" });
     emit({ ...base(turn.threadId, turnId), type: "session.started", sessionId: null, model });
@@ -933,6 +937,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
               stopReason = "tool_error";
               throw new ChatProtocolError("One or more tool operations failed or were denied. See the tool results; the final response is not an execution receipt.");
             }
+            // Input parked while this final answer streamed: answer it in one
+            // more round rather than end the turn with it unread.
+            if (turnEntry.asides.length) {
+              messages.push({ role: "assistant", content: reply });
+              continue;
+            }
             ok = true;
             break;
           }
@@ -1055,6 +1065,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         stopReason = abort.signal.aborted ? "interrupted" : stopReason ?? "error";
         failure = safeText(asError(value).message).slice(0, 2_000);
       } finally {
+        turnEntry.ending = true;
         approval.close();
         let cleanupFailed = false;
         try { await tools?.close(); }
@@ -1159,12 +1170,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       steer: async (threadId, text) => {
         // This engine has no external session to respect — parking the
         // words in the live turn's entry IS delivery into the loop, so a
-        // successful park is "steered" and a missing turn is the only
-        // refusal. The words ride the array at the next round boundary;
-        // if the turn settles first, the harness's transcript record
-        // keeps them for the next turn (they are never re-sent here).
+        // successful park is "steered"; a missing or ending turn is
+        // refused, so the harness sends the words as the next turn. The
+        // words ride the array at the next round boundary, and a final
+        // answer that streamed meanwhile gets one more round to read them.
         const running = active.get(threadId);
-        if (!running) return "refused";
+        if (!running || running.ending) return "refused";
         running.asides.push(text);
         return "steered";
       },

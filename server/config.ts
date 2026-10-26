@@ -46,7 +46,7 @@ export const DEFAULT_MCP_CALL_TIMEOUT_MINUTES = 10;
 export const MIN_MCP_CALL_TIMEOUT_MINUTES = 1;
 export const MAX_MCP_CALL_TIMEOUT_MINUTES = 60;
 export const DEFAULT_MAX_CONCURRENT_BOT_THREADS = 3;
-export const MAX_CONCURRENT_BOT_THREADS = 10;
+export const MAX_CONCURRENT_BOT_THREADS = 16;
 /** Bounds for threads.eventLogMaxBytes: the floor keeps the kept tail large
  * enough to still serve the event inspector's recent-line window; the
  * ceiling just rejects absurd hand edits. */

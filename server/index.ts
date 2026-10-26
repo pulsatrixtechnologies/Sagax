@@ -544,7 +544,7 @@ import { Handoffs, handedStateUsable, isContextMessage, recordHanded, renderUnse
 import { extractTurnImages } from "./turn-images.ts";
 import { fitTurnImagesForModel, modelImageCopyPath } from "./model-image.ts";
 import { callTitleExcerpt, threadTitlePrompt, titleConversationExcerpt, type ThreadTitleSource } from "./thread-title.ts";
-import { TurnWatchdog } from "./turn-watchdog.ts";
+import { stallLimitMs, TurnWatchdog } from "./turn-watchdog.ts";
 import { TurnResources, type TurnOwner } from "./turn-resources.ts";
 import {
   ensureWorkspace,
@@ -4487,7 +4487,11 @@ function parksBehindCoordination(botId: string, threadId: string): boolean {
   return (store.projectBotForTask(botId, threadId) ?? store.bot(botId))?.parkDirectMessages === true;
 }
 
-function botAtThreadCapacity(botId: string): boolean {
+/** `personThreadId`: the thread a person's own message lands on. The bot's
+ * main chat is never at capacity for it: the person always gets
+ * an answer there, however many task threads and routines hold the slots. */
+function botAtThreadCapacity(botId: string, personThreadId?: string): boolean {
+  if (personThreadId && personThreadId === botMainThread(botId)) return false;
   // Setup/dispatch reservations still occupy a slot even if an early
   // completion event has already cleared the stored busy flag.
   return store.tasks(botId).filter((task) => threadBusy(botId, task.threadId)).length >= botMaxConcurrentThreads(store.bot(botId), cfg);
@@ -4686,6 +4690,8 @@ function purgeTurnAttachmentsForThread(threadId: string): void {
 
 function markCancelledProviderHandshake(threadId: string, ownerId: string): void {
   pendingCancelledProviderHandshakes.mark(threadId, ownerId);
+  // The quarantined events include any tool's end: the teardown gets the plain silence limit.
+  watchdog.eventsDiscarded(threadId);
 }
 
 function clearCancelledProviderHandshake(threadId: string, ownerId: string): void {
@@ -12518,10 +12524,14 @@ const repeats = new RepeatDetector({ thresholds: [5, 10, 20], maxKeysPerThread: 
 // configurable absolute ceiling. The main 1:1 path had none, so a wedged CLI
 // left its bot busy forever. The watchdog stops a turn whose thread has emitted NOTHING for stallMs —
 // activity-based, so an hour-long turn that keeps streaming is never
-// touched, and turns parked on a human approval are exempt.
-const TURN_STALL_MS = Math.max(60_000, Number(process.env.SAGAX_TURN_STALL_MS) || 20 * 60_000);
-/** The watchdog's words for a turn it stopped, as its thread and requester read them. */
-const STALL_CAUSE = `no activity for ${Math.round(TURN_STALL_MS / 60_000)} minutes — the turn was stopped`;
+// touched, and turns parked on a human approval are exempt. Engines report a
+// tool only when it starts and ends, so while one of the turn's tools runs (a
+// long build or test suite) the turn may stay silent for TOOL_STALL_MS, a hard
+// bound of its own so a tool that truly hangs still ends the turn.
+const TURN_STALL_MS = Math.max(60_000, stallLimitMs(process.env.SAGAX_TURN_STALL_MS, 20 * 60_000));
+const TOOL_STALL_MS = Math.max(TURN_STALL_MS, stallLimitMs(process.env.SAGAX_TOOL_STALL_MS, 2 * 60 * 60_000));
+/** The watchdog's words for a turn it stopped after `silentMs` of silence, as its thread and requester read them. */
+const stallCause = (silentMs: number) => `no activity for ${Math.round(silentMs / 60_000)} minutes — the turn was stopped`;
 /** How long ask_bot waits synchronously before the ask is converted into a
  * delegation claim ticket (the peer's turn keeps running either way). */
 const ASK_BOT_TIMEOUT_MS = Math.max(5_000, Number(process.env.SAGAX_ASK_BOT_TIMEOUT_MS) || 15_000);
@@ -12559,9 +12569,9 @@ function stoppedTurnText(threadId: string, turnId: string | undefined, cause?: s
   });
 }
 const watchdog = new TurnWatchdog({
-  stallMs: TURN_STALL_MS,
+  stallMs: TURN_STALL_MS, toolStallMs: TOOL_STALL_MS,
   checkMs: 60_000,
-  onStall: (turn) => {
+  onStall: (turn, silentMs) => {
     const stalledResourceOwner = turnResourceOwners.get(turn.threadId);
     const stalledGeneration = directTurnGenerationByThread.get(turn.threadId);
     const stalledProviderTurn = directRequestOwners.get(turn.threadId);
@@ -12572,8 +12582,8 @@ const watchdog = new TurnWatchdog({
     const bot = botForThread(turn.botId, turn.threadId);
     const routineRun = activeRoutineRunForThread(turn.threadId);
     void runningTurnInstance(bot, turn.threadId)?.adapter.interruptTurn(turn.threadId).catch(() => {});
-    const minutes = Math.round(TURN_STALL_MS / 60_000);
-    const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), STALL_CAUSE);
+    const minutes = Math.round(silentMs / 60_000), cause = stallCause(silentMs);
+    const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), cause);
     if (routineRun?.target === "bot") {
       routines?.failThread(turn.threadId, `No activity for ${minutes} minutes — the routine was stopped`, { cause: "stalled" });
       pendingDelegationWakes.delete(turn.threadId);
@@ -12582,17 +12592,17 @@ const watchdog = new TurnWatchdog({
     store.appendMessage(turn.threadId, {
       role: "bot",
       kind: "activity",
-      tool: failedTurnTool(STALL_CAUSE),
+      tool: failedTurnTool(cause),
     });
     // a routine's stall reports through its own failure path
     if (bot && routineRun?.target !== "bot") {
-      reportIncident({ kind: "stalled", bot, threadId: turn.threadId, detail: STALL_CAUSE });
+      reportIncident({ kind: "stalled", bot, threadId: turn.threadId, detail: cause });
     }
     settleDirectFollowup(stalledGeneration, { ok: false, text: stalled });
     finalizeDelegationWatch(turn.threadId, false, "", `Delegated turn did not finish — ${stalled}`);
     turnUsage.delete(turn.threadId);
     turnContext.delete(turn.threadId);
-    roomStallCompletions.stall(turn.threadId);
+    roomStallCompletions.stall(turn.threadId, cause);
     // ACP interruption settles within five seconds; other adapters settle
     // sooner. Keep ownership during that grace period so another turn cannot
     // overlap the process we are stopping. The normal turn.completed fold
@@ -12674,7 +12684,7 @@ bus.subscribe((event: RuntimeEvent) => {
       }
     }
   } else if (event.type !== "session.exited") {
-    watchdog.touch(event.threadId);
+    watchdog.observe(event);
     coordinator.progress(event.threadId);
   }
 });
@@ -17355,7 +17365,9 @@ function drainQueuedSends() {
     // intact until that exact handshake releases its runtime-only claim.
     // Team incidents reports never park behind handed-on work (admission's
     // "incident" surface says why).
-    (botId, threadId, head) => threadBusy(botId, threadId) || botAtThreadCapacity(botId) || Boolean(activeGroupTurnForBot(botId))
+    // A person's queued words in the main chat never wait for a slot.
+    (botId, threadId, head) => threadBusy(botId, threadId) || botAtThreadCapacity(botId, head.peerAsk ? undefined : threadId)
+      || Boolean(activeGroupTurnForBot(botId))
       || (!head.peerAsk?.incident && parksBehindCoordination(botId, threadId)) || parallelTaskBlocked(botId, threadId),
   );
   // Asides always drain after person follow-ups (see drainAsideLane): the
@@ -17573,8 +17585,9 @@ async function startOrQueueDirectMessageNow(botId: string, threadId: string, tex
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
-    // here rather than bounce off startTurn's 409.
-    atCapacity: botAtThreadCapacity(botId),
+    // here rather than bounce off startTurn's 409. The main chat never
+    // queues for capacity.
+    atCapacity: botAtThreadCapacity(botId, threadId),
     threadBusy: threadBusy(botId, threadId),
     groupTurn: Boolean(activeGroupTurnForBot(botId)),
     parksBehindCoordination: parksBehindCoordination(botId, threadId),
@@ -18951,7 +18964,7 @@ async function startTurn(
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
   }
-  if (botAtThreadCapacity(botId)) {
+  if (botAtThreadCapacity(botId, threadId)) {
     throw Object.assign(new Error(`this bot has reached its limit of ${botMaxConcurrentThreads(store.bot(botId), cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
   }
   // Steering is never a cancel. A message sent while teammates are working
@@ -23019,7 +23032,7 @@ async function runGroupMemberTurn(
   let retainRoomVmLease = false;
   let roomSpeaker: { botId: string; name: string; color: string } | undefined;
   let providerDispatched = false;
-  let setupStalled = false;
+  let setupStallCause: string | undefined;
   let unregisterSetupStall = () => {};
   // The speaker's own This computer / Cloud mount, and what it must give back.
   let roomComputerKind: "local" | "vps" | "box" | null = null;
@@ -23275,9 +23288,9 @@ async function runGroupMemberTurn(
   // wedge — so the dispatch site completes the turn instead of launching a
   // provider turn the person was already told was stopped. The finally
   // below unregisters the latch on every other exit.
-  setupStalled = false;
-  unregisterSetupStall = roomStallCompletions.register(threadId, () => {
-    setupStalled = true;
+  setupStallCause = undefined;
+  unregisterSetupStall = roomStallCompletions.register(threadId, (cause) => {
+    setupStallCause = cause;
   });
   // Watch from claim, not provider dispatch: room setup (connected-app
   // discovery, browser, boat, and VM mounts) can wedge before any provider
@@ -23732,7 +23745,8 @@ async function runGroupMemberTurn(
     // provider turn: the stopped message is already on the thread, and the
     // watchdog's bounded cleanup owns releasing the claim.
     unregisterSetupStall();
-    if (setupStalled) {
+    if (setupStallCause !== undefined) {
+      if (orchestration) orchestration.result.stopReason = stoppedTurnText(threadId, undefined, setupStallCause);
       // No provider turn was launched, so there is no ambiguous event
       // window to quarantine: marking a cancelled handshake here would
       // strand the next turn behind its TTL for no benefit. The readiness
@@ -23740,8 +23754,8 @@ async function runGroupMemberTurn(
       finish("stalled");
       return;
     }
-    unregisterStall = roomStallCompletions.register(threadId, () => {
-      if (orchestration) orchestration.result.stopReason = stoppedTurnText(threadId, providerTurnId, STALL_CAUSE);
+    unregisterStall = roomStallCompletions.register(threadId, (cause) => {
+      if (orchestration) orchestration.result.stopReason = stoppedTurnText(threadId, providerTurnId, cause);
       abandonProviderTurn();
       finish("stalled");
     });
