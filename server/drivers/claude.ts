@@ -25,7 +25,7 @@ import { claudeProtectedDenyRules } from "../engine-protected-paths.ts";
 import { openStartupModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { writeFileAtomic, writeFileAtomicIfChanged } from "../atomic.ts";
 import { augmentedPath } from "../env-path.ts";
-import { brokerSocketPath, describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
+import { brokerSocketPath, cliVersionReader, describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 import { classifyResumeFailure, mayReplay, rebuiltSessionNotice, recoveryPromptFor } from "../resume-recovery.ts";
 import { hostTimeZone } from "../bot-settings.ts";
 import { ClaudeLoginController } from "./claude-login-auth.ts";
@@ -1498,12 +1498,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     // probed, or when the probe fails.
     let cliHasAutocompact: boolean | null = null;
     let cliHelpVersion: string | null = null;
-    const readCliVersion = (env: NodeJS.ProcessEnv): Promise<string | null> =>
-      new Promise((resolve) => {
-        execCli(config.cli, ["--version"], { timeout: 8000, env }, (err, stdout) =>
-          resolve(err ? null : stdout.trim() || null),
-        );
-      });
+    const versionOf = cliVersionReader(config.cli);
+    const readCliVersion = (env: NodeJS.ProcessEnv) => new Promise<ReturnType<typeof versionOf>>((resolve) => {
+      execCli(config.cli, ["--version"], { timeout: 8000, env }, (err, stdout) => resolve(versionOf(err, stdout)));
+    });
     // The --help read while it runs: snapshots that overlap (the server's
     // read at start and the app's first one) share it.
     let helpRead: { version: string; done: Promise<void> } | null = null;
@@ -1921,9 +1919,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       }
       const turnEnvironment = environment();
       if (!cliVersionChecked) {
-        const version = await readCliVersion(turnEnvironment);
-        if (version) {
-          cliVersion = parseClaudeCliVersion(version);
+        const probe = await readCliVersion(turnEnvironment);
+        if ("version" in probe) {
+          cliVersion = parseClaudeCliVersion(probe.version);
           cliVersionChecked = true;
         }
       }
@@ -3307,8 +3305,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
 
     const snapshot = async (): Promise<ProviderSnapshot> => {
       const env = environment();
-      const version = await readCliVersion(env);
-      if (!version) return { state: "unavailable", reason: `\`${config.cli}\` CLI not found` };
+      const probe = await readCliVersion(env);
+      if (!("version" in probe)) return { state: "unavailable", reason: probe.reason };
+      const { version } = probe;
       cliVersion = parseClaudeCliVersion(version);
       cliVersionChecked = true;
       if (version !== cliHelpVersion) await readCliHelp(version, env);
