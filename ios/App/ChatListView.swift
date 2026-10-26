@@ -820,7 +820,11 @@ struct ChatListView: View {
     private func selectAccount(_ item: AccountMenuItem) {
         Haptics.selection()
         switch item {
-        case .settings: showingSettings = true
+        case .settings:
+            // After the account menu has folded back into its avatar: the
+            // system draws that fold over the home, and Settings opening
+            // under it showed the avatar above the X (JC, 2026-10-26).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { showingSettings = true }
         case .teamMap: showingTeamMap = true
         case .automations: showingAutomations = true
         case .archivedBots: accountSheet = .archivedBots
@@ -1323,6 +1327,13 @@ extension ChatListView {
                 AnyView(legacyHome)
             }
         }
+        // Settings open full screen (JC, 2026-10-26): the home (avatar, search,
+        // bottom bar, island) hides at once, with no animation, so nothing of
+        // it crosses the Settings header. It comes back when Settings closes.
+        .opacity(showingSettings ? 0 : 1)
+        .allowsHitTesting(!showingSettings)
+        .accessibilityHidden(showingSettings)
+        .animation(nil, value: showingSettings)
         .overlay { AnyView(homeOverlays) }
         .task(id: session.connection?.id) {
             await session.loadAccount()
@@ -1826,7 +1837,9 @@ extension ChatListView {
                 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background(Theme.bg.ignoresSafeArea())
-                .transition(.move(edge: .bottom))
+                // No slide: the home is gone at once, and Settings takes its
+                // place whole, so no animation crosses another.
+                .transition(.identity)
                 .zIndex(1)
             }
             if showingCreateBot {
