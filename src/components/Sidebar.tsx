@@ -1306,6 +1306,14 @@ export function BotContextMenu({
       ? onMakePrimary && item(<Star size={16} className="text-ink" />, t("sidebar.bot.makePrimary"), () => onMakePrimary(bot))
       : null;
 
+  // Share opens the bot editor on its Sharing page, the flow the bot panel
+  // already has (people, teams and their level). Offered wherever the server
+  // has an organization to share in; every member shares their own bots, the
+  // server keeps its own rules about other people's.
+  const shareItem = state.config?.viewer?.principalId
+    ? item(<Share2 size={16} className="text-ink" />, t("sidebar.bot.share"), () => dispatch({ type: "toggleSettings", open: true, botId: bot.id, section: "sharing" }), { id: "share" })
+    : null;
+
   const menuFrame = (children: React.ReactNode) => createPortal(
     <div
       ref={menuRef}
@@ -1381,7 +1389,7 @@ export function BotContextMenu({
   }, { id: "new-topic" });
 
   // One flat menu, no More (2026-10-15): New thread | Pin, Move to › |
-  // Rename, Edit bot, Make primary bot, Put on the desktop | Hide from
+  // Rename, Edit bot, Share, Make primary bot, Put on the desktop | Hide from
   // sidebar, Archive, Delete. Mark as Unread, Mark all as read and Model…
   // left this menu (2026-10-15, for 0.5.7).
   const entries = remoteClient ? [
@@ -1392,6 +1400,7 @@ export function BotContextMenu({
       onMoveToSection?.(bot.id);
     }, { id: "move" })] : []),
     editItem,
+    ...(shareItem ? [shareItem] : []),
   ] : [
     ...(newThreadItem ? [newThreadItem, divider("d-new")] : []),
     item(
@@ -1405,6 +1414,7 @@ export function BotContextMenu({
     divider("d-name"),
     ...(canRename ? [item(<Pencil size={16} className="text-ink" />, t("persona.menu.rename"), () => onRename(bot.id), { id: "rename" })] : []),
     editItem,
+    ...(shareItem ? [shareItem] : []),
     ...(primaryItem ? [primaryItem] : []),
     floatItem,
     divider("d-place"),

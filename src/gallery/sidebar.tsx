@@ -113,7 +113,7 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     { principalId: "pr_bob", name: "Bob Martin", login: "bob", role: "member", disabled: false },
   ] });
   if (path === "/api/code/status") return json({ available: true });
-  if (path === "/api/config") return json({ profile: { name: "Alex Gagnon" }, ...(sharing ? { viewer: { principalId: "pr_me" } } : {}) });
+  if (path === "/api/config") return json({ profile: { name: "Alex Gagnon" }, ...(sharing || params.get("org") === "1" ? { viewer: { principalId: "pr_me" } } : {}) });
   // the avatar menu's Usage › (a made-up plan, this month's cost)
   if (path === "/api/plan-usage") return json({ providers: [{
     id: "claude", name: "Claude", driver: "claude", plan: "Max", ok: true, error: null, state: "windows", access: "subscription",
