@@ -459,6 +459,23 @@ describe("Chat MCP x-mcp-header (port de OpenMausBot #3169)", () => {
   });
 });
 
+describe("Chat MCP x-google-enum-descriptions (port de OpenMausBot #3299)", () => {
+  it("accepts Google MCP's x-google-enum-descriptions annotation and still enforces the enum", async () => {
+    const toolSchema = {
+      type: "object",
+      properties: {
+        value: { type: "string", enum: ["METRIC", "IMPERIAL"], "x-google-enum-descriptions": ["Metric units.", "Imperial units."] },
+      },
+      required: ["value"],
+    };
+    const f = fixture("", toolSchema);
+    const session = await f.mount();
+    expect(session.skipped).toEqual([]);
+    expect(() => session.validate("audit_write", { value: "METRIC" })).not.toThrow();
+    expect(() => session.validate("audit_write", { value: "KELVIN" })).toThrow("input schema");
+  });
+});
+
 describe("Chat MCP approvals by server", () => {
   it("asks nothing for Sagax's agents server, and grants no session-wide allow on the person's computer", async () => {
     const agents = fixture(); const audit = fixture(); const computer = fixture();
@@ -733,6 +750,7 @@ describe("Chat MCP schema validation", () => {
     { type: "object", properties: {value:{type:"string",format:"unregistered-format"}} },
     { type: "object", properties: {value:{$ref:"https://example.invalid/private-schema"}} },
     { type: "object", properties: {value:{type:"string",unrecognizedAssertion: true}} },
+    { type: "object", properties: {value:{type:"string","x-google-enum-descriptions": "not a list"}} },
   ])("refuses schemas it cannot validate instead of silently weakening them %#", async (toolSchema) => {
     const f = fixture("", toolSchema);
     await expectSkipped(f, /schema could not be validated/);
