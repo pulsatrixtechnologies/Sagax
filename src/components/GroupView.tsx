@@ -1298,6 +1298,13 @@ export function GroupView({ group: stored }: { group: Group }) {
 
   useEffect(() => setBulletinDraft(group.bulletin), [group.id, group.bulletin]);
   useEffect(() => setMembersOpen(false), [group.id]);
+  // The room's panel, when it was already open as the room opened (it follows
+  // the selection from the previous conversation), is drawn in place on the
+  // first frame; only a panel the person opens here slides in.
+  const [panelOpenedWithRoom, setPanelOpenedWithRoom] = useState(panelOpen);
+  useEffect(() => {
+    if (!panelOpen) setPanelOpenedWithRoom(false);
+  }, [panelOpen]);
   const saveBulletin = () => {
     setBulletinOpen(false);
     if (bulletinDraft !== group.bulletin) {
@@ -1342,7 +1349,9 @@ export function GroupView({ group: stored }: { group: Group }) {
   });
 
   return (
-    <main className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
+    // data-room-view: a navigation into or out of a room never animates
+    // (src/lib/view-transitions.ts), it opens in place like a 1:1.
+    <main data-room-view="" className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
       <ExchangeColumnProvider node={exchangeColumnNode}>
       <div ref={exchangeColumnRef} className="relative isolate flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
@@ -1640,6 +1649,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       {panelOpen && (
         <GroupPanel
           key={`panel:${group.id}`}
+          arriving={!panelOpenedWithRoom}
           group={group}
           members={members}
           canEdit={editable}

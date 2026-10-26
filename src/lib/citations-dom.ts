@@ -1,3 +1,4 @@
+import { scrollMotion } from "./motion";
 import { createCitationTextSelector, findCitationText, type CitationAttachment } from "./citations";
 
 type TextChunk = { node: Text; start: number; end: number };
@@ -122,7 +123,7 @@ export async function highlightCitationSource(citation: CitationAttachment): Pro
     const source = findCitationSource(document, citation);
     const range = source ? resolveCitationRange(source, citation) : null;
     if (source && range) {
-      source.scrollIntoView({ block: "center", behavior: "smooth" });
+      source.scrollIntoView({ block: "center", behavior: scrollMotion() });
       const highlights = (CSS as unknown as { highlights?: { set(name: string, value: unknown): void; delete(name: string): void } }).highlights;
       const HighlightConstructor = (globalThis as unknown as { Highlight?: new (range: Range) => unknown }).Highlight;
       window.clearTimeout(highlightCleanup);

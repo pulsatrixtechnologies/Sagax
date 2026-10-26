@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { useCopyFeedback } from "@/lib/copy-text";
+import { scrollMotion } from "@/lib/motion";
 import { remarkMentions, type MentionPeer } from "@/lib/mentions";
 
 import {
@@ -1276,8 +1277,7 @@ function scrollToFragment(fragment: string, prefix: string): boolean {
   }
   const target = document.getElementById(id) ?? document.getElementById(`${prefix}${id}`);
   if (!target) return false;
-  const reduce = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  target.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" });
+  target.scrollIntoView({ block: "start", behavior: scrollMotion() });
   if (target instanceof HTMLElement) {
     if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
     target.focus({ preventScroll: true });

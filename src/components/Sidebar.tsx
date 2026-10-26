@@ -59,6 +59,7 @@ import { searchMatchesThreads, useSearchDisclosure } from "@/lib/search-disclosu
 import { useHeldMenuMotion } from "./MenuMotion";
 import { animateSidebarSnap } from "@/lib/sidebar-motion";
 import { navigate } from "@/lib/view-transitions";
+import { scrollMotion } from "@/lib/motion";
 import { lastNonReceipt } from "@/lib/receipts";
 import { activityPreview, botEngine } from "@/lib/failed-turn";
 import { activeLocale, t } from "@/lib/i18n";
@@ -2555,7 +2556,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       return direction === "above" ? middle < view.top : middle > view.bottom;
     });
     const target = direction === "above" ? offscreen[offscreen.length - 1] : offscreen[0];
-    target?.scrollIntoView({ block: "center", behavior: "smooth" });
+    target?.scrollIntoView({ block: "center", behavior: scrollMotion() });
   };
   const selectionFor = (botId: string) => ({
     active: selecting,
