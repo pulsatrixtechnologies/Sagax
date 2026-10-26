@@ -136,6 +136,8 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/slack-management"], // a link to Admin, read-only
       ["GET", "/api/bots/x/inbound-mail"], // the bot's own email address (Perspicax relay), read-only
       ["PUT", "/api/bots/x/inbound-mail"], // its owner changes it (the handler checks the owner)
+      ["GET", "/api/bots/x/browser/live"], // watch the bot's browser (the handler checks the viewer)
+      ["POST", "/api/bots/x/browser/action"], // take over that session (same check)
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
       ["POST", "/api/bots/x/primary"], ["DELETE", "/api/bots/x/primary"], // the owner's own Primary Bot, both ways
@@ -163,6 +165,8 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/projects"], ["PATCH", "/api/bots/x/projects/order"], ["DELETE", "/api/bots/x/projects/p"],
       ["POST", "/api/sidebar-sections"], ["GET", "/api/usage"],
       ["POST", "/api/bots/x/computer/exec"], ["POST", "/api/bots/x/computer/join"], ["POST", "/api/local-computer/run"],
+      ["POST", "/api/bots/x/browser/live"], ["GET", "/api/bots/x/browser/action"],
+      ["POST", "/api/bots/x/browser/restart"], ["POST", "/api/browser-engine/install"],
       ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
       ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],

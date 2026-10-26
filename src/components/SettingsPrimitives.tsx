@@ -648,10 +648,10 @@ export function PillSelect<T extends string>({
 
 /** A compact Grok-style row: the label at the left, the control at the
  * right, no help text. */
-export function CompactRow({ label, children, className, rowId }: { label: string; children: React.ReactNode; className?: string; rowId?: string }) {
+export function CompactRow({ label, children, className, rowId, keywords }: { label: string; children: React.ReactNode; className?: string; rowId?: string; keywords?: string }) {
   const labelId = useId();
   return (
-    <div role="group" aria-labelledby={labelId} data-settings-row={rowId} className={cn("flex min-h-[44px] items-center justify-between gap-5 px-3.5 py-2", className)}>
+    <div role="group" aria-labelledby={labelId} data-settings-row={rowId} data-settings-keywords={keywords} className={cn("flex min-h-[44px] items-center justify-between gap-5 px-3.5 py-2", className)}>
       <div id={labelId} className="min-w-0 text-[13px] leading-[18px] text-ink">{label}</div>
       <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">{children}</div>
     </div>
@@ -669,6 +669,7 @@ export function DescribedRow({
   children,
   below,
   rowId,
+  keywords,
 }: {
   label: string;
   description?: React.ReactNode;
@@ -678,10 +679,12 @@ export function DescribedRow({
   children?: React.ReactNode;
   below?: React.ReactNode;
   rowId?: string;
+  /** Extra search words that are not already in the label (a Dock or taskbar alias). */
+  keywords?: string;
 }) {
   const labelId = useId();
   return (
-    <div role="group" aria-labelledby={labelId} data-settings-row={rowId} className="px-3.5 py-2.5">
+    <div role="group" aria-labelledby={labelId} data-settings-row={rowId} data-settings-keywords={keywords} className="px-3.5 py-2.5">
       <div className="flex min-h-[28px] flex-wrap items-center justify-between gap-x-5 gap-y-2">
         <div className="flex min-w-0 flex-1 basis-[240px] items-start gap-2">
           {icon && <span aria-hidden="true" className="mt-px shrink-0 text-ink-secondary">{icon}</span>}

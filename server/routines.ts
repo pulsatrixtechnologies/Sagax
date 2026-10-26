@@ -33,7 +33,7 @@ import {
   storedTiming,
   type RoutineWindowTiming,
 } from "../shared/routine-timing.ts";
-import { isRoutineProblemRun, type RoutineRetryCause } from "../shared/routines.ts";
+import { isRoutineProblemRun, isTriggerSchedule, type RoutineRetryCause } from "../shared/routines.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import { ROUTINE_PARTS, type PartPair, type RoutinePart } from "./package-parts.ts";
 import {
@@ -75,7 +75,9 @@ export type RoutineSchedule =
   | { type: "once"; at: number }
   | ({ type: "daily"; time: string; weekdays: number[] } & RoutineWindowTiming)
   | (RoutineCronSchedule & RoutineWindowTiming)
-  | (RoutineIntervalSchedule & RoutineWindowTiming);
+  | (RoutineIntervalSchedule & RoutineWindowTiming)
+  | { type: "webhook" }
+  | { type: "event"; source: "email" };
 
 export type RoutineScheduleInput =
   | Exclude<RoutineSchedule, RoutineIntervalSchedule>
@@ -537,6 +539,13 @@ export interface RoutineManagerOptions {
   presence?: (routine: Routine) => AwayVerdict;
   /** 2026-10-16: the person is back; `skips` is what was skipped meanwhile. */
   onAwaySkipsReported?: (routine: Routine, skips: RoutineAwaySkips) => void;
+  /** A routine that starts from a webhook or an email was removed, or its
+   * schedule stopped being a trigger. The owned webhook is deleted with it. */
+  onTriggerRoutineRemoved?: (routine: Routine) => void;
+  /** A trigger routine changed (name, instructions, bot, where it runs, or
+   * whether it is on). The owned webhook follows. Create does not call this:
+   * the confirmation path attaches the webhook itself. */
+  onTriggerRoutineUpdated?: (routine: Routine) => void;
 }
 
 /** The longest a run's start waits for the memory hint. */
@@ -630,6 +639,7 @@ const ROUTINE_REQUEST_ACTIONS = new Set<RoutineRequestOperation["action"]>([
   "resume",
   "run_now",
   "delete",
+  "rotate_webhook_key",
 ]);
 
 function isRoutineRequestAction(value: unknown): value is RoutineRequestOperation["action"] {
@@ -686,6 +696,8 @@ function loadAttachments(value: unknown): RoutineContextAttachment[] {
 }
 
 function cloneSchedule(schedule: RoutineSchedule): RoutineSchedule {
+  if (schedule.type === "webhook") return { type: "webhook" };
+  if (schedule.type === "event") return { type: "event", source: "email" };
   if (schedule.type === "once") return { type: "once", at: schedule.at };
   if (schedule.type === "cron") return { ...schedule };
   if (schedule.type === "interval") {
@@ -887,6 +899,12 @@ function parseSchedule(schedule: RoutineScheduleInput, after: number): RoutineSc
     const base = normalizeCronSchedule({ type: "cron", expression: schedule.expression, timeZone: schedule.timeZone }, after);
     return applyTiming(base, schedule);
   }
+  if (schedule?.type === "webhook" || schedule?.type === "event") {
+    if (hasTimingInput(schedule)) throw new Error("A trigger routine has no clock");
+    if (schedule.type === "webhook") return { type: "webhook" };
+    if (schedule.source !== "email") throw new Error("Choose a supported schedule");
+    return { type: "event", source: "email" };
+  }
   if (schedule?.type === "once") {
     if (hasTimingInput(schedule)) throw new Error("A one-time routine starts at its chosen time");
     const at = Number(schedule.at);
@@ -1004,6 +1022,7 @@ function nextAlignedInterval(schedule: RoutineIntervalSchedule, after: number): 
  * times, windows and weekdays use `zone`, else the configured routine zone
  * (setRoutineTimeZone), else the host's. */
 export function nextOccurrence(schedule: RoutineSchedule, after: number, zone?: string): number | null {
+  if (isTriggerSchedule(schedule)) return null;
   if (schedule.type === "once") return schedule.at > after ? schedule.at : null;
   if (schedule.type === "cron") return nextCronRuns(schedule, after, 1)[0] ?? null;
   if (schedule.type === "interval") {
@@ -1084,6 +1103,7 @@ function keepTiming(
   incoming: RoutineScheduleInput,
   base: RoutineScheduleInput,
 ): RoutineScheduleInput {
+  if (isTriggerSchedule(base) || isTriggerSchedule(incoming) || isTriggerSchedule(current)) return base;
   if (base.type === "once" || incoming.type === "once" || current.type === "once") return base;
   if (Object.hasOwn(incoming, "timing") || !isFlexibleSchedule(current)) return base;
   const sentEarly = Object.hasOwn(incoming, "windowEarlyMinutes");
@@ -1118,6 +1138,9 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
   if (target !== "bot" && target !== "room-goal") throw new Error("Choose a valid routine target");
   const groupId = typeof input.groupId === "string" ? input.groupId.trim() : "";
   if (target === "room-goal" && !groupId) throw new Error("Choose a room for this goal");
+  if (target === "room-goal" && (input.schedule?.type === "webhook" || input.schedule?.type === "event")) {
+    throw new Error("A trigger routine runs on a bot, not a room goal");
+  }
   const runOn = input.runOn ?? "maus";
   if (runOn !== "maus" && runOn !== "cloud") throw new Error("Choose where this routine runs");
   const attachments = cleanAttachments(input.attachments);
@@ -1652,6 +1675,7 @@ export class RoutineManager {
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
     const enabledChanged = clean.enabled !== routine.enabled;
+    const previousSchedule = cloneSchedule(routine.schedule);
     // A definition edit (anything but a bare on/off flip): its named line goes
     // in the conversation. Read before commitMutation rewrites `routine`.
     const definitionChanged = ROUTINE_DEFINITION_FIELDS.some((field) =>
@@ -1739,6 +1763,7 @@ export class RoutineManager {
       }
     }
     if (definitionChanged) this.noteRoutineChanged("updated", routine, request, meta);
+    this.notifyTrigger(routine, previousSchedule);
     return this.routineWithHealth(routine);
   }
 
@@ -1758,6 +1783,23 @@ export class RoutineManager {
     } catch {
       // The change is committed; its line in the conversation is a courtesy.
     }
+  }
+
+  /** The owned webhook follows a trigger routine. A throw there does not
+   * undo the routine change. */
+  private notifyTrigger(routine: Routine, previous: RoutineSchedule): void {
+    if (isTriggerSchedule(routine.schedule)) this.notifyTriggerUpdated(routine);
+    else if (isTriggerSchedule(previous)) this.notifyTriggerRemoved(routine);
+  }
+
+  private notifyTriggerUpdated(routine: Routine): void {
+    try { this.options.onTriggerRoutineUpdated?.(cloneRoutine(routine)); }
+    catch { /* the routine change is already committed */ }
+  }
+
+  private notifyTriggerRemoved(routine: Routine): void {
+    try { this.options.onTriggerRoutineRemoved?.(cloneRoutine(routine)); }
+    catch { /* the routine change is already committed */ }
   }
 
   remove(id: string, request?: RoutineRequestCommitFor<"delete">): boolean {
@@ -1790,6 +1832,7 @@ export class RoutineManager {
     for (const run of changedRuns) this.emitRun(run);
     this.options.emit?.({ kind: "routine.deleted", routineId: id });
     this.noteRoutineChanged("deleted", removed, request);
+    if (isTriggerSchedule(removed.schedule)) this.notifyTriggerRemoved(removed);
     return true;
   }
 
@@ -1801,6 +1844,7 @@ export class RoutineManager {
       routine.nextRunAt = null;
       routine.updatedAt = Math.max(this.now(), routine.updatedAt + 1);
       this.emitRoutine(routine);
+      if (isTriggerSchedule(routine.schedule)) this.notifyTriggerUpdated(routine);
       changed = true;
     }
     for (const run of this.runs) {
@@ -1831,6 +1875,7 @@ export class RoutineManager {
       routine.nextRunAt = null;
       routine.updatedAt = Math.max(this.now(), routine.updatedAt + 1);
       this.emitRoutine(routine);
+      if (isTriggerSchedule(routine.schedule)) this.notifyTriggerUpdated(routine);
       changed = true;
     }
     for (const run of this.runs) {
@@ -1879,6 +1924,12 @@ export class RoutineManager {
     return cloneRun(run);
   }
 
+  /** The routine itself, or null. Callers that mirror a trigger read this. */
+  routineById(id: string): Routine | null {
+    const routine = this.routines.find((candidate) => candidate.id === id);
+    return routine ? cloneRoutine(routine) : null;
+  }
+
   /** Look up an accepted delivery independently of run-log retention. */
   webhookRunReceipt(webhookId: string, deliveryId: string): { id: string } | null {
     const receipt = this.webhookRunReceipts.find((candidate) =>
@@ -1900,6 +1951,8 @@ export class RoutineManager {
     runOn: RoutineRunOn;
     deliveryId: string;
     receivedAt: number;
+    /** When the webhook belongs to a routine, the run is that routine's. */
+    routineId?: string;
   }): { id: string } {
     this.assertWritable();
     const existing = this.webhookRunReceipt(input.webhookId, input.deliveryId);
@@ -1909,7 +1962,7 @@ export class RoutineManager {
     }
     const run: RoutineRun = {
       id: randomUUID(),
-      routineId: input.webhookId,
+      routineId: input.routineId ?? input.webhookId,
       routineName: input.webhookName,
       prompt: input.prompt,
       target: "bot",

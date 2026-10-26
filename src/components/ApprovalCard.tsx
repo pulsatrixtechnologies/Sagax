@@ -83,6 +83,7 @@ export function approvalCardOutcome(card: OptionCardData): string | undefined {
   if (card.answered !== "allow") return card.teamSetupRequest?.suggestion ? t("approval.status.notNow") : isProposal ? t("approval.status.cancelled") : t("approval.status.denied");
   if (card.teamSetupRequest) return card.teamSetupRequest.deletion ? "Bot deleted" : "Team setup applied";
   const routineAction = card.routineRequest?.operation.action;
+  if (routineAction === "rotate_webhook_key") return t("approval.status.routineUpdated");
   if (routineAction) return t(ROUTINE_SETTLED_LABEL[routineAction]);
   const skillAction = card.skillRequest?.action;
   if (skillAction) return t(SKILL_SETTLED_LABEL[skillAction]);
@@ -275,6 +276,9 @@ export function appliedChange(card: OptionCardData, name: string): { line: strin
       undo?.name ?? (operation.action === "create" ? operation.routine.name : ""),
       operation.forBot ? t("approval.applied.forBot", { target: `@${operation.forBot.name}` }) : "",
     ].filter(Boolean).join(" · ") + (when ? `, ${when}` : "");
+    if (operation.action === "rotate_webhook_key") {
+      return { line: t("approval.applied.routine.update", { name, title }), canUndo: false };
+    }
     const canUndo = operation.action === "create" ? Boolean(routine.resultId)
       : operation.action === "update" ? Boolean(undo?.before && undo.appliedUpdatedAt !== undefined)
         : operation.action === "pause" || operation.action === "resume" ? undo?.appliedUpdatedAt !== undefined

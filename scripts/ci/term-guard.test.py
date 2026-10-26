@@ -122,6 +122,48 @@ class T(unittest.TestCase):
         text = open(allow).read().lower()
         self.assertFalse(any(t in text for t in terms))
 
+    def ident(self):
+        return "CVE-" + "2024-1000"
+
+    def cve_env(self):
+        return {
+            "FORBIDDEN_TERMS": "widgetco",
+            "CVE_ALLOW_FILE": os.path.join(HERE, "..", "..", ".github", "cve-id-allow-paths.txt"),
+        }
+
+    def test_vulnerability_id_in_added_line_is_located_not_printed(self):
+        token = self.ident()
+        d = "diff --git a/notes.md b/notes.md\n--- a/notes.md\n+++ b/notes.md\n@@ -0,0 +1 @@\n+" + token + "\n"
+        code, out = run(self.cve_env(), d)
+        self.assertEqual(code, 1, out)
+        self.assertIn("Vulnerability identifier found in notes.md:1", out)
+        self.assertNotIn(token, out)
+
+    def test_vulnerability_id_allowed_in_changelog_and_lockfile(self):
+        token = self.ident()
+        for name in ("CHANGELOG.md", "docs/foo/CHANGELOG.md", "pnpm-lock.yaml"):
+            d = f"diff --git a/{name} b/{name}\n--- /dev/null\n+++ b/{name}\n@@ -0,0 +1 @@\n+{token}\n"
+            code, out = run(self.cve_env(), d)
+            self.assertEqual(code, 0, out)
+
+    def test_vulnerability_id_in_title_and_commit_message(self):
+        token = self.ident()
+        code, out = run({**self.cve_env(), "PR_TITLE": token}, "")
+        self.assertEqual(code, 1, out)
+        self.assertIn("Vulnerability identifier found in title", out)
+        self.assertNotIn(token, out)
+        code, out = run(self.cve_env(), "", commits=[self.commit(message=token)])
+        self.assertEqual(code, 1, out)
+        self.assertIn("commit abcdef123 message", out)
+        self.assertNotIn(token, out)
+
+    def test_workspace_tracks_no_vulnerability_ids(self):
+        root = os.path.join(HERE, "..", "..")
+        env = {"PATH": os.environ["PATH"], "CVE_ALLOW_FILE": self.cve_env()["CVE_ALLOW_FILE"]}
+        p = subprocess.run([sys.executable, SCRIPT, "--tree", root], env=env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn("No vulnerability identifiers", p.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

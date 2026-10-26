@@ -86,8 +86,11 @@ describe("Browser panel installation access", () => {
 
   it("does not offer an install on unsupported hosts and still shows a ready engine", () => {
     expect(renderBrowser({ features: { browser: true }, browserEngine: { kind: "unavailable", installable: false } })).not.toContain("Install the browser engine");
-    // A ready browser waits for the owner check before opening a live stream.
-    expect(renderBrowser({ features: { browser: true }, browserEngine: { kind: "engine" } })).toContain("Loading browser…");
+    // A ready engine opens the live screen at once. Watching is not an admin check.
+    const ready = renderBrowser({ features: { browser: true }, browserEngine: { kind: "engine" } });
+    expect(ready).toContain("Connecting to the browser…");
+    expect(ready).toContain('data-computer-source="browser"');
+    expect(ready).not.toContain("Only admins of this installation");
   });
 
   it("keeps Chrome setup failure and progress visible even when the binary exists", () => {

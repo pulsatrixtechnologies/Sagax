@@ -6,6 +6,7 @@ import { z } from "zod";
 import { cronScheduleLabel } from "../shared/cron-label.ts";
 import { normalizeCronSchedule, nextCronRuns } from "../shared/routine-schedule.ts";
 import { presentTiming, storedTiming } from "../shared/routine-timing.ts";
+import { isTriggerSchedule } from "../shared/routines.ts";
 import { newId } from "./contracts.ts";
 import { SELF_ROUTINE_CAP, UNDO_STALE, type DirectApply, type DirectApplyCheck } from "./direct-apply.ts";
 import { redactSecretsInText } from "./redact.ts";
@@ -55,6 +56,7 @@ const ACTION_COPY = {
   resume: { title: "Resume", detail: "Resume routine" },
   run_now: { title: "Run now", detail: "Run routine now" },
   delete: { title: "Delete", detail: "Delete routine" },
+  rotate_webhook_key: { title: "Rotate key", detail: "Rotate the trigger key" },
 } as const satisfies Record<RoutineRequestOperation["action"], { title: string; detail: string }>;
 const ROUTINE_REQUEST_FINGERPRINT_VERSION = 1 as const;
 const jsonObjectSchema = z.record(z.string(), z.custom<JsonValue>());
@@ -89,22 +91,40 @@ const routineToolScheduleSchema = z.discriminatedUnion("type", [
   }).strict(),
 ]);
 
-const routineToolDefinitionSchema = z.object({
+const routineToolTriggerSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("webhook") }).strict(),
+  z.object({ type: z.literal("email") }).strict(),
+]);
+
+/** Fields a create or an update may name. The XOR of schedule and trigger
+ * lives on the create schema only: an update cannot retarget a trigger. */
+const routineToolFieldsSchema = z.object({
   name: z.string().max(80),
   instructions: z.string().max(20_000),
-  schedule: routineToolScheduleSchema,
+  schedule: routineToolScheduleSchema.optional(),
+  trigger: routineToolTriggerSchema.optional(),
   runOn: z.enum(["maus", "cloud"]).optional(),
   durationMinutes: z.number().optional(),
   timeoutMinutes: z.number().nullable().optional(),
   continuity: z.boolean().optional(),
   overlap: z.enum(["skip", "queue"]).optional(),
   /** Create only: true starts the routine live, false paused; absent
-   * follows `routines.newPaused`. Pause and resume are actions of their own. */
+   * follows `routines.newPaused`. A webhook or email trigger is always
+   * paused, whatever this says. Pause and resume are actions of their own. */
   enabled: z.boolean().optional(),
 }).strict();
 
-const routineToolChangesSchema = routineToolDefinitionSchema
-  .omit({ timeoutMinutes: true, enabled: true })
+const routineToolDefinitionSchema = routineToolFieldsSchema.superRefine((input, context) => {
+  if ((input.schedule === undefined) === (input.trigger === undefined)) {
+    context.addIssue({
+      code: "custom",
+      message: "Choose exactly one of schedule or trigger",
+    });
+  }
+});
+
+const routineToolChangesSchema = routineToolFieldsSchema
+  .omit({ timeoutMinutes: true, enabled: true, trigger: true })
   .partial()
   .extend({ timeoutMinutes: z.number().nullable().optional() })
   .strict()
@@ -126,6 +146,7 @@ const routineProposalSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resume"), routineId: z.string().max(128), forBot: targetBotSchema.optional() }).strict(),
   z.object({ action: z.literal("run_now"), routineId: z.string().max(128), forBot: targetBotSchema.optional() }).strict(),
   z.object({ action: z.literal("delete"), routineId: z.string().max(128), forBot: targetBotSchema.optional() }).strict(),
+  z.object({ action: z.literal("rotate_webhook_key"), routineId: z.string().max(128), forBot: targetBotSchema.optional() }).strict(),
 ]);
 
 const storedWeekdaysSchema = z.array(z.number().int().min(0).max(6)).min(1).max(7).refine(
@@ -174,6 +195,8 @@ const storedScheduleSchema = z.discriminatedUnion("type", [
     endsAt: z.number().int().nonnegative().max(MAX_DATE_MS).optional(),
     ...storedTimingFields,
   }).strict(),
+  z.object({ type: z.literal("webhook") }).strict(),
+  z.object({ type: z.literal("event"), source: z.literal("email") }).strict(),
 ]).superRefine((schedule, context) => {
   if (schedule.type !== "interval") return;
   if (schedule.window && intervalWindowMinutes(schedule.window) < schedule.everyMinutes) {
@@ -209,6 +232,8 @@ const storedScheduleChangesSchema = z.discriminatedUnion("type", [
     endsAt: z.number().int().nonnegative().max(MAX_DATE_MS).nullable().optional(),
     ...storedTimingFields,
   }).strict(),
+  z.object({ type: z.literal("webhook") }).strict(),
+  z.object({ type: z.literal("event"), source: z.literal("email") }).strict(),
 ]).superRefine((schedule, context) => {
   if (schedule.type !== "interval") return;
   if (schedule.window && intervalWindowMinutes(schedule.window) < schedule.everyMinutes) {
@@ -270,6 +295,7 @@ const storedOperationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resume"), ...storedManageBase }).strict(),
   z.object({ action: z.literal("run_now"), ...storedManageBase }).strict(),
   z.object({ action: z.literal("delete"), ...storedManageBase }).strict(),
+  z.object({ action: z.literal("rotate_webhook_key"), ...storedManageBase }).strict(),
 ]);
 const storedSnapshotSchema = storedDefinitionSchema.extend({
   enabled: z.boolean(),
@@ -367,6 +393,14 @@ export interface RoutineRequestServiceOptions {
    * default true). Read once per proposal and carried on the operation, so
    * the card and the applied routine never disagree. */
   newPaused?: () => boolean;
+  /** Attaches the webhook or email trigger a confirmed create owns. The
+   * key stays in the webhook store; this callback returns nothing. */
+  bindTrigger?: (routine: Routine) => void;
+  /** Mints a new key for the trigger the routine owns. The new key stays
+   * in the webhook store for the owner to copy. */
+  rotateTrigger?: (routine: Routine) => void;
+  /** Admin journal for a trigger create or key rotation. No secret. */
+  onAudit?: (action: "routine.trigger.create" | "routine.trigger.rotate", routine: Routine) => void;
 }
 
 export interface ProposeRoutineRequestArgs {
@@ -417,6 +451,8 @@ export type ResolveRoutineRequestResult =
       resultId: string;
       settlementPending?: true;
       message?: string;
+      /** The owner copies the new key in the app. Never the key itself. */
+      ownerCopiesKey?: true;
     };
 
 export type UndoRoutineRequestResult =
@@ -569,6 +605,7 @@ function keptTiming(
   current: RoutineRequestSchedule,
   incoming: object,
 ): { timing?: "exact" | "flexible"; windowEarlyMinutes?: number; windowLateMinutes?: number } {
+  if (isTriggerSchedule(current) || isTriggerSchedule(incoming as { type: string })) return {};
   if (Object.hasOwn(incoming, "timing")) return timingCarry(incoming as Parameters<typeof timingCarry>[0]);
   if (current.type !== "once" && current.timing === "flexible") return storedTiming(current);
   return {};
@@ -678,12 +715,20 @@ function normalizeScheduleChanges(
   };
 }
 
+function triggerSchedule(trigger: { type: "webhook" } | { type: "email" }): RoutineRequestSchedule {
+  if (trigger.type === "webhook") return { type: "webhook" };
+  return { type: "event", source: "email" };
+}
+
 function normalizeDefinition(input: RoutineToolDefinitionInput, now: number): RoutineRequestDefinition {
+  if ((input.schedule === undefined) === (input.trigger === undefined)) {
+    throw new RoutineRequestError("Choose exactly one of schedule or trigger");
+  }
   const timeoutMinutes = timeout(input.timeoutMinutes);
   return {
     name: text(input.name, "name", 80),
     instructions: text(input.instructions, "instructions", 20_000),
-    schedule: normalizeSchedule(input.schedule, now),
+    schedule: input.trigger ? triggerSchedule(input.trigger) : normalizeSchedule(input.schedule!, now),
     runOn: runOn(input.runOn),
     durationMinutes: duration(input.durationMinutes),
     ...(timeoutMinutes == null ? {} : { timeoutMinutes }),
@@ -741,9 +786,11 @@ function normalizedOperation(
       routine: normalizeDefinition(validated.routine, now),
     };
     if (validated.forBot) operation.forBot = validated.forBot;
-    // Decided once, here: the card and the applied routine both read this
-    // flag. An explicit choice of the creator wins over the server default.
-    if (validated.routine.enabled === undefined ? newPaused : !validated.routine.enabled) operation.paused = true;
+    // A trigger starts paused so nothing runs before the owner has the key.
+    // Otherwise an explicit choice of the creator wins over the server default.
+    if (isTriggerSchedule(operation.routine.schedule) || (validated.routine.enabled === undefined ? newPaused : !validated.routine.enabled)) {
+      operation.paused = true;
+    }
     return operation;
   }
   const id = routineId(validated.routineId);
@@ -762,7 +809,11 @@ function normalizedOperation(
       ...(validated.forBot ? { forBot: validated.forBot } : {}),
     };
   }
-  if (validated.action === "resume" && nextOccurrence(current.schedule, now) === null) {
+  if (validated.action === "rotate_webhook_key" && !isTriggerSchedule(current.schedule)) {
+    throw new RoutineRequestError("That routine has no webhook or email trigger", 409);
+  }
+  // A trigger has no clock, so a null next run is not a reason to refuse resume.
+  if (validated.action === "resume" && !isTriggerSchedule(current.schedule) && nextOccurrence(current.schedule, now) === null) {
     throw new RoutineRequestError(noFutureResumeMessage(current.schedule), 409);
   }
   return {
@@ -787,6 +838,8 @@ export function asSchedule(schedule: RoutineRequestSchedule, now: number): Routi
       ...timingCarry(schedule),
     };
   }
+  if (schedule.type === "webhook") return { type: "webhook" };
+  if (schedule.type === "event") return { type: "event", source: "email" };
   return { type: "daily", time: schedule.time, weekdays: [...schedule.weekdays], ...timingCarry(schedule) };
 }
 
@@ -816,6 +869,8 @@ function effectiveSchedule(
   incoming: RoutineRequestScheduleChanges,
 ): RoutineRequestSchedule {
   if (incoming.type === "cron") return { ...incoming, ...keptTiming(current, incoming) };
+  if (incoming.type === "webhook") return { type: "webhook" };
+  if (incoming.type === "event") return { type: "event", source: "email" };
   if (incoming.type !== "interval") {
     return incoming.type === "once"
       ? { type: "once", at: incoming.at }
@@ -878,7 +933,7 @@ function formatInstant(at: number, timeZone: string): string {
 }
 
 function timingPhrase(schedule: RoutineRequestSchedule): string {
-  if (schedule.type === "once" || schedule.timing !== "flexible") return "";
+  if (schedule.type === "once" || isTriggerSchedule(schedule) || schedule.timing !== "flexible") return "";
   return ` (-${schedule.windowEarlyMinutes ?? 0}/+${schedule.windowLateMinutes ?? 0} min)`;
 }
 
@@ -906,6 +961,12 @@ export function scheduleText(schedule: RoutineRequestSchedule, timeZone: string)
     const text = restrictions.length ? `${cadence} · ${restrictions.join(" · ")}` : cadence;
     return phrase ? `${text} · around the time${phrase}` : text;
   }
+  if (schedule.type === "webhook") {
+    return "Trigger: incoming webhook (URL and key are shown to you after approval)";
+  }
+  if (schedule.type === "event") {
+    return "Trigger: incoming email (the mailbox setup is shown to you after approval)";
+  }
   const days = schedule.weekdays.map((day) => WEEKDAY_LABEL[day]).join(", ");
   return phrase
     ? `${days} around ${schedule.time}${phrase} (${timeZone})`
@@ -919,9 +980,11 @@ export function consequenceLine(schedule: RoutineRequestSchedule, continuity = f
   // over is the previous run's report, so say that rather than contradict
   // the Continuity line above it.
   const session = continuity ? "each run starts a fresh session with the previous run's report" : "each run starts a fresh session";
-  const window = schedule.type !== "once" && schedule.timing === "flexible"
+  const window = schedule.type !== "once" && !isTriggerSchedule(schedule) && schedule.timing === "flexible"
     ? ` Starts up to ${schedule.windowEarlyMinutes ?? 0} min early and ${schedule.windowLateMinutes ?? 0} min late.`
     : "";
+  if (schedule.type === "webhook") return "Runs when a webhook delivery arrives.";
+  if (schedule.type === "event") return "Runs when email arrives.";
   if (schedule.type === "cron") return `Will run at matching calendar times in ${schedule.timeZone}; ${session}.${window}`;
   if (schedule.type === "once") return "Will run once; that run starts a fresh session.";
   if (schedule.type === "interval") {
@@ -1242,8 +1305,13 @@ function revalidateOperation(operation: RoutineRequestOperation, manager: Routin
   }
   if (operation.action === "resume") {
     if (!current) throw new RoutineRequestError("That routine no longer exists", 404);
-    if (nextOccurrence(current.schedule, now) === null) {
+    if (!isTriggerSchedule(current.schedule) && nextOccurrence(current.schedule, now) === null) {
       throw new RoutineRequestError(noFutureResumeMessage(current.schedule), 409);
+    }
+  }
+  if (operation.action === "rotate_webhook_key") {
+    if (!current || !isTriggerSchedule(current.schedule)) {
+      throw new RoutineRequestError("That routine has no webhook or email trigger", 409);
     }
   }
 }
@@ -1299,6 +1367,9 @@ export class RoutineRequestService {
   private readonly validateTarget?: RoutineRequestServiceOptions["validateTarget"];
   private readonly autoApply?: RoutineRequestServiceOptions["autoApply"];
   private readonly newPaused: () => boolean;
+  private readonly bindTrigger?: RoutineRequestServiceOptions["bindTrigger"];
+  private readonly rotateTrigger?: RoutineRequestServiceOptions["rotateTrigger"];
+  private readonly onAudit?: RoutineRequestServiceOptions["onAudit"];
 
   constructor(options: RoutineRequestServiceOptions) {
     this.store = options.store;
@@ -1311,6 +1382,9 @@ export class RoutineRequestService {
     this.autoApply = options.autoApply;
     // Same default as config.ts DEFAULT_NEW_ROUTINES_PAUSED.
     this.newPaused = options.newPaused ?? (() => true);
+    this.bindTrigger = options.bindTrigger;
+    this.rotateTrigger = options.rotateTrigger;
+    this.onAudit = options.onAudit;
   }
 
   async propose(args: ProposeRoutineRequestArgs): Promise<RoutineProposalResult> {
@@ -1550,8 +1624,13 @@ export class RoutineRequestService {
           }).id;
           break;
         }
-        default:
+        case "rotate_webhook_key":
+          return cannot("A rotated trigger key can't be undone.");
+        default: {
+          const unexpected: never = operation;
+          void unexpected;
           return cannot("This change can't be undone here.");
+        }
       }
     } catch (error) {
       return cannot(redactSecretsInText(error instanceof Error ? error.message : String(error)).slice(0, 500));
@@ -1741,7 +1820,15 @@ export class RoutineRequestService {
     });
     if (!settled) throw new RoutineRequestError("This routine confirmation card is no longer available", 409);
     this.forgetSettledReceipt(payload, messageId);
-    return { claimed: true, state: "applied", action: payload.operation.action, resultId };
+    const copiesKey = payload.operation.action === "rotate_webhook_key"
+      || (payload.operation.action === "create" && isTriggerSchedule(payload.operation.routine.schedule));
+    return {
+      claimed: true,
+      state: "applied",
+      action: payload.operation.action,
+      resultId,
+      ...(copiesKey ? { ownerCopiesKey: true as const } : {}),
+    };
   }
 
   private forgetSettledReceipt(payload: RoutineRequestCardData, messageId: string): void {
@@ -1798,8 +1885,8 @@ export class RoutineRequestService {
     const operation = payload.operation;
     const confirmationAt = this.now();
     switch (operation.action) {
-      case "create":
-        return this.routines.create(inputFromDefinition(
+      case "create": {
+        const created = this.routines.create(inputFromDefinition(
           operation.routine,
           operation.forBot?.botId ?? payload.botId,
           confirmationAt,
@@ -1812,7 +1899,10 @@ export class RoutineRequestService {
           action: "create",
           fingerprintVersion: ROUTINE_REQUEST_FINGERPRINT_VERSION,
           fingerprint,
-        }, meta).id;
+        }, meta);
+        if (isTriggerSchedule(created.schedule)) this.attachTrigger(created);
+        return created.id;
+      }
       case "update": {
         const current = verifyManageSnapshot(operation, this.routines, operation.forBot?.botId ?? payload.botId);
         const updated = this.routines.update(
@@ -1875,8 +1965,41 @@ export class RoutineRequestService {
           throw new RoutineRequestError("That routine no longer exists", 404);
         }
         return operation.routineId;
-      default:
+      case "rotate_webhook_key": {
+        const current = verifyManageSnapshot(operation, this.routines, operation.forBot?.botId ?? payload.botId);
+        if (!isTriggerSchedule(current.schedule)) {
+          throw new RoutineRequestError("That routine has no webhook or email trigger", 409);
+        }
+        if (!this.rotateTrigger) {
+          throw new RoutineRequestError("This server cannot rotate a trigger key", 503);
+        }
+        this.rotateTrigger(current);
+        this.onAudit?.("routine.trigger.rotate", current);
+        return current.id;
+      }
+      default: {
+        const unexpected: never = operation;
+        void unexpected;
         throw new RoutineRequestError("Unsupported persisted routine action");
+      }
+    }
+  }
+
+  /** Binds the owned trigger after create. A failure removes the routine
+   * so a trigger is never left without its webhook. */
+  private attachTrigger(routine: Routine): void {
+    if (!this.bindTrigger) {
+      this.routines.remove(routine.id);
+      throw new RoutineRequestError("This server cannot attach a trigger to a routine", 503);
+    }
+    try {
+      this.bindTrigger(routine);
+      this.onAudit?.("routine.trigger.create", routine);
+    } catch (error) {
+      this.routines.remove(routine.id);
+      throw error instanceof RoutineRequestError
+        ? error
+        : new RoutineRequestError(error instanceof Error ? error.message : "The trigger could not be attached", 503);
     }
   }
 }

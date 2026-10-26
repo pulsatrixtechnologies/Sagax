@@ -29,7 +29,7 @@ const SHEET: MausState[] = ["idle", "happy", "sad", "celebrate", "thinking", "wr
 function Gallery() {
   if (state) {
     return (
-      <div className="grid min-h-screen place-items-center bg-surface p-6 text-ink">
+      <div className="grid min-h-screen place-items-center bg-app p-6 text-ink">
         <figure data-shot className="flex flex-col items-center gap-2 rounded-2xl bg-panel p-6">
           <BotAvatar bot={bot} size={256} state={state} animated={!still} />
           <figcaption className="text-xs text-ink-secondary">
@@ -41,7 +41,7 @@ function Gallery() {
     );
   }
   return (
-    <div className="min-h-screen bg-surface p-6 text-ink">
+    <div className="min-h-screen bg-app p-6 text-ink">
       <div data-shot className="grid grid-cols-6 gap-4">
         {SHEET.map((s) => (
           <figure key={s} className="flex flex-col items-center gap-1">

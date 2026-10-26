@@ -1,7 +1,8 @@
 # Fails a pull request whose title, branch name, changed paths, added lines, or
 # commit metadata (author/committer name and e-mail, message) contain a
-# forbidden term. The term list is NOT stored in this repository: it
-# is read from the FORBIDDEN_TERMS Actions secret (newline-separated).
+# forbidden term or a vulnerability identifier. The term list is NOT stored
+# in this repository: it is read from the FORBIDDEN_TERMS Actions secret
+# (newline-separated). Identifier exceptions are path globs only.
 #
 # pull_request_target runs in the base repository so the secret is available
 # for every pull request, including a fork. The job runs on a GitHub-hosted
@@ -38,6 +39,7 @@ jobs:
           sparse-checkout: |
             scripts/ci/term-guard.py
             .github/term-guard-allow-paths.txt
+            .github/cve-id-allow-paths.txt
           sparse-checkout-cone-mode: false
 
       - name: Mask terms

@@ -40,13 +40,14 @@ afterAll(async () => { await fixture?.close(); });
 
 describe("live browser route authorization", () => {
   // The Computer tab's preview (live?preview=1) sits behind the same gate.
-  it.each([["GET", "live"], ["GET", "live?preview=1"], ["POST", "action"]])("keeps %s %s owner-only", async (method, suffix) => {
+  // A client session that cannot use the bot learns nothing about it.
+  it.each([["GET", "live"], ["GET", "live?preview=1"], ["POST", "action"]])("keeps %s %s to people who can use the bot", async (method, suffix) => {
     const path = `/api/bots/${botId}/browser/${suffix}`;
     const body = method === "POST" ? { viewerId: "forged", type: "take" } : undefined;
     expect((await call(method, path, body, remote)).status).toBe(403);
     const denied = await call(method, path, body, { ...remote, authorization: `Bearer ${clientToken}` });
-    expect(denied.status).toBe(403);
-    expect(denied.body.error).toContain("admin");
+    expect(denied.status).toBe(404);
+    expect(denied.body.error).toContain("no such bot");
     const crossOrigin = await call(method, path, body, { ...remote, cookie: ownerCookie, origin: "https://attacker.invalid" });
     expect(crossOrigin.status).toBe(403);
     expect(crossOrigin.body.error).toContain("cross-origin");

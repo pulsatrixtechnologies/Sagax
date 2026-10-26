@@ -495,7 +495,7 @@ import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
-import { NO_ENGINE_MESSAGE, engineProblem, namesEngine } from "./bot-engine.ts";
+import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { offeredEngines, orgEngineMoveLine } from "../shared/offered-engines.ts";
@@ -5786,7 +5786,7 @@ const routineRequestEnvelopeSchema = z.discriminatedUnion("action", [
     changes: z.unknown(),
     forBotId: z.unknown().optional(),
   }).strict(),
-  ...(["pause", "resume", "run_now", "delete"] as const).map((action) =>
+  ...(["pause", "resume", "run_now", "delete", "rotate_webhook_key"] as const).map((action) =>
     z.object({ ...routineRequestSourceSchema, action: z.literal(action), routineId: z.unknown(), forBotId: z.unknown().optional() }).strict()
   ),
 ]);
@@ -18974,7 +18974,7 @@ async function startTurn(
   if (!namesEngine(bot.modelSelection)) {
     // No engine at all: the default one, or a plain sentence, never `provider instance ""`.
     const healed = healBotEngine(bot);
-    if (!namesEngine(healed.modelSelection)) throw Object.assign(new Error(NO_ENGINE_MESSAGE), { status: 409 });
+    if (!namesEngine(healed.modelSelection)) throw noEngineError();
     bot = healed;
   }
   const instance = registry.get(bot.modelSelection.instanceId);
@@ -21211,6 +21211,17 @@ routines = new RoutineManager({
   handedOffWorkLive: (threadId) => coordinator.outstandingDirect(threadId).length > 0 || pendingThreads().includes(threadId) ||
     [...delegationWatch.values()].some((watch) => watch.sourceThreadId === threadId) || pendingDelegationWakes.has(threadId),
   botState: unattendedDispatchState,
+  onTriggerRoutineRemoved: (routine) => { webhooks.removeOwnedRoutine(routine.id); },
+  onTriggerRoutineUpdated: (routine) => {
+    webhooks.syncOwned({
+      id: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      enabled: routine.enabled,
+    });
+  },
   goalState: (groupId, coordinatorBotId) => {
     const group = store.group(groupId);
     const coordinator = store.bot(coordinatorBotId);
@@ -21585,7 +21596,7 @@ async function cloudRoutineReadiness(botId: string, threadId?: string): Promise<
   const bot = projected && selection ? { ...projected, modelSelection: selection } : projected;
   if (!bot || bot.hidden) return { ready: false, reason: "The routine's target bot no longer exists." };
   const instance = registry.get(bot.modelSelection.instanceId);
-  if (!namesEngine(bot.modelSelection)) return { ready: false, reason: NO_ENGINE_MESSAGE };
+  if (!namesEngine(bot.modelSelection)) return { ready: false, reason: NO_ENGINE_PERSON };
   if (!instance) return { ready: false, reason: "The target bot's model is unavailable. Choose another model in the bot's settings." };
   // Organization server: a cloud routine runs in the bot owner's server
   // environment. It does not need a remote computer account.
@@ -21649,6 +21660,22 @@ const routineRequests = new RoutineRequestService({
       return `@${target.name} is no longer in this section, so this routine request cannot be confirmed for it`;
     }
     return null;
+  },
+  bindTrigger: (routine) => {
+    webhooks.createOwned({
+      routineId: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      kind: routine.schedule.type === "event" ? "email" : "webhook",
+    });
+  },
+  rotateTrigger: (routine) => {
+    if (!webhooks.rotateOwned(routine.id)) throw new Error("That routine has no trigger");
+  },
+  onAudit: (action, routine) => {
+    routineAudit(action, effectiveRunAs(routine), { routine });
   },
 });
 async function deleteBotWithLifecycle(botId: string, revalidate: () => void = () => {}, setupRequest?: TeamSetupRequest) {
@@ -22211,11 +22238,15 @@ const agentRoutine = (
           }
         : routine.schedule.type === "cron"
           ? { ...routine.schedule }
-          : {
-              type: "weekly" as const,
-              time: routine.schedule.time,
-              weekdays: routine.schedule.weekdays.map((day) => ROUTINE_WEEKDAY_NAMES[day]),
-            },
+          : routine.schedule.type === "webhook"
+            ? { type: "webhook" as const }
+            : routine.schedule.type === "event"
+              ? { type: "event" as const, source: "email" as const }
+              : {
+                  type: "weekly" as const,
+                  time: routine.schedule.time,
+                  weekdays: routine.schedule.weekdays.map((day) => ROUTINE_WEEKDAY_NAMES[day]),
+                },
     nextRunAt: routine.nextRunAt === null ? null : new Date(routine.nextRunAt).toISOString(),
     latestRun: latestRun
       ? {
@@ -22233,9 +22264,17 @@ const agentRoutine = (
       : null,
   };
 };
+/** A webhook or email key is shown once, and only to the person who tapped
+ * Allow. A bot replaying that tap, or a service on loopback, leaves the key
+ * for the app. */
+function routineKeyReveal(auth: RequestAuth): boolean {
+  if (auth.kind === "loopback") return auth.trust !== "service";
+  return auth.kind === "session" && !isBotActSession(auth.session);
+}
 function sendRoutineResolution(
   res: ServerResponse,
   result: ReturnType<RoutineRequestService["resolve"]>,
+  revealKey = false,
 ): boolean {
   if (!result.claimed) return false;
   if (result.state === "invalid") {
@@ -22254,11 +22293,15 @@ function sendRoutineResolution(
     json(res, 200, { ok: true, outcome: "rejected" });
     return true;
   }
+  const webhookKey = revealKey && result.state === "applied" && result.ownerCopiesKey
+    ? webhooks.revealForRoutine(result.resultId)?.secret
+    : undefined;
   json(res, 200, {
     ok: true,
     outcome: "allowed-once",
     routineAction: result.action,
     resultId: result.resultId,
+    ...(webhookKey ? { webhookKey } : {}),
   });
   return true;
 }
@@ -22266,6 +22309,7 @@ function resolveAndSendRoutine(
   res: ServerResponse,
   args: { botId: string; botName?: string; threadId: string; requestId: string; behavior: string; actorPrincipalId?: string },
   ownersAnswer = false,
+  revealKey = false,
 ): boolean {
   if (args.behavior === "allow") safetyForgetArmed(args.requestId);
   else if (args.behavior === "deny") safetyRejectArmed(args.requestId);
@@ -22293,7 +22337,7 @@ function resolveAndSendRoutine(
       source: "user",
     });
   }
-  return sendRoutineResolution(res, result);
+  return sendRoutineResolution(res, result, revealKey);
 }
 function resolveAndSendProfile(
   res: ServerResponse,
@@ -22502,6 +22546,19 @@ const webhooks = new WebhookManager({
   },
   botState: unattendedDispatchState,
   enqueue: (input) => routines!.enqueueWebhook(input),
+  ownedRoutine: (id) => {
+    const routine = routines!.routineById(id);
+    if (!routine) return null;
+    return {
+      id: routine.id,
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      enabled: routine.enabled,
+    };
+  },
+  onOwnedRoutineRemoved: (routineId) => { routines!.remove(routineId); },
   findRun: (webhookId, deliveryId) => routines!.webhookRunReceipt(webhookId, deliveryId),
   cancelQueued: (webhookId, message) => routines!.cancelQueuedWebhook(webhookId, message),
   pendingRuns: (webhookId) => routines!.activeWebhookRunCount(webhookId),
@@ -22872,7 +22929,7 @@ async function runGroupMemberTurn(
   const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined"
     ? (cloudGuestDriven(threadId) || !botmailConfined(threadId) ? guestEngineRefusal(threadId) : BOTMAIL_ENGINE_REFUSAL) : undefined;
   if (!instance || roomPolicyRefusal || roomGuestRefusal) {
-    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_MESSAGE);
+    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_PERSON);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "activity",
@@ -40873,14 +40930,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : json(res, 404, { error: "no such webhook" });
     }
 
-    // ── events stream ──
-    // Owner-only (default-deny in request-auth). Never mix login frames into
-    // the general events feed, which is also visible to client-only devices.
+    // ── the bot's browser, then the events stream ──
     const liveBrowserMatch = /^\/api\/bots\/([\w-]+)\/browser\/(live|action)$/.exec(path);
     if (liveBrowserMatch) {
       res.setHeader("cache-control", "no-store");
       const bot = store.bot(liveBrowserMatch[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // Anyone who can use the bot watches its session. A stranger learns
+      // nothing about whether the bot exists. Installing the engine is a
+      // separate admin route.
+      if (viewerBotLevel(auth, bot) === null && !auth.scopes.includes("admin") && !orgAdminCaller(auth)) {
+        return json(res, 404, { error: "no such bot" });
+      }
       if (!builtInBrowserEnabled(cfg) || bot.browser === false) {
         return json(res, 409, { error: "Enable this bot's browser in its profile first." });
       }
@@ -40919,6 +40980,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return json(res, 405, { error: "method not allowed" });
     }
+    // Owner-only (default-deny in request-auth). Never mix login frames into
+    // the general events feed, which is also visible to client-only devices.
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
@@ -45222,7 +45285,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           requestId: String(body.requestId),
           behavior,
           ...routineActor(auth),
-        }, auth.kind === "session" && cloudOwnerSession(auth))) return;
+        }, auth.kind === "session" && cloudOwnerSession(auth), routineKeyReveal(auth))) return;
         if (resolveAndSendProfile(res, {
           botId: bot.id,
           botName: bot.name,
@@ -45383,7 +45446,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             requestId,
             behavior,
             ...routineActor(auth),
-          }, auth.kind === "session" && cloudOwnerSession(auth))) return;
+          }, auth.kind === "session" && cloudOwnerSession(auth), routineKeyReveal(auth))) return;
         }
         const setupCard = store.messagesFor(threadId).find((message) => message.card?.requestId === requestId && message.card.teamSetupRequest);
         if (setupCard) {
@@ -48200,7 +48263,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested", "misuse_blocked", "misuse_approval_required", "misuse_locked", "safety_blocked"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested", "misuse_blocked", "misuse_approval_required", "misuse_locked", "safety_blocked", "no_engine"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {
