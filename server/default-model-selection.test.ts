@@ -3,7 +3,7 @@ import { transpileTs } from "./testing/transpile.ts";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EngineAccess, ModelCatalog, ModelSelection, ProviderSnapshot } from "./contracts.ts";
-import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, memberNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { ManagedDesktopPolicy } from "./managed-policy.ts";
 
 const codex = {
@@ -310,5 +310,41 @@ describe("a brand-new bot starts on Auto", () => {
   it("is idempotent on a selection that is already Auto", () => {
     expect(autoNewBotSelection({ instanceId: "claude", model: "claude-sonnet-5", auto: true }))
       .toEqual({ instanceId: "claude", model: "claude-sonnet-5", auto: true });
+  });
+});
+
+describe("an organization member's new bot model (#1060)", () => {
+  it("starts on the organization's default for new bots", () => {
+    const organization = { instanceId: "codex", model: "selected-model", effort: "high" as const };
+    expect(memberNewBotSelection([claude, codex], { organization, server: { instanceId: "claude", model: "claude-default" } }))
+      .toEqual(organization);
+  });
+  it("falls back to the server's default when the organization's cannot run here", () => {
+    const organization = { instanceId: "gone", model: "x" };
+    expect(memberNewBotSelection([claude, codex], { organization, server: { instanceId: "codex", model: "codex-default" } }))
+      .toEqual({ instanceId: "codex", model: "codex-default" });
+  });
+  it("never leaves the bot without an engine while one can run: Auto on it", () => {
+    const signedOutCodex = { ...codex, snapshot: { state: "available", authenticated: false } satisfies ProviderSnapshot };
+    expect(memberNewBotSelection([signedOutCodex, claude], { organization: { instanceId: "codex", model: "codex-default" } }))
+      .toEqual({ instanceId: "claude", model: "claude-default", auto: true });
+  });
+  it("skips a default the organization's policy refuses", () => {
+    const refusal = (instance: SelectableInstance) => instance.instanceId === "codex" ? "not allowed" : undefined;
+    expect(memberNewBotSelection([claude, codex], { organization: { instanceId: "codex", model: "codex-default" } }, { refusal }))
+      .toEqual({ instanceId: "claude", model: "claude-default", auto: true });
+  });
+  it("is empty only when no engine is available", () => {
+    expect(memberNewBotSelection([], { organization: { instanceId: "codex", model: "codex-default" } })).toEqual({ instanceId: "", model: "" });
+  });
+});
+
+describe("POST /api/bots for an organization member (#1060)", () => {
+  it("resolves the member's model through the organization's default, not the bare server default", () => {
+    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    const route = source.slice(source.indexOf('if (method === "POST" && path === "/api/bots") {'));
+    expect(route.slice(0, route.indexOf("store.createBot("))).toContain("memberCreate ? await memberDefaultSelection() : await defaultSelection()");
+    const helper = source.slice(source.indexOf("async function memberDefaultSelection("));
+    expect(helper.slice(0, helper.indexOf("\n}\n"))).toContain("cfg.newBotDefaults?.profile.modelSelection");
   });
 });

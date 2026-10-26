@@ -110,3 +110,25 @@ export function withNewBotEffort(
   }
   return { ...selection, effort };
 }
+
+/** What an organization member's new bot starts on when the request names
+ * no model (#1060). Each level is tried in order and the first one that can
+ * run here wins: the organization's default for new bots
+ * (`newBotDefaults.profile.modelSelection`, the console's setting), then the
+ * server's default (`defaultModelSelection`), then an engine that can run a
+ * turn now, on Auto. A saved choice that cannot run (engine gone, signed
+ * out, disallowed by the organization) never leaves a member's bot without
+ * an engine: the next level decides. An empty selection only when no engine
+ * at all is available here. */
+export function memberNewBotSelection(
+  instances: readonly SelectableInstance[],
+  levels: { organization?: ModelSelection | null; server?: ModelSelection | null },
+  context: DefaultSelectionContext = {},
+): ModelSelection {
+  for (const preferred of [levels.organization, levels.server]) {
+    if (!preferred?.instanceId?.trim() || !preferred.model?.trim()) continue;
+    const picked = selectDefaultModelSelection(instances, preferred, context);
+    if (picked.instanceId && picked.model) return picked;
+  }
+  return autoNewBotSelection(selectDefaultModelSelection(instances, undefined, context));
+}
