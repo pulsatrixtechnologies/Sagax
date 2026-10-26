@@ -356,6 +356,7 @@ import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-dr
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
+import { personLanguage } from "./person-language.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -20569,7 +20570,7 @@ async function startTurn(
       }
       if (!warmOnly) turnTrace(threadId, "send");
       // Each picture within the model's limits: a scaled copy for a large one.
-      const modelImages = await fitTurnImagesForModel(turnImages, { language: cfg.language });
+      const modelImages = await fitTurnImagesForModel(turnImages, { language: languageOfPerson(turnPlace.principal) });
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -23844,7 +23845,7 @@ async function runGroupMemberTurn(
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
-        images: await fitTurnImagesForModel(turnImages, { language: cfg.language }),
+        images: await fitTurnImagesForModel(turnImages, { language: languageOfPerson(roomSpeakerId) }),
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
@@ -30058,6 +30059,20 @@ async function settleBotActCard(
 
 const cwActionPasses = createCwActionPasses();
 
+/** The language to word a text for the person behind this request: their own
+ * `omb-language`, else the server's default (server/person-language.ts). */
+function languageOfPerson(person: string | null | undefined): string {
+  let preference: unknown;
+  try {
+    if (person) preference = userPreferenceStore.get(person).preferences["omb-language"];
+  } catch { /* the server default */ }
+  return personLanguage(preference, cfg.language);
+}
+
+function languageOfRequest(auth: RequestAuth): string {
+  return languageOfPerson(actorPrincipalId(auth));
+}
+
 function cwActionActor(auth: RequestAuth): PerformActor | null {
   if (auth.kind === "session") {
     return { kind: "person", sessionId: auth.session.id, personKey: personKey(auth.session), scopes: [...auth.session.scopes] };
@@ -30096,13 +30111,14 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
   if (!cwActionActor(auth) || approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) {
     return { status: 403, body: { error: "Only the bot owner can approve a ConnectWise change.", code: "cw_action_owner_only" } };
   }
-  const language = cwActionLanguage(cfg.language);
+  const personal = languageOfRequest(auth);
+  const language = cwActionLanguage(personal);
   const card = cwActionCard(action, language, actorPrincipalId(auth));
-  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(cfg.language));
+  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(personal));
   // 2026-10-19 ("Toujours permettre" on every card): what Always allow
   // keeps here (this bot, this kind of ConnectWise change), and whether the
   // person already kept it (no security key of theirs protecting the write)
-  const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(cfg.language));
+  const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(personal));
   const candidate = { ...described, tool: CW_WIDGET_RULE_TOOL };
   const answerer = approvalOwnerId(bot, threadId);
   const stepUp = autoAnswerStepUp(bot, threadId, { tool: "cw_psa__write", input: card.toolInput, summary: card.summary });
@@ -30135,7 +30151,7 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
       threadId, requestId: card.requestId, botId: bot.id, botName: bot.name, tool: "cw_psa__write", summary: card.summary,
       decision: "auto-approved", source: "owner-rule", rule: kept.id,
     });
-    const done = await allowCwAction(actor, threadId, message.id, { ...message.card!, ruleSaved: { id: kept.id, behavior: kept.behavior, description: kept.description } }, bot, action);
+    const done = await allowCwAction(actor, threadId, message.id, { ...message.card!, ruleSaved: { id: kept.id, behavior: kept.behavior, description: kept.description } }, bot, action, languageOfRequest(auth));
     return done.status < 400
       ? { status: 201, body: { requestId: card.requestId, messageId: message.id, allowedByRule: true } }
       : done;
@@ -30177,7 +30193,7 @@ async function resolveAndSendCwAction(
     json(res, 409, { error: "This bot is no longer here." });
     return true;
   }
-  const done = await allowCwAction(actor, threadId, message.id, card, bot, action);
+  const done = await allowCwAction(actor, threadId, message.id, card, bot, action, languageOfRequest(auth));
   json(res, done.status, done.body);
   return true;
 }
@@ -30191,10 +30207,11 @@ async function allowCwAction(
   card: NonNullable<Message["card"]>,
   bot: BotRecord,
   action: NonNullable<ReturnType<typeof parseCwAction>>,
+  language: string | undefined = cfg.language,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   store.patchMessage(threadId, messageId, { card: { ...card, answered: "allow" } });
   cwActionPasses.grant(threadId, action);
-  const text = cwActionInstruction(action, cwActionLanguage(cfg.language));
+  const text = cwActionInstruction(action, cwActionLanguage(language));
   const group = store.groupByThread(threadId);
   const sent = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
@@ -30299,7 +30316,7 @@ async function settleConfidentialMemoryCard(auth: RequestAuth, threadId: string,
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow" } });
   confidentialMemoryPasses.grant(threadId, pending.digest);
-  const french = cwActionLanguage(cfg.language) === "fr";
+  const french = cwActionLanguage(languageOfRequest(auth)) === "fr";
   // the owner allowed it in person: the follow-up posts into exactly this
   // thread, never as an on-behalf request (which a confidential thread refuses)
   const sent = await performBotActRoute(actor, {
@@ -30347,9 +30364,9 @@ function emailDraftBot(auth: RequestAuth, threadId: string, botIdHint: unknown):
 
 /** Where a draft can be sent from: the bot's own mail connectors first (the
  * person's mailbox), then the server's mail when it is set up. */
-function emailConnectorsFor(bot: BotRecord): EmailConnector[] {
+function emailConnectorsFor(bot: BotRecord, language: string | undefined = cfg.language): EmailConnector[] {
   const connectors = mailConnectorsOf(bot);
-  if (mailer()) connectors.push({ kind: "smtp", label: cfg.language?.toLowerCase().startsWith("fr") ? "le courriel du serveur" : "the server's mail" });
+  if (mailer()) connectors.push({ kind: "smtp", label: language?.toLowerCase().startsWith("fr") ? "le courriel du serveur" : "the server's mail" });
   return connectors;
 }
 
@@ -30368,7 +30385,7 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
   if (normalized.draft.bcc.length && store.groupByThread(threadId)) {
     return { status: 400, body: { error: "Bcc is not available in a room: everyone in it would see the hidden recipients.", code: "bcc_in_room" } };
   }
-  const connectors = emailConnectorsFor(bot);
+  const connectors = emailConnectorsFor(bot, languageOfRequest(auth));
   const wanted = body.connector && typeof body.connector === "object" ? body.connector as { kind?: unknown; id?: unknown } : undefined;
   const connector = wanted
     ? connectors.find((candidate) => candidate.kind === wanted.kind && (candidate.id ?? null) === (typeof wanted.id === "string" ? wanted.id : null))
@@ -30383,7 +30400,7 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
     .find((row) => row.card?.emailSendRequest?.draftKey === draftKey && JSON.stringify(row.card.emailSendRequest.draft) === sameDraft)?.card?.emailSendRequest;
   const sentTo = earlier?.status === "failed" && earlier.sentTo?.length && earlier.connector.kind === connector.kind ? earlier.sentTo : undefined;
   const request = { ...emailSendCard({ draft: normalized.draft, draftKey, connector, by: actorPrincipalId(auth) }), ...(sentTo ? { sentTo } : {}) };
-  const summary = emailSendSummary(normalized.draft, connector, cfg.language);
+  const summary = emailSendSummary(normalized.draft, connector, languageOfRequest(auth));
   // the card's arguments never list Bcc addresses, only how many
   const toolInput = JSON.stringify({
     to: normalized.draft.to, cc: normalized.draft.cc,
@@ -30451,7 +30468,7 @@ function emailDraftStatus(auth: RequestAuth, threadId: string, draftKey: string)
   if (message.card?.answered === "deny" && status === "pending") status = "denied";
   if (status === "handed-off" && !emailSendPasses.waiting(threadId, request.id)) {
     status = "failed";
-    error = cfg.language?.toLowerCase().startsWith("fr")
+    error = languageOfRequest(auth).toLowerCase().startsWith("fr")
       ? "Le robot n'a pas envoyé ce courriel à temps. Réessayez."
       : "The bot did not send this email in time. Try again.";
   }
@@ -30540,7 +30557,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", emailSendRequest: { ...request, status: "handed-off" } } });
   emailSendPasses.grant(threadId, bot.id, requestId, request.draft, request.connector);
-  const text = emailSendInstruction(request.draft, request.connector, cfg.language);
+  const text = emailSendInstruction(request.draft, request.connector, languageOfRequest(auth));
   const group = store.groupByThread(threadId);
   const asked = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
@@ -30549,7 +30566,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
     emailSendPasses.revoke(threadId, requestId);
     patchEmailSend(threadId, requestId, {
       status: "failed",
-      error: cfg.language?.toLowerCase().startsWith("fr") ? "Le robot n'a pas pu recevoir la demande d'envoi. Réessayez." : "The bot could not be asked to send it. Try again.",
+      error: languageOfRequest(auth).toLowerCase().startsWith("fr") ? "Le robot n'a pas pu recevoir la demande d'envoi. Réessayez." : "The bot could not be asked to send it. Try again.",
     });
     json(res, 502, { error: "The bot could not be asked to send this email. Try again." });
     return true;
@@ -41908,7 +41925,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // may name coworkers they can see in the directory (#1061).
       const memberCreates = IDENTITY.kind === "perspicax" && auth.kind === "session" && channelActorRole(auth) === "member";
       const humans = refuseHumanEdit(auth, body, [], memberCreates);
-      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
+      if (humans) { const bad = humans.startsWith("unknown team") || humans.startsWith("unknown person"); return json(res, bad ? 400 : 403, bad ? { error: humans } : { error: humans, code: "not_channel_editor" }); }
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -43097,7 +43114,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (Object.hasOwn(settings, "computer")) settings.computer = requestedWorksOn(settings.computer) ?? undefined;
       body = { ...body, ...settings, name: settings.name };
       if (settings.approvalMode === "full" || settings.approvalMode === "custom") {
-        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation." });
+        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation.", code: "approval_desktop_required" });
       }
       if (namedThisComputer && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
         return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });
