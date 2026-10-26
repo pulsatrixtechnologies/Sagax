@@ -318,8 +318,10 @@ struct ChatListView: View {
                         updatesButton
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
+                            .bottomBarScrim()
                     } else {
                         bottomBar(includesUpdates: true)
+                            .bottomBarScrim()
                     }
                 }
             }
@@ -1536,6 +1538,7 @@ extension ChatListView {
             }
             .padding(.horizontal, Theme.Metric.screenEdge)
             .padding(.bottom, 8)
+            .bottomBarScrim()
         }
     }
 
@@ -1805,15 +1808,14 @@ extension ChatListView {
     private var homeOverlays: some View {
         ZStack {
             if showingSettings {
-                CardSheetContainer(onDismiss: {
+                // Full screen on iPhone and iPad (JC, 2026-10-26): the whole
+                // surface, with the X of SettingsView to close.
+                SettingsView(close: {
                     showingSettings = false
                     Task { await flags.reload(session) }
-                }) {
-                    SettingsView(close: {
-                        showingSettings = false
-                        Task { await flags.reload(session) }
-                    })
-                }
+                })
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(Theme.bg.ignoresSafeArea())
                 .transition(.move(edge: .bottom))
                 .zIndex(1)
             }
