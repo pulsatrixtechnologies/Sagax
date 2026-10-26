@@ -13,7 +13,8 @@ struct ChatListView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var query = ""
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    /// Settings > Appearance > Tool calls, the desktop's switch.
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) var showUpdatesButton = false
     @AppStorage(PrefKey.rosterChromeAtTop) private var storedChromeAtTop = false
@@ -813,10 +814,7 @@ struct ChatListView: View {
 
     /// Changes when a message or an unread mark arrives, or the roster's
     /// membership changes.
-    private var rosterSignature: [String] {
-        session.state.bots.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0):\($0.tasks?.compactMap(\.updatedAt).max() ?? 0)" }
-            + session.state.rooms.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0)" }
-    }
+    private var rosterSignature: [String] { session.rosterSignature }
 
     /// The account menu's entries.
     private func selectAccount(_ item: AccountMenuItem) {
@@ -854,7 +852,7 @@ struct ChatListView: View {
     // MARK: - Data
 
     /// The reader's activity level, which the roster preview folds by.
-    private var activity: ActivityDetail { ActivityDetail(rawValue: activityDetail) ?? .full }
+    private var activity: ActivityDetail { toolCalls.detail }
 
     /// How much each row says, from Settings.
     private var density: RosterDensity { RosterDensity.shown(stored: rosterDensity) }
@@ -1316,6 +1314,7 @@ extension ChatListView {
         .task(id: session.connection?.id) {
             await session.loadAccount()
             await sidebarPrefs.load(session)
+            await ToolCallsSetting.shared.load(session)
             await people.load(session)
             await AccountRowModel.shared.refresh(session)
             await flags.reload(session)

@@ -23,6 +23,8 @@ export interface PushHubDeps {
   activeTokens?(person: string): string[];
   /** The person's synced "Notification sounds" (true when unset). */
   personSound?(person: string): boolean;
+  /** The person's synced "Notification sound" (a tone id, or "system"). */
+  personSoundChoice?(person: string): string | undefined;
   transport?: ApnsTransport;
   now?: () => number;
   log?: ApnsLog;
@@ -216,8 +218,9 @@ export class PushHub {
     const sender = this.sender;
     if (!sender) return;
     const personSound = this.deps.personSound?.(message.personId) ?? true;
+    const personSoundChoice = this.deps.personSoundChoice?.(message.personId);
     for (const device of this.devicesToSend(message.personId)) {
-      const request = buildApnsRequest({ message, bundleId: this.deps.config.configured ? this.deps.config.config.bundleId : "", settings: device.settings, personSound, nowMs: this.now() });
+      const request = buildApnsRequest({ message, bundleId: this.deps.config.configured ? this.deps.config.config.bundleId : "", settings: device.settings, personSound, personSoundChoice, nowMs: this.now() });
       const outcome = await sender.send(device, request);
       if (!outcome.ok && outcome.prune) {
         this.deps.store.prune(device.token);

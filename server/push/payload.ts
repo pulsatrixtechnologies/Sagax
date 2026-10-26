@@ -80,6 +80,22 @@ export const NUDGE_SOUND = "nudge.caf";
 /** A short chime, distinct from the system sound and from the nudge (ios/App/approval.caf). */
 export const APPROVAL_SOUND = "approval.caf";
 
+/** The tones of Settings > Notifications > Notification sound
+ * (src/lib/notification-sound.ts), bundled on the phone as
+ * ios/App/notify-<id>.caf. "system" (and anything else) is the platform's. */
+export const NOTIFICATION_TONE_SOUNDS: Readonly<Record<string, string>> = Object.freeze({
+  tick: "notify-tick.caf",
+  "double-tick": "notify-double-tick.caf",
+  "chime-a": "notify-chime-a.caf",
+  "chime-b": "notify-chime-b.caf",
+  blip: "notify-blip.caf",
+});
+
+/** The person's chosen tone as an APNs sound, else the platform's. */
+export function notificationToneSound(choice: string | undefined): string {
+  return (choice && Object.hasOwn(NOTIFICATION_TONE_SOUNDS, choice) ? NOTIFICATION_TONE_SOUNDS[choice] : undefined) ?? "default";
+}
+
 /** Which category the phone registered. Questions and ordinary news have no actions. */
 export function pushCategory(message: Pick<PushMessage, "kind" | "prompt" | "needsKey">): string {
   if (message.kind !== "approval" || message.prompt === "question") return UPDATE_CATEGORY;
@@ -164,6 +180,8 @@ export function buildApnsRequest(input: {
   settings?: Partial<DevicePushSettings>;
   /** Whether the person's synced "Notification sounds" is on. */
   personSound?: boolean;
+  /** The person's synced "Notification sound" (`sagax.notificationSound.v1`). */
+  personSoundChoice?: string;
   nowMs: number;
 }): ApnsRequest {
   const { message } = input;
@@ -174,7 +192,7 @@ export function buildApnsRequest(input: {
     ? (settings.nudgeSound ? NUDGE_SOUND : soundOn ? "default" : undefined)
     : !soundOn ? undefined
       : approvalChime ? APPROVAL_SOUND
-        : "default";
+        : notificationToneSound(input.personSoundChoice);
   const senderName = communicationSenderName(message);
   const avatarUrl = pushAvatarUrl(message.avatarUrl);
   const senderId = (message.senderId ?? message.botId ?? message.fromId)?.trim() || undefined;

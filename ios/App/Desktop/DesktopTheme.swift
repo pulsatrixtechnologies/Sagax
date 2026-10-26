@@ -97,6 +97,33 @@ struct DesktopTheme: Equatable {
         return phone(skin.palette)
     }
 
+    /// The worn palette's skin with its colour variant (`omb-skin-tint`)
+    /// and the open bot's accent laid over it, as the desktop does.
+    static func of(_ palette: SkinPalette) -> DesktopTheme {
+        guard palette.tint != nil || palette.botAccent != nil else { return of(palette.id) }
+        var theme: DesktopTheme
+        if let tokens = DesktopSkins.tokens(palette.id, tint: palette.tint, depth: palette.depth), var extra = extras[palette.id] {
+            let layer = SkinTints.overrides(palette.id, tint: palette.tint, depth: palette.depth)
+            if let value = layer["sidebar"] { extra.sidebar = value }
+            if let value = layer["sidebar-ink"] { extra.sidebarInk = value }
+            if let value = layer["sidebar-ink-secondary"] { extra.sidebarInkSecondary = value }
+            if let value = layer["sidebar-hover"] { extra.sidebarHover = value }
+            if let value = layer["sidebar-selected"] { extra.sidebarSelected = value }
+            if let value = layer["sidebar-hairline"] { extra.sidebarHairline = value }
+            theme = DesktopTheme(skin: palette.id, tokens: tokens, extra: extra)
+        } else {
+            theme = phone(palette)
+        }
+        if let accent = palette.botAccent {
+            theme.accent = accent.fill.color
+            theme.accentBorder = accent.fill.color
+            theme.focus = accent.fill.color
+            theme.accentText = accent.text.color
+            theme.accentInk = accent.ink.color
+        }
+        return theme
+    }
+
     /// What the shared table does not hold: sidebar, ring, glow, radii, face.
     private struct Extra {
         var sidebar, sidebarInk, sidebarInkSecondary, sidebarHover, sidebarSelected, sidebarHairline: String
