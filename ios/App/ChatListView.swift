@@ -820,11 +820,7 @@ struct ChatListView: View {
     private func selectAccount(_ item: AccountMenuItem) {
         Haptics.selection()
         switch item {
-        case .settings:
-            // After the account menu has folded back into its avatar: the
-            // system draws that fold over the home, and Settings opening
-            // under it showed the avatar above the X (JC, 2026-10-26).
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { showingSettings = true }
+        case .settings: showingSettings = true
         case .teamMap: showingTeamMap = true
         case .automations: showingAutomations = true
         case .archivedBots: accountSheet = .archivedBots
@@ -1504,15 +1500,27 @@ extension ChatListView {
 
     // MARK: Header
 
+    /// The avatar, taken out of the tree (not just hidden) while Settings is
+    /// open: the account menu folds back into it, and that fold, drawn by the
+    /// system, would otherwise cross the Settings header (JC, 2026-10-26).
+    @ViewBuilder
+    private var homeAccountButton: some View {
+        if showingSettings {
+            Color.clear.frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
+        } else {
+            HomeAccountButton(select: selectAccount)
+        }
+    }
+
     private var standardHeader: some View {
         VStack(spacing: Theme.Metric.controlGap) {
             HStack(spacing: Theme.Metric.controlGap) {
                 if avatarAtTrailingCorner {
                     // the iPad: the window controls own the leading corner
                     Spacer(minLength: 0)
-                    HomeAccountButton(select: selectAccount)
+                    homeAccountButton
                 } else {
-                    HomeAccountButton(select: selectAccount)
+                    homeAccountButton
                     Spacer(minLength: 0)
                     if rosterChromeAtTop {
                         standardChromeTrailing
