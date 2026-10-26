@@ -36065,7 +36065,7 @@ const agentApi = createAgentApi({
     }));
   },
   turnState: agentTurnState,
-  async conversation(caller, agentId) {
+  async conversation(caller, agentId, options) {
     const target = store.bot(agentId);
     if (!target) return agentRefuse(404, "unknown_agent", "No such agent.");
     const newest = (tasks: TaskRecord[]) => tasks.filter((task) => task.hidden === true && task.archivedAt === undefined && !task.closedBy)
@@ -36075,7 +36075,9 @@ const agentApi = createAgentApi({
       // 2026-10-19 (owner setup): never a conversation a bot opened (an
       // "@Name · agent" thread): the person's words landed there under that
       // bot's name and their bots took them for another agent's relay.
-      const existing = newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true && !task.openedBy?.botId));
+      // `fresh` (send_prompt without thread_id): never reuse, so the engine
+      // does not read the whole earlier history again on every ping.
+      const existing = options?.fresh ? undefined : newest(store.tasks(agentId).filter((task) => task.ownerPrincipalId === caller.id && task.confidential !== true && !task.openedBy?.botId));
       if (existing) return { threadId: existing.threadId };
       const created = await performAsMember(memberForAgentCaller(caller), { method: "POST", path: `/api/bots/${encodeURIComponent(agentId)}/tasks`, body: { hidden: true, title: "AI client", confidential: false } });
       const threadId = (created.body as { task?: { threadId?: unknown } })?.task?.threadId;

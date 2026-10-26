@@ -249,8 +249,9 @@ export interface AgentApiDeps {
   /** The live state of one conversation. */
   turnState(agentId: string, threadId: string): TurnState;
   /** The caller's hidden conversation with this agent: the newest open one,
-   * else a new one. */
-  conversation(caller: AgentCaller, agentId: string): Promise<{ threadId: string } | Refusal>;
+   * else a new one. `fresh` always opens a new one (an AI client's ping must
+   * not make the engine read the whole earlier history again). */
+  conversation(caller: AgentCaller, agentId: string, options?: { fresh?: boolean }): Promise<{ threadId: string } | Refusal>;
   /** Put the prompt (and the staged files) into the conversation and start or
    * queue its turn. messageId is the stored prompt's id, when known. */
   post(caller: AgentCaller, agentId: string, threadId: string, prompt: string, files: FileInput[], wake?: PriorityDelivery): Promise<{ messageId: string | null } | Refusal>;
@@ -702,10 +703,12 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
     },
 
     async send_prompt(caller, args, signal) {
-      const bad = onlyKeys(args, ["agent_id", "prompt", "mode", "timeout_ms", "on_busy", "files", "priority"]);
+      const bad = onlyKeys(args, ["agent_id", "prompt", "mode", "timeout_ms", "on_busy", "files", "priority", "thread_id"]);
       if (bad) return bad;
       const agentId = agentIdArg(args);
       if (isRefusal(agentId)) return agentId;
+      const continued = args.thread_id === undefined || args.thread_id === null || args.thread_id === "" ? null : args.thread_id;
+      if (continued !== null && (typeof continued !== "string" || !ID.test(continued))) return refuse(400, "bad_request", "thread_id is a conversation id, as send_prompt or await_turn returned it.");
       const prompt = typeof args.prompt === "string" ? args.prompt : "";
       if (!prompt.trim() || prompt.length > PROMPT_MAX_CHARS) return refuse(400, "bad_request", `prompt is 1 to ${PROMPT_MAX_CHARS} characters.`);
       const mode = (args.mode ?? "fire_and_forget") as SendMode;
@@ -737,7 +740,18 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       }
       const agent = await reachable(caller, agentId);
       if (isRefusal(agent)) return agent;
-      const conversation = await deps.conversation(caller, agentId);
+      // An AI client (a person) starts a fresh hidden conversation unless it
+      // names one of its own to continue: the engine reads a conversation's
+      // whole history again every turn. A bot keeps one per pair.
+      let conversation: { threadId: string } | Refusal;
+      if (continued !== null) {
+        if (!deps.threads(caller, agentId).some((thread) => thread.threadId === continued)) {
+          return refuse(404, "unknown_thread", "No conversation of yours with this agent has that id. Use the thread_id send_prompt or await_turn returned, or leave it out to start a new one.");
+        }
+        conversation = { threadId: continued };
+      } else {
+        conversation = await deps.conversation(caller, agentId, caller.kind === "person" ? { fresh: true } : undefined);
+      }
       if (isRefusal(conversation)) return conversation;
       const { threadId } = conversation;
       const state = deps.turnState(agentId, threadId);
