@@ -30,6 +30,7 @@ import {
   setDraftAttachments,
   setDraftChannelMode,
   useComposerChannelMode,
+  useComposerDraft,
   useDraft,
 } from "./drafts";
 import { citationAttachment, createCitationTextSelector } from "./citations";
@@ -333,6 +334,66 @@ describe("durable attachment completion", () => {
     }]);
     expect(getDraftAttachments(store, "bot:a:thread-a")).toHaveLength(1);
     expect(getDraftAttachments(store, "bot:b:thread-b")).toEqual([]);
+  });
+
+  it("keeps a second in-flight image when the first upload finishes", () => {
+    const store = memoryStorage();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: store });
+    const draftId = "bot:two:thread-two";
+    const image = (id: string, size: number) => ({
+      kind: "image" as const,
+      id,
+      path: "",
+      name: `${id}.png`,
+      size,
+      mime: "image/png",
+      uploading: true,
+    });
+    appendDraftAttachments(draftId, [image("first", 10)]);
+    appendDraftAttachments(draftId, [image("second", 20)]);
+    expect(replaceDraftAttachment(draftId, "first", {
+      kind: "image",
+      id: "first",
+      path: "/private/attachments/first.png",
+      name: "first.png",
+      size: 10,
+      mime: "image/png",
+    })).toBe(true);
+    expect(getDraftAttachments(store, draftId).map((attachment) => attachment.id)).toEqual(["first", "second"]);
+  });
+
+  it("a functional edit keeps a screenshot the store already appended", () => {
+    const store = memoryStorage();
+    Object.defineProperty(globalThis, "localStorage", { configurable: true, value: store });
+    const draftId = "bot:stale:thread-stale";
+    let edit: ReturnType<typeof useComposerDraft>[3] = () => {};
+    function Draft() {
+      edit = useComposerDraft(draftId)[3];
+      return null;
+    }
+    renderToStaticMarkup(createElement(Draft));
+    appendDraftAttachments(draftId, [{
+      kind: "image",
+      id: "first",
+      path: "",
+      name: "first.png",
+      size: 10,
+      mime: "image/png",
+      uploading: true,
+    }]);
+    appendDraftAttachments(draftId, [{
+      kind: "image",
+      id: "second",
+      path: "",
+      name: "second.png",
+      size: 20,
+      mime: "image/png",
+      uploading: true,
+    }]);
+    // The hook's React list is still empty: nothing has rendered the appends.
+    // Removing one chip must not write that empty list back over both.
+    edit((previous) => previous.filter((attachment) => attachment.id !== "first"));
+    expect(getDraftAttachments(store, draftId).map((attachment) => attachment.id)).toEqual(["second"]);
   });
 
   it("merges with the live in-memory draft when storage rejects writes", () => {

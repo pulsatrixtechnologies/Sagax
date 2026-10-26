@@ -6,8 +6,14 @@
 //   GET  /api/org/member/bots                  the bots the person can see
 //   POST /api/org/member/bots/{id}/messages    send, optionally wait (120 s)
 //   GET  /api/org/member/threads/{id}          messages since a cursor
+//   GET  /api/org/member/routines              the person's own routines
+//   GET  /api/org/member/routines/{id}         one routine, full instructions
 //   POST /api/org/member/routines/{id}/run     run a routine now
 //   GET  /api/org/member/routines/runs/{id}    one run
+//   GET  /api/org/member/bots/{id}/rules       the owner's rules
+//   GET  /api/org/member/bots/{id}/docs        the owner's documents
+//   GET  /api/org/member/bots/{id}/memory      the owner's memory
+//   GET  /api/org/member/bots/{id}/connectors  connector names of an owned bot
 //   GET  /api/org/member/approvals?status=pending  the cards waiting on the person
 //   GET  /api/org/member/approvals/{id}        may the person answer it
 //   POST /api/org/member/approvals/{id}        allow, deny or pick an option
@@ -37,14 +43,18 @@
 // Sagax (visibility, private threads, who may answer a card, Run now) holds
 // here unchanged, and a refusal from that route passes through. Every write
 // leaves one admin activity row, category `client`, actor the person,
-// `via: "perspicax-mcp"`. No row carries message text.
+// `via: "perspicax-mcp"`. No row carries message text. Reads are not
+// audited. A routine or a bot file is answered only when the catalogue
+// says the person owns it; anyone else's is 404, an admin's included.
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { formatQuestionAnswers, MAX_CUSTOM_ANSWER, MAX_OPTIONS, parseAskQuestions, parseChoices, type AskQuestion } from "../shared/ask-question.ts";
 import { meetingRequestBehavior } from "../shared/meeting-request.ts";
 import { can, permissionLabel, type PermissionKey, type PermissionPrincipal } from "../shared/permissions.ts";
+import { mask, redactSecretsInText } from "../shared/redact.ts";
 import { skillRequestBehavior } from "../shared/skill-request.ts";
 import { terminalRequestBehavior } from "../shared/terminal-request.ts";
+import { parseMemoryPath } from "./memory-store.ts";
 import type { ConsoleAssertion } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
 import { compileRoutes, matchRoutes } from "./org-admin-console.ts";
@@ -145,6 +155,9 @@ export interface OrgMemberRouteDeps {
   /** The person's open hidden conversation with this bot (#291), the one an
    * AI client continues when it names no thread; null when they have none. */
   hiddenThreadOf?(botId: string, principalId: string): string | null;
+  /** MEMORY.md of a bot the caller already owns. Null when it cannot be
+   * read. The admin memory route is not used: it has no owner check. */
+  readBotMemory?(botId: string): { text: string } | null;
   /** One admin activity row, category `client`, actor the person. */
   record(person: MemberPerson, entry: { action: string; target: { kind: string; id?: string; name?: string }; after?: Record<string, unknown> }): void;
   /** The agent-to-agent API (server/agent-api.ts) for this person: the
@@ -231,6 +244,73 @@ function objectOf(value: unknown): Record<string, unknown> | null {
 }
 
 const str = (value: unknown): string | null => (typeof value === "string" ? value : null);
+
+/** Names that must never leave this API, whatever their value looks like. */
+const SECRET_FIELD = /^(?:secret|signingsecret|webhookkey|pendingtoken|secrethash|token|password|credentials|authorization|apikey|accesstoken|refreshtoken|clientsecret)$/;
+const WEBHOOK_KEY = /\bwhsec_[A-Za-z0-9_-]+/g;
+
+function scrubText(value: string): string {
+  return redactSecretsInText(value).replace(WEBHOOK_KEY, (match) => mask(match));
+}
+
+/** Drop secret-shaped fields and mask secret-shaped text. Depth and width
+ * are capped so a hostile listing cannot grow the answer without bound. */
+function scrubValue(value: unknown, depth = 0): unknown {
+  if (depth > 6) return null;
+  if (typeof value === "string") return scrubText(value);
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 40).map((item) => scrubValue(item, depth + 1));
+  const obj = objectOf(value);
+  if (!obj) return null;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(obj).slice(0, 40)) {
+    if (SECRET_FIELD.test(key.toLowerCase().replace(/[_-]/g, ""))) continue;
+    out[key] = scrubValue(child, depth + 1);
+  }
+  return out;
+}
+
+/** A document path (`docs/<name>.md`) or null. Anything else, including a
+ * traversal, is refused before a file is opened. */
+function docPath(path: string): string | null {
+  try {
+    const ref = parseMemoryPath(path);
+    return ref.kind === "doc" ? ref.path : null;
+  } catch {
+    return null;
+  }
+}
+
+function lastRunOf(runs: readonly Record<string, unknown>[], routineId: string) {
+  const mine = runs.filter((run) => run.routineId === routineId);
+  mine.sort((a, b) => (typeof b.startedAt === "number" ? b.startedAt : 0) - (typeof a.startedAt === "number" ? a.startedAt : 0));
+  const run = mine[0];
+  if (!run || typeof run.id !== "string") return null;
+  return {
+    id: run.id,
+    status: str(run.status),
+    startedAt: typeof run.startedAt === "number" ? run.startedAt : null,
+    endedAt: typeof run.finishedAt === "number" ? run.finishedAt : typeof run.endedAt === "number" ? run.endedAt : null,
+  };
+}
+
+/** The list shape. `detail` adds the full instructions; the list never does. */
+function projectRoutine(row: Record<string, unknown>, runs: readonly Record<string, unknown>[], detail: boolean) {
+  const suspended = objectOf(row.suspended);
+  return {
+    id: str(row.id),
+    name: scrubText(str(row.name) ?? ""),
+    botId: str(row.botId),
+    enabled: row.enabled === true,
+    suspended: suspended
+      ? { reason: scrubText(str(suspended.reason) ?? ""), at: typeof suspended.at === "number" ? suspended.at : null }
+      : false,
+    schedule: scrubValue(row.schedule),
+    nextRunAt: typeof row.nextRunAt === "number" ? row.nextRunAt : null,
+    lastRun: lastRunOf(runs, str(row.id) ?? ""),
+    ...(detail ? { instructions: scrubText(typeof row.prompt === "string" ? row.prompt : "") } : {}),
+  };
+}
 
 function send(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json", "x-sagax-member-api": "1", "cache-control": "no-store" });
@@ -931,6 +1011,36 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
     };
   };
 
+  /** The catalogue entry only when this person owns the bot. A shared bot,
+   * a published bot, and another person's bot (an admin's view included)
+   * are 404 before any file is read. */
+  const ownedBot = async (person: MemberPerson, botId: string): Promise<Answer | { id: string }> => {
+    const catalogue = await deps.perform(person, { method: "GET", path: "/api/bot-catalog" });
+    if (!okStatus(catalogue)) return passThrough(catalogue, "Your bots cannot be read.");
+    const entries = ((objectOf(catalogue.body)?.entries as unknown[] | undefined) ?? []).map(objectOf);
+    const entry = entries.find((candidate) => candidate?.id === botId);
+    const ownerId = str(objectOf(entry?.owner)?.principalId);
+    if (!entry || str(entry.source) !== "mine" || ownerId !== person.principalId) return fail(404, "not_found", "No such bot.");
+    return { id: botId };
+  };
+
+  const ownRoutineRows = async (person: MemberPerson): Promise<Answer | { routines: Record<string, unknown>[]; runs: Record<string, unknown>[] }> => {
+    const reply = await deps.perform(person, { method: "GET", path: "/api/routines" });
+    if (!okStatus(reply)) return passThrough(reply, "Routines cannot be read.");
+    const body = objectOf(reply.body) ?? {};
+    const routines = ((body.routines as unknown[] | undefined) ?? []).map(objectOf).filter((row): row is Record<string, unknown> => {
+      if (!row || row.redacted === true) return false;
+      return str(objectOf(row.owner)?.id) === person.principalId;
+    });
+    const ownedIds = new Set(routines.map((row) => row.id).filter((id): id is string => typeof id === "string"));
+    const runs = ((body.runs as unknown[] | undefined) ?? []).map(objectOf).filter((row): row is Record<string, unknown> => {
+      if (!row || row.redacted === true) return false;
+      const routineId = str(row.routineId);
+      return routineId !== null && ownedIds.has(routineId);
+    });
+    return { routines, runs };
+  };
+
   const routes: MemberRoute[] = [
     {
       method: "GET", path: "capabilities",
@@ -1084,6 +1194,24 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       },
     },
     {
+      method: "GET", path: "routines", permission: "clients.routinesRead",
+      async handle({ person }) {
+        const rows = await ownRoutineRows(person);
+        if ("status" in rows) return rows;
+        return answer({ routines: rows.routines.map((row) => projectRoutine(row, rows.runs, false)) });
+      },
+    },
+    {
+      method: "GET", path: "routines/{id}", permission: "clients.routinesRead",
+      async handle({ person, params }) {
+        const rows = await ownRoutineRows(person);
+        if ("status" in rows) return rows;
+        const found = rows.routines.find((row) => row.id === params.id);
+        if (!found) return fail(404, "not_found", "No such routine.");
+        return answer({ routine: projectRoutine(found, rows.runs, true) });
+      },
+    },
+    {
       method: "POST", path: "routines/{id}/run", permission: "clients.routinesRun",
       async handle({ person, params }) {
         const reply = await deps.perform(person, { method: "POST", path: `/api/routines/${encodeURIComponent(params.id!)}/run`, body: {} });
@@ -1102,6 +1230,81 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const found = runs.map(objectOf).find((run) => run?.id === params.id);
         if (!found) return fail(404, "not_found", "No such run.");
         return answer({ run: wireRun(found, true) });
+      },
+    },
+    {
+      method: "GET", path: "bots/{id}/rules", permission: "clients.botsRead",
+      async handle({ person, params }) {
+        const owned = await ownedBot(person, params.id!);
+        if ("status" in owned) return owned;
+        const id = encodeURIComponent(owned.id);
+        const [file, listing] = await Promise.all([
+          deps.perform(person, { method: "GET", path: `/api/bots/${id}/workspace/file`, query: { path: "RULES.md" } }),
+          deps.perform(person, { method: "GET", path: `/api/bots/${id}/rules` }),
+        ]);
+        if (!okStatus(file) && file.status !== 404) return passThrough(file, "Rules cannot be read.");
+        if (!okStatus(listing)) return passThrough(listing, "Rules cannot be read.");
+        const sets = ((objectOf(listing.body)?.sets as unknown[] | undefined) ?? []).map(objectOf).flatMap((set) => {
+          if (!set) return [];
+          return [{
+            id: str(set.id),
+            name: scrubText(str(set.name) ?? ""),
+            enabled: set.enabled === true,
+            text: scrubText(typeof set.text === "string" ? set.text : ""),
+          }];
+        });
+        return answer({ rules: okStatus(file) ? scrubText(str(objectOf(file.body)?.text) ?? "") : "", sets });
+      },
+    },
+    {
+      method: "GET", path: "bots/{id}/docs", permission: "clients.botsRead",
+      async handle({ person, params, url }) {
+        const asked = url.searchParams.get("path");
+        const ref = asked === null ? null : docPath(asked);
+        if (asked !== null && !ref) return fail(400, "bad_request", "path must be docs/<name>.md");
+        const owned = await ownedBot(person, params.id!);
+        if ("status" in owned) return owned;
+        const id = encodeURIComponent(owned.id);
+        if (ref) {
+          const file = await deps.perform(person, { method: "GET", path: `/api/bots/${id}/workspace/file`, query: { path: ref } });
+          if (!okStatus(file)) return passThrough(file, "That document cannot be read.");
+          return answer({ path: ref, text: scrubText(str(objectOf(file.body)?.text) ?? "") });
+        }
+        const tree = await deps.perform(person, { method: "GET", path: `/api/bots/${id}/workspace` });
+        if (!okStatus(tree)) return passThrough(tree, "Documents cannot be read.");
+        const docs = ((objectOf(tree.body)?.entries as unknown[] | undefined) ?? []).map(objectOf).flatMap((entry) => {
+          const path = str(entry?.path);
+          return path && docPath(path) ? [path] : [];
+        });
+        return answer({ docs });
+      },
+    },
+    {
+      method: "GET", path: "bots/{id}/memory", permission: "clients.botsRead",
+      async handle({ person, params }) {
+        const owned = await ownedBot(person, params.id!);
+        if ("status" in owned) return owned;
+        const read = deps.readBotMemory?.(owned.id) ?? null;
+        return answer({ text: scrubText(read?.text ?? "") });
+      },
+    },
+    {
+      method: "GET", path: "bots/{id}/connectors", permission: "clients.botsRead",
+      async handle({ person, params }) {
+        const owned = await ownedBot(person, params.id!);
+        if ("status" in owned) return owned;
+        const detail = await deps.perform(person, { method: "GET", path: `/api/bot-catalog/${encodeURIComponent(owned.id)}` });
+        if (!okStatus(detail)) return passThrough(detail, "Connectors cannot be read.");
+        const connectors = ((objectOf(detail.body)?.integrations as unknown[] | undefined) ?? []).map(objectOf).flatMap((row) => {
+          if (!row) return [];
+          return [{
+            name: scrubText(str(row.name) ?? ""),
+            kind: row.kind === "browser" ? "browser" : "mcp",
+            enabled: row.enabled !== false,
+            scope: "bot",
+          }];
+        });
+        return answer({ connectors });
       },
     },
     {

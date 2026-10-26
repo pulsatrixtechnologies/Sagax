@@ -3,7 +3,7 @@
 // is the stuff shared by every bot: who you are, your keys, and the
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Archive, Bell, Check, Coins, Download, FileText, FlaskConical, Import, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection } from "@/state/store";
 import { decisionModelEnabled } from "@/lib/feature-flags";
@@ -53,6 +53,7 @@ import { cn } from "@/lib/cn";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { simpleHidesSettingsSection } from "@/lib/interface-visibility";
 import { effectiveLanguage, setLanguageChoice, useLanguageChoice } from "@/lib/language-preference";
+import { applySettingsSearch, clearSettingsSearch, focusSettingsSearchLabel, settingsSearchLabels, settingsTextMatches } from "@/lib/settings-search";
 
 // The threads choice moved with Appearance (0.5.6); old imports still work.
 export { chooseThreadsView } from "./settings/AppearanceSettings";
@@ -96,7 +97,7 @@ export const SECTIONS: Array<{
   { id: "general", group: "you", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "thème", "variant", "variante", "light", "clair", "dark", "sombre", "auto", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "accessibility", "accessibilité", "reduce motion", "motion", "animations", "contrast", "contraste", "text size", "taille du texte", "zoom", "hardware acceleration", "accélération matérielle", "gpu", "spell check", "spellcheck", "orthographe", "correcteur", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
-  { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "notification sound", "son de notification", "tick", "tic", "carillon", "chime a", "chime b", "blip", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
+  { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "notification sound", "son de notification", "tick", "tic", "carillon", "chime a", "chime b", "blip", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "app icon", "icône", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
   // 2026-10-16: the credential vault (logins, API keys, notes; 1Password).
   { id: "credentials", group: "you", labelKey: "settings.section.credentials", icon: KeyRound, keywords: ["credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage"] },
   // 2026-10-16 (wave 2, package E): security keys and passkeys, and which
@@ -197,8 +198,8 @@ export function orgMemoryAvailable(): boolean {
 }
 
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string, extra: string[] = []): boolean {
-  if (!query) return true;
-  return [t(section.labelKey), ...section.keywords, ...extra].some((part) => part.toLowerCase().includes(query));
+  if (!query.trim()) return true;
+  return [t(section.labelKey), ...section.keywords, ...extra].some((part) => settingsTextMatches(part, query));
 }
 
 
@@ -460,6 +461,8 @@ export function SettingsModal() {
       ? "appearance"
       : current;
   const dialogRef = useRef<HTMLDivElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [searchLabels, setSearchLabels] = useState<string[]>([]);
   // Closing goes back out of Settings with a quick page cross-fade.
   const closeSettings = () => navigate(() => dispatch({ type: "toggleAppSettings", open: false }), "back", "page");
   const [query, setQuery] = useState("");
@@ -569,6 +572,32 @@ export function SettingsModal() {
     if (nextVisibleSection) dispatch({ type: "toggleAppSettings", open: true, section: nextVisibleSection });
   }, [dispatch, nextVisibleSection]);
 
+  // The open page hides the rows that do not match and scrolls to the first
+  // one. A disclosure that opens later is filtered again, without jumping.
+  useLayoutEffect(() => {
+    const pane = paneRef.current;
+    if (!pane || !q) {
+      if (pane) clearSettingsSearch(pane);
+      setSearchLabels((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    let scroll = true;
+    const apply = () => {
+      const hit = applySettingsSearch(pane, q);
+      const labels = settingsSearchLabels(pane);
+      setSearchLabels((prev) => (prev.length === labels.length && prev.every((label, index) => label === labels[index]) ? prev : labels));
+      if (scroll && hit) hit.scrollIntoView({ block: "center", inline: "nearest" });
+      scroll = false;
+    };
+    apply();
+    const observer = new MutationObserver(() => apply());
+    observer.observe(pane, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      clearSettingsSearch(pane);
+    };
+  }, [q, section, subPage]);
+
   useEffect(() => {
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const dialog = dialogRef.current;
@@ -673,20 +702,39 @@ export function SettingsModal() {
                   {t(group.labelKey)}
                 </div>
                 {entries.map(({ id, labelKey, icon: Icon }) => (
-                  <button
-                    key={id}
-                    onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
-                    aria-current={section === id ? "page" : undefined}
-                    className={cn(
-                      "flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors motion-reduce:transition-none",
-                      section === id ? "bg-selected" : "hover:bg-hover",
+                  <div key={id} className="flex min-w-0 flex-col">
+                    <button
+                      onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: id })}
+                      aria-current={section === id ? "page" : undefined}
+                      className={cn(
+                        "flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink transition-colors motion-reduce:transition-none",
+                        section === id ? "bg-selected" : "hover:bg-hover",
+                      )}
+                    >
+                      {/* The reference design's nav item (198px rail, 7/9px padding, 9px gap,
+                          8px corners, 15px icon) with its thinner glyph stroke */}
+                      <Icon size={15} strokeWidth={1.5} className="shrink-0" />
+                      {t(labelKey)}
+                    </button>
+                    {section === id && q && searchLabels.length > 0 && (
+                      <ul data-settings-search-hits="" className="mb-0.5 flex flex-col">
+                        {searchLabels.map((label) => (
+                          <li key={label}>
+                            <button
+                              type="button"
+                              className="w-full truncate rounded-md py-0.5 pl-[33px] pr-2 text-left text-[12px] leading-4 text-ink-secondary hover:bg-hover hover:text-ink"
+                              onClick={() => {
+                                const pane = paneRef.current;
+                                if (pane) focusSettingsSearchLabel(pane, label);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     )}
-                  >
-                    {/* The reference design's nav item (198px rail, 7/9px padding, 9px gap,
-                        8px corners, 15px icon) with its thinner glyph stroke */}
-                    <Icon size={15} strokeWidth={1.5} className="shrink-0" />
-                    {t(labelKey)}
-                  </button>
+                  </div>
                 ))}
               </div>
             );
@@ -735,7 +783,7 @@ export function SettingsModal() {
               {subPage.render()}
             </SettingsSubPage>
           ) : (
-          <div className="flex flex-1 flex-col overflow-y-auto">
+          <div ref={paneRef} data-settings-pane="" className="flex flex-1 flex-col overflow-y-auto">
             <h2 className="hidden px-8 pb-1 pt-6 text-[17px] font-semibold leading-6 tracking-[-0.008em] text-ink sm:block">
               {sectionLabelKey ? t(sectionLabelKey) : null}
             </h2>

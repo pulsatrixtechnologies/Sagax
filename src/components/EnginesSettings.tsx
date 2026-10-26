@@ -539,7 +539,7 @@ function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, e
   /** Check again: whoever manages the server's engines. */
   refresh: boolean;
   renderEngine: (instance: InstanceInfo) => ReactNode;
-  /** The read-only claude.ai connectors, while Connected apps is off. */
+  /** The read-only claude.ai connectors of the person's own Claude account. */
   connectors: boolean;
   /** An organization member with no engine on this server. */
   empty: boolean;
@@ -574,9 +574,8 @@ function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, e
             rowId="auto"
           />
         </div>
-        {/* The claude.ai connectors of the person's own Claude account live in
-            Connected apps; while that experiment is off, their read-only
-            status shows here, next to the Claude sign-in that brings them. */}
+        {/* The claude.ai connectors of the person's own Claude account, next
+            to the Claude sign-in that brings them. */}
         {connectors && <div className="px-3.5 py-1 empty:hidden"><HarnessConnectorsSection placement="settings" /></div>}
         {ready.length > 0 && (
           <div className="flex flex-col" data-engines-ready="">

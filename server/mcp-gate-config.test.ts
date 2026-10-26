@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { customServerGate, gateServer, hasOwnResultBudget, mcpStdioServer, resultBudget, serverResultBudget } from "./mcp-gate-config.ts";
+import { customServerGate, gateQueryTools, gateServer, hasOwnResultBudget, mcpStdioServer, resultBudget, serverResultBudget } from "./mcp-gate-config.ts";
 
 const server = { command: "example-mcp", args: ["--stdio"], env: { TOKEN: "disposable-test-token" } };
 const input = { name: "notes", server, threadId: "disposable-thread", budget: 0 };
@@ -154,5 +154,21 @@ describe("per-server result budget", () => {
     expect(gateServer({ ...input, server: remote, budget: 12_000 })).toBeNull();
     const gated = gateServer({ ...input, server: remote, ...customServerGate("fx", true, { fx: 40_000 }, env) });
     expect(gated?.env.SAGAX_GATE_BUDGET).toBe("40000");
+  });
+});
+
+describe("the gate's own query tool", () => {
+  const server = { command: "npx", args: ["shop"] };
+  const configEnvName = `SAGAX_GATE_CONFIG_${"a".repeat(64)}`;
+
+  it("is named for each mount that is a trimming gate, whatever carries its configuration", () => {
+    const trimming = gateServer({ name: "shop", server, threadId: "t", budget: 8_000 })!;
+    const scopedOnly = gateServer({ name: "notes", server, threadId: "t", budget: 0, toolScope: { allow: ["mcp:notes:*"] } })!;
+    const private_ = gateServer({ name: "files", server, threadId: "t", budget: 0, toolScope: { allow: ["mcp:files:*"] }, configEnvName })!;
+    const privateTrimming = { ...private_, env: { [configEnvName]: JSON.stringify({ ...JSON.parse(private_.env[configEnvName]!), SAGAX_GATE_BUDGET: "500" }) } };
+    expect(gateQueryTools({ shop: trimming, notes: scopedOnly, files: private_, docs: server, ogb: { command: "node", args: ["perm-proxy.js"] },
+      lookalike: { ...server, env: { SAGAX_GATE_BUDGET: "8000" } } }))
+      .toEqual(["mcp__shop__query_result"]);
+    expect(gateQueryTools({ files: privateTrimming, broken: { args: trimming.args, env: {} } })).toEqual(["mcp__files__query_result"]);
   });
 });

@@ -31,6 +31,8 @@ export interface AcpOneShotInput {
   /** True when a failed or missing auth method must stop the call. */
   authRequired: boolean | "if-requested";
   loginNote: string;
+  /** Sent as `clientCapabilities._meta` on initialize (AcpSupport.clientCapabilitiesMeta). */
+  clientCapabilitiesMeta?: Record<string, unknown>;
   /** Per-session settings (mode, model) between session/new and the prompt. */
   configure?: (ctx: { request: (method: string, params: unknown, timeoutMs?: number) => Promise<any>; sessionId: string; session: any }) => Promise<unknown>;
   /** Who this one-shot says it is. Memory upkeep and permission review differ. */
@@ -160,7 +162,11 @@ export function runAcpOneShot(input: AcpOneShotInput): Promise<string> {
       const init = await request("initialize", {
         protocolVersion: 1,
         clientInfo: { name: input.clientName ?? "openmausbot_memory", version: "1" },
-        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false },
+        clientCapabilities: {
+          fs: { readTextFile: false, writeTextFile: false },
+          terminal: false,
+          ...(input.clientCapabilitiesMeta ? { _meta: input.clientCapabilitiesMeta } : {}),
+        },
       });
       const methods: Array<{ id?: string }> = Array.isArray(init?.authMethods) ? init.authMethods : [];
       const methodId = input.pickAuthMethod(methods);

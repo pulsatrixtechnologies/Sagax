@@ -286,10 +286,10 @@ describe("control-omb ui drives the real renderer", () => {
     const models = await runControlOmb(["models", "--url", info.url]) as any;
     const options = models.instances.find((instance: any) => instance.instanceId === originalBot.modelSelection.instanceId).models.options;
     const nextModel = options.find((option: any) => option.id !== originalModel);
-    // The model menu sits in the composer's + menu (2026-10-18): + then Model.
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-composer-plus]').click(); true");
-    await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(Boolean(document.querySelector('[data-composer-plus-row=\"model\"]')))")).result, { timeout: 10_000 }).toBe("true");
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-composer-plus-row=\"model\"]').click(); true");
+    // The + menu is attach and teach. The model menu is the headless picker
+    // the mascot opens with omb:composer-model (Composer.grok.test.ts).
+    await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(Boolean(document.querySelector('[data-composer-model]')))")).result, { timeout: 10_000 }).toBe("true");
+    await ui("eval", info.ui, "--js", `window.dispatchEvent(new CustomEvent("omb:composer-model", { detail: { botId: ${JSON.stringify(info.botId)} } })); true`);
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });

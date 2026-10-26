@@ -32,8 +32,8 @@ const MAX_BATCH_LINES = 64;
 
 /** In-memory ceiling. Past this, live delivery continues and the canonical
  * log records the same incomplete-history marker a failed disk write does. */
-const MAX_QUEUED_EVENTS = 256;
-const MAX_QUEUED_BYTES = 1024 * 1024;
+const MAX_QUEUED_EVENTS = 4096;
+const MAX_QUEUED_BYTES = 32 * 1024 * 1024;
 
 /** Disk append used by the canonical log. Sync throws and async rejections
  * are both write failures. Tests and the persistence bench inject their own. */

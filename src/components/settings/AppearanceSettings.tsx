@@ -251,6 +251,7 @@ function AppIconRow() {
     <DescribedRow
       label={t("settings.appIcon.title")}
       rowId="appIcon"
+      keywords="dock taskbar"
       below={open && <div className="mt-2.5"><AppIconPicker /></div>}
     >
       <DisclosurePill open={open} onToggle={() => setOpen((value) => !value)} label={t("settings.appIcon.title")}>

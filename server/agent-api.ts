@@ -23,6 +23,7 @@
 // caller owns, never in the person's open chat.
 import type { GuardDecision, GuardPolicy, ToolGuardMode } from "./tool-guard.ts";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { parseWakePriority, planPriorityWake, releasePriorityNow, wakeSenderId, type PriorityDelivery } from "./priority-wake.ts";
 import { TEMP_AGENT_IDLE_HOURS_MAX } from "./temporary-agents.ts";
 
 export const AGENT_TOOL_NAMES = [
@@ -252,7 +253,7 @@ export interface AgentApiDeps {
   conversation(caller: AgentCaller, agentId: string): Promise<{ threadId: string } | Refusal>;
   /** Put the prompt (and the staged files) into the conversation and start or
    * queue its turn. messageId is the stored prompt's id, when known. */
-  post(caller: AgentCaller, agentId: string, threadId: string, prompt: string, files: FileInput[]): Promise<{ messageId: string | null } | Refusal>;
+  post(caller: AgentCaller, agentId: string, threadId: string, prompt: string, files: FileInput[], wake?: PriorityDelivery): Promise<{ messageId: string | null } | Refusal>;
   /** Stop the conversation's running turn (on_busy supersede). */
   interrupt(agentId: string, threadId: string): Promise<void>;
   /** Async mode: tell the caller the turn ended (a bot is woken with the reply). */
@@ -360,6 +361,25 @@ export function signHandle(secret: Buffer, body: HandleBody): string {
   const payload = b64(JSON.stringify(body));
   const mac = createHmac("sha256", secret).update(payload).digest("base64url").slice(0, 32);
   return `turn_${payload}.${mac}`;
+}
+
+/** The same handle send_prompt returns, for a one-way send whose prompt is
+ * stored when its turn starts (messageId null until then). */
+export function signTurnHandle(secret: Buffer, input: {
+  agentId: string;
+  threadId: string;
+  messageId: string | null;
+  issuedAt: number;
+  callerId: string;
+  callerKind: "bot" | "person";
+}): string {
+  return signHandle(secret, {
+    a: input.agentId,
+    t: input.threadId,
+    m: input.messageId,
+    i: input.issuedAt,
+    c: `${input.callerKind}:${input.callerId}`,
+  });
 }
 
 export function verifyHandle(secret: Buffer, handle: string, now: number): HandleBody | null {
@@ -682,7 +702,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
     },
 
     async send_prompt(caller, args, signal) {
-      const bad = onlyKeys(args, ["agent_id", "prompt", "mode", "timeout_ms", "on_busy", "files"]);
+      const bad = onlyKeys(args, ["agent_id", "prompt", "mode", "timeout_ms", "on_busy", "files", "priority"]);
       if (bad) return bad;
       const agentId = agentIdArg(args);
       if (isRefusal(agentId)) return agentId;
@@ -694,6 +714,8 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       // its approval) the caller often did not know was still going.
       const onBusy = (args.on_busy ?? "queue") as OnBusy;
       if (!["supersede", "reject", "queue"].includes(onBusy)) return refuse(400, "bad_request", "on_busy is queue (default), reject or supersede.");
+      const asked = parseWakePriority(args.priority);
+      if (asked === "invalid") return refuse(400, "bad_request", "priority is now or normal.");
       const timeoutMs = intArg(args, "timeout_ms", TIMEOUT_MS_MIN, TIMEOUT_MS_MAX, TIMEOUT_MS_DEFAULT);
       if (isRefusal(timeoutMs)) return timeoutMs;
       const files = args.files ?? [];
@@ -723,14 +745,30 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
         if (onBusy === "reject") {
           return refuse(409, "busy", `${agent.name} is still working on your previous prompt. Wait with await_turn, or send with on_busy queue (waits its turn) or supersede (stops the running turn).`, { thread_id: threadId });
         }
-        if (onBusy === "supersede" && (state === "running" || state === "waiting")) await deps.interrupt(agentId, threadId);
+        // priority now never stops a turn that is already running, even when
+        // the caller also asked to supersede.
+        if (onBusy === "supersede" && asked !== "now" && (state === "running" || state === "waiting")) await deps.interrupt(agentId, threadId);
       }
+      const slotFree = deps.turnState(agentId, threadId) === "idle";
+      const senderId = wakeSenderId(caller);
+      const plan = planPriorityWake({ asked, applies: true, slotFree, needsApproval: false, senderId, now: now() });
       const issuedAt = now();
-      const posted = await deps.post(caller, agentId, threadId, prompt, fileInputs);
-      if (isRefusal(posted)) return posted;
+      const wake: PriorityDelivery | undefined = plan.wakeNow
+        ? { priorityNow: true }
+        : plan.queueFront
+          ? { front: true, priorityNow: true }
+          : undefined;
+      const posted = await deps.post(caller, agentId, threadId, prompt, fileInputs, wake);
+      if (isRefusal(posted)) {
+        if (plan.reported === "now") releasePriorityNow(senderId);
+        return posted;
+      }
       const body: HandleBody = { a: agentId, t: threadId, m: posted.messageId, i: issuedAt, c: callerKey(caller) };
       const handle = signHandle(deps.secret, body);
-      const accepted = { handle, label: turnLabel(agent.name, prompt), agent_id: agentId, thread_id: threadId, mode, accepted: true, files: fileInputs.length };
+      const accepted = {
+        handle, label: turnLabel(agent.name, prompt), agent_id: agentId, thread_id: threadId, mode, accepted: true, files: fileInputs.length,
+        ...(plan.reported ? { priority: plan.reported, ...(plan.downgraded ? { downgraded: true, priority_note: plan.note } : {}) } : {}),
+      };
       if (mode === "fire_and_forget") return ok({ ...accepted, finished: false, status: "accepted" });
       if (mode === "async") {
         if (deps.notify) {
@@ -758,7 +796,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       if (args.handle !== undefined && args.handle !== null && args.handle !== "") {
         const body = typeof args.handle === "string" ? verifyHandle(deps.secret, args.handle, now()) : null;
         if (!body || body.a !== agentId || body.c !== callerKey(caller)) {
-          return refuse(400, "bad_handle", "That handle is not one send_prompt gave you for this agent, or it expired.");
+          return refuse(400, "bad_handle", "That handle is not one send_prompt or send_to_bot gave you for this agent, or it expired.");
         }
         return ok(resultBody(await waitTurn(body, args.handle as string, timeoutMs!, signal)));
       }
@@ -924,6 +962,7 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
           detail.onBusy = args.on_busy ?? "queue";
           detail.files = Array.isArray(args.files) ? args.files.length : 0;
           if (typeof shaped.body.thread_id === "string") detail.threadId = shaped.body.thread_id;
+          if (typeof args.priority === "string") detail.priority = args.priority;
         }
         if (tool === "create_agent" && shaped.status < 400) {
           detail.created = (shaped.body.agent as { id?: string } | undefined)?.id ?? null;

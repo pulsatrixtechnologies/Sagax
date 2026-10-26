@@ -328,7 +328,7 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
       )}
     </div>
   ) : null;
-  return <div className={cn(DIALOG.backdrop, "z-[70]")}>
+  return <div className={cn(DIALOG.backdrop, "z-[70]")} hidden={!defaultsMode && parent.state.appSettingsOpen}>
     <div ref={dialog} role="dialog" aria-modal="true" aria-label={title} aria-busy={saving} tabIndex={-1}
       className={`${DIALOG.frame} h-[min(760px,94dvh)] max-w-[720px]`}>
       <div className={DIALOG.header}>

@@ -46,7 +46,7 @@ export const DEFAULT_MCP_CALL_TIMEOUT_MINUTES = 10;
 export const MIN_MCP_CALL_TIMEOUT_MINUTES = 1;
 export const MAX_MCP_CALL_TIMEOUT_MINUTES = 60;
 export const DEFAULT_MAX_CONCURRENT_BOT_THREADS = 3;
-export const MAX_CONCURRENT_BOT_THREADS = 10;
+export const MAX_CONCURRENT_BOT_THREADS = 16;
 /** Bounds for threads.eventLogMaxBytes: the floor keeps the kept tail large
  * enough to still serve the event inspector's recent-line window; the
  * ceiling just rejects absurd hand edits. */
@@ -1494,19 +1494,22 @@ export function loadConfig(): AppConfig {
 
 /** `derive(loadConfig())`, worked out again only when config.json changes:
  * a new file (every save renames one into place), a new size, a new
- * modification time, or new permissions or owner. For values read on every
- * request or stream frame, where parsing the file each time costs more than
- * the work itself. A file that is missing, saved in the last two seconds, or
- * that loadConfig() could not use (unreadable, a failed read, invalid JSON)
- * is read on every call: a second write inside one clock tick is never
- * missed, and a file that is fixed is used again on the next call. */
+ * modification time, or new permissions or owner. Mode, uid and gid are in
+ * the stamp themselves: ctime is not a reliable stand-in, some filesystems
+ * leave it unchanged on chmod. For values read on every request or stream
+ * frame, where parsing the file each time costs more than the work itself.
+ * A file that is missing, saved in the last two seconds, or that
+ * loadConfig() could not use (unreadable, a failed read, invalid JSON) is
+ * read on every call: a second write inside one clock tick is never missed,
+ * and a file that is fixed is used again on the next call. */
 export function cacheUntilConfigChanges<T>(derive: (config: AppConfig) => T): () => T {
   let cached: { stamp: string; value: T } | null = null;
   return () => {
     let stamp: string | null = null;
     try {
       const file = statSync(join(DATA_DIR, "config.json"), { bigint: true });
-      if (Date.now() - Number(file.mtimeMs) >= 2_000) stamp = `${file.ino}:${file.size}:${file.mtimeNs}:${file.ctimeNs}`;
+      // mode/uid/gid, not ctime: a chmod that leaves ctime alone must still miss.
+      if (Date.now() - Number(file.mtimeMs) >= 2_000) stamp = `${file.ino}:${file.size}:${file.mtimeNs}:${file.ctimeNs}:${file.mode}:${file.uid}:${file.gid}`;
     } catch {
       // Missing or out of reach: read it the way loadConfig() always has.
     }

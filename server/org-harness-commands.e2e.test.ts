@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { splitLaunchNote } from "./testing/launch-note.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
 
@@ -63,7 +64,7 @@ const jsonl = (path: string): any[] => existsSync(path)
 const probeDirs = (): Array<string | null> => jsonl(probes).map((probe) => probe.env?.CLAUDE_CONFIG_DIR ?? null);
 /** The text of every turn the engine received. */
 const turnTexts = (): string[] => jsonl(prompts).map((prompt) => {
-  const content = prompt?.message?.content;
+  const content = splitLaunchNote(prompt).prompt?.message?.content;
   return typeof content === "string" ? content : Array.isArray(content) ? content.map((part: any) => part.text ?? "").join("") : "";
 });
 

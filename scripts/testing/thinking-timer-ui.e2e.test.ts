@@ -156,6 +156,13 @@ describe("the thinking timer stays anchored across a thread switch", () => {
     const api = fixtureApi(info.url);
     const evaluate = async (js: string) => (await ui("eval", info.ui, "--js", js)).result;
     const timerText = () => evaluate(`document.querySelector('.turn-presence .tabular-nums')?.textContent ?? null`);
+    // Threads are off until the person turns them on. The header's All
+    // threads button, and a new idle thread's row, exist only then.
+    await evaluate(`(() => {
+      localStorage.setItem("omb-show-threads", "1");
+      window.dispatchEvent(new StorageEvent("storage", { key: "omb-show-threads", newValue: "1" }));
+      return true;
+    })()`);
     // A bot's threads live in the chat header's thread picker ("All threads"),
     // in either Threads location: nothing unfolds under the bot row any more
     // (Sidebar.threads-location.layout.test.ts). Its rows are mounted only

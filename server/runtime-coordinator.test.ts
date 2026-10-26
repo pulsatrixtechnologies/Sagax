@@ -20,11 +20,11 @@ import { removeTempDir } from "./testing/cleanup.ts";
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-type Outcome = { ok: boolean; text: string };
+type Outcome = { ok: boolean; text: string; stalled?: boolean };
 type Script = (node: HandoffView, text: string) => Outcome | "hold" | undefined;
 
 interface Host extends CoordinatorHost {
-  runs: Array<{ node: HandoffView; resumed: boolean; text: string; signal: AbortSignal }>;
+  runs: Array<{ node: HandoffView; resumed: boolean; text: string; signal: AbortSignal; asked?: string[] }>;
   parks: Array<{ node: HandoffView; question: string }>;
   reports: Array<{ child: HandoffView; parent?: HandoffView }>;
   changes: Array<{ groups: string[]; threads: string[] }>;
@@ -46,7 +46,7 @@ function fakeHost(script: Script = () => undefined): Host {
     busy: node => host.busyAnswer(node),
     run(node, resumed, signal, composed) {
       const text = composed?.text ?? "";
-      host.runs.push({ node, resumed, text, signal });
+      host.runs.push({ node, resumed, text, signal, ...(composed?.asked ? { asked: composed.asked } : {}) });
       const outcome = host.script(node, text);
       if (outcome !== "hold") return Promise.resolve(outcome ?? { ok: true, text: `${node.botId} done` });
       // Like the real host: a stop resolves the turn with its own words.
@@ -275,6 +275,26 @@ describe("RuntimeCoordinator: the requesting turn and its tree", () => {
     expect(w.coordinator.active()).toEqual([]);
   });
 
+  // port de OpenMausBot #3325: the watchdog's stop reaches the runtime as a
+  // stall (the requesting turn's own end is runtime.test.ts's).
+  it("fails a turn the host's watchdog stopped as stalled, not as a provider error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "runtime-coordinator-stalled-"));
+    try {
+      const w = world((node) => node.botId === "builder" ? { ok: false, text: "No activity for 20 minutes — the turn was stopped", stalled: true }
+        : node.botId === "tester" ? { ok: false, text: "The engine exited" } : undefined, {}, dir);
+      const { node: built } = send(w, chief, "gen-1", undefined, builder, "Build it");
+      const { node: tested } = send(w, chief, "gen-1", undefined, tester, "Test it");
+      w.coordinator.sourceSettled("gen-1", true); w.coordinator.tick(); await flush();
+      const db = new DatabaseSync(join(dir, "runtime.db"));
+      const outcome = (id: string) => (JSON.parse((db.prepare("SELECT json FROM assignments WHERE id = ?").get(id) as { json: string }).json) as Assignment).outcome;
+      expect([outcome(built.id), outcome(tested.id)]).toEqual(["stalled", "provider_error"]);
+      db.close();
+      w.coordinator.close();
+    } finally {
+      await removeTempDir(dir);
+    }
+  });
+
   it("active() never reads an ended row: one that no longer parses stops all(), not active()", async () => {
     const dir = mkdtempSync(join(tmpdir(), "runtime-coordinator-active-"));
     try {
@@ -471,6 +491,55 @@ describe("RuntimeCoordinator: the run adapter", () => {
     expect(next).toContain('The person answered: "Use the staging account".');
     await flush();
     expect(w.coordinator.node(node.id)).toMatchObject({ status: "completed", result: "builder done" });
+  });
+
+  it("resumes the requester with a teammate's NEEDS INPUT question while its other teammate still works", async () => {
+    let asked = false;
+    const w = world((node) => {
+      if (node.botId === "tester") return "hold";
+      if (node.botId !== "builder" || asked) return undefined;
+      asked = true;
+      return { ok: true, text: "Did the first half.\nNEEDS INPUT: Which region should I deploy to?" };
+    });
+    const { node: built } = send(w, chief, "gen-1", undefined, builder, "Build it");
+    const { node: tested } = send(w, chief, "gen-1", undefined, tester, "Test it");
+    w.coordinator.sourceSettled("gen-1", true);
+    w.coordinator.tick(); await flush();
+    w.coordinator.tick(); await flush();
+    const resumes = w.host.runs.filter(run => run.node.id === "gen-1");
+    expect(resumes.map(run => [run.resumed, run.asked])).toEqual([[true, ["builder"]]]);
+    expect(resumes[0]!.text).toMatch(/^A teammate you are waiting on stopped on a question for Milind; the rest of your requests are still open/);
+    expect(resumes[0]!.text).toContain(`\n\n[Sagax question from @builder on assignment ${built.id}: waiting on Milind]\nIt asks Milind: "Which region should I deploy to?".`);
+    expect(w.coordinator.node("gen-1")?.status).toBe("waiting");
+    expect(w.coordinator.node(tested.id)?.status).toBe("running");
+    // no relay shortcut and no second pass of the same question
+    w.coordinator.tick(); await flush();
+    expect(w.host.runs.filter(run => run.node.id === "gen-1")).toHaveLength(1);
+  });
+
+  it("a requester that asked the person reads the answer and the results that settled meanwhile in one resume", async () => {
+    let first = true;
+    const w = world((node) => {
+      if (node.botId !== "builder" || !first) return undefined;
+      first = false;
+      send(w, builder, "unused", node.id, tester, "Test it");
+      return { ok: true, text: "Tests are running.\nNEEDS INPUT: Which region should I deploy to?" };
+    });
+    const { node: built } = send(w, chief, "gen-1", undefined, builder, "Build it");
+    w.coordinator.sourceSettled("gen-1", true);
+    w.coordinator.tick(); await flush();
+    w.coordinator.tick(); await flush();
+    const testedId = w.coordinator.children(built.id)[0]!.id;
+    expect(w.coordinator.node(testedId)?.status).toBe("completed");
+    expect(w.coordinator.node(built.id)?.status).toBe("waiting");
+    expect(w.coordinator.answer("builder-work", "eu-west")).toBe(true);
+    w.coordinator.tick(); await flush();
+    const builderRuns = w.host.runs.filter(run => run.node.id === built.id);
+    expect(builderRuns.map(run => run.resumed)).toEqual([false, true]);
+    expect(builderRuns[1]!.text).toContain('The person answered: "eu-west".');
+    expect(builderRuns[1]!.text).toContain(`[Sagax report from @tester on assignment ${testedId}: done]`);
+    expect(builderRuns.filter(run => run.text.includes("[Sagax report from @tester"))).toHaveLength(1);
+    expect(w.coordinator.node(built.id)?.status).toBe("completed");
   });
 
   it("reads a provider failure as a failed turn, and a stop as stopped", async () => {

@@ -173,10 +173,10 @@ COPY --from=build --chown=maus:maus /src/NOTICE /src/LICENSE /src/LICENSE-APACHE
 COPY --from=build --chown=maus:maus /src/third_party/t3-code/LICENSE ./licenses/t3-code-LICENSE.txt
 # Keep the baked-in browser outside both root's private home and /data,
 # which may be an existing mounted volume. Session state still lives in HOME.
-#  OMB_DUCKDB_DIR: the DuckDB binding tree the server requires (no node_modules here).
+#  SAGAX_DUCKDB_DIR: the DuckDB binding tree the server requires (no node_modules here).
 ENV HOME=/data \
     AGENT_BROWSER_EXECUTABLE_PATH=/opt/openmausbot-browser/chrome \
-    OMB_DUCKDB_DIR=/app/duckdb \
+    SAGAX_DUCKDB_DIR=/app/duckdb \
     OMB_DATA_DIR=/data/.openmausbot \
     OMB_STATIC_DIR=/app/dist \
     OMB_PORT=8799 \

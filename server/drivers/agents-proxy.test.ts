@@ -885,7 +885,11 @@ describe("agents-proxy MCP surface", () => {
   it("publishes a flat routine schedule schema that survives provider conversion", async () => {
     const list = await rpc("tools/list");
     const create = list.result.tools.find((t: { name: string }) => t.name === "propose_routine");
-    expect(create.inputSchema.required).toEqual(["name", "instructions", "schedule"]);
+    expect(create.inputSchema.required).toEqual(["name", "instructions"]);
+    const trigger = create.inputSchema.properties.trigger;
+    expect(trigger.additionalProperties).toBe(false);
+    expect(trigger.required).toEqual(["type"]);
+    expect(trigger.properties.type.enum).toEqual(["webhook", "email"]);
     const schedule = create.inputSchema.properties.schedule;
     // No composition keywords anywhere in the tool surface: several agent
     // CLIs flatten or drop oneOf/anyOf/const when converting MCP tools for
@@ -911,7 +915,9 @@ describe("agents-proxy MCP surface", () => {
     expect(create.inputSchema.properties.enabled).toMatchObject({ type: "boolean" });
     expect(create.description).toContain("created paused unless enabled is true");
     const action = list.result.tools.find((t: { name: string }) => t.name === "propose_routine_action");
+    expect(action.inputSchema.properties.action.enum).toContain("rotate_webhook_key");
     expect(action.inputSchema.properties.changes.properties).not.toHaveProperty("enabled");
+    expect(action.inputSchema.properties.changes.properties).not.toHaveProperty("trigger");
     expect(create.inputSchema.properties).not.toHaveProperty("duration_minutes");
     expect(create.inputSchema.properties.timeout_minutes).toMatchObject({ minimum: 5, maximum: 240 });
     expect(create.inputSchema.properties.continuity).toMatchObject({ type: "boolean" });
@@ -2588,6 +2594,52 @@ describe("coordinate_bots arguments (room turn)", () => {
     } });
     expect(result.result.isError).toBe(true);
     expect(result.result.content[0].text).toContain("cross-bot only");
+    expect(lastThreadBody).toBeNull();
+  });
+
+  it("forwards priority now and returns a handle when the send starts at once", async () => {
+    const previous = threadResponse;
+    threadResponse = {
+      threadId: "thread-sent", title: "Ship it", botId: "bot-helper", botName: "Helper",
+      self: false, state: "running", priority: "now", handle: "turn_example",
+    };
+    try {
+      const result = await roomRpc("tools/call", { name: "send_to_bot", arguments: {
+        bot_id: "bot-helper", title: "Ship it", message: "Ship the reviewed patch.", priority: "now",
+      } });
+      expect(result.result.isError).toBeFalsy();
+      expect(lastThreadBody).toMatchObject({ priority: "now", oneWay: true });
+      const text = result.result.content[0].text as string;
+      expect(text).toContain("started now");
+      expect(text).toContain(JSON.stringify({ threadId: "thread-sent", handle: "turn_example" }));
+    } finally {
+      threadResponse = previous;
+    }
+  });
+
+  it("says when a priority-now send was delivered as normal", async () => {
+    const previous = threadResponse;
+    threadResponse = {
+      threadId: "thread-sent", title: "Ship it", botId: "bot-helper", botName: "Helper",
+      self: false, downgraded: true, priority: "normal", handle: "turn_example",
+    };
+    try {
+      const result = await roomRpc("tools/call", { name: "send_to_bot", arguments: {
+        bot_id: "bot-helper", title: "Ship it", message: "Ship the reviewed patch.", priority: "now",
+      } });
+      expect(result.result.content[0].text).toContain("past this sender's 10 per hour");
+    } finally {
+      threadResponse = previous;
+    }
+  });
+
+  it("refuses a priority that is not now or normal without posting", async () => {
+    lastThreadBody = null;
+    const result = await roomRpc("tools/call", { name: "send_to_bot", arguments: {
+      bot_id: "bot-helper", title: "Ship it", message: "Ship the reviewed patch.", priority: "urgent",
+    } });
+    expect(result.result.isError).toBe(true);
+    expect(result.result.content[0].text).toContain("priority is now or normal");
     expect(lastThreadBody).toBeNull();
   });
 

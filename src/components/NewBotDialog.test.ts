@@ -50,6 +50,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("bot draft dialog", () => {
+  it("steps aside while App settings, opened from inside it, is on top", () => {
+    expect(render().html).not.toMatch(/^<div[^>]* hidden/);
+    fixture.state = { appSettingsOpen: true };
+    expect(render().html).toMatch(/^<div[^>]* hidden/);
+    expect(render(true).html).not.toMatch(/^<div[^>]* hidden/);
+  });
   it("preserves upstream audience selection for browser admins before creation", () => {
     fixture.admin = true;
     vi.stubGlobal("window", {});

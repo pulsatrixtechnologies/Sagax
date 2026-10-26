@@ -44,6 +44,8 @@ type TtsPrepareBody = { ready?: boolean; utterances?: string[]; error?: string }
 type TtsErrorBody = { error?: string };
 
 const IDLE: SpeechSnapshot = { status: "idle" };
+/** How many utterances are rendered ahead of the one that is audible. */
+const PREFETCH_WINDOW = 3;
 
 export class Speaker {
   private snapshot: SpeechSnapshot = IDLE;
@@ -168,7 +170,7 @@ export class Speaker {
       return;
     }
 
-    // Prefetch: request utterance n+1 while n is audible. This is what buys
+    // Prefetch: request the next PREFETCH_WINDOW utterances while n is audible. This is what buys
     // responsiveness without holding a streaming socket open for the whole
     // turn — the only gap the listener hears is the first.
     type Rendered = { blob: Blob; error?: never } | { blob?: never; error: unknown };
@@ -180,10 +182,12 @@ export class Speaker {
         (blob) => ({ blob }),
         (error: unknown) => ({ error }),
       );
-    let next: Promise<Rendered> | null = render(utterances[0]);
+    const inFlight: Promise<Rendered>[] = [];
     for (let i = 0; i < utterances.length; i += 1) {
-      const current = next;
-      next = i + 1 < utterances.length ? render(utterances[i + 1]) : null;
+      while (inFlight.length < PREFETCH_WINDOW && i + inFlight.length < utterances.length) {
+        inFlight.push(render(utterances[i + inFlight.length]));
+      }
+      const current = inFlight.shift();
       if (!current) break;
       const rendered = await current;
       if ("error" in rendered) {
@@ -193,6 +197,7 @@ export class Speaker {
             error: rendered.error instanceof Error ? rendered.error.message : String(rendered.error),
           });
         }
+        controller.abort();
         if (this.request === controller) this.request = null;
         return;
       }
@@ -201,6 +206,7 @@ export class Speaker {
       const finished = await this.play(rendered.blob, live);
       if (!finished || !live()) {
         if (live()) this.set({ ...IDLE, error: "The generated voice clip couldn't be played." });
+        controller.abort();
         if (this.request === controller) this.request = null;
         return;
       }

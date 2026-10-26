@@ -16,6 +16,7 @@ import { launchVerificationServer, runControlOmb, verificationServerArgs, verifi
 import { ENVELOPE_MARK } from "./runtime/envelope.ts";
 import { waitForExit } from "./testing/cleanup.ts";
 import { hostTimeout } from "./testing/host-timeout.ts";
+import { splitLaunchNote } from "./testing/launch-note.ts";
 import { ownTurnText } from "./testing/room-handoff-agent.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -23,6 +24,11 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SETTLED = "Your downstream room requests have settled.";
 /** The report envelope's opening (composeReport). */
 const REPORT_FROM_MIRA = "[Sagax report from @Mira";
+const REPORT_FROM_THEO = "[Sagax report from @Theo";
+/** A resume a teammate's question made due opens with this (composeResume). */
+const QUESTION_RESUME = "A teammate you are waiting on stopped on a question for";
+/** The question envelope's opening (composeQuestion). */
+const QUESTION_FROM_MIRA = "[Sagax question from @Mira";
 /** The first line of a turn a restart cut and ran again (restartNote). */
 const RERUN_NOTE = "Sagax restarted while your previous turn here was running";
 /** What a requester hears about teammates a restart cut. */
@@ -105,7 +111,10 @@ async function scenario(test: (f: any) => Promise<void>) {
     const own = (record: any): string => ownTurnText(record?.prompt);
     /** The same, after the harness's own time line that opens every turn:
      * what the coordinator composed, from its first line. */
-    const body = (record: any): string => own(record).replace(/^\s*Current time when this message was sent:[^\n]*\n+/, "");
+    const body = (record: any): string => {
+      const stripped = splitLaunchNote({ message: { content: own(record) } }).prompt.message.content as string;
+      return stripped.replace(/^\s*Current time when this message was sent:[^\n]*\n+/, "");
+    };
     /** Everything the turn's process could read: its instructions and its prompt. */
     const told = (record: any): string => `${record?.system ?? ""}\n${JSON.stringify(record?.prompt ?? "")}`;
     const messages = async (threadId: string): Promise<any[]> => (await api("GET", `/api/threads/${threadId}/messages?limit=300`)).body.messages ?? [];
@@ -138,7 +147,7 @@ async function scenario(test: (f: any) => Promise<void>) {
       }, { timeout: 30_000 }).toBe(true);
     };
     try {
-      await test({ api, clive, mira, dataDir, script, say, db, roots, children, eventsOf, turns, turn, own, body, told, messages, chips, said, final,
+      await test({ api, bot, clive, mira, dataDir, script, say, db, roots, children, eventsOf, turns, turn, own, body, told, messages, chips, said, final,
         gate, open, ready, settle, restart });
     } catch (error) {
       // What the fakes were told and what the chats hold, for a failure
@@ -214,10 +223,11 @@ it("S1 assigns a teammate under the envelope and resumes the Chief once with the
 // for, Mira's record parks on it, and the answer typed into her work thread
 // is carried into her next turn as a harness-written quote, never as an
 // ordinary turn of its own. Her finished reply then resumes Clive once.
-it("S2 parks a teammate on NEEDS INPUT, carries the person's answer into her next turn, and resumes the Chief once", () => scenario(async (f) => {
+it("S2 parks a teammate on NEEDS INPUT, passes her question to the Chief once, carries the person's answer into her next turn, and resumes the Chief with the result", () => scenario(async (f) => {
   const brief = "S2-BRIEF: tag the release in the repository and report the tag.";
   f.script(f.clive.id,
     { key: "C0", match: ["S2-JOB"], steps: [{ arguments: { bot_ids: [f.mira.id], message: brief } }], reply: "C0: Mira is tagging it." },
+    { key: "C-ASKED", match: [QUESTION_RESUME, QUESTION_FROM_MIRA, "which repository?"], reply: "C-ASKED: Mira needs the repository." },
     { key: "C1", match: [SETTLED, REPORT_FROM_MIRA], reply: "S2-FINAL: the release is tagged." });
   f.script(f.mira.id,
     { key: "M2", match: ["S2-BRIEF", "The person answered"], reply: "S2-RESULT: tagged v1.2.0 in the main repository." },
@@ -234,9 +244,11 @@ it("S2 parks a teammate on NEEDS INPUT, carries the person's answer into her nex
   expect(work).not.toBe(f.mira.activeTaskId);
   await expect.poll(async () => (await f.chips(job, "needs your input")).length, { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
   expect((await f.chips(job, "needs your input")).some((message: any) => chipText(message).includes("which repository?"))).toBe(true);
-  // Nothing resumed Clive on the question.
-  expect(f.turns(f.clive.id).map((record: any) => record.planKey)).toEqual(["C0"]);
-  expect(f.roots()[0].status).toBe("waiting");
+  // Clive is resumed once with her question, says what it needs, and waits again.
+  await expect.poll(async () => await f.said(job, "C-ASKED: Mira needs the repository.") === 1 && f.roots()[0]?.status === "waiting", { timeout: 30_000 }).toBe(true);
+  const chiefTurns = () => (f.turns(f.clive.id) as Array<{ planKey?: string; resumed?: boolean }>).map((record) => [record.planKey, record.resumed]);
+  expect(chiefTurns()).toEqual([["C0", false], ["C-ASKED", false]]);
+  expect((await f.messages(job)).filter((message: any) => message.tool?.name === "Resumed with a question from Mira, reviewing")).toHaveLength(1);
 
   // The person answers in Mira's work thread, the route a person uses to
   // message a thread. The answer rides her next assignment turn.
@@ -250,8 +262,9 @@ it("S2 parks a teammate on NEEDS INPUT, carries the person's answer into her nex
   await expect.poll(() => f.roots()[0]?.status, { timeout: 15_000 }).toBe("completed");
   // No ordinary turn ran on her thread for the person's words: two turns, both assignment turns.
   expect(f.turns(f.mira.id).map((record: any) => record.planKey)).toEqual(["M1", "M2"]);
-  // Clive resumed once, with the report; the record settled.
-  expect(f.turns(f.clive.id).map((record: any) => [record.planKey, record.resumed])).toEqual([["C0", false], ["C1", true]]);
+  // Clive resumed once more, with the report and not the question again; the record settled.
+  expect(chiefTurns()).toEqual([["C0", false], ["C-ASKED", false], ["C1", true]]);
+  expect(f.told(f.turn("C1"))).not.toContain(QUESTION_FROM_MIRA);
   expect(f.told(f.turn("C1"))).toContain(REPORT_FROM_MIRA);
   expect(f.told(f.turn("C1"))).toContain("S2-RESULT: tagged v1.2.0");
   // The answer travelled in that turn and is cleared with it; the events keep the record.
@@ -262,15 +275,69 @@ it("S2 parks a teammate on NEEDS INPUT, carries the person's answer into her nex
   expect((await f.messages(job)).filter((message: any) => message.tool?.name === "Mira replied")).toHaveLength(1);
 }), hostTimeout(60_000));
 
+// S2c. Clive hands work to Mira and Theo. Mira stops on a question, so
+// Clive is resumed with it; while that question turn still runs, Theo
+// finishes, the person answers Mira and she finishes too. Nothing Clive's
+// question turn read says so, so Clive is resumed once more with both
+// results, each exactly once, instead of the tree ending on the question turn.
+it("S2c resumes the Chief once more with the results that settled during its question turn", () => scenario(async (f) => {
+  const theo = await f.bot("Theo", "Engineering");
+  const brief = "S2C-BRIEF: tag the release and run the smoke tests, then report.";
+  f.script(f.clive.id,
+    { key: "C0", match: ["S2C-JOB"], steps: [{ arguments: { bot_ids: [f.mira.id, theo.id], message: brief } }], reply: "C0: Mira and Theo are on it." },
+    { key: "C-ASKED", match: [QUESTION_RESUME, QUESTION_FROM_MIRA, "which repository?"], readyFile: f.ready("asked"), gateFile: f.gate("asked"),
+      reply: "C-ASKED: Mira needs the repository." },
+    { key: "C1", match: [SETTLED, REPORT_FROM_MIRA, REPORT_FROM_THEO], reply: "S2C-FINAL: tagged and tested." });
+  f.script(f.mira.id,
+    { key: "M2", match: ["S2C-BRIEF", "The person answered"], reply: "S2C-MIRA: tagged v1.2.0 in the main repository." },
+    { key: "M1", match: ["S2C-BRIEF"], reply: "I can tag it once I know where.\nNEEDS INPUT: which repository?" });
+  f.script(theo.id,
+    { key: "T1", match: ["S2C-BRIEF"], readyFile: f.ready("theo"), gateFile: f.gate("theo"), reply: "S2C-THEO: the smoke tests pass." });
+  const job = f.clive.activeTaskId;
+  await f.say(f.clive.id, job, "S2C-JOB: have Mira tag the release and Theo run the smoke tests, and own the result.");
+
+  // Mira parks; Clive's question turn starts and is held open.
+  await expect.poll(() => existsSync(f.ready("asked")), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => existsSync(f.ready("theo")), { timeout: 30_000 }).toBe(true);
+  const child = (botId: string) => f.children().find((row: any) => row.assignee.botId === botId);
+  expect(child(f.mira.id)).toMatchObject({ status: "needs_input" });
+  expect(f.roots()[0].status).toBe("running");
+
+  // While it runs: Theo finishes, the person answers Mira, and she finishes.
+  f.open("theo");
+  await expect.poll(() => child(theo.id)?.status === "completed" && child(theo.id)?.reportedAt !== undefined, { timeout: 30_000 }).toBe(true);
+  const work = child(f.mira.id).assignee.destination.threadId as string;
+  await f.say(f.mira.id, work, "the main one");
+  await expect.poll(() => child(f.mira.id)?.status === "completed" && child(f.mira.id)?.reportedAt !== undefined, { timeout: 30_000 }).toBe(true);
+  expect(f.roots()[0].status).toBe("running");
+
+  // The question turn ends having read neither result: Clive is resumed once more with both.
+  f.open("asked");
+  await f.final(job, "S2C-FINAL", 45_000);
+  await expect.poll(() => f.roots()[0]?.status, { timeout: 15_000 }).toBe("completed");
+  const chiefTurns = (f.turns(f.clive.id) as Array<{ planKey?: string; resumed?: boolean }>).map((record) => [record.planKey, record.resumed]);
+  expect(chiefTurns).toEqual([["C0", false], ["C-ASKED", false], ["C1", true]]);
+  expect(f.told(f.turn("C1"))).toContain("S2C-THEO: the smoke tests pass.");
+  expect(f.told(f.turn("C1"))).toContain("S2C-MIRA: tagged v1.2.0");
+  expect(f.told(f.turn("C1"))).not.toContain(QUESTION_FROM_MIRA);
+  // Each result reached Clive in exactly one turn.
+  const carrying = (text: string) => (f.turns(f.clive.id) as any[]).filter((record) => f.own(record).includes(text)).map((record) => record.planKey);
+  expect(carrying("S2C-THEO: the smoke tests pass.")).toEqual(["C1"]);
+  expect(carrying("S2C-MIRA: tagged v1.2.0")).toEqual(["C1"]);
+  expect(f.eventsOf(f.roots()[0].id).filter((event: any) => event.kind === "resume_due").map((event: any) => event.detail))
+    .toEqual(["resume: a teammate asks", "resume"]);
+}), hostTimeout(90_000));
+
 // S2b. A question parked across a restart is shown once: the restart parks
 // it again (contract section 5) but posts no second card and marks nothing
 // unread the person already read. While it waits, list_threads and
 // close_thread say the thread waits on the person, not that it is queued or
 // running.
-it("S2b keeps one question card across a restart and names the parked thread as waiting on the person", () => scenario(async (f) => {
+it("S2b resumes the Chief once with a parked question, keeps one question card across a restart and names the parked thread as waiting on the person", () => scenario(async (f) => {
   const brief = "S2B-BRIEF: tag the release in the repository and report the tag.";
   f.script(f.clive.id,
-    { key: "C0", match: ["S2B-JOB"], steps: [{ arguments: { bot_ids: [f.mira.id], message: brief } }], reply: "C0: Mira is tagging it." });
+    { key: "C0", match: ["S2B-JOB"], steps: [{ arguments: { bot_ids: [f.mira.id], message: brief } }], reply: "C0: Mira is tagging it." },
+    { key: "C-ASKED", match: [QUESTION_RESUME, QUESTION_FROM_MIRA, "which repository?"], reply: "C-ASKED: Mira needs the repository." });
   f.script(f.mira.id, { key: "M1", match: ["S2B-BRIEF"], reply: "I can tag it once I know where.\nNEEDS INPUT: which repository?" });
   const job = f.clive.activeTaskId;
   await f.say(f.clive.id, job, "S2B-JOB: have Mira tag the release and own the result.");
@@ -278,6 +345,7 @@ it("S2b keeps one question card across a restart and names the parked thread as 
   const parked = f.children()[0];
   const work = parked.assignee.destination.threadId as string;
   await expect.poll(async () => (await f.chips(job, "needs your input")).length, { timeout: 15_000 }).toBe(1);
+  await expect.poll(async () => await f.said(job, "C-ASKED: Mira needs the repository.") === 1 && f.roots()[0]?.status === "waiting", { timeout: 30_000 }).toBe(true);
 
   // The person reads both conversations, then the app restarts.
   const unread = async (botId: string, threadId: string) => ((await f.api("GET", "/api/bots?messages=0")).body.bots as any[])
@@ -288,6 +356,10 @@ it("S2b keeps one question card across a restart and names the parked thread as 
   await expect.poll(() => f.eventsOf(parked.id).some((event: any) => event.kind === "restart_reconciled"), { timeout: 15_000 }).toBe(true);
   await f.settle(500);
   expect(f.children()[0]).toMatchObject({ status: "needs_input", question: expect.stringContaining("which repository?") });
+  // The restart parked the question again without passing it to Clive a second time.
+  expect((f.turns(f.clive.id) as Array<{ planKey?: string }>).filter((record) => record.planKey === "C-ASKED")).toHaveLength(1);
+  const resumes = (f.eventsOf(f.roots()[0].id) as Array<{ kind: string; detail?: string }>).filter((event) => event.kind === "resume_due");
+  expect(resumes.map((event) => event.detail)).toEqual(["resume: a teammate asks"]);
   expect(await f.chips(job, "needs your input")).toHaveLength(1);
   expect(await unread(f.clive.id, job)).toBe(false);
   expect(await unread(f.mira.id, work)).toBe(false);

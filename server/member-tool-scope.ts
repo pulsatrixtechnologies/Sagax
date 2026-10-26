@@ -62,6 +62,9 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   check_widget: "read",
   show_widget: "conversation",
   update_widget: "conversation",
+  // live HTML apps (agents-app-tools.ts): a card in the member's own conversation
+  show_html: "conversation",
+  update_html: "conversation",
   // artifacts (agents-artifact-tools.ts): the bot's own saved widgets; a
   // source runs alone only when it needs no approval (artifact-refresh.ts)
   save_artifact: "conversation",

@@ -286,6 +286,14 @@ describe("Settings → Appearance", () => {
     expect(pill).toContain('title="Shift+Enter"');
   });
 
+  it("finds the app icon in Appearance and in Notifications", () => {
+    const appearance = SECTIONS.find((section) => section.id === "appearance")!;
+    const notifications = SECTIONS.find((section) => section.id === "notifications")!;
+    expect(sectionMatches(appearance, "icon")).toBe(true);
+    expect(sectionMatches(notifications, "icon")).toBe(true);
+    expect(sectionMatches(notifications, "icône")).toBe(true);
+  });
+
   it("finds the send key by the keys' names on every platform", () => {
     const appearance = SECTIONS.find((section) => section.id === "appearance")!;
     for (const query of ["enter", "return", "shift+enter", "ctrl+enter", "cmd", "cmd+enter", "⌘", "⌘+enter", "command", "send", "new line", "ime"]) {

@@ -21,8 +21,8 @@ names, parameters and limits as the reference design's agent tools, plus `get_ag
 | `get_agent` | read | `agents.read` | `agent_id`: the full profile for an audit (see below) |
 | `create_agent` | admin | `agents.create` | one temporary agent per call (see below), `name` (≤ 80 chars, one line), optional `description` and `idle_hours` (1 to 720, default 24); it greets the person itself. Only on the person's explicit ask |
 | `delete_agent` | admin | `agents.create` | `agent_id` of a temporary agent: archives it (see below). A lasting agent answers 409 `not_temporary` |
-| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn and the approval it waits on), up to 8 `files` (workspace-relative, 25 MiB each). Answers a `handle` and a short `label` (the agent's name and the prompt's first words) |
-| `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. Never send the prompt again: wait again with the same handle |
+| `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn and the approval it waits on), optional `priority` `now` or `normal` (default `normal`), up to 8 `files` (workspace-relative, 25 MiB each). Answers a `handle` and a short `label` (the agent's name and the prompt's first words). `now` wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn. Past 10 `now` sends an hour the answer is `priority: "normal"` with `downgraded: true` and `priority_note` |
+| `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. The handle is the one `send_prompt` returned, or the `{threadId, handle}` a one-way `send_to_bot` included. Never send the prompt again: wait again with the same handle |
 | `read_transcript` | read | `agents.read` | the whole transcript (the newest 2,000 entries; `truncated` says when there were more) |
 | `read_transcript_page` | read | `agents.read` | one bounded page: `limit` (1 to 200) and `before_ms` required, `after_ms` optional (inclusive unix ms), `cursor` for the next older page |
 | `read_latest_page` | read | `agents.read` | the newest page: `limit` ≤ 200 (default 20), `cursor`, optional `thread_id` (one of the caller's conversations, 404 `unknown_thread` otherwise) |
@@ -106,7 +106,10 @@ reads the entries just before it.
   what `GET /api/bots` shows them, and nothing else exists for them (404
   `unknown_agent`).
 - **Handles** are HMAC-signed with a server key (`agent-api.key`, mode 0600)
-  and bound to the caller and the agent. They expire after 7 days.
+  and bound to the caller and the agent. They expire after 7 days. A one-way
+  `send_to_bot` answer includes the same kind of handle (`{threadId, handle}`).
+  `await_turn` accepts it for that caller and agent. The fresh thread stays
+  visible to the recipient; it is not the hidden conversation `send_prompt` uses.
 - **One hop**: a prompt a bot received from another agent cannot be passed on
   (409 `too_deep`).
 - **Approval gate**: a bot whose peer contact needs review raises the
@@ -127,7 +130,9 @@ reads the entries just before it.
   | `create_agent` | 5 per hour |
   | `delete_agent` | 30 per hour |
 
-  Going over answers 429 with `retry_after_ms`.
+  Going over answers 429 with `retry_after_ms`. A separate cap of 10
+  `priority: "now"` sends per sender per hour is kept in memory and forgotten
+  on restart. Past that cap the send is delivered as normal; it is not a 429.
 - **Audit**: every call is written to the admin activity log (`category:
   client`, action `agents.<tool>`). Each entry records the outcome, the
   agent and the mode, but never the prompt, the reply or a file.

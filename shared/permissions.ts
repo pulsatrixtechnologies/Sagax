@@ -345,8 +345,8 @@ const definitions = [
     key: "clients.botsRead", group: "clients", memberDefault: true, adminOnly: false,
     label: { en: "See their bots and conversations from an AI client", fr: "Voir leurs bots et leurs conversations depuis un client IA" },
     description: {
-      en: "List the bots they can use and read their own conversations with them from Claude Code, claude.ai or another client attached to Perspicax.",
-      fr: "Lister les bots qu'ils peuvent utiliser et lire leurs propres conversations avec eux depuis Claude Code, claude.ai ou un autre client relié à Perspicax.",
+      en: "List the bots they can use, read their own conversations with them, and read the rules, documents, memory and connector names of bots they own, from Claude Code, claude.ai or another client attached to Perspicax.",
+      fr: "Lister les bots qu'ils peuvent utiliser, lire leurs propres conversations avec eux, et lire les règles, les documents, la mémoire et les noms de connecteurs des bots qu'ils possèdent, depuis Claude Code, claude.ai ou un autre client relié à Perspicax.",
     },
   },
   {
@@ -363,6 +363,14 @@ const definitions = [
     description: {
       en: "Run a routine now and follow its run from a client attached to Perspicax. The routine's own Run now rule still applies.",
       fr: "Lancer une routine maintenant et suivre son exécution depuis un client relié à Perspicax. La règle Lancer maintenant de la routine s'applique toujours.",
+    },
+  },
+  {
+    key: "clients.routinesRead", group: "clients", memberDefault: false, adminOnly: false,
+    label: { en: "Read their routines from an AI client", fr: "Lire leurs routines depuis un client IA" },
+    description: {
+      en: "List their own routines and read one routine's full instructions from a client attached to Perspicax. Another person's routine is hidden.",
+      fr: "Lister leurs propres routines et lire les instructions complètes d'une routine depuis un client relié à Perspicax. La routine d'une autre personne reste cachée.",
     },
   },
   {

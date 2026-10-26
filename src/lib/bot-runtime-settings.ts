@@ -19,7 +19,7 @@ export interface BotRuntimePatch {
   automaticRecovery?: BotRecovery;
 }
 
-export const BOT_THREAD_LIMITS = Array.from({ length: 10 }, (_, i) => i + 1);
+export const BOT_THREAD_LIMITS = Array.from({ length: 16 }, (_, i) => i + 1);
 
 export function botThreadLimit(bot: RuntimeBot, config: RuntimeConfig): number {
   return bot.maxConcurrentThreads ?? config?.threads?.maxConcurrentPerBot ?? 3;

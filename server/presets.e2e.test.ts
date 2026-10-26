@@ -38,7 +38,7 @@ it("shares New bot defaults as a preset, imports it, and creates bots from file 
     // My New bot defaults, including everything a preset must never carry.
     await ok("PATCH", "/api/config", { newBotDefaults: {
       profile: { name: "Sky", title: "Support", soul: "Be kind. The portal password=Presets-Fixture-77 stays private.\n", color: "blue",
-        approvalMode: "auto", composio: true, browser: true, mcpServers: [], alwaysAllow: ["Bash(*)"], parkDirectMessages: true },
+        approvalMode: "auto", browser: true, mcpServers: [], alwaysAllow: ["Bash(*)"], parkDirectMessages: true },
       memory: { "MEMORY.md": "- Customers first.\n", "memory/tone.md": "Warm.\n" },
       skills: [{ name: "follow-up", description: "follow-up steps.", source: "fixture", text: skill("follow-up"), enabled: true, warnings: [] }],
       routines: [{ name: "Daily", prompt: "Check the inbox.", schedule: { type: "daily", time: "09:00", weekdays: [1] } }],

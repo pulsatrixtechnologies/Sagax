@@ -9,6 +9,10 @@ COPY apps/docs/package.json ./apps/docs/package.json
 COPY cloudflare/control-plane/package.json ./cloudflare/control-plane/package.json
 RUN pnpm install --frozen-lockfile
 COPY . .
+# The native modules the bundle cannot hold (DuckDB, resvg; server/data/engine.ts),
+# staged for this image's one architecture at the path the runtime stage copies.
+RUN node --input-type=module -e "import { stageDuckdb } from './scripts/prepare-duckdb.mjs'; await stageDuckdb({ root: process.cwd(), targets: [{ platform: 'linux', arch: 'x64' }] });" \
+  && chmod -R go-w dist-native/duckdb
 RUN pnpm build:server && pnpm exec vite build
 
 FROM node:24.21.0-trixie-slim
@@ -25,11 +29,13 @@ RUN curl -fsSL https://github.com/podman-container-tools/podman/releases/downloa
     && install -m 0755 /tmp/bin/podman-remote-static-linux_amd64 /usr/local/bin/podman \
     && rm /tmp/podman.tgz /tmp/bin/podman-remote-static-linux_amd64
 WORKDIR /app
+COPY --from=build --chown=maus:maus /src/dist-native/duckdb/linux-x64 ./duckdb
 COPY --from=build --chown=maus:maus /src/dist-server ./dist-server
 COPY --from=build --chown=maus:maus /src/dist ./dist
 ARG ENGINES=""
 RUN if [ -n "$ENGINES" ]; then npm install -g $ENGINES; fi
 ENV HOME=/data \
+    SAGAX_DUCKDB_DIR=/app/duckdb \
     OMB_DATA_DIR=/data/.openmausbot \
     OMB_STATIC_DIR=/app/dist \
     OMB_PORT=8799 \

@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   AGENT_TOOL_NAMES, AGENT_TOOL_POLICY, COLD_PAGE_SIZE, createAgentApi, ENTRY_TEXT_MAX, decodeCursor, encodeCursor, FIND_LIMIT_MAX,
-  matchScore, SEND_FILES_MAX, signHandle, turnLabel, verifyHandle,
+  matchScore, SEND_FILES_MAX, signHandle, signTurnHandle, turnLabel, verifyHandle,
   type AgentApiDeps, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type StoredMessage, type TurnState,
 } from "./agent-api.ts";
+import { PRIORITY_DOWNGRADED_NOTE, resetPriorityWakeForTests, type PriorityDelivery } from "./priority-wake.ts";
 
 const SECRET = Buffer.alloc(32, 7);
 const ALL: AgentScope[] = ["agents.read", "agents.send", "agents.create"];
@@ -29,7 +30,7 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
   const notified: string[] = [];
   const interrupted: string[] = [];
   const turnStateCalls: string[] = [];
-  const posted: Array<{ threadId: string; files: FileInput[] }> = [];
+  const posted: Array<{ threadId: string; files: FileInput[]; wake?: PriorityDelivery }> = [];
   const add = (threadId: string, message: Omit<StoredMessage, "id" | "at">) => {
     const row = { ...message, id: `m${++ids}`, at: clock++ } as StoredMessage;
     messages.set(threadId, [...(messages.get(threadId) ?? []), row]);
@@ -92,8 +93,10 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
       threads.set(threadId, { agentId, owner: key(caller), title: `${caller.name} via agent API`, hidden: true });
       return { threadId };
     },
-    async post(_caller, _agentId, threadId, prompt, files) {
-      posted.push({ threadId, files });
+    async post(_caller, _agentId, threadId, prompt, files, wake) {
+      posted.push({ threadId, files, ...(wake ? { wake } : {}) });
+      // A front send waits; it must not start a turn or move the clock.
+      if (wake?.front) return { messageId: null };
       const row = add(threadId, { role: "user", kind: "text", text: prompt });
       state.set(threadId, "running");
       pending.set(threadId, { polls: options.replyAfterPolls ?? 3, prompt });
@@ -446,6 +449,77 @@ describe("send_prompt / await_turn", () => {
     expect(verifyHandle(SECRET, handle, 2000)).toEqual(body);
     expect(verifyHandle(Buffer.alloc(32, 8), handle, 2000)).toBeNull();
     expect(verifyHandle(SECRET, handle, 1000 + 8 * 24 * 3_600_000)).toBeNull();
+  });
+
+  it("priority now wakes an idle agent and does not move a busy one ahead by stopping it", async () => {
+    resetPriorityWakeForTests();
+    const w = world();
+    const caller = bot("bot-priority-idle");
+    const idle = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "wake", priority: "now" });
+    expect(idle.body).toMatchObject({ accepted: true, priority: "now" });
+    expect(idle.body).not.toHaveProperty("downgraded");
+    expect(w.posted.at(-1)!.wake).toEqual({ priorityNow: true });
+    expect(w.interrupted).toEqual([]);
+
+    const busy = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "front", priority: "now" });
+    expect(busy.body).toMatchObject({ accepted: true, priority: "now" });
+    expect(w.posted.at(-1)!.wake).toEqual({ front: true, priorityNow: true });
+    expect(w.interrupted).toEqual([]);
+  });
+
+  it("priority now does not supersede a running turn", async () => {
+    resetPriorityWakeForTests();
+    const w = world();
+    const caller = bot("bot-priority-supersede");
+    await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "running" });
+    await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "now", priority: "now", on_busy: "supersede" });
+    expect(w.interrupted).toEqual([]);
+    expect(w.posted.at(-1)!.wake).toEqual({ front: true, priorityNow: true });
+  });
+
+  it("past ten priority-now sends in an hour the next one is delivered as normal", async () => {
+    resetPriorityWakeForTests();
+    const w = world();
+    const caller = bot("bot-priority-cap");
+    const first = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "1", priority: "now" });
+    expect(first.body).toMatchObject({ priority: "now" });
+    for (let n = 2; n <= 10; n++) {
+      const sent = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: String(n), priority: "now" });
+      expect(sent.body).toMatchObject({ priority: "now" });
+      expect(w.posted.at(-1)!.wake).toEqual({ front: true, priorityNow: true });
+    }
+    const over = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "11", priority: "now" });
+    expect(over.body).toMatchObject({ priority: "normal", downgraded: true, priority_note: PRIORITY_DOWNGRADED_NOTE });
+    expect(w.posted.at(-1)!.wake).toBeUndefined();
+  });
+
+  it("refuses a priority that is not now or normal, and omits the field when priority is absent", async () => {
+    resetPriorityWakeForTests();
+    const w = world();
+    const caller = bot("bot-priority-shape");
+    const bad = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "x", priority: "urgent" });
+    expect(bad.status).toBe(400);
+    expect(bad.body.message).toBe("priority is now or normal.");
+    expect(w.posted).toHaveLength(0);
+    const plain = await w.api.call(caller, "send_prompt", { agent_id: "bot-a", prompt: "plain" });
+    expect(plain.body).not.toHaveProperty("priority");
+    expect(w.posted.at(-1)!.wake).toBeUndefined();
+  });
+
+  it("await_turn reads a send_to_bot handle, and only for the bot that sent it", async () => {
+    resetPriorityWakeForTests();
+    const w = world();
+    const user = w.add("t-handle", { role: "user", kind: "text", text: "do this" });
+    w.add("t-handle", { role: "bot", kind: "text", text: "done" });
+    w.threads.set("t-handle", { agentId: "bot-a", owner: "bot:sender", title: "Ship", hidden: false });
+    w.state.set("t-handle", "idle");
+    const handle = signTurnHandle(SECRET, {
+      agentId: "bot-a", threadId: "t-handle", messageId: null, issuedAt: user.at, callerId: "sender", callerKind: "bot",
+    });
+    const r = await w.api.call(bot("sender"), "await_turn", { agent_id: "bot-a", handle, timeout_ms: 0 });
+    expect(r.body).toMatchObject({ finished: true, reply: "done" });
+    const other = await w.api.call(bot("other"), "await_turn", { agent_id: "bot-a", handle, timeout_ms: 0 });
+    expect(other.body.code).toBe("bad_handle");
   });
 });
 

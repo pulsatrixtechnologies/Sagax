@@ -22,6 +22,8 @@ import { ChatProtocolError, ChatReasoningDetails, ChatToolCalls, object, type Ch
 import { appendNative } from "./native.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS } from "./retry.ts";
 import { outOfCreditsMessage } from "./engine-errors.ts";
+import { refusesRequestSize, RequestTooLargeError, sizeChange, smallerResend } from "./chat-size-limit.ts";
+import { requestTooLargeMessage } from "../../shared/request-too-large.ts";
 import { classifyContinuable, writeTurnHandoff } from "../turn-continuation.ts";
 import { DUPLEX_INTERRUPT_WAIT_MS } from "../voice-call-duplex.ts";
 import { KEY_REJECTED_REASON, keyRejected, noteKeyAccepted, noteKeyRejected, rejectsKey } from "../key-rejections.ts";
@@ -363,6 +365,10 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
      * it before its next completion. Kept out of messages[] until then:
      * a parked item must never look like delivered input. */
     asides: string[];
+    /** Set once the turn stops taking rounds: a later steer is refused so the
+     * harness sends it as the next turn instead of parking it where no round
+     * will ever read it. */
+    ending: boolean;
   }>();
   /** Models whose endpoint rejected an echoed `reasoning_content`. In memory
    * only: later rounds and turns omit the field instead of failing again. */
@@ -469,21 +475,24 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         ? AbortSignal.any([signal, timeoutController.signal])
         : timeoutController.signal;
 
+      const payload = JSON.stringify({
+        ...options.requestBody(model, messages, stream),
+        ...(tools.length ? { tools } : {}),
+        ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
+      });
       const response = await fetch(`${options.apiUrl}/chat/completions`, {
         method: "POST",
         ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
         headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          ...options.requestBody(model, messages, stream),
-          ...(tools.length ? { tools } : {}),
-          ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
-        }),
+        body: payload,
         signal: activeSignal,
       });
       if (!response.ok) {
         const body = await response.text().catch(() => "");
         if (rejectsKey(response.status, body)) noteKeyRejected(options.apiUrl, apiKey);
         const message = `${options.httpErrorLabel} HTTP ${response.status}${body ? `: ${httpErrorDetail(body)}` : ""}`;
+        // The provider refused the request's size before running anything (chat-size-limit.ts).
+        if (refusesRequestSize(response.status, body)) throw new RequestTooLargeError(message, Buffer.byteLength(payload));
         if (rejectsToolsParameter(response.status, body)) throw new UnsupportedChatToolsError(message);
         const refusal = refusedToolCall(response.status, body);
         if (refusal) throw new RejectedToolCallError(message, refusal);
@@ -703,6 +712,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     if (turn.keepWarm === true) rememberWarm(turn.threadId);
     const abort = new AbortController();
     const messages = messagesFor(turn);
+    // This turn's own request: a smaller resend (chat-size-limit.ts) keeps it whole.
+    const request = messages.at(-1)!;
     const retainImages = chatImageBudget();
     for (const message of messages) retainImages(message.content);
     const model = turn.model || options.models().default;
@@ -761,7 +772,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     });
     let resolveDone!: () => void;
     const done = new Promise<void>((resolve) => { resolveDone = resolve; });
-    const turnEntry = { abort, turnId, done, approval, asides: [] as string[] };
+    const turnEntry = { abort, turnId, done, approval, asides: [] as string[], ending: false };
     active.set(turn.threadId, turnEntry);
     emit({ ...base(turn.threadId, turnId), type: "turn.started" });
     emit({ ...base(turn.threadId, turnId), type: "session.started", sessionId: null, model });
@@ -809,6 +820,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           if (parked.length) messages.push({ role: "user", content: parked.join("\n\n") });
           native("out", options.nativeLog.outgoing(turn, messages, model, tools.definitions));
           let attempt = 0;
+          let resized = false;
           let completion: Completion;
           for (;;) {
             let streamed = false;
@@ -850,6 +862,20 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
               if (error instanceof UnsupportedReasoningReplayError && !streamed && !abort.signal.aborted) {
                 reasoningReplayRejected.add(model);
                 for (const message of messages) delete message.reasoning_content;
+                continue;
+              }
+              // A provider refuses an oversized request before running
+              // anything, so one smaller copy may go again: older pictures
+              // first, then this round's long tool outputs, then the oldest
+              // history (chat-size-limit.ts). Only once per round.
+              if (error instanceof RequestTooLargeError && !abort.signal.aborted) {
+                const resend = resized ? null : smallerResend(messages, request, error.bytes);
+                native("out", { refused: "request_too_large", bytes: error.bytes, ...(resend ? { before: resend.before, after: resend.after } : {}) });
+                console.warn(`${options.driverKind}: ${model} refused a ${error.bytes}-byte request as too large; ${resend ? `resending smaller (${sizeChange(resend.before, resend.after)})` : "not resending"}`);
+                if (!resend) throw new ChatProtocolError(requestTooLargeMessage(options.models().options.find((option) => option.id === model)?.label ?? model));
+                messages.splice(0, messages.length, ...resend.messages);
+                resized = true;
+                emit({ ...base(turn.threadId, turnId), type: "turn.retrying", attempt: 1, delayMs: 0, reason: "request_too_large" });
                 continue;
               }
               // A refused tool call ran nothing, so the same request goes
@@ -910,6 +936,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
               // answered with a prompt to run the same thing again.
               stopReason = "tool_error";
               throw new ChatProtocolError("One or more tool operations failed or were denied. See the tool results; the final response is not an execution receipt.");
+            }
+            // Input parked while this final answer streamed: answer it in one
+            // more round rather than end the turn with it unread.
+            if (turnEntry.asides.length) {
+              messages.push({ role: "assistant", content: reply });
+              continue;
             }
             ok = true;
             break;
@@ -1033,6 +1065,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         stopReason = abort.signal.aborted ? "interrupted" : stopReason ?? "error";
         failure = safeText(asError(value).message).slice(0, 2_000);
       } finally {
+        turnEntry.ending = true;
         approval.close();
         let cleanupFailed = false;
         try { await tools?.close(); }
@@ -1137,12 +1170,12 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       steer: async (threadId, text) => {
         // This engine has no external session to respect — parking the
         // words in the live turn's entry IS delivery into the loop, so a
-        // successful park is "steered" and a missing turn is the only
-        // refusal. The words ride the array at the next round boundary;
-        // if the turn settles first, the harness's transcript record
-        // keeps them for the next turn (they are never re-sent here).
+        // successful park is "steered"; a missing or ending turn is
+        // refused, so the harness sends the words as the next turn. The
+        // words ride the array at the next round boundary, and a final
+        // answer that streamed meanwhile gets one more round to read them.
         const running = active.get(threadId);
-        if (!running) return "refused";
+        if (!running || running.ending) return "refused";
         running.asides.push(text);
         return "steered";
       },

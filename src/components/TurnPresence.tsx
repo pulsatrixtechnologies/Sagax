@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { useStreaming } from "@/state/store";
 import type { BotAvatarProps } from "@/components/Avatar";
 import { BotActivityIndicator, THINKING_PHASE } from "@/components/BotActivityIndicator";
+import { WorkingTimer } from "@/components/WorkingIndicator";
 
 export function TurnPresence({
   bot,
@@ -16,6 +17,7 @@ export function TurnPresence({
   phase,
   seed = "",
   answering = false,
+  since = null,
   ultracode = false,
   streamThreadId = null,
   typing,
@@ -31,6 +33,8 @@ export function TurnPresence({
   /** turn identity, so one turn always reads the same and two turns differ */
   seed?: string;
   answering?: boolean;
+  /** Turn start (epoch ms). The elapsed readout counts from this while thinking. */
+  since?: number | null;
   /** Ultracode effort: purple activity shimmer while the turn runs. */
   ultracode?: boolean;
   /** the thread whose in-flight answer text (useStreaming) means typing */
@@ -72,7 +76,7 @@ export function TurnPresence({
       {showWorking && (
         <div
           className={cn(
-            "flex items-center",
+            "flex items-center gap-2",
             presencePhase === "think" && "turn-mascot-in",
             presencePhase === "out" && "turn-mascot-out",
           )}
@@ -86,6 +90,9 @@ export function TurnPresence({
             ultracode={ultracode}
             active={presencePhase === "think"}
           />
+          {presencePhase === "think" && since != null && (
+            <WorkingTimer since={since} className="text-[11.5px] text-ink-tertiary" />
+          )}
         </div>
       )}
     </div>

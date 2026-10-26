@@ -209,4 +209,24 @@ describe("room header", () => {
     expect(markup).toContain("You sent a nudge to Ada.");
     expect(markup).not.toContain("data-chat-bubble");
   });
+
+  it("keeps a conversation with a person in the same column as the composer", () => {
+    vi.stubGlobal("window", { ogb: undefined });
+    const dm: Group = {
+      ...room,
+      id: "dm",
+      name: "Ada",
+      peopleDm: true,
+      humanIds: ["local-owner", "pr_ada"],
+    };
+    let markup: string;
+    try {
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: dm })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const log = markup.match(/<div[^>]*role="log"[^>]*>/)?.[0] ?? "";
+    expect(log).toContain("mx-auto");
+    expect(log).toContain("max-w-[960px]");
+  });
 });

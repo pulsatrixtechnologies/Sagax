@@ -220,6 +220,19 @@ export function execCli(
   });
 }
 
+/** Concurrent probes on a busy machine can outlast the timeout, so a CLI that answered before keeps its last version. */
+export function cliVersionReader(cli: string): (err: Error | null, stdout: string) => { version: string } | { reason: string } {
+  let last: string | null = null;
+  return (err, stdout) => {
+    const version = err ? "" : stdout.trim();
+    if (version) return { version: (last = version) };
+    const failure = err as (NodeJS.ErrnoException & { killed?: boolean }) | null;
+    const timedOut = failure?.killed === true && typeof failure.code !== "string";
+    if (timedOut && last) return { version: last };
+    return { reason: timedOut ? `\`${cli}\` took longer than 8 seconds to answer --version. The machine may be busy; check again.` : `\`${cli}\` CLI not found` };
+  };
+}
+
 /** Whether `cli` (a bare name or a path) runs one of the built-in engines. */
 export function isEngineCli(cli: string): boolean {
   const name = cli.trim().split(/[\\/]/).pop()?.toLowerCase().replace(/\.(?:exe|cmd|bat)$/, "") ?? "";

@@ -24,7 +24,7 @@ import { EFFORT_LEVELS } from "../shared/wire.ts";
 
 /** Same bounds as config.ts (DEFAULT_ / MAX_CONCURRENT_BOT_THREADS). */
 export const DEFAULT_BOT_CONCURRENT_THREADS = 3;
-export const MAX_BOT_CONCURRENT_THREADS = 10;
+export const MAX_BOT_CONCURRENT_THREADS = 16;
 
 /** Marker file in the data directory: the one-time copy has run. */
 export const RUNTIME_SETTINGS_MIGRATION_MARKER = "bot-runtime-settings.v1";
