@@ -50,7 +50,7 @@ const list = (jobs: UsageJobTrace[], over: Partial<UsageTraceList> = {}): UsageT
   truncated: false, ...over,
 });
 
-async function render(load: () => Promise<UsageTraceList>) {
+async function render(load: (range: { from: string; to: string }, paging?: { limit: number; offset: number }) => Promise<UsageTraceList>) {
   await act(async () => { root.render(createElement(UsageTraces, { load })); });
   await act(async () => { await Promise.resolve(); });
 }
@@ -95,5 +95,53 @@ describe("UsageTraces", () => {
   it("states the empty case", async () => {
     await render(() => Promise.resolve(list([])));
     expect(host.textContent ?? "").toContain("No job recorded");
+  });
+
+  // A fake paging server over 23 fictional jobs, newest first.
+  const all = Array.from({ length: 23 }, (_, n) => job({ jobId: `j${n}`, botName: `Bot ${String(n).padStart(2, "0")}` }));
+  const paged = (calls: Array<{ limit: number; offset: number } | undefined>) => (_r: unknown, paging?: { limit: number; offset: number }) => {
+    calls.push(paging);
+    const { limit, offset } = paging ?? { limit: 999, offset: 0 };
+    return Promise.resolve({ ...list(all.slice(offset, offset + limit), { page: { offset, limit } }), total: { jobs: 23, turns: 69, durationMs: 3_725_000, costUsd: 1.5, estimatedUsd: null, unpriced: 0, input: 0, output: 0 } });
+  };
+  const click = async (label: string) => {
+    const button = [...host.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    await act(async () => { button.click(); });
+    await act(async () => { await Promise.resolve(); });
+  };
+
+  it("shows ten jobs a page, the range and the whole period's time and cost on top", async () => {
+    const calls: Array<{ limit: number; offset: number } | undefined> = [];
+    await render(paged(calls));
+    expect(calls[0]).toEqual({ limit: 10, offset: 0 });
+    const text = host.textContent ?? "";
+    expect(text).toContain("Bot 00");
+    expect(text).toContain("Bot 09");
+    expect(text).not.toContain("Bot 10");
+    expect(text).toContain("1-10 of 23");
+    expect(host.querySelector("[data-testid='usage-trace-total']")?.textContent).toContain("1 h 2 m");
+    expect(host.querySelector("[data-testid='usage-trace-total']")?.textContent).toContain("$1.50");
+  });
+
+  it("goes to the next and previous page, disabling the ends", async () => {
+    const calls: Array<{ limit: number; offset: number } | undefined> = [];
+    await render(paged(calls));
+    expect([...host.querySelectorAll("button")].find((b) => b.textContent === "Previous")?.disabled).toBe(true);
+    await click("Next");
+    expect(calls.at(-1)).toEqual({ limit: 10, offset: 10 });
+    expect(host.textContent ?? "").toContain("11-20 of 23");
+    await click("Next");
+    expect(host.textContent ?? "").toContain("21-23 of 23");
+    expect([...host.querySelectorAll("button")].find((b) => b.textContent === "Next")?.disabled).toBe(true);
+    await click("Previous");
+    expect(host.textContent ?? "").toContain("11-20 of 23");
+  });
+
+  it("slices an older server's full answer on the client", async () => {
+    await render(() => Promise.resolve(list(all)));
+    const text = host.textContent ?? "";
+    expect(text).toContain("Bot 09");
+    expect(text).not.toContain("Bot 10");
+    expect(text).toContain("1-10 of 23");
   });
 });

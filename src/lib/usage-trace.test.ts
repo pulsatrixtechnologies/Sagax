@@ -45,8 +45,10 @@ describe("fetchTraces", () => {
       calls.push(path);
       return { from: "", to: "", jobs: [] as UsageJobTrace[], total: {} as never, truncated: false } as unknown as T;
     };
-    await fetchTraces({ from: "2026-10-01", to: "2026-10-22" }, get);
+    await fetchTraces({ from: "2026-10-01", to: "2026-10-22" }, undefined, get);
     expect(calls[0]).toBe("/api/usage/traces?from=2026-10-01&to=2026-10-22");
+    await fetchTraces({ from: "2026-10-01", to: "2026-10-22" }, { limit: 10, offset: 20 }, get);
+    expect(calls[1]).toBe("/api/usage/traces?from=2026-10-01&to=2026-10-22&limit=10&offset=20");
   });
 });
 
@@ -57,7 +59,7 @@ describe("fetchMyTraces", () => {
       calls.push(path);
       return { from: "", to: "", jobs: [] as UsageJobTrace[], total: {} as never, truncated: false } as unknown as T;
     };
-    await fetchMyTraces({ from: "2026-10-01", to: "2026-10-22" }, get);
+    await fetchMyTraces({ from: "2026-10-01", to: "2026-10-22" }, undefined, get);
     expect(calls[0]).toBe("/api/me/usage/traces?from=2026-10-01&to=2026-10-22");
   });
 });

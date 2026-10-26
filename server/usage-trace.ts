@@ -91,8 +91,26 @@ export interface UsageTraceTotal {
 
 export interface UsageTraceList {
   jobs: UsageJobTrace[];
+  /** Totals over EVERY job of the period (not just this page). */
   total: UsageTraceTotal;
   truncated: boolean;
+  /** Present when the caller asked for a page: where this slice sits. */
+  page?: { offset: number; limit: number };
+}
+
+/** The most jobs one page carries. */
+export const USAGE_TRACE_MAX_PAGE = 100;
+
+/** Parse ?limit and ?offset: both absent keeps the old answer (everything,
+ * up to the job cap), so an older client is unaffected. */
+export function parseTracePaging(limitRaw: string | null, offsetRaw: string | null): { limit: number; offset: number } | null {
+  const limit = Number(limitRaw);
+  if (limitRaw === null || !Number.isFinite(limit) || limit <= 0) return null;
+  const offset = Number(offsetRaw);
+  return {
+    limit: Math.min(Math.trunc(limit), USAGE_TRACE_MAX_PAGE),
+    offset: Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0,
+  };
 }
 
 /** The most jobs one trace list answers; older jobs are dropped and the
@@ -107,7 +125,7 @@ const routineIdOf = (trigger: UsageTrigger): string | undefined =>
  * Pure and offline: it reads what the ledger settled and invents nothing. */
 export function buildUsageTraces(
   rows: readonly UsageRow[],
-  opts: { max?: number } = {},
+  opts: { max?: number; limit?: number; offset?: number } = {},
 ): UsageTraceList {
   const max = opts.max ?? USAGE_TRACE_MAX_JOBS;
   const byJob = new Map<string, UsageJobTrace>();
@@ -182,10 +200,13 @@ export function buildUsageTraces(
   }
   const ordered = [...byJob.values()].sort((a, b) => b.lastAt.localeCompare(a.lastAt) || b.firstAt.localeCompare(a.firstAt));
   const truncated = ordered.length > max;
-  const jobs = truncated ? ordered.slice(0, max) : ordered;
+  const capped = truncated ? ordered.slice(0, max) : ordered;
+  // The totals cover the whole period; only the jobs (and their per-turn
+  // steps) are sliced to the requested page.
+  const jobs = capped;
 
   const total: UsageTraceTotal = {
-    jobs: jobs.length,
+    jobs: capped.length,
     turns: 0,
     durationMs: 0,
     costUsd: null,
@@ -194,7 +215,7 @@ export function buildUsageTraces(
     input: 0,
     output: 0,
   };
-  for (const job of jobs) {
+  for (const job of capped) {
     total.turns += job.turns;
     total.durationMs += job.durationMs;
     total.input += job.input;
@@ -202,6 +223,10 @@ export function buildUsageTraces(
     total.unpriced += job.unpriced;
     if (job.costUsd !== null) total.costUsd = (total.costUsd ?? 0) + job.costUsd;
     if (job.estimatedUsd !== null) total.estimatedUsd = (total.estimatedUsd ?? 0) + job.estimatedUsd;
+  }
+  if (opts.limit !== undefined) {
+    const offset = Math.max(0, opts.offset ?? 0);
+    return { jobs: capped.slice(offset, offset + opts.limit), total, truncated, page: { offset, limit: opts.limit } };
   }
   return { jobs, total, truncated };
 }
