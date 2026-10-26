@@ -180,6 +180,8 @@ import { appendComposerDraft, appendDraftAttachments, useReplyDraft } from "@/li
 import { OtherAuthorLabel } from "./MessageAuthor";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
 import { AccessCard } from "./AccessCard";
+import { TransientNotice } from "./TransientNotice";
+import { isTransientChatNotice } from "../../shared/transient-notices";
 import { transcriptLookups, type TranscriptLookups } from "@/lib/transcript-derivations";
 import { citationPreviewText, splitTranscriptCitations, type CitationAttachment } from "@/lib/citations";
 import { highlightCitationSource } from "@/lib/citations-dom";
@@ -1095,6 +1097,9 @@ const MessagesList = memo(function MessagesList({
     // each one; dropping them here keeps the go-to grouping clean.
     const shown = withoutDeadThreadChips(messages, owners).filter((message) =>
       !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message)
+      // a failed routine run and a routine's access card pass as a banner
+      // (TransientNotice), never a row (shared/transient-notices.ts)
+      && !isTransientChatNotice(message)
       && (showThreads || !(message.threadRef && message.tool)));
     const collapsed = collapseBotExchanges(shown, {
       selfBotId: botId,
@@ -2286,6 +2291,13 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
 
       {!side && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
       {!side && <ChatNotice notice={state.notice} />}
+      {!side && <TransientNotice messages={messages} render={(m, close) => m.kind === "access" && m.access ? (
+        <AccessCard
+          access={m.access}
+          viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+          onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
+        />
+      ) : <RoutineRunRow message={m} botId={bot.id} />} />}
       {!side && <ChatStaleBanner />}
       {!side && !remoteClient && <WeeklyLimitNotice />}
 

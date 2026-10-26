@@ -79,6 +79,8 @@ import { SecretRequestCard } from "./SecretRequestCard";
 import { hasRoutineExecutionTask, RoutineRunCard } from "./RoutineRunCard";
 import { GoalRunCard, GoalRunHeaderChip, goalRunPlace } from "./GoalRunCard";
 import { AccessCard } from "./AccessCard";
+import { TransientNotice } from "./TransientNotice";
+import { isTransientChatNotice } from "../../shared/transient-notices";
 import { AttachmentGallery, MessageAttachmentGallery, replyAttachmentGroup } from "./AttachmentGallery";
 import { ConversationGalleryProvider } from "./ConversationGallery";
 import { VoiceNoteBubble, type VoiceNoteAttachment } from "./VoiceNoteBubble";
@@ -494,8 +496,10 @@ export const Transcript = memo(function Transcript({
   const items = useMemo(() => {
     const plan = voiceCallPlan(transcript);
     const seen = new Set<string>();
-    const visible = withoutDeadThreadChips(messages, owners).filter((message) =>
-      message.kind !== "activity" || (!isHiddenStatusActivity(message) && roomActivityVisible(message, showToolCalls)));
+    // a failed routine run and a routine's access card pass as a banner
+    // (TransientNotice), never a row (shared/transient-notices.ts)
+    const visible = withoutDeadThreadChips(messages, owners).filter((message) => !isTransientChatNotice(message) && (
+      message.kind !== "activity" || (!isHiddenStatusActivity(message) && roomActivityVisible(message, showToolCalls))));
     const collapsed = collapseBotExchanges(visible, {
       pairChannel,
       members: members.map((member) => ({ id: member.id, name: member.name, color: member.color })),
@@ -1090,6 +1094,7 @@ async function loadRemoteActor(): Promise<{ id: string; role: "owner" | "admin" 
 
 export function GroupView({ group: stored }: { group: Group }) {
   "use memo";
+  const roomShowThreads = useShowThreads();
   // A direct conversation between two people (server/people-dms.ts) runs on
   // the single-thread path of a bot-to-bot channel: no panel, no tasks. It
   // reads as the other person.
@@ -1433,6 +1438,19 @@ export function GroupView({ group: stored }: { group: Group }) {
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
       <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
       <ChatNotice notice={state.notice} />
+      <TransientNotice messages={group.messages} render={(m, close) => {
+        if (m.kind === "access" && m.access) return (
+          <AccessCard
+            access={m.access}
+            viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
+            onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
+          />
+        );
+        const owner = state.bots.find((candidate) => candidate.id === m.from?.botId);
+        const runThread = m.routineRun?.executionThreadId;
+        const target = owner && hasRoutineExecutionTask(owner.tasks, runThread) ? { botId: owner.id, threadId: runThread } : undefined;
+        return <RoutineRunCard message={m} onOpen={target ? () => { close(); openNotificationTarget(dispatch, target, state, roomShowThreads); } : undefined} />;
+      }} />
       <ChatStaleBanner />
       {!remoteClient && <><GroupCostNotice group={group} /><WeeklyLimitNotice /></>}
 
