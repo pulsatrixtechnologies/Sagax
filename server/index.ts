@@ -495,7 +495,7 @@ import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
-import { NO_ENGINE_MESSAGE, engineProblem, namesEngine } from "./bot-engine.ts";
+import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { offeredEngines, orgEngineMoveLine } from "../shared/offered-engines.ts";
@@ -18974,7 +18974,7 @@ async function startTurn(
   if (!namesEngine(bot.modelSelection)) {
     // No engine at all: the default one, or a plain sentence, never `provider instance ""`.
     const healed = healBotEngine(bot);
-    if (!namesEngine(healed.modelSelection)) throw Object.assign(new Error(NO_ENGINE_MESSAGE), { status: 409 });
+    if (!namesEngine(healed.modelSelection)) throw noEngineError();
     bot = healed;
   }
   const instance = registry.get(bot.modelSelection.instanceId);
@@ -21585,7 +21585,7 @@ async function cloudRoutineReadiness(botId: string, threadId?: string): Promise<
   const bot = projected && selection ? { ...projected, modelSelection: selection } : projected;
   if (!bot || bot.hidden) return { ready: false, reason: "The routine's target bot no longer exists." };
   const instance = registry.get(bot.modelSelection.instanceId);
-  if (!namesEngine(bot.modelSelection)) return { ready: false, reason: NO_ENGINE_MESSAGE };
+  if (!namesEngine(bot.modelSelection)) return { ready: false, reason: NO_ENGINE_PERSON };
   if (!instance) return { ready: false, reason: "The target bot's model is unavailable. Choose another model in the bot's settings." };
   // Organization server: a cloud routine runs in the bot owner's server
   // environment. It does not need a remote computer account.
@@ -22872,7 +22872,7 @@ async function runGroupMemberTurn(
   const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined"
     ? (cloudGuestDriven(threadId) || !botmailConfined(threadId) ? guestEngineRefusal(threadId) : BOTMAIL_ENGINE_REFUSAL) : undefined;
   if (!instance || roomPolicyRefusal || roomGuestRefusal) {
-    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_MESSAGE);
+    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_PERSON);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "activity",
@@ -48193,7 +48193,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
   } catch (e) {
     const status = (e as any)?.status ?? 500;
     const candidateCode = (e as { code?: unknown })?.code;
-    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested", "misuse_blocked", "misuse_approval_required", "misuse_locked", "safety_blocked"].includes(candidateCode)
+    const code = typeof candidateCode === "string" && ["guarded_busy", "guarded_branch", "guarded_permissions", "guarded_request_changed", "guarded_request_untracked", "outside_workspace", "org_full_access_disabled", "parallel_limit", "parallel_nested", "misuse_blocked", "misuse_approval_required", "misuse_locked", "safety_blocked", "no_engine"].includes(candidateCode)
       ? candidateCode : undefined;
     return json(res, status, { error: e instanceof Error ? e.message : String(e), ...(code ? { code } : {}) });
   } finally {

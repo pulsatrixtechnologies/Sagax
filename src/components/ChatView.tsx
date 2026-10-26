@@ -77,6 +77,7 @@ import { ClaudeUpdatePrompt } from "./ClaudeUpdatePrompt";
 import { MacCuaRecoveryActions } from "./MacCuaRecoveryActions";
 import { macCuaPermissionMessage, missingMacCuaPermissions } from "@/lib/mac-cua-permissions";
 import { failedTurnCause, signedOutEngine } from "@/lib/failed-turn";
+import { localizedEngineCause } from "@/lib/engine-error-text";
 import { plainErrorLine } from "@/lib/plain-error";
 import { openPlaceAction, placeRowViewFor, usePlaceSeat, worksOnSimpleLabel } from "@/lib/place-view";
 import type { PlaceRow } from "../../shared/place-view";
@@ -445,7 +446,8 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
   if (signedOut && tool.setup && engine && !(engine.snapshot.state === "available" && engine.snapshot.authenticated !== false)) {
     return <div className="flex justify-start"><EngineSetup instance={engine} className="text-ink-secondary" /></div>;
   }
-  const cause = failedTurnCause(tool.name) ?? tool.name;
+  const rawCause = failedTurnCause(tool.name) ?? tool.name;
+  const cause = localizedEngineCause(rawCause) ?? rawCause;
   return (
     <ErrorRow
       message={cause}

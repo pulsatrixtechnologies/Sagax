@@ -5583,6 +5583,8 @@
       "composer.dictation.stopHint": "8d8e3224444a417d7e5d0c22d1ca1c9a65bbf92e9578733db97f1186748d3b9c",
       "composer.dictation.unavailable": "a346aca777ab30ce20623cb1d8619b9ccb1cdf61c0f0119b3d6034a3bfffa51a",
       "composer.error.clipboardImage": "8b11ddc122805b4be2d41b8c613672c0872c55cbdd2a21d036917072b1082e7b",
+      "composer.error.engineRemoved": "d7673ddc3bf855c2f845cd41e2771926f5828cdad6e94f43d00db62a610f8154",
+      "composer.error.noEngine": "3c1d855331004e1224fae925318ea3136ff126104ddb75feb39788c44002b840",
       "composer.error.noImages": "49fa2ba9ea68fd0a3cfbf2ef55fe9b27d4436baf92adcf843f89c82701e11f73",
       "composer.failed.attachment": "602a5e69c3021bdbd3d25156a02d2cbb467605b8203248eea6af3fb42168d663",
       "composer.failed.dismiss": "48845bff334a50a59aaecf499f28a7a24c3b4b891b8b18a9f1169ad8e8a6b261",
