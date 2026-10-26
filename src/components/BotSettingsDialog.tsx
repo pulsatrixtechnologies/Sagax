@@ -13,6 +13,7 @@ import { useDataWindowItem } from "./DataWindowButton";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { reportAchievement } from "@/lib/achievements";
 import { cn } from "@/lib/cn";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { BotActionsMenu, type BotActionsMenuAnchor } from "./bot-settings/BotActionsMenu";
 import { LibraryTab } from "./bot-settings/LibraryTab";
@@ -40,6 +41,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
   overlay?: boolean;
 }) {
   const advanced = useAdvancedMode();
+  const perspicaxOrg = usePerspicaxOrg();
   const { state, dispatch } = useStore();
   const { padClass, dragProps } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
@@ -255,7 +257,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
             <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
               <SuggestionsSection bot={bot} routineCount={derived.botRoutines.length} />
               <ActivitySection bot={bot} />
-              <RemoteSessionsSection bot={bot} />
+              {perspicaxOrg !== null && <RemoteSessionsSection bot={bot} />}
               <section data-bot-settings-section="routines" className="flex flex-col gap-2">
                 <RoutinesSection bot={bot} routines={derived.botRoutines} runs={state.routineRuns} grouped />
               </section>

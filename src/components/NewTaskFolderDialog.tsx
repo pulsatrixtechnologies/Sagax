@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { FolderOpen, X } from "lucide-react";
 import { useStore, type Bot } from "@/state/store";
 import { t } from "@/lib/i18n";
+import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { cn } from "@/lib/cn";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { RemoteFolderField } from "./remote-session/RemoteFolderField";
@@ -12,6 +13,7 @@ import { FIELD, FieldRow, PILL, PRIMARY_PILL, DIALOG, GROUP_CARD } from "./Setti
  * working directory of a provider session that already exists. */
 export function NewTaskFolderDialog({ bot, onClose, onReturnFocus }: { bot: Bot; onClose: () => void; onReturnFocus?: () => void }) {
   const { dispatch } = useStore();
+  const solo = usePerspicaxOrg() === null;
   const [cwd, setCwd] = useState(bot.cwd ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function NewTaskFolderDialog({ bot, onClose, onReturnFocus }: { bot: Bot;
         <div className={DIALOG.body}>
           <div className={GROUP_CARD}>
             <FieldRow label={t("task.folder.path")} hint={t("task.folder.detail")} hintId="new-task-folder-description">
-              <RemoteFolderField botId={bot.id} inputRef={input} value={cwd} disabled={saving} aria-describedby="new-task-folder-description" autoComplete="off" spellCheck={false}
+              <RemoteFolderField botId={bot.id} solo={solo} inputRef={input} value={cwd} disabled={saving} aria-describedby="new-task-folder-description" autoComplete="off" spellCheck={false}
                 onChange={(path) => { setCwd(path); setError(null); }} placeholder={t("task.folder.placeholder")}
                 inputClassName={`${FIELD} font-mono`} />
             </FieldRow>
