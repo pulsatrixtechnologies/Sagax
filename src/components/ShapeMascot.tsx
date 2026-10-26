@@ -190,7 +190,7 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
       ))}
     </g>
   );
-  const m = poseMatrices(detail, pose);
+  const m = poseMatrices(detail, pose, frame.depth);
   const view = (children: ReactNode, extra: Record<string, string> = {}) => (volume ? <g transform={m.face} data-pose-face="" {...extra}>{children}</g> : <>{children}</>);
   return (
     <svg viewBox="0 0 100 100" width="100%" height="100%" ref={bodyRef} className={bodyClass} style={{ overflow: "visible", display: "block" }} data-eyes={frame.eyes ? "cut" : "none"} data-volume={volume ? detail : "flat"}>
