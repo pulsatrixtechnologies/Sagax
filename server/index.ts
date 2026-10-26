@@ -343,7 +343,7 @@ import { blockedTarget, buildSpendNotification, deliverableNotification, quietFo
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
 import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
-import { cardRuleCandidate, matchOwnerRule, ownerDecision, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { cardRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -14987,6 +14987,9 @@ bus.subscribe((event: RuntimeEvent) => {
           personMustAnswer: safetyEffect?.kind === "hold" || event.requiresExplicitApproval === true,
           stepUpRequired: ownerStepUp.length > 0,
           autonomyRefused: ownerOriginRefused,
+          // #1065: the owner's real computer from their own turn on their
+          // own bot, which Bypass answers (never another origin or person)
+          ownComputerOwnTurn: Boolean(ownDestination && !ownEnvironment && destination?.byOwner && destinationOrigin === "owner"),
           crossPerson: foreignDestination,
         })
         : null;
@@ -15020,15 +15023,10 @@ bus.subscribe((event: RuntimeEvent) => {
         });
         break;
       }
-      const ownerVerdict = owner?.kind === "allow" && baseVerdict?.source !== "custom-rule-ask"
-        ? {
-          approve: owner.source === "owner-rule"
-            ? `approved ${event.tool} (your rule)`
-            : owner.source === "owner-auto" ? `approved ${event.tool} (automatic approval)` : `approved ${event.tool} (bypass)`,
-          source: owner.source,
-          ...(owner.rule ? { rule: owner.rule.id } : {}),
-        }
-        : baseVerdict;
+      // An organization rule (Refuser, Demander d'abord) or the person's own
+      // deny/ask rule always wins over the owner's mode (owner-approval.ts
+      // ownerVerdictOver, #1065).
+      const ownerVerdict = ownerVerdictOver(baseVerdict, owner, event.tool);
       // The person's allow rule, when nothing answered and the owner's own
       // rules did not hold the card (an owner ask rule or an admin card win).
       const customAllow = permission && asker && event.requestId && !ownerVerdict?.approve && customDecision?.kind === "allow"
