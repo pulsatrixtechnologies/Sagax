@@ -679,14 +679,14 @@ private struct RoutineRow: View {
     var body: some View {
         let canToggle = routine.canToggle()
         HStack(spacing: 12) {
-            if let bot { BotMascotView(bot: bot, size: 42, state: routine.enabled ? .idle : .sleeping, animated: false) }
-            else { Image(systemName: "calendar.badge.exclamationmark").frame(width: 42, height: 42) }
-            VStack(alignment: .leading, spacing: 3) {
-                Text(routine.name).font(.headline).foregroundStyle(Theme.textPrimary)
+            if let bot { BotMascotView(bot: bot, size: 34, state: routine.enabled ? .idle : .sleeping, animated: false) }
+            else { Image(systemName: "calendar.badge.exclamationmark").frame(width: 34, height: 34) }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(routine.name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.textPrimary).lineLimit(1)
                 ((bot.map { Text(verbatim: $0.name) } ?? routine.bot.map { Text(verbatim: $0.name) } ?? Text("Deleted agent"))
                     + Text(verbatim: " · \(RoutineWording.schedule(routine.schedule)) · ")
                     + Text(LocalizedStringKey(routine.isTeamGoal ? "Team goal" : routine.runLocation.label)))
-                    .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                    .font(.caption).foregroundStyle(Theme.textSecondary).lineLimit(1)
                 // AU20: someone else's routine names its owner
                 if let owner = routine.foreignOwnerName {
                     Text(String(localized: "Owned by \(owner)"))

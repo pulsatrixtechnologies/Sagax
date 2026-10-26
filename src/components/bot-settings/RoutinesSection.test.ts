@@ -116,7 +116,8 @@ describe("RoutinesSection", () => {
   it("shows when an enabled routine runs, and marks a disabled one paused", () => {
     const markup = render([activeRoutine, pausedRoutine], []);
     expect(markup).toContain("Every weekday at");
-    expect(markup).toContain('data-routine-when="Paused"');
+    expect(markup).not.toContain('data-routine-when="Paused"');
+    expect(markup).toMatch(/title="[^"]*· Paused/);
     expect(markup).not.toContain(">Active<");
   });
 
