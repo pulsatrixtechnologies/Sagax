@@ -105,7 +105,8 @@ final class StepLabelTests: XCTestCase {
     func testServerSentencesAndUnknownToolsStayReadable() {
         XCTAssertEqual(StepLabel.read(tool("Sent to Wren · Ops"), words: fr).label, "Envoyé à Wren dans Ops")
         XCTAssertEqual(StepLabel.read(tool("Something already said"), words: en).label, "Something already said")
-        XCTAssertEqual(StepLabel.read(tool("LINEAR_CREATE_LINEAR_COMMENT"), words: en).label, "Used create linear comment")
+        // an unknown tool keeps its own words, as the desktop (`step-label.ts`); the Composio phrase left with #1014
+        XCTAssertEqual(StepLabel.read(tool("LINEAR_CREATE_LINEAR_COMMENT"), words: en).label, "Used LINEAR CREATE LINEAR COMMENT")
         XCTAssertEqual(StepLabel.read(tool("my_tool", summary: "the summary"), words: en), StepReading(label: "Used my tool", target: "the summary"))
     }
 

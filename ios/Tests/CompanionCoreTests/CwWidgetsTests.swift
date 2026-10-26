@@ -24,14 +24,25 @@ final class CwWidgetsTests: XCTestCase {
     }
 
     func testAWidgetRowIsNotHiddenWithTheToolChips() throws {
+        // a view tool (`cw_psa__show_<view>`, #870) keeps its widget with the steps hidden
         let data = """
-        {"id":"w","role":"bot","kind":"activity","at":1,"tool":{"name":"cw_psa__query","ok":true,"widget":{"family":"time","view":"card","records":[{"id":88021,"charge":"Ticket #48213","hours":1.25}]}}}
+        {"id":"w","role":"bot","kind":"activity","at":1,"tool":{"name":"cw_psa__show_time_entries","ok":true,"widget":{"family":"time","view":"card","records":[{"id":88021,"charge":"Ticket #48213","hours":1.25}]}}}
         """.data(using: .utf8)!
         let message = try JSONDecoder().decode(Message.self, from: data)
         XCTAssertEqual(message.tool?.widget?.family, "time")
         XCTAssertFalse(isToolActivityRow(message))
         let rows = transcriptRows([message], detail: .hidden)
         XCTAssertEqual(rows.map(\.id), ["w"])
+    }
+
+    func testAQueryWidgetStoredBeforeViewsOnDemandIsAStepAgain() throws {
+        // #870: a row stored with a widget on `cw_psa__query` reads as a step, hidden with the others
+        let data = """
+        {"id":"w","role":"bot","kind":"activity","at":1,"tool":{"name":"cw_psa__query","ok":true,"widget":{"family":"time","view":"card","records":[{"id":88021,"charge":"Ticket #48213","hours":1.25}]}}}
+        """.data(using: .utf8)!
+        let message = try JSONDecoder().decode(Message.self, from: data)
+        XCTAssertTrue(isToolActivityRow(message))
+        XCTAssertEqual(transcriptRows([message], detail: .hidden).map(\.id), [])
     }
 
     func testABrokenWidgetDoesNotDropTheActivity() throws {
