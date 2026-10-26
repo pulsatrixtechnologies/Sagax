@@ -1,7 +1,8 @@
 // Explicit --import in isolated fixtures only: the verification launcher adds
 // it when SAGAX_TEST_STALL_CLOCK=1 reaches it. The stall watchdog's window (its
 // production twenty minutes of silence) elapses for every turn that is silent
-// at that moment once the fixture writes <data dir>/stall-turns, and the
+// at that moment with no tool running once the fixture writes
+// <data dir>/stall-turns (a running tool's longer limit does not), and the
 // watchdog sweeps every 50 ms instead of every minute, so a test can follow a
 // stalled turn through its real course. A turn that speaks afterwards counts
 // from then, as it would in production. It changes no authorization or
