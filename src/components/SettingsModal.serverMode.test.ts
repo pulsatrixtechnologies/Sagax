@@ -11,7 +11,7 @@ vi.mock("@/lib/interface-mode", () => ({ useAdvancedMode: () => true, setAdvance
 // server only. Settings > General names that server with the one way out,
 // and a section about this computer says the organization manages it.
 const fixture = vi.hoisted(() => ({
-  section: "general" as AppSettingsSection,
+  section: "account" as AppSettingsSection,
   serverMode: null as null | { active: false } | { active: true; name: string; origin: string },
   viewer: undefined as undefined | Record<string, unknown>,
   workspace: { available: false, current: null as null | { local: boolean; name: string; origin?: string }, open: false, error: "", openMenu: () => {} },
@@ -34,7 +34,7 @@ vi.mock("./CustomDomainSettings", () => ({ CustomDomainSettings: () => null }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fixture.section = "general";
+  fixture.section = "account";
   fixture.serverMode = null;
   fixture.viewer = undefined;
   fixture.workspace = { available: false, current: null, open: false, error: "", openMenu: () => {} };
@@ -148,7 +148,7 @@ describe("Settings in server mode", () => {
     fixture.section = "companion";
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     const html = render();
-    expect(html).toContain('<option value="general" selected="">General</option>');
+    expect(html).toContain('<option value="account" selected="">Account</option>');
     expect(html).not.toContain('<option value="companion"');
     expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER");
     expect(html).not.toContain("LOCAL_COMPANION_MARKER");
@@ -159,7 +159,7 @@ describe("Settings in server mode", () => {
     fixture.section = "companion";
     fixture.serverMode = { active: true, name: "Example", origin: "https://bot.example.test" };
     const html = render();
-    expect(html).toContain('<option value="general" selected="">Général</option>');
+    expect(html).toContain('<option value="account" selected="">Compte</option>');
     expect(html).not.toContain("Jumeler des appareils");
   });
 });

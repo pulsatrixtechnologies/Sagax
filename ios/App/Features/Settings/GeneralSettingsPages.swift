@@ -262,7 +262,9 @@ struct ExperimentalSettingsView: View {
 /// how the home and the chats show things on this phone.
 struct DisplaySettingsCard: View {
     @Environment(\.themePalette) var themePalette
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    @EnvironmentObject private var session: Session
+    /// Tool calls ("Details"): the desktop's own switch, kept by the server.
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) private var updatesButton = false
     @AppStorage(PrefKey.rosterChromeAtTop) private var rosterChromeAtTop = false
@@ -288,16 +290,15 @@ struct DisplaySettingsCard: View {
                 identifier: "settings.updatesButton"
             )
             CardHairline(leadingInset: SettingsMetrics.rowInset)
-            Menu {
-                Picker(selection: $activityDetail) {
-                    ForEach(ActivityDetail.allCases, id: \.rawValue) { level in
-                        Text(LocalizedStringKey(level.label)).tag(level.rawValue)
-                    }
-                } label: { EmptyView() }
-            } label: {
-                SettingsRow(title: "Activity", accessory: .valueChevron(String(localized: String.LocalizationValue((ActivityDetail(rawValue: activityDetail) ?? .full).label))), height: 43.67)
-            }
-            .accessibilityIdentifier("settings-activity")
+            SettingsRow(
+                title: "Tool calls",
+                subtitle: "Show tool calls in chat. Off: the chat shows the messages, a turn's steps fold away. The same switch as on your computer.",
+                accessory: .toggle(Binding(get: { toolCalls.showToolCalls }, set: { on in
+                    Task { await toolCalls.set(session, on) }
+                })),
+                identifier: "settings-activity"
+            )
+            .disabled(toolCalls.saving)
             CardHairline(leadingInset: SettingsMetrics.rowInset)
             SettingsRow(
                 title: "Search and + at top",
@@ -306,6 +307,10 @@ struct DisplaySettingsCard: View {
                 identifier: "settings.rosterChromeAtTop"
             )
         }
+        if let error = toolCalls.error {
+            SettingsFooter(text: LocalizedStringKey(error))
+        }
         SettingsFooter(text: LocalizedStringKey(RosterDensity.shown(stored: rosterDensity).caption))
+            .task(id: session.connection?.id) { await toolCalls.load(session) }
     }
 }

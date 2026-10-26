@@ -42,12 +42,18 @@ struct CardView: View {
     /// it is waiting. Allowed, denied and expired asks leave the chat.
     private var answeredInDock: Bool { message.card?.isPermission == true }
 
-    /// Finished permission asks are not drawn. Questions are not this. One
-    /// answered with Always allow stays: it says which Allow rule it saved
-    /// and offers Edit rule (ApprovalCard.tsx AllowRuleInset).
+    /// A finished permission ask the engine closed on its own, or one put
+    /// away, is not drawn (`approvalCardStaysInChat`). Questions are not this.
     private var settledPermission: Bool {
         guard answeredInDock, let card = message.card, !card.isPending else { return false }
-        return AllowRuleText.savedRule(card) == nil
+        return !ApprovalReceiptRules.staysInChat(card)
+    }
+
+    /// Issue #426: a plain tool ask (not a proposal) is one line in the
+    /// thread, while it waits on the dock and once answered or expired.
+    private var toolAsk: Bool {
+        guard answeredInDock, let card = message.card else { return false }
+        return !ApprovalDockRules.isProposal(card)
     }
 
     /// A first-run quiz goes once picked, dismissed or talked past.
@@ -58,6 +64,12 @@ struct CardView: View {
     var body: some View {
         if settledPermission {
             EmptyView()
+        } else if toolAsk, let card = message.card, !hidden {
+            if card.isPending {
+                ApprovalWaitingLine(message: message, card: card, waiting: waitingLine(card), accent: Theme.readable(tint))
+            } else {
+                ApprovalReceiptRow(chat: chat, message: message, card: card)
+            }
         } else if let desktop, let card = message.card, !hidden, answeredInDock {
             DesktopPermissionCard(chat: chat, message: message, card: card, theme: desktop, waiting: waitingLine(card))
         } else if let card = message.card, !hidden {
@@ -229,7 +241,7 @@ struct CardView: View {
         }
         return ApprovalDockRules.isProposal(card)
             ? String(localized: "Waiting for your confirmation below")
-            : String(localized: "Waiting for your answer below")
+            : String(localized: "Waiting for your approval")
     }
 
     static func outcomeText(_ outcome: ApprovalOutcome) -> String {

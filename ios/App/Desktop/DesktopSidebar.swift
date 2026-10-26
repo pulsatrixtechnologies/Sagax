@@ -81,7 +81,7 @@ struct DesktopSidebar: View {
             AnyView(DesktopSidebarFooter())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(theme.sidebar)
+        .background(theme.sidebar.skinTexture(theme.texture, ink: UIColor(theme.sidebarInk)))
         .overlay(alignment: .trailing) {
             // border-r-[0.5px] border-hairline-weak
             Rectangle().fill(theme.sidebarInk.opacity(0.10)).frame(width: 1)
@@ -217,7 +217,7 @@ struct DesktopSidebarList: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: DesktopShellModel
     @ObservedObject private var prefs = SidebarPrefsModel.shared
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
     let layout: SidebarLayout
     @State private var contentFrame: CGRect = .zero
     @State private var viewport: CGFloat = 0
@@ -280,7 +280,7 @@ struct DesktopSidebarList: View {
     }
 
     private func previewMap() -> [String: String] {
-        let activity = ActivityDetail(rawValue: activityDetail) ?? .full
+        let activity = toolCalls.detail
         var map: [String: String] = [:]
         for summary in session.state.chatSummaries(activity: activity) { map[summary.chat.id] = summary.preview }
         return map

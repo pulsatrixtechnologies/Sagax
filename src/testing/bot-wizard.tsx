@@ -1,0 +1,32 @@
+// Isolated page for the bot creation wizard (scripts/testing/capture-bot-wizard.ts):
+// the real store and wizard against a disposable fake-engine server.
+// `?skin=` picks the skin, `?lang=` the language.
+import { useEffect } from "react";
+import { createRoot } from "react-dom/client";
+import { BotWizard } from "../components/bot-wizard/BotWizard";
+import { PluginsPanel } from "../components/PluginsPanel";
+import { StoreProvider, useStore } from "../state/store";
+import { applySkin, type SkinId } from "../lib/skins";
+import { setLocale } from "../lib/i18n";
+import "../styles.css";
+
+const params = new URLSearchParams(location.search);
+setLocale(params.get("lang") ?? "fr");
+
+function Fixture() {
+  const { state, dispatch } = useStore();
+  const ready = state.bots.length > 0;
+  useEffect(() => {
+    if (ready && !state.botWizard) dispatch({ type: "openBotWizard" });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+  return <main className="min-h-screen bg-app">
+    {state.botWizard && <BotWizard />}
+    {state.pluginsOpen && <PluginsPanel />}
+  </main>;
+}
+
+applySkin((params.get("skin") ?? "midnight") as SkinId);
+const root = createRoot(document.getElementById("root")!);
+root.render(<StoreProvider><Fixture /></StoreProvider>);
+if (import.meta.hot) import.meta.hot.dispose(() => root.unmount());

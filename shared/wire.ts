@@ -933,7 +933,16 @@ export interface OptionCardData {
   /** A permission card in plain words, made by shared/approval-describe.ts
    * (the same generator writes the push): "Allow Nova to run a
    * command?" and one line under it. Clients without a catalog show these. */
-  plain?: { title: string; line: string; risk?: "read" | "write" | "destructive" | "execute" };
+  plain?: {
+    title: string;
+    line: string;
+    risk?: "read" | "write" | "destructive" | "execute";
+    /** The verb phrase after "wants to", in `locale` (phones word their
+     * own heading with it when it is in their reader's language). */
+    action?: string;
+    /** The language these words are in: the answering person's (#1089). */
+    locale?: string;
+  };
   /** The engine's own `<server>__<tool>` name when `tool` is a kind (ACP
    * "other") or a bare name. */
   mcpTool?: string;

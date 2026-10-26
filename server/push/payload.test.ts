@@ -59,6 +59,19 @@ describe("APNs payload", () => {
     expect(nudgeNoWizz.aps.sound).toBe("default");
   });
 
+  it("plays the person's chosen notification tone, bundled on the phone", () => {
+    const tone = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSoundChoice: "chime-b", nowMs: 0 }).body);
+    expect(tone.aps.sound).toBe("notify-chime-b.caf");
+    const system = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSoundChoice: "system", nowMs: 0 }).body);
+    expect(system.aps.sound).toBe("default");
+    const unknown = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSoundChoice: "__proto__", nowMs: 0 }).body);
+    expect(unknown.aps.sound).toBe("default");
+    const muted = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSound: false, personSoundChoice: "tick", nowMs: 0 }).body);
+    expect(muted.aps.sound).toBeUndefined();
+    const nudge = JSON.parse(buildApnsRequest({ message: message({ kind: "nudge" }), bundleId: "x", personSoundChoice: "tick", nowMs: 0 }).body);
+    expect(nudge.aps.sound).toBe(NUDGE_SOUND);
+  });
+
   it("clips long text and keeps the collapse id within 64 bytes", () => {
     const long = buildApnsRequest({ message: message({ body: "word ".repeat(200) }), bundleId: "x", nowMs: 0 });
     expect(JSON.parse(long.body).aps.alert.body.length).toBeLessThanOrEqual(240);
@@ -163,7 +176,7 @@ describe("an approval push", () => {
     expect(body.requestId).toBe("req-1");
     expect(body.prompt).toBe("approval");
   });
-  it("a key-protected approval opens the app, and a question has no actions", () => {
+  it("a key-protected approval opens the app, and a question offers Reply", () => {
     const keyed = JSON.parse(buildApnsRequest({
       message: message({ kind: "approval", prompt: "approval", needsKey: true, requestId: "req-2", title: "Allow?" }),
       bundleId: "x", nowMs: 0,
@@ -171,11 +184,12 @@ describe("an approval push", () => {
     expect(keyed.aps.category).toBe("SAGAX_APPROVAL_KEY");
     expect(keyed.needsKey).toBe(true);
     expect(pushCategory({ kind: "approval", prompt: "question" })).toBe("SAGAX_UPDATE");
+    expect(pushCategory({ kind: "approval", prompt: "question", requestId: "q1" })).toBe("SAGAX_QUESTION");
     const question = JSON.parse(buildApnsRequest({
       message: message({ kind: "approval", prompt: "question", requestId: "q1", title: "Which?" }),
       bundleId: "x", nowMs: 0,
     }).body);
-    expect(question.aps.category).toBe("SAGAX_UPDATE");
+    expect(question.aps.category).toBe("SAGAX_QUESTION");
     expect(question.aps.sound).toBe("default");
     expect(question.needsKey).toBeUndefined();
   });

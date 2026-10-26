@@ -744,7 +744,7 @@ public enum BotLibraryChip: Hashable, Sendable {
 /// the editor Overview's quick actions and the Primary bot button. "Put on
 /// the desktop" floats a window: desktop only.
 public enum BotActionsMenuItem: String, CaseIterable, Hashable, Sendable {
-    case editBot, rename, makePrimary, replacePrimary
+    case editBot, redoWizard, rename, makePrimary, replacePrimary
     case copyConversation, downloadConversation, exportZip
     case archive, inspector
 }
@@ -770,10 +770,12 @@ public struct BotActionsMenuPlan: Hashable, Sendable {
     ///     through a sidecar).
     ///   - inspector: the Inspector is offered where the pairing shows it.
     ///   - activeBotCount: bots not archived, for Archive's "keep one".
+    ///   - wizard: "Redo the wizard" (2026-10-26), for whoever may change the bot.
     public init(gate: SurfaceGate, bot: Bot, viewerId: String?, editable: Bool, zipExport: Bool,
-                inspector: Bool = false, activeBotCount: Int) {
+                inspector: Bool = false, activeBotCount: Int, wizard: Bool = false) {
         var first: [BotActionsMenuItem] = []
         if editable { first.append(.editBot) }
+        if editable, wizard { first.append(.redoWizard) }
         if gate.allows(.renameBot), gate.scope != .serverClient || viewerId.map({ PrimaryBotRules.viewerOwns(bot, viewerId: $0) }) == true {
             first.append(.rename)
         }

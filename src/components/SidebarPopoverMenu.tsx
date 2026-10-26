@@ -9,7 +9,7 @@
 // when you are aiming at nothing in particular is startling.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight, Pencil } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { bindHoverIntent, createHoverIntent } from "./sidebar-hover-intent";
 import { useMenuMotion } from "./MenuMotion";
@@ -76,6 +76,10 @@ export interface SidebarSubmenuEntry {
   separatorBefore?: boolean;
   /** `data-tour` id, so the guided tour can point at this row */
   tourId?: string;
+  /** a tooltip on the row (a server's address under its name) */
+  title?: string;
+  /** a small Rename button beside the row (its own button, not nested in the row) */
+  rename?: { label: string; onRename: () => void };
   onSelect?: () => void;
 }
 
@@ -341,27 +345,50 @@ export function SidebarPopoverMenu({
                           {entry.value && <span className="shrink-0 tabular-nums text-ink-secondary">{entry.value}</span>}
                         </div>
                       ) : (
+                        <div className="group/entry relative">
                         <button
                           type="button"
                           role="menuitem"
                           data-tour={entry.tourId}
                           data-menu-key={entry.key}
+                          title={entry.title}
                           disabled={entry.disabled}
                           onClick={() => {
                             entry.onSelect?.();
                             close();
                           }}
                           className={cn(
-                            "flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left disabled:opacity-60",
+                            "flex w-full items-center gap-2 rounded-md px-2 text-left disabled:opacity-60",
+                            entry.subtitle ? "min-h-[30px] py-1" : "h-[30px]",
+                            entry.rename && "pr-14",
                             entry.active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
                           )}
                         >
                           {entry.icon && <span className="flex size-5 shrink-0 items-center justify-center">{entry.icon}</span>}
-                          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+                          <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="truncate">{entry.label}</span>
+                            {entry.subtitle && <span className="truncate text-[11.5px] leading-[14px] text-ink-secondary">{entry.subtitle}</span>}
+                          </span>
                           {entry.value && <span className="shrink-0 tabular-nums text-ink-tertiary">{entry.value}</span>}
                           {entry.trailing}
                           {entry.checked && <Check size={16} aria-label="✓" className="shrink-0 text-ink" />}
                         </button>
+                        {entry.rename && (
+                          <button
+                            type="button"
+                            data-rename-key={entry.key}
+                            title={entry.rename.label}
+                            aria-label={entry.rename.label}
+                            onClick={() => {
+                              entry.rename?.onRename();
+                              close();
+                            }}
+                            className="absolute right-8 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-ink-tertiary opacity-50 hover:bg-hover hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus group-hover/entry:opacity-100"
+                          >
+                            <Pencil size={13} aria-hidden="true" />
+                          </button>
+                        )}
+                        </div>
                       )}
                     </div>
                   ))}

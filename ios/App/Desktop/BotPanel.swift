@@ -178,7 +178,8 @@ private struct BotPanelContent: View {
             gate: gate, bot: current, viewerId: viewerId, editable: DesktopPersonaEditor.offered(gate: gate, slack: slackURL != nil),
             zipExport: gate.scope != .sidecar && (session.canAdminister || PrimaryBotRules.viewerOwns(current, viewerId: session.roomViewer.actorId)),
             inspector: true,
-            activeBotCount: session.state.bots.filter { $0.hidden != true }.count
+            activeBotCount: session.state.bots.filter { $0.hidden != true }.count,
+            wizard: true
         )
     }
 
@@ -219,6 +220,7 @@ private struct BotPanelContent: View {
         let (icon, title): (String, LocalizedStringKey) = {
             switch item {
             case .editBot: return ("person.crop.circle.badge.pencil", "Edit bot")
+            case .redoWizard: return ("wand.and.stars", "Redo the wizard")
             case .rename: return ("pencil", "Rename the bot")
             case .makePrimary: return ("star", "Make primary bot")
             case .replacePrimary: return ("arrow.left.arrow.right", "Replace with different Bot")
@@ -241,6 +243,7 @@ private struct BotPanelContent: View {
     private func perform(_ item: BotActionsMenuItem) {
         switch item {
         case .editBot: model.showPersona()
+        case .redoWizard: BotWizardPresenter.shared.open(botId: current.id)
         case .rename:
             renameDraft = current.name
             renaming = true

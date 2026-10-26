@@ -10,6 +10,8 @@ import Foundation
 public enum NotificationApproval {
     public static let allowAction = "sagax.approval.allow"
     public static let denyAction = "sagax.approval.deny"
+    /// A question's Reply, with a text field (`UNTextInputNotificationAction`).
+    public static let replyAction = "sagax.question.reply"
     /// `UNNotificationDefaultActionIdentifier`.
     public static let defaultAction = "com.apple.UNNotificationDefaultActionIdentifier"
     /// `UNNotificationDismissActionIdentifier`.
@@ -18,6 +20,8 @@ public enum NotificationApproval {
     public static let category = "SAGAX_APPROVAL"
     public static let keyCategory = "SAGAX_APPROVAL_KEY"
     public static let updateCategory = "SAGAX_UPDATE"
+    /// A question that names its request (server/push/payload.ts `QUESTION_CATEGORY`).
+    public static let questionCategory = "SAGAX_QUESTION"
     /// Bundled chime (ios/App/approval.caf). Distinct from the system sound and the nudge.
     public static let soundFile = "approval.caf"
     /// APNs subtitle key. `%@` is the routine's name.
@@ -32,6 +36,8 @@ public enum NotificationApproval {
         case deny(threadId: String, requestId: String)
         /// The person opened the follow-up banner. Run the security-key ceremony, then Allow once.
         case confirmKey(threadId: String, requestId: String)
+        /// Reply to a question from the banner: the typed text is the answer.
+        case reply(threadId: String, requestId: String, text: String)
     }
 
     /// What to do after the server refuses an Allow because a key is required.
@@ -46,20 +52,26 @@ public enum NotificationApproval {
         appActive ? .ceremony : .deferToApp
     }
 
-    /// The category a local banner registers. Only an approval that names
-    /// its request gets actions. A question does not.
+    /// The category a local banner registers. Only an approval or a
+    /// question that names its request gets actions: Allow and Deny, or Reply.
     public static func category(kind: String, requestId: String?, needsKey: Bool) -> String {
+        if kind == "question" { return token(requestId) != nil ? questionCategory : updateCategory }
         guard kind == "approval", token(requestId) != nil else { return updateCategory }
         return needsKey ? keyCategory : category
     }
 
     /// `nil` dismisses the banner and does nothing else.
-    public static func decide(actionIdentifier: String, info: [String: String]) -> Decision? {
+    /// `replyText`: what the person typed in Reply; empty opens the conversation.
+    public static func decide(actionIdentifier: String, info: [String: String], replyText: String? = nil) -> Decision? {
         if actionIdentifier == dismissAction { return nil }
         let threadId = token(info["threadId"])
         let requestId = token(info["requestId"])
         let target = NotificationTarget(payload: info)
         switch actionIdentifier {
+        case replyAction:
+            let text = (replyText ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let threadId, let requestId, !text.isEmpty else { return target.map(Decision.open) }
+            return .reply(threadId: threadId, requestId: requestId, text: String(text.prefix(4_000)))
         case allowAction:
             guard let threadId, let requestId else { return target.map(Decision.open) }
             return .allow(threadId: threadId, requestId: requestId, needsKey: info["needsKey"] == "1")

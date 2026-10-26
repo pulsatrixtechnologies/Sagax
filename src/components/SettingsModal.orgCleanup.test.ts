@@ -10,7 +10,7 @@ import type { AppSettingsSection } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
 
 const fixture = vi.hoisted(() => ({
-  section: "general" as AppSettingsSection,
+  section: "account" as AppSettingsSection,
   org: null as null | { org: { name: string; identity: { kind: "perspicax"; issuer: string } } },
   features: {} as Record<string, boolean>,
   viewer: undefined as { role: "member" | "admin" | "owner"; operator: boolean } | undefined,
@@ -39,7 +39,7 @@ vi.mock("./MailSettings", () => ({ MailSettings: () => "MAIL_SETTINGS_MARKER" })
 vi.mock("./LocalComputerSection", () => ({ LocalComputerSection: () => "LOCAL_COMPUTER_MARKER" }));
 
 beforeEach(() => {
-  fixture.section = "general";
+  fixture.section = "account";
   fixture.org = null;
   fixture.features = {};
   fixture.viewer = undefined;
@@ -89,7 +89,7 @@ describe("Settings on an organization server", () => {
       fixture.section = section;
       const html = await render();
       expect(html, section).not.toContain("MAIL_SETTINGS_MARKER");
-      expect(html, section).toContain('<option value="general" selected="">General</option>');
+      expect(html, section).toContain('<option value="account" selected="">Account</option>');
     }
     fixture.org = ORG;
     fixture.section = "privacy";
@@ -138,7 +138,9 @@ describe("an organization member", () => {
     expect(nav).not.toContain(">Decision model<");
     expect(nav).toContain(">Usage<");
     expect(nav).not.toContain(">Backups<");
-    expect(nav).toContain(">General<");
+    // General is out of the navigation (2026-10-26); Account is first
+    expect(nav).not.toContain(">General<");
+    expect(nav).toContain(">Account<");
     expect(nav).toContain(">Computer<");
   });
 
@@ -194,7 +196,7 @@ describe("People and Installations are hidden in the app", () => {
     for (const section of ["people", "workspaces", "mail"] as const) {
       fixture.section = section;
       const html = await render();
-      expect(html, section).toContain('<option value="general" selected="">General</option>');
+      expect(html, section).toContain('<option value="account" selected="">Account</option>');
       expect(html, section).not.toContain("MAIL_SETTINGS_MARKER");
       expect(html, section).not.toContain('data-settings-card="people.list"');
     }

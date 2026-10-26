@@ -47,9 +47,13 @@ import { useBotEditor } from "./BotEditorContext";
 export function PermissionsSection({
   bot,
   derived,
+  part = "all",
 }: {
   bot: Bot;
   derived: ReturnType<typeof useBotSettingsDerived>;
+  /** "approval": the approval level row alone, with its warnings (the bot
+   * creation wizard's Rules step, 2026-10-26). */
+  part?: "all" | "approval";
 }) {
   const advanced = useAdvancedMode();
   const { patch, engine, canCoordinate, approvalMode, trustedModesAvailable, sectionName, currentChief } = derived;
@@ -128,20 +132,21 @@ export function PermissionsSection({
   // Making a saved bot primary is in the bot's "..." menu (BotActionsMenu);
   // this pane shows the role only while the bot holds it (to leave it and
   // pick the teams it coordinates), and on a draft.
-  const showPrimaryUi = advanced && showPrimary && (draft || Boolean(bot.chiefOfStaff));
-  const showContactUi = advanced && showContact;
-  const showOutboundUi = advanced && showOutbound;
+  const only = part === "approval";
+  const showPrimaryUi = !only && advanced && showPrimary && (draft || Boolean(bot.chiefOfStaff));
+  const showContactUi = !only && advanced && showContact;
+  const showOutboundUi = !only && advanced && showOutbound;
   // 2026-10-21 (parité 1C): who it writes to without a card
-  const showRecipientsUi = advanced && !draft && canEditBotField(state.config, bot, "allowedRecipients");
-  const showDrafts = advanced && !draft && canEditBotField(state.config, bot, "emailDrafts");
-  const showHooks = !draft && canEditBotField(state.config, bot, "allowedRecipients");
+  const showRecipientsUi = !only && advanced && !draft && canEditBotField(state.config, bot, "allowedRecipients");
+  const showDrafts = !only && advanced && !draft && canEditBotField(state.config, bot, "emailDrafts");
+  const showHooks = !only && !draft && canEditBotField(state.config, bot, "allowedRecipients");
   // the owner always manages their own bot's permission mode and rules
-  const showOwnerPermissions = !draft && viewerOwnsBot(state.config, bot);
+  const showOwnerPermissions = !only && !draft && viewerOwnsBot(state.config, bot);
   // 2026-10-15: this bot's tool access and parallel conversations (they were
   // Settings > General > Advanced for every bot). Owner or admin; the server
   // checks the same (server/routes/bot-runtime-settings.ts).
-  const showToolAccess = advanced && !draft && canEditBotField(state.config, bot, "toolScope");
-  const showParallel = advanced && !draft && canEditBotField(state.config, bot, "maxConcurrentThreads");
+  const showToolAccess = !only && advanced && !draft && canEditBotField(state.config, bot, "toolScope");
+  const showParallel = !only && advanced && !draft && canEditBotField(state.config, bot, "maxConcurrentThreads");
   if (!showPrimaryUi && !showApproval && !showContactUi && !showRecipientsUi && !showDrafts && !showHooks && !showOutboundUi && !showOwnerPermissions && !showToolAccess && !showParallel) return null;
 
   const approvalSelector = showApproval && (
@@ -180,7 +185,7 @@ export function PermissionsSection({
           {advanced && approvalSelector}
         </DescribedRow>
       )}
-      {showApproval && advanced && (
+      {showApproval && advanced && !only && (
         <DescribedRow
           label={t("botPanel.permissions.proactive")}
           help={t("botPanel.permissions.proactiveHelp")}
@@ -273,7 +278,7 @@ export function PermissionsSection({
       />}
       {/* Applying Full to every thread, the command list (also in the
           approval menu) and sending on your behalf: folded. */}
-      {!draft && advanced && (showApproval || showOutboundUi) && <AdvancedFold id="permissions">
+      {!draft && advanced && !only && (showApproval || showOutboundUi) && <AdvancedFold id="permissions">
         {showApproval && approvalMode === "full" && trustedModesAvailable && <button
           type="button" disabled={Boolean(bot.busy)}
           className={cn(PILL, "self-start")}

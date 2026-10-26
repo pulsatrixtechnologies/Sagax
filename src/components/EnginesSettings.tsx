@@ -30,7 +30,7 @@ import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup 
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
-import { MicrophoneSettings } from "./settings/MicrophoneSettings";
+import { MicrophonePermissionRow, MicrophoneSettings } from "./settings/MicrophoneSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
@@ -465,6 +465,7 @@ export function EnginesSettings() {
       {/* this computer's microphone: everyone's, whoever edits the installation */}
       <div data-settings-card="connections.audio">
         <SettingsGroup title={t("settings.audio.title")} groupId="audio">
+          <MicrophonePermissionRow />
           <MicrophoneSettings />
         </SettingsGroup>
       </div>

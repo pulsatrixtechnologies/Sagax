@@ -10,7 +10,7 @@ import type { AppSettingsSection } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
 
 const fixture = vi.hoisted(() => ({
-  section: "general" as AppSettingsSection,
+  section: "account" as AppSettingsSection,
   config: { rooms: { turnTimeoutMinutes: 5 } } as Record<string, unknown> | undefined,
 }));
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -29,7 +29,7 @@ const nav = (html: string) => html.slice(html.indexOf("<nav"), html.indexOf("</n
 const updater = { check: vi.fn(), install: vi.fn(), onState: vi.fn(), setPrereleases: vi.fn() };
 
 beforeEach(() => {
-  fixture.section = "general";
+  fixture.section = "account";
   fixture.config = { rooms: { turnTimeoutMinutes: 5 } };
   setLocale("en");
   vi.stubGlobal("document", { documentElement: { dataset: {} } });
@@ -47,9 +47,9 @@ describe("Settings nav groups", () => {
     expect(at.every((value) => value >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(SECTIONS.map((entry) => entry.id)).toEqual([
-      "general", "appearance", "notifications", "credentials", "security",
+      "account", "appearance", "notifications",
       "engines",
-      "organization", "computer", "usage", "pages", "backups", "import",
+      "organization", "computer", "usage", "backups", "import",
       "updates", "experimental",
     ]);
   });
@@ -68,9 +68,47 @@ describe("Settings nav groups", () => {
     expect(rail).toMatch(/role="group" aria-labelledby="app-settings-nav-you"/);
   });
 
+  // 2026-10-26: General is out of the navigation, Security keys and the
+  // vault are under Account, Published pages are in Connect apps.
+  it("leaves General out of the rail and the menu; Account is first, with no page of its own for the moved ones", () => {
+    const html = render();
+    const rail = nav(html);
+    expect(rail).not.toContain(">General</button>");
+    expect(html).not.toContain('<option value="general"');
+    expect(rail.indexOf(">Account</button>")).toBeGreaterThan(-1);
+    expect(rail.indexOf(">Account</button>")).toBeLessThan(rail.indexOf(">Appearance</button>"));
+    for (const gone of ["Security", "Credentials", "Published pages"]) expect(rail, gone).not.toContain(`>${gone}</button>`);
+    for (const id of ["security", "credentials", "pages"]) expect(html, id).not.toContain(`<option value="${id}"`);
+  });
+
+  it("Account holds the account row, then Security keys, then the vault", () => {
+    const html = render();
+    const at = ['data-settings-group="account"', 'data-settings-card="security"', 'Loading your vault'].map((text) => html.indexOf(text));
+    expect(at.every((value) => value >= 0)).toBe(true);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+  });
+
+  it("a search for pages finds Published pages in Connect apps, and the moved sections where they are now", async () => {
+    const { publishedPagesMatch, sectionMatches } = await import("./SettingsModal");
+    for (const query of ["pages", "published", "publiées", "revoke"]) expect(publishedPagesMatch(query), query).toBe(true);
+    expect(publishedPagesMatch("vault")).toBe(false);
+    expect(publishedPagesMatch("")).toBe(false);
+    const account = SECTIONS.find((entry) => entry.id === "account")!;
+    for (const query of ["security key", "clé de sécurité", "passkey", "yubikey", "vault", "coffre", "identifiants", "1password"]) {
+      expect(sectionMatches(account, query), query).toBe(true);
+    }
+    // what General held is found on Account; the microphone on Models and voice
+    for (const query of ["language", "langue", "time zone", "fuseau", "server", "serveur", "tour", "diagnostic", "tool access"]) {
+      expect(sectionMatches(account, query), query).toBe(true);
+    }
+    expect(sectionMatches(account, "microphone")).toBe(false);
+    expect(sectionMatches(SECTIONS.find((entry) => entry.id === "engines")!, "microphone")).toBe(true);
+    expect(SECTIONS.some((entry) => entry.id === ("general" as string))).toBe(false);
+  });
+
   it("groups the small-screen menu the same way", () => {
     const html = render();
-    expect(html).toContain('<optgroup label="Personal"><option value="general" selected="">General</option>');
+    expect(html).toContain('<optgroup label="Personal"><option value="account" selected="">Account</option>');
     expect(html).toContain('<optgroup label="App"><option value="updates">Updates</option>');
   });
 

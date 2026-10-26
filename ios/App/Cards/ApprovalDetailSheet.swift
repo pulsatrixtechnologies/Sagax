@@ -95,6 +95,29 @@ struct ApprovalDetailSheet: View {
                     .accessibilityIdentifier("approval-detail-command")
                 }
 
+                // issue #426: the whole request, arguments included (a
+                // teammate ask's `<tool> {json}` never shows on the card)
+                if let arguments = DesktopApprovalText.arguments(card), arguments != ApprovalHeading.detail(card) {
+                    Text("Full request")
+                        .font(Theme.Profile.labelFont)
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.leading, Theme.Profile.textInset)
+                        .padding(.top, 28)
+                        .padding(.bottom, 8)
+                    ScrollView(.vertical) {
+                        Text(verbatim: arguments)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(Theme.textSecondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 260)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(Theme.Profile.textInset)
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+                    .accessibilityIdentifier("approval-detail-arguments")
+                }
+
                 if outcome == nil, card.isPending, card.adminApproval != true {
                     buttons.padding(.top, 28)
                 }
@@ -114,7 +137,9 @@ struct ApprovalDetailSheet: View {
     /// The server's plain question in English, else "Allow <bot> to run a
     /// command?" in the phone's language.
     private var title: String {
-        ApprovalHeading.plainTitle(card)
+        // a teammate ask names who it writes to (#426)
+        if TeammateAsk.parse(card) != nil { return ApprovalWords.wantsTo(card, name: botName, session: session) }
+        return ApprovalHeading.plainTitle(card)
             ?? String(localized: "Allow \(botName) to \(ApprovalDock.phrase(action))?")
     }
 
@@ -142,9 +167,17 @@ struct ApprovalDetailSheet: View {
                 .font(Theme.Font.body)
                 .accessibilityIdentifier("approval-detail-status")
         case nil:
-            Text("Waiting for you").foregroundStyle(Theme.textSecondary)
-                .font(Theme.Font.body)
-                .accessibilityIdentifier("approval-detail-status")
+            // opened from a receipt: what the ask became
+            if let pill = ApprovalPill.of(card) {
+                Text(verbatim: ApprovalWords.pill(pill))
+                    .foregroundStyle(pill.tone == .success ? Theme.success : pill.tone == .danger ? Theme.destructive : Theme.textSecondary)
+                    .font(Theme.Font.body)
+                    .accessibilityIdentifier("approval-detail-status")
+            } else {
+                Text("Waiting for you").foregroundStyle(Theme.textSecondary)
+                    .font(Theme.Font.body)
+                    .accessibilityIdentifier("approval-detail-status")
+            }
         }
     }
 

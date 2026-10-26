@@ -228,11 +228,27 @@ struct TasksRoutinesView: View {
                 }
             }
         }
-        .task { await reload() }
+        .task {
+            // the person's last scope and filters (`sagax.routineScope.v1`, every device)
+            if organization {
+                let remembered = SidebarPrefsModel.shared.routineScope(session).query
+                if remembered != scopeQuery {
+                    scopeQuery = remembered
+                    return // the change reloads
+                }
+            }
+            await reload()
+        }
         .refreshable { await reload() }
         .onValueChange(of: botFilter) { _ in routineFilter = nil }
-        .onValueChange(of: scopeQuery) { _ in
+        .onValueChange(of: scopeQuery) { query in
             routineFilter = nil
+            if organization {
+                var kept = SidebarPrefsModel.shared.routineScope(session)
+                let bot = kept.botId
+                kept = RoutineScopePrefs(query: query, botId: bot)
+                SidebarPrefsModel.shared.setRoutineScope(session, kept)
+            }
             Task { await reload() }
         }
         .sheet(item: $editor) { target in

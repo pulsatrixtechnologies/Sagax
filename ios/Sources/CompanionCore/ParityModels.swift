@@ -129,10 +129,13 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
     public var path: String
     /// The resolved absolute path on the computer, while it is available.
     public var localPath: String?
+    /// Pinned in the Library tab; kept on the server, so it follows the
+    /// person across devices (`POST /api/threads/:id/files/:fileId/pin`).
+    public var pinned: Bool
 
-    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath }
+    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath, pinned }
 
-    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil) {
+    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil, pinned: Bool = false) {
         self.id = id
         self.messageId = messageId
         self.source = source
@@ -143,6 +146,7 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         self.available = available
         self.path = path
         self.localPath = localPath
+        self.pinned = pinned
     }
 
     public init(from decoder: Decoder) throws {
@@ -157,6 +161,7 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         available = try values.decodeIfPresent(Bool.self, forKey: .available) ?? false
         path = try values.decodeIfPresent(String.self, forKey: .path) ?? ""
         localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
+        pinned = try values.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
 
     /// Media tab when true, Files tab otherwise. Falls back to the extension
@@ -166,6 +171,14 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         let ext = (name as NSString).pathExtension.lowercased()
         return ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(ext)
     }
+}
+
+struct ArtifactFavoriteBody: Encodable {
+    let favorite: Bool
+}
+
+struct ThreadFilePinBody: Encodable {
+    let pinned: Bool
 }
 
 struct ThreadFilesResponse: Decodable {
@@ -197,6 +210,17 @@ public struct AuthSession: Decodable, Equatable, Sendable {
     /// Perspicax's, and the person changes their own photo through
     /// PUT /api/me/avatar (2026-10-16).
     public var profileManagedBy: String?
+    /// On a Cloud home, a device that is not one of the owner's own: it
+    /// writes only in `openedThreads`, the conversations it started
+    /// (src/lib/cloud-guest.ts).
+    public var cloudGuest: Bool = false
+    public var openedThreads: [String] = []
+
+    /// `canWriteIn`: whether this device may write in a conversation.
+    /// Everywhere but a Cloud guest, always.
+    public func canWrite(in threadId: String) -> Bool {
+        !cloudGuest || openedThreads.contains(threadId)
+    }
 
     /// Whether this person may change their own photo from the phone.
     public var ownPhotoEditable: Bool { profileManagedBy == "perspicax" && kind == "session" && principalId != nil }
@@ -206,6 +230,7 @@ public struct AuthSession: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl, profileManagedBy
+        case cloudGuest, openedThreads
     }
 
     public init(from decoder: Decoder) throws {
@@ -227,6 +252,8 @@ public struct AuthSession: Decodable, Equatable, Sendable {
         let avatar = try? values.decodeIfPresent(String.self, forKey: .avatarUrl)
         avatarUrl = avatar.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         profileManagedBy = try? values.decodeIfPresent(String.self, forKey: .profileManagedBy)
+        cloudGuest = (try? values.decodeIfPresent(Bool.self, forKey: .cloudGuest)) == true && kind == "session"
+        openedThreads = ((try? values.decodeIfPresent([String].self, forKey: .openedThreads)) ?? nil) ?? []
     }
 
     public var isAdmin: Bool { scopes.contains("admin") }

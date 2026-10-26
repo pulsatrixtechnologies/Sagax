@@ -2374,7 +2374,7 @@ ipcMain.on("desktop:notify-withdraw", (event, withdrawKey) => {
 // The app switches by loading the chosen server's own UI (electron/menu.mjs).
 // Only {id, name, origin} is stored here; the session credential is the
 // HttpOnly cookie /pair set for that origin, kept by Chromium's cookie jar.
-const { LOCAL_ID, activeEnvironment, activeRemote, allowedOrigins, bootEnvironmentDir, bundledOrigin, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, startupEnvironmentDir, withActive, withEnvironment, withLocalEnvironment, withMicrophone, withOrganizationUpgrade, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
+const { LOCAL_ID, activeEnvironment, activeRemote, allowedOrigins, bootEnvironmentDir, bundledOrigin, parseEnvironments, parseHostedWorkspaceLink, serializeEnvironments, serverModeEnvironment, startupEnvironmentDir, withActive, withEnvironment, withLocalEnvironment, withMicrophone, withOrganizationUpgrade, withServerName, withServerMode, withoutEnvironment, withoutServerMode, workspaceMenuTemplate, workspaceNavigationAllowed, workspaceSenderAllowed, workspaceSummary, workspaceWindowTitle } = environmentsModule;
 let environmentsState = { environments: [], activeId: LOCAL_ID };
 let computerSharing;
 const sharingPrompts = new Set();
@@ -4738,7 +4738,24 @@ ipcMain.handle("dialog:confirm", desktopUiOnly("dialog:confirm", workspaceOnly(a
 // app's own UI only (the local page, or the bundle on that server).
 ipcMain.handle("server-mode:state", desktopUiOnly("server-mode:state", workspaceOnly(() => {
   const locked = serverModeEnvironment(environmentsState);
-  return locked ? { active: true, id: locked.id, name: locked.name, origin: locked.origin } : { active: false };
+  return locked ? {
+    active: true, id: locked.id, name: locked.name, origin: locked.origin,
+    ...(locked.label ? { label: locked.label } : {}), ...(locked.orgName ? { orgName: locked.orgName } : {}),
+  } : { active: false };
+})));
+// The name shown for a saved server: the person's own (`label`) and the
+// organization name the server announced (`orgName`). Local to this computer.
+const setServerName = (id, input) => {
+  const next = withServerName(environmentsState, id, {
+    ...(typeof input?.label === "string" ? { label: input.label } : {}),
+    ...(typeof input?.orgName === "string" ? { orgName: input.orgName } : {}),
+  });
+  if (next !== environmentsState) persistEnvironments(next);
+  return { ok: environmentsState.environments.some((e) => e.id === id && e.kind !== "local") };
+};
+ipcMain.handle("server-mode:set-name", desktopUiOnly("server-mode:set-name", workspaceOnly((_event, input) => {
+  const locked = serverModeEnvironment(environmentsState);
+  return locked ? setServerName(locked.id, input) : { ok: false };
 })));
 ipcMain.handle("server-mode:leave", desktopUiOnly("server-mode:leave", workspaceOnly(() => leaveServerMode())));
 // The model picker opened: probe this computer's loopback model servers now
@@ -4772,6 +4789,7 @@ ipcMain.handle("environments:state", localWorkspaceOnly("environments:state", (e
   environments: environmentsState.environments,
 })));
 ipcMain.handle("environments:switch", localWorkspaceOnly("environments:switch", (_event, id) => switchEnvironment(typeof id === "string" ? id : LOCAL_ID)));
+ipcMain.handle("environments:set-name", localWorkspaceOnly("environments:set-name", (_event, id, input) => setServerName(typeof id === "string" ? id : "", input)));
 ipcMain.handle("environments:create", localWorkspaceOnly("environments:create", (_event, name, dataDir) => createLocalEnvironment(
   typeof name === "string" ? name : "",
   typeof dataDir === "string" ? dataDir : undefined,

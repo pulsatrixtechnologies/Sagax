@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { accountChoices, businessAccount, CURRENT_ACCOUNT_ID, SAGAX_MOBILE_URL, switchTargets, usageLines, usagePercent } from "./account-menu";
+import { accountChoices, businessAccount, CURRENT_ACCOUNT_ID, PERSONAL_ID, SAGAX_MOBILE_URL, serverDisplayName, switchTargets, usageLines, usagePercent } from "./account-menu";
 import type { PlanRow, PlanWindow } from "./plan-usage";
 
 const closed: PlanWindow = { available: false, remainingPercent: null, usedPercent: null, resetsAt: null };
@@ -45,7 +45,7 @@ describe("the avatar menu's Switch organization", () => {
     }, "This computer (solo)");
     expect(targets).toEqual([
       { id: "local", name: "This computer (solo)", local: true, active: false },
-      { id: "acme", name: "Acme", local: false, active: true },
+      { id: "acme", name: "Acme", local: false, active: true, defaultName: "Acme" },
     ]);
   });
 
@@ -62,7 +62,10 @@ const saved = [
 describe("the avatar menu's Switch account", () => {
   it("names the locked server, and otherwise the organization", () => {
     expect(businessAccount({ active: true, id: "north", name: " North office " }, "Other")).toEqual({
-      id: "north", name: "North office", local: false,
+      id: "north", name: "Other", local: false, defaultName: "Other", custom: false,
+    });
+    expect(businessAccount({ active: true, id: "north", name: "North office" }, "")).toEqual({
+      id: "north", name: "North office", local: false, defaultName: "North office", custom: false,
     });
     expect(businessAccount({ active: false }, " North office ")).toEqual({
       id: CURRENT_ACCOUNT_ID, name: "North office", local: false,
@@ -71,29 +74,71 @@ describe("the avatar menu's Switch account", () => {
     expect(businessAccount({ active: true, id: " ", name: " " }, null)).toBeNull();
   });
 
-  it("checks the account in use and keeps a saved personal account switchable", () => {
-    expect(accountChoices(saved, { id: "north", name: "North office" })).toEqual([
-      { id: "local", name: "This computer", local: true, active: false, switchable: true },
-      { id: "north", name: "North office", local: false, active: true, switchable: true },
+  it("always lists Personal first, even when the person is only on an organization server", () => {
+    expect(accountChoices([], { id: CURRENT_ACCOUNT_ID, name: "North office" }, "Personal")).toEqual([
+      { id: PERSONAL_ID, name: "Personal", local: true, active: false, switchable: true, renamable: false },
+      { id: CURRENT_ACCOUNT_ID, name: "North office", local: false, active: true, switchable: false, renamable: false },
+    ]);
+    expect(accountChoices([], null, "Personnel").map((entry) => [entry.id, entry.name, entry.switchable])).toEqual([
+      ["local", "Personnel", true],
     ]);
   });
 
-  it("still lists the current account when it is the only one", () => {
-    expect(accountChoices([], { id: CURRENT_ACCOUNT_ID, name: "North office" })).toEqual([
-      { id: CURRENT_ACCOUNT_ID, name: "North office", local: false, active: true, switchable: false },
+  it("names the personal space Personal rather than the saved computer name, and checks it when it is in use", () => {
+    const rows = accountChoices([{ id: "local", name: "This computer (solo)", local: true, active: true }], null, "Personal");
+    expect(rows).toEqual([{ id: "local", name: "Personal", local: true, active: true, switchable: true, renamable: false }]);
+  });
+
+  it("checks the account in use and keeps a saved server switchable and renamable", () => {
+    expect(accountChoices(saved, { id: "north", name: "North office" })).toEqual([
+      { id: "local", name: "Personal", local: true, active: false, switchable: true, renamable: false },
+      { id: "north", name: "North office", local: false, active: true, switchable: true, renamable: true },
     ]);
   });
 
   it("adds a current account the saved list does not name, and does not duplicate one it does", () => {
-    expect(accountChoices(saved, { id: "east", name: "East office" })).toEqual([
-      { id: "local", name: "This computer", local: true, active: false, switchable: true },
-      { id: "north", name: "North office", local: false, active: false, switchable: true },
-      { id: "east", name: "East office", local: false, active: true, switchable: false },
+    expect(accountChoices(saved, { id: "east", name: "East office", host: "east.example.com", defaultName: "East" })).toEqual([
+      { id: "local", name: "Personal", local: true, active: false, switchable: true, renamable: false },
+      { id: "north", name: "North office", local: false, active: false, switchable: true, renamable: true },
+      { id: "east", name: "East office", local: false, active: true, switchable: false, renamable: true, host: "east.example.com", defaultName: "East" },
     ]);
     expect(accountChoices(saved, { id: CURRENT_ACCOUNT_ID, name: "north office" }).map((entry) => [entry.id, entry.active])).toEqual([
       ["local", false], ["north", true],
     ]);
-    expect(accountChoices([], null)).toEqual([]);
+  });
+});
+
+describe("a server's shown name", () => {
+  it("is the person's own name, else the organization name the server announced, else its host", () => {
+    expect(serverDisplayName({ name: "bot.example.com", label: " Bureau ", orgName: "Acme" })).toBe("Bureau");
+    expect(serverDisplayName({ name: "bot.example.com", orgName: "Acme" })).toBe("Acme");
+    expect(serverDisplayName({ name: "bot.example.com" })).toBe("bot.example.com");
+    expect(serverDisplayName({ name: "bot.example.com", label: "  ", orgName: " " })).toBe("bot.example.com");
+  });
+
+  it("shows a saved server under that name, with its host and its default", () => {
+    const targets = switchTargets({
+      activeId: "local",
+      environments: [
+        { id: "local", kind: "local", name: "" },
+        { id: "a", kind: "remote", name: "bot.example.com", origin: "https://bot.example.com", org: true, orgName: "Acme" },
+        { id: "b", kind: "remote", name: "work.example.com", origin: "https://work.example.com", org: true, orgName: "Acme", label: "Bureau" },
+        { id: "c", kind: "remote", name: "lab.example.com", origin: "https://lab.example.com", org: true },
+      ],
+    }, "solo");
+    expect(targets.slice(1).map((entry) => [entry.id, entry.name, entry.host, entry.defaultName, entry.custom ?? false])).toEqual([
+      ["a", "Acme", "bot.example.com", "Acme", false],
+      ["b", "Bureau", "work.example.com", "Acme", true],
+      ["c", "lab.example.com", "lab.example.com", "lab.example.com", false],
+    ]);
+  });
+
+  it("carries the locked server's own name, host and default into Switch account", () => {
+    const current = businessAccount({ active: true, id: "n", name: "bot.example.com", origin: "https://bot.example.com", label: "Bureau", orgName: "Acme" }, "Acme");
+    expect(current).toEqual({ id: "n", name: "Bureau", local: false, host: "bot.example.com", defaultName: "Acme", custom: true });
+    expect(accountChoices([], current).find((entry) => entry.id === "n")).toMatchObject({
+      name: "Bureau", host: "bot.example.com", defaultName: "Acme", custom: true, renamable: true, active: true,
+    });
   });
 });
 

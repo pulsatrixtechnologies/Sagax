@@ -499,6 +499,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // a conversation's files (the bot panel's Files tab): the list and one file by id
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
+  // pin or unpin a file of the conversation (the Library tab); kept on the server
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}\/pin$/ },
   // what a bot is doing (the bot panel's Coding list): narrowed to the
   // viewer's own threads and the routines they may see (routes/bot-activity.ts)
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
@@ -705,6 +707,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
   // reading the conversation and changing the new bot are checked there
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/team-bot-(?:draft|carry)$/ },
+  // The bot creation wizard's draft (routes/bot-wizard.ts): the bot's
+  // owner's, checked there; a member runs it alone (2026-10-26)
+  { methods: ["GET"], path: /^\/api\/bot-wizard(?:\/kits)?$/ },
+  { methods: ["GET", "PUT", "PATCH", "DELETE"], path: /^\/api\/bot-wizard\/[\w-]+$/ },
+  { methods: ["POST"], path: /^\/api\/bot-wizard\/[\w-]+\/(?:soul|finish)$/ },
   { methods: ["POST"], path: /^\/api\/routines\/away\/beat$/ },
   { methods: ["GET"], path: /^\/api\/routines\/away$/ },
   { methods: ["POST"], path: /^\/api\/routines\/[\w-]+\/away-seen$/ },

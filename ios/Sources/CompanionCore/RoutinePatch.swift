@@ -120,5 +120,14 @@ public enum RoutinePatch {
             && a.timeZone == b.timeZone
             && a.window == b.window
             && a.endsAt == b.endsAt
+            && sameTiming(a, b)
+    }
+
+    /// No timing reads as exact; a flexible window is part of the schedule.
+    static func sameTiming(_ a: RoutineSchedule, _ b: RoutineSchedule) -> Bool {
+        let modeA = a.timing ?? "exact", modeB = b.timing ?? "exact"
+        guard modeA == modeB else { return false }
+        guard modeA == "flexible" else { return true }
+        return a.windowEarlyMinutes == b.windowEarlyMinutes && a.windowLateMinutes == b.windowLateMinutes
     }
 }

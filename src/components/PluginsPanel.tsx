@@ -76,6 +76,7 @@ import { CATEGORY_MODAL, cardActionClass } from "./category-modal";
 import { BotCatalogPane } from "./lazy-screens";
 import { isBackShortcut, pageKeyAction } from "@/lib/back-shortcut";
 import { ManageView } from "./plugins/ManageView";
+import { PublishedPagesSettings } from "./PublishedPages";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
 import { OrgSourcesAccess, showOrgSourcesAccess } from "./plugins/OrgSourcesAccess";
 import { PluginStatusLabel } from "./plugins/PluginParts";
@@ -292,6 +293,24 @@ export function PluginsPanel() {
   // Organization > Plugins and GitHub card): Manage, for everyone, with
   // Advanced open at that section.
   const orgAccessRequested = state.pluginsPage === "orgAccess";
+  // A link to Published pages (moved here from Settings, 2026-10-26): Manage,
+  // scrolled to that section.
+  const pagesRequested = state.pluginsPage === "pages";
+  useEffect(() => {
+    if (!pagesRequested) return;
+    setScopeChoice("workspace");
+    setStack([{ page: "main" }, { page: "manage" }]);
+  }, [pagesRequested]);
+  useEffect(() => {
+    if (!pagesRequested || page.page !== "manage") return;
+    let frames = 0;
+    const reveal = () => {
+      const section = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-pages]");
+      if (section) section.scrollIntoView?.({ block: "start" });
+      else if (++frames < 30) requestAnimationFrame(reveal);
+    };
+    requestAnimationFrame(reveal);
+  }, [pagesRequested, page.page]);
   useEffect(() => {
     if (!orgAccessRequested) return;
     setScopeChoice("workspace");
@@ -737,6 +756,7 @@ export function PluginsPanel() {
         sourceLabel={pluginSourceLabel}
         scope={scopeControl}
         pluginsOnly={scope === "bot"}
+        pages={<PublishedPagesSettings />}
         onBack={back}
         trail={trail}
         onOpenItem={openItem}
