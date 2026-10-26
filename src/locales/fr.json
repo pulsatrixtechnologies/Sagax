@@ -4267,7 +4267,7 @@
   "settings.appIcon.glyph.spark": "Étincelle",
   "settings.appIcon.hintLinux": "Change l'icône des fenêtres de Sagax. Votre lanceur garde l'icône d'origine.",
   "settings.appIcon.hintMac": "Change l'icône du Dock pendant que Sagax est ouverte. Le Finder et le Launchpad gardent l'icône d'origine : macOS la lit dans l'app signée, que Sagax ne modifie jamais. L'icône par défaut garde l'effet Liquid Glass du système.",
-  "settings.appIcon.hintWindows": "Change l'icône des fenêtres de Sagax et de leur bouton dans la barre des tâches. Les raccourcis du bureau et du menu Démarrer gardent l'icône d'origine.",
+  "settings.appIcon.hintWindows": "Change l'icône des fenêtres de Sagax, de leur bouton dans la barre des tâches et des raccourcis Sagax du bureau, du menu Démarrer et de la barre des tâches. Windows peut prendre un moment, ou un redémarrage de l'Explorateur, pour redessiner une icône en cache.",
   "settings.appIcon.reset": "Réinitialiser",
   "settings.appIcon.title": "Icône de l'app",
   "settings.appIcon.upload": "Mon image",
