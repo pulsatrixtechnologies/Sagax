@@ -2130,6 +2130,21 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(recorder.events.some(e => e.type === "runtime.error")).toBe(false);
   });
 
+  it("does not count idle time before a new prompt toward the quiet notice", async () => {
+    vi.spyOn(quietStatus, "sampleProcessTree").mockResolvedValue({ cpuMs: 0, connections: 1 });
+    process.env.SAGAX_ACP_QUIET_NOTICE_MS = "400";
+    process.env.SAGAX_ACP_QUIET_TICK_MS = "50";
+    process.env.FAKE_ACP_QUIET_MS = "200";
+    await create(GrokAgentDriver, "quiet-then-answer");
+    await instance.adapter.sendTurn({ threadId: "t-quiet-idle", text: "one" });
+    await recorder.until(e => e.type === "turn.completed");
+    await new Promise(r => setTimeout(r, 800));
+    const before = recorder.events.length;
+    await instance.adapter.sendTurn({ threadId: "t-quiet-idle", text: "two" });
+    await recorder.until(e => e.type === "turn.completed" && recorder.events.indexOf(e) >= before);
+    expect(recorder.events.filter(e => e.type === "runtime.notice")).toEqual([]);
+  });
+
   it("reads Qwen's debug log: a logged rate-limit retry is reported and keeps the turn alive", async () => {
     vi.spyOn(quietStatus, "sampleProcessTree").mockResolvedValue({ cpuMs: 0, connections: 1 });
     process.env.QWEN_HOME = scratch;

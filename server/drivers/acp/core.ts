@@ -1225,6 +1225,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         let notices = 0;
         let probing = false;
         let state: QuietState | null = null;
+        // A reused session's last inbound message may predate this prompt:
+        // idle time between turns is not the agent being quiet on this one.
+        const promptStartedAt = Date.now();
         const tick = async () => {
           if (probing || current.state.settled || session.current !== current) return;
           const now = Date.now();
@@ -1234,7 +1237,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             if (signal?.kind === "context") context = { tokens: signal.tokens, threshold: signal.threshold };
             else if (signal) logged = { signal, at: now };
           }
-          const quietMs = now - session.acp.lastInboundAt;
+          const quietMs = now - Math.max(promptStartedAt, session.acp.lastInboundAt);
           // A running tool or an open question is already on screen.
           if (quietMs < noticeAfterMs || current.asks.size || current.runningTools.size) {
             if (quietMs < noticeAfterMs) logged = null;
