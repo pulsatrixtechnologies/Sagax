@@ -86,12 +86,20 @@ describe("unattended grant and revoke", () => {
     expect((await admin.revokeUnattended({ principalId: "p", orgAdmin: true }, "missing"))).toEqual({ ok: false, error: "not_found" });
   });
 
-  it("is gated off by default: grant and revoke are disabled until the path is wired", async () => {
+  it("is gated off by default: grant is disabled, revoke still works (M2)", async () => {
     const consent = createUnattendedConsentStore({ dataDir: dir, now: () => NOW });
     const admin = createRemoteSessionsAdmin({ rows: () => [input()], botLabel: () => "Atlas", consent, log: () => [], closeById: vi.fn(async () => true), now: () => NOW });
     expect(admin.unattendedEnabled()).toBe(false);
     expect(admin.grantUnattended({ principalId: "p", orgAdmin: true }, { hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" })).toBe("disabled");
-    expect(await admin.revokeUnattended({ principalId: "p", orgAdmin: true }, "sn-a")).toEqual({ ok: false, error: "disabled" });
     expect(consent.get("sn-a")).toBeNull();
+    // A consent recorded while the flag was on stays revocable once it is cut.
+    consent.grant({ hostKey: "sn-a", org: "GOX", installedBy: "admin@gox" });
+    const onRevoke = vi.fn(async () => {});
+    const off = createRemoteSessionsAdmin({ rows: () => [input()], botLabel: () => "Atlas", consent, log: () => [], closeById: vi.fn(async () => true), onRevoke, now: () => NOW });
+    const out = await off.revokeUnattended({ principalId: "boss@gox", orgAdmin: true }, "sn-a");
+    expect(out.ok).toBe(true);
+    expect(consent.get("sn-a")?.revokedAt).toBeTruthy();
+    // the audit actor is the admin who revoked, not the installer (M4)
+    expect(onRevoke).toHaveBeenCalledWith(expect.objectContaining({ hostKey: "sn-a", installedBy: "admin@gox" }), "boss@gox");
   });
 });

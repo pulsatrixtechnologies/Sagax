@@ -25,7 +25,7 @@ export interface AdminViewer {
 
 export type RevokeOutcome =
   | { ok: true; consent: UnattendedConsent }
-  | { ok: false; error: "forbidden" | "not_found" | "disabled" };
+  | { ok: false; error: "forbidden" | "not_found" };
 
 export function createRemoteSessionsAdmin(deps: {
   /** Every stored session on this server, mapped to the admin input. */
@@ -36,12 +36,13 @@ export function createRemoteSessionsAdmin(deps: {
   /** End any session by id (service.adminClose). Cuts control and the tunnel. */
   closeById(id: string): Promise<boolean>;
   /** Propagate a revoke to the host service and Perspicax --allow binding.
-   * Best effort; the consent is already marked revoked when this runs. */
-  onRevoke?(consent: UnattendedConsent): Promise<void>;
+   * Best effort; the consent is already marked revoked when this runs.
+   * `actor` is the admin who revoked, for the audit (M4), never the installer. */
+  onRevoke?(consent: UnattendedConsent, actor: string): Promise<void>;
   /** The unattended (Access) path is only usable when this is true. It is
    * false by default: the host service install, the revoke that uninstalls it,
    * and the expiry enforcement are designed but not wired yet, so the grant
-   * and revoke actions are gated off until they are. */
+   * action is gated off until they are. Revoke is never gated (M2). */
   unattendedEnabled?(): boolean;
   now?: () => number;
 }) {
@@ -91,9 +92,9 @@ export function createRemoteSessionsAdmin(deps: {
     },
     /** Revoke unattended access for a host from the page (admin only): mark the
      * consent revoked, end any live session on that host (cuts the tunnel), and
-     * propagate to the host service and Perspicax. */
+     * propagate to the host service and Perspicax. Works whatever the flag
+     * (M2): a consent recorded before the flag was cut stays revocable. */
     async revokeUnattended(viewer: AdminViewer, hostKey: string): Promise<RevokeOutcome> {
-      if (!unattendedEnabled()) return { ok: false, error: "disabled" };
       if (!viewer.orgAdmin) return { ok: false, error: "forbidden" };
       const consent = deps.consent.revoke(hostKey);
       if (!consent) return { ok: false, error: "not_found" };
@@ -103,7 +104,7 @@ export function createRemoteSessionsAdmin(deps: {
           await deps.closeById(input.id).catch(() => false);
         }
       }
-      await deps.onRevoke?.(consent).catch(() => {});
+      await deps.onRevoke?.(consent, viewer.principalId).catch(() => {});
       return { ok: true, consent };
     },
   };

@@ -20,7 +20,15 @@ export interface RemoteSessionActionEvent {
   sessionId: string;
   principalId: string;
   botId: string;
-  kind: "exec" | "transfer";
+  /** exec / transfer: one session's action. unattended.open / unattended.revoke:
+   * a host-level act on the Remote Sessions page, `principalId` is the person
+   * who acted (never the installer, M4) and `hostKey` the host; the per-session
+   * log view leaves these out. */
+  kind: "exec" | "transfer" | "unattended.open" | "unattended.revoke";
+  /** unattended.*: the host the act was on (enrolled host id or consent key). */
+  hostKey?: string;
+  /** unattended.*: whether Perspicax accepted it. */
+  ok?: boolean;
   /** exec: the command line, already safe to store (redacted again here). */
   command?: string;
   readOnly?: boolean;
