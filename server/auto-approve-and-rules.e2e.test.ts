@@ -69,10 +69,10 @@ it("auto level + auto mode auto-approves ordinary and read-only work and a rule-
   };
   try {
     const bot = (await api("POST", "/api/bots", { name: "Zachary", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
-    // level = Approve for me (auto), owner mode = Approbation automatique (auto)
+    // level = Approve for me (auto): since 2026-10-26 the owner route reads
+    // it as automatic approval (one approval level, no second mode)
     await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "auto" });
     await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: "auto" });
-    await api("PUT", `/api/bots/${bot.id}/permission-mode`, { mode: "auto" });
     // a custom rule authorizing one type: email sends (external-send)
     await api("POST", "/api/custom-rules", { when: "l'envoi de courriels", behavior: "allow", botId: null, riskScope: ["external-send"] }, 201);
 

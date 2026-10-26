@@ -153,6 +153,9 @@ export type AutoVerdictSource =
   | "owner-auto"
   | "owner-bypass"
   | "owner-rule-deny"
+  /** 2026-10-26 (one approval level): the owner's ask rule kept the card
+   * the level would have answered. */
+  | "owner-rule-ask"
   /** 2026-10-19 ("Toujours permettre" on every card): an allow rule an
    * organization admin (or a holder of host.commands, for their own bot)
    * saved on an admin card of a member's bot; checked again at each use. */
@@ -406,7 +409,7 @@ export function approvalHeldNote(context: {
   if (!context.permission) return undefined;
   if (context.source === "outbound-guard") return "approval.held.outbound";
   if (context.source === "safety-hold") return "approval.held.native";
-  if (context.source === "custom-rule-ask") return "approval.held.customRule";
+  if (context.source === "custom-rule-ask" || context.source === "owner-rule-ask") return "approval.held.customRule";
   if (context.source === "explicit-approval-block") return "approval.held.sandbox";
   if (context.source === "native-approval") return "approval.held.native";
   return undefined;

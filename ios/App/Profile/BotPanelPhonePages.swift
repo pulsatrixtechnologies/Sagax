@@ -313,7 +313,10 @@ struct BotPermissionsSection: View {
             }
             .accessibilityIdentifier("permissions-approval-grants")
         } footer: {
-            Text("Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.")
+            VStack(alignment: .leading, spacing: 6) {
+                Text(DesktopApprovalButton.detail(level))
+                Text("Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.")
+            }
         }
         .task(id: bot.id) { viewerId = PrimaryBotRules.viewerId(config: await session.configStatus()) }
         .alert("Give this bot Full access?", isPresented: $confirmingFull) {

@@ -289,7 +289,7 @@ export function decideBotAct(input: {
     return { ok: false, status: 403, error: "Use sagax_settings to change a preference." };
   }
   if (escalatesApproval(target)) {
-    return { ok: false, status: 403, error: "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, bot.permissionMode, rules.*), which asks the person when it must." };
+    return { ok: false, status: 403, error: "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, rules.*), which asks the person when it must." };
   }
   const write = target.kind === "route" ? target.method !== "GET" && target.method !== "HEAD" : target.write;
   // Full still runs an ordinary write. Auto does not: it is "Approve for me"

@@ -1,5 +1,8 @@
-// A person's own approval rules and their bots' permission modes
-// (2026-10-14, docs/superpowers/specs/2026-10-14-bot-owner-permissions.md).
+// A person's own approval rules (2026-10-14,
+// docs/superpowers/specs/2026-10-14-bot-owner-permissions.md). 2026-10-26:
+// a bot's permission mode is no longer a setting of its own (GET/PUT
+// /api/bots/:id/permission-mode is gone): the bot's one approval level
+// decides what no rule covers (owner-autonomy.ts ownerModeForLevel).
 //
 //   GET    /api/approval-rules?botId=        -> { rules }: the caller's rules
 //                                               (and their bots' earlier
@@ -9,14 +12,12 @@
 //                                               else saved on an admin's card
 //                                               of a bot the caller owns or
 //                                               administers, 2026-10-21)
-//   GET    /api/bots/:id/permission-mode     -> { mode, canBypass }
-//   PUT    /api/bots/:id/permission-mode     { mode, confirmBypass? }
 //
 // Every route is the caller's own: their rules, their bots. A local
 // service or a turn's token is never a person here (`manager` is null), so
 // a bot cannot widen its own leash.
 import type { RequestAuth } from "../request-auth.ts";
-import { isBotPermissionMode, isRuleBehavior, type BotPermissionMode, type OwnerRule } from "../owner-approval.ts";
+import { isRuleBehavior, type OwnerRule } from "../owner-approval.ts";
 import type { OwnerApprovalStore } from "../owner-approval-store.ts";
 import { ORG_ALWAYS_ALLOW_OFF, standingGrantsAllowed } from "../custom-rules-org.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -49,21 +50,12 @@ export interface OwnerApprovalRouteDeps {
   describeLegacy: (key: string, personId?: string) => string;
   /** Remove an earlier Allow key from a bot and its conversations. */
   revokeLegacy: (botId: string, key: string) => void;
-  /** Why this person may not turn Bypass on, or null. */
-  bypassRefusal: (auth: RequestAuth) => string | null;
-  /** A mode this bot may not take now (a member's bot while the
-   * organization turned automatic levels off), or null. */
-  modeRefusal?: (botId: string, mode: BotPermissionMode) => { error: string; code: string } | null;
   audit: (row: { action: string; botId?: string; personId: string; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
-  /** One journal row for a mode change. */
-  journalMode: (bot: { id: string; name: string; threadId: string }, before: BotPermissionMode, after: BotPermissionMode) => void;
   /** 2026-10-16 (security keys): a change that loosens (a rule that allows,
    * a looser mode) needs the person's key when they chose "rule-change"
    * (shared/step-up.ts). Null lets it through; else the refusal. */
-  stepUp?: (auth: RequestAuth, personId: string, action: "approval-rules.allow" | "permission-mode" | "rules.remove", detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
+  stepUp?: (auth: RequestAuth, personId: string, action: "approval-rules.allow" | "rules.remove", detail: Record<string, unknown>, stepUp: unknown) => { status: number; body: unknown } | null;
 }
-
-const MODE_RANK: Record<BotPermissionMode, number> = { approval: 0, auto: 1, bypass: 2 };
 
 export function legacyRuleId(botId: string, key: string): string {
   return `legacy_${Buffer.from(`${botId}\n${key}`).toString("base64url")}`;
@@ -222,40 +214,6 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       return json(res, 200, { rule: updated });
     }
 
-    const mode = /^\/api\/bots\/([\w-]+)\/permission-mode$/.exec(path);
-    if (mode && method !== "GET" && method !== "PUT") return json(res, 405, { error: "GET or PUT only" });
-    if (mode && (method === "GET" || method === "PUT")) {
-      const botId = mode[1]!;
-      const ownerId = deps.ownerOf(botId);
-      if (!ownerId) return json(res, 404, { error: "no such bot" });
-      const me = deps.manager(auth);
-      if (!me || !same(me, ownerId)) return json(res, 403, { error: "Only this bot's owner chooses its permission mode.", code: "not_bot_owner" });
-      if (method === "GET") return json(res, 200, { mode: deps.store.modeOf(botId, ownerId), canBypass: deps.bypassRefusal(auth) === null });
-      const body = await readBody(req);
-      if (!isBotPermissionMode(body.mode)) return json(res, 400, { error: "mode must be approval, auto or bypass" });
-      const next: BotPermissionMode = body.mode;
-      if (next === "bypass") {
-        if (body.confirmBypass !== true) return json(res, 400, { error: "Bypass needs an explicit confirmation.", code: "bypass_confirmation_required" });
-        const refusal = deps.bypassRefusal(auth);
-        if (refusal) return json(res, 403, { error: refusal, code: "bypass_not_allowed" });
-      }
-      const before = deps.store.modeOf(botId, ownerId);
-      const modeRefused = next !== before ? deps.modeRefusal?.(botId, next) ?? null : null;
-      if (modeRefused) return json(res, 403, modeRefused);
-      if (MODE_RANK[next] > MODE_RANK[before] && deps.stepUp) {
-        const refused = deps.stepUp(auth, me, "permission-mode", { botId, mode: next }, body.stepUp);
-        if (refused) return json(res, refused.status, refused.body);
-      }
-      try {
-        deps.store.setMode(botId, ownerId, next);
-      } catch (error) {
-        return json(res, (error as { status?: number }).status === 503 ? 503 : 500, { error: error instanceof Error ? error.message : String(error) });
-      }
-      deps.audit({ action: "bot.permission-mode", botId, personId: me, before: { mode: before }, after: { mode: next } }, auth);
-      const bot = deps.ownedBots(ownerId).find((candidate) => candidate.id === botId);
-      if (bot) deps.journalMode(bot, before, next);
-      return json(res, 200, { mode: next, canBypass: deps.bypassRefusal(auth) === null });
-    }
     return PASS;
   };
 }

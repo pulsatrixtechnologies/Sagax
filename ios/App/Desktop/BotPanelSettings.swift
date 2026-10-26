@@ -254,6 +254,11 @@ struct BotPanelPermissions: View {
                 .disabled(!canEdit || bot.busy == true)
                 .padding(.top, 12)
                 .accessibilityLabel(Text("Approval level"))
+                Text(DesktopApprovalButton.detail(level))
+                    .panelText(13, 19.5)
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.top, 6)
+                    .accessibilityIdentifier("desktop-panel-approval-detail")
                 if session.surfaceGate.allows(.commandAllowlist) {
                     Button { allowlist = true } label: {
                         Text("Manage command allowlist").panelText(13, 19.5).foregroundStyle(theme.inkSecondary)

@@ -163,8 +163,8 @@ describe("relying party", () => {
   });
 
   it("names a settings grant by its action and exact detail", () => {
-    expect(settingsGrant("permission-mode", { botId: "b", mode: "auto" })).toBe(settingsGrant("permission-mode", { mode: "auto", botId: "b" }));
-    expect(settingsGrant("permission-mode", { botId: "b", mode: "auto" })).not.toBe(settingsGrant("permission-mode", { botId: "b", mode: "bypass" }));
+    expect(settingsGrant("approval-mode", { botId: "b", mode: "auto" })).toBe(settingsGrant("approval-mode", { mode: "auto", botId: "b" }));
+    expect(settingsGrant("approval-mode", { botId: "b", mode: "auto" })).not.toBe(settingsGrant("approval-mode", { botId: "b", mode: "full" }));
   });
 });
 

@@ -51,3 +51,16 @@ final class ModelSuggestionsTests: XCTestCase {
         XCTAssertEqual(ModelSuggestions.filter(options, query: " ").count, 2)
     }
 }
+
+/// 2026-10-26 (one approval level): each of the four levels says that the
+/// bot's rules come first, and Full access that Ask and Deny still hold.
+final class ApprovalLevelDetailTests: XCTestCase {
+    func testEveryLevelSaysRulesComeFirst() {
+        for level in [ApprovalLevel.ask, .edits, .auto, .full] {
+            XCTAssertTrue(level.detail.contains("Your rules"), "\(level)")
+        }
+        XCTAssertTrue(ApprovalLevel.full.detail.contains("\"Deny\" refuses, even here"))
+        XCTAssertTrue(ApprovalLevel.ask.detail.contains("\"Allow automatically\" goes without a card"))
+        XCTAssertEqual(ApprovalLevel.custom.detail, "Uses permissions defined in config.toml")
+    }
+}

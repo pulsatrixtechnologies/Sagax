@@ -21,7 +21,7 @@
 //   S3-10 the directory is the backstop: a disabled person's session ends
 //   S3-11 the authenticated health lists the engines and whether installed
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
@@ -805,44 +805,25 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       expect(delAgain.card).toBeNull();
       expect(delAgain.answer()?.behavior).toBe("deny");
 
-      // modes: the owner's only
-      expect([403, 404]).toContain((await api("PUT", `/api/bots/${cora.id}/permission-mode`, alice, { mode: "auto" })).status);
-      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.mode).toBe("approval");
-      expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "auto" })).status).toBe(200);
-      const schedule = await ask(CW, { resource: "schedule/entries", operation: "create", body: {} });
-      expect(schedule.card).toBeNull();
-      expect(schedule.answer()?.behavior).toBe("allow");
-      // an edited rule: only its owner edits it; Ask every time keeps a card even in auto
+      // 2026-10-26 (one approval level): no permission mode of its own any
+      // more; the route is gone and the level (Ask here) decides what no
+      // rule covers
+      // an edited rule: only its owner edits it; Ask every time keeps a card
       const ruleIdEarly = mine[0]!.id as string;
       expect((await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, alice, { behavior: "ask" })).status).toBe(404);
       const toAsk = await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, erin, { behavior: "ask" });
       expect(toAsk.status, toAsk.text).toBe(200);
       expect(toAsk.body.rule).toMatchObject({ behavior: "ask", scope: { resource: "service/tickets", operation: "update" } });
       const askRule = await ask(CW, { resource: "service/tickets/80", operation: "update", body: {} });
-      expect(askRule.card, "an Ask every time rule still asks in auto").toBeTruthy();
+      expect(askRule.card, "an Ask every time rule asks").toBeTruthy();
       expect((await respond(erin, askRule.id)).status).toBe(200);
       await waitFor(async () => askRule.answer()?.behavior === "allow");
       expect((await api("PATCH", `/api/approval-rules/${ruleIdEarly}`, erin, { behavior: "allow" })).status).toBe(200);
-      // auto still asks for a destructive call no rule covers
+      // a destructive call no rule covers asks
       const bulk = await ask(CW, { resource: "service/tickets", operation: "update", ids: [1, 2, 3], body: { status: "Closed" } });
       expect(bulk.card?.ownerRule?.destructive).toBe("bulk");
       expect((await respond(erin, bulk.id, { behavior: "deny" })).status).toBe(200);
 
-      // bypass needs an explicit confirmation
-      const unconfirmed = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass" });
-      expect(unconfirmed.status).toBe(400);
-      expect(unconfirmed.body.code).toBe("bypass_confirmation_required");
-      // 2026-10-26 (JC): no organization switch takes Bypass from the owner
-      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: false })).status).toBe(200);
-      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.canBypass).toBe(true);
-      expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true })).status).toBe(200);
-      const project = await ask(CW, { resource: "project/projects", operation: "update", body: {} });
-      expect(project.card).toBeNull();
-      expect(project.answer()?.behavior).toBe("allow");
-      // bypass asks nothing but writes every approval to the journal
-      const journal = join(realpathSync(join(home, ".sagax")), "decisions");
-      await waitFor(async () => existsSync(journal) && readdirSync(journal).some((file) =>
-        readFileSync(join(journal, file), "utf8").split("\n").some((line) => line.includes(`"requestId":"${project.id}"`) && line.includes(`"source":"owner-bypass"`))));
       // no mode reaches past the owner's rights: a server command still waits for an admin
       const shell = await ask("Bash", { command: "cat /etc/hostname" });
       expect(shell.card.adminApproval).toBe(true);
@@ -853,8 +834,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       expect((await respond(alice, shell.id, { rule: "allow" })).status).toBe(200);
       await waitFor(async () => shell.answer()?.behavior === "allow");
 
-      // revoke: the rule goes, the next ticket update asks again (back on approval)
-      expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "approval" })).status).toBe(200);
+      // revoke: the rule goes, the next ticket update asks again
       const ruleId = mine[0]!.id as string;
       expect((await api("DELETE", `/api/approval-rules/${ruleId}`, alice)).status).toBe(404);
       expect((await api("DELETE", `/api/approval-rules/${ruleId}`, erin)).status).toBe(200);

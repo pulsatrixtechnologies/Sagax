@@ -26,22 +26,22 @@ describe("approval mode selector", () => {
       {
         mode: "ask",
         label: "Ask for approval",
-        description: "Requests approval for commands and file changes",
+        description: "Asks you before each command, file change or tool call. Your rules come first: \"Allow automatically\" goes without a card, \"Deny\" refuses.",
       },
       {
         mode: "edits",
         label: "Auto-accept edits",
-        description: "Approves file edits automatically; other actions can still require approval",
+        description: "File edits go without asking; other actions ask you. Your rules come first: \"Ask every time\" shows a card, \"Deny\" refuses.",
       },
       {
         mode: "auto",
         label: "Approve for me",
-        description: "Uses the provider's automatic review to approve routine actions and ask about others. Web search is allowed without asking.",
+        description: "Uses the engine's automatic review to approve routine actions, and asks about deletions, bulk changes and messages sent on your behalf. Your rules come first: \"Ask every time\" always shows a card, \"Deny\" always refuses.",
       },
       {
         mode: "full",
         label: "Full access",
-        description: "Runs commands and edits files without asking. Use only with bots you trust.",
+        description: "Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust.",
       },
       {
         mode: "custom",
