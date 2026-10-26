@@ -70310,6 +70310,22 @@
         }
       }
     },
+    "Hide earlier topics": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer les sujets précédents"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar tópicos anteriores"
+          }
+        }
+      }
+    },
     "Earlier topics": {
       "localizations": {
         "fr": {

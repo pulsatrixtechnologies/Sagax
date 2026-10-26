@@ -52,6 +52,34 @@ public enum BotConversations {
         return (before, after)
     }
 
+    /// The rows older than the first loaded line open the topic: they fold
+    /// behind "Earlier topics" instead of standing above the chat. With no
+    /// line yet, every row is a leading one; while earlier pages remain,
+    /// the ones older than the window are left out.
+    public static func split(
+        _ rows: [BotConversation], firstStart: Double?, hasMore: Bool
+    ) -> (leading: [BotConversation], inline: [BotConversation]) {
+        var leading: [BotConversation] = []
+        var inline: [BotConversation] = []
+        for row in rows {
+            if let firstStart, row.at >= firstStart { inline.append(row); continue }
+            if !hasMore { leading.append(row) }
+        }
+        return (leading, inline)
+    }
+
+    /// One row per bot, the most recent, newest first.
+    public static func deduped(_ rows: [BotConversation]) -> [BotConversation] {
+        func when(_ row: BotConversation) -> Double { row.updatedAt ?? row.startedAt ?? 0 }
+        var latest: [String: BotConversation] = [:]
+        for row in rows {
+            let key = row.otherBotId.isEmpty ? row.threadId : row.otherBotId
+            if let kept = latest[key], when(kept) >= when(row) { continue }
+            latest[key] = row
+        }
+        return latest.values.sorted { when($0) > when($1) }
+    }
+
     /// The thread's spoken lines, each credited to its bot. The thread belongs
     /// to the destination bot: a line names its speaker (`from`, or the bot
     /// that delivered it), else a person-side line is the origin's words and
