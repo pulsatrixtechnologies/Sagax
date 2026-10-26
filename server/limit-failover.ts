@@ -172,6 +172,15 @@ export class LimitFailoverStore {
     this.save();
   }
 
+  /** A turn on this engine worked for this payer: its hold ends now. */
+  unblock(payer: string, instanceId: string): void {
+    const key = LimitFailoverStore.key(payer, instanceId);
+    const kept = this.state.blocks.filter((row) => row.key !== key);
+    if (kept.length === this.state.blocks.length) return;
+    this.state.blocks = kept;
+    this.save();
+  }
+
   /** Until when this engine refuses this payer, or null while it should work. */
   blockedUntil(payer: string, instanceId: string): number | null {
     const now = this.deps.now();

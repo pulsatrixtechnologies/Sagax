@@ -160,6 +160,9 @@
 //                        the first, silently) and records it; session/load
 //                        reports the recorded model, whatever the new profile
 //                        or -m asks for
+//   FAKE_ACP_CURSOR_FAST=1  a `fast` select ("true") once initialize declares
+//                        _meta.parameterizedModelPicker, as Cursor CLI 2026.10.01;
+//                        =stuck acknowledges set_config_option but keeps "true"
 //   FAKE_ACP_GROK_CONFIG_MODELS=1  also offer every [model.<slug>] block of
 //                        $GROK_HOME/config.toml (else $HOME/.grok), as Grok
 //                        lists the blocks Sagax writes for local models
@@ -216,6 +219,7 @@ const variantValues = (entries: any[]): string[] => entries.flatMap((entry) => (
 ));
 const modes = (process.env.FAKE_ACP_MODES ?? "").split(",").filter(Boolean);
 let currentMode: string | null = modes[0] ?? null;
+let currentFast: string | null = null;
 // task id captured from the last delegate_bot reply, for a later
 // check_delegation call. Each turn is a fresh process, so the id is passed
 // through a file (same state-passing pattern as FAKE_ACP_GATE_FILE).
@@ -274,6 +278,13 @@ const configOptions = () => {
       type: "select",
       currentValue: currentMode,
       options: modes.map((value) => ({ value, name: value })),
+    }] : []),
+    ...(currentFast ? [{
+      id: "fast",
+      name: "Fast",
+      type: "select",
+      currentValue: currentFast,
+      options: [{ value: "true", name: "On" }, { value: "false", name: "Off" }],
     }] : []),
   ];
   return options.length ? options : null;
@@ -774,6 +785,9 @@ function handle(msg: any) {
   switch (msg.method) {
     case "initialize": {
       if (failRpc(msg)) break;
+      if (["1", "stuck"].includes(process.env.FAKE_ACP_CURSOR_FAST ?? "") && msg.params?.clientCapabilities?._meta?.parameterizedModelPicker === true) {
+        currentFast = "true";
+      }
       if (mode === "hang-initialize") {
         setInterval(() => {}, 1_000);
         return;
@@ -941,6 +955,15 @@ function handle(msg: any) {
           writeFileSync(`${process.env.FAKE_ACP_DUMP}.config.json`, JSON.stringify(configCalls, null, 2));
         }
         resultAndConfigUpdates(msg.id, process.env.FAKE_ACP_EMPTY_VARIANT_ACK ? {} : { configOptions: configOptions() }, "effort", msg.params.sessionId);
+        break;
+      }
+      if (configId === "fast" && currentFast && (value === "true" || value === "false")) {
+        if (process.env.FAKE_ACP_CURSOR_FAST !== "stuck") currentFast = value;
+        configCalls.push({ method: msg.method, params: msg.params });
+        if (process.env.FAKE_ACP_DUMP) {
+          writeFileSync(`${process.env.FAKE_ACP_DUMP}.config.json`, JSON.stringify(configCalls, null, 2));
+        }
+        result(msg.id, { configOptions: configOptions() });
         break;
       }
       if (configId === "mode" && modes.includes(value)) {

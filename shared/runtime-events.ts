@@ -238,7 +238,10 @@ export type RuntimeEvent = RuntimeEventBase &
       stalled?: boolean;
       /** A usage limit refused the turn: epoch ms when it resets, when the
        * engine said (server/limit-failover-host.ts). */
-      limitResetsAt?: number }
+      limitResetsAt?: number;
+      /** The refusal binds this model only (its extra-usage credits, or its
+       * own weekly window): the engine stays free for its other models. */
+      limitScope?: "model" }
     /** Something the person should know that did not fail the turn — for
      * example, a saved model the engine no longer offers was replaced. */
     | { type: "runtime.notice"; message: string }
