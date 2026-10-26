@@ -221,11 +221,13 @@ struct DesktopSettingsNav: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // The search sits on the row of the close button (its centre is
+            // at 26 pt from the top: 10 pt inset, 32 pt tall), the title below.
+            search
+                .padding(.top, -6)
+                .padding(.bottom, 4)
             DesktopText("Settings", weight: .semibold, line: 19.5)
                 .padding(8)
-            search
-                .padding(.top, 4)
-                .padding(.bottom, 8)
             if sections.isEmpty {
                 DesktopText(Text("No settings match “\(query.trimmingCharacters(in: .whitespaces))”."),
                             size: 12.5, line: 20.3, color: \.inkSecondary)

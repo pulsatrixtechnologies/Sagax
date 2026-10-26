@@ -140,10 +140,17 @@ private struct SettingsRootPage: View {
     }
 
     var body: some View {
-        SettingsPage(leading: close.map { .close($0) } ?? .back) {
-            SettingsSearchField(prompt: "Search", text: $query, identifier: "settings-search")
-                .padding(.horizontal, SettingsMetrics.cardMargin)
-            SettingsSpacer(18)
+        // The search shares the header row with the X: same height (the
+        // button's 42), centred on one line.
+        SettingsPage(
+            leading: close.map { .close($0) } ?? .back,
+            contentTop: SettingsMetrics.headerInset + GlassCircleButton.Size.sheet.rawValue + 17,
+            trailingFills: true,
+            trailing: {
+                SettingsSearchField(prompt: "Search", text: $query, identifier: "settings-search",
+                                    rowHeight: GlassCircleButton.Size.sheet.rawValue)
+            }
+        ) {
             if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 groupedRoot
                 footer
