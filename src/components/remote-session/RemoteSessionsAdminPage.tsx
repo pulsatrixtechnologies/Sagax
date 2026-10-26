@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Monitor, FileText, X, ShieldOff, RefreshCw } from "lucide-react";
 
 import { formatEndLabel, type RemoteSessionView } from "../../../shared/remote-session";
@@ -105,6 +105,19 @@ export function RemoteSessionsAdminPage() {
   const [confirmRevoke, setConfirmRevoke] = useState<RemoteSessionAdminRow | null>(null);
 
   const toggle = (key: "activeOnly" | "unattendedOnly") => setFilters((f) => ({ ...f, [key]: !f[key] }));
+
+  useEffect(() => {
+    if (!logsFor && !controlling && !confirmRevoke) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (confirmRevoke) setConfirmRevoke(null);
+      else if (controlling) setControlling(null);
+      else setLogsFor(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [logsFor, controlling, confirmRevoke]);
 
   const end = async (row: RemoteSessionAdminRow) => {
     if (confirmEnd !== row.id) { setConfirmEnd(row.id); return; }

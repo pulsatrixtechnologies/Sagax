@@ -216,9 +216,8 @@ export function findCliCandidates(name: string): string[] {
 
 // Windows CLI resolution ───────────────────────────────────────────────
 // PATH alone is not enough on Windows. libuv ignores PATHEXT, so
-// spawn("claude") never finds claude.cmd — and since Node's
-// CVE-2024-27980 fix, spawning a .cmd without shell:true throws
-// synchronously anyway. shell:true is not an option here: the drivers
+// spawn("claude") never finds claude.cmd. Spawning a .cmd without
+// shell:true throws synchronously. shell:true is not an option here: the drivers
 // pass raw JSON in argv (claude's --mcp-config), which cmd would mangle.
 // Windows also has no #! support, so a node-shebang script (every fake
 // CLI in server/testing) is unspawnable as itself.

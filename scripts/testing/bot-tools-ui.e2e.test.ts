@@ -58,12 +58,14 @@ describe("bot setup and tools in the real renderer", () => {
     const snapshot = async () => (await ui("snapshot")).snapshot as string;
     const openPersona = async (section: string) => {
       await press("Escape");
-      // The chat header's bot pill opens the bot panel ("Open <name>'s panel");
-      // Edit bot sits in its Bot menu.
+      // The chat header's bot pill toggles the panel. Escape does not always
+      // close it, so a later visit reads "Close <name>'s panel". Click only
+      // while it is closed; Edit bot sits in the panel's Bot menu.
       await expect.poll(() => evaluate(`(() => {
-        const pill = [...document.querySelectorAll("main button[aria-label]")].find((button) => /^Open .+'s panel$/.test(button.getAttribute("aria-label")));
-        pill?.click();
-        return Boolean(pill);
+        const pill = document.querySelector("main [data-bot-header-pill]");
+        if (!pill) return false;
+        if (pill.getAttribute("aria-expanded") !== "true") pill.click();
+        return true;
       })()`), { timeout: 10_000 }).toBe(true);
       await expect.poll(snapshot, { timeout: 10_000 }).toContain('button "Bot menu"');
       await click("Bot menu");

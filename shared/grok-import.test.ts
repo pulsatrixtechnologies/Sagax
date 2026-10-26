@@ -201,11 +201,11 @@ describe("grokExportToPackage", () => {
     expect(routine("weekdays at 9am", { cron: "not a cron" })).toEqual({ type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] });
   });
 
-  it("lists apps as connector requirements, Composio slugs when known", () => {
+  it("lists apps as connector requirements, slugs taken from the label", () => {
     expect(mapped().document.package.requirements).toEqual({
       apps: [
         { slug: "gmail", label: "Gmail", reason: "DOGE (Department of Grok Efficiency) used Gmail in Grok Bot." },
-        { slug: "googlecalendar", label: "Google Calendar", reason: "DOGE (Department of Grok Efficiency) used Google Calendar in Grok Bot." },
+        { slug: "google-calendar", label: "Google Calendar", reason: "DOGE (Department of Grok Efficiency) used Google Calendar in Grok Bot." },
         { slug: "acme-crm", label: "Acme CRM", reason: "Reads deals." },
       ],
       capabilities: [],

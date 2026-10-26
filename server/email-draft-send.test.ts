@@ -117,7 +117,9 @@ describe("the one-shot pass after Allow", () => {
   it("B3: another connector's send is not covered", () => {
     expect(emailSendCallMatches(draft, ...send(exact, "mcp__gmail__send_email"), outlook)).toBe(false);
     expect(emailSendCallMatches(draft, ...send(exact, "mcp__outlook_evil__send_mail"), outlook)).toBe(false);
-    expect(emailSendCallMatches(draft, ...send(exact, "mcp__composio__GMAIL_SEND_EMAIL"), { kind: "bot", id: "gmail", label: "Gmail" })).toBe(true);
+    // The approved connector is gmail. A tool whose server is something else
+    // is not that send, even when the tool name says Gmail.
+    expect(emailSendCallMatches(draft, ...send(exact, "mcp__composio__GMAIL_SEND_EMAIL"), { kind: "bot", id: "gmail", label: "Gmail" })).toBe(false);
   });
 
   it("is used once, by the approved bot only, lapses after ten minutes, and can be withdrawn", () => {

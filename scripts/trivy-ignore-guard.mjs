@@ -1,16 +1,20 @@
 #!/usr/bin/env node
-// Staleness check for .trivyignore. Trivy itself drops listed CVEs; this
-// script reads a scan taken WITHOUT that file and fails when a listed CVE
-// now has a FixedVersion, or when the review date has passed. Entries are
-// explicit CVE ids (no wildcards), each with a reason and Review date.
+// Staleness check for an image-scan exception list. The scanner drops
+// listed identifiers; this script reads a scan taken WITHOUT that list
+// and fails when a listed identifier now has a FixedVersion, or when the
+// review date has passed. Entries are explicit identifiers (no wildcards),
+// each with a reason and Review date.
 //
 // Fail closed: an unusable scan, an empty Results array under --gated,
-// an empty ignore file, a whitespace FixedVersion, an invalid calendar
-// date, UNKNOWN severity, a listed id missing from the scan, a duplicated
-// ignore id, or a --gated row with no VulnerabilityID (including LOW)
-// is an error (non-zero exit).
+// an empty ignore file (unless --allow-empty), a whitespace FixedVersion,
+// an invalid calendar date, UNKNOWN severity, a listed id missing from
+// the scan, a duplicated ignore id, or a --gated row with no
+// VulnerabilityID (including LOW) is an error (non-zero exit).
 //
-//   node scripts/trivy-ignore-guard.mjs --ignore .trivyignore --scan scan.json
+// Printed lines never include an identifier. Pass --allow-empty when a
+// comments-only list is a valid "ignore nothing" configuration.
+//
+//   node scripts/trivy-ignore-guard.mjs --allow-empty --ignore list.txt --scan scan.json
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -18,11 +22,21 @@ const CVE_LINE = /^CVE-\d{4}-\d+$/;
 const REVIEW = /Review\s+(\d{4}-\d{2}-\d{2})/g;
 const REASON_OK = /no-dsa|pas de correctif dans trixie/i;
 const KNOWN_SEVERITY = new Set(["CRITICAL", "HIGH", "MEDIUM", "LOW", "NEGLIGIBLE"]);
+export const EMPTY_LIST = "ignore file lists no CVE";
+
+/** Replace identifier-shaped text before anything is printed. */
+export function redactVulnerabilityIds(text) {
+  return String(text ?? "").replace(/CVE-\d{4}-\d+/g, "an exception");
+}
 
 export function parseArgs(argv) {
-  const out = { ignore: "", scan: "", today: "", gated: "" };
+  const out = { ignore: "", scan: "", today: "", gated: "", allowEmpty: false };
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
+    if (flag === "--allow-empty") {
+      out.allowEmpty = true;
+      continue;
+    }
     const value = argv[++i];
     if (flag === "--ignore") out.ignore = value ?? "";
     else if (flag === "--scan") out.scan = value ?? "";
@@ -54,7 +68,7 @@ function reviewDatesIn(reason) {
   return [...String(reason).matchAll(REVIEW)].map((match) => match[1]);
 }
 
-/** Parse `.trivyignore`: one CVE per line, comment above with reason + Review date. */
+/** Parse an exception list: one identifier per line, comment above with reason + Review date. */
 export function parseTrivyignore(text) {
   const errors = [];
   const entries = [];
@@ -92,7 +106,7 @@ export function parseTrivyignore(text) {
     });
     comments = [];
   }
-  if (entries.length === 0) errors.push("ignore file lists no CVE");
+  if (entries.length === 0) errors.push(EMPTY_LIST);
   return { entries, errors };
 }
 
@@ -161,7 +175,7 @@ function missingIdErrors(findings) {
   return errors;
 }
 
-/** Per-package vs unique CVE ids, to reconcile Trivy row counts with `.trivyignore`. */
+/** Per-package vs unique identifiers, to reconcile scanner row counts with the exception list. */
 export function findingsSummary(scan) {
   const usable = usableScan(scan);
   if (!usable.ok) return { ok: false, errors: usable.errors, bySeverity: {}, unique: { CRITICAL: [], HIGH: [] } };
@@ -185,7 +199,7 @@ export function findingsSummary(scan) {
   };
 }
 
-/** Remaining CRITICAL/HIGH counts in a scan already filtered by `.trivyignore`. */
+/** Remaining CRITICAL/HIGH counts in a scan already filtered by the exception list. */
 export function highCriticalCounts(scan) {
   const counts = { CRITICAL: 0, HIGH: 0 };
   for (const finding of findingsFromScan(scan)) {
@@ -215,14 +229,17 @@ export function assessGatedScan(scan) {
 }
 
 /**
- * Fail closed when a listed CVE gained a Debian/Trivy fix, the review
- * date is past, the scan cannot be read, a listed id is missing, or a
- * finding has UNKNOWN severity. `today` is YYYY-MM-DD (UTC).
+ * Fail closed when a listed identifier gained a fix, the review date is
+ * past, the scan cannot be read, a listed id is missing, or a finding has
+ * UNKNOWN severity. `today` is YYYY-MM-DD (UTC). `allowEmpty` drops only
+ * the "no entries" error, so a comments-only list can mean "ignore nothing".
  */
-export function assessIgnoreGuard({ ignoreText, scan, today } = {}) {
+export function assessIgnoreGuard({ ignoreText, scan, today, allowEmpty } = {}) {
   const usable = usableScan(scan);
   const parsed = parseTrivyignore(ignoreText);
-  const errors = [...usable.errors, ...parsed.errors];
+  const errors = [...usable.errors, ...parsed.errors].filter(
+    (error) => !(allowEmpty && error === EMPTY_LIST),
+  );
   if (!usable.ok) {
     return { ok: false, errors, entries: parsed.entries, nowFixed: [] };
   }
@@ -247,7 +264,7 @@ export function assessIgnoreGuard({ ignoreText, scan, today } = {}) {
     errors.push(`${id} now has FixedVersion ${fixed}`);
   }
   for (const row of parsed.entries) {
-    if (!seen.has(row.id)) errors.push(`${row.id} is listed in .trivyignore but absent from the scan`);
+    if (!seen.has(row.id)) errors.push(`${row.id} is listed but absent from the scan`);
   }
   return {
     ok: errors.length === 0,
@@ -261,28 +278,34 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function report(line, write = console.error) {
+  write(`[trivy-ignore] ${redactVulnerabilityIds(line)}`);
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.gated) {
     const result = assessGatedScan(readJson(args.gated));
     if (!result.ok) {
-      for (const error of result.errors) console.error(`[trivy-ignore] ${error}`);
+      for (const error of result.errors) report(error);
       process.exit(1);
     }
     console.log(`gated remaining: critical=${result.counts.CRITICAL} high=${result.counts.HIGH}`);
     return;
   }
   if (!args.ignore || !args.scan) {
-    throw new Error("usage: node scripts/trivy-ignore-guard.mjs --ignore <file> --scan <trivy.json>");
+    throw new Error("usage: node scripts/trivy-ignore-guard.mjs [--allow-empty] --ignore <file> --scan <scan.json>");
   }
   const ignoreText = readFileSync(args.ignore, "utf8");
   const scan = readJson(args.scan);
-  const result = assessIgnoreGuard({ ignoreText, scan, today: args.today });
-  for (const row of result.entries) {
-    console.log(`[trivy-ignore] ${row.id} review ${row.reviewDate}`);
-  }
+  const result = assessIgnoreGuard({
+    ignoreText,
+    scan,
+    today: args.today,
+    allowEmpty: args.allowEmpty,
+  });
   if (!result.ok) {
-    for (const error of result.errors) console.error(`[trivy-ignore] ${error}`);
+    for (const error of result.errors) report(error);
     process.exit(1);
   }
   console.log(`[trivy-ignore] ok ${result.entries.length} exception(s), none have a FixedVersion`);
@@ -292,7 +315,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     main();
   } catch (error) {
-    console.error(`[trivy-ignore] ${error instanceof Error ? error.message : String(error)}`);
+    report(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

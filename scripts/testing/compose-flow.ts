@@ -1,6 +1,7 @@
 // Compose "Create new Bot" dispatches `{ type: "newBot" }` and closes: instant
 // create, no NewBotDialog, no Start from, no Browse templates.
-// Templates live in Browse Bots (sidebar), behind features.templates.
+// Templates live in Connect apps → Bot templates (the catalogue titled
+// Browse Bots). The sidebar has no Browse Bots button.
 // NewBotDialog stays on Team map → manage a named team → New Bot.
 // Unassigned (`data-team-key=""`) has no New Bot: TeamDialog.managing is
 // Boolean(section) && !rename, and an empty key is falsy.
@@ -29,42 +30,40 @@ async function until(probe: () => Promise<boolean>, timeoutMs: number, what: str
   }
 }
 
-function catalogHome(snap: string): boolean {
-  return snap.includes("Import") && snap.includes("Share a team") && !snap.includes('button "Back"');
+/** Import and Share a team sit on the Templates section, on the catalogue
+ * home and on View all. */
+export function catalogTemplateTools(snap: string): boolean {
+  return snap.includes("Import") && snap.includes("Share a team");
 }
 
-/** Enable the catalog flag, open Browse Bots. Import / Share a team sit on
- * the Templates section of that catalogue (home view, no extra click).
- * If the catalogue is already open, walk Back to home instead of clicking
- * the covered sidebar entry. */
+/** View all or a bot detail. The hosted home is heading "Browse Bots", and
+ * its Back returns to Connect apps, so that Back is not a step to click. */
+export function nestedTemplatesCatalog(snap: string): boolean {
+  return snap.includes('button "Back"')
+    && !snap.includes('heading "Browse Bots"')
+    && (snap.includes("Browse Bots") || snap.includes('heading "Templates"'));
+}
+
+/** Open Connect apps, then Bot templates. Import / Share a team are on that
+ * catalogue's Templates section. A catalogue already open on a detail walks
+ * Back until those tools show; the home's own Back is left alone. */
 export async function openTemplatesCatalog(flow: CatalogFlow): Promise<void> {
   await flow.flag("features.templates=true");
+  if (catalogTemplateTools(await flow.snapshot())) return;
   const snap = await flow.snapshot();
-  if (catalogHome(snap)) return;
-  if (snap.includes("Import") || snap.includes("Share a team") || snap.includes("Templates")) {
-    await until(async () => {
-      const next = await flow.snapshot();
-      if (catalogHome(next)) return true;
-      if (next.includes('button "Back"')) {
-        await flow.click("Back");
-        return false;
-      }
-      return catalogHome(next);
-    }, 12_000, "Browse Bots template tools");
-    if (catalogHome(await flow.snapshot())) return;
-  }
-  // Browse Bots sits in the Connect apps window (#594); the sidebar keeps its
-  // own entry only on the icon rail.
-  if (!(await flow.snapshot()).includes('button "Browse Bots"')) await flow.click("Connect apps");
-  await until(async () => (await flow.snapshot()).includes('button "Browse Bots"'), 12_000, "Browse Bots");
-  await flow.click("Browse Bots");
+  const inWindow = snap.includes('button "Bot templates"')
+    || snap.includes('heading "Browse Bots"')
+    || nestedTemplatesCatalog(snap);
+  if (!inWindow) await flow.click("Connect apps");
   await until(async () => {
     const next = await flow.snapshot();
-    if (next.includes('button "Back"')) {
+    if (catalogTemplateTools(next)) return true;
+    if (nestedTemplatesCatalog(next)) {
       await flow.click("Back");
       return false;
     }
-    return catalogHome(next);
+    if (next.includes('button "Bot templates"')) await flow.click("Bot templates");
+    return false;
   }, 12_000, "Browse Bots template tools");
 }
 
