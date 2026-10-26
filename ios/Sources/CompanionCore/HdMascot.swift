@@ -72,19 +72,37 @@ public enum HdMascots {
 // MARK: - Synced with the person's other devices
 
 extension CompanionClient {
-    /// The switch as the person's organization keeps it (`/api/me/preferences`),
-    /// or nil when the server keeps none (a personal computer, or never set).
+    /// The switch as the computer keeps it: the person's record on an
+    /// organization server (`/api/me/preferences`), the desktop's look on a
+    /// personal computer (`/api/me/appearance`, shared/desktop-appearance.ts).
+    /// Nil when it keeps none (never set, or an older computer).
     public func hdMascotsPreference() async -> String? {
-        guard let record = try? await preferences() else { return nil }
-        return record.preferences[HdMascots.preferenceKey]
+        do {
+            return try await preferences().preferences[HdMascots.preferenceKey]
+        } catch let APIError.status(code, _) where code == 404 || code == 403 {
+            // a personal computer: the desktop's look
+        } catch {
+            return nil
+        }
+        return try? await personalAppearance()[HdMascots.preferenceKey]
     }
 
-    /// Writes the switch beside the person's other preferences (the record is
-    /// replaced whole, so it is read first). A personal computer has no such
-    /// record: the choice stays on this phone.
+    /// Writes the switch where the computer keeps it. Both records are
+    /// replaced whole, so each is read first and only this key changes.
     public func saveHdMascotsPreference(_ on: Bool) async {
-        guard var record = try? await preferences().preferences else { return }
-        record[HdMascots.preferenceKey] = on ? "on" : "off"
-        _ = try? await putPreferences(record)
+        let value = on ? "on" : "off"
+        do {
+            var record = try await preferences().preferences
+            record[HdMascots.preferenceKey] = value
+            _ = try? await putPreferences(record)
+            return
+        } catch let APIError.status(code, _) where code == 404 || code == 403 {
+            // a personal computer: below
+        } catch {
+            return
+        }
+        guard var record = try? await personalAppearance() else { return }
+        record[HdMascots.preferenceKey] = value
+        _ = try? await send(makeRequest("PUT", "/api/me/appearance", encodedBody: DesktopAppearanceBody(preferences: record)))
     }
 }

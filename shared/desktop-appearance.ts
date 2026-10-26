@@ -39,7 +39,10 @@ export const APPEARANCE_FONT_IDS = ["skin", "system", "inter", "poppins", "serif
 // family's own look; a phone that does not know it shows the base skin.
 // `omb-skin-depth` ("full": the colour reaches every surface) and
 // `omb-skin-texture` (a texture over the ground) follow the same way.
-export const DESKTOP_APPEARANCE_KEYS = ["omb-skin", "omb-skin-mode", "omb-skin-tint", "omb-skin-depth", "omb-skin-texture", "omb-font", "omb.retro98.on", "omb.retro98.unlocked"] as const;
+// `sagax.hdMascots.v1` ("on" | "off", absent is on; src/lib/hd-mascots-preference.ts):
+// Settings > Appearance > Mascots > HD mascots, so the phone's switch and the
+// desktop's follow each other on a personal computer as on an organization server.
+export const DESKTOP_APPEARANCE_KEYS = ["omb-skin", "omb-skin-mode", "omb-skin-tint", "omb-skin-depth", "omb-skin-texture", "omb-font", "omb.retro98.on", "omb.retro98.unlocked", "sagax.hdMascots.v1"] as const;
 
 export type DesktopAppearanceKey = (typeof DESKTOP_APPEARANCE_KEYS)[number];
 export type DesktopAppearance = Partial<Record<DesktopAppearanceKey, string>>;
@@ -57,6 +60,7 @@ function validValue(key: DesktopAppearanceKey, value: unknown): value is string 
   if (key === "omb-skin-tint") return TINTS.has(value);
   if (key === "omb-skin-depth") return value === "full";
   if (key === "omb-skin-texture") return TEXTURES.has(value);
+  if (key === "sagax.hdMascots.v1") return value === "on" || value === "off";
   return value === "1";
 }
 

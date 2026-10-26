@@ -120,6 +120,7 @@ final class SidebarPrefsModel: ObservableObject {
         guard id == connectionID else { return }
         guard let record else {
             synced = false
+            await readComputerHdMascots(client)
             return
         }
         synced = true
@@ -347,6 +348,26 @@ final class SidebarPrefsModel: ObservableObject {
     var hdMascots: Bool { prefs.hdMascots }
     func setHdMascots(_ session: Session, _ on: Bool) {
         update(session) { $0.setHdMascots(on) }
+        // a personal computer keeps it with its look (/api/me/appearance); an organization server got it above
+        guard !synced, let client = session.settingsClient else { return }
+        Task { await client.saveHdMascotsPreference(on) }
+    }
+
+    /// A personal computer's HD mascots switch, worn here (its desktop
+    /// shares it through /api/me/appearance). Absent: this phone's stands.
+    func readComputerHdMascots(_ session: Session) async {
+        guard !synced, let client = session.settingsClient else { return }
+        await readComputerHdMascots(client)
+    }
+
+    private func readComputerHdMascots(_ client: CompanionClient) async {
+        let id = connectionID
+        guard let value = await client.hdMascotsPreference(), id == connectionID, !synced else { return }
+        var next = prefs
+        next.setHdMascots(HdMascots.enabled(value))
+        guard next != prefs else { return }
+        prefs = next
+        persist()
     }
 
     var showSuggestions: Bool { prefs.showSuggestions }

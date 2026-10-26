@@ -107,4 +107,37 @@ final class ClientAppearanceTests: XCTestCase {
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: put.body ?? Data()) as? [String: [String: String]])
         XCTAssertEqual(json["preferences"], ["omb-skin": "retro98", "omb-font": "serif", "omb.retro98.on": "1", "omb.retro98.unlocked": "1"])
     }
+
+    func testAPersonalComputerKeepsTheHdMascotsSwitchWithItsLook() async throws {
+        AppearanceStub.routes["GET /api/me/appearance"] = (200, #"{"stored":true,"preferences":{"omb-skin":"atelier","sagax.hdMascots.v1":"off"},"updatedAt":1}"#)
+        AppearanceStub.routes["PUT /api/me/appearance"] = (200, #"{"stored":true,"preferences":{},"updatedAt":2}"#)
+        let read = await client.hdMascotsPreference()
+        XCTAssertEqual(read, "off")
+        await client.saveHdMascotsPreference(true)
+        let put = try XCTUnwrap(AppearanceStub.requests.last { $0.method == "PUT" })
+        XCTAssertEqual(put.path, "/api/me/appearance")
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: put.body ?? Data()) as? [String: [String: String]])
+        // only the switch changes: the computer's look stays
+        XCTAssertEqual(json["preferences"], ["omb-skin": "atelier", "sagax.hdMascots.v1": "on"])
+    }
+
+    func testWritingTheLookBackKeepsAPersonalComputersHdMascotsSwitch() async throws {
+        AppearanceStub.routes["GET /api/me/appearance"] = (200, #"{"stored":true,"preferences":{"omb-skin":"atelier","sagax.hdMascots.v1":"off"},"updatedAt":1}"#)
+        AppearanceStub.routes["PUT /api/me/appearance"] = (200, #"{"stored":true,"preferences":{},"updatedAt":2}"#)
+        try await client.saveComputerAppearance(ComputerAppearance.preferences(skin: .midnight, font: .skin, retroUnlocked: false), to: .personal)
+        let put = try XCTUnwrap(AppearanceStub.requests.last { $0.method == "PUT" })
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: put.body ?? Data()) as? [String: [String: String]])
+        XCTAssertEqual(json["preferences"], ["omb-skin": "midnight", "omb-font": "skin", "sagax.hdMascots.v1": "off"])
+    }
+
+    func testAnOrganizationServerKeepsTheHdMascotsSwitchInThePersonsRecord() async throws {
+        AppearanceStub.routes["GET /api/me/preferences"] = (200, #"{"stored":true,"preferences":{"omb-language":"fr"},"updatedAt":1}"#)
+        AppearanceStub.routes["PUT /api/me/preferences"] = (200, #"{"stored":true,"preferences":{},"updatedAt":2}"#)
+        let read = await client.hdMascotsPreference()
+        XCTAssertNil(read)
+        await client.saveHdMascotsPreference(false)
+        let put = try XCTUnwrap(AppearanceStub.requests.last { $0.method == "PUT" })
+        XCTAssertEqual(put.path, "/api/me/preferences")
+        XCTAssertFalse(AppearanceStub.requests.contains { $0.path == "/api/me/appearance" })
+    }
 }

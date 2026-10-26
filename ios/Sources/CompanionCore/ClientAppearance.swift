@@ -58,7 +58,16 @@ extension CompanionClient {
         case .personal:
             var body: [String: String] = [:]
             for key in keys { body[key] = values[key] }
+            // the record is replaced whole: the HD mascots switch kept there stays
+            if let kept = try? await personalAppearance()[DesktopAppearanceKeys.hdMascots] {
+                body[DesktopAppearanceKeys.hdMascots] = kept
+            }
             try await send(makeRequest("PUT", "/api/me/appearance", encodedBody: DesktopAppearanceBody(preferences: body)))
         }
+    }
+
+    /// A personal computer's stored look (`GET /api/me/appearance`), its raw keys.
+    func personalAppearance() async throws -> [String: String] {
+        try await send(makeRequest("GET", "/api/me/appearance"), as: UserPreferences.self).preferences
     }
 }

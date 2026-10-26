@@ -245,7 +245,10 @@ struct DesktopAppearanceSettings: View {
                 }
             }
         }
-        .task(id: session.connection?.id) { await toolCalls.load(session) }
+        .task(id: session.connection?.id) {
+            await toolCalls.load(session)
+            await prefs.readComputerHdMascots(session)
+        }
     }
 }
 

@@ -116,6 +116,8 @@ struct AppearanceSettingsView: View {
         .task(id: selection.mode) {
             if selection.mode == .computer { await themes.refreshFromComputer(client: client) }
         }
+        // a personal computer's HD mascots switch (an organization server's comes with the preferences)
+        .task { await prefs.readComputerHdMascots(session) }
     }
 
     private func fontRow(_ font: SkinFontChoice, title: LocalizedStringKey) -> some View {

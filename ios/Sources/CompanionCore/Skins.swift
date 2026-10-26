@@ -632,6 +632,9 @@ public enum DesktopAppearanceKeys {
     public static let skinTexture = "omb-skin-texture"
     public static let retroOn = "omb.retro98.on"
     public static let retroUnlocked = "omb.retro98.unlocked"
+    /// Settings > Appearance > Mascots > HD mascots ("on" | "off", absent is on):
+    /// on a personal computer it rides with the look (shared/desktop-appearance.ts).
+    public static let hdMascots = "sagax.hdMascots.v1"
 }
 
 /// What the computer says about its look: from `/api/me/preferences`
