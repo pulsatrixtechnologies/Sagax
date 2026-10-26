@@ -3672,3 +3672,8 @@ button:disabled.bg-danger {
    browser's fallback. */
 :root[data-text-size="large"]:not([data-zoom-native]) { zoom: 1.1; }
 :root[data-text-size="xlarge"]:not([data-zoom-native]) { zoom: 1.25; }
+
+/* Settings search: the open page keeps the matching rows. The attribute
+   survives a React render, unlike a class added beside the row's own. */
+[data-settings-filtering] [data-settings-search-miss] { display: none; }
+[data-settings-search-hit] { background: var(--color-selected); }
