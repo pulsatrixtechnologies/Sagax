@@ -303,7 +303,7 @@ struct DesktopShell: View {
     @StateObject private var model = DesktopShellModel()
 
     var body: some View {
-        let theme = DesktopTheme.of(themePalette.id)
+        let theme = DesktopTheme.of(themePalette)
         return GeometryReader { geometry in
             AnyView(columns(width: geometry.size.width, theme: theme))
                 .onAppear { model.panelDocked = DesktopShellRules.docksPanel(width: geometry.size.width) }
@@ -517,6 +517,12 @@ private struct DesktopShellRouting: ViewModifier {
             .task(id: session.connection?.id) {
                 await session.loadAccount()
                 await SidebarPrefsModel.shared.load(session)
+                await ToolCallsSetting.shared.load(session)
+            }
+            // a new message brings a hidden entry back (Settings > "Show
+            // people again" and "Show bots again"), as on the iPhone's home
+            .onValueChange(of: session.rosterSignature) { _ in
+                sidebarPrefs.unhideNewMessages(session)
             }
     }
 

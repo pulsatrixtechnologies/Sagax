@@ -41,6 +41,8 @@ extension PrefKey {
     static let themeFont = "companion.prefs.theme.font"
     static let themeComputerSkin = "companion.prefs.theme.computerSkin"
     static let themeComputerFont = "companion.prefs.theme.computerFont"
+    static let themeComputerTint = "companion.prefs.theme.computerTint"
+    static let themeComputerDepth = "companion.prefs.theme.computerDepth"
     /// Hibou 98 found on this phone (or on the computer).
     static let themeRetroUnlocked = "companion.prefs.theme.retroUnlocked"
 }
@@ -65,7 +67,7 @@ final class ThemeStore: ObservableObject {
         self.defaults = defaults
         func skin(_ key: String) -> SkinID? { defaults.string(forKey: key).flatMap(SkinID.init(rawValue:)) }
         if let mode = defaults.string(forKey: PrefKey.themeMode).flatMap(ThemeMode.init(rawValue:)) {
-            selection = ThemeSelection(
+            var stored = ThemeSelection(
                 mode: mode,
                 fixedSkin: skin(PrefKey.themeFixed) ?? .black,
                 lightSkin: skin(PrefKey.themeLight) ?? ThemeSelection.defaultLight,
@@ -74,6 +76,9 @@ final class ThemeStore: ObservableObject {
                 computerSkin: skin(PrefKey.themeComputerSkin),
                 computerFont: defaults.string(forKey: PrefKey.themeComputerFont).flatMap(SkinFontChoice.init(rawValue:))
             )
+            stored.computerTint = defaults.string(forKey: PrefKey.themeComputerTint).flatMap(SkinTint.init(rawValue:))
+            stored.computerDepth = SkinTints.depth(defaults.string(forKey: PrefKey.themeComputerDepth))
+            selection = stored
         } else if UIDevice.current.userInterfaceIdiom == .pad,
                   defaults.string(forKey: PrefKey.appearanceMode) == nil,
                   defaults.string(forKey: PrefKey.appearanceTone) == nil {
@@ -106,7 +111,27 @@ final class ThemeStore: ObservableObject {
     /// What decides the look now (a launch override wins in DEBUG).
     var effective: ThemeSelection { launchOverride ?? selection }
 
-    func palette(deviceDark: Bool) -> SkinPalette { effective.skin(deviceDark: deviceDark).palette }
+    /// The open bot's colour (a bot chat on screen), for "Use bot color as
+    /// accent" (src/lib/bot-accent.ts); nil when no bot is open.
+    @Published private(set) var openBotColor: String?
+
+    func palette(deviceDark: Bool) -> SkinPalette { effective.palette(deviceDark: deviceDark) }
+
+    /// The palette with the open bot's colour as the accent, when the
+    /// person turned that on.
+    func palette(deviceDark: Bool, botAccent: Bool) -> SkinPalette {
+        let base = palette(deviceDark: deviceDark)
+        guard botAccent, let name = openBotColor, let hex = MausColors.hex(for: name), let color = SkinColor(css: hex) else { return base }
+        let panel = DesktopSkins.tokens(base.id, tint: base.tint, depth: base.depth)?.panel
+        return base.withBotAccent(color, panel: panel)
+    }
+
+    /// A bot chat came on screen (its colour) or left it (nil, with the colour it had).
+    func setOpenBot(_ color: String?, leaving: String? = nil) {
+        if color == nil, let leaving, openBotColor != leaving { return }
+        guard openBotColor != color else { return }
+        openBotColor = color
+    }
 
     func typeface(deviceDark: Bool) -> SkinTypeface {
         SkinTypeface.resolve(skin: effective.skin(deviceDark: deviceDark), font: effective.fontChoice())
@@ -134,7 +159,8 @@ final class ThemeStore: ObservableObject {
         case .fixed: update { $0.fixedSkin = skin }
         case .system: update { skin.isDark ? ($0.darkSkin = skin) : ($0.lightSkin = skin) }
         case .computer:
-            update { $0.computerSkin = skin }
+            // a skin picked here is the family's own look: the colour goes
+            update { $0.computerSkin = skin; $0.computerTint = nil }
             // a skin picked here is a fixed choice on the computer: its Auto ends
             computerAuto = false
             writeBack(client: client)
@@ -188,19 +214,35 @@ final class ThemeStore: ObservableObject {
             if record.appearance.retroUnlocked { unlockRetro() }
             computerAuto = record.appearance.auto
             if selection.mode == .computer {
-                update {
-                    $0.computerSkin = record.appearance.skin
-                    $0.computerFont = record.appearance.font
-                }
+                apply(record.appearance)
             }
         } catch {
             computerError = String(localized: "Could not reach the computer to read its appearance.")
         }
     }
 
+    private func apply(_ appearance: ComputerAppearance) {
+        update {
+            $0.computerSkin = appearance.skin
+            $0.computerFont = appearance.font
+            $0.computerTint = appearance.tint
+            $0.computerDepth = appearance.depth
+        }
+    }
+
+    /// The person's record as a device just saved it (the `preferences`
+    /// frame, organization servers): the computer's look follows live.
+    func receive(_ record: UserPreferences) {
+        guard computerSource == .organization else { return }
+        let appearance = ComputerAppearance(preferences: record.preferences)
+        if appearance.retroUnlocked { unlockRetro() }
+        computerAuto = appearance.auto
+        if selection.mode == .computer { apply(appearance) }
+    }
+
     private func writeBack(client: CompanionClient?) {
         guard let client, let source = computerSource, let skin = selection.computerSkin else { return }
-        let values = ComputerAppearance.preferences(skin: skin, font: selection.computerFont ?? .skin, retroUnlocked: retroUnlocked, auto: computerAuto)
+        let values = ComputerAppearance.preferences(skin: skin, font: selection.computerFont ?? .skin, retroUnlocked: retroUnlocked, auto: computerAuto, tint: selection.computerTint)
         Task {
             do { try await client.saveComputerAppearance(values, to: source) } catch {
                 computerError = String(localized: "Could not save the appearance on the computer.")
@@ -219,6 +261,8 @@ final class ThemeStore: ObservableObject {
         defaults.set(s.font.rawValue, forKey: PrefKey.themeFont)
         defaults.set(s.computerSkin?.rawValue, forKey: PrefKey.themeComputerSkin)
         defaults.set(s.computerFont?.rawValue, forKey: PrefKey.themeComputerFont)
+        defaults.set(s.computerTint?.rawValue, forKey: PrefKey.themeComputerTint)
+        defaults.set(s.computerDepth.rawValue, forKey: PrefKey.themeComputerDepth)
         writeShared()
     }
 
@@ -239,18 +283,20 @@ final class ThemeStore: ObservableObject {
 /// when the skin does not follow the phone, and dresses UIKit to match.
 struct ThemeRoot: ViewModifier {
     @ObservedObject private var store = ThemeStore.shared
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
-        let palette = store.palette(deviceDark: scheme == .dark)
+        let palette = store.palette(deviceDark: scheme == .dark, botAccent: prefs.botAccent)
         let typeface = store.typeface(deviceDark: scheme == .dark)
         ThemeRuntime.palette = palette
         ThemeRuntime.typeface = typeface
         ThemeRuntime.desktopFace = UIDevice.current.userInterfaceIdiom == .pad
-            && DesktopTheme.of(palette.id).face == .geist && DesktopFonts.available
+            && DesktopTheme.of(palette).face == .geist && DesktopFonts.available
         return content
             .environment(\.themePalette, palette)
             .environment(\.mascotShadow, palette.mascotShadow)
+            .environment(\.hdMascotsEnabled, prefs.hdMascots)
             .modifier(ThemeTint(palette: palette))
             .background(palette.desktop.color.ignoresSafeArea())
             .overlay(alignment: .top) { if palette.bevelled { RetroDesktopStrip() } }
@@ -269,7 +315,7 @@ private struct ThemeTint: ViewModifier {
     let palette: SkinPalette
 
     func body(content: Content) -> some View {
-        content.tint(palette.id == .black || palette.id == .dim ? nil : palette.accent.color)
+        content.tint((palette.id == .black || palette.id == .dim) && palette.botAccent == nil ? nil : palette.accent.color)
     }
 }
 
@@ -292,10 +338,11 @@ private struct RetroDesktopStrip: View {
 /// below stays visible.
 struct ThemeOverlayRoot: ViewModifier {
     @ObservedObject private var store = ThemeStore.shared
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
-        let palette = store.palette(deviceDark: scheme == .dark)
+        let palette = store.palette(deviceDark: scheme == .dark, botAccent: prefs.botAccent)
         return content
             .environment(\.themePalette, palette)
             .environment(\.mascotShadow, palette.mascotShadow)
@@ -341,7 +388,7 @@ enum ThemeUIKit {
         UISwitch.appearance().onTintColor = palette.toggleOn.uiColor
         UITableView.appearance().backgroundColor = background
 
-        let tint: UIColor? = (palette.id == .black || palette.id == .dim) ? nil : palette.accent.uiColor
+        let tint: UIColor? = (palette.id == .black || palette.id == .dim) && palette.botAccent == nil ? nil : palette.accent.uiColor
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             // An overlay window (the unlock banner's) stays transparent.

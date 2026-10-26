@@ -10,6 +10,7 @@ struct AppearanceSettingsView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
     @AppStorage(RunCardPreference.key) private var showRunCard = true
 
     /// The skin in effect (a DEBUG launch override included).
@@ -68,6 +69,31 @@ struct AppearanceSettingsView: View {
                     subtitle: "Show a list of the shell commands a bot ran for your current request. Turn it off to hide the card and its shortcut for saving the run as a skill.",
                     accessory: .toggle($showRunCard),
                     identifier: "settings.runCard"
+                )
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
+                    title: "Use bot color as accent",
+                    subtitle: "The accent follows the open bot's color.",
+                    accessory: .toggle(Binding(get: { prefs.botAccent }, set: { prefs.setBotAccent(session, $0) })),
+                    identifier: "settings.botAccent"
+                )
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
+                    title: "Show suggestions",
+                    subtitle: "Show the Suggestions card in the bot panel",
+                    accessory: .toggle(Binding(get: { prefs.showSuggestions }, set: { prefs.setShowSuggestions(session, $0) })),
+                    identifier: "settings.showSuggestions"
+                )
+            }
+
+            // Settings > Appearance > Mascots (src/lib/hd-mascots-preference.ts)
+            SettingsSectionLabel(text: "Mascots")
+            SettingsCard {
+                SettingsRow(
+                    title: "HD mascots",
+                    subtitle: "Detailed art for the characters that have it. Colors and skins apply to the classic look.",
+                    accessory: .toggle(Binding(get: { prefs.hdMascots }, set: { prefs.setHdMascots(session, $0) })),
+                    identifier: "settings.hdMascots"
                 )
             }
         }

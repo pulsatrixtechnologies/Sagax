@@ -1398,6 +1398,15 @@ const pushHub = new PushHub({
       return true;
     }
   },
+  // Settings > Notifications > Notification sound, the person's tone on the phone too
+  personSoundChoice: (person) => {
+    if (IDENTITY.kind !== "perspicax") return undefined;
+    try {
+      return userPreferenceStore.get(person).preferences["sagax.notificationSound.v1"];
+    } catch {
+      return undefined;
+    }
+  },
 });
 /** Turns another bot's words joined as an aside (tryAsideDelivery): no phone
  * tool for the rest of that turn (review of #960). Cleared when a turn starts. */

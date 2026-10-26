@@ -224,6 +224,12 @@ public struct SkinPalette: Equatable, Sendable {
     /// The approval / question card ("Approval needed").
     public var attentionSurface, attentionBorder, attentionText, attentionSecondary: SkinColor
 
+    /// The computer's colour variant laid over the skin (SkinTints.swift).
+    public var tint: SkinTint? = nil
+    public var depth: SkinDepth = .accent
+    /// The open bot's colour as the accent (BotAccent.swift), nil for the skin's own.
+    public var botAccent: BotAccentColors? = nil
+
     public static func of(_ id: SkinID) -> SkinPalette {
         switch id {
         case .black: return black
@@ -370,6 +376,11 @@ public struct SkinPalette: Equatable, Sendable {
 public enum DesktopSkins {
     public static func tokens(_ id: SkinID) -> DesktopSkinTokens? {
         guard let raw = table[id.rawValue] else { return nil }
+        return tokens(raw: raw)
+    }
+
+    /// One block's values as tokens (a base skin, or one with a tint laid over it).
+    public static func tokens(raw: [String: String]) -> DesktopSkinTokens {
         func c(_ key: String) -> SkinColor {
             var value = raw[key] ?? "#ff00ff"
             // `var(--color-x)`: that block's own x
@@ -526,6 +537,9 @@ public struct ThemeSelection: Equatable, Sendable {
     /// The computer's choice, as last read (computer mode).
     public var computerSkin: SkinID?
     public var computerFont: SkinFontChoice?
+    /// The computer's colour variant over its skin (`omb-skin-tint`, `omb-skin-depth`).
+    public var computerTint: SkinTint? = nil
+    public var computerDepth: SkinDepth = .accent
 
     /// The default pair is Black twice: "System · Black", the reference look,
     /// whatever the phone's own appearance. A light skin for a light phone is
@@ -560,6 +574,14 @@ public struct ThemeSelection: Equatable, Sendable {
         case .computer: return computerSkin ?? (deviceDark ? darkSkin : lightSkin)
         case .system: return deviceDark ? darkSkin : lightSkin
         }
+    }
+
+    /// The palette worn: with "Same as my computer", the computer's skin
+    /// with its colour variant; otherwise the phone's own skin as it is.
+    public func palette(deviceDark: Bool) -> SkinPalette {
+        let skin = skin(deviceDark: deviceDark)
+        guard mode == .computer, computerSkin == skin else { return skin.palette }
+        return SkinPalette.of(skin, tint: computerTint, depth: computerDepth)
     }
 
     public func fontChoice() -> SkinFontChoice {
@@ -609,12 +631,18 @@ public struct ComputerAppearance: Equatable, Sendable {
     public var retroUnlocked: Bool
     /// The computer's skin follows its system (Auto).
     public var auto: Bool
+    /// The colour variant over the skin (`omb-skin-tint`), nil for its own look.
+    public var tint: SkinTint?
+    /// How far a colour reaches (`omb-skin-depth`).
+    public var depth: SkinDepth
 
-    public init(skin: SkinID?, font: SkinFontChoice?, retroUnlocked: Bool, auto: Bool = false) {
+    public init(skin: SkinID?, font: SkinFontChoice?, retroUnlocked: Bool, auto: Bool = false, tint: SkinTint? = nil, depth: SkinDepth = .accent) {
         self.skin = skin
         self.font = font
         self.retroUnlocked = retroUnlocked
         self.auto = auto
+        self.tint = tint
+        self.depth = depth
     }
 
     /// From the desktop's string preferences. An unknown or absent skin is
@@ -626,6 +654,9 @@ public struct ComputerAppearance: Equatable, Sendable {
         self.font = preferences[DesktopAppearanceKeys.font].flatMap(SkinFontChoice.init(rawValue:)) ?? .skin
         self.retroUnlocked = preferences[DesktopAppearanceKeys.retroUnlocked] == "1" || preferences[DesktopAppearanceKeys.retroOn] == "1"
         self.auto = preferences[DesktopAppearanceKeys.skinMode] == "auto"
+        // a tint the skin's family has no variant for is dropped (`normalizeWorn`)
+        self.tint = SkinTints.tint(preferences[SkinTintKeys.tint], on: skin)
+        self.depth = SkinTints.depth(preferences[SkinTintKeys.depth])
     }
 
     /// The keys the phone writes back when it changes the computer's look.
@@ -633,9 +664,12 @@ public struct ComputerAppearance: Equatable, Sendable {
     /// for Black and Graphite for Dim, the nearest the desktop has.
     /// `auto` keeps the computer's Auto (a font change); a skin picked on the
     /// phone is a fixed choice, so it is written without it.
-    public static func preferences(skin: SkinID, font: SkinFontChoice, retroUnlocked: Bool, auto: Bool = false) -> [String: String] {
+    /// `tint` is the computer's colour variant, kept by a font change; a
+    /// skin picked on the phone is the family's own look, written without it.
+    public static func preferences(skin: SkinID, font: SkinFontChoice, retroUnlocked: Bool, auto: Bool = false, tint: SkinTint? = nil) -> [String: String] {
         let desktop: SkinID = skin == .black ? .midnight : skin == .dim ? .graphite : skin
         var out = [DesktopAppearanceKeys.skin: desktop.rawValue, DesktopAppearanceKeys.font: font.rawValue]
+        if let tint = SkinTints.tint(tint?.rawValue, on: desktop) { out[SkinTintKeys.tint] = tint.rawValue }
         if auto { out[DesktopAppearanceKeys.skinMode] = "auto" }
         if retroUnlocked { out[DesktopAppearanceKeys.retroUnlocked] = "1" }
         out[DesktopAppearanceKeys.retroOn] = skin == .retro98 ? "1" : nil

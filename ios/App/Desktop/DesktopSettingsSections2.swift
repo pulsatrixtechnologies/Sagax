@@ -110,6 +110,8 @@ struct DesktopAppearanceSettings: View {
     @AppStorage(RunCardPreference.key) private var showRunCard = true
     @AppStorage(NotificationSounds.key) private var sounds = true
     @AppStorage(DesktopInspectorButton.key) private var showInspector = false
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
 
     var body: some View {
         DesktopSettingsCard(
@@ -195,7 +197,53 @@ struct DesktopAppearanceSettings: View {
                     showRunCard.toggle()
                 }
             }
+            DesktopSettingRow(
+                title: Text("Tool calls"),
+                subtitle: Text("Show tool calls in chat. Off: the chat shows the messages, a turn's steps fold away. The same switch as on your computer.")
+            ) {
+                DesktopSwitch(isOn: toolCalls.showToolCalls, label: Text("Show tool calls in chat"), identifier: "desktop-settings.tool-calls", disabled: toolCalls.saving) {
+                    let next = !toolCalls.showToolCalls
+                    Task { await toolCalls.set(session, next) }
+                }
+            }
+            DesktopSettingRow(title: Text("Use bot color as accent"), subtitle: Text("The accent follows the open bot's color.")) {
+                DesktopSwitch(isOn: prefs.botAccent, label: Text("Use bot color as accent"), identifier: "desktop-settings.bot-accent") {
+                    prefs.setBotAccent(session, !prefs.botAccent)
+                }
+            }
+            DesktopSettingRow(title: Text("Show suggestions"), subtitle: Text("Show the Suggestions card in the bot panel")) {
+                DesktopSwitch(isOn: prefs.showSuggestions, label: Text("Show suggestions"), identifier: "desktop-settings.show-suggestions") {
+                    prefs.setShowSuggestions(session, !prefs.showSuggestions)
+                }
+            }
+            DesktopSettingRow(
+                title: Text("HD mascots"),
+                subtitle: Text("Detailed art for the characters that have it. Colors and skins apply to the classic look.")
+            ) {
+                DesktopSwitch(isOn: prefs.hdMascots, label: Text("HD mascots"), identifier: "desktop-settings.hd-mascots") {
+                    prefs.setHdMascots(session, !prefs.hdMascots)
+                }
+            }
+            DesktopSettingRow(title: Text("Notification sound"), subtitle: Text("Play a sound when an agent finishes or needs you.")) {
+                DesktopSelect(
+                    options: NotificationSoundChoice.allCases.map { ($0, AppStrings.localized($0.label)) },
+                    selection: prefs.notificationSound,
+                    label: Text("Notification sound"),
+                    identifier: "desktop-settings.notification-sound"
+                ) { choice in
+                    prefs.setNotificationSound(session, choice)
+                    NotificationSounds.preview(choice)
+                }
+            }
+            if prefs.synced {
+                DesktopSettingRow(title: Text("Send read receipts"), subtitle: Text("Off: you do not see other people's either.")) {
+                    DesktopSwitch(isOn: prefs.readReceipts, label: Text("Send read receipts"), identifier: "desktop-settings.read-receipts") {
+                        prefs.setReadReceipts(session, !prefs.readReceipts)
+                    }
+                }
+            }
         }
+        .task(id: session.connection?.id) { await toolCalls.load(session) }
     }
 }
 

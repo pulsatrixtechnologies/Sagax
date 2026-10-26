@@ -1349,6 +1349,12 @@ final class Session: ObservableObject {
                     // the person's sidebar, saved on any of their devices
                     if case let .preferences(record) = frame.frame {
                         SidebarPrefsModel.shared.receive(self, record)
+                        // the skin, its colour variant and font, saved on the desktop
+                        ThemeStore.shared.receive(record)
+                    }
+                    // a server setting changed (Tool calls among them)
+                    if case .config = frame.frame {
+                        Task { await ToolCallsSetting.shared.load(self) }
                     }
                     if case let .notify(notification) = frame.frame {
                         NotificationCoordinator.shared.deliver(notification, sequence: frame.seq,

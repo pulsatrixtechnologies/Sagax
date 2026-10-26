@@ -226,7 +226,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         if kind == "approval", ApprovalChime.isEnabled {
             return UNNotificationSound(named: UNNotificationSoundName(NotificationApproval.soundFile))
         }
-        return .default
+        // Settings > Notifications > Notification sound
+        return NotificationSounds.platformSound
     }
 
     /// A key was required and the app was not in front. Nothing was approved.
