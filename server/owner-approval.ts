@@ -15,8 +15,10 @@
 //   mode: never implicitly;
 // - modes: approval (default: rules, then a card), auto (rules, then
 //   approve what no rule covers unless it is destructive), bypass (no card
-//   for the owner route, only the journal; deny rules and the destructive
-//   rule still hold).
+//   for the owner route, only the journal; deny and ask rules and the
+//   destructive rule still hold). 2026-10-26: the mode is no longer a
+//   setting of its own; it is read from the bot's one approval level
+//   (owner-autonomy.ts ownerModeForTurn).
 //
 // Nothing here answers an admin card, a safety hold, a sandbox widening, a
 // question or a guest's turn: the caller never asks (ownerDecision returns
@@ -402,13 +404,18 @@ export function ownerDecision(input: {
   if (input.stepUpRequired) return { kind: "card", reason: "step-up", ...(rule ? { rule } : {}) };
   if (situation) {
     if (rule?.behavior === "allow") return { kind: "allow", source: "owner-rule", rule };
+    // 2026-10-26: an ask rule is an ask rule here too, whatever the level
+    if (rule?.behavior === "ask") return { kind: "card", reason: "ask-rule", rule };
     return { kind: "card", reason: situation, ...(rule ? { rule } : {}) };
   }
   if (rule?.behavior === "allow") return { kind: "allow", source: "owner-rule", rule };
-  const destructive = destructiveKindOf(input.call);
-  if (destructive) return { kind: "card", reason: "destructive", destructive, ...(rule ? { rule } : {}) };
-  if (input.mode === "bypass") return { kind: "allow", source: "owner-bypass", ...(rule ? { rule } : {}) };
+  // 2026-10-26 (JC, one approval level): a rule decides whatever the level.
+  // An ask rule shows its card even in Full access (bypass), where it used
+  // to be skipped; the level only decides what no rule covers.
   if (rule?.behavior === "ask") return { kind: "card", reason: "ask-rule", rule };
+  const destructive = destructiveKindOf(input.call);
+  if (destructive) return { kind: "card", reason: "destructive", destructive };
+  if (input.mode === "bypass") return { kind: "allow", source: "owner-bypass" };
   if (input.mode === "auto") return { kind: "allow", source: "owner-auto" };
   return { kind: "card", reason: "no-rule" };
 }
@@ -423,8 +430,14 @@ export function ownerVerdictOver<V extends { approve: string | null; source: str
   base: V | null,
   owner: OwnerDecision | null,
   tool: string,
-): V | { approve: string; source: Exclude<OwnerDecisionSource, "owner-rule-deny">; rule?: string } | null {
+): V | { approve: string; source: Exclude<OwnerDecisionSource, "owner-rule-deny">; rule?: string } | { approve: null; source: "owner-rule-ask"; rule: string } | null {
   if (base?.source === "custom-rule-deny" || base?.source === "custom-rule-ask") return base;
+  // 2026-10-26 (JC, one approval level): the person's own ask rule keeps its
+  // card even when the level (Full access, Approve for me) would have
+  // answered it. The person's answer on a draft's own card stays an answer.
+  if (owner?.kind === "card" && owner.reason === "ask-rule" && owner.rule && base?.source !== "email-draft-approval") {
+    return { approve: null, source: "owner-rule-ask", rule: owner.rule.id };
+  }
   if (owner?.kind !== "allow") return base;
   return {
     approve: owner.source === "owner-rule"
@@ -587,10 +600,6 @@ export function appRuleCandidate(identity: ScreenAppIdentity, words: ApprovalWor
     scope: appScope(identity) ?? {},
     description: (worded === key ? `Use ${app} on this computer (see it, click and type in it)` : worded).slice(0, 500),
   };
-}
-
-export function isBotPermissionMode(value: unknown): value is BotPermissionMode {
-  return typeof value === "string" && (BOT_PERMISSION_MODES as readonly string[]).includes(value);
 }
 
 export function isRuleBehavior(value: unknown): value is RuleBehavior {

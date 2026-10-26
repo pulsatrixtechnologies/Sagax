@@ -42,7 +42,7 @@ describe("Full access in the approval menu", () => {
   it("says what it does and wears a warning icon of its own", () => {
     const full = approvalModeOptionsFor("claudeAgent").find((option) => option.mode === "full")!;
     expect(full.label).toBe("Full access");
-    expect(full.description).toBe("Runs commands and edits files without asking. Use only with bots you trust.");
+    expect(full.description).toBe("Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust.");
     expect(full.Icon).toBe(TriangleAlert);
     for (const other of approvalModeOptionsFor("claudeAgent").filter((option) => option.mode !== "full")) expect(other.Icon).not.toBe(TriangleAlert);
   });

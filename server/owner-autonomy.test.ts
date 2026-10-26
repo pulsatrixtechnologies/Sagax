@@ -33,20 +33,18 @@ describe("ownerLineageOrigin", () => {
 });
 
 describe("ownerModeForTurn", () => {
-  const base = { ownerMode: "approval" as const, lineage: "owner" as const, autoAllowed: true };
-  it("reads Approve for me and Full access as auto on the owner's own work", () => {
+  const base = { lineage: "owner" as const, autoAllowed: true, bypassAllowed: true };
+  it("reads the one approval level (2026-10-26): Approve for me as auto, Full access as bypass", () => {
     expect(ownerModeForTurn({ ...base, approvalMode: "auto" })).toBe("auto");
-    expect(ownerModeForTurn({ ...base, approvalMode: "full" })).toBe("auto");
+    expect(ownerModeForTurn({ ...base, approvalMode: "full" })).toBe("bypass");
+    expect(ownerModeForTurn({ ...base, approvalMode: "full", bypassAllowed: false })).toBe("auto");
   });
-  it("keeps the owner's mode at Ask or Edits, outside their lineage, or when the organization turned it off", () => {
+  it("is approval at Ask, Edits or Custom, outside the owner's lineage, or when the organization turned automatic levels off", () => {
     expect(ownerModeForTurn({ ...base, approvalMode: "ask" })).toBe("approval");
     expect(ownerModeForTurn({ ...base, approvalMode: "edits" })).toBe("approval");
+    expect(ownerModeForTurn({ ...base, approvalMode: "custom" })).toBe("approval");
     expect(ownerModeForTurn({ ...base, approvalMode: "auto", lineage: "other" })).toBe("approval");
-    expect(ownerModeForTurn({ ...base, approvalMode: "auto", autoAllowed: false })).toBe("approval");
-  });
-  it("never changes a mode the owner chose", () => {
-    expect(ownerModeForTurn({ ...base, ownerMode: "bypass", approvalMode: "ask" })).toBe("bypass");
-    expect(ownerModeForTurn({ ...base, ownerMode: "auto", approvalMode: "ask" })).toBe("auto");
+    expect(ownerModeForTurn({ ...base, approvalMode: "full", autoAllowed: false })).toBe("approval");
   });
   it("still cards a destructive call, an ask rule and a security key under the implied auto", () => {
     const mode = ownerModeForTurn({ ...base, approvalMode: "auto" });

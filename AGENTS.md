@@ -1831,11 +1831,23 @@ rules, covered by `server/owner-approval.test.ts`,
   (`owner-approvals.json`, never shared between people). A destructive call
   (delete, bulk change, external email or SMS) is allowed only by an allow
   rule made for that kind, in every mode.
-- Modes: Approval (default), Automatic approval, Bypass (explicit
-  confirmation, `bots.fullAccess`, org Full access policy, journaled as
-  `owner-bypass`). A mode belongs to the owner who chose it; a new owner
-  starts on Approval. No mode or rule answers an admin card, a safety hold,
-  a sandbox widening, a question, a guest's turn or a teammate tool.
+- Modes (2026-10-26, one approval level): no setting of their own any
+  more. The bot's approval level is the only one (Ask for approval,
+  Auto-accept edits, Approve for me, Full access; Custom on Codex) and the
+  owner route reads it (`owner-autonomy.ts` `ownerModeForLevel`): Ask,
+  Edits and Custom are Approval, Approve for me is Automatic approval, Full
+  access is Bypass (`bots.fullAccess` and the org Full access policy, else
+  Automatic; journaled as `owner-bypass`). Rules come first at every level:
+  org Refuse/Ask first, then the person's and the bot's rules (a deny
+  refuses, an ask keeps its card even in Full access, an allow goes without
+  a card even at Ask), then the level for what no rule covers
+  (`ownerVerdictOver`, matrix in `server/owner-approval-levels.test.ts`).
+  At Full with an Ask or Deny rule in force, the engine runs at Ask so the
+  rule sees every call (`engineApprovalMode`); Sagax answers the rest as
+  Full. The old `GET/PUT /api/bots/:id/permission-mode` is gone; stored
+  modes were carried into the level once (`approval-level-migration.ts`).
+  No level or rule answers an admin card, a safety hold, a sandbox
+  widening, a question, a guest's turn or a teammate tool.
 - Routes live in `server/routes/owner-approvals.ts`, the owner's only;
   `act` cannot reach their writes (`tool-policy.generated.ts`), and a bot-act
   session copy (`isBotActSession`) is never the rule manager, so a bot

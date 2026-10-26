@@ -1,5 +1,6 @@
 // Permissions: how autonomously this bot acts: the approval level (ask /
-// auto / full / custom), review-routine approvals, whether it asks before
+// edits / auto / full, custom on Codex: the only approval setting since
+// 2026-10-26, rules first whatever the level), review-routine approvals, whether it asks before
 // contacting other bots, and, while it is its person's Primary Bot
 // (formerly Chief of Staff), that role. Moved from SettingsPanel.tsx (Chief of Staff ~720-755,
 // Ask-before-contacting ~757-776, Approval level ~990-1010, Review routine
@@ -12,6 +13,7 @@
 // warnings remember which bot they were opened for, so a bot switch while
 // one is up never applies the choice to the newly selected bot.
 import { useEffect, useState } from "react";
+import { Lock } from "lucide-react";
 
 import { canEditBotField, canStepPrimary, viewerOwnsBot } from "@/lib/bot-capabilities";
 import { useAdvancedMode } from "@/lib/interface-mode";
@@ -168,7 +170,13 @@ export function PermissionsSection({
           // Simple draws its two choices under the label.
           below={!advanced && <div className="mt-2">{approvalSelector}</div>}
         >
-          <ProposalStatus bot={bot} />
+          {/* 2026-10-26 (JC): a lock on the level only while an
+              organization rule really limits it (Full turned off by the
+              organization); a member otherwise sets their own bot's
+              level freely, so no lock. */}
+          {orgFullAccess === "disabled" && <span role="img" data-level-org-lock="" aria-label={t("approvalMode.full.orgDisabled")} title={t("approvalMode.full.orgDisabled")} className="mr-1.5 inline-flex text-ink-tertiary">
+            <Lock size={11} aria-hidden="true" />
+          </span>}
           {advanced && approvalSelector}
         </DescribedRow>
       )}
@@ -246,8 +254,8 @@ export function PermissionsSection({
       </PaneSection>}
 
       {/* 2026-10-16: one Approvals group of rows like Settings: the
-          approval level, the owner's permission mode (OwnerPermissionsCard)
-          and contacting other bots. */}
+          approval level (2026-10-26: the bot's one approval setting) and
+          contacting other bots, then the owner's rules (OwnerPermissionsCard). */}
       {showOwnerPermissions
         ? <OwnerPermissionsCard key={bot.id} bot={bot} leading={approvalRows} />
         : approvalRows && <SettingsGroup title={t("botPanel.permissions.approvals")} groupId="approvals">{approvalRows}</SettingsGroup>}

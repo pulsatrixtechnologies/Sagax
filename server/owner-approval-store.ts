@@ -1,11 +1,11 @@
-// The owners' approval rules and their bots' permission modes, on disk
-// (owner-approvals.json, mode 0600). Spec:
-// docs/superpowers/specs/2026-10-14-bot-owner-permissions.md.
+// The owners' approval rules, on disk (owner-approvals.json, mode 0600).
+// Spec: docs/superpowers/specs/2026-10-14-bot-owner-permissions.md.
 //
 // Rules are a person's own: every read and write names the person, and a
-// rule of one person is never returned to or changed by another. A bot's
-// mode remembers who chose it: when the bot's owner is someone else now,
-// the mode reads as approval (the default) until the new owner picks one.
+// rule of one person is never returned to or changed by another.
+// 2026-10-26 (one approval level): the bots' permission modes kept here
+// are read once (legacyModes) to carry them into the approval level
+// (approval-level-migration.ts), then dropped (dropLegacyModes).
 
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
@@ -13,12 +13,11 @@ import { dirname } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import type { LegacyPermissionMode } from "./approval-level-migration.ts";
 import {
-  BOT_PERMISSION_MODES,
   MAX_EXACT_VALUE,
   RULE_BEHAVIORS,
   RULE_SITUATIONS,
-  type BotPermissionMode,
   type DestructiveKind,
   type OwnerRule,
   type RuleBehavior,
@@ -45,7 +44,7 @@ const ruleSchema = z.object({
 });
 
 const modeSchema = z.object({
-  mode: z.enum(BOT_PERMISSION_MODES),
+  mode: z.enum(["approval", "auto", "bypass"]),
   ownerId: z.string().min(1).max(200),
   at: z.number(),
 });
@@ -53,7 +52,8 @@ const modeSchema = z.object({
 const fileSchema = z.object({
   version: z.literal(1),
   rules: z.array(ruleSchema),
-  modes: z.record(z.string(), modeSchema),
+  /** Legacy (before 2026-10-26): read once by the migration, then emptied. */
+  modes: z.record(z.string(), modeSchema).default({}),
 });
 
 type FileShape = z.infer<typeof fileSchema>;
@@ -194,17 +194,15 @@ export class OwnerApprovalStore {
     return true;
   }
 
-  /** The bot's mode for its current owner: approval when none was chosen,
-   * or when it was chosen by a previous owner. */
-  modeOf(botId: string, currentOwnerId: string): BotPermissionMode {
-    const row = this.data.modes[botId];
-    if (!row || !same(row.ownerId, currentOwnerId)) return "approval";
-    return row.mode;
+  /** The permission modes saved before 2026-10-26, by bot. */
+  legacyModes(): Record<string, { mode: LegacyPermissionMode; ownerId: string }> {
+    return Object.fromEntries(Object.entries(this.data.modes).map(([botId, row]) => [botId, { mode: row.mode, ownerId: row.ownerId }]));
   }
 
-  setMode(botId: string, ownerId: string, mode: BotPermissionMode): void {
-    if (mode === "approval") delete this.data.modes[botId];
-    else this.data.modes[botId] = { mode, ownerId, at: this.now() };
+  /** Forget the legacy modes once they are carried into the levels. */
+  dropLegacyModes(): void {
+    if (!Object.keys(this.data.modes).length) return;
+    this.data.modes = {};
     this.save();
   }
 

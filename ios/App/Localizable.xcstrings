@@ -44757,24 +44757,18 @@
         }
       }
     },
-    "Approves file edits automatically; other actions can still require approval": {
+    "File edits go without asking; other actions ask you. Your rules come first: \"Ask every time\" shows a card, \"Deny\" refuses.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Approves file edits automatically; other actions can still require approval"
+            "value": "File edits go without asking; other actions ask you. Your rules come first: \"Ask every time\" shows a card, \"Deny\" refuses."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Approuve automatiquement les modifications de fichiers ; d'autres actions peuvent encore demander une approbation"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aprova edições de arquivos automaticamente; outras ações ainda podem exigir aprovação"
+            "value": "Les modifications de fichiers passent sans demander; les autres actions vous sont demandées. Vos règles passent d'abord : « Demander chaque fois » montre une carte, « Refuser » refuse."
           }
         }
       }
@@ -45417,24 +45411,18 @@
         }
       }
     },
-    "Requests approval for commands and file changes": {
+    "Asks you before each command, file change or tool call. Your rules come first: \"Allow automatically\" goes without a card, \"Deny\" refuses.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Requests approval for commands and file changes"
+            "value": "Asks you before each command, file change or tool call. Your rules come first: \"Allow automatically\" goes without a card, \"Deny\" refuses."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Demande l'approbation pour les commandes et les modifications de fichiers"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pede aprovação para comandos e alterações de arquivos"
+            "value": "Vous demande avant chaque commande, modification de fichier ou outil. Vos règles passent d'abord : « Autoriser automatiquement » passe sans carte, « Refuser » refuse."
           }
         }
       }
@@ -45483,24 +45471,18 @@
         }
       }
     },
-    "Runs commands and edits files without asking. Use only with bots you trust.": {
+    "Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Runs commands and edits files without asking. Use only with bots you trust."
+            "value": "Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécute des commandes et modifie des fichiers sans demander. À utiliser seulement avec des bots de confiance."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Executa comandos e edita arquivos sem perguntar. Use só com bots de confiança."
+            "value": "Exécute des commandes et modifie des fichiers sans demander. Vos règles s'appliquent quand même : « Demander chaque fois » montre une carte et « Refuser » refuse, même ici. À utiliser seulement avec des bots de confiance."
           }
         }
       }
@@ -45637,24 +45619,18 @@
         }
       }
     },
-    "Uses the provider's automatic review to approve routine actions and ask about others": {
+    "Uses the engine's automatic review to approve routine actions, and asks about deletions, bulk changes and messages sent on your behalf. Your rules come first: \"Ask every time\" always shows a card, \"Deny\" always refuses.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses the provider's automatic review to approve routine actions and ask about others"
+            "value": "Uses the engine's automatic review to approve routine actions, and asks about deletions, bulk changes and messages sent on your behalf. Your rules come first: \"Ask every time\" always shows a card, \"Deny\" always refuses."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Utilise la révision automatique du fournisseur pour approuver les actions courantes et demander pour les autres"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Usa a revisão automática do provedor para aprovar ações rotineiras e perguntar sobre as outras"
+            "value": "Utilise la révision automatique du moteur pour approuver les actions courantes, et vous demande pour les suppressions, les changements en lot et les messages envoyés en votre nom. Vos règles passent d'abord : « Demander chaque fois » montre toujours une carte, « Refuser » refuse toujours."
           }
         }
       }

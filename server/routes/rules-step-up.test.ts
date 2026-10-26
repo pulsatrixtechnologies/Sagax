@@ -40,8 +40,8 @@ async function serve() {
     createOwnerApprovalRoutes({
       store: owner, manager: () => ME,
       ownedBots: () => [{ id: "bot-a", name: "Alpha", threadId: "t-a", alwaysAllow: ["mcp:files__read"] }],
-      ownerOf: () => ME, describeLegacy: (key) => key, revokeLegacy: () => {}, bypassRefusal: () => null,
-      audit: () => {}, journalMode: () => {}, stepUp,
+      ownerOf: () => ME, describeLegacy: (key) => key, revokeLegacy: () => {},
+      audit: () => {}, stepUp,
     }),
   ];
   const auth = { kind: "loopback", scopes: ["admin", "client"] } as RequestAuth;

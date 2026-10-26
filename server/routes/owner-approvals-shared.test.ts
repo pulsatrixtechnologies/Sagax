@@ -35,8 +35,8 @@ async function serve() {
     botName: () => "Fern",
     sharedBotRules: (_person, botId) => store.adminRulesForBot(botId),
     personName: (id) => (id === ALICE ? "Alice" : undefined),
-    ownerOf: () => BOB, describeLegacy: (key) => key, revokeLegacy: () => {}, bypassRefusal: () => null,
-    audit: () => {}, journalMode: () => {},
+    ownerOf: () => BOB, describeLegacy: (key) => key, revokeLegacy: () => {},
+    audit: () => {},
   })];
   const auth = { kind: "loopback", scopes: ["admin", "client"] } as RequestAuth;
   const server = createServer(async (req, res) => {

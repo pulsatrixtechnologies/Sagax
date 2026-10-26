@@ -434,13 +434,7 @@ struct DesktopApprovalButton: View {
     }
 
     static func detail(_ level: ApprovalLevel) -> LocalizedStringKey {
-        switch level {
-        case .ask: "Requests approval for commands and file changes"
-        case .edits: "Approves file edits automatically; other actions can still require approval"
-        case .auto: "Uses the provider's automatic review to approve routine actions and ask about others"
-        case .full: "Runs commands and edits files without asking. Use only with bots you trust."
-        case .custom: "Uses permissions defined in config.toml"
-        }
+        LocalizedStringKey(level.detail)
     }
 }
 

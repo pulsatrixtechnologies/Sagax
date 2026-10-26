@@ -57,7 +57,6 @@ export const STEP_UP_SETTINGS_ACTIONS = [
   "security-keys.classes",
   "custom-rules.allow",
   "approval-rules.allow",
-  "permission-mode",
   /** A bot's or a thread's approval level made looser (Ask to Auto, Full...). */
   "approval-mode",
   /** An exact command saved so a bot runs it without asking. */
@@ -89,7 +88,6 @@ export const SETTINGS_ACTION_CLASS: Readonly<Record<StepUpSettingsAction, StepUp
   "security-keys.classes": null,
   "custom-rules.allow": "rule-change",
   "approval-rules.allow": "rule-change",
-  "permission-mode": "rule-change",
   "approval-mode": "rule-change",
   "command-allowlist": "always-grant",
   "allowed-recipients": "always-grant",

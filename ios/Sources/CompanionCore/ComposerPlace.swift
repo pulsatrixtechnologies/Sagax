@@ -18,6 +18,20 @@ public enum ApprovalLevel: String, CaseIterable, Sendable {
     /// What the composer menu offers: the three a remote session may pick
     /// (Full asks for a confirmation and Custom is desktop only).
     public static let offered: [ApprovalLevel] = [.ask, .edits, .auto]
+
+    /// 2026-10-26 (one approval level, `approvalMode.*.desc`): what each
+    /// level does, rules first. The bot's one approval setting: its rules
+    /// (Allow automatically, Ask every time, Deny) decide first whatever the
+    /// level, and the level only decides what no rule covers.
+    public var detail: String {
+        switch self {
+        case .ask: "Asks you before each command, file change or tool call. Your rules come first: \"Allow automatically\" goes without a card, \"Deny\" refuses."
+        case .edits: "File edits go without asking; other actions ask you. Your rules come first: \"Ask every time\" shows a card, \"Deny\" refuses."
+        case .auto: "Uses the engine's automatic review to approve routine actions, and asks about deletions, bulk changes and messages sent on your behalf. Your rules come first: \"Ask every time\" always shows a card, \"Deny\" always refuses."
+        case .full: "Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust."
+        case .custom: "Uses permissions defined in config.toml"
+        }
+    }
 }
 
 public enum WorkPlace: String, CaseIterable, Sendable {

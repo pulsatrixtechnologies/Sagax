@@ -83,3 +83,14 @@ export function isEmergencyApprovalDowngrade(
 ): boolean {
   return next === "ask" && (current === "full" || current === "custom");
 }
+
+/** 2026-10-26 (JC, one approval level): the level an engine runs natively
+ * for one turn. Full access with an Ask or Deny rule in force (the
+ * person's own, the bot's or the organization's) runs the engine at Ask, so
+ * every call it would have made unasked reaches Sagax: the rule decides
+ * the calls it covers and Sagax answers the rest as Full access
+ * (auto-approve.ts autoVerdict "full-access"). The server keeps judging
+ * with the bot's own level; only the engine's native mode changes. */
+export function engineApprovalMode(level: ApprovalMode, rulesHold: boolean): ApprovalMode {
+  return level === "full" && rulesHold ? "ask" : level;
+}

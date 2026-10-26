@@ -244,14 +244,13 @@ posixOnly("organization server: a member's own destinations", () => {
       const allowed = await turn.respond(bob, command.id, "allow");
       expect(allowed.status, allowed.text).toBe(200);
       await waitFor(async () => command.answer()?.behavior === "allow");
-      // security review: his own permission mode (Automatic) never answers
-      // a command on his real computer; the card shows
-      expect((await api("PUT", `/api/bots/${pickle.id}/permission-mode`, bob, { mode: "auto" })).status).toBe(200);
+      // security review: a second command on his real computer shows its
+      // card too (2026-10-26: no separate permission mode any more; the
+      // automatic case is in owner-approval-levels.test.ts)
       const underAuto = await turn.ask("mcp__sagax-desktop__run_command", { command: "npm install" });
       expect((await turn.cardOf(underAuto.id)).adminApproval).not.toBe(true);
       await sleep(300);
       expect(underAuto.answer()).toBeUndefined();
-      expect((await api("PUT", `/api/bots/${pickle.id}/permission-mode`, bob, { mode: "approval" })).status).toBe(200);
       // a write elsewhere on his computer: his card too
       const write = await turn.ask("mcp__sagax-desktop__write_file", { path: "C:\\Users\\BOBSMI~1\\Documents\\notes.txt", content: "x" });
       expect((await turn.cardOf(write.id)).adminApproval).not.toBe(true);
@@ -576,8 +575,7 @@ posixOnly("organization server: a member's own destinations", () => {
       const allowed = await turn.respond(bob, shell.id, "allow");
       expect(allowed.status, allowed.text).toBe(200);
       await waitFor(async () => shell.answer()?.behavior === "allow");
-      // security review: his permission mode never answers a server command
-      expect((await api("PUT", `/api/bots/${otto.id}/permission-mode`, bob, { mode: "auto" })).status).toBe(200);
+      // security review: a second server command shows its card too
       const underAuto = await turn.ask("Bash", { command: "uptime" });
       const autoCard = await turn.cardOf(underAuto.id);
       expect(autoCard.adminApproval).not.toBe(true);
@@ -590,7 +588,6 @@ posixOnly("organization server: a member's own destinations", () => {
       expect(late.status).toBe(403);
       expect(underAuto.answer()).toBeUndefined();
     } finally {
-      await api("PUT", `/api/bots/${otto.id}/permission-mode`, bob, { mode: "approval" });
       await turn.end();
       idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
     }
