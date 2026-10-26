@@ -167,7 +167,7 @@ import { ActivityRun } from "./ActivityRun";
 import { CwActivityWidgets, CwWidgetView, shownCwWidget } from "./cw/CwWidgetView";
 import { webhookMessageView } from "@/lib/webhook-message";
 import { splitTranscriptAttachments } from "@/lib/composer-attachments";
-import { useComposerDockPad } from "@/lib/composer-dock";
+import { useComposerDockPad, useMeasuredHeight } from "@/lib/composer-dock";
 import { useTranscriptViewport } from "@/hooks/use-transcript-viewport";
 import { offscreenAnchorShift, useOffscreenRowAnchor } from "@/hooks/use-offscreen-row-anchor";
 import { claimMessageEntrance } from "@/lib/message-entrance";
@@ -1962,6 +1962,14 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     pinOn: [bot.busy, composerDock.pad],
     hasMore: bot.hasMore,
   });
+  // The run card sits in the right rail, over the transcript. It is not part
+  // of the measured dock: folding it into the pad scrolls the thread by the
+  // card's height each time the card appears or closes.
+  const runOverlayRef = useRef<HTMLDivElement>(null);
+  const runCardOpen = Boolean(
+    lastRunStep && showRun(recordedRun) && showRunCard && runDismissed.get(transcriptKey) !== lastRunStep.id,
+  );
+  const runCardHeight = useMeasuredHeight(runOverlayRef, runCardOpen);
   // Rows drawn for the first time above the viewport (.transcript-row) keep
   // the reader still.
   useOffscreenRowAnchor(scrollRef, transcriptRef, followRef, transcriptKey);
@@ -2397,7 +2405,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
 
       {/* Dev context pods (Settings > Experimental): an overlay in the
           pane's top-right corner; the transcript above never moves. */}
-      <DevPods bot={bot} messages={messages} composerHeight={composerDock.height} computerStart={state.computerStarts[bot.id]} dispatch={dispatch} />
+      <DevPods bot={bot} messages={messages} composerHeight={composerDock.height + runCardHeight} computerStart={state.computerStarts[bot.id]} dispatch={dispatch} />
 
       {/* Reading scrollback — one tap back to the end, streaming or not */}
       {!following && (
@@ -2411,33 +2419,40 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
         </button>
       )}
 
+      {runCardOpen && lastRunStep && (
+        <div
+          ref={runOverlayRef}
+          data-run-overlay=""
+          className="pointer-events-none absolute inset-x-0 z-[2]"
+          style={{ bottom: composerDock.height }}
+        >
+          {/* Checklist for this ask, once it is worth one (a verified step,
+              or more than one command). An overlay on the rail: the
+              transcript pad stays the composer's, so the thread does not
+              jump when the card opens or closes. Save fills this thread's
+              composer and hands the caret over; nothing is sent from here. */}
+          <RailAligned className="pointer-events-none pb-2">
+            <div className="pointer-events-auto w-full min-w-0">
+              <VerifyCard
+                key={transcriptKey}
+                steps={recordedRun}
+                canSave={canSaveRun}
+                skill={runSkill(messages, recordedRun)}
+                onDismiss={() => setRunDismissed((current) => new Map(current).set(transcriptKey, lastRunStep.id))}
+                onSave={() => {
+                  appendComposerDraft(`bot:${bot.id}:${bot.threadId}`, skillPrompt(recordedRun, askText(messages)));
+                  composerDockRef.current?.querySelector("textarea")?.focus();
+                }}
+              />
+            </div>
+          </RailAligned>
+        </div>
+      )}
       {/* Keyed by task: each conversation keeps its own draft and a failed
           request can restore the old task without spilling into the newly
           selected one. ArrowUp-to-edit stays gated on busy because editing
           rewinds the thread, which a live turn forbids (the server 409s it). */}
-      <div ref={composerDockRef} className="pointer-events-none absolute inset-x-0 bottom-0 z-[2]">
-      {/* The bot's run in this ask as a checklist, once it is worth one (a
-          verified step, or more than one command). Save fills this thread's
-          composer with the run and the person's request and hands the caret
-          over; the person adds context and sends — nothing is sent from
-          here. In the dock so its height is measured with the composer's:
-          the transcript pad, the jump pill and bottom-follow all move with
-          it. */}
-      {lastRunStep && showRun(recordedRun) && showRunCard && runDismissed.get(transcriptKey) !== lastRunStep.id && (
-        <RailAligned className="pb-2">
-          <VerifyCard
-            key={transcriptKey}
-            steps={recordedRun}
-            canSave={canSaveRun}
-            skill={runSkill(messages, recordedRun)}
-            onDismiss={() => setRunDismissed((current) => new Map(current).set(transcriptKey, lastRunStep.id))}
-            onSave={() => {
-              appendComposerDraft(`bot:${bot.id}:${bot.threadId}`, skillPrompt(recordedRun, askText(messages)));
-              composerDockRef.current?.querySelector("textarea")?.focus();
-            }}
-          />
-        </RailAligned>
-      )}
+      <div ref={composerDockRef} data-composer-dock="" className="pointer-events-none absolute inset-x-0 bottom-0 z-[2]">
       {confidential && <ConfidentialBanner position="bottom" className="mb-1" />}
       {canWrite === false ? (
         <NewConversationInstead onNew={() => dispatch({ type: "newTask", botId: bot.id })} />
