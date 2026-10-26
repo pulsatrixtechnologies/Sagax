@@ -243,6 +243,12 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "GET", path: /^\/api\/threads\/[\w-]+\/files$/ },
   { method: "GET", path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
   { method: "POST", path: /^\/api\/bots\/[\w-]+\/export$/ },
+  // The Library's artifacts (server/routes/artifacts.ts): the bot's list, one
+  // artifact's document, and its pin (PATCH takes favorite and popped only).
+  // Refreshing (it runs the source) and deleting stay on the computer.
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/artifacts$/ },
+  { method: "GET", path: /^\/api\/bots\/[\w-]+\/artifacts\/art_[\w-]+$/ },
+  { method: "PATCH", path: /^\/api\/bots\/[\w-]+\/artifacts\/art_[\w-]+$/ },
   // Settings: auto-review default and time zone, saved command rules.
   { method: "GET", path: /^\/api\/settings\/bot$/ },
   { method: "PUT", path: /^\/api\/settings\/bot$/ },
