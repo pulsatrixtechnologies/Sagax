@@ -93,6 +93,38 @@ node key with `--allow`, and the bind is audited. A revoke from the page
 propagates so the key no longer resolves for that host. The helper exposes the
 `--allow` argv and an audit hook (`internal/service/allow.go`).
 
+## Session grant and per-session key
+
+The single long-lived technician key is gone. Sagax (technician side) creates
+one tailcat client key per session, kept in that session's folder
+(`<data dir>/remote-support/sessions/<CODE>/`), never sent, and deleted when the
+session is closed or past its end; see `docs/remote-sessions.md`. The old
+shared `technician.private.json` is deleted when found.
+
+Perspicax binds that session's public nodekey into a short authorization, the
+session grant, which it signs (ES256) and hands to the helper with the support
+page answer. The helper on the end user's machine verifies it before it admits
+any tunnel client:
+
+- Audience: the grant names the machine (the host id the helper sent on its
+  first fetch); another machine refuses it.
+- Admitted client: only the nodekey in the grant, that is the key of this one
+  session.
+- Expiry: at most one hour after it is issued, and never past the session end.
+  While the session runs the helper renews it online; Perspicax signs a new
+  grant only for a session still open.
+- Revocation: closing the session (the technician, the panel, or an admin on
+  this page) makes Perspicax answer 404 to the helper's check; the helper tears
+  the session down, refuses new connections when it cannot check, and the last
+  grant dies at its expiry because no renewal is signed.
+- Scope: `remote_support_open` takes an optional `scope` (`full-control` by
+  default, `view-only`, `shell-only`) carried in the grant, and an optional
+  `call_ref`, the reference of the phone call or ticket that records the
+  person's consent, kept in the Perspicax session journal.
+
+This does not turn unattended access on: `SAGAX_UNATTENDED_ACCESS` stays off by
+default and the grant and revoke routes are unchanged.
+
 ## Flow skill wording (to mirror into the Flow skill)
 
 > Enabling unattended access on a client host is done with the end user present
