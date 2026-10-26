@@ -40866,14 +40866,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         : json(res, 404, { error: "no such webhook" });
     }
 
-    // ── events stream ──
-    // Owner-only (default-deny in request-auth). Never mix login frames into
-    // the general events feed, which is also visible to client-only devices.
+    // ── the bot's browser, then the events stream ──
     const liveBrowserMatch = /^\/api\/bots\/([\w-]+)\/browser\/(live|action)$/.exec(path);
     if (liveBrowserMatch) {
       res.setHeader("cache-control", "no-store");
       const bot = store.bot(liveBrowserMatch[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // Anyone who can use the bot watches its session. A stranger learns
+      // nothing about whether the bot exists. Installing the engine is a
+      // separate admin route.
+      if (viewerBotLevel(auth, bot) === null && !auth.scopes.includes("admin") && !orgAdminCaller(auth)) {
+        return json(res, 404, { error: "no such bot" });
+      }
       if (!builtInBrowserEnabled(cfg) || bot.browser === false) {
         return json(res, 409, { error: "Enable this bot's browser in its profile first." });
       }
@@ -40912,6 +40916,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       return json(res, 405, { error: "method not allowed" });
     }
+    // Owner-only (default-deny in request-auth). Never mix login frames into
+    // the general events feed, which is also visible to client-only devices.
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
