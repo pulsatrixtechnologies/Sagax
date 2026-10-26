@@ -774,19 +774,9 @@ struct ChatListView: View {
     /// chat, with Create new Bot, Create group chat, the bots and, on an
     /// organization server, the members (JC, 2026-10-18).
     private var newMenuButton: some View {
-        Button {
-            Haptics.selection()
+        GlassCircleButton(systemImage: "plus", accessibilityLabel: "Create") {
             showingNewChat = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(Theme.textPrimary)
-                .frame(width: 48, height: 48)
-                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
-        .glassCapsule()
-        .accessibilityLabel("Create")
         .accessibilityFocused($chromeFocus, equals: .plus)
         .accessibilityIdentifier("home-plus")
     }
@@ -800,12 +790,10 @@ struct ChatListView: View {
     }
 
     private var searchButton: some View {
-        GlassButton(systemImage: "magnifyingglass", size: 48, weight: .semibold) {
-            Haptics.selection()
+        GlassCircleButton(systemImage: "magnifyingglass", accessibilityLabel: "Search") {
             searchOpen = true
             searchFocused = true
         }
-        .accessibilityLabel("Search")
     }
 
     /// The roster as the sidebar lays it out: the person's sections,
