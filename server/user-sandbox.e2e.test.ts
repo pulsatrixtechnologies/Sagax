@@ -226,7 +226,7 @@ posixOnly("organization server environments (user-sandbox)", () => {
     if (home) removeTempDir(home);
   });
 
-  it("2026-10-16: a member's bot runs commands in its owner's own environment unasked, while the organization allows it", async () => {
+  it("2026-10-16: a member's bot runs commands in its owner's own environment unasked (no admin switch since 2026-10-26)", async () => {
     const created = await api("POST", "/api/bots", bob, { name: "Moss" });
     expect(created.status, created.text).toBe(201);
     const moss = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
@@ -271,14 +271,13 @@ posixOnly("organization server environments (user-sandbox)", () => {
       // a command on the server itself still waits for an admin
       const shell = await ask("Bash", { command: "cat /etc/hostname" });
       expect((await cardOf(shell.id)).adminApproval).toBe(true);
-      // the admin turns it off: the same call becomes a card again
+      // 2026-10-26 (JC): no admin switch; a saved false changes nothing in his environment
       const off = await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: false });
       expect(off.status, off.text).toBe(200);
-      expect(off.body.settings.memberEnvironmentAutonomy).toBe(false);
+      expect(off.body.settings.memberEnvironmentAutonomy).toBe(true);
       expect((await api("PATCH", "/api/org/settings", bob, { memberEnvironmentAutonomy: true })).status).toBe(403);
-      const held = await ask("mcp__sagax-environment__run_command", { command: "ls" });
-      expect(await cardOf(held.id)).toBeTruthy();
-      expect(held.answer()).toBeUndefined();
+      const still = await ask("mcp__sagax-environment__run_command", { command: "ls" });
+      await waitFor(async () => still.answer()?.behavior === "allow");
       await api("PATCH", "/api/org/settings", alice, { memberEnvironmentAutonomy: true });
       // back at Ask (a new turn): the person asked to see every call, so a
       // card (Bob's, never an admin's)
@@ -432,11 +431,8 @@ posixOnly("organization server environments (user-sandbox)", () => {
     expect(got.body).toMatchObject({ backend: "sandbox", configured: true });
   });
 
-  it("2026-10-16: a member's bot runs Auto unless an admin turns it off; the first time off resets saved levels once", async () => {
+  it("2026-10-26 (JC): a member's bot runs Auto, and a saved memberAutoApproval false changes nothing", async () => {
     const configOf = () => (JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8")) as { organization?: { memberAutoResetAt?: unknown; memberAutoApproval?: unknown } }).organization;
-    // by default: allowed, and no reset ran at start
-    expect(configOf()?.memberAutoApproval).toBeUndefined();
-    expect(configOf()?.memberAutoResetAt).toBeUndefined();
     expect(log).not.toContain("set back to Ask");
     expect((await api("GET", "/api/org", alice)).body.settings.memberAutoApproval).toBe(true);
     const fern = await createBot(bob, "Fern");
@@ -454,64 +450,28 @@ posixOnly("organization server environments (user-sandbox)", () => {
       const chosen = await level("auto");
       expect(chosen.status, chosen.text).toBe(200);
       expect(await runs("auto by default")).toBe("auto");
-      // only an admin turns it off
+      // a member still never saves the organization's settings
       expect((await api("PATCH", "/api/org/settings", bob, { memberAutoApproval: false })).status).toBe(403);
       const off = await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false });
       expect(off.status, off.text).toBe(200);
-      expect(off.body.settings.memberAutoApproval).toBe(false);
-      // the first time off: the saved Auto went back to Ask, once, with a marker
-      await waitFor(async () => log.includes("1 saved Auto or Auto-accept edits level(s) of members' bots set back to Ask"));
-      const marker = configOf()?.memberAutoResetAt;
-      expect(typeof marker).toBe("number");
-      expect(await runs("after the reset")).toBe("default");
-      for (const mode of ["auto", "edits"]) {
-        const refused = await level(mode);
-        expect(refused.status, refused.text).toBe(403);
-        expect(refused.body).toMatchObject({ code: "member_auto_not_allowed" });
-      }
-      // re-review 2026-10-17: nor the owner's permission mode (Automatic, Bypass)
-      for (const mode of ["auto", "bypass"]) {
-        const refused = await api("PUT", `/api/bots/${fern.id}/permission-mode`, bob, { mode, confirmBypass: true });
-        expect(refused.status, refused.text).toBe(403);
-        // Bypass may already be refused by the Full access policy
-        expect(mode === "bypass" ? ["member_auto_not_allowed", "bypass_not_allowed"] : ["member_auto_not_allowed"], refused.text).toContain(refused.body.code);
-      }
-      expect((await api("PUT", `/api/bots/${fern.id}/permission-mode`, bob, { mode: "approval" })).status).toBe(200);
-      // re-review 2026-10-17: nor a new bot saved on an automatic level
-      // (refused, or saved on Ask: never stored as Auto)
-      for (const mode of ["auto", "edits"]) {
-        const created = await api("POST", "/api/bots", bob, { name: `Gale ${mode}`, approvalMode: mode });
-        if (created.status === 403) {
-          expect(created.body).toMatchObject({ code: "member_auto_not_allowed" });
-          continue;
-        }
-        expect(created.status, created.text).toBe(201);
-        expect(created.body.bot.approvalMode).toBe("ask");
-        expect((created.body.bot.tasks as Array<{ approvalMode?: string }>).every((task) => (task.approvalMode ?? "ask") === "ask")).toBe(true);
-        expect((await api("DELETE", `/api/bots/${created.body.bot.id}`, bob)).status).toBeLessThan(300);
-      }
-      // on again: nothing comes back by itself; the member chooses again
-      expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true })).status).toBe(200);
-      expect(await runs("on again")).toBe("default");
+      expect(off.body.settings.memberAutoApproval).toBe(true);
+      expect(configOf()?.memberAutoResetAt).toBeUndefined();
+      expect(await runs("after the save")).toBe("auto");
+      expect((await level("edits")).status).toBe(200);
       expect((await level("auto")).status).toBe(200);
-      // off a second time: no second reset, the saved Auto runs as Ask
-      expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false })).status).toBe(200);
-      expect(configOf()?.memberAutoResetAt).toBe(marker);
-      expect(log.split("set back to Ask").length - 1).toBe(1);
-      expect(await runs("off again")).toBe("default");
+      expect(log).not.toContain("set back to Ask");
     } finally {
       await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: true });
     }
   }, 120_000);
 
-  it("2026-10-17 (follow-up of #696): a demoted admin's bots keep no stored Auto while the organization refuses it for members", async () => {
+  it("2026-10-26 (JC): a demoted admin's bots keep their Auto, a saved memberAutoApproval false changes nothing", async () => {
     const CAROL: FakeOidcUser = { sub: "01J9S5CAROL0000000000000C", email: "carol@example.test", name: "Carol", preferred_username: "carol", role: "admin" };
     idp.directoryPeople = [ALICE, BOB, CAROL].map((user) => idp.personOf(user));
     try {
       expect((await api("PATCH", "/api/org/settings", alice, { memberAutoApproval: false })).status).toBe(200);
       const carol = await signIn(CAROL);
       const juniper = await createBot(carol, "Juniper");
-      // an admin's bot may keep Auto with the setting off
       const chosen = await api("PATCH", `/api/bots/${juniper.id}/tasks/${juniper.threadId}`, carol, { approvalMode: "auto" });
       expect(chosen.status, chosen.text).toBe(200);
       const levels = async (auth: Auth) => {
@@ -519,15 +479,14 @@ posixOnly("organization server environments (user-sandbox)", () => {
         return bot.tasks?.find((task) => task.threadId === juniper.threadId)?.approvalMode ?? bot.approvalMode;
       };
       expect(await levels(carol)).toBe("auto");
-      // Carol is no longer an admin: her next sign-in says so
+      // Carol is no longer an admin: her bot is still hers, Auto included
       idp.directoryPeople = [ALICE, BOB, { ...CAROL, role: "employee" }].map((user) => idp.personOf(user));
       const demoted = await signIn({ ...CAROL, role: "employee" });
-      await waitFor(async () => log.includes("an owner is no longer an organization admin"));
-      expect(await levels(demoted)).toBe("ask");
-      // and she cannot choose it again
-      const refused = await api("PATCH", `/api/bots/${juniper.id}/tasks/${juniper.threadId}`, demoted, { approvalMode: "auto" });
-      expect(refused.status, refused.text).toBe(403);
-      expect(refused.body).toMatchObject({ code: "member_auto_not_allowed" });
+      expect(await levels(demoted)).toBe("auto");
+      const again = await api("PATCH", `/api/bots/${juniper.id}/tasks/${juniper.threadId}`, demoted, { approvalMode: "ask" });
+      expect(again.status, again.text).toBe(200);
+      const back = await api("PATCH", `/api/bots/${juniper.id}/tasks/${juniper.threadId}`, demoted, { approvalMode: "auto" });
+      expect(back.status, back.text).toBe(200);
       expect((await api("DELETE", `/api/bots/${juniper.id}`, demoted)).status).toBeLessThan(300);
     } finally {
       idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));

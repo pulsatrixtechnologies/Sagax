@@ -7,9 +7,8 @@
 // right to create bots), a new team, the Primary Bot role among their own
 // bots, a deletion of their own bot and every field a member sets on a
 // bot they own (2026-10-26, JC: a member manages what is theirs without an
-// admin). New bots start on Ask while the organization does not allow Auto
-// for members' bots (server/team-setup-requests.ts newBotApprovalMode).
-// Stays out of reach: a bot that is not theirs (another person's things),
+// admin; the organization switch that refused Auto for members' bots is
+// gone, server/member-auto-approval.ts). Stays out of reach: a bot that is not theirs (another person's things),
 // and a working folder on the server's disk (folders.botWorkingFolder: it
 // reaches other people's files there).
 

@@ -6,10 +6,8 @@
 // client. There a bot's owner turns Full access on over HTTP, under three
 // rules decided here:
 //
-// - the organization allows it (Settings > Organization, admin only,
-//   `organization.allowFullAccess`). Off until an admin turns it on
-//   (2026-10-11); an organization that already used Full before that keeps
-//   it, written as an explicit `true` once (orgFullAccessGrandfathered);
+// - (2026-10-26, JC) no organization switch: the former
+//   `organization.allowFullAccess` is ignored (orgFullAccessAllowed);
 // - the caller is a person signed in (a session with a principal), and is
 //   the bot's owner: a bot's own shell, a service caller or loopback never
 //   is, so a bot cannot raise itself;
@@ -51,10 +49,13 @@ export const FULL_ACCESS_CONFIRM_REQUIRED: FullAccessRefusal = {
   code: "full_access_confirm_required",
 };
 
-/** The organization's policy: allowed only once an admin turned it on
- * (2026-10-11; it was on unless turned off before). */
-export function orgFullAccessAllowed(organization: { allowFullAccess?: unknown } | undefined): boolean {
-  return organization?.allowFullAccess === true;
+/** 2026-10-26 (JC): no organization switch any more. Full access on a
+ * member's own bot stays in that person's environment (host tools withheld,
+ * server commands still an admin's card, private threads, egress and payer
+ * rules unchanged), so the owner's own confirmation is the only gate. A saved
+ * `allowFullAccess` is ignored. */
+export function orgFullAccessAllowed(_organization?: { allowFullAccess?: unknown }): boolean {
+  return true;
 }
 
 /** The marker of the one-time pass below, in the data directory. */

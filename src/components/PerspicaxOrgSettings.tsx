@@ -7,8 +7,8 @@
 // Since 2026-10-01 a person's own engine sign-in (My engines) lives in
 // Settings > Model providers, and "Bring bots from a solo Sagax" is hidden
 // (the desktop's join flow still copies bots through POST /api/org/import).
-// An admin also allows or refuses Full access for every bot (2026-10-01,
-// OrgFullAccessPolicy, server/org-full-access.ts).
+// 2026-10-26 (JC): no admin switch for Full access, Auto or the own
+// environment of members' bots any more (server/org-full-access.ts).
 // People, teams and invitations live in Perspicax, never here.
 // 2026-10-15 : Sharing in the organization (every bot of the
 // organization with its owner) is hidden from the app, like Activity, Email,
@@ -27,10 +27,7 @@ import { api } from "@/state/store";
 import { CountPill, DescribedRow, PILL, SettingsGroup } from "./SettingsPrimitives";
 import { InterimPeople } from "./settings/InterimPeople";
 
-import { OrgFullAccessPolicy } from "./settings/OrgFullAccessPolicy";
-import { OrgMemberAutoApprovalPolicy } from "./settings/OrgMemberAutoApprovalPolicy";
 import { OrgVaultExportPolicy } from "./settings/OrgVaultExportPolicy";
-import { OrgMemberEnvironmentPolicy } from "./settings/OrgMemberEnvironmentPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 import { OrgTeamSecrets } from "./settings/OrgTeamSecrets";
 import { OrgPhoneCalls } from "./settings/OrgPhoneCalls";
@@ -180,10 +177,7 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
             </DescribedRow>
           </div>
         )}
-        {admin && <OrgFullAccessPolicy initial={org.settings.allowFullAccess !== false} onChanged={onChanged} />}
-        {admin && <OrgMemberEnvironmentPolicy initial={org.settings.memberEnvironmentAutonomy !== false} onChanged={onChanged} />}
         {admin && <OrgConfidentialThreadsDefault initial={org.settings.confidentialThreadsByDefault === true} onChanged={onChanged} />}
-        {admin && <OrgMemberAutoApprovalPolicy initial={org.settings.memberAutoApproval !== false} onChanged={onChanged} />}
         {admin && <OrgVaultExportPolicy initial={org.settings.allowVaultExport !== false} onChanged={onChanged} />}
         {admin && <OrgTeamSecrets />}
         {admin && <OrgPhoneCalls />}

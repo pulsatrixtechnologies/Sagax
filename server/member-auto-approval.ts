@@ -17,6 +17,10 @@
 // `organization.memberAutoResetAt` records the pass. When an admin later
 // turns the setting on again, old levels do not come back by themselves:
 // members choose again.
+//
+// 2026-10-26 (JC): the switch is gone (memberAutoApprovalAllowed is always
+// true), so none of the above happens any more; the helpers stay for the
+// callers and their tests.
 
 import type { ApprovalMode } from "../shared/approval-mode.ts";
 
@@ -25,9 +29,11 @@ export const MEMBER_AUTO_NOT_ALLOWED = {
   code: "member_auto_not_allowed",
 } as const;
 
-/** The organization's policy: allowed unless an admin turned it off. */
-export function memberAutoApprovalAllowed(organization: { memberAutoApproval?: unknown } | undefined): boolean {
-  return organization?.memberAutoApproval !== false;
+/** 2026-10-26 (JC): no organization switch any more. Auto on a member's
+ * own bot acts in that person's environment; a saved
+ * `memberAutoApproval: false` is ignored. */
+export function memberAutoApprovalAllowed(_organization?: { memberAutoApproval?: unknown }): boolean {
+  return true;
 }
 
 /** The levels this setting governs. */
@@ -102,7 +108,7 @@ export function memberAutoLevelResets(bots: readonly MemberAutoResetBot[], membe
 /** Whether the pass has to run now: an organization server whose admin
  * turned the setting off explicitly, and no marker yet. Never by default. */
 export function memberAutoResetPending(identity: "solo" | "perspicax", organization: { memberAutoApproval?: unknown; memberAutoResetAt?: unknown } | undefined): boolean {
-  return identity === "perspicax" && organization?.memberAutoApproval === false && typeof organization?.memberAutoResetAt !== "number";
+  return identity === "perspicax" && !memberAutoApprovalAllowed(organization) && typeof organization?.memberAutoResetAt !== "number";
 }
 
 /** 2026-10-17 (follow-up of #696): which saved automatic levels go back to

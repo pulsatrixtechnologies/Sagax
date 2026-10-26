@@ -11163,8 +11163,13 @@ function adminApprovalCheck(auth: RequestAuth, threadId: string, requestId: stri
   // 2026-10-19: or a person an admin gave host.shell in Perspicax
   return adminApprovalDecision({ identity: IDENTITY.kind, card, callerIsOrgAdmin: orgAdminCaller(auth) || callerCan(auth, "host.shell") });
 }
+// 2026-10-26 (JC): not an admin's call. On an organization server the
+// owner turns Full on through its own confirmation (the approvalMode
+// "full" branch of PATCH /api/bots/:id, org-full-access.ts); this answers
+// the other doors (Custom, the desktop channel, a loopback task), which
+// need the packaged app on the person's own computer.
 const MEMBER_BOT_FULL_ACCESS = {
-  error: "A bot whose owner is not an organization admin cannot run with full access on this server.",
+  error: "Turn Full access on from the bot's Permissions, where you confirm it once for this bot. Custom needs the desktop app on your own computer.",
   code: "member_bot_full_access",
 } as const;
 const ADMIN_APPROVAL_REQUIRED = {
@@ -22217,12 +22222,6 @@ const teamSetupRequests = new TeamSetupRequestService({
   // create_bot from a bot that is not a Primary Bot (server/bot-creation.ts)
   mayCreateBots: (bot) => botCreationOffered(bot, ownerBotsReadOnly(bot)),
   autoApply: fullAccessForSource,
-  // 2026-10-26: a member's new bots start on Ask while the organization
-  // does not allow Auto for members' bots, instead of waiting on an admin.
-  newBotApprovalMode: (request) => {
-    const chief = store.bot(request.botId);
-    return chief && memberAutoRefused(chief, ["ask"], "auto") ? "ask" : "auto";
-  },
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
   targetBusy: (botId, sourceThreadId) => {
@@ -32590,12 +32589,12 @@ function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: strin
  * skills and MCP servers (`sagax_integrations: off` in the directory,
  * Perspicax migration 0046; server/person-integrations.ts). Never an
  * organization admin, the operator, or anyone on a solo server. */
-function personIntegrationsOff(principalId: string | undefined | null): boolean {
-  if (IDENTITY.kind !== "perspicax" || !principalId || !isPrincipalId(principalId)) return false;
-  const person = principals.byId(principalId);
-  if (!person || person.local === true || person.orgRole === "admin") return false;
-  const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
-  return Boolean(sub) && perspicaxDirectory?.integrationRights(sub!) === "off";
+// 2026-10-26 (JC): a person's own plugins, skills, MCP servers and GitHub
+// account work in their own environment, so the sheet's
+// `sagax_integrations: off` no longer takes them: nothing an admin switches
+// off here. Kept as a function for its callers.
+function personIntegrationsOff(_principalId: string | undefined | null): boolean {
+  return false;
 }
 /** A signed-in person whose plugins, skills and MCP servers an admin
  * manages: every change to them answers 403 `org_integrations_admin_only`.

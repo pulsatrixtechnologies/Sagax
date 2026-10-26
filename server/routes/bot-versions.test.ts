@@ -91,7 +91,8 @@ describe("POST /api/bots/:id/history/restore", () => {
     const { answer } = await call("/api/bots/b/history/restore", { id: rows[0]!.id, expectedRevision: "rev-1" });
     expect(answer?.status).toBe(403);
     expect(apply).not.toHaveBeenCalled();
-    expect(requiredScope("POST", "/api/bots/b/history/restore")).toBe("admin");
+    // 2026-10-26: a signed-in session reaches it; this owner check decides
+    expect(requiredScope("POST", "/api/bots/b/history/restore")).toBe("client");
   });
 
   it("refuses a stale revision, a missing id and an unknown bot", async () => {

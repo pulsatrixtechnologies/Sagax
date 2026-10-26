@@ -156,13 +156,9 @@ posixOnly("organization Full access", () => {
   });
 
   it("FA-1: the owner confirms once, the turn bypasses prompts, host tools stay withheld", async () => {
-    // 2026-10-11: off until an admin turns it on
-    expect((await api("GET", "/api/org", alice)).body.settings.allowFullAccess).toBe(false);
+    // 2026-10-26 (JC): no organization switch, the owner's confirmation is the gate
+    expect((await api("GET", "/api/org", alice)).body.settings.allowFullAccess).toBe(true);
     const thread = `/api/bots/${zed.id}/tasks/${zed.threadId}`;
-    expect((await api("PATCH", thread, erin, { approvalMode: "full", confirmFullAccess: true })).body.code).toBe("org_full_access_disabled");
-    const on = await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true });
-    expect(on.status, on.text).toBe(200);
-    expect(on.body.settings.allowFullAccess).toBe(true);
     const unconfirmed = await api("PATCH", thread, erin, { approvalMode: "full" });
     expect(unconfirmed.status, unconfirmed.text).toBe(409);
     expect(unconfirmed.body.code).toBe("full_access_confirm_required");
@@ -191,20 +187,14 @@ posixOnly("organization Full access", () => {
     await waitFor(async () => auditRows().some((row) => row.action === "approval.full_access_turn"));
   }, 60_000);
 
-  it("FA-2: with the policy off, Full is refused for grants and turns; Ask still works", async () => {
+  it("FA-2: a saved allowFullAccess false takes nothing from the owner (2026-10-26); Ask still works", async () => {
     expect((await api("PATCH", "/api/org/settings", erin, { allowFullAccess: false })).status).toBe(403);
     const off = await api("PATCH", "/api/org/settings", alice, { allowFullAccess: false });
     expect(off.status, off.text).toBe(200);
-    expect(off.body.settings.allowFullAccess).toBe(false);
+    expect(off.body.settings.allowFullAccess).toBe(true);
     await waitFor(async () => !(await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string; busy?: boolean }) => bot.id === zed.id)?.busy);
-
-    const turn = await api("POST", `/api/bots/${zed.id}/messages`, erin, { text: "still full?" });
-    expect(turn.status, turn.text).toBe(403);
-    expect(turn.body.code).toBe("org_full_access_disabled");
-    const bot = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", confirmFullAccess: true });
-    expect(bot.body.code).toBe("org_full_access_disabled");
     const thread = await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "full", confirmFullAccess: true });
-    expect(thread.body.code).toBe("org_full_access_disabled");
+    expect(thread.status, thread.text).toBe(200);
 
     // back to Ask: the bot works again, prompting as usual
     expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
@@ -213,7 +203,6 @@ posixOnly("organization Full access", () => {
     await waitFor(async () => existsSync(dump), 20_000);
     const argv = (JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] }).argv;
     expect(argv[argv.indexOf("--permission-mode") + 1]).not.toBe("bypassPermissions");
-    expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true })).body.settings.allowFullAccess).toBe(true);
   }, 60_000);
 
   it("FA-3: mode changes and the policy are in the admin activity log", async () => {
