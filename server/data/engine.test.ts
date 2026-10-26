@@ -9,6 +9,7 @@ import { join } from "node:path";
 import type { DuckDBConnection } from "@duckdb/node-api";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
+import { bridgeLegacyEnv } from "../../electron/legacy-names.mjs";
 import { DATA_LIMITS, DATA_RESULTS_SCHEMA } from "../../shared/data-surface.ts";
 import { CLOSE_DRAIN_MS, EXTENSION_INSTALL_TIMEOUT_MS, Lane, REINTERRUPT_MS, closeNames, createDataEngine, dataEngine, drainLanes, duckdbDirectory, instanceSettings, levenshtein, likePattern, loadExtensions, type DataEngineOptions } from "./engine.ts";
 import { DataFailure, type BotDatabase, type DataEngine } from "./types.ts";
@@ -88,6 +89,16 @@ describe("loading the binding", () => {
     expect(duckdbDirectory({ SAGAX_RESOURCES_PATH: staged })).toBe(join(staged, "duckdb"));
     expect(duckdbDirectory({ SAGAX_RESOURCES_PATH: join(root, "nowhere") })).toBeNull();
     expect(duckdbDirectory({})).toBeNull();
+  });
+
+  it("reads the old OMB_DUCKDB_DIR name through the shared bridge, the SAGAX_ name winning", () => {
+    const old: NodeJS.ProcessEnv = { OMB_DUCKDB_DIR: "/old" };
+    bridgeLegacyEnv(old, { warn: () => {} });
+    expect(duckdbDirectory(old)).toBe("/old");
+    const both: NodeJS.ProcessEnv = { OMB_DUCKDB_DIR: "/old", SAGAX_DUCKDB_DIR: "/new" };
+    bridgeLegacyEnv(both, { warn: () => {} });
+    expect(duckdbDirectory(both)).toBe("/new");
+    expect(both.OMB_DUCKDB_DIR).toBeUndefined();
   });
 
   it("loads from the copied out-of-tree directory", async () => {
