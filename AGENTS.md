@@ -1383,6 +1383,27 @@ deterministic arithmetic of the marketplace plugin `pulsatrix-flow`
   and gate accept it only for the harness's own proxy path
   (`isFlowToolsServer`), Codex mounts it as a workplace proxy.
 
+## Pulsatrix Flow for every member (2026-10-26)
+
+On a server linked to Perspicax, `server/org-flow-plugins.ts` installs the
+Flow plugins Perspicax declares in the directory (`flow_plugins`) from its
+private marketplace, with a member's short marketplace token, and loads the
+sanitized copy (no hooks) on the Claude turns of active members' bots
+(`pluginDirsFor`). Keep these rules, covered by
+`server/org-flow-plugins.test.ts`:
+
+- The Flow guard is Perspicax's: install and load only while the declaration
+  says `enabled` and `guard: "enforce"` (`guarded`); anything else takes the
+  copy out and loads nothing. Never re-add hooks to the copy to make up for
+  it, and never install from another source.
+- The token lives only in the environment of the one `claude plugin`
+  command (`TOKEN_ENV`, read by `headers-helper.cjs`); never on disk, never
+  in a status or a log line. The commands get `ENV_KEEP` plus the `env`
+  option, nothing else of the server's environment.
+- The marketplace must be served from the issuer's origin and the token
+  audience must be `<issuer>/flow/marketplace` (`refusal`).
+- Docs: `docs/self-hosting.md`, "Pulsatrix Flow for every member".
+
 ## Organization memory signals (2026-10-11)
 
 Perspicax keeps the organization's work log and a duplicate detector over
