@@ -513,6 +513,8 @@ const bridge = {
   serverMode: {
     state: () => ipcRenderer.invoke("server-mode:state"),
     leave: () => ipcRenderer.invoke("server-mode:leave"),
+    /** The locked server's shown name: the person's own `label`, and the `orgName` it announced. */
+    setName: (input) => ipcRenderer.invoke("server-mode:set-name", input),
     /** Probe this computer's local model servers now (the model picker opened). */
     refreshLocalModels: () => ipcRenderer.invoke("server-mode:refresh-local-models"),
   },
@@ -525,6 +527,7 @@ const bridge = {
   environments: {
     state: () => ipcRenderer.invoke("environments:state"),
     switch: (id) => ipcRenderer.invoke("environments:switch", id),
+    setName: (id, input) => ipcRenderer.invoke("environments:set-name", id, input),
     addFromLink: (link, name) => ipcRenderer.invoke("environments:add-from-link", link, name),
     create: (name, dataDir) => ipcRenderer.invoke("environments:create", name, dataDir),
     pickDir: () => ipcRenderer.invoke("environments:pick-dir"),

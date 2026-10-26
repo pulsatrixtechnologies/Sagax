@@ -200,6 +200,26 @@ function cleanName(value, fallback) {
   return name || fallback;
 }
 
+function cleanOptionalName(value) {
+  return cleanName(value, "");
+}
+
+/** The name the person gave a saved server (`label`) and the organization
+ * name the server announced (`orgName`). An empty value clears it. Only a
+ * remote entry carries them; the shown name is label, then orgName, then
+ * `name` (the host). */
+function withServerName(state, id, input) {
+  const target = state.environments.find((e) => e.id === id && e.kind !== "local");
+  if (!target) return state;
+  const next = { ...target };
+  for (const key of ["label", "orgName"]) {
+    if (typeof input?.[key] !== "string") continue;
+    const value = cleanOptionalName(input[key]);
+    if (value) next[key] = value; else delete next[key];
+  }
+  return { ...state, environments: state.environments.map((e) => (e === target ? next : e)) };
+}
+
 function nameFromOrigin(origin) {
   try {
     return new URL(origin).host;
@@ -287,6 +307,8 @@ function parseEnvironments(raw) {
       origin,
       ...(entry?.org === true ? { org: true } : {}),
       ...(entry?.microphone === true ? { microphone: true } : {}),
+      ...(cleanOptionalName(entry?.label) ? { label: cleanOptionalName(entry.label) } : {}),
+      ...(cleanOptionalName(entry?.orgName) ? { orgName: cleanOptionalName(entry.orgName) } : {}),
     });
   }
   // Server mode survives a restart only on an organization server it saved.
@@ -470,6 +492,7 @@ module.exports = {
   withEnvironment,
   withLocalEnvironment,
   withMicrophone,
+  withServerName,
   withoutEnvironment,
   workspaceMenuTemplate,
   workspaceNavigationAllowed,

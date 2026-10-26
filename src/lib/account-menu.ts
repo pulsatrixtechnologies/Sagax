@@ -67,12 +67,39 @@ export function usageLines(
   return lines;
 }
 
+/** This person's own space on this computer (the solo server). Switch
+ * account always lists it, even while signed into an organization server. */
+export const PERSONAL_ID = "local";
+
+/** The name shown for a server: the one the person gave it, else the
+ * organization name it announced, else its host (the saved name). */
+export function serverDisplayName(entry: { name: string; label?: string | null; orgName?: string | null }): string {
+  return entry.label?.trim() || entry.orgName?.trim() || entry.name.trim();
+}
+
+/** A server's host, for the quiet line under its name; "" when the origin
+ * does not parse. */
+export function serverHost(origin: string | null | undefined): string {
+  if (!origin) return "";
+  try {
+    return new URL(origin).host;
+  } catch {
+    return "";
+  }
+}
+
 export interface SwitchTarget {
   id: string;
   name: string;
   /** this computer's own server (solo) */
   local: boolean;
   active: boolean;
+  /** the server's host, shown as a quiet line (a server, never this computer) */
+  host?: string;
+  /** the name used when the person has not set their own */
+  defaultName?: string;
+  /** the person gave this server its own name */
+  custom?: boolean;
 }
 
 /** The account this page is signed into, when it is not one of the saved
@@ -88,40 +115,61 @@ export interface AccountChoice {
    * is not one of those servers, is shown and checked, and picking it
    * does nothing. */
   switchable: boolean;
+  /** the server's host, for a tooltip and a quiet line under the name */
+  host?: string;
+  /** the name used when the person has not set their own */
+  defaultName?: string;
+  /** the person gave this server its own name */
+  custom?: boolean;
+  /** a server the person may rename (never their personal space) */
+  renamable?: boolean;
 }
 
 /** The account a business session is signed into: the desktop's locked
  * server when it names one, otherwise the organization's own name. */
 export function businessAccount(
-  server: { active: true; id: string; name: string } | { active: false } | null,
+  server: { active: true; id: string; name: string; origin?: string; label?: string; orgName?: string } | { active: false } | null,
   organizationName: string | null | undefined,
-): { id: string; name: string; local: false } | null {
+): { id: string; name: string; local: false; host?: string; defaultName?: string; custom?: boolean } | null {
+  const announced = organizationName?.trim() || undefined;
   if (server?.active) {
     const id = server.id.trim();
-    const name = server.name.trim();
-    if (id && name) return { id, name, local: false };
+    const host = serverHost(server.origin);
+    const defaultName = serverDisplayName({ name: server.name, orgName: announced ?? server.orgName });
+    const name = serverDisplayName({ name: server.name, label: server.label, orgName: announced ?? server.orgName });
+    if (id && name) return { id, name, local: false, ...(host ? { host } : {}), defaultName, custom: Boolean(server.label?.trim()) };
   }
-  const name = organizationName?.trim() ?? "";
-  if (!name) return null;
-  return { id: CURRENT_ACCOUNT_ID, name, local: false };
+  if (!announced) return null;
+  return { id: CURRENT_ACCOUNT_ID, name: announced, local: false };
 }
 
-/** Switch account ›: the saved personal and organization accounts, with the
- * one in use checked. A current account the saved list does not already
- * name is added, still checked, and is not a switch target. */
+/** Switch account ›: the person's Personal space first (always), then the
+ * saved organization accounts, with the one in use checked. A current
+ * account the saved list does not already name is added, still checked,
+ * and is not a switch target. */
 export function accountChoices(
   saved: readonly SwitchTarget[],
-  current: { id: string; name: string; local?: boolean } | null,
+  current: { id: string; name: string; local?: boolean; host?: string; defaultName?: string; custom?: boolean } | null,
+  personalName = "Personal",
 ): AccountChoice[] {
-  const rows: AccountChoice[] = saved
-    .filter((entry) => entry.id.trim().length > 0 && entry.name.trim().length > 0)
+  const servers: AccountChoice[] = saved
+    .filter((entry) => !entry.local && entry.id.trim().length > 0 && entry.name.trim().length > 0)
     .map((entry) => ({
       id: entry.id,
       name: entry.name.trim(),
-      local: entry.local,
+      local: false,
       active: entry.active,
       switchable: true,
+      renamable: true,
+      ...(entry.host ? { host: entry.host } : {}),
+      ...(entry.defaultName ? { defaultName: entry.defaultName } : {}),
+      ...(entry.custom ? { custom: true } : {}),
     }));
+  const personalActive = saved.some((entry) => entry.local && entry.active);
+  const rows: AccountChoice[] = [
+    { id: PERSONAL_ID, name: personalName, local: true, active: personalActive, switchable: true, renamable: false },
+    ...servers,
+  ];
   const id = current?.id.trim() ?? "";
   const name = current?.name.trim() ?? "";
   if (!id || !name) return rows;
@@ -134,22 +182,41 @@ export function accountChoices(
   }
   return [
     ...rows.map((entry) => ({ ...entry, active: false })),
-    { id, name, local: current?.local === true, active: true, switchable: false },
+    {
+      id, name, local: current?.local === true, active: true, switchable: false,
+      renamable: current?.local !== true && id !== CURRENT_ACCOUNT_ID,
+      ...(current?.host ? { host: current.host } : {}),
+      ...(current?.defaultName ? { defaultName: current.defaultName } : {}),
+      ...(current?.custom ? { custom: true } : {}),
+    },
   ];
 }
 
 /** Switch organization ›: this computer first, then the organization
  * servers saved on it, the active one checked. Missing folders and other
- * computers' remote servers that are not organizations stay in Settings. */
+ * computers' remote servers that are not organizations stay in Settings.
+ * Each server shows the name the person gave it, else the organization
+ * name it announced, else its host. */
 export function switchTargets(state: {
   activeId: string;
-  environments: Array<{ id: string; kind?: "local" | "remote"; name: string; org?: boolean; missing?: boolean }>;
+  environments: Array<{ id: string; kind?: "local" | "remote"; name: string; origin?: string; label?: string; orgName?: string; org?: boolean; missing?: boolean }>;
 } | null, soloName: string): SwitchTarget[] {
   if (!state) return [];
   const local = state.environments.find((entry) => entry.id === "local");
   const orgs = state.environments.filter((entry) => entry.id !== "local" && entry.org === true && !entry.missing);
   return [
     { id: "local", name: local?.name?.trim() || soloName, local: true, active: state.activeId === "local" },
-    ...orgs.map((entry) => ({ id: entry.id, name: entry.name, local: false, active: state.activeId === entry.id })),
+    ...orgs.map((entry) => {
+      const host = serverHost(entry.origin);
+      return {
+        id: entry.id,
+        name: serverDisplayName(entry),
+        local: false,
+        active: state.activeId === entry.id,
+        ...(host ? { host } : {}),
+        defaultName: serverDisplayName({ name: entry.name, orgName: entry.orgName }),
+        ...(entry.label?.trim() ? { custom: true } : {}),
+      };
+    }),
   ];
 }
