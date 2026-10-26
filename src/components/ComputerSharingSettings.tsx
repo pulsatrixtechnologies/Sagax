@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { FolderPlus, X } from "lucide-react";
-import { Card } from "./SettingsPrimitives";
+import { Card, PILL, PRIMARY_PILL, Switch, SwitchRow } from "./SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import { sharedComputersEnabled } from "@/lib/feature-flags";
@@ -65,31 +65,31 @@ export function ComputerSharingSettings({ workspace, onClose }: { workspace: { i
       <fieldset disabled={busy || !state} className="flex flex-col gap-3 disabled:opacity-50">
         <legend className="mb-2 font-medium text-ink">{t("settings.share.folders")}</legend>
         {folders.length === 0 && <p className="text-[12px] text-ink-secondary">{t("settings.share.noFolders")}</p>}
-        {folders.map(folder => <div key={folder.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-hairline/40 p-3">
+        {folders.map(folder => <div key={folder.id} className="flex flex-wrap items-center gap-3 py-1">
           <div className="min-w-0 flex-1"><p className="font-medium text-ink">{folder.name}</p><p className="break-all text-[12px] text-ink-secondary">{folder.path}</p></div>
-          <label className="flex items-center gap-2 text-[12px] text-ink-secondary"><input type="checkbox" checked={folder.write} onChange={event => setFolders(current => current.map(entry => entry.id === folder.id ? { ...entry, write: event.target.checked } : entry))} />{t("settings.share.edits")}</label>
+          <label className="flex cursor-pointer items-center gap-2 text-[12px] text-ink-secondary">{t("settings.share.edits")}<Switch checked={folder.write} onClick={() => setFolders(current => current.map(entry => entry.id === folder.id ? { ...entry, write: !entry.write } : entry))} /></label>
           <button type="button" aria-label={t("settings.share.removeFolder", { name: folder.name })} onClick={() => setFolders(current => current.filter(entry => entry.id !== folder.id))} className="rounded p-1 text-ink-secondary hover:bg-control"><X size={14} /></button>
         </div>)}
         <button type="button" disabled={folders.length >= 20} onClick={() => void perform(async () => {
           const folder = await bridge.chooseFolder();
           if (mounted.current && folder) setFolders(current => current.some(entry => entry.path === folder.path) ? current : [...current, folder]);
-        })} className="flex w-fit items-center gap-2 rounded-lg border border-hairline/40 px-3 py-2 text-ink hover:bg-control"><FolderPlus size={14} />{t("settings.share.choose")}</button>
+        })} className={`${PILL} inline-flex w-fit items-center gap-1.5`}><FolderPlus size={13} />{t("settings.share.choose")}</button>
         <p className="text-[12px] text-ink-secondary">{t("settings.share.small")}</p>
       </fieldset>
       <fieldset disabled={busy || !state} className="flex flex-col gap-3 border-t border-hairline/40 pt-3 disabled:opacity-50">
         <legend className="font-medium text-ink">{t("settings.share.broader")}</legend>
-        <label className="flex items-start gap-2"><input className="mt-1" type="checkbox" checked={terminal} onChange={event => setTerminal(event.target.checked)} /><span className="text-ink">{t("settings.share.terminal")}<span className="mt-1 block text-[12px] text-ink-secondary">{t("settings.share.terminalHelp")}</span></span></label>
-        <label className="flex items-start gap-2"><input className="mt-1" type="checkbox" checked={computer} onChange={event => setComputer(event.target.checked)} /><span className="text-ink">{t("settings.share.control")}<span className="mt-1 block text-[12px] text-ink-secondary">{t("settings.share.controlHelp")}</span></span></label>
+        <SwitchRow label={t("settings.share.terminal")} description={t("settings.share.terminalHelp")} checked={terminal} onChange={setTerminal} />
+        <SwitchRow label={t("settings.share.control")} description={t("settings.share.controlHelp")} checked={computer} onChange={setComputer} />
       </fieldset>
       {(error || state?.error) && <p role="alert" className="text-[12px] text-danger">{error || state?.error}</p>}
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy || !state || (!folders.length && !terminal && !computer)} onClick={() => void perform(async () => {
           const next = await bridge.save(workspace.id, { folders, terminal, computer });
           if (mounted.current && next) apply(next);
-        })} className="rounded-lg bg-accent px-3 py-2 font-medium text-accent-ink disabled:opacity-50">{state?.enabled ? t("settings.share.save") : t("settings.share.share")}</button>
+        })} className={PRIMARY_PILL}>{state?.enabled ? t("settings.share.save") : t("settings.share.share")}</button>
         {state?.enabled && <button type="button" disabled={busy} onClick={() => void perform(async () => {
           const next = await bridge.revoke(workspace.id); if (mounted.current) apply(next);
-        })} className="rounded-lg border border-hairline/40 px-3 py-2 text-danger disabled:opacity-50">{t("settings.share.stop")}</button>}
+        })} className={`${PILL} text-danger`}>{t("settings.share.stop")}</button>}
       </div>
       {state?.enabled && <p className="text-[12px] text-ink-secondary">{t("settings.share.stopHelp")}</p>}
       <div className="border-t border-hairline/40 pt-3"><LendingActivityList entries={activity} /></div>

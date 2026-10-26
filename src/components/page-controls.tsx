@@ -8,6 +8,7 @@ import { copyText } from "@/lib/copy-text";
 import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, ApiError } from "@/state/store";
+import { PillSelect } from "./SettingsPrimitives";
 import {
   DEFAULT_PAGES_POLICY,
   PAGE_ACCESS,
@@ -112,14 +113,19 @@ export function AccessPicker({ value, onChange, name, disabled, linkOff }: {
 
 export function ExpirySelect({ value, onChange, disabled }: { value: number; onChange(hours: number): void; disabled?: boolean }) {
   return (
-    <label className="flex items-center gap-2 text-[12.5px] text-ink">
-      {t("pages.expiry.label")}
-      <select value={value} disabled={disabled} onChange={(event) => onChange(Number(event.target.value))}
-        className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
-        {value < 0 && <option value={-1} disabled>{t("pages.expiry.change")}</option>}
-        {PAGE_EXPIRY_CHOICES.map((hours) => <option key={hours} value={hours}>{expiryLabel(hours)}</option>)}
-      </select>
-    </label>
+    <div className="flex items-center gap-1 text-[12.5px] text-ink">
+      <span>{t("pages.expiry.label")}</span>
+      <PillSelect
+        ariaLabel={t("pages.expiry.label")}
+        value={String(value)}
+        disabled={disabled}
+        onChange={(next) => onChange(Number(next))}
+        options={[
+          ...(value < 0 ? [{ value: "-1", label: t("pages.expiry.change"), disabled: true }] : []),
+          ...PAGE_EXPIRY_CHOICES.map((hours) => ({ value: String(hours), label: expiryLabel(hours) })),
+        ]}
+      />
+    </div>
   );
 }
 

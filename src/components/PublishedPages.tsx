@@ -11,7 +11,7 @@ import { Eye, EyeOff, FileText, Loader2, Maximize2, Trash2, XCircle } from "luci
 
 import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
-import { SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, SwitchRow } from "./SettingsPrimitives";
+import { PillSelect, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, SwitchRow } from "./SettingsPrimitives";
 import { api, useStore, type Message } from "@/state/store";
 import {
   PAGE_ACCESS,
@@ -218,18 +218,20 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
         <>
           <LinkRow page={page} />
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-[12.5px] text-ink">
-              {t("pages.whoCanSee")}
-              <select value={pendingAccess ?? page.access} disabled={busy} onChange={(event) => {
-                const next = event.target.value as PageAccess;
-                // the same second press as a first publish for a public link
-                if (needsLinkConfirm(page.access, next)) return setPendingAccess(next);
-                void call("", { method: "PATCH", body: JSON.stringify({ access: next }) });
-              }}
-                className="rounded-md border border-hairline/50 bg-panel px-2 py-1 text-[12.5px]">
-                {PAGE_ACCESS.map((access) => <option key={access} value={access} disabled={access === "link" && linkOff && page.access !== "link"}>{t(ACCESS_LABEL[access])}</option>)}
-              </select>
-            </label>
+            <div className="flex items-center gap-1 text-[12.5px] text-ink">
+              <span>{t("pages.whoCanSee")}</span>
+              <PillSelect<PageAccess>
+                ariaLabel={t("pages.whoCanSee")}
+                value={pendingAccess ?? page.access}
+                disabled={busy}
+                onChange={(next) => {
+                  // the same second press as a first publish for a public link
+                  if (needsLinkConfirm(page.access, next)) return setPendingAccess(next);
+                  void call("", { method: "PATCH", body: JSON.stringify({ access: next }) });
+                }}
+                options={PAGE_ACCESS.map((access) => ({ value: access, label: t(ACCESS_LABEL[access]), disabled: access === "link" && linkOff && page.access !== "link" }))}
+              />
+            </div>
             <ExpirySelect value={-1} disabled={busy} onChange={(hours) => void call("", { method: "PATCH", body: JSON.stringify({ expiresAt: expiryFromHours(hours) }) })} />
             {confirmRevoke ? (
               <span role="alert" className="flex items-center gap-2 text-[12px]">

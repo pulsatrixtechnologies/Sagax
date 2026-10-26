@@ -7,7 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
-import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
+import { cn } from "@/lib/cn";
+import { DescribedRow, FIELD, PILL, Switch } from "../SettingsPrimitives";
 
 interface PhoneCallSettings {
   enabled: boolean;
@@ -55,43 +56,62 @@ export function OrgPhoneCalls() {
     }
   };
 
+  // Rows of the Organization's bots card (2026-10-26, JC): the pilot and
+  // its switch, the callback number with a compact field, the do-not-call
+  // list. A missing callback number is a warning line in its row.
+  const field = cn(FIELD, "w-[170px] tabular-nums sm:w-[190px]");
   return (
     <div data-settings-card="organization.phoneCalls">
-      <SettingsGroup title={t("orgCalls.title")} groupId="organization.phoneCalls">
-        <SettingsTextRow>{t("orgCalls.intro")}</SettingsTextRow>
-        {error && <SettingsNotice tone="danger">{error}</SettingsNotice>}
-        {settings && (
+      <DescribedRow
+        label={t("orgCalls.title")}
+        rowId="phoneCalls"
+        description={(
           <>
-            <label className="flex items-center justify-between gap-2 px-3.5 py-2.5 text-[13px] text-ink">
-              {t("orgCalls.enabled")}
-              <input type="checkbox" data-org-calls-enabled checked={settings.enabled} disabled={busy} onChange={(event) => void save({ enabled: event.target.checked })} />
-            </label>
-            <div className="flex flex-col gap-2 px-3.5 py-2.5">
-              <span className="text-[12px] text-ink-secondary">{t("orgCalls.callbackHelp")}</span>
-              <div className="flex gap-2">
-                <input className={FIELD} dir="ltr" value={callback} onChange={(event) => setCallback(event.target.value)} placeholder="+1 514 555 0100" aria-label={t("orgCalls.callback")} autoComplete="off" />
-                <button type="button" className={PRIMARY_PILL} disabled={busy || !callback.trim()} onClick={() => void save({ callbackNumber: callback })}>{t("orgCalls.save")}</button>
-              </div>
-              {!settings.callbackNumber && <SettingsNotice tone="warning">{t("orgCalls.noCallback")}</SettingsNotice>}
-            </div>
-            <div className="flex flex-col gap-2 px-3.5 py-2.5">
-              <span className="text-[13px] text-ink">{t("orgCalls.doNotCall")}</span>
-              <span className="text-[12px] text-ink-secondary">{t("orgCalls.doNotCallHelp")}</span>
-              {settings.doNotCall.map((number) => (
-                <div key={number} className="flex items-center justify-between gap-2 text-[13px]" data-do-not-call>
-                  <span dir="ltr">{shown(number)}</span>
-                  <button type="button" className={PILL} disabled={busy} onClick={() => void save({ removeDoNotCall: number })}>{t("orgCalls.remove")}</button>
-                </div>
-              ))}
-              {!settings.doNotCall.length && <span className="text-[12px] text-ink-secondary">{t("orgCalls.empty")}</span>}
-              <div className="flex gap-2">
-                <input className={FIELD} dir="ltr" value={blocked} onChange={(event) => setBlocked(event.target.value)} placeholder="+1 514 555 0142" aria-label={t("orgCalls.addNumber")} autoComplete="off" />
-                <button type="button" className={PILL} disabled={busy || !blocked.trim()} onClick={() => void save({ addDoNotCall: blocked }).then((ok) => { if (ok) setBlocked(""); })}>{t("orgCalls.add")}</button>
-              </div>
-            </div>
+            {t("orgCalls.intro")}
+            {error && <span role="alert" className="mt-1 block text-danger">{error}</span>}
           </>
         )}
-      </SettingsGroup>
+      >
+        {settings && (
+          <Switch data-org-calls-enabled="" checked={settings.enabled} disabled={busy} aria-label={t("orgCalls.enabled")} title={t("orgCalls.enabled")} onClick={() => void save({ enabled: !settings.enabled })} />
+        )}
+      </DescribedRow>
+      {settings && (
+        <>
+          <DescribedRow
+            label={t("orgCalls.callback")}
+            rowId="phoneCallsCallback"
+            description={(
+              <>
+                {t("orgCalls.callbackHelp")}
+                {!settings.callbackNumber && <span role="status" className="mt-0.5 block text-warning" data-org-calls-no-callback="">{t("orgCalls.noCallback")}</span>}
+              </>
+            )}
+          >
+            <input className={field} dir="ltr" value={callback} onChange={(event) => setCallback(event.target.value)} placeholder="+1 514 555 0100" aria-label={t("orgCalls.callback")} autoComplete="off" />
+            <button type="button" className={PILL} disabled={busy || !callback.trim()} onClick={() => void save({ callbackNumber: callback })}>{t("orgCalls.save")}</button>
+          </DescribedRow>
+          <DescribedRow
+            label={t("orgCalls.doNotCall")}
+            rowId="phoneCallsDoNotCall"
+            description={t("orgCalls.doNotCallHelp")}
+            below={(
+              <ul className="mt-2 flex flex-col" aria-label={t("orgCalls.doNotCall")}>
+                {settings.doNotCall.map((number) => (
+                  <li key={number} className="flex items-center justify-between gap-3 py-1.5 text-[13px] text-ink" data-do-not-call>
+                    <span dir="ltr" className="tabular-nums">{shown(number)}</span>
+                    <button type="button" className={PILL} disabled={busy} onClick={() => void save({ removeDoNotCall: number })}>{t("orgCalls.remove")}</button>
+                  </li>
+                ))}
+                {!settings.doNotCall.length && <li className="py-1 text-[12px] leading-4 text-ink-secondary">{t("orgCalls.empty")}</li>}
+              </ul>
+            )}
+          >
+            <input className={field} dir="ltr" value={blocked} onChange={(event) => setBlocked(event.target.value)} placeholder="+1 514 555 0142" aria-label={t("orgCalls.addNumber")} autoComplete="off" />
+            <button type="button" className={PILL} disabled={busy || !blocked.trim()} onClick={() => void save({ addDoNotCall: blocked }).then((ok) => { if (ok) setBlocked(""); })}>{t("orgCalls.add")}</button>
+          </DescribedRow>
+        </>
+      )}
     </div>
   );
 }

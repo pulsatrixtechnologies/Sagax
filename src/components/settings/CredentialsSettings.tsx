@@ -8,13 +8,13 @@
 // rows, the page's intro level with its title, SettingsPrimitives). Import
 // and Export move items from and to other password managers
 // (CredentialsTransfer.tsx).
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { allowBotAlways, answerPurchase, createCredential, deleteCredential, importOnePasswordItem, loadCredentials, loadOnePasswordItems, parseDomains, revealCredential, revealCredentialNotes, revokeBot, updateCredential, type CredentialVaultState, type OnePasswordItem, type PurchaseListing, type VaultItemDraft, type VaultItemListing } from "@/lib/credential-vault";
 import { t, activeLocale } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import type { VaultItemKind } from "../../../shared/credential-vault";
-import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
+import { EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
 import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
 import { PhoneCardScanButton, scannedCardFields } from "./PhoneCardScanButton";
 import { botLabel } from "@/lib/human-label";
@@ -139,7 +139,7 @@ export function CredentialsSettings() {
                 onClick={() => { setImported(null); setTransfer("export"); }}
                 data-credentials-export=""
               >{t("vault.transfer.export")}</button>
-              <button type="button" className={PRIMARY_PILL} onClick={() => setAdding(true)}>{t("vault.settings.add")}</button>
+              <button type="button" className={PRIMARY_PILL} onClick={() => setAdding(true)} data-credentials-add="">{t("vault.settings.add")}</button>
             </div>
           )}
         </SettingsGroup>
@@ -228,10 +228,16 @@ function ItemRow({ item, botName, bots, onEdit, onChanged, onError }: {
               <button type="button" aria-label={t("vault.settings.revoke", { bot: botName(grant.botId) })} title={t("vault.settings.revoke", { bot: botName(grant.botId) })} disabled={busy} className="text-ink-tertiary hover:text-ink" onClick={() => void run(() => revokeBot(item.id, grant.botId))}>×</button>
             </span>
           ))}
-          <select aria-label={t("vault.settings.allowBot")} value={allow} disabled={busy} onChange={(event) => setAllow(event.target.value)} className="rounded-lg border border-border bg-transparent px-1.5 py-0.5 text-[12px] text-ink">
-            <option value="">{t("vault.settings.allowBot")}</option>
-            {bots.filter((bot) => !allowed.has(bot.id)).map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}
-          </select>
+          <PillSelect
+            ariaLabel={t("vault.settings.allowBot")}
+            value={allow}
+            disabled={busy}
+            onChange={setAllow}
+            options={[
+              { value: "", label: t("vault.settings.allowBot"), disabled: true },
+              ...bots.filter((bot) => !allowed.has(bot.id)).map((bot) => ({ value: bot.id, label: bot.name })),
+            ]}
+          />
           {allow && <button type="button" className={PILL} disabled={busy} onClick={() => void run(async () => { await allowBotAlways(item.id, allow); setAllow(""); })}>{t("vault.settings.allow")}</button>}
         </div>
       )}
@@ -259,8 +265,7 @@ function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Pro
   const [error, setError] = useState<string | null>(null);
   const readOnly = item?.source === "1password";
   const set = (key: keyof Draft) => (event: { target: { value: string } }) => setDraft((current) => ({ ...current, [key]: event.target.value }));
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
+  const submit = async () => {
     setBusy(true);
     setError(null);
     try {
@@ -277,64 +282,71 @@ function ItemForm({ item, onDone }: { item?: VaultItemListing; onDone: () => Pro
   };
   const keep = item ? t("vault.settings.keepBlank") : undefined;
   return (
-    <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-2 px-3.5 py-2.5" data-credential-form>
-      {!item && (
-        <select aria-label={t("vault.field.kind")} value={draft.kind} onChange={set("kind")} className={inputClass}>
-          <option value="login">{t("vault.kind.login")}</option>
-          <option value="apiKey">{t("vault.kind.apiKey")}</option>
-          <option value="note">{t("vault.kind.note")}</option>
-          <option value="card">{t("vault.kind.card")}</option>
-          <option value="address">{t("vault.kind.address")}</option>
-          <option value="contact">{t("vault.kind.contact")}</option>
-        </select>
+    <EditorBox
+      label={item ? item.name : t("vault.settings.add")}
+      className="mx-3.5 my-1.5"
+      data-credential-form=""
+      onSubmit={() => void submit()}
+      actions={(
+        <>
+          <button type="button" className={PILL} disabled={busy} onClick={() => void onDone()}>{t("vault.settings.cancel")}</button>
+          <button type="submit" className={PRIMARY_PILL} disabled={busy}>{t("vault.settings.save")}</button>
+        </>
       )}
-      <input className={inputClass} value={draft.name} onChange={set("name")} placeholder={t("vault.field.name")} aria-label={t("vault.field.name")} required />
-      {(draft.kind === "login" || draft.kind === "apiKey") && <input className={inputClass} dir="ltr" value={draft.domains} onChange={set("domains")} placeholder={t("vault.field.sitesHint")} aria-label={t("vault.field.sites")} />}
+    >
+      {!item && (
+        <EditorField label={t("vault.field.kind")} menu>
+          <PillSelect
+            ariaLabel={t("vault.field.kind")}
+            value={draft.kind}
+            onChange={(kind) => setDraft((current) => ({ ...current, kind }))}
+            options={(["login", "apiKey", "note", "card", "address", "contact"] as const).map((kind) => ({ value: kind, label: t(`vault.kind.${kind}`) }))}
+          />
+        </EditorField>
+      )}
+      <EditorField label={t("vault.field.name")}><input className={inputClass} value={draft.name} onChange={set("name")} aria-label={t("vault.field.name")} required /></EditorField>
+      {(draft.kind === "login" || draft.kind === "apiKey") && <EditorField label={t("vault.field.sites")} hint={t("vault.field.sitesHint")}><input className={inputClass} dir="ltr" value={draft.domains} onChange={set("domains")} aria-label={t("vault.field.sites")} /></EditorField>}
       {draft.kind === "card" && !readOnly && (
         <>
-          {!item && <PhoneCardScanButton onRead={(card) => setDraft((current) => ({ ...current, ...scannedCardFields(card) }))} />}
-          <input className={inputClass} value={draft.holder} onChange={set("holder")} placeholder={t("vault.field.holder")} aria-label={t("vault.field.holder")} autoComplete="off" />
-          <input className={inputClass} dir="ltr" type="password" value={draft.pan} onChange={set("pan")} placeholder={keep ?? t("vault.field.pan")} aria-label={t("vault.field.pan")} autoComplete="off" inputMode="numeric" />
-          <input className={inputClass} dir="ltr" type="password" value={draft.cvv} onChange={set("cvv")} placeholder={keep ?? t("vault.field.cvv")} aria-label={t("vault.field.cvv")} autoComplete="off" inputMode="numeric" />
-          <input className={inputClass} dir="ltr" value={draft.expMonth} onChange={set("expMonth")} placeholder={t("vault.field.expMonth")} aria-label={t("vault.field.expMonth")} inputMode="numeric" />
-          <input className={inputClass} dir="ltr" value={draft.expYear} onChange={set("expYear")} placeholder={t("vault.field.expYear")} aria-label={t("vault.field.expYear")} inputMode="numeric" />
+          {!item && <div className="px-3 py-1.5"><PhoneCardScanButton onRead={(card) => setDraft((current) => ({ ...current, ...scannedCardFields(card) }))} /></div>}
+          <EditorField label={t("vault.field.holder")}><input className={inputClass} value={draft.holder} onChange={set("holder")} aria-label={t("vault.field.holder")} autoComplete="off" /></EditorField>
+          <EditorField label={t("vault.field.pan")}><input className={inputClass} dir="ltr" type="password" value={draft.pan} onChange={set("pan")} placeholder={keep} aria-label={t("vault.field.pan")} autoComplete="off" inputMode="numeric" /></EditorField>
+          <EditorField label={t("vault.field.cvv")}><input className={inputClass} dir="ltr" type="password" value={draft.cvv} onChange={set("cvv")} placeholder={keep} aria-label={t("vault.field.cvv")} autoComplete="off" inputMode="numeric" /></EditorField>
+          <EditorField label={t("vault.field.expMonth")}><input className={inputClass} dir="ltr" value={draft.expMonth} onChange={set("expMonth")} aria-label={t("vault.field.expMonth")} inputMode="numeric" /></EditorField>
+          <EditorField label={t("vault.field.expYear")}><input className={inputClass} dir="ltr" value={draft.expYear} onChange={set("expYear")} aria-label={t("vault.field.expYear")} inputMode="numeric" /></EditorField>
         </>
       )}
       {draft.kind === "address" && (
         <>
-          <input className={inputClass} value={draft.recipient} onChange={set("recipient")} placeholder={t("vault.field.recipient")} aria-label={t("vault.field.recipient")} />
-          <input className={inputClass} value={draft.line1} onChange={set("line1")} placeholder={t("vault.field.line1")} aria-label={t("vault.field.line1")} />
-          <input className={inputClass} value={draft.city} onChange={set("city")} placeholder={t("vault.field.city")} aria-label={t("vault.field.city")} />
-          <input className={inputClass} value={draft.region} onChange={set("region")} placeholder={t("vault.field.region")} aria-label={t("vault.field.region")} />
-          <input className={inputClass} dir="ltr" value={draft.postal} onChange={set("postal")} placeholder={t("vault.field.postal")} aria-label={t("vault.field.postal")} />
-          <input className={inputClass} dir="ltr" value={draft.country} onChange={set("country")} placeholder={t("vault.field.country")} aria-label={t("vault.field.country")} />
+          <EditorField label={t("vault.field.recipient")}><input className={inputClass} value={draft.recipient} onChange={set("recipient")} aria-label={t("vault.field.recipient")} /></EditorField>
+          <EditorField label={t("vault.field.line1")}><input className={inputClass} value={draft.line1} onChange={set("line1")} aria-label={t("vault.field.line1")} /></EditorField>
+          <EditorField label={t("vault.field.city")}><input className={inputClass} value={draft.city} onChange={set("city")} aria-label={t("vault.field.city")} /></EditorField>
+          <EditorField label={t("vault.field.region")}><input className={inputClass} value={draft.region} onChange={set("region")} aria-label={t("vault.field.region")} /></EditorField>
+          <EditorField label={t("vault.field.postal")}><input className={inputClass} dir="ltr" value={draft.postal} onChange={set("postal")} aria-label={t("vault.field.postal")} /></EditorField>
+          <EditorField label={t("vault.field.country")}><input className={inputClass} dir="ltr" value={draft.country} onChange={set("country")} aria-label={t("vault.field.country")} /></EditorField>
         </>
       )}
       {draft.kind === "contact" && (
         <>
-          <input className={inputClass} value={draft.fullName} onChange={set("fullName")} placeholder={t("vault.field.fullName")} aria-label={t("vault.field.fullName")} />
-          <input className={inputClass} dir="ltr" value={draft.email} onChange={set("email")} placeholder={t("vault.field.email")} aria-label={t("vault.field.email")} />
-          <input className={inputClass} dir="ltr" value={draft.phone} onChange={set("phone")} placeholder={t("vault.field.phone")} aria-label={t("vault.field.phone")} />
-          <input className={inputClass} value={draft.company} onChange={set("company")} placeholder={t("vault.field.company")} aria-label={t("vault.field.company")} />
+          <EditorField label={t("vault.field.fullName")}><input className={inputClass} value={draft.fullName} onChange={set("fullName")} aria-label={t("vault.field.fullName")} /></EditorField>
+          <EditorField label={t("vault.field.email")}><input className={inputClass} dir="ltr" value={draft.email} onChange={set("email")} aria-label={t("vault.field.email")} /></EditorField>
+          <EditorField label={t("vault.field.phone")}><input className={inputClass} dir="ltr" value={draft.phone} onChange={set("phone")} aria-label={t("vault.field.phone")} /></EditorField>
+          <EditorField label={t("vault.field.company")}><input className={inputClass} value={draft.company} onChange={set("company")} aria-label={t("vault.field.company")} /></EditorField>
         </>
       )}
       {draft.kind === "login" && !readOnly && (
         <>
-          <input className={inputClass} dir="ltr" autoComplete="off" value={draft.username} onChange={set("username")} placeholder={t("vault.field.username")} aria-label={t("vault.field.username")} />
-          <input className={inputClass} dir="ltr" type="password" autoComplete="new-password" value={draft.password} onChange={set("password")} placeholder={keep ?? t("vault.field.password")} aria-label={t("vault.field.password")} />
-          <input className={inputClass} dir="ltr" type="password" autoComplete="off" value={draft.totpSeed} onChange={set("totpSeed")} placeholder={keep ?? t("vault.field.totpOptional")} aria-label={t("vault.field.totp")} />
+          <EditorField label={t("vault.field.username")}><input className={inputClass} dir="ltr" autoComplete="off" value={draft.username} onChange={set("username")} aria-label={t("vault.field.username")} /></EditorField>
+          <EditorField label={t("vault.field.password")}><input className={inputClass} dir="ltr" type="password" autoComplete="new-password" value={draft.password} onChange={set("password")} placeholder={keep} aria-label={t("vault.field.password")} /></EditorField>
+          <EditorField label={t("vault.field.totp")}><input className={inputClass} dir="ltr" type="password" autoComplete="off" value={draft.totpSeed} onChange={set("totpSeed")} placeholder={keep ?? t("vault.field.totpOptional")} aria-label={t("vault.field.totp")} /></EditorField>
         </>
       )}
       {draft.kind === "apiKey" && !readOnly && (
-        <input className={inputClass} dir="ltr" type="password" autoComplete="off" value={draft.apiKey} onChange={set("apiKey")} placeholder={keep ?? t("vault.field.apiKey")} aria-label={t("vault.field.apiKey")} />
+        <EditorField label={t("vault.field.apiKey")}><input className={inputClass} dir="ltr" type="password" autoComplete="off" value={draft.apiKey} onChange={set("apiKey")} placeholder={keep} aria-label={t("vault.field.apiKey")} /></EditorField>
       )}
-      <textarea className={inputClass} rows={draft.kind === "note" ? 4 : 2} value={draft.notes} onChange={set("notes")} placeholder={keep ?? t("vault.field.notesOptional")} aria-label={t("vault.field.notes")} />
-      {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
-      <div className="flex justify-end gap-2">
-        <button type="button" className={PILL} disabled={busy} onClick={() => void onDone()}>{t("vault.settings.cancel")}</button>
-        <button type="submit" className={PRIMARY_PILL} disabled={busy}>{t("vault.settings.save")}</button>
-      </div>
-    </form>
+      <EditorField label={t("vault.field.notes")}><textarea className={inputClass} rows={draft.kind === "note" ? 4 : 2} value={draft.notes} onChange={set("notes")} placeholder={keep ?? t("vault.field.notesOptional")} aria-label={t("vault.field.notes")} /></EditorField>
+      {error && <p role="alert" className="px-3 py-1.5 text-[12px] text-danger">{error}</p>}
+    </EditorBox>
   );
 }
 
