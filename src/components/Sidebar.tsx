@@ -174,7 +174,7 @@ import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
 import { useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
-import { botShowsUnread, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
+import { botShowsUnread, iconUnreadDotPosition, isInterBotThread, offscreenUnread, toggleSelected } from "@/lib/bot-unread";
 import { SidebarBotActivity, sidebarBotActivityTasks } from "./SidebarBotActivity";
 import { citationPreviewText } from "@/lib/citations";
 import { groupMemberBots } from "@/lib/group-members";
@@ -2161,7 +2161,7 @@ export function BotListItem({
         </span>
       )}
       {!renaming && iconOnly && unread && (
-        <span className="pointer-events-none absolute bottom-1.5 right-1.5 size-2 rounded-full border border-sidebar bg-unread" />
+        <span data-sidebar-unread-icon className={cn("pointer-events-none absolute size-2 rounded-full border border-sidebar bg-unread", iconUnreadDotPosition(Boolean(primary || sharer)))} />
       )}
       {!renaming && !deleting && !iconOnly && !selection?.active && <>
         {/* direct New thread, beside the "..." (JC, 2026-10-15) */}

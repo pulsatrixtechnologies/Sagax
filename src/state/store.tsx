@@ -84,6 +84,7 @@ import type { StepUpTarget } from "../../shared/step-up";
 import { permissionMissingMessage } from "@/lib/permissions";
 import { engineErrorMessage } from "@/lib/engine-error-text";
 import { teamSetupErrorMessage } from "@/lib/team-setup-error-text";
+import { serverErrorMessage } from "@/lib/server-error-text";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
@@ -1576,7 +1577,7 @@ export type Action =
   | { type: "routineRunsRemoved"; ids: string[] }
   | { type: "groupPatched"; group: Partial<Group> & { id: string } }
   | { type: "groupDeleted"; groupId: string }
-  | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
+  | { type: "createGroup"; memberIds: string[]; humanIds?: string[]; name?: string; section?: string }
   /** Open (or create) the direct conversation with another person of the
    * organization (server/people-dms.ts). */
   | { type: "openPeopleDm"; principalId: string }
@@ -3678,6 +3679,7 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
     const message = permissionMissingMessage(body)
       ?? teamSetupErrorMessage(body)
       ?? engineErrorMessage(body)
+      ?? serverErrorMessage(body)
       ?? (typeof error === "string" ? error : typeof error?.message === "string" ? error.message : `${res.status} ${res.statusText}`);
     throw new ApiError(message, res.status, body);
   }
@@ -4810,6 +4812,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             method: "POST",
             body: JSON.stringify({
               memberIds: action.memberIds,
+              ...(action.humanIds?.length ? { humanIds: action.humanIds } : {}),
               name: action.name,
               section: action.section,
               ...(window.ogb?.remoteClient?.active

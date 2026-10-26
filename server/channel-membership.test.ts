@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, canPlaceBot, firstUnseenPerson, ownerUserIdForPlacement } from "./channel-membership.ts";
 
 describe("channel membership", () => {
   it("refuses a human list on a bot-to-bot dm", () => {
@@ -41,5 +41,17 @@ describe("channel membership", () => {
     expect(canPlaceBot({ actorId: "zachary@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "local-owner", ownerUserId })).toBe(true);
+  });
+});
+
+describe("firstUnseenPerson (#1061)", () => {
+  const visible = (id: string) => id === "usr_bob";
+  it("lets a member add a person the directory shows, and keep the room as is", () => {
+    expect(firstUnseenPerson({ actorId: "usr_ann", before: ["usr_ann"], after: ["usr_ann", "usr_bob"], visible })).toBeNull();
+    expect(firstUnseenPerson({ actorId: "usr_ann", before: ["usr_zed"], after: ["usr_zed"], visible })).toBeNull();
+  });
+  it("refuses a person outside the directory and any team entry", () => {
+    expect(firstUnseenPerson({ actorId: "usr_ann", before: [], after: ["usr_eve"], visible })).toBe("usr_eve");
+    expect(firstUnseenPerson({ actorId: "usr_ann", before: [], after: ["team:ops"], visible: () => true })).toBe("team:ops");
   });
 });

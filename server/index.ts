@@ -358,6 +358,7 @@ import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-dr
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
+import { personLanguage } from "./person-language.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -495,7 +496,7 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
-import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
@@ -606,6 +607,7 @@ import {
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
+import { greetingLanguage } from "./new-bot-greeting.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -947,7 +949,7 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
-import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, firstUnseenPerson, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
@@ -5923,6 +5925,23 @@ async function defaultSelection(saved: ModelSelection | null = cfg.defaultModelS
     refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
   });
 }
+/** The model an organization member's new bot starts on when they named
+ * none (#1060, #1074): the person's own (a model they starred), else the
+ * organization's default for new bots, else the server's, else an engine
+ * that can run now (memberNewBotSelection). */
+async function memberDefaultSelection(principalId: string | null | undefined): Promise<ModelSelection> {
+  const organization = cfg.newBotDefaults?.profile.modelSelection ?? null;
+  let person: ModelSelection[] = [];
+  try {
+    if (IDENTITY.kind === "perspicax" && principalId) person = starredModelSelections(userPreferenceStore.get(principalId).preferences["sagax.modelFavorites.v1"]);
+  } catch { /* no preference of their own: the organization's level decides */ }
+  if (hostedModels) {
+    const own = person.find((candidate) => hostedModels!.allows(candidate));
+    return own ?? hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
+  }
+  return memberNewBotSelection(selectableInstances<SelectableInstance>(await registry.describe()),
+    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContext);
+}
 /** Engines that are not the person's own: a Company one. A working engine
  * of their own wins over it; the organization's engine policy applies. */
 const selectionContext = {
@@ -6461,6 +6480,7 @@ const store = new Store(
   () => bootSelection,
   (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
   newBotApprovalMode,
+  newBotGreetingLanguage,
 );
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
@@ -20550,7 +20570,7 @@ async function startTurn(
       }
       if (!warmOnly) turnTrace(threadId, "send");
       // Each picture within the model's limits: a scaled copy for a large one.
-      const modelImages = await fitTurnImagesForModel(turnImages, { language: cfg.language });
+      const modelImages = await fitTurnImagesForModel(turnImages, { language: languageOfPerson(turnPlace.principal) });
       const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
         return instance.adapter.sendTurn({
@@ -23851,7 +23871,7 @@ async function runGroupMemberTurn(
         text: engineCommand ? engineCommand.engineText : withRecalled(roomRecalled, text),
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
-        images: await fitTurnImagesForModel(turnImages, { language: cfg.language }),
+        images: await fitTurnImagesForModel(turnImages, { language: languageOfPerson(roomSpeakerId) }),
         approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
@@ -30067,6 +30087,20 @@ async function settleBotActCard(
 
 const cwActionPasses = createCwActionPasses();
 
+/** The language to word a text for the person behind this request: their own
+ * `omb-language`, else the server's default (server/person-language.ts). */
+function languageOfPerson(person: string | null | undefined): string {
+  let preference: unknown;
+  try {
+    if (person) preference = userPreferenceStore.get(person).preferences["omb-language"];
+  } catch { /* the server default */ }
+  return personLanguage(preference, cfg.language);
+}
+
+function languageOfRequest(auth: RequestAuth): string {
+  return languageOfPerson(actorPrincipalId(auth));
+}
+
 function cwActionActor(auth: RequestAuth): PerformActor | null {
   if (auth.kind === "session") {
     return { kind: "person", sessionId: auth.session.id, personKey: personKey(auth.session), scopes: [...auth.session.scopes] };
@@ -30105,13 +30139,14 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
   if (!cwActionActor(auth) || approvalAnswerStatus({ question: false, audience, callerUserId: approvalCallerUserId(auth) }) === 403) {
     return { status: 403, body: { error: "Only the bot owner can approve a ConnectWise change.", code: "cw_action_owner_only" } };
   }
-  const language = cwActionLanguage(cfg.language);
+  const personal = languageOfRequest(auth);
+  const language = cwActionLanguage(personal);
   const card = cwActionCard(action, language, actorPrincipalId(auth));
-  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(cfg.language));
+  const plain = approvalPlain({ botName: bot.name, tool: "cw_psa__write", toolInput: card.toolInput, detail: card.summary }, serverApprovalWords(personal));
   // 2026-10-19 ("Toujours permettre" on every card): what Always allow
   // keeps here (this bot, this kind of ConnectWise change), and whether the
   // person already kept it (no security key of theirs protecting the write)
-  const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(cfg.language));
+  const described = ruleCandidateFor({ tool: "cw_psa__write", input: card.toolInput }, serverApprovalWords(personal));
   const candidate = { ...described, tool: CW_WIDGET_RULE_TOOL };
   const answerer = approvalOwnerId(bot, threadId);
   const stepUp = autoAnswerStepUp(bot, threadId, { tool: "cw_psa__write", input: card.toolInput, summary: card.summary });
@@ -30144,7 +30179,7 @@ async function requestCwAction(auth: RequestAuth, threadId: string, body: Record
       threadId, requestId: card.requestId, botId: bot.id, botName: bot.name, tool: "cw_psa__write", summary: card.summary,
       decision: "auto-approved", source: "owner-rule", rule: kept.id,
     });
-    const done = await allowCwAction(actor, threadId, message.id, { ...message.card!, ruleSaved: { id: kept.id, behavior: kept.behavior, description: kept.description } }, bot, action);
+    const done = await allowCwAction(actor, threadId, message.id, { ...message.card!, ruleSaved: { id: kept.id, behavior: kept.behavior, description: kept.description } }, bot, action, languageOfRequest(auth));
     return done.status < 400
       ? { status: 201, body: { requestId: card.requestId, messageId: message.id, allowedByRule: true } }
       : done;
@@ -30186,7 +30221,7 @@ async function resolveAndSendCwAction(
     json(res, 409, { error: "This bot is no longer here." });
     return true;
   }
-  const done = await allowCwAction(actor, threadId, message.id, card, bot, action);
+  const done = await allowCwAction(actor, threadId, message.id, card, bot, action, languageOfRequest(auth));
   json(res, done.status, done.body);
   return true;
 }
@@ -30200,10 +30235,11 @@ async function allowCwAction(
   card: NonNullable<Message["card"]>,
   bot: BotRecord,
   action: NonNullable<ReturnType<typeof parseCwAction>>,
+  language: string | undefined = cfg.language,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   store.patchMessage(threadId, messageId, { card: { ...card, answered: "allow" } });
   cwActionPasses.grant(threadId, action);
-  const text = cwActionInstruction(action, cwActionLanguage(cfg.language));
+  const text = cwActionInstruction(action, cwActionLanguage(language));
   const group = store.groupByThread(threadId);
   const sent = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
@@ -30308,7 +30344,7 @@ async function settleConfidentialMemoryCard(auth: RequestAuth, threadId: string,
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow" } });
   confidentialMemoryPasses.grant(threadId, pending.digest);
-  const french = cwActionLanguage(cfg.language) === "fr";
+  const french = cwActionLanguage(languageOfRequest(auth)) === "fr";
   // the owner allowed it in person: the follow-up posts into exactly this
   // thread, never as an on-behalf request (which a confidential thread refuses)
   const sent = await performBotActRoute(actor, {
@@ -30356,9 +30392,9 @@ function emailDraftBot(auth: RequestAuth, threadId: string, botIdHint: unknown):
 
 /** Where a draft can be sent from: the bot's own mail connectors first (the
  * person's mailbox), then the server's mail when it is set up. */
-function emailConnectorsFor(bot: BotRecord): EmailConnector[] {
+function emailConnectorsFor(bot: BotRecord, language: string | undefined = cfg.language): EmailConnector[] {
   const connectors = mailConnectorsOf(bot);
-  if (mailer()) connectors.push({ kind: "smtp", label: cfg.language?.toLowerCase().startsWith("fr") ? "le courriel du serveur" : "the server's mail" });
+  if (mailer()) connectors.push({ kind: "smtp", label: language?.toLowerCase().startsWith("fr") ? "le courriel du serveur" : "the server's mail" });
   return connectors;
 }
 
@@ -30377,7 +30413,7 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
   if (normalized.draft.bcc.length && store.groupByThread(threadId)) {
     return { status: 400, body: { error: "Bcc is not available in a room: everyone in it would see the hidden recipients.", code: "bcc_in_room" } };
   }
-  const connectors = emailConnectorsFor(bot);
+  const connectors = emailConnectorsFor(bot, languageOfRequest(auth));
   const wanted = body.connector && typeof body.connector === "object" ? body.connector as { kind?: unknown; id?: unknown } : undefined;
   const connector = wanted
     ? connectors.find((candidate) => candidate.kind === wanted.kind && (candidate.id ?? null) === (typeof wanted.id === "string" ? wanted.id : null))
@@ -30392,7 +30428,7 @@ async function requestEmailDraftSend(auth: RequestAuth, threadId: string, body: 
     .find((row) => row.card?.emailSendRequest?.draftKey === draftKey && JSON.stringify(row.card.emailSendRequest.draft) === sameDraft)?.card?.emailSendRequest;
   const sentTo = earlier?.status === "failed" && earlier.sentTo?.length && earlier.connector.kind === connector.kind ? earlier.sentTo : undefined;
   const request = { ...emailSendCard({ draft: normalized.draft, draftKey, connector, by: actorPrincipalId(auth) }), ...(sentTo ? { sentTo } : {}) };
-  const summary = emailSendSummary(normalized.draft, connector, cfg.language);
+  const summary = emailSendSummary(normalized.draft, connector, languageOfRequest(auth));
   // the card's arguments never list Bcc addresses, only how many
   const toolInput = JSON.stringify({
     to: normalized.draft.to, cc: normalized.draft.cc,
@@ -30460,7 +30496,7 @@ function emailDraftStatus(auth: RequestAuth, threadId: string, draftKey: string)
   if (message.card?.answered === "deny" && status === "pending") status = "denied";
   if (status === "handed-off" && !emailSendPasses.waiting(threadId, request.id)) {
     status = "failed";
-    error = cfg.language?.toLowerCase().startsWith("fr")
+    error = languageOfRequest(auth).toLowerCase().startsWith("fr")
       ? "Le robot n'a pas envoyé ce courriel à temps. Réessayez."
       : "The bot did not send this email in time. Try again.";
   }
@@ -30549,7 +30585,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
   }
   store.patchMessage(threadId, message.id, { card: { ...card, answered: "allow", emailSendRequest: { ...request, status: "handed-off" } } });
   emailSendPasses.grant(threadId, bot.id, requestId, request.draft, request.connector);
-  const text = emailSendInstruction(request.draft, request.connector, cfg.language);
+  const text = emailSendInstruction(request.draft, request.connector, languageOfRequest(auth));
   const group = store.groupByThread(threadId);
   const asked = await performBotActRoute(actor, group
     ? { kind: "route", method: "POST", path: `/api/groups/${group.id}/messages`, body: { text: `@${bot.name} ${text}`, threadId } }
@@ -30558,7 +30594,7 @@ async function resolveAndSendEmailDraft(res: ServerResponse, auth: RequestAuth, 
     emailSendPasses.revoke(threadId, requestId);
     patchEmailSend(threadId, requestId, {
       status: "failed",
-      error: cfg.language?.toLowerCase().startsWith("fr") ? "Le robot n'a pas pu recevoir la demande d'envoi. Réessayez." : "The bot could not be asked to send it. Try again.",
+      error: languageOfRequest(auth).toLowerCase().startsWith("fr") ? "Le robot n'a pas pu recevoir la demande d'envoi. Réessayez." : "The bot could not be asked to send it. Try again.",
     });
     json(res, 502, { error: "The bot could not be asked to send this email. Try again." });
     return true;
@@ -31552,6 +31588,16 @@ function bypassRefusal(auth: RequestAuth): string | null {
 /** 2026-10-11: the level a new bot starts on. A solo server keeps Approve
  * for me; an organization server follows its policy (`defaults.approvalMode`)
  * and starts on Ask when it names none. */
+/** The language a new bot greets its person in (#1075): on an organization
+ * server the owner's own language preference (kept per person), then the
+ * server's language, the same default the app falls back to. */
+function newBotGreetingLanguage(ownerUserId: string | undefined): "fr" | "en" {
+  let person = "";
+  try {
+    if (IDENTITY.kind === "perspicax" && ownerUserId) person = userPreferenceStore.get(ownerUserId).preferences["omb-language"] ?? "";
+  } catch { /* no preference of their own */ }
+  return greetingLanguage([person, cfg.language]);
+}
 function newBotApprovalMode(): "ask" | "auto" {
   return IDENTITY.kind === "perspicax" ? orgNewBotApprovalMode(cfg.newBotDefaults?.profile.approvalMode) : "auto";
 }
@@ -32594,8 +32640,15 @@ function botUserName(bot: { ownerUserId?: unknown }): string {
  * needs humanIds). An explicit humanIds list is kept as sent. */
 function withCreatorListed(auth: RequestAuth, body: unknown): unknown {
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return body;
-  if (!body || typeof body !== "object" || Array.isArray(body) || Object.prototype.hasOwnProperty.call(body, "humanIds")) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const principalId = auth.session.principalId?.trim();
+  if (Object.prototype.hasOwnProperty.call(body, "humanIds")) {
+    // A member naming coworkers stays in the room they create.
+    const named = (body as { humanIds?: unknown }).humanIds;
+    if (channelActorRole(auth) !== "member" || !principalId || !Array.isArray(named)) return body;
+    const listed = named.some((id) => typeof id === "string" && id.trim().toLowerCase() === principalId.toLowerCase());
+    return listed ? body : { ...(body as Record<string, unknown>), humanIds: [principalId, ...named] };
+  }
   return principalId ? { ...(body as Record<string, unknown>), humanIds: [principalId] } : body;
 }
 
@@ -32634,6 +32687,12 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       const id = entry.slice(5);
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
+  }
+  // A member who owns the room adds only people the organization directory
+  // lists as active; never a team entry (those stay with admins).
+  if (ownerChecked && IDENTITY.kind === "perspicax" && Array.isArray(after) && channelActorRole(auth) === "member") {
+    const unseen = firstUnseenPerson({ actorId: channelActorId(auth), before, after, visible: (id) => resolveOrgGrantee(id).ok });
+    if (unseen !== null) return "unknown person: choose someone from the organization directory";
   }
   // Organization server: the group's owner rule already decided (group-ownership.ts).
   if (ownerChecked) return null;
@@ -41890,8 +41949,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set());
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      // On an organization server the creator owns the new room, so a member
+      // may name coworkers they can see in the directory (#1061).
+      const memberCreates = IDENTITY.kind === "perspicax" && auth.kind === "session" && channelActorRole(auth) === "member";
+      const humans = refuseHumanEdit(auth, body, [], memberCreates);
+      if (humans) { const bad = humans.startsWith("unknown team") || humans.startsWith("unknown person"); return json(res, bad ? 400 : 403, bad ? { error: humans } : { error: humans, code: "not_channel_editor" }); }
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -42477,7 +42539,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
       // A paired phone's companion edits a room like a member session does.
       if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         // The owner of an organization group also picks its default responder,
@@ -43080,7 +43142,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (Object.hasOwn(settings, "computer")) settings.computer = requestedWorksOn(settings.computer) ?? undefined;
       body = { ...body, ...settings, name: settings.name };
       if (settings.approvalMode === "full" || settings.approvalMode === "custom") {
-        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation." });
+        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation.", code: "approval_desktop_required" });
       }
       if (namedThisComputer && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
         return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });
@@ -43133,7 +43195,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       let selection: ModelSelection;
       if (body.modelSelection === undefined) {
-        selection = await defaultSelection();
+        // A member's bot is not built from the admin's template: the
+        // person's own model first, then the organization's (#1074, #1060).
+        selection = memberCreate ? await memberDefaultSelection(sessionPrincipal(auth)) : await defaultSelection();
       } else {
         const checked = checkedModelSelection(body.modelSelection, undefined, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });
