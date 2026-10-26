@@ -56,6 +56,9 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
         clipped: label ? label.scrollWidth - label.clientWidth : -1,
         labelRight: label?.getBoundingClientRect().right ?? 0,
         stackLeft: stack.left,
+        groupLeft: label?.getBoundingClientRect().left ?? 0,
+        groupRight: stack.right,
+        pillLeft: pill.left,
         pillRight: pill.right,
         rowRight: row.right,
         updRight: upd?.right ?? 0,
@@ -68,6 +71,8 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
     expect(m.clipped).toBeLessThanOrEqual(0);
     expect(m.labelRight).toBeLessThanOrEqual(m.stackLeft + 1);
     expect(m.pillRight).toBeLessThanOrEqual(m.rowRight + 1);
+    // the label and the logos, together, sit in the middle of the pill
+    expect(Math.abs((m.groupLeft + m.groupRight) / 2 - (m.pillLeft + m.pillRight) / 2)).toBeLessThanOrEqual(2);
     expect(m.updRight).toBeLessThanOrEqual(m.rowRight + 1);
   }, 120_000);
 });
