@@ -136,7 +136,7 @@ extension ChatView {
             // the phone's "+" door keeps the thread entries while threads are
             // on, wherever they are listed (the header's name menu follows
             // Threads location, #210)
-            if SidebarPrefsModel.shared.showThreads {
+            if threadPrefs.threads.allows(.newThread) {
                 out.append(PlusAction(
                     id: "task", systemImage: "plus.square.on.square", title: "New thread",
                     subtitle: "Start a fresh thread with \(bot.name)"
@@ -173,15 +173,18 @@ extension ChatView {
             ) { startVoiceMode() })
         }
         if case let .room(room) = current, room.dm != true {
-            out.append(PlusAction(
-                id: "task", systemImage: "plus.square.on.square", title: "New thread",
-                subtitle: "Start a fresh conversation in \(room.name)",
-                disabled: current.busy || hasPendingApproval
-            ) { Task { await session.createTask(for: room, title: nil) } })
-            out.append(PlusAction(
-                id: "tasks", systemImage: "square.stack", title: "Threads",
-                subtitle: "Switch, rename or remove one"
-            ) { showingTasks = true })
+            // a group's thread entries follow Show threads too (TaskPicker.tsx)
+            if threadPrefs.threads.allows(.roomThreads) {
+                out.append(PlusAction(
+                    id: "task", systemImage: "plus.square.on.square", title: "New thread",
+                    subtitle: "Start a fresh conversation in \(room.name)",
+                    disabled: current.busy || hasPendingApproval
+                ) { Task { await session.createTask(for: room, title: nil) } })
+                out.append(PlusAction(
+                    id: "tasks", systemImage: "square.stack", title: "Threads",
+                    subtitle: "Switch, rename or remove one"
+                ) { showingTasks = true })
+            }
             // WP11 (RM11): the desktop's Goal chip. A typed "/goal …" sends
             // as a bounded team goal; tapping again takes it back out.
             out.append(PlusAction(

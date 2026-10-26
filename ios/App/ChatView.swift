@@ -223,7 +223,7 @@ struct ChatView: View {
     /// The transcript as the reader has asked to see it: every chip, folded
     /// runs, or none at all.
     var rows: [TranscriptRow] {
-        transcriptRows(messages, detail: toolCalls.detail, showThreads: threadPrefs.showThreads)
+        transcriptRows(messages, detail: toolCalls.detail, showThreads: threadPrefs.threads.allows(.transcriptReceipts))
     }
 
     /// The composer's chip row, as edited in Settings.
@@ -252,7 +252,7 @@ struct ChatView: View {
             }
         }
         .sheet(isPresented: $showingTasks) {
-            if current.supportsTasks {
+            if current.supportsTasks, threadPrefs.threads.allows(.threadList) {
                 TaskManagerView(chat: current) { selectedThreadId = $0 }
             }
         }
@@ -343,6 +343,11 @@ struct ChatView: View {
         }
         .onValueChange(of: showingTasks) { shown in
             if shown { dictation.stop() }
+        }
+        // Show threads turned off here or on another device (`preferences`
+        // frame): the open thread list goes at once, no relaunch.
+        .onValueChange(of: threadPrefs.threads.allows(.threadList)) { allowed in
+            if !allowed { showingTasks = false }
         }
         .onValueChange(of: showingRoomInfo) { shown in
             if shown { dictation.stop() }

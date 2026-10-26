@@ -102,6 +102,10 @@ struct ChatListView: View {
             AnyView(homeContent)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: Chat.self) { ChatView(chat: $0) }
+            // Show threads off on any device: the thread list sheet goes
+            .onValueChange(of: sidebarPrefs.threads.allows(.threadList)) { allowed in
+                if !allowed { managingThreads = nil }
+            }
             .onValueChange(of: session.notificationChat) { chat in
                 guard let chat else { return }
                 showingAutomations = false
@@ -185,10 +189,12 @@ struct ChatListView: View {
             // the person sheet (RM21), from a room line, a row or a header
             .personSheetPresenter { chat in path.append(chat) }
             .sheet(item: $managingThreads) { chat in
-                TaskManagerView(chat: chat) { threadId in
-                    guard let bot = session.state.bot(forThread: threadId) else { return }
-                    managingThreads = nil
-                    path.append(Chat.bot(bot))
+                if sidebarPrefs.threads.allows(.threadList) {
+                    TaskManagerView(chat: chat) { threadId in
+                        guard let bot = session.state.bot(forThread: threadId) else { return }
+                        managingThreads = nil
+                        path.append(Chat.bot(bot))
+                    }
                 }
             }
             .environmentObject(threadActions)
@@ -200,7 +206,7 @@ struct ChatListView: View {
             // its own host: alerts chained on one view after the thread
             // presenter's would never show
             .background { Color.clear.sidebarSectionActionsPresenter(sectionActions) }
-            .environment(\.sidebarShowsThreads, sidebarPrefs.threadsPlacement.inSidebar)
+            .environment(\.sidebarShowsThreads, sidebarPrefs.threads.allows(.sidebarTree))
             // a new message brings a hidden entry back; a first roster seeds
             // the person's own sections (organization server)
             .onValueChange(of: rosterSignature) { _ in
@@ -274,7 +280,7 @@ struct ChatListView: View {
                                     .buttonStyle(.plain)
                                     .padding(.horizontal, 16)
                                 }
-                                sectionLabel(Text("Threads"))
+                                sectionLabel(Text(sidebarPrefs.threads.shown ? LocalizedStringKey("Threads") : LocalizedStringKey("Chats")))
                                     .padding(.top, 14)
                                     .padding(.bottom, 4)
                             } else if searching {
@@ -359,7 +365,8 @@ struct ChatListView: View {
             Spacer(minLength: 8)
 
             VStack(spacing: 2) {
-                Text("Threads")
+                // the conversations, not threads, while Show threads is off
+                Text(sidebarPrefs.threads.shown ? LocalizedStringKey("Threads") : LocalizedStringKey("Chats"))
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(Theme.textPrimary)
                 Text(headerSubtitle)
@@ -679,7 +686,7 @@ struct ChatListView: View {
                 .contextMenu { chatMenu(summary.chat) }
                 .sidebarBotPinSwipe(summary.chat, session: session)
                 .accessibilityIdentifier("chat-row.\(summary.chat.id)")
-                if case let .bot(bot) = summary.chat, sidebarPrefs.threadsPlacement.inSidebar {
+                if case let .bot(bot) = summary.chat, sidebarPrefs.threads.allows(.sidebarTree) {
                     BotThreadTree(
                         botID: bot.id, query: $query,
                         expanded: expandedBinding(bot.id),
@@ -1760,7 +1767,7 @@ extension ChatListView {
         switch chat {
         case let .bot(bot):
             let row = CompactBotRow(bot: bot, hasPendingCard: waiting, queuedThreadIds: queued, creatingThread: creatingThreads.contains(bot.id))
-            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: sidebarPrefs.threadsPlacement.inSidebar ? row.threadCount : 0, unread: row.showsUnreadDot)
+            return HomeRowStatus(waiting: row.showsWaiting, working: row.showsSpinner, threadCount: sidebarPrefs.threads.rowThreadCount(row.threadCount), unread: row.showsUnreadDot)
         case let .room(room):
             let busy = room.busyBotId != nil
             return HomeRowStatus(waiting: waiting, working: busy, threadCount: 0, unread: room.unread && !busy)

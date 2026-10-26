@@ -66,16 +66,16 @@ extension ChatView {
     /// The "..." at the top right (the reference design iOS 1.14): the profile, the
     /// computer (it had its own button before), the threads the name's
     /// long press offers, then sharing and the bot's id.
-    /// A bot's threads, one touch away from its chat whatever Settings say
-    /// (the desktop keeps its activity picker above the chat with threads
-    /// hidden; JC 2026-10-19: a new thread, one the bot opened in parallel
-    /// or a new topic, was announced but could not be reached). Nil below
-    /// two threads: the chat on screen is then all there is.
+    /// A bot's threads, one touch away from its chat while Show threads is
+    /// on, whatever the location (JC 2026-10-19: a new thread, one the bot
+    /// opened in parallel, was announced but could not be reached). Threads
+    /// off (TestFlight 79, 2026-10-26): no button, the single stream is
+    /// all there is. Nil below two threads.
     var headerThreadCount: Int? {
-        guard case let .bot(bot) = current else { return nil }
+        guard case let .bot(bot) = current, threadPrefs.threads.allows(.headerButton) else { return nil }
         let live = session.state.bot(bot.id) ?? bot
         let count = live.threadGroups(queuedThreadIds: session.state.queuedThreadIds).reduce(0) { $0 + $1.tasks.count }
-        return count >= 2 ? count : nil
+        return threadPrefs.threads.headerButtonCount(threadCount: count)
     }
 
     /// Sibling threads that want a look: working, waiting on the person,
@@ -186,7 +186,7 @@ extension ChatView {
         // A bot's threads live here while Threads location is the chat
         // header (#143, #210); in sidebar mode they are under its home row
         // and the header offers none. Rooms are unchanged.
-        if current.supportsTasks, !current.isBot || SidebarPrefsModel.shared.threadsPlacement.inHeader {
+        if current.supportsTasks, threadPrefs.threads.nameMenuThreads(isBot: current.isBot) {
             Button { showingTasks = true } label: {
                 Label(String(localized: "Threads"), systemImage: "square.stack")
             }
@@ -252,7 +252,7 @@ extension ChatView {
             // A team room opens its Room info (RM6); Threads is a row there.
             } else if case let .room(room) = current, room.dm != true {
                 showingRoomInfo = true
-            } else if current.supportsTasks {
+            } else if current.supportsTasks, threadPrefs.threads.allows(.roomThreads) {
                 showingTasks = true
             } else {
                 showingPlus = true
