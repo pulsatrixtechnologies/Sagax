@@ -392,6 +392,29 @@ export function cursorApprovalArgs(fullAuto: boolean, approvalMode: string | und
   return approvalMode === "auto" && !sagaxReviews ? ["--auto-review"] : [];
 }
 
+async function setCursorFast(
+  request: (method: string, params: unknown) => Promise<unknown>,
+  sessionId: string,
+  fast: boolean,
+): Promise<void> {
+  let reply: { configOptions?: Array<{ id?: unknown; currentValue?: unknown }> } | undefined;
+  try {
+    reply = (await request("session/set_config_option", { sessionId, configId: "fast", value: String(fast) })) as typeof reply;
+  } catch (e) {
+    // -32602: the chosen model has no Fast variant, so there is nothing to switch.
+    if ((e as { code?: unknown }).code !== -32602) throw e;
+    return;
+  }
+  // Cursor can acknowledge the switch yet keep its default Fast variant, so only the echoed value counts.
+  const confirmed = reply?.configOptions?.find((option) => option?.id === "fast")?.currentValue;
+  if (confirmed !== String(fast)) {
+    throw new Error(
+      `Cursor did not confirm Fast ${fast ? "on" : "off"} (fast is ${confirmed === undefined ? "unreported" : JSON.stringify(confirmed)}), ` +
+        "so the turn was not sent. Check that `cursor-agent` is current.",
+    );
+  }
+}
+
 const support = (run: typeof execCli): AcpSupport => ({
   driverKind: "cursorAgent",
   displayName: "Cursor",
@@ -447,12 +470,22 @@ const support = (run: typeof execCli): AcpSupport => ({
   isAuthenticated: (env, config) => probeCursorAuth(config.cli || "cursor-agent", env, run),
   classifyError: classifyCursorError,
 
-  async configureSession({ request, sessionId, turn, sessionModels, currentModelId, notice }) {
+  // Without parameterizedModelPicker Cursor (CLI 2026.10.01 and later)
+  // offers only `composer-2.5[fast=true]`, so a `composer-2.5` bot bills as
+  // Fast; with it, Fast is a separate `fast` config option. A CLI that does
+  // not know the flag ignores it and advertises no `fast` option, so the
+  // turn goes on exactly as before.
+  clientCapabilitiesMeta: { parameterizedModelPicker: true },
+
+  async configureSession({ request, sessionId, turn, sessionModels, currentModelId, configOptions, notice }) {
     if (!turn.model) return;
+    const fastOption = configOptions.some((option) => option?.id === "fast");
+    const wantsFast = /-fast$/i.test(turn.model);
+    const wanted = fastOption && wantsFast ? turn.model.slice(0, -"-fast".length) : turn.model;
     // Prefer the id this session actually advertised; fall back to the argv
     // slug so a CLI that advertises nothing behaves exactly as before.
-    const match = matchCursorAcpModel(sessionModels ?? [], turn.model);
-    const modelId = match?.modelId ?? turn.model;
+    const match = matchCursorAcpModel(sessionModels ?? [], wanted);
+    const modelId = match?.modelId ?? wanted;
     try {
       await request("session/set_model", { sessionId, modelId });
       if (match && !match.exact) {
@@ -480,6 +513,7 @@ const support = (run: typeof execCli): AcpSupport => ({
           `Check that \`cursor-agent\` is current and that this account can use that model.`,
       );
     }
+    if (fastOption) await setCursorFast(request, sessionId, wantsFast);
   },
 
   buildPromptText: (turn) => (turn.system ? `${turn.system}\n\n${turn.text}` : turn.text),
