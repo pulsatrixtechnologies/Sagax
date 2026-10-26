@@ -201,6 +201,12 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     expect(toolsOf(items({ achievementsLabel: null })).submenu!.map((entry) => entry.key)).toEqual(["routines", "remote-sessions"]);
   });
 
+  it("shows Remote sessions only on an organization server", () => {
+    const keys = (remoteSessions: boolean) => toolsOf(items({ remoteSessions })).submenu!.map((entry) => entry.key);
+    expect(keys(false)).toEqual(["routines", "achievements"]);
+    expect(keys(true)).toEqual(["routines", "remote-sessions", "achievements"]);
+  });
+
   it("opens the Remote sessions page from Tools", () => {
     let opened = 0;
     const entry = toolsOf(items({ handlers: { ...handlers, onRemoteSessions: () => { opened += 1; } } })).submenu!.find((item) => item.key === "remote-sessions")!;

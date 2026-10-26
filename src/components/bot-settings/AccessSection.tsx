@@ -38,6 +38,7 @@ import type { useBotSettingsDerived } from "./useBotSettingsDerived";
  * validates the path and a rejected folder must not stick in local state. */
 function WorkingFolder({ bot }: { bot: Bot }) {
   const { request: api } = useBotEditor();
+  const solo = usePerspicaxOrg() === null;
   const { capabilities } = useDesktopCapabilities();
   const home = capabilities.host.homeDir;
   const [draft, setDraft] = useState<string | null>(null);
@@ -92,6 +93,7 @@ function WorkingFolder({ bot }: { bot: Bot }) {
         >
           <RemoteFolderField
             botId={bot.id}
+            solo={solo}
             inputClassName={cn(inputCls, "font-mono text-[12.5px]")}
             placeholder={t("botPanel.access.placeholder")}
             value={draft ?? bot.cwd ?? ""}

@@ -1846,6 +1846,9 @@ function catalogTools(profile: CatalogProfile) {
   return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || (tool.name !== "create_agent" && tool.name !== "delete_agent"))];
 }
 
+/** Tools of a Tailcat remote session (opened through Perspicax remote_support_*). */
+export const REMOTE_SESSION_TOOL_NAMES: ReadonlySet<string> = new Set(["publish_remote_session", "remote_session_snapshot", "remote_session_exec"]);
+
 function coreCatalogTools(profile: CatalogProfile) {
   const TOOLS = toolDefinitions(profile.externalRuntime);
   const BOT_SCOPED_TOOLS = TOOLS.filter((tool) =>
@@ -1867,7 +1870,9 @@ function coreCatalogTools(profile: CatalogProfile) {
     .filter((tool) => profile.meetings === true || !MEETING_TOOL_NAMES.has(tool.name))
     .filter((tool) => profile.singleStream === true || !STREAM_TOOL_NAMES.has(tool.name))
     .filter((tool) => profile.routeMessages === true || !ROUTE_TOOL_NAMES.has(tool.name))
-    .filter((tool) => profile.githubConnect === true || !GITHUB_CONNECT_TOOL_NAMES.has(tool.name));
+    .filter((tool) => profile.githubConnect === true || !GITHUB_CONNECT_TOOL_NAMES.has(tool.name))
+    // Tailcat remote sessions need Perspicax: nothing of them on a solo server.
+    .filter((tool) => profile.perspicax === true || !REMOTE_SESSION_TOOL_NAMES.has(tool.name));
   const ROLE_TOOLS = profile.chief
     ? CALL_TOOLS
     : CALL_TOOLS.filter((tool) => !CHIEF_ONLY_TOOL_NAMES.has(tool.name) || (tool.name === "create_bot" && profile.createBots === true)).map((tool) => {

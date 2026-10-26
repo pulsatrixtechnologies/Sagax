@@ -314,6 +314,8 @@ export function profileMenuItems(input: {
   achievementsLabel: string | null;
   automationsActive: boolean;
   remoteSessionsActive: boolean;
+  /** false on a solo server (no Perspicax organization): no remote sessions row. */
+  remoteSessions?: boolean;
   shortcutsTrailing?: ReactNode;
   /** Check for updates, where the desktop app answers */
   updateItem: SidebarMenuItem | null;
@@ -405,13 +407,16 @@ export function profileMenuItems(input: {
       active: input.automationsActive,
       onSelect: input.handlers.onAutomations,
     },
-    {
-      key: "remote-sessions",
-      label: t("remoteSessionsAdmin.title"),
-      icon: <MonitorIcon size={18} />,
-      active: input.remoteSessionsActive,
-      onSelect: input.handlers.onRemoteSessions,
-    },
+    // Remote sessions need Perspicax: not offered on a solo server.
+    ...(input.remoteSessions !== false
+      ? [{
+          key: "remote-sessions",
+          label: t("remoteSessionsAdmin.title"),
+          icon: <MonitorIcon size={18} />,
+          active: input.remoteSessionsActive,
+          onSelect: input.handlers.onRemoteSessions,
+        }]
+      : []),
     ...(input.achievementsLabel
       ? [{
           key: "achievements",
@@ -597,6 +602,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     achievementsLabel: achievements.status === "ready" ? t("achievements.menu") : null,
     automationsActive: state.activeView === "routines",
     remoteSessionsActive: state.activeView === "remote-sessions",
+    remoteSessions: perspicaxOrg !== null,
     shortcutsTrailing: <ShortcutHint id="shortcuts-cheat-sheet" />,
     updateItem: update ? { ...update.item, label: t("sidebar.update.check") } : null,
     switchTargets: business ? [] : account.targets,

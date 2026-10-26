@@ -10,6 +10,8 @@ import { NewTaskFolderDialog } from "./NewTaskFolderDialog";
 const dispatch = vi.hoisted(() => vi.fn());
 vi.mock("@/state/store", () => ({ useStore: () => ({ dispatch }) }));
 vi.mock("./remote-session/use-remote-sessions", () => ({ useRemoteSessions: () => ({ rows: [], reload: () => {} }) }));
+const org = vi.hoisted(() => ({ value: null as unknown }));
+vi.mock("@/lib/perspicax-org", () => ({ usePerspicaxOrg: () => org.value }));
 const bot = { id: "bot", threadId: "old-thread", name: "Pepper", cwd: "/projects/default",
   projects: [{ id: "project", name: "Project" }],
   tasks: [{ threadId: "old-thread", projectId: "project" }] } as Bot;
@@ -26,6 +28,7 @@ const type = (value: string) => {
 beforeEach(() => {
   dispatch.mockReset();
   setLocale("en");
+  org.value = null;
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -38,6 +41,17 @@ afterEach(() => {
 });
 
 describe("new thread working folder", () => {
+  it("offers the remote computer browse button only on an organization server", () => {
+    flushSync(() => root.render(createElement(NewTaskFolderDialog, { bot, onClose })));
+    expect(document.querySelector("[data-remote-folder-field]")).toBeNull();
+    expect(document.body.textContent).not.toContain("Browse");
+    flushSync(() => root.unmount());
+    root = createRoot(host);
+    org.value = { org: { name: "Acme" } };
+    flushSync(() => root.render(createElement(NewTaskFolderDialog, { bot, onClose })));
+    expect(document.querySelector("[data-remote-folder-field]")).not.toBeNull();
+  });
+
   it("prefills the default, then submits the explicit path to a new task without editing the old one", () => {
     expect(field().value).toBe("/projects/default");
     expect(document.activeElement).toBe(field());

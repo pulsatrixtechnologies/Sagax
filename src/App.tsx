@@ -493,7 +493,7 @@ function Shell() {
         <CodePage />
       ) : mainIsApprovals ? (
         <ApprovalsPage />
-      ) : mainIsRemoteSessions ? (
+      ) : mainIsRemoteSessions && org ? (
         <RemoteSessionsAdminPage />
       ) : !remoteClient && localVmWorkspaceBotId ? (
         <LocalVmWorkspace
