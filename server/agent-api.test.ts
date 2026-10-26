@@ -86,8 +86,8 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
       turnStateCalls.push(threadId);
       return state.get(threadId) ?? "idle";
     },
-    async conversation(caller, agentId) {
-      const found = [...threads].find(([, t]) => t.agentId === agentId && t.owner === key(caller));
+    async conversation(caller, agentId, options) {
+      const found = options?.fresh ? undefined : [...threads].find(([, t]) => t.agentId === agentId && t.owner === key(caller));
       if (found) return { threadId: found[0] };
       const threadId = `t${++ids}`;
       threads.set(threadId, { agentId, owner: key(caller), title: `${caller.name} via agent API`, hidden: true });
@@ -351,6 +351,21 @@ describe("send_prompt / await_turn", () => {
     expect(r.body).toMatchObject({ accepted: true, mode: "fire_and_forget", finished: false, agent_id: "bot-a" });
     expect(String(r.body.handle)).toMatch(/^turn_/);
     expect(w.threads.get(String(r.body.thread_id))).toMatchObject({ hidden: true, owner: "bot:bot-x" });
+  });
+
+  it("a person's send_prompt opens a fresh conversation unless thread_id names one of theirs; a bot keeps one", async () => {
+    const w = world();
+    const first = await w.api.call(person("p1"), "send_prompt", { agent_id: "bot-a", prompt: "one" });
+    const second = await w.api.call(person("p1"), "send_prompt", { agent_id: "bot-a", prompt: "two" });
+    expect(second.body.thread_id).not.toBe(first.body.thread_id);
+    const again = await w.api.call(person("p1"), "send_prompt", { agent_id: "bot-a", prompt: "three", thread_id: first.body.thread_id });
+    expect(again.body).toMatchObject({ accepted: true, thread_id: first.body.thread_id });
+    const foreign = await w.api.call(person("p2"), "send_prompt", { agent_id: "bot-a", prompt: "x", thread_id: first.body.thread_id });
+    expect(foreign.status).toBe(404);
+    expect(foreign.body).toMatchObject({ code: "unknown_thread" });
+    const b1 = await w.api.call(bot("bot-x"), "send_prompt", { agent_id: "bot-a", prompt: "one" });
+    const b2 = await w.api.call(bot("bot-x"), "send_prompt", { agent_id: "bot-a", prompt: "two" });
+    expect(b2.body.thread_id).toBe(b1.body.thread_id);
   });
 
   it("blocking waits for the reply; empty reply with finished=true means no text", async () => {
