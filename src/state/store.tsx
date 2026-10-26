@@ -173,6 +173,8 @@ export interface OptionCardData {
    * "Always deny" would save for the bot's owner: the tool, its target
    * read from the arguments, the destructive kind and plain words. */
   ownerRule?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; from?: "admin" | "hold" | "origin" };
+  /** 2026-10-26 (#1065): the second "Always allow", the whole folder of the file this card reads (and its subfolders). */
+  ownerRuleFolder?: { tool: string; scope: Record<string, string>; destructive?: "delete" | "bulk" | "external-message"; description: string; writes?: boolean };
   /** The owner's rule saved when answering this card. */
   ruleSaved?: { id: string; behavior: "allow" | "ask" | "deny"; description: string };
   /** the Allow rule saved when this card was answered (server/index.ts) */
@@ -1678,6 +1680,9 @@ export type Action =
       /** 2026-10-14: save the card's ownerRule as the owner's rule (Always
        * allow / Always deny), atomically with the answer. */
       rule?: "allow" | "deny";
+      /** 2026-10-26 (#1065): "folder" keeps the card's folder rule (every
+       * file of the folder and its subfolders) instead of the exact path. */
+      ruleScope?: "folder";
       /** Local UI recovery hook for voice flows. Never sent to the server. */
       onError?: (message: string) => void;
     }
@@ -4595,6 +4600,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 always: action.always,
                 rememberCommand: action.rememberCommand,
                 rule: action.rule,
+                ...(action.ruleScope ? { ruleScope: action.ruleScope } : {}),
               }),
             });
           void waitForExecutionSettings(executionBotsBeforeAction, action.threadId)

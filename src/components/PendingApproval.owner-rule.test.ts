@@ -77,6 +77,32 @@ describe("owner rule buttons", () => {
     expect(result.html).not.toContain("only a rule made for it can allow it");
   });
 
+  // 2026-10-26 (#1065): a file card offers this file and the whole folder
+  it("offers this file and the whole folder when the card carries a folder rule", () => {
+    const result = view({ ownerRuleFolder: { tool: ownerRule.tool, scope: { path_in: "/repo/docs" }, description: "Read files in /repo/docs and its subfolders" } });
+    expect(result.buttons.map((button) => button.props.children)).toEqual(["Deny", "Always allow this file", "Always allow the whole folder", "Allow once"]);
+    click(result, "Always allow this file");
+    const exact = fixture.dispatch.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(exact).toMatchObject({ behavior: "allow", rule: "allow" });
+    expect(exact.ruleScope).toBeUndefined();
+    click(result, "Always allow the whole folder");
+    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ behavior: "allow", rule: "allow", ruleScope: "folder" }));
+  });
+
+  it("says the folder covers changes when the card is a write", () => {
+    const result = view({ ownerRuleFolder: { tool: ownerRule.tool, scope: { path_in: "/repo/docs" }, description: "Write files in /repo/docs and its subfolders", writes: true } });
+    expect(result.buttons.map((button) => button.props.children)).toEqual(["Deny", "Always allow changes to this file", "Always allow changes in the whole folder, deletions included", "Allow once"]);
+    click(result, "Always allow changes in the whole folder, deletions included");
+    expect(fixture.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ rule: "allow", ruleScope: "folder" }));
+  });
+
+  it("offers no folder choice when the organization turned Always allow off", () => {
+    fixture.alwaysAllow = false;
+    const result = view({ ownerRuleFolder: { tool: ownerRule.tool, scope: { path_in: "/repo/docs" }, description: "x" } });
+    expect(result.html).not.toContain("data-always-allow-folder");
+    expect(result.buttons.map((button) => button.props.children)).not.toContain("Always allow the whole folder");
+  });
+
   it("an admin card offers no rule, and its owner only waits", () => {
     const result = view({ adminApproval: true });
     expect(result.buttons.map((button) => button.props.children)).not.toContain("Always deny");
