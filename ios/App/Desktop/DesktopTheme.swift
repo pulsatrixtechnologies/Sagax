@@ -103,6 +103,20 @@ struct DesktopTheme: Equatable {
     /// The worn look: the skin's tokens with its variant's block laid over
     /// them (the sidebar set included), as the desktop's CSS does.
     static func of(_ palette: SkinPalette) -> DesktopTheme {
+        var theme = ofVariant(palette)
+        // the open bot's colour as the accent ("Use bot color as accent"), over the variant
+        if let accent = palette.botAccent {
+            theme.accent = accent.fill.color
+            theme.accentBorder = accent.fill.color
+            theme.focus = accent.fill.color
+            theme.accentText = accent.text.color
+            theme.accentInk = accent.ink.color
+            theme.accentGradient = []
+        }
+        return theme
+    }
+
+    private static func ofVariant(_ palette: SkinPalette) -> DesktopTheme {
         var theme = of(palette.id)
         theme.texture = palette.texture
         let look = SkinLook(skin: palette.id, tint: palette.tint, depth: palette.depth, texture: palette.texture)

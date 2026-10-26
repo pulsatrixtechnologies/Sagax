@@ -14,7 +14,10 @@ struct AccountSettingsView: View {
     @EnvironmentObject private var session: Session
     @EnvironmentObject private var model: SettingsModel
     @ObservedObject private var photos = AccountPhotoStore.shared
+    @ObservedObject private var names = AccountNameStore.shared
     @EnvironmentObject private var navigator: SettingsNavigator
+    @State private var renaming: Connection?
+    @State private var renameText = ""
     @State private var confirmingSignOut = false
     @State private var confirmingDelete = false
     @State private var deleting = false
@@ -55,6 +58,13 @@ struct AccountSettingsView: View {
                         guard !current else { return }
                         closeSheet?()
                         session.switchComputer(to: connection.id)
+                    }
+                    // the person may name each account on this phone
+                    .contextMenu {
+                        Button("Rename") {
+                            renameText = names.name(for: connection.id) ?? ""
+                            renaming = connection
+                        }
                     }
                     CardHairline(leadingInset: SettingsMetrics.rowInset)
                 }
@@ -101,6 +111,14 @@ struct AccountSettingsView: View {
         } message: {
             Text("Your bots, conversations and saved settings on this server are deleted with it. This can't be undone.")
         }
+        .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField(renaming.map { $0.name } ?? "Name", text: $renameText)
+            Button("Save") {
+                if let connection = renaming { names.setName(renameText, for: connection.id) }
+                renaming = nil
+            }
+            Button("Cancel", role: .cancel) { renaming = nil }
+        }
         .alert(item: $notice) { notice in
             Alert(title: Text(notice.title), message: Text(verbatim: notice.message), dismissButton: .default(Text("OK")) {
                 notice.afterwards?()
@@ -115,6 +133,7 @@ struct AccountSettingsView: View {
     /// The email for the account this phone is signed in as; the computer's
     /// name for the others.
     private func accountLabel(for connection: Connection, current: Bool) -> String {
+        if let own = names.name(for: connection.id) { return own }
         if current, let email = model.identity?.email { return email }
         return connection.name
     }

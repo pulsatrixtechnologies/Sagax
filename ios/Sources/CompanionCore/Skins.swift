@@ -206,6 +206,8 @@ public struct SkinPalette: Equatable, Sendable {
     public var texture: SkinTexture = .none
     /// The accent's gradient stops where it is filled (duo-tones, moods); empty for a flat accent.
     public var accentGradient: [SkinColor] = []
+    /// The open bot's colour as the accent (BotAccent.swift), nil for the skin's own.
+    public var botAccent: BotAccentColors? = nil
 
     // surfaces
     public var bg, card, cardRaised, hairline, tabHairline: SkinColor

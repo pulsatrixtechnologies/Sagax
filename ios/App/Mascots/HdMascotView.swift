@@ -119,10 +119,11 @@ struct HdOrVector<Vector: View>: View {
     let size: CGFloat
     var animated = false
     @ViewBuilder let vector: () -> Vector
-    @AppStorage(HdMascots.preferenceKey) private var preference = "on"
+    /// Settings > Appearance > Mascots > HD mascots (on by default), published by ThemeRoot.
+    @Environment(\.hdMascotsEnabled) private var hdEnabled
 
     var body: some View {
-        if hd, HdMascots.enabled(preference), let manifest = HdMascots.manifest(for: character) {
+        if hd, hdEnabled, let manifest = HdMascots.manifest(for: character) {
             HdMascotView(manifest: manifest, key: key, size: size, animated: animated, fallback: vector)
         } else {
             vector()
@@ -233,5 +234,17 @@ struct HdMascotView<Fallback: View>: View {
         if file != shownFile { started = Date() }
         shown = clip
         shownFile = file
+    }
+}
+
+private struct HdMascotsEnabledKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    /// Settings > Appearance > Mascots > HD mascots (on by default).
+    var hdMascotsEnabled: Bool {
+        get { self[HdMascotsEnabledKey.self] }
+        set { self[HdMascotsEnabledKey.self] = newValue }
     }
 }

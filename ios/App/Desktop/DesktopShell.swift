@@ -519,6 +519,12 @@ private struct DesktopShellRouting: ViewModifier {
             .task(id: session.connection?.id) {
                 await session.loadAccount()
                 await SidebarPrefsModel.shared.load(session)
+                await ToolCallsSetting.shared.load(session)
+            }
+            // a new message brings a hidden entry back (Settings > "Show
+            // people again" and "Show bots again"), as on the iPhone's home
+            .onValueChange(of: session.rosterSignature) { _ in
+                sidebarPrefs.unhideNewMessages(session)
             }
     }
 

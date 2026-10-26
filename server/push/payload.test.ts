@@ -59,6 +59,19 @@ describe("APNs payload", () => {
     expect(nudgeNoWizz.aps.sound).toBe("default");
   });
 
+  it("plays the person's chosen notification tone, bundled on the phone", () => {
+    const tone = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSoundChoice: "chime-b", nowMs: 0 }).body);
+    expect(tone.aps.sound).toBe("notify-chime-b.caf");
+    const system = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSoundChoice: "system", nowMs: 0 }).body);
+    expect(system.aps.sound).toBe("default");
+    const unknown = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSoundChoice: "__proto__", nowMs: 0 }).body);
+    expect(unknown.aps.sound).toBe("default");
+    const muted = JSON.parse(buildApnsRequest({ message: message(), bundleId: "x", personSound: false, personSoundChoice: "tick", nowMs: 0 }).body);
+    expect(muted.aps.sound).toBeUndefined();
+    const nudge = JSON.parse(buildApnsRequest({ message: message({ kind: "nudge" }), bundleId: "x", personSoundChoice: "tick", nowMs: 0 }).body);
+    expect(nudge.aps.sound).toBe(NUDGE_SOUND);
+  });
+
   it("clips long text and keeps the collapse id within 64 bytes", () => {
     const long = buildApnsRequest({ message: message({ body: "word ".repeat(200) }), bundleId: "x", nowMs: 0 });
     expect(JSON.parse(long.body).aps.alert.body.length).toBeLessThanOrEqual(240);

@@ -14175,6 +14175,94 @@
         }
       }
     },
+    "Couldn't open this artifact.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open this artifact."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir cet artefact."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir este artefato."
+          }
+        }
+      }
+    },
+    "This week": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This week"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette semaine"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta semana"
+          }
+        }
+      }
+    },
+    "Older": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Older"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus ancien"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mais antigo"
+          }
+        }
+      }
+    },
+    "Files and artifacts from this chat show up here.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files and artifacts from this chat show up here."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les fichiers et artefacts de cette discussion apparaissent ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os arquivos e artefatos desta conversa aparecem aqui."
+          }
+        }
+      }
+    },
     "Files": {
       "localizations": {
         "en": {
@@ -74366,6 +74454,216 @@
         "fr": { "stringUnit": { "state": "translated", "value": "En attente d'activation par l'administrateur" } }
       }
     },
+    "Tool calls": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tool calls" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Appels d'outils" } }
+      }
+    },
+    "Show tool calls in chat. Off: the chat shows the messages, a turn's steps fold away. The same switch as on your computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show tool calls in chat. Off: the chat shows the messages, a turn's steps fold away. The same switch as on your computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les appels d'outils dans la conversation. Désactivé : la conversation montre les messages, les étapes d'un tour se replient. Le même interrupteur que sur votre ordinateur." } }
+      }
+    },
+    "Show tool calls in chat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show tool calls in chat" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les appels d'outils dans la conversation" } }
+      }
+    },
+    "Could not save the tool calls setting.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not save the tool calls setting." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible d'enregistrer le réglage des appels d'outils." } }
+      }
+    },
+    "Use bot color as accent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use bot color as accent" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Couleur du bot comme accent" } }
+      }
+    },
+    "The accent follows the open bot's color.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The accent follows the open bot's color." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'accent prend la couleur du bot ouvert." } }
+      }
+    },
+    "Show suggestions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show suggestions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les suggestions" } }
+      }
+    },
+    "Show the Suggestions card in the bot panel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show the Suggestions card in the bot panel" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher la carte Suggestions dans le panneau du bot" } }
+      }
+    },
+    "Mascots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mascots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mascottes" } }
+      }
+    },
+    "HD mascots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "HD mascots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mascottes HD" } }
+      }
+    },
+    "Detailed art for the characters that have it. Colors and skins apply to the classic look.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Detailed art for the characters that have it. Colors and skins apply to the classic look." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Illustrations détaillées pour les personnages qui en ont. Les couleurs et les styles s'appliquent à l'apparence classique." } }
+      }
+    },
+    "Notification sound": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Notification sound" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Son de notification" } }
+      }
+    },
+    "Tick": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tick" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tic" } }
+      }
+    },
+    "Double tick": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Double tick" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Double tic" } }
+      }
+    },
+    "Chime A": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Chime A" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Carillon A" } }
+      }
+    },
+    "Chime B": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Chime B" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Carillon B" } }
+      }
+    },
+    "Blip": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Blip" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Blip" } }
+      }
+    },
+    "Send read receipts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Send read receipts" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Envoyer les accusés de lecture" } }
+      }
+    },
+    "Off: you do not see other people's either.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Off: you do not see other people's either." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactivé : vous ne voyez pas non plus ceux des autres." } }
+      }
+    },
+    "Thread lists, their controls and thread receipts in the chat. Off: one conversation per bot, as on your computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Thread lists, their controls and thread receipts in the chat. Off: one conversation per bot, as on your computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les listes de fils, leurs commandes et les reçus de fil dans la conversation. Désactivé : une seule conversation par bot, comme sur votre ordinateur." } }
+      }
+    },
+    "Suggestions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Suggestions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Suggestions" } }
+      }
+    },
+    "Answer a waiting request": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Answer a waiting request" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Répondre à une demande en attente" } }
+      }
+    },
+    "A conversation is waiting for your answer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A conversation is waiting for your answer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une conversation attend votre réponse" } }
+      }
+    },
+    "Waiting in %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting in %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente dans %@" } }
+      }
+    },
+    "%@ is waiting for your answer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ is waiting for your answer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ attend votre réponse" } }
+      }
+    },
+    "Give it a name and a role": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Give it a name and a role" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lui donner un nom et un rôle" } }
+      }
+    },
+    "So people know what to ask it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "So people know what to ask it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pour qu'on sache quoi lui demander" } }
+      }
+    },
+    "Write its standing instructions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Write its standing instructions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrire ses consignes permanentes" } }
+      }
+    },
+    "How it works, every conversation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "How it works, every conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sa façon de travailler, à chaque conversation" } }
+      }
+    },
+    "Choose a working folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a working folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisir un dossier de travail" } }
+      }
+    },
+    "Where its files live": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Where its files live" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Où ses fichiers sont rangés" } }
+      }
+    },
+    "Connect the apps it needs": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect the apps it needs" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connecter les applications dont il a besoin" } }
+      }
+    },
+    "Some of its tools still need a sign-in": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Some of its tools still need a sign-in" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Certains de ses outils attendent encore une connexion" } }
+      }
+    },
+    "Add a schedule or a trigger": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add a schedule or a trigger" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter un horaire ou un déclencheur" } }
+      }
+    },
+    "Let it work without being asked": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Let it work without being asked" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pour qu'il travaille sans qu'on le lui demande" } }
+      }
+    },
     "Base": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Base" } },
@@ -74550,12 +74848,6 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Candy" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Bonbon" } }
-      }
-    },
-    "Full (intensity)": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Full" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Pleine" } }
       }
     }
   },

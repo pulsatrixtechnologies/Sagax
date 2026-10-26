@@ -30,6 +30,14 @@ public enum ActivityDetail: String, CaseIterable, Codable, Sendable {
         case .hidden: "No activity, only messages."
         }
     }
+
+    /// The desktop's Settings > Appearance > Tool calls ("Details",
+    /// `features.showToolCalls`, off by default): on shows every step, off
+    /// the pared-down chat (steps gone, narration folded, failures kept).
+    /// The phone follows that one switch rather than a setting of its own.
+    public static func forToolCalls(_ showToolCalls: Bool?) -> ActivityDetail {
+        showToolCalls == true ? .full : .hidden
+    }
 }
 
 /// One chip on the composer's quick-reply row.
@@ -324,7 +332,12 @@ public func settledPermissionLeavesChat(_ message: Message) -> Bool {
 /// A digest is a row of its own, drawn as a chip: never folded into a run
 /// of the tool chips it summarises, never counted as one of their steps,
 /// and gone with them when activity is hidden.
-public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [TranscriptRow] {
+///
+/// `showThreads` false is Settings > Appearance > Threads off: a receipt
+/// that opens another conversation (a thread chip, "Go to conversation")
+/// leaves the chat, as the desktop's unified chat drops it (ChatView.tsx,
+/// #1026).
+public func transcriptRows(_ messages: [Message], detail: ActivityDetail, showThreads: Bool = true) -> [TranscriptRow] {
     let voice = makeVoiceCallPlan(messages)
     // Fold only explicitly completed turns; never guess that the last reply
     // is final on an older server or while the bot is still working.
@@ -387,6 +400,7 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail) -> [Tr
             break
         }
         if isHiddenStatusNotice(message) { continue }
+        if !showThreads, message.threadRef != nil, message.tool != nil { continue }
         if hiddenIDs.contains(message.id) {
             join(message)
             if let fold = folds[message.id] {

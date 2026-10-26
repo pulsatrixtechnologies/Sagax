@@ -11,8 +11,8 @@ struct AppearanceSettingsView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @ObservedObject private var themes = ThemeStore.shared
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
     @AppStorage(RunCardPreference.key) private var showRunCard = true
-    @AppStorage(HdMascots.preferenceKey) private var hdMascots = "on"
 
     /// The skin in effect (a DEBUG launch override included).
     private var selection: ThemeSelection { themes.effective }
@@ -77,23 +77,6 @@ struct AppearanceSettingsView: View {
             // list density, activity and home chrome (this phone's display)
             DisplaySettingsCard()
 
-            // HD mascots (#968): painted art for the characters that have some, shown while one does
-            if !HdMascots.characters.isEmpty {
-                SettingsSectionLabel(text: "Mascots")
-                SettingsCard {
-                    SettingsRow(
-                        title: "HD mascots",
-                        subtitle: "Detailed art for the characters that have it. Colors and skins apply to the classic look.",
-                        accessory: .toggle(Binding(get: { HdMascots.enabled(hdMascots) }, set: { on in
-                            hdMascots = on ? "on" : "off"
-                            // the same choice on the person's other devices (an organization keeps it)
-                            if let client { Task { await client.saveHdMascotsPreference(on) } }
-                        })),
-                        identifier: "settings.hdMascots"
-                    )
-                }
-            }
-
             // the run card above the composer (ST4, SettingsModal RunCardRow)
             SettingsSectionLabel(text: "Chat")
             SettingsCard {
@@ -103,11 +86,32 @@ struct AppearanceSettingsView: View {
                     accessory: .toggle($showRunCard),
                     identifier: "settings.runCard"
                 )
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
+                    title: "Use bot color as accent",
+                    subtitle: "The accent follows the open bot's color.",
+                    accessory: .toggle(Binding(get: { prefs.botAccent }, set: { prefs.setBotAccent(session, $0) })),
+                    identifier: "settings.botAccent"
+                )
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(
+                    title: "Show suggestions",
+                    subtitle: "Show the Suggestions card in the bot panel",
+                    accessory: .toggle(Binding(get: { prefs.showSuggestions }, set: { prefs.setShowSuggestions(session, $0) })),
+                    identifier: "settings.showSuggestions"
+                )
             }
-        }
-        .task {
-            // the switch as set on the person's other devices
-            if let client, let value = await client.hdMascotsPreference() { hdMascots = HdMascots.enabled(value) ? "on" : "off" }
+
+            // Settings > Appearance > Mascots (src/lib/hd-mascots-preference.ts)
+            SettingsSectionLabel(text: "Mascots")
+            SettingsCard {
+                SettingsRow(
+                    title: "HD mascots",
+                    subtitle: "Detailed art for the characters that have it. Colors and skins apply to the classic look.",
+                    accessory: .toggle(Binding(get: { prefs.hdMascots }, set: { prefs.setHdMascots(session, $0) })),
+                    identifier: "settings.hdMascots"
+                )
+            }
         }
         .task(id: selection.mode) {
             if selection.mode == .computer { await themes.refreshFromComputer(client: client) }

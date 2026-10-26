@@ -37,15 +37,15 @@ final class SidebarPrefsModel: ObservableObject {
 
     // MARK: Reads
 
-    /// The thread lists and controls (Settings > Appearance > Threads). The
-    /// desktop's default is off; a phone that never stored the switch keeps
-    /// showing them, as it always did.
+    /// The thread lists and controls (Settings > Appearance > Threads), in
+    /// the sidebar and in the chat. Off by default, as on the desktop.
     var showThreads: Bool {
 #if DEBUG
         // UI tests: the desktop's default (threads hidden) on a fixture
         if ProcessInfo.processInfo.arguments.contains("-threads-hidden") { return false }
 #endif
-        return prefs.showThreads ?? true
+        // the desktop's default (thread-preferences.ts): off until turned on
+        return prefs.showThreads ?? false
     }
 
     /// Settings > Appearance > Threads location (#210): per device, never
@@ -94,6 +94,7 @@ final class SidebarPrefsModel: ObservableObject {
         if prefs.values[SidebarPrefKey.collapsedSections] == nil {
             migrateLegacyCollapsed()
         }
+        applyPersonValues()
     }
 
     /// Reads the person's record when the server keeps one.
@@ -119,6 +120,8 @@ final class SidebarPrefsModel: ObservableObject {
             pending.formUnion(prefs.values.keys)
         }
         persist()
+        offerLanguage(session)
+        applyPersonValues()
         seedIfNeeded(session)
         await push(session)
     }
@@ -131,6 +134,7 @@ final class SidebarPrefsModel: ObservableObject {
         guard next != prefs else { return }
         prefs = next
         persist()
+        applyPersonValues()
     }
 
     // MARK: Writes
@@ -295,6 +299,67 @@ final class SidebarPrefsModel: ObservableObject {
         update(session) { $0.setShowThreads(on) }
     }
 
+    // MARK: The person's other preferences (PersonPreferences.swift)
+
+    /// The language picked on this phone (Settings > Language) becomes the
+    /// person's: the server words pushes, rule texts and its own replies in
+    /// it, and the desktop follows (src/lib/language-preference.ts).
+    func setLanguage(_ session: Session, _ choice: String) {
+        let code = PersonLanguage.stored(fromApp: choice)
+        guard prefs.languageCode != code else { return }
+        update(session) { $0.setLanguageCode(code) }
+    }
+
+    /// A record without a language takes the one this phone already chose.
+    private func offerLanguage(_ session: Session) {
+        guard synced, prefs.languageCode == nil else { return }
+        let choice = UserDefaults.standard.string(forKey: PrefKey.language) ?? AppLanguage.system.rawValue
+        guard choice != AppLanguage.system.rawValue else { return }
+        update(session) { $0.setLanguageCode(PersonLanguage.stored(fromApp: choice)) }
+    }
+
+    /// The record's values that live outside this model: the app language
+    /// and the theme's bot accent (ThemeStore reads `prefs` directly).
+    private func applyPersonValues() {
+        NotificationSounds.applyChoice(prefs.notificationSound)
+        // the language follows the person only where the server keeps it
+        guard synced else { return }
+        if let code = prefs.languageCode,
+           let choice = PersonLanguage.app(fromStored: code, available: AppLanguage.allCases.filter { $0 != .system }.map(\.rawValue)),
+           UserDefaults.standard.string(forKey: PrefKey.language) ?? AppLanguage.system.rawValue != choice {
+            UserDefaults.standard.set(choice, forKey: PrefKey.language)
+        }
+    }
+
+    var botAccent: Bool { prefs.botAccent }
+    func setBotAccent(_ session: Session, _ on: Bool) { update(session) { $0.setBotAccent(on) } }
+
+    var hdMascots: Bool { prefs.hdMascots }
+    func setHdMascots(_ session: Session, _ on: Bool) {
+        update(session) { $0.setHdMascots(on) }
+    }
+
+    var showSuggestions: Bool { prefs.showSuggestions }
+    func setShowSuggestions(_ session: Session, _ on: Bool) { update(session) { $0.setShowSuggestions(on) } }
+
+    var readReceipts: Bool { prefs.readReceipts }
+    func setReadReceipts(_ session: Session, _ on: Bool) { update(session) { $0.setReadReceipts(on) } }
+
+    var notificationSound: NotificationSoundChoice { prefs.notificationSound }
+    func setNotificationSound(_ session: Session, _ choice: NotificationSoundChoice) {
+        update(session) { $0.setNotificationSound(choice) }
+        NotificationSounds.applyChoice(choice)
+    }
+
+    func routineScope(_ session: Session) -> RoutineScopePrefs {
+        prefs.routineScope(for: session.account?.principalId)
+    }
+
+    func setRoutineScope(_ session: Session, _ scope: RoutineScopePrefs) {
+        guard routineScope(session) != scope else { return }
+        update(session) { $0.setRoutineScope(scope, for: session.account?.principalId) }
+    }
+
     // MARK: Team map
 
     /// The Team map's bot order follows the person on an organization
@@ -304,6 +369,15 @@ final class SidebarPrefsModel: ObservableObject {
 
     func setTeamBotOrders(_ session: Session, _ orders: [String: [String]]) {
         update(session) { $0.setTeamBotOrders(orders) }
+    }
+}
+
+extension Session {
+    /// Changes when a message or an unread mark arrives, or the roster's
+    /// membership changes: when a hidden entry may come back.
+    var rosterSignature: [String] {
+        state.bots.map { "\($0.id):\($0.unread):\(state.messages[$0.threadId]?.last?.at ?? 0):\($0.tasks?.compactMap(\.updatedAt).max() ?? 0)" }
+            + state.rooms.map { "\($0.id):\($0.unread):\(state.messages[$0.threadId]?.last?.at ?? 0)" }
     }
 }
 
