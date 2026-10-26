@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConfigStatus } from "@/state/store";
-import { canEditBotField, canStepPrimary, showBotArchive, showBotDelete, showBotRename, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
+import { canEditBotField, canStepPrimary, canTeachInBrowser, showBotArchive, showBotDelete, showBotRename, showServerSectionMove, viewerOwnsBot } from "./bot-capabilities";
 
 const ZARA = "pr_00000000-0000-4000-8000-000000000002";
 const member = {
@@ -118,5 +118,21 @@ describe("canStepPrimary", () => {
     expect(canStepPrimary(member, other)).toBe(false);
     expect(canStepPrimary(member, own, { draft: true })).toBe(true);
     expect(canStepPrimary({ viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus, own)).toBe(false);
+  });
+});
+
+describe("canTeachInBrowser", () => {
+  it("lets an organization member teach in the browser of a bot they own, never another person's (2026-10-26)", () => {
+    expect(canTeachInBrowser(member, own, false)).toBe(true);
+    expect(canTeachInBrowser(member, own, null)).toBe(true);
+    expect(canTeachInBrowser(member, other, false)).toBe(false);
+    const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
+    expect(canTeachInBrowser(readOnly, own, false)).toBe(false);
+  });
+
+  it("keeps the owner on this machine and an admin session, and a solo chat-only session out", () => {
+    expect(canTeachInBrowser(null, other, true)).toBe(true);
+    expect(canTeachInBrowser(member, other, true)).toBe(true);
+    expect(canTeachInBrowser(null, own, false)).toBe(false);
   });
 });

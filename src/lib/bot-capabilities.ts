@@ -101,3 +101,18 @@ export function showServerSectionMove(
   if (!viewerIsOrgMember(config)) return true;
   return bots.length > 0 && bots.every((bot) => canEditBotField(config, bot, "section"));
 }
+
+/** Teach by demonstration in the bot's browser (Composer's "Show in the
+ * browser"). The owner on this machine or an admin session, as before; and
+ * 2026-10-26 (JC): an organization member on a bot they own, whose browser
+ * runs in their own server environment (/api/desktop-viewer/sandbox/me),
+ * never on someone else's bot. */
+export function canTeachInBrowser(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null },
+  ownerOrAdmin: boolean | null,
+): boolean {
+  if (ownerOrAdmin === true) return true;
+  if (!viewerIsOrgMember(config) || viewerBotsReadOnly(config)) return false;
+  return viewerOwnsBot(config, bot);
+}
