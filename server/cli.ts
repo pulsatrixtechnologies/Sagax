@@ -1,5 +1,5 @@
 // `openmausbot` on the command line: run the server anywhere and pair devices
-// to it. One implementation for three homes — `openmausbot` (an installed
+// to it. One implementation for three homes — `npx @pulsatrixtechnologies/sagax` (the npm
 // package), `node dist-server/cli.js` (the container image) and
 // `pnpm omb` (a checkout) — because scripts/bundle-server.mjs bundles this
 // file next to the server.
@@ -266,8 +266,9 @@ access  who may sign in with an emailed code at /pair: an address or
         Takes effect at once, no restart.
 service keep the server running across reboots: writes a systemd unit
         (Linux) or a launchd agent (macOS) for the same serve options and
-        prints the commands that install it. Run it from a checkout
-        you keep in place (pnpm omb service install).
+        prints the commands that install it. Install the package
+        permanently first (npm install -g
+        @pulsatrixtechnologies/sagax).
 browser install: the bots' browser engine (agent-browser, pinned) into the
         data dir, and Chrome for Testing into the user's browser cache.
         --with-deps also installs
@@ -301,8 +302,8 @@ fleet   many client workspaces on one Linux server, each its own account,
 --no-pair   skip phone setup and do not print a pairing code
 --local     start locally this time, ignoring saved remote-access settings
 
-From a checkout: \`pnpm install && pnpm build\`, then \`pnpm omb <command>\`.
-Node 24+ is required.
+Install once with \`npm install -g @pulsatrixtechnologies/sagax\`, then type \`sagax\`.
+Or run without a global install: \`npx @pulsatrixtechnologies/sagax\`. Node 24+ is required.
 `;
 
 /** Terminal in, terminal out; tests substitute all three. */
@@ -1133,7 +1134,7 @@ export async function runOnboardingCommand(
 ): Promise<number> {
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
   if (options.command === "setup" && !interactive) {
-    io.error("Setup needs an interactive terminal. Run `openmausbot setup` (or `pnpm omb setup` from a checkout) in a terminal, then use `openmausbot serve` for unattended starts.");
+    io.error("Setup needs an interactive terminal. Run `npx @pulsatrixtechnologies/sagax setup` in a terminal, then use `npx @pulsatrixtechnologies/sagax serve` for unattended starts.");
     return 1;
   }
   // The default folder moves from ~/.openmausbot to ~/.sagax here, once,
@@ -1155,7 +1156,7 @@ export async function runOnboardingCommand(
   try {
     if (options.command === "setup" || !(await isSetupComplete(options.dataDir))) {
       if (!interactive) {
-        io.error("No completed setup was found. Run `openmausbot setup` (or `pnpm omb setup` from a checkout) in an interactive terminal first, or use `openmausbot serve` with an existing configuration.");
+        io.error("No completed setup was found. Run `npx @pulsatrixtechnologies/sagax setup` in an interactive terminal first, or use `npx @pulsatrixtechnologies/sagax serve` with an existing configuration.");
         return 1;
       }
       if (!(await runSetup({ dataDir: options.dataDir, port: options.port }))) {
@@ -1180,7 +1181,7 @@ export async function runOnboardingCommand(
       saveCliStartup(options.dataDir, startupPreferences(launch));
     }
     if (options.command === "setup") {
-      io.log("\nAll set. Start with: openmausbot (or pnpm omb from a checkout).");
+      io.log("\nAll set. Start with: sagax (or npx @pulsatrixtechnologies/sagax without a global install).");
       if (!options.dataDirIsDefault || options.port !== 8799) {
         io.log(`Use the same --data-dir (${options.dataDir}) and --port (${options.port}) options when starting.`);
       }
