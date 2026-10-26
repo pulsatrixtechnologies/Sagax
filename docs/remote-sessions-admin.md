@@ -23,9 +23,54 @@ Designed but NOT wired yet (gated OFF, do not rely on in prod):
 
 Because of this, unattended access is gated behind a server flag
 `unattendedEnabled` that is FALSE by default (env `SAGAX_UNATTENDED_ACCESS=1`).
-While it is off: the grant and revoke routes return 501 "not available", the
-page shows the Unattended column read only with a "not enabled" note, and no
-one can turn the dangerous path on by mistake. See the TODO at the bottom.
+While it is off: recording consent (grant) and opening an enrolled host return
+501 "not available", the page shows a "not enabled" note, and no one can turn
+the dangerous path on by mistake. Revoking is never behind the flag (M2 of the
+2026-10-26 review): a host enrolled before the flag was cut can always be
+revoked. See the TODO at the bottom.
+
+## Enrolled hosts (2026-10-26)
+
+The contract is `docs/inscription-hote.md` in `sagax-remote-access` ("Côté
+Sagax"). Perspicax is the authority: it keeps the enrolled hosts
+(`remote_support_hosts`), keyed by `host_id` (`h_` and 32 hex, the fingerprint
+of the host's own key, never a hostname or a serial: E3).
+
+- The page shows an "Enrolled hosts" section above the sessions
+  (`src/components/remote-session/UnattendedHostsSection.tsx`): the readable
+  name, the organization when it is a name, the scope, enrolled, expires, last
+  seen and the state (enrolled, expired, revoked). The `host_id` is only in the
+  name's tooltip and behind the Copy button, never in the text.
+- "Unattended access" (`POST /api/admin/remote-sessions/hosts/<host_id>/open`)
+  shows on an enrolled host only when `SAGAX_UNATTENDED_ACCESS=1`. Any person
+  who reaches this server may open (no admin approval, decision 2026-10-26).
+  Sagax makes a client key for that session only (as for a coded open), sends
+  `remote_support_open` with `host_id` and the public nodekey, follows
+  `remote_support_status` until the host picks the session at its beat, and
+  the usual registrar posts the card and the panel row (`client = "app"`) in
+  the conversation of the person's Primary Bot (else another bot of theirs
+  with a Perspicax profile). The page then opens the live control overlay by
+  itself.
+- "Revoke" (`POST /api/admin/remote-sessions/hosts/<host_id>/revoke`) shows on
+  every host not yet revoked, flag OFF included (M2), with a confirm. Sessions
+  opened from this page on that host end here at once; Perspicax ends the
+  others and the host stops and uninstalls at its next beat.
+- Every open and revoke writes an `unattended.open` / `unattended.revoke`
+  line in `remote-session-actions.jsonl` whose actor is the person who acted
+  (M4), with the host in its own field. The legacy consent revoke writes the
+  same kind with the revoking admin, no longer the installer.
+- Server: `server/remote-unattended-hosts.ts` (list, open, revoke),
+  `shared/remote-unattended-host.ts` (rows, states, what may be opened),
+  `openUnattendedSession` in `server/remote-support-local.ts`.
+
+Pending at Perspicax (TODO): the contract names the actions but not the MCP
+tools for listing and revoking hosts. Sagax calls `remote_support_hosts`
+(answer `{ hosts: [{ host_id, hostname, org, scope, created_at, expires_at,
+last_seen_at, revoked_at }] }`) and `remote_support_host_revoke` (`{ host_id }`);
+until Perspicax ships them the section says the list is not available and
+Revoke reports Perspicax could not do it. The unattended
+`remote_support_open` is expected to answer the session's `code`, as status
+and close stay keyed by code.
 
 ## What shipped in Sagax (this PR)
 
@@ -192,7 +237,8 @@ From the security review of PR #981:
 2. Enforce `Expired()` at runtime: a host whose consent lapsed must not accept
    an unattended (re)connect.
 3. `onRevoke` must actually uninstall the host service and invalidate the
-   Perspicax `--allow` binding, not only write an audit line.
+   Perspicax `--allow` binding, not only write an audit line. (Enrolled hosts:
+   revoke goes to Perspicax, which tells the host at its next beat.)
 4. `publish()` must refuse a session from a host without active consent
    (revoked or expired), so unattended cannot be used past its window.
 5. Decide signed consent attestation (org signed token) vs free text
