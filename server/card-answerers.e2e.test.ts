@@ -390,7 +390,7 @@ posixOnly("who may answer an approval card on a shared workspace", () => {
   }, 90_000);
 
   it("lets a member of the team, not its owner, confirm a team-memory card; a stranger is refused", async () => {
-    // Juniper is BOSS's, in Dispatch, shared with Ada (Zachary's place). Bob uses no Dispatch bot.
+    // Juniper is BOSS's, in Dispatch, shared with Ada (Morgan's place). Bob uses no Dispatch bot.
     const juniper = await makeTeamBot("Juniper", "Dispatch", [ADA]);
     await makeTeamBot("Sales desk", "Sales", [BOB]);
     const task = await api("POST", `/api/bots/${juniper.id}/tasks`, { title: "Ada's dispatch" }, ADA);

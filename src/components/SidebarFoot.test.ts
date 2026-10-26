@@ -1,7 +1,7 @@
 // Regression (2026-10-26): the foot lost its design of #935. #1014 (Composio
 // removal) deleted the pill that showed the connected apps' logos and left a
 // plain "Connect apps" text button, which ate the width and cut the name
-// ("Jean-Christophe ..."). The foot must show the full name while the row has
+// ("Jean-Baptiste ..."). The foot must show the full name while the row has
 // room, and the logos of the connected apps whenever there are some.
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
@@ -70,16 +70,16 @@ describe("foot mode", () => {
   });
 
   it("renders the name whole in the inline foot, beside the logos pill, never a text Connect apps button", () => {
-    fixture.state = { config: { profile: { name: "Jean-Christophe Proulx" } } as AppState["config"] };
+    fixture.state = { config: { profile: { name: "Jean-Baptiste Exemplar" } } as AppState["config"] };
     vi.stubGlobal("window", {});
     const html = renderToStaticMarkup(createElement(SidebarFoot, { onOpenApps: () => {} }));
     vi.unstubAllGlobals();
     expect(html).toContain('data-foot-mode="inline"');
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
     expect(html).not.toContain("data-connect-apps-label");
   });
 
-  it("the compact foot is sized so the default 280px sidebar keeps 'Jean-Christophe Proulx' whole", () => {
+  it("the compact foot is sized so the default 280px sidebar keeps 'Jean-Baptiste Exemplar' whole", () => {
     // measured in a real browser (gallery ?view=foot&data=real, 280px
     // sidebar, the row 6px wider than its gutter: 258px): name pill ~210px
     // (32px avatar, 14.5px name), logos pill ~42px, one 6px gap; the real
@@ -104,7 +104,7 @@ describe("foot mode", () => {
 
 describe("foot hover expand", () => {
   const named = () => {
-    fixture.state = { config: { profile: { name: "Jean-Christophe Proulx" } } as AppState["config"] };
+    fixture.state = { config: { profile: { name: "Jean-Baptiste Exemplar" } } as AppState["config"] };
     vi.stubGlobal("window", {});
   };
 
@@ -121,7 +121,7 @@ describe("foot hover expand", () => {
     vi.unstubAllGlobals();
     expect(html).not.toContain("data-foot-hot");
     expect(html).not.toContain("data-connect-apps-label");
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
   });
 
   it("hovered (or focused), the apps pill is expanded with its words and the row is marked hot", () => {

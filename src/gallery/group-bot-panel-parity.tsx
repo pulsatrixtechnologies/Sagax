@@ -74,7 +74,7 @@ function Parity() {
             details={
               <>
                 <PanelSection title={t("groupPanel.people")}>
-                  <ChannelMembers part="humans" humans={[{ id: "jc@example.test", label: "Jean-Christophe" }]} bots={[]} canAddHuman canAddBot={false} onAddHuman={() => {}} />
+                  <ChannelMembers part="humans" humans={[{ id: "jc@example.test", label: "Jean-Baptiste" }]} bots={[]} canAddHuman canAddBot={false} onAddHuman={() => {}} />
                 </PanelSection>
                 <PanelSection title="Bots">
                   <ChannelMembers part="bots" humans={[]} bots={members.map((m) => ({ id: m.id, name: m.name, title: m.title, color: m.color, removable: true }))} canAddHuman={false} canAddBot onRemoveBot={() => {}} onAddBot={() => {}} addBotLabel="Ajouter mon robot" />

@@ -6,7 +6,7 @@ import { myReactions, reactionChips, reactionSelfIds, reactionTooltip } from "./
 import type { ConfigStatus } from "@/state/store";
 
 const stored = [
-  { emoji: "👍", actors: [{ id: "pr_zach", kind: "person", name: "Sam Taylor" }, { id: "bot:quasar", kind: "bot", name: "Quasar" }, { id: "pr_me", kind: "person", name: "Me" }], at: 1 },
+  { emoji: "👍", actors: [{ id: "pr_morgan", kind: "person", name: "Sam Taylor" }, { id: "bot:quasar", kind: "bot", name: "Quasar" }, { id: "pr_me", kind: "person", name: "Me" }], at: 1 },
   { emoji: "👀", actors: [{ id: "bot:quasar", kind: "bot", name: "Quasar" }], at: 2 },
 ];
 

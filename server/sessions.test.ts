@@ -708,7 +708,7 @@ describe("sessions carry a principal", () => {
     // (see "fails closed" above), which is orthogonal to principalId.
     registry = new SessionRegistry({ file: file(), now: () => clock, emailScopes: () => ["client"] });
     const sessions = registry;
-    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "zach@example.com", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
+    const issued = sessions.issue({ label: "Mac", scopes: ["client"], email: "morgan@example.com", userId: "cp_1", principalId: "pr_22222222-2222-4222-8222-222222222222" });
     expect(sessions.authenticate(issued.token)?.principalId).toBe("pr_22222222-2222-4222-8222-222222222222");
   });
 

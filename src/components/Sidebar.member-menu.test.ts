@@ -54,10 +54,10 @@ const baseGroup = {
 function personRow(pinned = false): Group {
   return {
     ...baseGroup,
-    id: "dm-zach",
-    threadId: "thread-zach",
+    id: "dm-morgan",
+    threadId: "thread-morgan",
     name: "Sam Taylor",
-    humanIds: ["pr_me", "pr_zach"],
+    humanIds: ["pr_me", "pr_morgan"],
     peopleDm: true,
     ...(pinned ? { pinned: true } : {}),
   };
@@ -206,26 +206,26 @@ describe("person row menu", () => {
   it("opens the profile, copies the people-DM thread, hides the person, unpins and marks unread", () => {
     const open = openRoom(personRow(true));
     click(open.buttons, t("personPanel.view"));
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "openPersonPanel", personId: "pr_zach" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "openPersonPanel", personId: "pr_morgan" });
 
     click(open.buttons, t("sidebar.copyConversationId"));
-    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("thread-zach");
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith("thread-morgan");
 
     click(open.buttons, t("sidebar.hidden.close"));
-    expect(readSidebarHidden().items).toEqual([expect.objectContaining({ kind: "person", id: "pr_zach" })]);
-    expect(hiddenKey("person", "pr_zach")).toBe("person:pr_zach");
+    expect(readSidebarHidden().items).toEqual([expect.objectContaining({ kind: "person", id: "pr_morgan" })]);
+    expect(hiddenKey("person", "pr_morgan")).toBe("person:pr_morgan");
 
     click(open.buttons, t("sidebar.bot.unpin"));
     expect(fixture.dispatch).toHaveBeenCalledWith({
       type: "patchGroup",
-      groupId: "dm-zach",
+      groupId: "dm-morgan",
       patch: { pinned: false },
     });
 
     click(open.buttons, t("sidebar.bot.markUnread"));
     expect(fixture.dispatch).toHaveBeenCalledWith({
       type: "patchGroup",
-      groupId: "dm-zach",
+      groupId: "dm-morgan",
       patch: { unread: true },
     });
     expect(open.onDelete).not.toHaveBeenCalled();

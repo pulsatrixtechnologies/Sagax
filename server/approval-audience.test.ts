@@ -32,7 +32,7 @@ describe("approval audience", () => {
     })).toBe(card);
     const other = approvalDelivery({
       audience,
-      viewer: { userId: "zachary@example.test", deviceId: null },
+      viewer: { userId: "morgan@example.test", deviceId: null },
       message: card,
       ownerName: "Alex",
     });
@@ -45,7 +45,7 @@ describe("approval audience", () => {
     expect(other).not.toHaveProperty("card");
     const settled = approvalDelivery({
       audience,
-      viewer: { userId: "zachary@example.test", deviceId: null },
+      viewer: { userId: "morgan@example.test", deviceId: null },
       message: { ...card, card: { ...card.card, answered: "allow" } },
       ownerName: "Alex",
     });
@@ -79,7 +79,7 @@ describe("approval audience", () => {
     const audience = approvalAudience({ ownerUserId: "jc", host: { kind: "fleet" } });
     const card = { id: "m1", kind: "options" as const, card: { title: "Approval needed", requestId: "r1", tool: "bash" } };
     const before = { ...card, card: { ...card.card } };
-    const refused = answerApproval({ callerUserId: "zachary@example.test", audience, card });
+    const refused = answerApproval({ callerUserId: "morgan@example.test", audience, card });
     expect(refused).toEqual({ status: 403, card });
     expect(refused.card).toBe(card);
     expect(card).toEqual(before);
@@ -91,17 +91,17 @@ describe("approval audience", () => {
     expect(approvalAnswerStatus({
       question: true,
       audience,
-      callerUserId: "zachary@example.test",
+      callerUserId: "morgan@example.test",
     })).toBeNull();
     expect(approvalAnswerStatus({
       question: false,
       audience: null,
-      callerUserId: "zachary@example.test",
+      callerUserId: "morgan@example.test",
     })).toBeNull();
     expect(approvalAnswerStatus({
       question: false,
       audience,
-      callerUserId: "zachary@example.test",
+      callerUserId: "morgan@example.test",
     })).toBe(403);
     expect(approvalAnswerStatus({
       question: false,
@@ -115,6 +115,6 @@ describe("approval audience", () => {
     expect(audience.deviceId).toBeNull();
     expect(receivesApprovalCard({ userId: "jc", deviceId: null }, audience)).toBe(true);
     expect(receivesApprovalCard({ userId: "jc", deviceId: "studio" }, audience)).toBe(true);
-    expect(receivesApprovalCard({ userId: "zachary@example.test", deviceId: null }, audience)).toBe(false);
+    expect(receivesApprovalCard({ userId: "morgan@example.test", deviceId: null }, audience)).toBe(false);
   });
 });

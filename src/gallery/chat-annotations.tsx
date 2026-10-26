@@ -23,7 +23,7 @@ const trigger: Message = { id: "u3", role: "user", kind: "text", text: "passe le
 const userBubble = (text: string) => (
   <div className="self-end rounded-[18px] bg-bubble-user px-3 py-2 text-[13px] text-ink">{text}</div>
 );
-const routine = (id: string): RoutineToggleEvent["routines"][number] => ({ id, name: "Revue des billets GECKO", botId: "bot-a" });
+const routine = (id: string): RoutineToggleEvent["routines"][number] => ({ id, name: "Revue des billets ACME", botId: "bot-a" });
 const change = (action: "created" | "updated" | "deleted"): RoutineToggleEvent => ({ action, turnKey: "u1", routines: [routine(`r-${action}`)] });
 
 const samples: Array<{ id: string; render: () => React.ReactNode }> = [
@@ -31,7 +31,7 @@ const samples: Array<{ id: string; render: () => React.ReactNode }> = [
     id: "reply-to",
     render: () => (
       <div className="flex w-[520px] flex-col gap-2">
-        {userBubble("salut, peux-tu regarder les billets GECKO")}
+        {userBubble("salut, peux-tu regarder les billets ACME")}
         {userBubble("et me faire un résumé ce soir")}
         {userBubble("passe le mot aussi a katarina sur sagax")}
         <div className="flex max-w-[460px] flex-col gap-2 self-start rounded-[18px] bg-card px-3 py-2 text-[13px] text-ink">

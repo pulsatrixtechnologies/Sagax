@@ -3,7 +3,7 @@ import { applyHumanIds, canEditHumans, canPlaceBot, firstUnseenPerson, ownerUser
 
 describe("channel membership", () => {
   it("refuses a human list on a bot-to-bot dm", () => {
-    expect(applyHumanIds({ dm: true, humanIds: ["zachary@example.test"] })).toEqual({ ok: false, error: "dm-has-no-humans" });
+    expect(applyHumanIds({ dm: true, humanIds: ["morgan@example.test"] })).toEqual({ ok: false, error: "dm-has-no-humans" });
   });
   it("lets only the bot owner place it", () => {
     expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId: "jc" })).toBe(false);
@@ -31,14 +31,14 @@ describe("channel membership", () => {
     });
     expect(ownerUserId).toBe("jc");
     expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId })).toBe(false);
-    expect(canPlaceBot({ actorId: "zachary@example.test", ownerUserId })).toBe(false);
+    expect(canPlaceBot({ actorId: "morgan@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "local-owner", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "jc", ownerUserId })).toBe(true);
   });
   it("lets only the local operator place a bot before an organization exists", () => {
     const ownerUserId = ownerUserIdForPlacement({ localOperatorId: "local-owner" });
     expect(ownerUserId).toBe("local-owner");
-    expect(canPlaceBot({ actorId: "zachary@example.test", ownerUserId })).toBe(false);
+    expect(canPlaceBot({ actorId: "morgan@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId })).toBe(false);
     expect(canPlaceBot({ actorId: "local-owner", ownerUserId })).toBe(true);
   });

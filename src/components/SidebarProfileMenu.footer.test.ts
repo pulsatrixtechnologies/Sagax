@@ -38,7 +38,7 @@ const points = (): AchievementSnapshot => ({
 
 beforeEach(() => {
   fixture.badge = true;
-  fixture.state = { config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"] };
+  fixture.state = { config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"] };
   resetAchievementsForTests();
   vi.stubGlobal("window", {});
 });
@@ -47,12 +47,12 @@ afterEach(() => { vi.unstubAllGlobals(); resetAchievementsForTests(); });
 describe("sidebar footer row", () => {
   it("shows the avatar in its real colours and the full name, without the places' tour anchor", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { places: [place("archived")] }));
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
     expect(html).not.toContain('data-tour="tools"');
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).not.toContain("footer-tint");
     expect(html).not.toContain("filter");
-    expect(html).toContain(">JP<");
+    expect(html).toContain(">JE<");
     expect(html).toContain("width:40px");
     expect(html).toContain("height:40px");
     expect(html).not.toContain('data-testid="footer-attention"');
@@ -60,7 +60,7 @@ describe("sidebar footer row", () => {
 
   const withBadge = () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
     };
@@ -69,7 +69,7 @@ describe("sidebar footer row", () => {
   it("shows my title and points under the name when both switches are on", () => {
     resetAchievementsForTests({ status: "ready", snapshot: points() });
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    const nameAt = html.indexOf(">Jean-Christophe Proulx</span>");
+    const nameAt = html.indexOf(">Jean-Baptiste Exemplar</span>");
     const lineAt = html.indexOf("data-member-line");
     expect(lineAt).toBeGreaterThan(nameAt);
     expect(html).toContain(">Commander<");
@@ -81,7 +81,7 @@ describe("sidebar footer row", () => {
   it("drops the title and points line while the sidebar shortcuts take the room", () => {
     resetAchievementsForTests({ status: "ready", snapshot: points() });
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { memberLine: false }));
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
     expect(html).not.toContain("data-member-line");
     expect(html).not.toContain(">Commander<");
     expect(html).not.toContain("data-gamertag");
@@ -103,7 +103,7 @@ describe("sidebar footer row", () => {
     const base = points();
     resetAchievementsForTests({ status: "ready", snapshot: { ...base, settings: { ...base.settings, showPoints: false, showTitle: false } } });
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
     expect(html).not.toContain("data-member-line");
     expect(html).not.toContain(">Commander<");
     expect(html).not.toContain(">195<");
@@ -117,12 +117,12 @@ describe("sidebar footer row", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
     expect(html).not.toContain("data-routines-line");
     expect(html).not.toContain("data-active-routines");
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
   });
 
   it("puts the routines badge at the right of the row, beside the name, opening Automations", () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [
         { id: "r1", botId: "b1", enabled: true, nextRunAt: 1 },
@@ -132,7 +132,7 @@ describe("sidebar footer row", () => {
     };
     resetAchievementsForTests({ status: "ready", snapshot: points() });
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, {}));
-    const nameAt = html.indexOf(">Jean-Christophe Proulx</span>");
+    const nameAt = html.indexOf(">Jean-Baptiste Exemplar</span>");
     const lineAt = html.indexOf("data-routines-line");
     const badgeAt = html.indexOf('data-active-routines="2"');
     expect(lineAt).toBeGreaterThan(nameAt);
@@ -167,7 +167,7 @@ describe("sidebar footer row", () => {
 
   it("says one routine in the singular", () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
     };
@@ -182,7 +182,7 @@ describe("sidebar footer row", () => {
 
   it("keeps the routines count and icon without any dot when an automation failed, and clears the failed label once seen", () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
       routineRuns: [{ status: "failed" }] as AppState["routineRuns"],
@@ -212,8 +212,8 @@ describe("sidebar footer row", () => {
   it("keeps the avatar-only trigger for the collapsed rail, without the tour anchor", () => {
     const html = renderToStaticMarkup(createElement(SidebarProfileMenu, { avatarOnly: true }));
     expect(html).not.toContain('data-tour="tools"');
-    expect(html).not.toContain(">Jean-Christophe Proulx</span>");
-    expect(html).toContain('title="Jean-Christophe Proulx"');
+    expect(html).not.toContain(">Jean-Baptiste Exemplar</span>");
+    expect(html).toContain('title="Jean-Baptiste Exemplar"');
     expect(html).toContain("width:36px");
     expect(html).not.toContain("data-sidebar-account-row");
     expect(html).not.toContain("width:40px");
@@ -274,7 +274,7 @@ describe("the footer avatar (Grok Bot's foot, 2026-10-16)", () => {
 describe("the routines badge in Grok Bot's foot (JC, 2026-10-16)", () => {
   const active = () => {
     fixture.state = {
-      config: { profile: { name: "Jean-Christophe Proulx", email: "jc@example.com" } } as AppState["config"],
+      config: { profile: { name: "Jean-Baptiste Exemplar", email: "jc@example.com" } } as AppState["config"],
       bots: [{ id: "b1" }] as AppState["bots"],
       routines: [{ id: "r1", botId: "b1", enabled: true, nextRunAt: 1 }] as AppState["routines"],
     };
@@ -323,14 +323,14 @@ describe("sidebar foot account pill: title and points line", () => {
   ])("shows points %s and title %s as the toggles say", (showPoints, showTitle) => {
     withSettings({ showPoints, showTitle });
     const html = pill();
-    expect(html).toContain(">Jean-Christophe Proulx</span>");
+    expect(html).toContain(">Jean-Baptiste Exemplar</span>");
     expect(html.includes("data-member-line")).toBe(showPoints || showTitle);
     expect(html.includes(">Commander<")).toBe(showTitle);
     expect(html.includes("data-gamertag")).toBe(showPoints);
     expect(html.includes(">195<")).toBe(showPoints);
     expect(html.includes("data-account-pill-line")).toBe(showPoints || showTitle);
     // the name stays on top
-    if (showPoints || showTitle) expect(html.indexOf("data-member-line")).toBeGreaterThan(html.indexOf(">Jean-Christophe Proulx</span>"));
+    if (showPoints || showTitle) expect(html.indexOf("data-member-line")).toBeGreaterThan(html.indexOf(">Jean-Baptiste Exemplar</span>"));
   });
 
   it("takes the points from the achievements state, never a fixed number", () => {

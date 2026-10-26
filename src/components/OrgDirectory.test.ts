@@ -51,7 +51,7 @@ describe("OrgDirectory", () => {
   it("offers no invitation on an organization server that signs people in with Pulsatrix", () => {
     const html = render({
       org: { name: "Example" },
-      people: [{ id: "zachary@example.test", role: "member" }],
+      people: [{ id: "morgan@example.test", role: "member" }],
       pendingInvites: [{ email: "late@example.test", token: "t1", link: "https://bot.example.test/join#token=t1" }],
       lastInvite: { email: "late@example.test", link: "https://bot.example.test/join#token=t1" },
       invitesOff: true,
@@ -66,13 +66,13 @@ describe("OrgDirectory", () => {
   it("lists members once the organization exists", () => {
     const html = render({
       org: { name: "Example" },
-      people: [{ id: "zachary@example.test", role: "member" }],
+      people: [{ id: "morgan@example.test", role: "member" }],
       onCreate() {},
       onInvite() {},
     }).html;
     // A solo server's name was its host name: no row for it (0.5.6).
     expect(html).not.toContain(">Example<");
-    expect(html).toContain("zachary@example.test");
+    expect(html).toContain("morgan@example.test");
     expect(html).not.toContain("Create organization");
   });
   it("shows a pending invite separately from members, with its link actions", () => {
@@ -80,13 +80,13 @@ describe("OrgDirectory", () => {
     const view = render({
       org: { name: "Example" },
       people: [],
-      pendingInvites: [{ email: "zachary@example.test", token: "tok-1", link: "https://server.example.com/join#token=tok-1" }],
+      pendingInvites: [{ email: "morgan@example.test", token: "tok-1", link: "https://server.example.com/join#token=tok-1" }],
       onCreate() {},
       onInvite() {},
       onRevoke,
     });
     expect(view.html).toContain("Pending invitations");
-    expect(view.html).toContain("zachary@example.test");
+    expect(view.html).toContain("morgan@example.test");
     expect(view.html).toContain("Copy link");
     view.nodes.find((node) => node.type === "button" && node.props.children === "Revoke")!.props.onClick!();
     expect(onRevoke).toHaveBeenCalledExactlyOnceWith("tok-1");
@@ -142,15 +142,15 @@ describe("OrgDirectory", () => {
   it("keeps the invite address when onInvite fails", async () => {
     const onInvite = vi.fn(() => Promise.reject(new Error("forbidden")));
     const props = { org: { name: "Example" }, people: [] as { id: string; role: "member" }[], onCreate() {}, onInvite };
-    render(props).nodes.find((node) => node.type === "input")!.props.onChange!({ target: { value: "zachary@example.test" } });
+    render(props).nodes.find((node) => node.type === "input")!.props.onChange!({ target: { value: "morgan@example.test" } });
     await render(props).nodes.find((node) => node.type === "form")!.props.onSubmit!({ preventDefault() {} });
-    expect(onInvite).toHaveBeenCalledExactlyOnceWith("zachary@example.test");
-    expect(render(props).nodes.find((node) => node.type === "input")!.props.value).toBe("zachary@example.test");
+    expect(onInvite).toHaveBeenCalledExactlyOnceWith("morgan@example.test");
+    expect(render(props).nodes.find((node) => node.type === "input")!.props.value).toBe("morgan@example.test");
   });
   it("clears the invite address after onInvite succeeds", async () => {
     const onInvite = vi.fn(() => Promise.resolve());
     const props = { org: { name: "Example" }, people: [] as { id: string; role: "member" }[], onCreate() {}, onInvite };
-    render(props).nodes.find((node) => node.type === "input")!.props.onChange!({ target: { value: "zachary@example.test" } });
+    render(props).nodes.find((node) => node.type === "input")!.props.onChange!({ target: { value: "morgan@example.test" } });
     await render(props).nodes.find((node) => node.type === "form")!.props.onSubmit!({ preventDefault() {} });
     expect(render(props).nodes.find((node) => node.type === "input")!.props.value).toBe("");
   });

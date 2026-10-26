@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Zachary rejoint l'organisation, voit ses canaux, et fait travailler les bots qu'on y a posés, sans approuver à la place du propriétaire.
+**Goal:** Morgan rejoint l'organisation, voit ses canaux, et fait travailler les bots qu'on y a posés, sans approuver à la place du propriétaire.
 
 **Architecture:** On étend le `Group` actuel. `memberIds` reste les bots. `humanIds` ajoute les gens. L'annuaire réutilise `config.signIn` (admins, members) plus un enregistrement d'organisation et des invitations. L'hôte de la flotte garde les transcripts. À la tranche 3, une machine personnelle s'enregistre comme worker et reçoit le tour. La colonne Discord n'apparaît que lorsqu'une organisation existe. Sans organisation, la barre latérale actuelle reste, pour les bots d'avant.
 
@@ -62,7 +62,7 @@ import { INVITE_TTL_MS, acceptInvite, inviteStatus, roleOf, type OrgInvite } fro
 
 const invite = (over: Partial<OrgInvite> = {}): OrgInvite => ({
   token: "tok",
-  email: "zachary@example.test",
+  email: "morgan@example.test",
   createdAt: 0,
   expiresAt: INVITE_TTL_MS,
   ...over,
@@ -92,10 +92,10 @@ describe("acceptInvite", () => {
 
 describe("roleOf", () => {
   it("gives the creator owner and keeps admins distinct from members", () => {
-    const lists = { ownerUserId: "jc", admins: ["jc", "ada@example.test"], members: ["zachary@example.test"] };
+    const lists = { ownerUserId: "jc", admins: ["jc", "ada@example.test"], members: ["morgan@example.test"] };
     expect(roleOf({ ...lists, userId: "jc" })).toBe("owner");
     expect(roleOf({ ...lists, userId: "ada@example.test" })).toBe("admin");
-    expect(roleOf({ ...lists, userId: "zachary@example.test" })).toBe("member");
+    expect(roleOf({ ...lists, userId: "morgan@example.test" })).toBe("member");
     expect(roleOf({ ...lists, userId: "stranger" })).toBeNull();
   });
 });
@@ -186,11 +186,11 @@ describe("org record", () => {
     expect(() => createOrg({ name: "  ", ownerUserId: "jc", host: { kind: "this-computer" } })).toThrow(/name/);
   });
   it("issues a single-use invite that expires in 7 days", () => {
-    expect(issueInvite({ email: "zachary@example.test", now: 50, token: "tok" }).expiresAt).toBe(50 + INVITE_TTL_MS);
+    expect(issueInvite({ email: "morgan@example.test", now: 50, token: "tok" }).expiresAt).toBe(50 + INVITE_TTL_MS);
   });
   it("returns an existing member without a second row", () => {
-    expect(memberListsAfterAccept({ members: ["zachary@example.test"], email: "zachary@example.test" })).toEqual({
-      members: ["zachary@example.test"],
+    expect(memberListsAfterAccept({ members: ["morgan@example.test"], email: "morgan@example.test" })).toEqual({
+      members: ["morgan@example.test"],
       alreadyMember: true,
     });
   });
@@ -273,10 +273,10 @@ Le test instancie les handlers avec un faux store en mémoire `{ org: null, invi
 it("joins once and reports already-member the second time", () => {
   const state = emptyOrgState();
   createOrgRoute(state, { name: "Example", ownerUserId: "jc", host: { kind: "this-computer" } });
-  const issued = issueInviteRoute(state, { actorId: "jc", email: "zachary@example.test", now: 1, token: "tok" });
+  const issued = issueInviteRoute(state, { actorId: "jc", email: "morgan@example.test", now: 1, token: "tok" });
   expect(issued.status).toBe(200);
-  expect(acceptInviteRoute(state, { token: "tok", userId: "zachary@example.test", now: 2 }).body.status).toBe("joined");
-  expect(acceptInviteRoute(state, { token: "tok", userId: "zachary@example.test", now: 3 }).body.status).toBe("used");
+  expect(acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 2 }).body.status).toBe("joined");
+  expect(acceptInviteRoute(state, { token: "tok", userId: "morgan@example.test", now: 3 }).body.status).toBe("used");
 });
 ```
 
@@ -328,12 +328,12 @@ it("offers creation when there is no organization", () => {
 it("lists members once the organization exists", () => {
   const html = renderToStaticMarkup(createElement(OrgDirectory, {
     org: { name: "Example" },
-    people: [{ id: "zachary@example.test", role: "member" }],
+    people: [{ id: "morgan@example.test", role: "member" }],
     onCreate() {},
     onInvite() {},
   }));
   expect(html).toContain("Example");
-  expect(html).toContain("zachary@example.test");
+  expect(html).toContain("morgan@example.test");
   expect(html).not.toContain("Créer l'organisation");
 });
 ```
@@ -382,7 +382,7 @@ git commit -m "feat: show the organization directory above the enterprise card"
 
 ```ts
 it("refuses a human list on a bot-to-bot dm", () => {
-  expect(applyHumanIds({ dm: true, humanIds: ["zachary@example.test"] })).toEqual({ ok: false, error: "dm-has-no-humans" });
+  expect(applyHumanIds({ dm: true, humanIds: ["morgan@example.test"] })).toEqual({ ok: false, error: "dm-has-no-humans" });
 });
 it("lets only the bot owner place it", () => {
   expect(canPlaceBot({ actorId: "ada@example.test", ownerUserId: "jc" })).toBe(false);
@@ -433,12 +433,12 @@ git commit -m "feat: keep channel humans apart from bot members"
 
 ```ts
 it("hides a channel from someone who was not added", () => {
-  expect(canSeeChannel({ humanIds: ["jc"], viewerId: "zachary@example.test" })).toBe(false);
-  expect(canSeeChannel({ humanIds: ["jc", "zachary@example.test"], viewerId: "zachary@example.test" })).toBe(true);
+  expect(canSeeChannel({ humanIds: ["jc"], viewerId: "morgan@example.test" })).toBe(false);
+  expect(canSeeChannel({ humanIds: ["jc", "morgan@example.test"], viewerId: "morgan@example.test" })).toBe(true);
 });
 it("shows another person's bot in Direct only after a grant", () => {
-  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "zachary@example.test", directGrants: [] })).toBe(false);
-  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "zachary@example.test", directGrants: ["zachary@example.test"] })).toBe(true);
+  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: [] })).toBe(false);
+  expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "morgan@example.test", directGrants: ["morgan@example.test"] })).toBe(true);
   expect(canSeeDirectBot({ ownerUserId: "jc", viewerId: "jc", directGrants: [] })).toBe(true);
 });
 ```
@@ -482,9 +482,9 @@ Seul `actorId === ownerUserId` ajoute. Un deuxième appel avec la même paire ne
 
 ```ts
 it("lets the owner open a direct and refuses anyone else", () => {
-  const opened = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "zachary@example.test", grants: [] });
+  const opened = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] });
   expect(opened.ok).toBe(true);
-  expect(grantDirect({ actorId: "ada@example.test", ownerUserId: "jc", botId: "aurora", userId: "zachary@example.test", grants: [] })).toEqual({
+  expect(grantDirect({ actorId: "ada@example.test", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] })).toEqual({
     ok: false,
     error: "not-owner",
   });
@@ -579,13 +579,13 @@ Si `canAddBot` est faux, aucun bouton d'ajout de bot. Si `canAddHuman` est faux,
 ```ts
 it("hides add controls from a member who cannot edit", () => {
   const html = renderToStaticMarkup(createElement(ChannelMembers, {
-    humans: [{ id: "zachary@example.test" }],
+    humans: [{ id: "morgan@example.test" }],
     bots: [{ id: "aurora", name: "Aurora" }],
     canAddHuman: false,
     canAddBot: false,
   }));
   expect(html).toContain("Aurora");
-  expect(html).toContain("zachary@example.test");
+  expect(html).toContain("morgan@example.test");
   expect(html).not.toContain("Ajouter");
 });
 ```
@@ -630,7 +630,7 @@ git commit -m "feat: list channel humans and bots separately"
 ```ts
 it("queues a message when the chosen machine is offline", () => {
   expect(turnDestination({
-    host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+    host: { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" },
     workerOnline: false,
   })).toEqual({ kind: "queued" });
 });
@@ -680,7 +680,7 @@ git commit -m "feat: route a bot turn to its chosen host"
 ```ts
 it("does not start a turn for an offline machine", () => {
   const destination = turnDestination({
-    host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+    host: { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" },
     workerOnline: false,
   });
   expect(queueTurn({ destination, messageId: "m1", queued: [] })).toEqual({ queued: ["m1"], started: false });
