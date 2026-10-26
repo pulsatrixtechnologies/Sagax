@@ -3309,16 +3309,12 @@ button:disabled.bg-danger {
 /* the update button hovered takes the row (its right edge stays under the
    pointer, so the hover holds while the profile folds) */
 [data-sidebar-account-row][data-foot-hot="update"] .sidebar-update-pill { flex-grow: 1; }
-/* the pill, folded: no border, no card, the avatar at the tile's 40px */
+/* the pill, folded: no border, no card, the avatar at the size it has at rest */
 [data-sidebar-account-row][data-foot-hot] [data-sidebar-account-pill] {
   gap: 0;
   padding: 0;
   border-width: 0;
   background-color: transparent;
-}
-[data-sidebar-account-row][data-foot-hot] [data-sidebar-account-pill] > span:first-child {
-  transform: scale(1.25);
-  transform-origin: left center;
 }
 [data-sidebar-account-row][data-foot-hot] [data-account-pill-name],
 [data-sidebar-account-row][data-foot-hot] [data-account-pill-line] {
