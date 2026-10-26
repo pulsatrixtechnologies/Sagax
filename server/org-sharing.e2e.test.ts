@@ -247,6 +247,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       orgKeyConfigured: true, allowFullAccess: true, allowVaultExport: true, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, memberAutoApproval: true, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
       githubTokens: [],
+      // Pulsatrix Flow for members (#1091)
+      flowPlugins: expect.anything(),
     });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
