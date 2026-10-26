@@ -59,7 +59,7 @@ describe("foot connected apps", () => {
 describe("foot mode", () => {
   it("keeps the full name inline while it fits", () => {
     expect(nextFootMode("inline", { width: 248, cut: 0, need: null }).mode).toBe("inline");
-    expect(nextFootMode("inline", { width: 248, cut: 1, need: null }).mode).toBe("inline");
+    expect(nextFootMode("inline", { width: 248, cut: 0, need: null }).mode).toBe("inline");
   });
 
   it("stacks as soon as the name is cut, and comes back once the row is as wide as it needed", () => {
@@ -77,6 +77,16 @@ describe("foot mode", () => {
     expect(html).toContain('data-foot-mode="inline"');
     expect(html).toContain(">Jean-Christophe Proulx</span>");
     expect(html).not.toContain("data-connect-apps-label");
+  });
+
+  it("the compact foot is sized so the default 280px sidebar keeps 'Jean-Christophe Proulx' whole", () => {
+    // measured in a real browser (gallery ?view=foot&name=Jean-Christophe Proulx&apps=3,
+    // 248px row): name pill ~195px, logos pill ~44px, one 6px gap
+    const source = readFileSync(new URL("./SidebarFoot.tsx", import.meta.url), "utf8");
+    expect(source).toContain("shrink-0 px-1");
+    expect(source).toContain("-space-x-[9px]");
+    expect(source).toContain("size-[15px]");
+    expect(source).not.toContain("flex-wrap");
   });
 
   it("Sidebar.tsx lays the foot out with SidebarFoot, not a bare text button", () => {

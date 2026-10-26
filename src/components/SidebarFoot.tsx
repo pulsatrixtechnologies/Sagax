@@ -20,7 +20,8 @@ import type { PluginItem } from "@/lib/plugins-model";
 import { PluginIcon } from "./plugins/PluginParts";
 import { SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
-import { SidebarUpdatePill } from "./SidebarUpdatePill";
+import { SidebarUpdatePill, updatePillView } from "./SidebarUpdatePill";
+import { useUpdaterState } from "@/lib/updater";
 
 /** The connected apps, read from the same routes as the Connect apps panel;
  * read again each time that panel closes (what was just connected shows). */
@@ -46,10 +47,10 @@ export function useConnectedApps(): PluginItem[] {
 /** The logos, overlapping. Brand marks sit on white whatever the theme. */
 export function ConnectedAppsStack({ apps }: { apps: readonly PluginItem[] }) {
   return (
-    <span data-connected-apps-stack="" className="flex shrink-0 items-center -space-x-1.5" aria-hidden="true">
+    <span data-connected-apps-stack="" className="flex shrink-0 items-center -space-x-[9px]" aria-hidden="true">
       {apps.slice(0, FOOT_APP_LOGOS).map((app) => (
-        <span key={app.key} data-connected-app={app.key} className="flex size-[18px] items-center justify-center overflow-hidden rounded-full bg-white ring-2 ring-sidebar-card">
-          <PluginIcon item={app} className="size-3.5 rounded-full" />
+        <span key={app.key} data-connected-app={app.key} className="flex size-[15px] items-center justify-center overflow-hidden rounded-full bg-white ring-[1.5px] ring-sidebar-card">
+          <PluginIcon item={app} className="size-[11px] rounded-full" />
         </span>
       ))}
     </span>
@@ -64,7 +65,7 @@ export type FootMode = "inline" | "stacked";
  * the row is as wide as it measured it needed. */
 export function nextFootMode(mode: FootMode, m: { width: number; cut: number; need: number | null }): { mode: FootMode; need: number | null } {
   if (mode === "inline") {
-    return m.cut > 1 ? { mode: "stacked", need: m.width + m.cut } : { mode, need: m.need };
+    return m.cut >= 1 ? { mode: "stacked", need: m.width + m.cut } : { mode, need: m.need };
   }
   return m.need !== null && m.width >= m.need ? { mode: "inline", need: m.need } : { mode, need: m.need };
 }
@@ -88,10 +89,16 @@ function useFootMode(rowRef: React.RefObject<HTMLDivElement | null>, resetKey: s
       if (next.mode !== mode) setMode(next.mode);
     };
     check();
-    if (typeof ResizeObserver === "undefined") return;
+    // the web font arriving widens the name without resizing the row
+    void document.fonts?.ready.then(check);
+    document.fonts?.addEventListener?.("loadingdone", check);
+    if (typeof ResizeObserver === "undefined") return () => document.fonts?.removeEventListener?.("loadingdone", check);
     const observer = new ResizeObserver(check);
     observer.observe(row);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      document.fonts?.removeEventListener?.("loadingdone", check);
+    };
   }, [mode, rowRef, resetKey]);
   return mode;
 }
@@ -112,7 +119,7 @@ export function FootConnectApps({ apps, mode, onOpen }: { apps: readonly PluginI
       title={label}
       className={cn(
         "flex h-[var(--foot-tile-h,2.25rem)] items-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card text-sidebar-ink-secondary transition-colors hover:bg-sidebar-elevated-hover hover:text-sidebar-ink",
-        stacked ? "min-w-[7rem] flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1.5",
+        stacked ? "min-w-0 flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1.5",
       )}
     >
       {apps.length === 0 && <Puzzle size={16} aria-hidden="true" className="shrink-0" />}
@@ -127,17 +134,20 @@ export function SidebarFoot({ places, onOpenApps }: { places?: SidebarMenuItem[]
   const apps = useConnectedApps();
   const rowRef = useRef<HTMLDivElement>(null);
   const name = state.config?.profile?.name ?? "";
-  const mode = useFootMode(rowRef, `${name}|${apps.map((app) => app.key).join(",")}`);
+  const hasUpdate = updatePillView(useUpdaterState()) !== null;
+  const mode = useFootMode(rowRef, `${name}|${apps.map((app) => app.key).join(",")}|${hasUpdate}`);
   const stacked = mode === "stacked";
   return (
     <div
       ref={rowRef}
       data-sidebar-account-row
-      className={cn("flex items-center gap-1.5 [container-type:inline-size]", stacked && "flex-wrap")}
+      className="flex items-center gap-1.5 [container-type:inline-size]"
       data-foot-mode={mode}
     >
       {stacked ? <SidebarProfileMenu avatarOnly places={places} /> : <SidebarProfileMenu avatarOnly withName places={places} />}
-      <FootConnectApps apps={apps} mode={mode} onOpen={onOpenApps} />
+      {/* with the wide update button in the row, the apps pill keeps to its
+          logos (the update takes the room, in the same row) */}
+      <FootConnectApps apps={apps} mode={stacked && hasUpdate ? "inline" : mode} onOpen={onOpenApps} />
       {/* a waiting update: the compact circle beside the profile, the wide
           one with its word once the profile is the avatar alone */}
       <SidebarUpdatePill layout={stacked ? "wide" : "compact"} />

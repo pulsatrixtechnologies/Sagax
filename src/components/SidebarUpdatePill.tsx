@@ -143,6 +143,7 @@ export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpe
         // Connect apps left instead of floating over it
         "sidebar-update-pill group inline-flex h-9 w-9 shrink-0 items-center justify-start overflow-hidden rounded-full bg-accent text-accent-ink shadow-sm outline-none",
         "focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
+        layout === "wide" && "min-w-9 shrink [&[data-layout=wide]]:w-auto",
         ready ? "cursor-pointer hover:brightness-95" : "cursor-default",
       )}
     >
