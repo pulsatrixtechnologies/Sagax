@@ -88,12 +88,12 @@ describe("ChannelMembers", () => {
       actorRole: "member",
       actorId: "zachary@example.test",
       bots: [{ id: "aurora", ownerUserId: "zachary@example.test" }],
-    })).toEqual({ canAddHuman: false, canAddBot: true });
+    })).toEqual({ canAddHuman: true, canAddBot: true });
     expect(channelRosterActions({
       actorRole: "member",
       actorId: "zachary@example.test",
       bots: [{ id: "aurora", ownerUserId: "jc" }],
-    })).toEqual({ canAddHuman: false, canAddBot: false });
+    })).toEqual({ canAddHuman: true, canAddBot: false });
   });
 });
 

@@ -7,13 +7,17 @@ import type { BotVisibility } from "../../shared/wire";
 import { botAvatarUrlFromStoredPath } from "../../shared/bot-avatar";
 import { isMemberBotField } from "../../shared/viewer-capabilities";
 
-/** Fields an organization member may send. Anything else (where the bot
- * runs, approval, a team, a preset) is refused on create and on the
- * follow-up patch, which would roll the new bot back. */
-function memberWritableProfile<T extends object>(profile: T): Partial<T> {
+/** Fields an organization member may send: the member set, and a field
+ * their profile's permissions open (`mayWrite`, BOT_FIELD_PERMISSIONS; the
+ * server's memberBotFieldRefusal accepts the same). Anything else (where
+ * the bot runs, approval without the permission, a team, a preset) is
+ * refused on create and on the follow-up patch, which would roll the new
+ * bot back. */
+function memberWritableProfile<T extends object>(profile: T, mayWrite?: (field: string) => boolean): Partial<T> {
   const next: Partial<T> = {};
   for (const key of Object.keys(profile) as Array<keyof T>) {
-    if (profile[key] !== undefined && isMemberBotField(String(key))) next[key] = profile[key];
+    if (profile[key] === undefined) continue;
+    if (isMemberBotField(String(key)) || mayWrite?.(String(key)) === true) next[key] = profile[key];
   }
   return next;
 }
@@ -38,7 +42,12 @@ export async function createConfiguredBot(
   update: typeof persistBotUpdate = persistBotUpdate,
   approvals = typeof window === "undefined" ? undefined : stepUpApprovals(window.ogb?.approvals),
   visibility?: BotVisibility,
-  options?: { memberFieldsOnly?: boolean },
+  options?: {
+    memberFieldsOnly?: boolean;
+    /** A field beyond the member set that this member's permissions open
+     * (#1076): kept on the follow-up patch instead of being dropped. */
+    memberMayWrite?: (field: string) => boolean;
+  },
 ): Promise<{ bot: Bot; warnings: string[] }> {
   const template = await preparedBotTemplate(draft);
   const { chiefOfStaff, managedSections, toolScope, ...profile } = template.profile;
@@ -63,8 +72,9 @@ export async function createConfiguredBot(
   try {
     // The create endpoint already validated the chosen model and completed
     // workspace effort defaults. Do not overwrite those with the raw draft.
-    const savedProfile = memberFieldsOnly ? memberWritableProfile(profile) : profile;
-    const patched = await update(bot.id, { ...savedProfile, modelSelection: bot.modelSelection, ...(memberFieldsOnly ? {} : draft.consent) }, new AbortController().signal,
+    const savedProfile = memberFieldsOnly ? memberWritableProfile(profile, options?.memberMayWrite) : profile;
+    const consent = memberFieldsOnly ? memberWritableProfile(draft.consent, options?.memberMayWrite) : draft.consent;
+    const patched = await update(bot.id, { ...savedProfile, modelSelection: bot.modelSelection, ...consent }, new AbortController().signal,
       request, approvals, bot);
     bot = { ...bot, ...patched };
     if (profile.approvalMode === "full" || profile.approvalMode === "custom") {

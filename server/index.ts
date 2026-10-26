@@ -494,7 +494,7 @@ import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, t
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
 import { holdIncludedServices } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
-import { autoNewBotSelection, readyToRun, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
+import { autoNewBotSelection, memberNewBotSelection, readyToRun, starredModelSelections, selectDefaultModelSelection, withNewBotEffort, type SelectableInstance } from "./default-model-selection.ts";
 import { threadModelFallback, type ThreadEngine } from "./thread-model.ts";
 import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./bot-engine.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
@@ -605,6 +605,7 @@ import {
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
+import { greetingLanguage } from "./new-bot-greeting.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -946,7 +947,7 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
-import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, firstUnseenPerson, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
@@ -5922,6 +5923,23 @@ async function defaultSelection(saved: ModelSelection | null = cfg.defaultModelS
     refusal: (instance) => policyModelRefusal(instance) ?? orgEngineAllowRefusal(instance.instanceId),
   });
 }
+/** The model an organization member's new bot starts on when they named
+ * none (#1060, #1074): the person's own (a model they starred), else the
+ * organization's default for new bots, else the server's, else an engine
+ * that can run now (memberNewBotSelection). */
+async function memberDefaultSelection(principalId: string | null | undefined): Promise<ModelSelection> {
+  const organization = cfg.newBotDefaults?.profile.modelSelection ?? null;
+  let person: ModelSelection[] = [];
+  try {
+    if (IDENTITY.kind === "perspicax" && principalId) person = starredModelSelections(userPreferenceStore.get(principalId).preferences["sagax.modelFavorites.v1"]);
+  } catch { /* no preference of their own: the organization's level decides */ }
+  if (hostedModels) {
+    const own = person.find((candidate) => hostedModels!.allows(candidate));
+    return own ?? hostedModels.select(organization ?? cfg.defaultModelSelection ?? undefined);
+  }
+  return memberNewBotSelection(selectableInstances<SelectableInstance>(await registry.describe()),
+    { person, organization, server: cfg.defaultModelSelection ?? null }, selectionContext);
+}
 /** Engines that are not the person's own: a Company one. A working engine
  * of their own wins over it; the organization's engine policy applies. */
 const selectionContext = {
@@ -6460,6 +6478,7 @@ const store = new Store(
   () => bootSelection,
   (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
   newBotApprovalMode,
+  newBotGreetingLanguage,
 );
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
@@ -31541,6 +31560,16 @@ function bypassRefusal(auth: RequestAuth): string | null {
 /** 2026-10-11: the level a new bot starts on. A solo server keeps Approve
  * for me; an organization server follows its policy (`defaults.approvalMode`)
  * and starts on Ask when it names none. */
+/** The language a new bot greets its person in (#1075): on an organization
+ * server the owner's own language preference (kept per person), then the
+ * server's language, the same default the app falls back to. */
+function newBotGreetingLanguage(ownerUserId: string | undefined): "fr" | "en" {
+  let person = "";
+  try {
+    if (IDENTITY.kind === "perspicax" && ownerUserId) person = userPreferenceStore.get(ownerUserId).preferences["omb-language"] ?? "";
+  } catch { /* no preference of their own */ }
+  return greetingLanguage([person, cfg.language]);
+}
 function newBotApprovalMode(): "ask" | "auto" {
   return IDENTITY.kind === "perspicax" ? orgNewBotApprovalMode(cfg.newBotDefaults?.profile.approvalMode) : "auto";
 }
@@ -32583,8 +32612,15 @@ function botUserName(bot: { ownerUserId?: unknown }): string {
  * needs humanIds). An explicit humanIds list is kept as sent. */
 function withCreatorListed(auth: RequestAuth, body: unknown): unknown {
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return body;
-  if (!body || typeof body !== "object" || Array.isArray(body) || Object.prototype.hasOwnProperty.call(body, "humanIds")) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const principalId = auth.session.principalId?.trim();
+  if (Object.prototype.hasOwnProperty.call(body, "humanIds")) {
+    // A member naming coworkers stays in the room they create.
+    const named = (body as { humanIds?: unknown }).humanIds;
+    if (channelActorRole(auth) !== "member" || !principalId || !Array.isArray(named)) return body;
+    const listed = named.some((id) => typeof id === "string" && id.trim().toLowerCase() === principalId.toLowerCase());
+    return listed ? body : { ...(body as Record<string, unknown>), humanIds: [principalId, ...named] };
+  }
   return principalId ? { ...(body as Record<string, unknown>), humanIds: [principalId] } : body;
 }
 
@@ -32623,6 +32659,12 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       const id = entry.slice(5);
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
+  }
+  // A member who owns the room adds only people the organization directory
+  // lists as active; never a team entry (those stay with admins).
+  if (ownerChecked && IDENTITY.kind === "perspicax" && Array.isArray(after) && channelActorRole(auth) === "member") {
+    const unseen = firstUnseenPerson({ actorId: channelActorId(auth), before, after, visible: (id) => resolveOrgGrantee(id).ok });
+    if (unseen !== null) return "unknown person: choose someone from the organization directory";
   }
   // Organization server: the group's owner rule already decided (group-ownership.ts).
   if (ownerChecked) return null;
@@ -41879,8 +41921,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set());
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, humans.startsWith("unknown team") ? { error: humans } : { error: humans, code: "not_channel_editor" });
+      // On an organization server the creator owns the new room, so a member
+      // may name coworkers they can see in the directory (#1061).
+      const memberCreates = IDENTITY.kind === "perspicax" && auth.kind === "session" && channelActorRole(auth) === "member";
+      const humans = refuseHumanEdit(auth, body, [], memberCreates);
+      if (humans) { const bad = humans.startsWith("unknown team") || humans.startsWith("unknown person"); return json(res, bad ? 400 : 403, bad ? { error: humans } : { error: humans, code: "not_channel_editor" }); }
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -42466,7 +42511,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
       // A paired phone's companion edits a room like a member session does.
       if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         // The owner of an organization group also picks its default responder,
@@ -43122,7 +43167,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       let selection: ModelSelection;
       if (body.modelSelection === undefined) {
-        selection = await defaultSelection();
+        // A member's bot is not built from the admin's template: the
+        // person's own model first, then the organization's (#1074, #1060).
+        selection = memberCreate ? await memberDefaultSelection(sessionPrincipal(auth)) : await defaultSelection();
       } else {
         const checked = checkedModelSelection(body.modelSelection, undefined, body.requireAvailableModel === true);
         if (!checked.ok) return json(res, checked.status, { error: checked.error });

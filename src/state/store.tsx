@@ -1576,7 +1576,7 @@ export type Action =
   | { type: "routineRunsRemoved"; ids: string[] }
   | { type: "groupPatched"; group: Partial<Group> & { id: string } }
   | { type: "groupDeleted"; groupId: string }
-  | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
+  | { type: "createGroup"; memberIds: string[]; humanIds?: string[]; name?: string; section?: string }
   /** Open (or create) the direct conversation with another person of the
    * organization (server/people-dms.ts). */
   | { type: "openPeopleDm"; principalId: string }
@@ -4810,6 +4810,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             method: "POST",
             body: JSON.stringify({
               memberIds: action.memberIds,
+              ...(action.humanIds?.length ? { humanIds: action.humanIds } : {}),
               name: action.name,
               section: action.section,
               ...(window.ogb?.remoteClient?.active

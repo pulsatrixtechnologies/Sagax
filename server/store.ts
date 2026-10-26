@@ -55,6 +55,7 @@ import type { WireBotGrant } from "../shared/wire.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { nextOpenThread } from "../shared/wire.ts";
 import { namesEngine } from "./bot-engine.ts";
+import { newBotGreeting } from "./new-bot-greeting.ts";
 // Re-exported under their historical names so server-side importers keep working.
 export type {
   BotActivity, GroupDefaultResponder, OptionCardData,
@@ -720,6 +721,7 @@ export class Store {
   private completeNewBotSelection: (selection: ModelSelection) => ModelSelection;
   /** The approval level every new bot and its first thread start on. */
   private newBotApprovalMode: () => "ask" | "auto";
+  private greetingLanguage: (ownerUserId: string | undefined) => "fr" | "en";
   private listeners = new Set<(change: StoreChange) => void>();
   /** A broken team registry must not prevent loading independent chat data. */
   private registeringInitialSections = true;
@@ -735,10 +737,14 @@ export class Store {
     /** Approve for me on a solo server; on an organization server the
      * organization's policy decides (2026-10-11, orgNewBotApprovalMode). */
     newBotApprovalMode: () => "ask" | "auto" = () => "auto",
+    /** The language a new bot's greeting uses for the person who will own
+     * it (#1075, server/new-bot-greeting.ts). English when not given. */
+    greetingLanguage: (ownerUserId: string | undefined) => "fr" | "en" = () => "en",
   ) {
     this.defaultSelection = defaultSelection;
     this.completeNewBotSelection = completeNewBotSelection;
     this.newBotApprovalMode = newBotApprovalMode;
+    this.greetingLanguage = greetingLanguage;
     mkdirSync(DATA_DIR, { recursive: true });
     for (const file of [BOTS_FILE, GROUPS_FILE]) tightenRegistryFile(file);
     // Whether the bot list is the real one. Room repair below trusts it to
@@ -2215,7 +2221,7 @@ export class Store {
       this.appendMessage(bot.threadId, {
         role: "bot",
         kind: "text",
-        text: `Hi, I'm ${name}. What would you like me to do?`,
+        text: newBotGreeting(name, this.greetingLanguage(bot.ownerUserId)),
       });
     }
     return bot;
