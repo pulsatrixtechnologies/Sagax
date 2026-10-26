@@ -110,12 +110,15 @@ describe.skipIf(!posix)("browsers whose engine was killed under them", () => {
 
   // Chrome may start a helper while it shuts down, after anything here read
   // its processes: one left in its group once Chrome itself has exited is
-  // still stopped by that group.
+  // still stopped by that group. The cmdline is visible before the script
+  // installs its SIGTERM handler, so the stop waits until that handler exists.
   it("stops a helper the browser starts while it exits, once the browser is gone", async () => {
     const home = mkdtempSync(join(tmpdir(), "omb-orphan-"));
     homes.push(home);
     const latePid = join(home, "late.pid");
-    const orphan = start(process.execPath, ["-e", `process.on("SIGTERM", () => { const late = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(latePid)}, String(late.pid)); process.exit(0); }); ${IDLE}`, "--", "--remote-debugging-port=0", `--user-data-dir=${profileFolder(home)}`], daemonEnv(home, "bot-late"));
+    const ready = join(home, "ready");
+    const orphan = start(process.execPath, ["-e", `process.on("SIGTERM", () => { const late = require("node:child_process").spawn("sleep", ["30"], { stdio: "ignore" }); require("node:fs").writeFileSync(${JSON.stringify(latePid)}, String(late.pid)); process.exit(0); }); require("node:fs").writeFileSync(${JSON.stringify(ready)}, String(process.listenerCount("SIGTERM"))); ${IDLE}`, "--", "--remote-debugging-port=0", `--user-data-dir=${profileFolder(home)}`], daemonEnv(home, "bot-late"));
+    await vi.waitFor(() => expect(existsSync(ready) && readFileSync(ready, "utf8")).toBe("1"));
     await vi.waitFor(async () => expect((await orphanedBrowsers(home)).map((found) => found.session)).toEqual(["bot-late"]), { timeout: 5_000 });
     const [found] = await orphanedBrowsers(home);
     expect(await stopBrowserProcesses(found!.tree)).toBe(true);
