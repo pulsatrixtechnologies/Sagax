@@ -167,7 +167,9 @@ describe("foot", () => {
     const foot = html.slice(html.indexOf("data-sidebar-foot"));
     expect(foot).toContain('data-test-account="avatar"');
     expect(foot.indexOf("data-test-account")).toBeLessThan(foot.indexOf("data-sidebar-connect-apps"));
-    expect(foot).toContain(">Connecter des applications</span>");
+    // the full name's pill, then the small Connect apps pill (its words show
+    // only when the profile is the avatar alone: SidebarFoot.test.ts)
+    expect(foot).toContain('aria-label="Connecter des applications"');
     expect(foot).not.toContain("data-sidebar-place=");
     expect(fixture.places.map((place) => place.key)).toEqual([]);
   });

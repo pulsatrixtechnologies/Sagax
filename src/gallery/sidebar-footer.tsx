@@ -15,7 +15,7 @@ import { createRoot } from "react-dom/client";
 import { LayoutGrid, Puzzle } from "lucide-react";
 import { SidebarPlaces, type SidebarPlace } from "../components/SidebarPlaces";
 import { SidebarProfileMenu } from "../components/SidebarProfileMenu";
-import { SidebarUpdatePill } from "../components/SidebarUpdatePill";
+import { SidebarFoot } from "../components/SidebarFoot";
 import type { UpdaterState } from "../lib/updater";
 import { resetAchievementsForTests } from "../lib/achievements";
 import { setLocale, t } from "../lib/i18n";
@@ -69,6 +69,12 @@ if (params.get("view") === "foot") {
     if (new URL(url, location.href).pathname === "/api/config") {
       return new Response(JSON.stringify({ profile: { name: profileName } }), { status: 200, headers: { "content-type": "application/json" } });
     }
+    // &apps=<n> (0 to 3) connected apps, with stand-in logos
+    const path = new URL(url, location.href).pathname;
+    const apps = [["Gmail", "mail.google.com"], ["Notion", "notion.so"], ["Google Drive", "drive.google.com"]].slice(0, Math.min(3, Math.max(0, Number(params.get("apps") ?? 3))));
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    if (path === "/api/mcp/servers") return json({ servers: apps.map(([name, host]) => ({ name, enabled: true, type: "http", url: `https://${host}/mcp`, auth: "connected" })) });
+    if (path === "/api/plugins/search") return json({ featured: [] });
     return realFetch(input, init);
   }) as typeof window.fetch;
 }
@@ -99,19 +105,7 @@ function ReferenceFoot() {
     <div className="flex flex-col rounded-xl border-[0.5px] border-hairline-weak bg-sidebar" style={{ width }} data-gallery="foot">
       <div className="h-24" />
       <div className="px-4 pb-4">
-        <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
-          <SidebarProfileMenu avatarOnly withName />
-          {/* the same tile as Sidebar.tsx's SidebarConnectApps (not exported) */}
-          <button
-            type="button"
-            data-sidebar-connect-apps=""
-            className="flex h-[var(--foot-tile-h,2.25rem)] min-w-0 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink"
-          >
-            <Puzzle size={16} aria-hidden="true" className="shrink-0" />
-            <span className="truncate">{t("chat.connectApps.pill")}</span>
-          </button>
-          {params.get("pill") !== "0" && <SidebarUpdatePill />}
-        </div>
+        <SidebarFoot onOpenApps={() => {}} />
       </div>
     </div>
   );

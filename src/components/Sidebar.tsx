@@ -168,8 +168,8 @@ import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
 import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 
-import { SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
-import { SidebarUpdatePill } from "./SidebarUpdatePill";
+import { SidebarProfileMenu } from "./SidebarProfileMenu";
+import { SidebarFoot } from "./SidebarFoot";
 import { SidebarSectionHeader } from "./SidebarSectionHeader";
 import { useShowThreads, useThreadsLocationChoice } from "@/lib/thread-preferences";
 import { openBotConversationActions } from "./thread-home";
@@ -3507,16 +3507,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           // then the Connect apps button, then the update button while an
           // update downloads or waits. Both tiles take their height from
           // --foot-tile-h on the row (styles.css).
-          <div data-sidebar-account-row className="flex items-center gap-1.5 [container-type:inline-size]">
-            <SidebarProfileMenu avatarOnly withName places={accountPlaces} />
-            <SidebarConnectApps onOpen={() => dispatch({ type: "togglePlugins", open: true })} />
-            {/* a waiting update, right of the pill, which gives way when it
-                widens (JC, 2026-10-18) */}
-            <SidebarUpdatePill />
-            {/* the active routines count, right of the pill, while Settings
-                shows it on the account row (JC, 2026-10-16) */}
-            <SidebarRoutinesBadge />
-          </div>
+          <SidebarFoot places={accountPlaces} onOpenApps={() => dispatch({ type: "togglePlugins", open: true })} />
         )}
       </div>
 

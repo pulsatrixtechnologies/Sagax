@@ -151,17 +151,15 @@ describe("sidebar header", () => {
     const pill = buttons[0] ?? "";
     expect(pill).toContain('type="button"');
     expect(pill).toContain('data-tour="nav-apps"');
-    // a plain rounded-lg nav button, no longer the removed round pill
-    expect(pill).toContain("rounded-lg");
-    expect(pill).not.toContain("rounded-full");
+    // a small rounded pill beside the name pill (#935's design): only the
+    // generic icon here (nothing connected in this fixture), no words
+    expect(pill).toContain("rounded-full");
+    expect(pill).toContain('data-connect-apps-layout="inline"');
     expect(pill).not.toContain("sidebar-apps-pill");
-    // it gives its label up before the account pill's minimum
-    expect(pill).toContain("min-w-0");
-    expect(pill.slice(0, pill.indexOf(">"))).not.toContain("shrink-0");
+    expect(pill.slice(0, pill.indexOf(">"))).toContain("shrink-0");
     // same height as the account pill (the --foot-tile-h tile of #980)
     expect(pill).toContain("h-[var(--foot-tile-h,2.25rem)]");
-    // the label is always shown (no hover reveal), as a truncating span
-    expect(pill).toMatch(/<span class="truncate">Connect apps<\/span>/);
+    expect(pill).not.toContain("data-connect-apps-label");
     expect(pill).toContain("lucide-puzzle");
     // the account pill carries the avatar and the name
     expect(foot).toContain("data-sidebar-account-pill");

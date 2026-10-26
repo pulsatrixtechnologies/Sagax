@@ -254,7 +254,8 @@ describe("the wide foot's account pill (reference design)", () => {
 
   it("is wired in the sidebar's wide foot, the rail keeps the bare avatar", () => {
     const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
-    expect(source).toContain("<SidebarProfileMenu avatarOnly withName places={accountPlaces} />");
+    expect(source).toContain("<SidebarFoot places={accountPlaces}");
+    expect(readFileSync(new URL("./SidebarFoot.tsx", import.meta.url), "utf8")).toContain("<SidebarProfileMenu avatarOnly withName places={places} />");
     const rail = source.slice(source.indexOf("data-sidebar-account-rail"));
     expect(rail.slice(0, 200)).toContain("<SidebarProfileMenu avatarOnly places={accountPlaces} />");
   });
@@ -296,8 +297,8 @@ describe("the routines badge in Grok Bot's foot (JC, 2026-10-16)", () => {
   });
 
   it("is wired right after the Connect apps pill in the sidebar foot", () => {
-    const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
-    const pill = source.indexOf("<SidebarConnectApps onOpen=");
+    const source = readFileSync(new URL("./SidebarFoot.tsx", import.meta.url), "utf8");
+    const pill = source.indexOf("<FootConnectApps ");
     expect(pill).toBeGreaterThan(-1);
     expect(source.indexOf("<SidebarRoutinesBadge />", pill)).toBeGreaterThan(pill);
   });

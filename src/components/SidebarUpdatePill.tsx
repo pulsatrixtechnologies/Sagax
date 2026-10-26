@@ -111,8 +111,12 @@ function ProgressRing({ percent }: { percent: number | null }) {
   );
 }
 
-export function UpdatePillButton({ view, wide: forcedWide = false, onOpen = openUpdatePrompt }: {
+export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpen = openUpdatePrompt }: {
   view: UpdatePillView;
+  /** the foot's two states: "compact" stays the circle beside the profile
+   * (never widens, so it cannot cut the name), "wide" always shows its word
+   * (the profile is the avatar alone). Left out: it widens on hover. */
+  layout?: "compact" | "wide";
   /** the announcement after an update lands */
   wide?: boolean;
   onOpen?: () => void;
@@ -122,7 +126,8 @@ export function UpdatePillButton({ view, wide: forcedWide = false, onOpen = open
     <button
       type="button"
       data-sidebar-update-pill={view.kind}
-      data-wide={forcedWide ? "" : undefined}
+      data-wide={forcedWide || layout === "wide" ? "" : undefined}
+      data-layout={layout}
       data-percent={view.kind === "progress" && view.percent !== null ? view.percent : undefined}
       aria-label={view.aria}
       title={view.aria}
@@ -155,9 +160,9 @@ export function UpdatePillButton({ view, wide: forcedWide = false, onOpen = open
 
 /** The foot's update button, live on the updater bridge; nothing in the
  * browser, in dev, or while there is nothing to say. */
-export function SidebarUpdatePill() {
+export function SidebarUpdatePill({ layout }: { layout?: "compact" | "wide" } = {}) {
   const view = updatePillView(useUpdaterState());
   const announcing = useAnnounce(view?.kind === "ready" ? view.version : undefined);
   if (!view) return null;
-  return <UpdatePillButton view={view} wide={announcing} />;
+  return <UpdatePillButton view={view} wide={announcing && layout !== "compact"} layout={layout} />;
 }
