@@ -4,6 +4,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import { BOT_MAIL_ASSERTION_ACTORS } from "./bot-inbound-mail.ts";
+import { TELEPHONY_ASSERTION_ACTORS } from "./bot-inbound-telephony.ts";
 import { ORG_MEMBER_ASSERTION_ACTORS } from "./org-member-routes.ts";
 import { ACCOUNT_PURGED_EVENT, CONSOLE_ASSERTION_ACTORS, accessExpiresIn, avatarVersionFromPicture, OIDC_MAX_PENDING_FLOWS, ROUTINE_DELEGATION_SCOPES, OIDC_PENDING_FLOW_TTL_MS, OidcRelyingParty, parseRetryAfter, parseTeamsClaim, validIssuer } from "./oidc-rp.ts";
 import { startFakeOidcProvider, type FakeOidcProvider } from "./testing/fake-oidc-provider.ts";
@@ -477,6 +478,20 @@ describe("OIDC relying party: console assertions (slice 7)", () => {
     await expect(party.verifyConsoleAssertion(mail(), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).resolves.toMatchObject({ sub, actor: "perspicax-mail" });
     await expect(party.verifyConsoleAssertion(assertion(), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
     await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mcp" } }) }), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
+  });
+
+  it("perspicax-voice (Perspicax Voice, 2026-10-26) passes only on the inbound telephony route, never the admin, member or mail API", async () => {
+    const party = rp();
+    const voice = () => assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-voice" }, body_sha256: "b".repeat(64) }) });
+    expect(CONSOLE_ASSERTION_ACTORS).toContain("perspicax-voice");
+    await expect(party.verifyConsoleAssertion(voice(), ORIGIN)).rejects.toMatchObject({ code: "console_assertion_act" });
+    expect(ORG_MEMBER_ASSERTION_ACTORS).not.toContain("perspicax-voice");
+    await expect(party.verifyConsoleAssertion(voice(), ORIGIN, null, ORG_MEMBER_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
+    await expect(party.verifyConsoleAssertion(voice(), ORIGIN, null, BOT_MAIL_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
+    expect(TELEPHONY_ASSERTION_ACTORS).toEqual(["perspicax-voice"]);
+    await expect(party.verifyConsoleAssertion(voice(), ORIGIN, null, TELEPHONY_ASSERTION_ACTORS)).resolves.toMatchObject({ sub, actor: "perspicax-voice", bodySha256: "b".repeat(64) });
+    await expect(party.verifyConsoleAssertion(assertion(), ORIGIN, null, TELEPHONY_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
+    await expect(party.verifyConsoleAssertion(assertion({ claims: (c: Bend) => ({ ...c, act: { sub: "perspicax-mail" } }) }), ORIGIN, null, TELEPHONY_ASSERTION_ACTORS)).rejects.toMatchObject({ code: "console_assertion_act" });
   });
 
   it("carries the body digest the mail relay signs (v2, S1), and refuses one that is not a SHA-256", async () => {

@@ -176,7 +176,7 @@ export function verifySource(
 ): VerifyResult {
   // Bot email has no endpoint: it arrives only through the Perspicax relay's
   // own route (server/bot-inbound-mail.ts), whatever is presented here.
-  if (TRIGGER_SOURCES[type].secretMode === "relay") return { ok: false, reason: "Bot email arrives only through the Perspicax relay" };
+  if (TRIGGER_SOURCES[type].secretMode === "relay") return { ok: false, reason: `${TRIGGER_SOURCES[type].label} arrives only through the Perspicax relay` };
   if (!secret) return { ok: false, reason: "No signing secret is set for this trigger" };
   const { headers, rawBody, now } = request;
   const windowSeconds = TRIGGER_SOURCES[type].replayWindowSeconds ?? 300;
@@ -251,6 +251,8 @@ export function verifySource(
     }
     case "botmail":
       return { ok: false, reason: "Bot email arrives only through the Perspicax relay" };
+    case "telephony":
+      return { ok: false, reason: "Bot phone arrives only through the Perspicax relay" };
   }
 }
 
@@ -581,6 +583,7 @@ export function normalizeSource(type: TriggerSourceType, request: SourceRequest)
     case "pagerduty": return pagerdutyEvents(request, payload);
     case "linear": return linearEvents(request, payload);
     case "botmail": return { ignored: "Bot email arrives only through the Perspicax relay" };
+    case "telephony": return { ignored: "Bot phone arrives only through the Perspicax relay" };
   }
 }
 
@@ -672,7 +675,7 @@ export function sampleSourceEvent(config: TriggerSourceConfig): NormalizedTrigge
   const fields: NormalizedTriggerEvent["fields"] = {};
   for (const key of definition.filters) {
     if (key === "keyword") continue;
-    const value = pick(key) ?? (config.type === "botmail" && key === "sender" ? "someone@example.com" : SAMPLE_FIELDS[key]);
+    const value = pick(key) ?? (config.type === "botmail" && key === "sender" ? "someone@example.com" : config.type === "telephony" && key === "sender" ? "+15145550100" : SAMPLE_FIELDS[key]);
     if (value) fields[key as Exclude<TriggerFilterKey, "keyword">] = value;
   }
   const keyword = pick("keyword");

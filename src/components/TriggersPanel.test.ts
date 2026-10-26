@@ -110,7 +110,7 @@ describe("Triggers pop-up", () => {
     // The source and the bot are pill menus (PillSelect): their choices.
     const menu = (label: string) => tree.find((node) => node.props.ariaLabel === label)!.props.options as Array<{ value: string; label: string }>;
     expect(menu(t("triggers.sourceAria")).map((option) => option.label)).toEqual(["Another app sends a link request", "Typeform", "Zapier", "Stripe", "Something else…",
-      "GitHub", "GitLab", "Slack", "Microsoft Teams", "Outlook", "Outlook Calendar", "Sentry", "PagerDuty", "Linear", "Bot email"]);
+      "GitHub", "GitLab", "Slack", "Microsoft Teams", "Outlook", "Outlook Calendar", "Sentry", "PagerDuty", "Linear", "Bot email", "Bot phone"]);
     expect(menu(t("triggers.botAria"))).toContainEqual({ value: "atlas", label: "Atlas" });
     expect(html).toContain("Create trigger");
     expect(html).toContain("No triggers yet");
@@ -395,8 +395,9 @@ describe("Triggers pop-up", () => {
     fixture.webhooks = [webhook("w1", { source: { type: "github", events: [], filters: {} }, signingSecretSet: true })];
     const { html, nodes: tree } = render();
     const options = tree.find((node) => node.props.ariaLabel === t("triggers.sourceAria"))!.props.options as Array<{ group: string }>;
-    expect(options.at(-2)!.group).toBe("Applications qui signent leurs événements");
-    expect(options.at(-1)!.group).toBe("Courriel à l'adresse du bot");
+    expect(options.at(-3)!.group).toBe("Applications qui signent leurs événements");
+    expect(options.at(-2)!.group).toBe("Courriel à l'adresse du bot");
+    expect(options.at(-1)!.group).toBe("Textos et appels sur la ligne du propriétaire");
     expect(html).toContain("Pull request ouverte");
     expect(html).toContain("Envoyer un événement test");
     expect(html).toContain("Secret de signature enregistré.");

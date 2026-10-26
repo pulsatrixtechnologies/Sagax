@@ -74,9 +74,11 @@ export interface TypedDraft {
 export const EMPTY_TYPED_DRAFT: TypedDraft = { events: [], filters: {}, signingSecret: "", tenantId: "", rateLimit: "" };
 
 /** The source's name: a brand as written, or for bot email (2026-10-21)
- * the translated "Bot email". */
+ * and bot phone (2026-10-26) the translated "Bot email" and "Bot phone". */
 export function typedSourceLabel(type: TriggerSourceType): string {
-  return type === "botmail" ? t("triggers.source.botmail") : TRIGGER_SOURCES[type].label;
+  if (type === "botmail") return t("triggers.source.botmail");
+  if (type === "telephony") return t("triggers.source.telephony");
+  return TRIGGER_SOURCES[type].label;
 }
 
 /** Bot email: the bot's own address (from the Perspicax relay) with a Copy
@@ -127,7 +129,7 @@ export function typedSourceConfig(type: TriggerSourceType, draft: TypedDraft): T
   }
   const config: TriggerSourceConfig = { type, events: draft.events.filter((kind) => definition.events.includes(kind)), filters };
   if (type === "github" && draft.includeBotComments) config.includeBotComments = true;
-  if (type === "botmail" && draft.allowFullTools) config.allowFullTools = true;
+  if ((type === "botmail" || type === "telephony") && draft.allowFullTools) config.allowFullTools = true;
   const rate = Number(draft.rateLimit);
   if (draft.rateLimit.trim() && Number.isInteger(rate) && rate >= 1 && rate <= TRIGGER_RATE_LIMIT_MAX) config.rateLimitPerMinute = rate;
   if (GRAPH_TYPES.has(type) && draft.tenantId.trim()) config.tenantId = draft.tenantId.trim();
@@ -376,7 +378,7 @@ export function TypedSourceFields({
   const deferred = new Set(definition.deferredFilters ?? []);
   const contains = new Set(definition.containsFilters ?? []);
   const relay = definition.secretMode === "relay";
-  const mail = useBotInboundMail(relay && creating ? botId : null);
+  const mail = useBotInboundMail(type === "botmail" && creating ? botId : null);
   const toggleEvent = (kind: string) =>
     onChange({ ...draft, events: draft.events.includes(kind) ? draft.events.filter((value) => value !== kind) : [...draft.events, kind] });
   return (
@@ -463,11 +465,11 @@ export function TypedSourceFields({
         )}
       </div>
       <ConnectionFields type={type} draft={draft} onChange={onChange} secretSet={pollerSecretSet} />
-      {type === "botmail" && (
+      {relay && (
         <div className="flex items-start justify-between gap-3">
           <span className="min-w-0">
             <span className="block text-[11.5px] font-medium text-ink-secondary">{t("triggers.botmail.fullTools")}</span>
-            <span className="mt-0.5 block text-[10.5px] text-warning">{t("triggers.botmail.fullToolsHelp")}</span>
+            <span className="mt-0.5 block text-[10.5px] text-warning">{t(type === "telephony" ? "triggers.telephony.fullToolsHelp" : "triggers.botmail.fullToolsHelp")}</span>
           </span>
           <Switch
             checked={Boolean(draft.allowFullTools)}
@@ -479,8 +481,8 @@ export function TypedSourceFields({
       )}
       {relay && (
         <div className="space-y-2">
-          <p data-botmail-relay="" className="flex items-center gap-1.5 text-[11px] text-ink-secondary"><ShieldCheck size={12} aria-hidden="true" />{t("triggers.botmail.relay")}</p>
-          {creating && <BotMailAddressLine mail={mail} />}
+          <p data-botmail-relay="" className="flex items-center gap-1.5 text-[11px] text-ink-secondary"><ShieldCheck size={12} aria-hidden="true" />{t(type === "telephony" ? "triggers.telephony.relay" : "triggers.botmail.relay")}</p>
+          {creating && type === "botmail" && <BotMailAddressLine mail={mail} />}
         </div>
       )}
       {creating && !relay && (definition.secretMode === "provided" ? (
@@ -608,7 +610,7 @@ export function TypedTriggerRow({
   });
   const automation = automationText(webhook.automation);
   const relay = definition.secretMode === "relay";
-  const mail = useBotInboundMail(relay ? webhook.botId : null);
+  const mail = useBotInboundMail(source.type === "botmail" ? webhook.botId : null);
 
   return (
     <li data-trigger-row={webhook.id} data-trigger-source={source.type}>
@@ -670,8 +672,8 @@ export function TypedTriggerRow({
         <div className="mt-3 space-y-3 pb-2 text-[11.5px] leading-relaxed text-ink-secondary">
           {relay ? (
             <section data-typed-setup className="space-y-2 rounded-xl border border-accent-border/30 bg-inset/60 px-3 py-2.5">
-              <p>{t("triggers.setup.botmail")}</p>
-              <BotMailAddressLine mail={mail} />
+              <p>{t(source.type === "telephony" ? "triggers.setup.telephony" : "triggers.setup.botmail")}</p>
+              {source.type === "botmail" && <BotMailAddressLine mail={mail} />}
             </section>
           ) : <>
           <section data-typed-setup className="rounded-xl border border-accent-border/30 bg-inset/60 px-3 py-2.5">

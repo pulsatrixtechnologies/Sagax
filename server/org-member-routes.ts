@@ -60,8 +60,10 @@ import { AssertionReplayCache } from "./org-admin-routes.ts";
 import { compileRoutes, matchRoutes } from "./org-admin-console.ts";
 
 export const ORG_MEMBER_PREFIX = "/api/org/member/";
-/** The `act.sub` values the member API accepts: never `perspicax-mail`
- * (that actor is the inbound mail route's alone, server/bot-inbound-mail.ts). */
+/** The `act.sub` values the member API accepts: never `perspicax-mail` nor
+ * `perspicax-voice` (those actors are the inbound mail route's and the
+ * inbound telephony route's alone, server/bot-inbound-mail.ts and
+ * server/bot-inbound-telephony.ts). */
 export const ORG_MEMBER_ASSERTION_ACTORS: readonly ConsoleAssertion["actor"][] = ["console", "perspicax-mcp"];
 /** The version `GET capabilities` reports. */
 export const ORG_MEMBER_API_VERSION = 1;

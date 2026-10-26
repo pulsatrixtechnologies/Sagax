@@ -34,7 +34,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { z } from "zod";
 
-import type { NormalizedTriggerEvent, TriggerSourceConfig } from "../shared/trigger-sources.ts";
+import { isRelaySource, isTriggerSourceType, type NormalizedTriggerEvent, type TriggerSourceConfig } from "../shared/trigger-sources.ts";
 import type { ConsoleAssertion, ConsoleAssertionActor } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
 import type { WebhookReceiveResult } from "./webhooks.ts";
@@ -134,7 +134,9 @@ export function botmailEvent(mail: InboundMail): NormalizedTriggerEvent {
  * confined: no shell, every write or outbound call behind its own card (no
  * Always-allow, no Full). Its trigger's owner may opt in to the bot's usual
  * tools (`source.allowFullTools`). A webhook run whose trigger is gone is
- * confined too: what woke it can no longer be told. */
+ * confined too: what woke it can no longer be told. Every relayed source is
+ * confined the same way: bot email and, since 2026-10-26, bot phone
+ * (server/bot-inbound-telephony.ts). */
 export function botmailRunConfined(
   run: { triggerSource?: string; webhookId?: string } | null | undefined,
   triggerOf: (webhookId: string) => { source?: Pick<TriggerSourceConfig, "type" | "allowFullTools"> } | null | undefined,
@@ -142,7 +144,8 @@ export function botmailRunConfined(
   if (!run || run.triggerSource !== "webhook" || !run.webhookId) return false;
   const trigger = triggerOf(run.webhookId);
   if (!trigger) return true;
-  return trigger.source?.type === "botmail" && trigger.source.allowFullTools !== true;
+  const type = trigger.source?.type;
+  return isTriggerSourceType(type) && isRelaySource(type) && trigger.source?.allowFullTools !== true;
 }
 
 /** Second review (S2 through delegation, 2026-10-22): the internal routes
@@ -169,7 +172,7 @@ const BOTMAIL_CONFINED_ROUTES = new Set([
   "/api/internal/approvals",
 ]);
 
-export const BOTMAIL_CONFINED_PEER_REFUSED = "This run was woken by an email: it can't hand work to another bot, a room or a new conversation. Do what you can here; the owner can continue from an ordinary conversation, or turn on full tools for this Bot email trigger.";
+export const BOTMAIL_CONFINED_PEER_REFUSED = "This run was woken by an email or a phone message: it can't hand work to another bot, a room or a new conversation. Do what you can here; the owner can continue from an ordinary conversation, or turn on full tools for this trigger.";
 
 /** The refusal for an internal write from a confined mail-woken run, or null. */
 export function botmailConfinedInternalRefusal(path: string, method: string): { error: string; code: "botmail_confined" } | null {
