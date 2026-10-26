@@ -41303,8 +41303,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(200, {
         "content-type": message.mime ?? "image/png",
         "content-length": String(bytes.byteLength),
-        // a settled message's image never changes
-        "cache-control": "private, max-age=31536000, immutable",
+        // Never cached: a room's screen is shown only to the person whose
+        // turn holds the workplace, and access to a thread can be withdrawn;
+        // a browser cache would keep the image past both.
+        "cache-control": "private, no-store",
       });
       return res.end(bytes);
     }
@@ -41428,7 +41430,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ...(streamsMessageImage
           ? { "content-disposition": "inline" }
           : { "content-disposition": messageFileDisposition(messageFileDownloadName(downloadName, file.name)) }),
-        "cache-control": streamsMessageImage ? "private, max-age=3600" : "private, no-store",
+        // previews too: access to the thread can be withdrawn
+        "cache-control": "private, no-store",
         "cdn-cache-control": "no-store",
         "cloudflare-cdn-cache-control": "no-store",
         pragma: "no-cache",
@@ -41499,7 +41502,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         "content-disposition": preview
           ? "inline"
           : messageFileDisposition(messageFileDownloadName(ref.source === "upload" || ref.source === "attachment" ? ref.name : undefined, file.name)),
-        "cache-control": preview ? "private, max-age=3600" : "private, no-store",
+        // previews too: access to the thread can be withdrawn
+        "cache-control": "private, no-store",
         "cdn-cache-control": "no-store",
         "cloudflare-cdn-cache-control": "no-store",
         pragma: "no-cache",

@@ -12305,7 +12305,7 @@ describe("message pages", () => {
     expect(response.headers.get("content-disposition")).toBe("inline");
     expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-    expect(response.headers.get("cache-control")).toBe("private, max-age=3600");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(await response.text()).toBe("png preview bytes");
 
     expect((await fetch(
