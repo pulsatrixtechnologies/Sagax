@@ -24,6 +24,14 @@ const items: SidebarMenuItem[] = [
     onSelect: () => {},
   },
   { key: "settings", label: "Settings", onSelect: () => {} },
+  {
+    key: "tools",
+    label: "Tools",
+    submenu: [
+      { key: "routines", label: "Automations", tourId: "nav-automations", active: true, onSelect: () => {} },
+    ],
+    onSelect: () => {},
+  },
 ];
 
 beforeEach(() => {
@@ -62,6 +70,14 @@ describe("a second level in the sidebar's popover menu", () => {
     expect(document.querySelector('[data-submenu="usage"]')).not.toBeNull();
     flushSync(() => action.click());
     expect(viewUsage).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a moved row's tour anchor and the open page lit", () => {
+    flushSync(() => row("tools").click());
+    const sub = document.querySelector<HTMLElement>('[data-submenu="tools"]')!;
+    const automations = sub.querySelector<HTMLButtonElement>('[data-menu-key="routines"]')!;
+    expect(automations.getAttribute("data-tour")).toBe("nav-automations");
+    expect(automations.className).toContain("bg-selected");
   });
 
   it("opens with the right arrow and closes with the left arrow", () => {

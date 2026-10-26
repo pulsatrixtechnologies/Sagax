@@ -139,6 +139,7 @@
   "sidebar.nav.connectedApps": "連携アプリ",
   "sidebar.appSettings": "アプリの設定",
   "sidebar.tools": "ツール",
+  "sidebar.account.tools": "ツール",
   "sidebar.section.expand": "{name} を開く",
   "sidebar.section.collapse": "{name} を畳む",
   "sidebar.section.expandReorder": "{name} を開きます。Alt+上下で並べ替えます。",

@@ -70,8 +70,12 @@ export interface SidebarSubmenuEntry {
   info?: boolean;
   /** a check mark: the current choice (the organization in use) */
   checked?: boolean;
+  /** the page this row opens is the one on screen */
+  active?: boolean;
   disabled?: boolean;
   separatorBefore?: boolean;
+  /** `data-tour` id, so the guided tour can point at this row */
+  tourId?: string;
   onSelect?: () => void;
 }
 
@@ -340,12 +344,17 @@ export function SidebarPopoverMenu({
                         <button
                           type="button"
                           role="menuitem"
+                          data-tour={entry.tourId}
+                          data-menu-key={entry.key}
                           disabled={entry.disabled}
                           onClick={() => {
                             entry.onSelect?.();
                             close();
                           }}
-                          className="flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-ink hover:bg-hover disabled:opacity-60"
+                          className={cn(
+                            "flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left disabled:opacity-60",
+                            entry.active ? "bg-selected text-ink" : "text-ink hover:bg-hover",
+                          )}
                         >
                           {entry.icon && <span className="flex size-5 shrink-0 items-center justify-center">{entry.icon}</span>}
                           <span className="min-w-0 flex-1 truncate">{entry.label}</span>

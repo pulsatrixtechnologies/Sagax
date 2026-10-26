@@ -252,6 +252,7 @@
   "sidebar.nav.connectedApps": "Підключені застосунки",
   "sidebar.appSettings": "Налаштування застосунку",
   "sidebar.tools": "Інструменти",
+  "sidebar.account.tools": "Інструменти",
   "sidebar.section.expand": "Розгорнути {name}",
   "sidebar.section.collapse": "Згорнути {name}",
   "sidebar.section.expandReorder": "Розгорнути {name}. Alt+Вгору/Вниз змінює порядок.",

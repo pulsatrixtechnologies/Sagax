@@ -9,8 +9,9 @@
 // (icon and count of active routines) sits at the right edge of the row and
 // opens Automations. Other people's rows never show title or points: those
 // live in a person's detail and on Settings > Achievements. The menu leads with
-// Automations, then a hairline, then settings (Team map opens from the
-// Automations header and the command palette, 2026-10-18). Archived bots, when there
+// Usage, Help and Settings, then Tools (Automations, Remote sessions,
+// Achievements), then a hairline (Team map opens from the Automations
+// header and the command palette, 2026-10-18). Archived bots, when there
 // are any, sit above that pair with their own hairline. Your phone and
 // Help Center are not in this menu: the phone stays in Settings and on
 // the collapsed rail, and docs stay on About. Connected apps and Browse Bots
@@ -52,6 +53,7 @@ import {
   ShieldCheck,
   Smartphone,
   Trophy,
+  Wrench,
 } from "lucide-react";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOrgApprovalsCount } from "@/lib/org-approvals";
@@ -270,8 +272,8 @@ function useUpdateButtonWide(version: string | null): [boolean, (on: boolean) =>
 }
 
 /** The footer menu: the profile items with the account-level places
- * (Archived bots) added to the group of Achievements, just
- * above the hairline. Without places it is the profile menu alone. */
+ * (Archived bots) added just above the hairline. Without places it is
+ * the profile menu alone. */
 export function footerMenuItems(places: SidebarMenuItem[], profileItems: SidebarMenuItem[]): SidebarMenuItem[] {
   if (places.length === 0) return profileItems;
   const at = profileItems.findIndex((item) => item.separatorBefore);
@@ -295,11 +297,13 @@ export interface ProfileMenuHandlers {
 }
 
 /** Grok Bot's account menu (JC, 2026-10-16; src/lib/account-menu.ts):
- * Usage ›, Get Sagax on mobile, Help ›, Settings, Automations, Achievements,
- * a hairline, Switch organization › (a business session: Switch account ›),
- * Sign out. Automations came back here from the settings nav (JC,
- * 2026-10-16). Team map left the menu (JC, 2026-10-18: one option, one
- * place): it opens from the Automations header and the command palette. */
+ * Usage ›, Get Sagax on mobile, Help ›, Settings, Tools › (Automations,
+ * Remote sessions, Achievements), a hairline, Switch organization ›
+ * (a business session: Switch account ›), Sign out. Automations came
+ * back here from the settings nav (JC, 2026-10-16) and sits under Tools
+ * with Remote sessions and Achievements. Team map left the menu (JC,
+ * 2026-10-18: one option, one place): it opens from the Automations
+ * header and the command palette. */
 export function profileMenuItems(input: {
   /** null: no plan reports a window, so Usage carries no percent */
   usagePercent: number | null;
@@ -390,6 +394,33 @@ export function profileMenuItems(input: {
     }] : []),
   ];
   if (lower[0]) lower[0] = { ...lower[0], separatorBefore: true };
+  // Each row keeps the place it had on the top level. An empty list (every
+  // row hidden) leaves Tools out of the menu.
+  const tools: SidebarSubmenuEntry[] = [
+    {
+      key: "routines",
+      tourId: "nav-automations",
+      label: t("sidebar.nav.automations"),
+      icon: <CalendarDays size={18} />,
+      active: input.automationsActive,
+      onSelect: input.handlers.onAutomations,
+    },
+    {
+      key: "remote-sessions",
+      label: t("remoteSessionsAdmin.title"),
+      icon: <MonitorIcon size={18} />,
+      active: input.remoteSessionsActive,
+      onSelect: input.handlers.onRemoteSessions,
+    },
+    ...(input.achievementsLabel
+      ? [{
+          key: "achievements",
+          label: input.achievementsLabel,
+          icon: <Trophy size={18} />,
+          onSelect: input.handlers.onAchievements,
+        }]
+      : []),
+  ];
   return [
     {
       key: "usage",
@@ -422,29 +453,15 @@ export function profileMenuItems(input: {
       icon: <SettingsIcon size={18} />,
       onSelect: input.handlers.onSettings,
     },
-    {
-      key: "routines",
-      tourId: "nav-automations",
-      label: t("sidebar.nav.automations"),
-      icon: <CalendarDays size={18} />,
-      active: input.automationsActive,
-      onSelect: input.handlers.onAutomations,
-    },
-    {
-      key: "remote-sessions",
-      label: t("remoteSessionsAdmin.title"),
-      icon: <MonitorIcon size={18} />,
-      active: input.remoteSessionsActive,
-      onSelect: input.handlers.onRemoteSessions,
-    },
-    ...(input.achievementsLabel
-      ? [{
-          key: "achievements",
-          label: input.achievementsLabel,
-          icon: <Trophy size={18} />,
-          onSelect: input.handlers.onAchievements,
-        }]
-      : []),
+    ...(tools.length > 0 ? [{
+      key: "tools",
+      label: t("sidebar.account.tools"),
+      icon: <Wrench size={18} />,
+      active: tools.some((entry) => entry.active),
+      submenu: tools,
+      submenuAlign: "bottom" as const,
+      onSelect: () => {},
+    }] : []),
     ...lower,
   ];
 }
