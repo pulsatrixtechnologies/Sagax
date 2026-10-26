@@ -4283,13 +4283,15 @@ const directRequestOwners = new Map<string, {
 }>();
 // Stop revokes credentials before completion, but the receipt must retain its
 // exact provider-turn owner until that completion or explicit failure cleanup.
-type DirectTurnOutcome = { ok: boolean; text: string };
+/** `stalled`: the stall watchdog stopped the turn, so its work fails as
+ * stalled, not as a provider error (port de OpenMausBot #3325). */
+type DirectTurnOutcome = { ok: boolean; text: string; stalled?: boolean };
 const directFollowupTurns = new ProviderTurnGenerationRegistry<DirectTurnOutcome>();
 const directFollowupSettlers = new Map<string, { threadId: string; settle?: () => void }>();
 const directCoordinationSettlers = new Map<string, (outcome: DirectTurnOutcome) => void>();
 function settleDirectCoordination(generation: string | undefined, outcome: DirectTurnOutcome) {
   if (!generation) return;
-  coordinator.sourceSettled(generation, outcome.ok);
+  coordinator.sourceSettled(generation, outcome.ok, outcome.stalled === true);
   const settle = directCoordinationSettlers.get(generation);
   directCoordinationSettlers.delete(generation);
   settle?.(outcome);
@@ -9315,9 +9317,9 @@ const coordinator: Coordinator = createCoordinator({
         ![...relayStreams.values()].some(stream => stream.to === parent.threadId) ? parent.threadId : undefined;
       const relayStream = relayTo ? { to: relayTo, full: "", sent: "", shown: false } : undefined;
       if (relayStream) relayStreams.set(node.threadId, relayStream);
-      if (!group) return new Promise<{ ok: boolean; text: string }>(resolve => {
+      if (!group) return new Promise<DirectTurnOutcome>(resolve => {
         let done = false;
-        const finish = (outcome: { ok: boolean; text: string }) => {
+        const finish = (outcome: DirectTurnOutcome) => {
           if (done) return;
           done = true; signal.removeEventListener("abort", abort);
           if (relayStream && relayStreams.get(node.threadId) === relayStream) {
@@ -9376,7 +9378,8 @@ const coordinator: Coordinator = createCoordinator({
       });
       groupQueues.set(node.threadId, tracked.catch(() => {}));
       await tracked;
-      return { ok: result.outcome === "settled", text: result.stopReason || result.replyText || result.outcome || "The addressed agent could not run" };
+      return { ok: result.outcome === "settled", ...(result.outcome === "stalled" ? { stalled: true } : {}),
+        text: result.stopReason || result.replyText || result.outcome || "The addressed agent could not run" };
     },
     // ── runtime-only hooks (docs/runtime-contract.md §4, §8) ──
     // Display names for the envelope. The person is named only when the
@@ -12581,7 +12584,19 @@ const watchdog = new TurnWatchdog({
     repeats.settle(turn.threadId);
     const bot = botForThread(turn.botId, turn.threadId);
     const routineRun = activeRoutineRunForThread(turn.threadId);
-    void runningTurnInstance(bot, turn.threadId)?.adapter.interruptTurn(turn.threadId).catch(() => {});
+    // The stopped process can never answer the approvals it raised: close
+    // them as Stop does (durable question cards and proposals stay, and keep
+    // their own expiry), once the interrupt settled and only while no
+    // replacement turn took the thread (port de OpenMausBot #3325).
+    const stillStalledTurn = () => {
+      const generation = directTurnGenerationByThread.get(turn.threadId);
+      const owner = turnResourceOwners.get(turn.threadId);
+      return (!generation || generation === stalledGeneration) &&
+        (!owner || !stalledResourceOwner || owner.generation === stalledResourceOwner.generation);
+    };
+    void Promise.resolve(runningTurnInstance(bot, turn.threadId)?.adapter.interruptTurn(turn.threadId))
+      .catch(() => {})
+      .then(() => { if (stillStalledTurn()) closeOpenApprovals(turn.threadId); });
     const minutes = Math.round(silentMs / 60_000), cause = stallCause(silentMs);
     const stalled = stoppedTurnText(turn.threadId, liveTurnByThread.get(turn.threadId), cause);
     if (routineRun?.target === "bot") {
@@ -12598,7 +12613,7 @@ const watchdog = new TurnWatchdog({
     if (bot && routineRun?.target !== "bot") {
       reportIncident({ kind: "stalled", bot, threadId: turn.threadId, detail: cause });
     }
-    settleDirectFollowup(stalledGeneration, { ok: false, text: stalled });
+    settleDirectFollowup(stalledGeneration, { ok: false, text: stalled, stalled: true });
     finalizeDelegationWatch(turn.threadId, false, "", `Delegated turn did not finish — ${stalled}`);
     turnUsage.delete(turn.threadId);
     turnContext.delete(turn.threadId);
@@ -18771,7 +18786,7 @@ async function startTurn(
     automaticRecoveryIndex?: number;
     /** Queue receipts outlive the dispatch acknowledgment until this exact turn settles. */
     onTurnSettled?: () => void;
-    coordination?: { id: string; resumed: boolean; settle: (outcome: { ok: boolean; text: string }) => void };
+    coordination?: { id: string; resumed: boolean; settle: (outcome: DirectTurnOutcome) => void };
     /** Start the engine for a call that was just accepted. No transcript
      * row, no turn, no model prompt. The first spoken turn joins it. */
     warmOnly?: boolean;
@@ -23053,6 +23068,8 @@ async function runGroupMemberTurn(
     releaseTurnResources(resourceOwner);
   };
   let roomHandoffSourceSucceeded = false;
+  /** The stall watchdog stopped this room turn, during its setup or after. */
+  let roomHandoffSourceStalled = false;
   try {
   // A workspace at its monthly spend limit rechecks the cap at execution time
   // for every room, goal, queued, calendar, and chained-mention turn.
@@ -23883,6 +23900,7 @@ async function runGroupMemberTurn(
   retainRoomVmLease = outcome === "timed_out" || outcome === "stalled";
   if (!retainRoomVmLease) releaseRoomVmLease();
   roomHandoffSourceSucceeded = outcome === "settled";
+  roomHandoffSourceStalled = outcome === "stalled";
   if (orchestration) {
     orchestration.result.replyText = unansweredApprovals.annotate(threadId, providerTurnId, replyText.trim(), outcome === "settled");
     orchestration.result.outcome = outcome;
@@ -24081,7 +24099,7 @@ async function runGroupMemberTurn(
     // other early returns that never produce a provider terminal event.
     unregisterSetupStall();
     revokeInternalCapabilityGeneration(threadId, internalGeneration);
-    coordinator.sourceSettled(internalGeneration, roomHandoffSourceSucceeded);
+    coordinator.sourceSettled(internalGeneration, roomHandoffSourceSucceeded, roomHandoffSourceStalled || setupStallCause !== undefined);
     if (!retainRoomVmLease) releaseRoomVmLease();
     if (!providerDispatched && roomSpeaker && groupSpeakers.get(threadId) === roomSpeaker) {
       groupSpeakers.delete(threadId);

@@ -20,7 +20,7 @@ import { removeTempDir } from "./testing/cleanup.ts";
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-type Outcome = { ok: boolean; text: string };
+type Outcome = { ok: boolean; text: string; stalled?: boolean };
 type Script = (node: HandoffView, text: string) => Outcome | "hold" | undefined;
 
 interface Host extends CoordinatorHost {
@@ -273,6 +273,26 @@ describe("RuntimeCoordinator: the requesting turn and its tree", () => {
     w.coordinator.tick(); await flush();
     expect(w.coordinator.all()).toHaveLength(2);
     expect(w.coordinator.active()).toEqual([]);
+  });
+
+  // port de OpenMausBot #3325: the watchdog's stop reaches the runtime as a
+  // stall (the requesting turn's own end is runtime.test.ts's).
+  it("fails a turn the host's watchdog stopped as stalled, not as a provider error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "runtime-coordinator-stalled-"));
+    try {
+      const w = world((node) => node.botId === "builder" ? { ok: false, text: "No activity for 20 minutes — the turn was stopped", stalled: true }
+        : node.botId === "tester" ? { ok: false, text: "The engine exited" } : undefined, {}, dir);
+      const { node: built } = send(w, chief, "gen-1", undefined, builder, "Build it");
+      const { node: tested } = send(w, chief, "gen-1", undefined, tester, "Test it");
+      w.coordinator.sourceSettled("gen-1", true); w.coordinator.tick(); await flush();
+      const db = new DatabaseSync(join(dir, "runtime.db"));
+      const outcome = (id: string) => (JSON.parse((db.prepare("SELECT json FROM assignments WHERE id = ?").get(id) as { json: string }).json) as Assignment).outcome;
+      expect([outcome(built.id), outcome(tested.id)]).toEqual(["stalled", "provider_error"]);
+      db.close();
+      w.coordinator.close();
+    } finally {
+      await removeTempDir(dir);
+    }
   });
 
   it("active() never reads an ended row: one that no longer parses stops all(), not active()", async () => {

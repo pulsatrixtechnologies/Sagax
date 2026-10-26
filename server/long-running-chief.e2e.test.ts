@@ -25,7 +25,7 @@ import { CONTROL_WAITED } from "./control-client.ts";
 import { CONSENT_RULE } from "./peer-provenance.ts";
 import { ENVELOPE_MARK } from "./runtime/envelope.ts";
 import { waitForExit } from "./testing/cleanup.ts";
-import { readHandoffs } from "./testing/handoff-rows.ts";
+import { handoffOutcome, readHandoffs } from "./testing/handoff-rows.ts";
 import { hostTimeout } from "./testing/host-timeout.ts";
 import { openSse, type SseRecorder } from "./testing/sse.ts";
 
@@ -489,7 +489,9 @@ it("tells the Chief a teammate's turn stalled, in the watchdog's words", () => c
   await f.final(job, "STALL-FINAL");
 
   const stalled = f.child(job, f.mira.id, "LONG-SUITE");
+  // port de OpenMausBot #3325: a stall, not a provider error
   expect(stalled.status).toBe("failed");
+  expect(handoffOutcome(f.dataDir, stalled.id)).toBe("stalled");
   // The cause first, then what the turn did and last said, quoted as data.
   expect(stalled.result).toBe('No activity for 20 minutes — the turn was stopped. No tool calls were seen before it stopped.\nIts last message, quoted: "SUITE-STARTED"');
   const review = f.prompt(f.turn("D1"));

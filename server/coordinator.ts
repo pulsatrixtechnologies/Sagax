@@ -68,8 +68,11 @@ export interface CoordinatorHost {
   validate(node: HandoffView, parent?: HandoffView): string | undefined;
   /** The assignee cannot take a turn now (slot-aware admission). */
   busy(node: HandoffView): boolean;
-  /** Run one turn of the assignee with the composed text; resolves when the engine settles. */
-  run(node: HandoffView, resumed: boolean, signal: AbortSignal, composed: ComposedTurn): Promise<{ ok: boolean; text: string }>;
+  /** Run one turn of the assignee with the composed text; resolves when the
+   * engine settles. `stalled`: the host's stall watchdog stopped the turn
+   * (a room turn too, during its setup), so it fails as `stalled`, not as a
+   * provider error. */
+  run(node: HandoffView, resumed: boolean, signal: AbortSignal, composed: ComposedTurn): Promise<{ ok: boolean; text: string; stalled?: boolean }>;
   /** A resume whose settled children all only relay (HandoffView.relay):
    * show their replies to the person as the answer, in the requester's
    * conversation, and return true; the requester then runs no turn. False
@@ -108,7 +111,8 @@ export interface Coordinator {
     approvalGranted?: boolean, rework?: boolean, sourceText?: string, requestBatchKey?: string, origin?: WorkOrigin,
     mode?: "work" | "consult" | "auto", person?: string, relay?: boolean): { node: HandoffView; duplicate: boolean; joined?: boolean };
   sharedRequest(node: HandoffView): { id: string; botIds: string[] };
-  sourceSettled(generation: string, ok: boolean): void;
+  /** The host's own turn ended; `stalled` when its stall watchdog stopped it. */
+  sourceSettled(generation: string, ok: boolean, stalled?: boolean): void;
   cancelRoom(groupId: string, threadId?: string, reason?: string, status?: "failed" | "cancelled"): void;
   cancelDirect(threadId: string, reason?: string): void;
   activeDirect(threadId: string): boolean;
