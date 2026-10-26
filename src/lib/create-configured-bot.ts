@@ -9,7 +9,7 @@ import { isMemberBotField } from "../../shared/viewer-capabilities";
 
 /** Fields an organization member may send: the member set, and a field
  * their permissions open (`mayWrite`, BOT_FIELD_PERMISSIONS; the server's
- * memberBotFieldRefusal accepts the same). 2026-10-26 (JC): every member
+ * memberBotFieldRefusal accepts the same). 2026-10-26: every member
  * holds the keys about their own bots, so only what reaches past their own
  * environment (a folder on the server's disk, the server's cloud computer
  * or shared browser profiles) is left out without its permission. */

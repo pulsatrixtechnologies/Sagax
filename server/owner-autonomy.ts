@@ -82,7 +82,7 @@ export function ownerLineageOrigin(input: {
   return "other";
 }
 
-/** 2026-10-26 (JC, one approval level): the owner route's mode is read
+/** 2026-10-26 (one approval level): the owner route's mode is read
  * from the bot's one approval level; there is no second setting. Ask for
  * approval, Auto-accept edits and Custom: rules, then a card. Approve for
  * me: rules, then what no rule covers runs unless it is destructive. Full

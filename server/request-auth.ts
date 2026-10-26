@@ -567,7 +567,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/workspace(?:\/download)?$/ },
   { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/workspace\/file$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/workspace\/docs\/rename$/ },
-  // 2026-10-26 (JC): the bot's memory (server/routes/bot-memory.ts):
+  // 2026-10-26: the bot's memory (server/routes/bot-memory.ts):
   // MEMORY.md, memory/ topics, the journal and its revert, upkeep and tidy.
   // Same gate as the Soul edit, checked in the handler: a member keeps the
   // memory of their own bots without an admin.
@@ -575,7 +575,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/memory\/(?:journal|upkeep)$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/memory\/(?:journal\/[\w-]+\/revert|tidy)$/ },
-  // 2026-10-26 (JC): the bot's change history, its SOUL.md undo and a
+  // 2026-10-26: the bot's change history, its SOUL.md undo and a
   // version restore: the owner (or an edit grant) or an admin, checked in
   // the handlers.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/history$/ },

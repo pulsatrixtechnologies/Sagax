@@ -1,5 +1,5 @@
 // Settings > Notifications: "Let your bots notify you", one line with an
-// Enable button, shown only while this browser was never asked. JC
+// Enable button, shown only while this browser was never asked
 // (2026-10-21, #876): never in the chat, only here.
 import { useState } from "react";
 import { requestNotificationPermission } from "@/lib/notify";

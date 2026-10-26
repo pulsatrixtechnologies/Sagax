@@ -2,7 +2,7 @@
 // (index.ts proposalPersistence): routine, profile, default-model and
 // team-setup proposals share eight open cards per bot per thread.
 //
-// 2026-10-20 (JC): a waiting proposal never blocks a new one. Past the
+// 2026-10-20: a waiting proposal never blocks a new one. Past the
 // budget the oldest waiting cards are replaced: closed as expired, nothing
 // applied, journaled. A card under a safety hold is never replaced.
 //

@@ -6,7 +6,7 @@
 // client. There a bot's owner turns Full access on over HTTP, under three
 // rules decided here:
 //
-// - (2026-10-26, JC) no organization switch: the former
+// - (2026-10-26) no organization switch: the former
 //   `organization.allowFullAccess` is ignored (orgFullAccessAllowed);
 // - the caller is a person signed in (a session with a principal), and is
 //   the bot's owner: a bot's own shell, a service caller or loopback never
@@ -49,7 +49,7 @@ export const FULL_ACCESS_CONFIRM_REQUIRED: FullAccessRefusal = {
   code: "full_access_confirm_required",
 };
 
-/** 2026-10-26 (JC): no organization switch any more. Full access on a
+/** 2026-10-26: no organization switch any more. Full access on a
  * member's own bot stays in that person's environment (host tools withheld,
  * server commands still an admin's card, private threads, egress and payer
  * rules unchanged), so the owner's own confirmation is the only gate. A saved

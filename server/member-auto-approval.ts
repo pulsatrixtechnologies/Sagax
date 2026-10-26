@@ -18,7 +18,7 @@
 // turns the setting on again, old levels do not come back by themselves:
 // members choose again.
 //
-// 2026-10-26 (JC): the switch is gone (memberAutoApprovalAllowed is always
+// 2026-10-26: the switch is gone (memberAutoApprovalAllowed is always
 // true), so none of the above happens any more; the helpers stay for the
 // callers and their tests.
 
@@ -29,7 +29,7 @@ export const MEMBER_AUTO_NOT_ALLOWED = {
   code: "member_auto_not_allowed",
 } as const;
 
-/** 2026-10-26 (JC): no organization switch any more. Auto on a member's
+/** 2026-10-26: no organization switch any more. Auto on a member's
  * own bot acts in that person's environment; a saved
  * `memberAutoApproval: false` is ignored. */
 export function memberAutoApprovalAllowed(_organization?: { memberAutoApproval?: unknown }): boolean {

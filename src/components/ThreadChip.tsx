@@ -19,7 +19,7 @@ export function ThreadChip({ message }: { message: Message }) {
   const tool = message.tool;
   if (!ref || !tool) return null;
   // Threads off (Settings > Appearance): the single stream shows no thread
-  // row or receipt in the chat (JC 2026-10-22). The thread stays reachable
+  // row or receipt in the chat (2026-10-22). The thread stays reachable
   // from the bot panel and the sidebar's activity list, never a chip here.
   if (!showThreads) return null;
   if (navigationTargetGone(message, state)) return null;

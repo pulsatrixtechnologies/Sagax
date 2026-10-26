@@ -1349,7 +1349,7 @@ export function BotContextMenu({
     if (!state.settingsOpen) dispatch({ type: "toggleSettings", open: true });
   }, { id: "edit" });
   // "Move to ›" sits at the first level, right under Pin, in Simple and
-  // Advanced alike (JC, 2026-10-15): right-click is the way to file a bot.
+  // Advanced alike (2026-10-15): right-click is the way to file a bot.
   const moveItem = canMoveSection ? <MoveToSectionItem
     key="move"
     itemKind="bot"
@@ -1368,7 +1368,7 @@ export function BotContextMenu({
     }}
   /> : null;
 
-  // New thread comes first (JC, 2026-10-15): #518 had left the sidebar with
+  // New thread comes first (2026-10-15): #518 had left the sidebar with
   // no way to start a conversation with a bot. newTask selects the bot too.
   // Threads turned off (the single stream): New topic, a fresh context in
   // the same conversation (docs/single-stream-orchestration.md).
@@ -1379,10 +1379,10 @@ export function BotContextMenu({
     startNewTopic(dispatch, bot);
   }, { id: "new-topic" });
 
-  // One flat menu, no More (JC, 2026-10-15): New thread | Pin, Move to › |
+  // One flat menu, no More (2026-10-15): New thread | Pin, Move to › |
   // Rename, Edit bot, Make primary bot, Put on the desktop | Hide from
   // sidebar, Archive, Delete. Mark as Unread, Mark all as read and Model…
-  // left this menu (JC, 2026-10-15, for 0.5.7).
+  // left this menu (2026-10-15, for 0.5.7).
   const entries = remoteClient ? [
     ...(newThreadItem ? [newThreadItem] : []),
     floatItem,
@@ -1946,7 +1946,7 @@ export function BotListItem({
   const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
   const [renaming, setRenaming] = useState(false);
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
-  // Grok Bot's rows (JC, 2026-10-15): a bot's threads no longer unfold under
+  // Grok Bot's rows (2026-10-15): a bot's threads no longer unfold under
   // it, whatever Settings > Threads location says; the chat header's thread
   // button is the one place for them. Only its unread threads (at most
   // three, never the one on screen) sit under the row (SidebarUnreadThreads).
@@ -2164,7 +2164,7 @@ export function BotListItem({
         <span data-sidebar-unread-icon className={cn("pointer-events-none absolute size-2 rounded-full border border-sidebar bg-unread", iconUnreadDotPosition(Boolean(primary || sharer)))} />
       )}
       {!renaming && !deleting && !iconOnly && !selection?.active && <>
-        {/* direct New thread, beside the "..." (JC, 2026-10-15) */}
+        {/* direct New thread, beside the "..." (2026-10-15) */}
         {showThreads && <button type="button" data-sidebar-bot-new-thread={bot.id} aria-label={t("task.newShort")} title={t("task.newShort")}
           onClick={() => dispatch({ type: "newTask", botId: bot.id })}
           className="pointer-events-none absolute right-8 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-sidebar-ink-secondary opacity-0 hover:bg-sidebar-hover hover:text-sidebar-ink group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-md:pointer-events-auto max-md:opacity-70 touch:pointer-events-auto touch:opacity-70"><Plus size={14} /></button>}
@@ -2949,7 +2949,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const generalOnTop = orgMode && orderedSectionIds.includes(GENERAL_SECTION_ID);
   const sectionIds = generalOnTop ? [GENERAL_SECTION_ID, ...orderedSectionIds.filter((id) => id !== GENERAL_SECTION_ID)] : orderedSectionIds;
   // With no team of the person's own, Unassigned is the whole list: its
-  // rows show without a header (JC, 2026-10-15).
+  // rows show without a header (2026-10-15).
   const loneGeneral = !sectionIds.some((sid) => sid !== GENERAL_SECTION_ID && sid !== BOT_CHATS_SECTION_ID);
   const layoutInteractive = sidebarLayoutInteractive(density, q);
   const sectionCollapsed = (id: string) =>
@@ -3064,7 +3064,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // same rule and order as the sidebar tree, so the bell can never
   // disagree with it.
   const pendingBotUndo = teamFeedback?.restoreBot;
-  // Grok Bot's foot (JC, 2026-10-15): the avatar and the Connect apps pill,
+  // Grok Bot's foot (2026-10-15): the avatar and the Connect apps pill,
   // nothing else. Archived bots, when there are any, join Achievements
   // in the account menu; Browse bots is in Connect apps' header
   // (2026-10-16).
@@ -3527,7 +3527,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           }}
           onRename={(botId) => setRenameBotId(botId)}
           onSelect={(botId) => { setSelecting(true); setSelectedBotIds((current) => current.includes(botId) ? current : [...current, botId]); }}
-          // Edit bot opens the bot editor (JC, 2026-10-16: it did nothing
+          // Edit bot opens the bot editor (2026-10-16: it did nothing
           // visible since the panel fallback lost its settings view)
           onEditPersona={(target) => dispatch({ type: "openPersonaEditor", botId: target.id })}
           onMakePrimary={(bot) => void makePrimaryBot(bot.id)}

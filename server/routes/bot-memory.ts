@@ -7,7 +7,7 @@
 // and refuses a save whose expectedHash no longer matches the file;
 // server/memory-journal.ts records every change made here so it can be
 // read back and reverted. Reads never create the workspace — a bot that
-// has not run yet simply has nothing to show. 2026-10-26 (JC): a signed-in
+// has not run yet simply has nothing to show. 2026-10-26: a signed-in
 // session reaches them (request-auth.ts) and `mayEdit` keeps them to the
 // Soul edit's gate: the bot's owner (or an edit grant) or an admin.
 import { z } from "zod";

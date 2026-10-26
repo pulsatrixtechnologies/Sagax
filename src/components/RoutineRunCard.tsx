@@ -52,7 +52,7 @@ export function hasRoutineExecutionTask(
   );
 }
 
-/** One routine run in the conversation it reports to (2026-10-22, JC): the
+/** One routine run in the conversation it reports to (2026-10-22): the
  * run works in the background, and only a run with something for the person
  * posts this message. It reads as the bot's own message (its report, never
  * the routine's instructions), with a small "Routine: <name> · View run" line

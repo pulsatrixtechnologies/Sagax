@@ -1,8 +1,8 @@
 // The bot's own email address on its profile (B21, 2026-10-21): the
 // address the Perspicax relay gave it, a Copy button, the one rule (mail
 // only wakes a routine), and, while the administrator has not turned it on
-// (off by default, JC decision 1), the address greyed with a waiting line.
-// The bot's owner may change the part before the @ (JC decision 4).
+// (off by default, decision 1), the address greyed with a waiting line.
+// The bot's owner may change the part before the @ (decision 4).
 // Nothing at all when no address is available (solo server, older
 // Perspicax, inbound mail off). The address is not an id: shown as is.
 import { useState } from "react";

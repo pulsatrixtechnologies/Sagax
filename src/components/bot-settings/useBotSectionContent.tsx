@@ -74,7 +74,7 @@ export function botSectionLock(
           // admin; 2026-10-09, members manage their own bots)
           : id === "rules" || id === "files" ? !canEditBotField(config, bot, "soul")
           : id === "soul" ? !canEditBotField(config, bot, "soul")
-            // 2026-10-26 (JC): the owner reads their own bot's history
+            // 2026-10-26: the owner reads their own bot's history
             : id === "history" ? !canEditBotField(config, bot, "soul")
               : id === "permissions" ? !canStepPrimary(config, bot) && !canEditBotField(config, bot, "approvalMode")
                 : false;

@@ -1,6 +1,6 @@
 /** Isolated gallery for Playwright screenshots that put the bot panel's
  * header beside the group panel (src/components/GroupPanel.tsx), so the two
- * right panels can be read as one design (JC 2026-10-21). The left column is
+ * right panels can be read as one design (2026-10-21). The left column is
  * the real bot-panel header (BotProfileAvatarCard, sized by #977, the name
  * pulled up, the label and the tab strip). The right column is the real
  * GroupPanel with three member bots and a members body. Not shipped in the

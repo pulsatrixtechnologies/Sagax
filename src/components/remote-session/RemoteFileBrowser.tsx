@@ -1,5 +1,5 @@
 // The remote computer's files, in a window drawn like Settings (2026-10-21,
-// JC: Télécharger and Envoyer un fichier open a browser of the remote
+// 2026-10-22: Télécharger and Envoyer un fichier open a browser of the remote
 // computer instead of asking for a path). It starts in the user's profile,
 // climbs with the breadcrumb or the parent button, switches drives on
 // Windows, and lists name, size and last change. Download picks a file;

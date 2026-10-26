@@ -391,7 +391,7 @@ function EventEditor({
   const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
-  // Post results in the conversation (JC 2026-10-22): the routine's own
+  // Post results in the conversation (2026-10-22): the routine's own
   // choice, else the installation default. Off keeps a run in the background.
   const [postResults, setPostResults] = useState(existingRoutine?.postResults ?? routinesInConversationEnabled(state.config));
   const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));

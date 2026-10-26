@@ -203,7 +203,7 @@ export function silentChatItem(item: AnyItem, showToolCalls: boolean, appleMobil
   if (isCancelledTranscriptRow(message)) return false;
   // A thread receipt, a Data receipt and a widget stay visible: the threads
   // toggle, not this one, governs the first. A comm chip is verbose detail
-  // on desktop (silent with tool calls off, JC 2026-10-22), but stays on
+  // on desktop (silent with tool calls off, 2026-10-22), but stays on
   // Apple mobile web, where it is the only trace a teammate was consulted.
   if (message.threadRef || message.dataResult || message.tool.widget) return false;
   if (message.comm) return !appleMobileWeb && message.tool.ok !== false;

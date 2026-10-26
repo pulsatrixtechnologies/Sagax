@@ -3,7 +3,7 @@
 // rule with edit and delete. Spec:
 // docs/superpowers/specs/2026-10-14-bot-owner-permissions.md.
 //
-// 2026-10-26 (JC, one approval level): the bot's separate permission mode
+// 2026-10-26 (one approval level): the bot's separate permission mode
 // (Approval, Automatic approval, Bypass) is gone. The approval level, drawn
 // first in the same Approvals group (`leading`), is the only setting; these
 // rules apply first, whatever the level.
@@ -35,7 +35,7 @@ export interface OwnerRuleRow {
    * held card, a turn that is not the person's own) and the bot's name. */
   from?: "admin" | "hold" | "origin";
   botName?: string;
-  /** 2026-10-21 (JC): an Always allow someone else saved on an admin's card
+  /** 2026-10-21: an Always allow someone else saved on an admin's card
    * of this bot (an admin, or its owner holding host.commands): shown to
    * the owner and an admin, removed but never edited here. */
   byOther?: true;

@@ -1,5 +1,5 @@
 // A path field with a navigable dropdown of the folders of the bot's remote
-// computer (2026-10-22, JC: "juste un drop down navigable"). Clicking the
+// computer (2026-10-22: "juste un drop down navigable"). Clicking the
 // folder button lists the folders of the current directory; a folder row goes
 // into it, the first row goes up, and "Choisir ce dossier" writes the absolute
 // path (Windows `C:\...` or POSIX `/...`, as the remote OS spells it) into the

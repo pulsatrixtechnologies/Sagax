@@ -6,7 +6,7 @@ import { failedTurnCause } from "../../shared/failed-turn";
 /** Whether a room shows this activity chip with tool calls hidden (the
  * default). Failures always show. A bot⇄bot comm chip ("Messaged @Ada") is
  * verbose detail: with tool calls (the details toggle) off it goes with the
- * other steps, matching Grok Bot's clean low-detail chat (JC 2026-10-22); a
+ * other steps, matching Grok Bot's clean low-detail chat (2026-10-22); a
  * failed send still shows as a failure. An opened-thread chip stays its own
  * decision: it reads as true here so the room still lays out its row, and
  * ThreadChip hides it when threads are off (src/components/ThreadChip.tsx).

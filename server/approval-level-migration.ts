@@ -1,4 +1,4 @@
-// One approval level per bot (2026-10-26, JC): the owner's "permission
+// One approval level per bot (2026-10-26): the owner's "permission
 // mode" (Approval, Automatic approval, Bypass) was a second setting beside
 // the approval level (Ask for approval, Auto-accept edits, Approve for me,
 // Full access). It is gone; a mode someone chose is carried into the level

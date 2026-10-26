@@ -503,7 +503,7 @@ function SharePanel({ page, version, busy, linkOff, call, onChange }: {
   );
 }
 
-/** Readers' comments on a published page (JC 2026-10-21): off unless the
+/** Readers' comments on a published page (2026-10-21): off unless the
  * person turns them on, and only while the organization allows them. A
  * reader's comment waits here until the person approves it. */
 function ReaderComments({ pageId, call }: { pageId: string; call: Call }) {

@@ -45,7 +45,7 @@ export interface PermissionDefinition<K extends string = string> {
   memberDefault: boolean;
   /** Only an organization admin, whatever a profile grants. */
   adminOnly: boolean;
-  /** 2026-10-26 (JC): about the person's own things (their bots, their
+  /** 2026-10-26: about the person's own things (their bots, their
    * routines, their own connections). Every member holds it, whatever
    * Perspicax sends: a member manages what is theirs without an admin. */
   memberAlways?: boolean;
@@ -394,7 +394,7 @@ const definitions = [
     },
   },
   // 2026-10-11: create_agent of the agent-to-agent API (server/agent-api.ts).
-  // 2026-10-26 (JC): every member holds it, the new bot is their own.
+  // 2026-10-26: every member holds it, the new bot is their own.
   {
     key: "clients.agentsCreate", group: "clients", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Create bots from an AI client", fr: "Créer des bots depuis un client IA" },
@@ -512,7 +512,7 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   maxParallelPerPerson: "bots.behaviour",
   busySend: "bots.behaviour",
   automaticRecovery: "bots.behaviour",
-  // 2026-10-26 (JC): where the bot works in the person's own environment
+  // 2026-10-26: where the bot works in the person's own environment
   // is theirs. The server's managed cloud computer (its cost, its machine)
   // and the server's shared browser profiles (signed-in sessions of other
   // people) reach past that environment and keep bots.computer.
@@ -529,7 +529,7 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   approvePeerComms: "bots.tools",
   allowedRecipients: "bots.tools",
   acknowledgePeerScope: "bots.tools",
-  // 2026-10-26 (JC): archiving their own bot, its Primary Bot role and the
+  // 2026-10-26: archiving their own bot, its Primary Bot role and the
   // teams their Primary Bot coordinates are the owner's.
   hidden: "bots.create",
   // the conversation a model change is for (it goes with modelSelection)

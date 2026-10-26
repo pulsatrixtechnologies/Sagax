@@ -175,7 +175,7 @@ export function PermissionsSection({
           // Simple draws its two choices under the label.
           below={!advanced && <div className="mt-2">{approvalSelector}</div>}
         >
-          {/* 2026-10-26 (JC): a lock on the level only while an
+          {/* 2026-10-26: a lock on the level only while an
               organization rule really limits it (Full turned off by the
               organization); a member otherwise sets their own bot's
               level freely, so no lock. */}
