@@ -147,7 +147,9 @@ final class RoutineEditorTests: XCTestCase {
     func testWeeklyUsesTheStartDay() throws {
         var form = RoutineScheduleForm(schedule: nil, seedAt: iso("2026-10-07T13:00:00Z"), now: iso("2026-10-03T12:00:00Z"), calendar: montreal)
         form.select(.weekly)
-        XCTAssertEqual(try form.schedule(savedAt: Date()), .daily(time: "09:00", weekdays: [3]))
+        var weekly = RoutineSchedule.daily(time: "09:00", weekdays: [3])
+        weekly.timing = "exact" // a repeating save names its timing (withRoutineTiming)
+        XCTAssertEqual(try form.schedule(savedAt: Date()), weekly)
         form.select(.custom)
         form.toggleWeekday(3) // the last day stays
         XCTAssertEqual(form.weekdays, [3])

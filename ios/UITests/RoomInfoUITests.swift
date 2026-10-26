@@ -159,13 +159,20 @@ final class RoomInfoUITests: XCTestCase {
         XCTAssertTrue(element(app, "room-info").waitForExistence(timeout: 15), "the Room info sheet")
     }
 
-    /// One of the sheet's tabs (GroupPanel.tsx: Details, Instructions,
-    /// Memory, Advanced).
+    /// One of the panel's parts (GroupPanel.tsx: Details, Instructions,
+    /// Memory, Advanced): Details is the panel itself, the others a page
+    /// opened from its row (#997, the bot panel's way).
     @MainActor
     private func tab(_ app: XCUIApplication, _ title: String) {
-        let button = app.segmentedControls["room-tabs"].buttons[title]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "the \(title) tab")
-        button.tap()
+        let back = app.navigationBars.buttons.firstMatch
+        if back.exists, back.isHittable { back.tap() }
+        if title == "Details" {
+            XCTAssertTrue(element(app, "room-info").waitForExistence(timeout: 10), "the panel")
+            return
+        }
+        let row = scrollTo(app, "room-page.\(title.lowercased())")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the \(title) row")
+        row.tap()
     }
 
     @MainActor

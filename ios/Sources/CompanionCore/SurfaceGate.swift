@@ -188,6 +188,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// The open chat's files with search, kinds, sort, copy path and show
     /// in chat (BF1, BF3, BF4): both gates pass `GET /api/threads/:id/files`.
     case threadFiles
+    /// The bot's artifacts in the Library tab: read, open, pin. The sidecar
+    /// does not forward `/api/bots/:id/artifacts`.
+    case botArtifacts
     /// Delete a routine from the bot profile (BP12).
     case routineDelete
     /// Per-bot usage (BP14): read from the bot's own threads.
@@ -330,6 +333,8 @@ public struct SurfaceGate: Hashable, Sendable {
             return true
         case .routineRunCancel, .routineRunsSeen, .routineAdvancedEditor, .routineAttachments:
             return true
+        case .botArtifacts:
+            return scope != .sidecar
         case .botActivity:
             return scope != .sidecar || sidecarRoutes.contains(.botActivity)
         case .primaryBot:

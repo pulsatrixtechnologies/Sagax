@@ -15,6 +15,7 @@ struct PrivacySettingsView: View {
     var body: some View {
         SettingsPage(title: "Privacy") {
             PrivacyPresenceCard()
+            ReadReceiptsCard()
         }
     }
 }
@@ -58,5 +59,26 @@ struct PrivacyPresenceCard: View {
         values[Self.key] = on ? "1" : "0"
         _ = try? await client.putPreferences(values)
         await PeopleDirectory.shared.load(session, force: true)
+    }
+}
+
+/// "Send read receipts" (Settings > Privacy, `sagax.readReceipts.v1`): off,
+/// nobody sees where this person read a conversation between people, and
+/// they see nobody's (server/read-receipts.ts). Rooms and bots always show.
+struct ReadReceiptsCard: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
+
+    var body: some View {
+        SettingsCard {
+            SettingsRow(
+                title: "Send read receipts",
+                subtitle: "Off: you do not see other people's either.",
+                accessory: .toggle(Binding(get: { prefs.readReceipts }, set: { prefs.setReadReceipts(session, $0) })),
+                identifier: "settings-read-receipts"
+            )
+        }
+        .disabled(!prefs.synced)
     }
 }

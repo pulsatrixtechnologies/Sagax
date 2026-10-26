@@ -1,17 +1,20 @@
-// The mascot shapes: a port of `src/components/ShapeMascot.tsx` (the
-// clean-room set of 2026-10-08, #187). One soft body in eight shapes with
-// two eyes cut through it (the surface shows through), shaded like clay on
-// the Plain skin, in the thirteen skins' base finishes.
+// The mascot shapes: a port of `src/components/ShapeMascot.tsx`. One body
+// in eight shapes, drawn in volume as on the desktop since #786 (with the
+// depth fix of #1106): a few slices of one outline turned with the pose, one
+// flat colour, two opaque eyes in a solid ink on the face's dome (capsules at
+// rest, ovals while busy, arches when pleased), every shape on the same
+// ground. The Outline skin stays flat on purpose, eyes cut through it.
 //
-// What moves it is the desktop's own engine, ported in CompanionCore
-// (`ShapeEngine`, numbers generated from shape-engine.ts and shape-moves.ts):
-// the gaze wanders, the body drifts and breathes, the eyes blink, changes of
-// shape, face and colour slide, the sixteen faces, and the fourteen moves
-// play on request (`OwlMascotHandle.shape(_:)`, the editor's Moves). As on the
-// desktop, the live loop runs only for an animated drawing of 44 pt or more
-// (`fxDetail`); smaller ones and Reduce Motion draw the still frame, and the
-// working bounce (shape-mascot.css) plays while animated. On a large layout
-// with a pointer, the face turns toward it while it is over the mascot.
+// What moves it is the desktop's own code, ported in CompanionCore with its
+// numbers generated from the desktop's modules: `ShapeEngine` (gaze, blinks,
+// breath, changes of shape, face and colour, the fourteen moves),
+// `ShapeMotion` (the pose: settle and glance at rest, the busy loops, a
+// mood change's slide, a tap's squash and hop) and `ShapeVolume` (slices,
+// bend, eyes, inks). The live loop runs only for an animated drawing of
+// 44 pt or more (`fxDetail`), at 30 frames a second at rest and the
+// display's rate during a move; smaller ones, lists and Reduce Motion draw
+// the still pose and run no timer at all. On a large layout with a pointer,
+// the body and the face turn toward it while it is over the mascot.
 import Combine
 import CompanionCore
 import SwiftUI
@@ -33,6 +36,8 @@ struct ShapeMascotView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var player = ShapePlayer()
+    /// A move plays: the loop runs at the display's rate until it ends.
+    @State private var moving = false
 
     /// `FX_FULL_MIN`: full detail (the live loop) from this size up.
     static let liveMinSize: CGFloat = 44
@@ -42,14 +47,17 @@ struct ShapeMascotView: View {
     var body: some View {
         let active = animated && !reduceMotion && scenePhase == .active
         let live = active && size >= Self.liveMinSize
+        // a flat skin bounces while working (shape-mascot.css), even small
+        let bouncing = active && skin == .outline && mood == .working
         let face = expression ?? ShapeEngineData.moodExpression[mood] ?? .neutral
         let state = ShapeEngineState(shape: shape, expression: face, color: ShapeArt.hex(color))
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !active)) { timeline in
+        TimelineView(.animation(minimumInterval: moving ? nil : ShapeVolumeData.idleFrame, paused: !(live || bouncing))) { timeline in
             Canvas { context, canvas in
                 let now = timeline.date.timeIntervalSinceReferenceDate
-                let frame = live ? player.frame(state, now: now) : ShapeFrames.still(shape, face, color: state.color)
-                ShapeRenderer.draw(in: &context, canvas: canvas, box: size, frame: frame, skin: skin, hex: state.color,
-                                   bounce: active && mood == .working ? now : nil)
+                let drawn = live ? player.frame(state, mood: mood, now: now)
+                    : (ShapeFrames.still(shape, face, color: state.color), ShapeVolume.grounded(ShapeVolume.rest, shape))
+                ShapeRenderer.draw(in: &context, canvas: canvas, box: size, frame: drawn.0, pose: drawn.1, shape: shape, skin: skin, hex: state.color,
+                                   eyes: ShapeVolume.eyeStyle(mood), bounce: bouncing ? now : nil)
             }
             .frame(width: size * Self.overflow, height: size * Self.overflow)
         }
@@ -65,67 +73,101 @@ struct ShapeMascotView: View {
                 player.pointer(nil)
             }
         }
+        // a tap: a wink and a squash-and-hop, without taking the tap from the row or button around it
+        .simultaneousGesture(TapGesture().onEnded {
+            guard live else { return }
+            let now = Date().timeIntervalSinceReferenceDate
+            player.poke(now: now)
+            run(ShapeMoves.length(.wink))
+        }, including: live ? .all : .subviews)
         .onReceive(handle?.$shapeMove.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { request in
             guard live, let request else { return }
-            player.play(request, now: Date().timeIntervalSinceReferenceDate)
+            if player.play(request, now: Date().timeIntervalSinceReferenceDate) { run(ShapeMoves.length(request.move)) }
         }
         .accessibilityHidden(true)
     }
+
+    /// The display's rate for `seconds`, then back to the resting pace.
+    private func run(_ seconds: Double) {
+        moving = true
+        let until = Date().addingTimeInterval(seconds + 0.1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.1) {
+            if Date() >= until { moving = false }
+        }
+    }
 }
 
-/// Holds the live engine across redraws (`engine.current`), made on the
-/// first live frame; a still drawing never asks it for a frame.
+/// Holds the live engine and motion across redraws (`engine.current`,
+/// `motion.current`), made on the first live frame; a still drawing never
+/// asks it for a frame.
 final class ShapePlayer {
     private var engine: ShapeEngine?
+    private var motion: ShapeMotion?
     private var lastMove = 0
     private var pendingPointer: CGPoint??
+    /// A seed of its own, so two mascots on one screen never move in step.
+    private let seed = Double.random(in: 0..<1000)
 
-    func frame(_ state: ShapeEngineState, now: Double) -> ShapeFrame {
+    func frame(_ state: ShapeEngineState, mood: ShapeMood, now: Double) -> (ShapeFrame, ShapePose) {
         let run: ShapeEngine
         if let engine {
             if engine.state != state { engine.set(state, now: now) }
             run = engine
         } else {
-            run = ShapeEngine(state, now: now)
+            run = ShapeEngine(state, now: now, seed: seed)
             engine = run
+        }
+        let sway: ShapeMotion
+        if let motion {
+            sway = motion
+        } else {
+            sway = ShapeMotion(mood.motion, seed: seed, start: now)
+            motion = sway
         }
         if let pointer = pendingPointer {
             run.pointer(pointer)
+            sway.pointer(pointer)
             pendingPointer = nil
         }
-        return run.frame(now)
+        sway.setMood(mood.motion, now: now)
+        let frame = run.frame(now)
+        let swayed = sway.pose(now)
+        // at rest the turn out of the picture plane holds (no bend); a move plays its full turn
+        let pose = ShapeVolume.grounded(run.playing(now) ? swayed : ShapeVolume.upright(swayed), state.shape)
+        return (frame, pose)
     }
 
-    func play(_ request: ShapeMoveRequest, now: Double) {
-        guard request.key != lastMove else { return }
+    /// Plays a requested move once; false when it was already played.
+    @discardableResult
+    func play(_ request: ShapeMoveRequest, now: Double) -> Bool {
+        guard request.key != lastMove else { return false }
         lastMove = request.key
         engine?.play(request.move, now: now)
+        return engine != nil
+    }
+
+    func poke(now: Double) {
+        engine?.play(.wink, now: now)
+        motion?.pokeAt(now)
     }
 
     func pointer(_ at: CGPoint?) {
-        if let engine { engine.pointer(at) } else { pendingPointer = .some(at) }
+        if let engine {
+            engine.pointer(at)
+            motion?.pointer(at)
+        } else {
+            pendingPointer = .some(at)
+        }
     }
 }
 
 enum ShapeRenderer {
-    /// shape-mascot.css `shape-bounce`, 0.9 s, on the body (`.shape-body`).
+    /// shape-mascot.css `shape-bounce`, 0.9 s, on a flat body (`.shape-body`).
     static let bounce = CSSKeyframes([(0, [0, 1, 1]), (0.45, [-0.06, 0.98, 1.03]), (0.7, [0, 1.04, 0.96]), (1, [0, 1, 1])])
 
-    /// Draws one frame centred in `canvas`, its 100 box mapped onto `box` points.
-    static func draw(in context: inout GraphicsContext, canvas: CGSize, box: CGFloat, frame: ShapeFrame, skin: ShapeSkin, hex: String, bounce time: Double?) {
-        let paint = ShapeArt.paint(skin, hex: hex)
-        let clay = skin == .plain
-        let affine = frame.affine
-
-        let outline = CGMutablePath()
-        ShapeMath.smoothClosedPath(frame.body, into: outline)
-        let eyes = CGMutablePath()
-        for eye in frame.eyes { ShapeMath.smoothClosedPath(eye, into: eyes) }
-        let body = Path(outline)
-        var cut = body
-        cut.addPath(Path(eyes))
-        let evenOdd = FillStyle(eoFill: true)
-
+    /// Draws one frame centred in `canvas`, its 100 box mapped onto `box` points (`ShapeFrameSvg`).
+    static func draw(in context: inout GraphicsContext, canvas: CGSize, box: CGFloat, frame: ShapeFrame, pose: ShapePose, shape: MascotShape,
+                     skin: ShapeSkin, hex: String, eyes style: ShapeEyeStyle = .capsule, bounce time: Double? = nil) {
         var ctx = context
         let k = box / 100
         ctx.translateBy(x: (canvas.width - box) / 2, y: (canvas.height - box) / 2)
@@ -133,42 +175,79 @@ enum ShapeRenderer {
 
         // rings behind the body
         for (i, ring) in frame.rings.enumerated() { stroke(ring.back, ring: ring, index: i, in: ctx) }
-
-        // .shape-body: the bounce while working, transform-origin 50% 100% of its own box
-        var group = ctx
-        if let time, let v = bounce.value(at: time, duration: 0.9, timing: .easeInOut) {
-            let bounds = body.applying(affine).boundingRect
-            let origin = CGPoint(x: bounds.midX, y: bounds.maxY)
-            group.translateBy(x: 0, y: v[0] * bounds.height)
-            group.pivot(origin, scaleX: v[1], scaleY: v[2])
+        if skin == .outline {
+            drawFlat(in: ctx, frame: frame, skin: skin, hex: hex, bounce: time)
+        } else {
+            drawVolume(in: ctx, box: box, frame: frame, pose: pose, skin: skin, hex: hex, style: style)
         }
+        drawExtras(in: ctx, frame: frame)
+    }
 
-        // the body, its eyes cut out, and its dots, under the move's transform
-        var shaped = group
-        shaped.concatenate(affine)
-        if let badge = frame.badge {
-            // the notch: the body steps aside around the badge
-            var keep = Path(CGRect(x: -60, y: -60, width: 220, height: 220))
-            keep.addEllipse(in: CGRect(x: badge.x - badge.r - badge.notch, y: badge.y - badge.r - badge.notch,
-                                       width: 2 * (badge.r + badge.notch), height: 2 * (badge.r + badge.notch)))
-            shaped.clip(to: keep, style: evenOdd)
+    /// The badge's notch: the face steps aside around the badge.
+    private static func notch(_ frame: ShapeFrame, in ctx: inout GraphicsContext) {
+        guard let badge = frame.badge else { return }
+        var keep = Path(CGRect(x: -60, y: -60, width: 220, height: 220))
+        keep.addEllipse(in: CGRect(x: badge.x - badge.r - badge.notch, y: badge.y - badge.r - badge.notch,
+                                   width: 2 * (badge.r + badge.notch), height: 2 * (badge.r + badge.notch)))
+        ctx.clip(to: keep, style: FillStyle(eoFill: true))
+    }
+
+    private static func badge(_ frame: ShapeFrame, in ctx: GraphicsContext) {
+        guard let badge = frame.badge, badge.r > 0 else { return }
+        ctx.fill(Path(ellipseIn: CGRect(x: badge.x - badge.r, y: badge.y - badge.r, width: 2 * badge.r, height: 2 * badge.r)), with: .color(Color(hex: "#2a8fe8")))
+    }
+
+    private static func dots(_ frame: ShapeFrame, fill: String, in ctx: GraphicsContext) {
+        for dot in frame.dots where dot.r > 0 {
+            var d = ctx
+            d.opacity = dot.opacity
+            d.fill(Path(ellipseIn: CGRect(x: dot.x - dot.r, y: dot.y - dot.r, width: 2 * dot.r, height: 2 * dot.r)), with: .color(Color(hex: fill)))
         }
-        if paint.glow != nil {
-            // the still neon's soft glow: the body blurred under itself
-            var g = shaped
-            g.addFilter(.blur(radius: 2.4))
-            g.fill(cut, with: .color(Color(hex: paint.fill)), style: evenOdd)
-            if let stroke = paint.stroke {
-                g.stroke(body, with: .color(Color(hex: stroke)), style: StrokeStyle(lineWidth: paint.strokeWidth, lineJoin: .round))
+    }
+
+    /// A body in volume: its slices, the face, and the eyes on the face's dome (shape-volume.ts).
+    private static func drawVolume(in ctx: GraphicsContext, box: CGFloat, frame: ShapeFrame, pose: ShapePose, skin: ShapeSkin, hex: String, style: ShapeEyeStyle) {
+        let paint = ShapeArt.paint(skin, hex: hex)
+        let solid = skin == .plain
+        let ink = ShapeVolume.ink(solid ? frame.color : paint.fill)
+        let fill = solid ? ink.fill : paint.fill
+        let detail = ShapeVolumeDetail.of(Double(box))
+        let m = ShapeVolume.matrices(detail, pose, depth: frame.depth)
+        // the turn out of the picture plane bends a plain body's outline and its eyes
+        guard let flat = ShapeOutline(points: frame.body) else { return }
+        let outline = solid ? ShapeVolume.warp(flat, pose) : flat
+        let eyeOutlines = frame.eyes.compactMap { ShapeOutline(points: $0) }.map { solid ? ShapeVolume.warp($0, pose) : $0 }
+        let bodyPath = CGMutablePath()
+        outline.add(to: bodyPath)
+        let body = Path(bodyPath)
+
+        // a move's motion (breath, drift, a move's turn) carries the whole body
+        var moved = ctx
+        moved.concatenate(frame.affine)
+        if let edge = ink.edge {
+            // a near-white or near-black body keeps its silhouette on any ground
+            for t in m.slices + [m.face] {
+                var c = moved
+                c.concatenate(t)
+                c.opacity = 0.2
+                c.stroke(body, with: .color(Color(hex: edge)), style: StrokeStyle(lineWidth: detail == .tiny ? 2.4 : 1.6, lineJoin: .round))
             }
         }
-        if clay {
-            // the clay finish: a radial light from the upper left to a dark rim
-            let stops = ShapeArt.clayStops(frame.color).map { Gradient.Stop(color: Color(hex: $0.color), location: $0.offset) }
-            shaped.fill(cut, with: .radialGradient(Gradient(stops: stops), center: CGPoint(x: frame.light.x, y: frame.light.y), startRadius: 0, endRadius: frame.light.r), style: evenOdd)
-        } else {
-            shaped.fill(cut, with: .color(Color(hex: paint.fill)), style: evenOdd)
+        for t in m.slices {
+            var c = moved
+            c.concatenate(t)
+            c.fill(body, with: .color(Color(hex: fill)))
         }
+        var face = moved
+        face.concatenate(m.face)
+        var faceBody = face
+        notch(frame, in: &faceBody)
+        if let glow = paint.glow {
+            var g = faceBody
+            g.addFilter(.blur(radius: 2.4))
+            g.fill(body, with: .color(Color(hex: glow)))
+        }
+        faceBody.fill(body, with: .color(Color(hex: fill)))
         if paint.shine {
             let g = Gradient(stops: [
                 .init(color: .white.opacity(0.55), location: 0),
@@ -177,30 +256,54 @@ enum ShapeRenderer {
             ])
             let bounds = body.boundingRect
             let center = CGPoint(x: bounds.minX + 0.32 * bounds.width, y: bounds.minY + 0.26 * bounds.height)
-            shaped.fill(cut, with: .radialGradient(g, center: center, startRadius: 0, endRadius: 0.75 * max(bounds.width, bounds.height)), style: evenOdd)
+            faceBody.fill(body, with: .radialGradient(g, center: center, startRadius: 0, endRadius: 0.75 * max(bounds.width, bounds.height)))
         }
         if let stroke = paint.stroke {
-            // the outline runs round the body and round each cut-out eye
+            faceBody.stroke(body, with: .color(Color(hex: stroke)), style: StrokeStyle(lineWidth: paint.strokeWidth, lineJoin: .round))
+        }
+        dots(frame, fill: fill, in: faceBody)
+        badge(frame, in: face)
+
+        // the eyes in their ink, on the face's dome, clipped to the face so a turn never lifts them off
+        guard !eyeOutlines.isEmpty else { return }
+        var eyes = moved
+        eyes.concatenate(m.eyes)
+        eyes.clip(to: body.applying(m.eyesClip))
+        let ink2 = solid ? ink.eyes : paint.eyes
+        eyes.fill(Path(ShapeVolume.path(ShapeVolume.styledEyes(eyeOutlines, style))), with: .color(Color(hex: ink2)))
+    }
+
+    /// A flat skin (Outline): the eyes cut through the body, the bounce while working.
+    private static func drawFlat(in ctx: GraphicsContext, frame: ShapeFrame, skin: ShapeSkin, hex: String, bounce time: Double?) {
+        let paint = ShapeArt.paint(skin, hex: hex)
+        let outline = CGMutablePath()
+        ShapeMath.smoothClosedPath(frame.body, into: outline)
+        let eyes = CGMutablePath()
+        for eye in frame.eyes { ShapeMath.smoothClosedPath(eye, into: eyes) }
+        let body = Path(outline)
+        var cut = body
+        cut.addPath(Path(eyes))
+        let evenOdd = FillStyle(eoFill: true)
+        var group = ctx
+        if let time, let v = bounce.value(at: time, duration: 0.9, timing: .easeInOut) {
+            let bounds = body.applying(frame.affine).boundingRect
+            let origin = CGPoint(x: bounds.midX, y: bounds.maxY)
+            group.translateBy(x: 0, y: v[0] * bounds.height)
+            group.pivot(origin, scaleX: v[1], scaleY: v[2])
+        }
+        var shaped = group
+        shaped.concatenate(frame.affine)
+        notch(frame, in: &shaped)
+        shaped.fill(cut, with: .color(Color(hex: paint.fill)), style: evenOdd)
+        if let stroke = paint.stroke {
             shaped.stroke(cut, with: .color(Color(hex: stroke)), style: StrokeStyle(lineWidth: paint.strokeWidth, lineJoin: .round))
         }
-        for dot in frame.dots where dot.r > 0 {
-            let rect = CGRect(x: dot.x - dot.r, y: dot.y - dot.r, width: 2 * dot.r, height: 2 * dot.r)
-            var d = shaped
-            d.opacity = dot.opacity
-            if clay {
-                // the dot's own clay light (objectBoundingBox 0.36, 0.3, r 0.85)
-                let stops = ShapeArt.clayStops(frame.color).map { Gradient.Stop(color: Color(hex: $0.color), location: $0.offset) }
-                d.fill(Path(ellipseIn: rect), with: .radialGradient(Gradient(stops: stops), center: CGPoint(x: rect.minX + 0.36 * rect.width, y: rect.minY + 0.3 * rect.height),
-                                                                     startRadius: 0, endRadius: 0.85 * rect.width))
-            } else {
-                d.fill(Path(ellipseIn: rect), with: .color(Color(hex: paint.fill)))
-            }
-        }
-        if let badge = frame.badge, badge.r > 0 {
-            group.fill(Path(ellipseIn: CGRect(x: badge.x - badge.r, y: badge.y - badge.r, width: 2 * badge.r, height: 2 * badge.r)), with: .color(Color(hex: "#2a8fe8")))
-        }
+        dots(frame, fill: paint.fill, in: shaped)
+        badge(frame, in: group)
+    }
 
-        // specks, rings in front, ribbons
+    /// Specks, rings in front, ribbons: in the box, around the body.
+    private static func drawExtras(in ctx: GraphicsContext, frame: ShapeFrame) {
         let speckColor = Color(hex: ShapeMath.mixHex(frame.color, "#0b0b0e", 0.62))
         for speck in frame.specks where speck.opacity > 0 {
             var s = ctx

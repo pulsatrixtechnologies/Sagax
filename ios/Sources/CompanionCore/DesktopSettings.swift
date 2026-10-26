@@ -133,6 +133,8 @@ public struct DesktopSettingsConfig: Decodable, Equatable, Sendable {
         public var templates: Bool?
         public var browser: Bool?
         public var claudeUserMcp: Bool?
+        /// Settings > Appearance > Tool calls ("Details"): off by default.
+        public var showToolCalls: Bool?
     }
 
     public struct Rooms: Decodable, Equatable, Sendable { public var turnTimeoutMinutes: Int? }
@@ -228,7 +230,7 @@ public enum DesktopConfigChange: Equatable, Sendable {
 
     /// The features the Experimental and General switches may set.
     public static let switchableFeatures: Set<String> = [
-        "skillAuthoring", "routinesInConversation", "templates", "browser", "claudeUserMcp",
+        "skillAuthoring", "routinesInConversation", "templates", "browser", "claudeUserMcp", "showToolCalls",
     ]
 
     /// The JSON body, or nil for a change that is out of range.

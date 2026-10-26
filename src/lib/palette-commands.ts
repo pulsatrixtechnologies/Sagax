@@ -207,7 +207,7 @@ export function paletteCommands(context: PaletteContext): PaletteItem[] {
     action: { kind: "settings" },
   });
   const sections: Array<[AppSettingsSection, LocaleKey, string[]]> = [
-    ["general", "settings.section.general", ["profile", "profil", "account", "compte", "language", "langue"]],
+    ["account", "settings.section.account", ["profile", "profil", "account", "compte", "security", "sécurité", "vault", "coffre"]],
     ["appearance", "settings.section.appearance", ["theme", "thème", "dark", "sombre", "mode"]],
     ["notifications", "settings.section.notifications", ["sound", "son", "badge", "alert", "alerte"]],
     ["engines", "settings.section.modelsVoice", ["models", "modèles", "voice", "voix", "claude", "codex", "grok", "keys", "clés"]],

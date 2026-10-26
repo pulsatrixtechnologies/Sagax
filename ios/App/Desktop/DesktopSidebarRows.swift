@@ -349,6 +349,10 @@ struct DesktopSidebarRow: View {
         // the row does not draw the title (Sidebar.tsx, as upstream): it is
         // read out with the name
         if let title = chat.desktopTitle { name += ", " + title }
+        if let sharer { name += ", " + String(localized: "Shared by \(sharer.name)") }
+        if case let .room(room) = chat, let presence = PeopleDirectory.shared.presence(of: room, session: session) {
+            name += ", " + PresenceDot.words(presence)
+        }
         if chat.unread { name += ", " + String(localized: "Unread") }
         return name
     }
@@ -364,16 +368,28 @@ struct DesktopSidebarRow: View {
                     .frame(width: size, height: size)
             }
         }
+        // #985: a bot shared with the viewer wears its sharer's face at the
+        // bottom right, and its activity dot moves to the top right
         .overlay(alignment: .bottomTrailing) {
+            if let sharer {
+                SharerBadge(sharer: sharer, avatarSize: size, ring: theme.sidebar)
+            }
+        }
+        .overlay(alignment: sharer == nil ? .bottomTrailing : .topTrailing) {
             if status != .idle {
                 // presence dot: green while working, amber while waiting
                 Circle()
                     .fill(status == .working ? theme.success : theme.warning)
                     .frame(width: density == .icons ? 12 : 10, height: density == .icons ? 12 : 10)
                     .overlay(Circle().strokeBorder(theme.sidebar, lineWidth: 2))
-                    .offset(x: 2, y: 2)
+                    .offset(x: 2, y: sharer == nil ? 2 : -2)
             }
         }
+    }
+
+    private var sharer: BotSharer? {
+        guard case let .bot(bot) = chat else { return nil }
+        return PeopleDirectory.shared.sharer(of: bot, session: session)
     }
 
     // MARK: Hover controls

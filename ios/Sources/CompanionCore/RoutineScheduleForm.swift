@@ -44,6 +44,14 @@ public enum RoutineRecurrence: String, CaseIterable, Hashable, Sendable {
     }
 }
 
+/// "Timing" of a repeating routine (RoutineTimingFields.tsx).
+public enum RoutineTimingMode: String, CaseIterable, Hashable, Sendable {
+    /// Starts at the scheduled time.
+    case exact
+    /// Starts somewhere in a window around the scheduled time.
+    case flexible
+}
+
 /// "On": which days an interval runs.
 public enum RoutineIntervalDays: String, CaseIterable, Hashable, Sendable {
     case everyDay = "every-day"
@@ -78,6 +86,15 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     /// The person touched the cron fields; until then a cron schedule is
     /// kept exactly as it was.
     public var cronChanged: Bool
+    /// "Timing": exact or flexible, for a repeating routine only.
+    public var timing: RoutineTimingMode
+    /// Flexible: minutes before the scheduled time (default 15).
+    public var earlyMinutes: Int
+    /// Flexible: minutes after; 0 means ready by the scheduled time.
+    public var lateMinutes: Int
+
+    public static let defaultEarlyMinutes = 15
+    public static let defaultLateMinutes = 15
 
     /// The schedule the editor opened, nil for a new routine.
     public let original: RoutineSchedule?
@@ -118,6 +135,16 @@ public struct RoutineScheduleForm: Hashable, Sendable {
             for: schedule?.type == .cron ? schedule : nil, at: initialAt, localZone: calendar.timeZone
         )
         cronChanged = false
+        // `readTiming`: a flexible repeating schedule keeps its window
+        if let schedule, schedule.type != .once, schedule.timing == "flexible" {
+            timing = .flexible
+            earlyMinutes = schedule.windowEarlyMinutes ?? Self.defaultEarlyMinutes
+            lateMinutes = schedule.windowLateMinutes ?? Self.defaultLateMinutes
+        } else {
+            timing = .exact
+            earlyMinutes = Self.defaultEarlyMinutes
+            lateMinutes = Self.defaultLateMinutes
+        }
     }
 
     // MARK: Reading a schedule
@@ -272,6 +299,31 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     /// the interval's days, window and end date written out: nil there
     /// means "clear it" (`RoutinePatch` sends null).
     public func schedule(savedAt: Date) throws -> RoutineSchedule {
+        Self.withTiming(try baseSchedule(savedAt: savedAt), mode: timing, early: earlyMinutes, late: lateMinutes)
+    }
+
+    /// `withRoutineTiming`: a one-time schedule carries no timing; an exact
+    /// repeating one names "exact" so a flexible routine can be turned back;
+    /// a flexible one keeps its whole, non-negative minutes.
+    public static func withTiming(_ schedule: RoutineSchedule, mode: RoutineTimingMode, early: Int, late: Int) -> RoutineSchedule {
+        var timed = schedule
+        timed.windowEarlyMinutes = nil
+        timed.windowLateMinutes = nil
+        guard schedule.type != .once else {
+            timed.timing = nil
+            return timed
+        }
+        guard mode == .flexible else {
+            timed.timing = RoutineTimingMode.exact.rawValue
+            return timed
+        }
+        timed.timing = RoutineTimingMode.flexible.rawValue
+        timed.windowEarlyMinutes = early >= 0 ? early : defaultEarlyMinutes
+        timed.windowLateMinutes = late >= 0 ? late : defaultLateMinutes
+        return timed
+    }
+
+    private func baseSchedule(savedAt: Date) throws -> RoutineSchedule {
         if let problem { throw RoutineScheduleError(problem.message) }
         switch recurrence {
         case .monthly, .yearly, .cron:

@@ -140,6 +140,7 @@ struct PanelInlineText: View {
 struct BotPanelDetails: View {
     @Environment(\.desktopTheme) private var theme
     @EnvironmentObject private var session: Session
+    @EnvironmentObject private var shell: DesktopShellModel
     let bot: Bot
 
     @StateObject private var activity: BotActivityModel
@@ -154,6 +155,14 @@ struct BotPanelDetails: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
+            // Details > Suggestions (SuggestionsSection.tsx); the routines are just below
+            BotSuggestionsCard(bot: bot) { action in
+                switch action {
+                case let .openThread(threadId): session.openChat(threadId: threadId)
+                case .openSection("routines"): break
+                case let .openSection(name): shell.showPersona(DesktopPanelSection(rawValue: name))
+                }
+            }
             if showsActivity {
                 if activity.showsCodingSection {
                     AnyView(codingSection)

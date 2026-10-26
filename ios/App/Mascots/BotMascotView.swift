@@ -170,7 +170,8 @@ struct ChatAvatarView: View {
             MascotComets(size: size, active: comets) {
                 // WP15 (RM22): a conversation with a person shows them
                 if let peer = PeopleDirectory.shared.peer(room, session: session) {
-                    PersonAvatar(initials: peer.initials, size: size, presenceId: peer.id)
+                    PersonAvatar(initials: peer.initials, size: size, presenceId: peer.id,
+                                 avatarUrl: PeopleDirectory.shared.directory?.person(peer.id)?.avatarUrl)
                 } else {
                     GroupMascotView(members: room.memberIds.compactMap { session.state.bot($0) }, size: size, background: background)
                 }

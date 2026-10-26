@@ -403,3 +403,19 @@ test("parseEnvironments dedups local dirs on the same normalized key", () => {
     { id: "l2", kind: "local", name: "B", dataDir: "/Users/me/.openmausbot-b" },
   ]).length, 2);
 });
+
+test("a server's own name and announced organization name persist, and an empty one clears", () => {
+  let state = env.withEnvironment({ environments: [], activeId: "local" }, { origin: "https://bot.example.com", org: true }, () => "srv");
+  state = env.withServerName(state, "srv", { orgName: "  Acme  Inc ", label: "Bureau" });
+  let reloaded = env.parseEnvironments(env.serializeEnvironments(state));
+  assert.equal(reloaded.environments[0].label, "Bureau");
+  assert.equal(reloaded.environments[0].orgName, "Acme Inc");
+  assert.equal(reloaded.environments[0].name, "bot.example.com", "the host stays as the fallback");
+  state = env.withServerName(state, "srv", { label: "  " });
+  reloaded = env.parseEnvironments(env.serializeEnvironments(state));
+  assert.equal(reloaded.environments[0].label, undefined);
+  assert.equal(reloaded.environments[0].orgName, "Acme Inc");
+  // this computer and unknown ids are not renamed
+  assert.equal(env.withServerName(state, "local", { label: "X" }), state);
+  assert.equal(env.withServerName(state, "nope", { label: "X" }), state);
+});

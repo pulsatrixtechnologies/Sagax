@@ -200,7 +200,7 @@ describe("Settings > Organization (cards from General > Advanced, 2026-10-15)", 
     const { cardsMatching, SECTIONS, sectionMatches } = await import("./SettingsModal");
     expect(cardsMatching("mcp")).toContain("organization.mcpCalls");
     const org = SECTIONS.find((entry) => entry.id === "organization")!;
-    const general = SECTIONS.find((entry) => entry.id === "general")!;
+    const general = SECTIONS.find((entry) => entry.id === "account")!;
     for (const word of ["mcp", "group turns", "routines"]) {
       expect(sectionMatches(org, word), word).toBe(true);
       expect(sectionMatches(general, word), word).toBe(false);
@@ -211,6 +211,6 @@ describe("Settings > Organization (cards from General > Advanced, 2026-10-15)", 
     expect(currentSettingsSection("general", "organization.roomTurns")).toBe("organization");
     expect(currentSettingsCard("general.roomTurns")).toBe("organization.roomTurns");
     expect(isMovedOrganizationCard("general.threadCleanup")).toBe(false);
-    expect(currentSettingsSection("general", "general.threadCleanup")).toBe("general");
+    expect(currentSettingsSection("general", "general.threadCleanup")).toBe("account");
   });
 });

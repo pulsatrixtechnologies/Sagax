@@ -107,7 +107,7 @@ public enum DesktopBotArchive {
 public enum DesktopComposeTo {
     public enum Mode: Equatable, Sendable { case browse, group }
     public enum Row: Equatable, Sendable {
-        case createBot, createGroup
+        case createBot, createBotWizard, createGroup
         case bot(String)
         /// A person of the organization (browse mode only): the direct
         /// conversation with them (ComposeToPicker.tsx `composePeople`).
@@ -127,7 +127,7 @@ public enum DesktopComposeTo {
     public static func rows(mode: Mode, bots: [Bot], canCreateBots: Bool, people: [OrgDirectoryPerson] = []) -> [Row] {
         let botRows = bots.map { Row.bot($0.id) }
         if mode == .group { return [.createGroup] + botRows }
-        return (canCreateBots ? [.createBot] : []) + [.createGroup] + botRows + people.map { Row.person($0.principalId) }
+        return (canCreateBots ? [.createBot, .createBotWizard] : []) + [.createGroup] + botRows + people.map { Row.person($0.principalId) }
     }
 
     /// Arrow keys wrap around the rows.

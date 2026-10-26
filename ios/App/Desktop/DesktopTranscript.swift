@@ -485,14 +485,18 @@ enum DesktopApprovalText {
         if ApprovalDockRules.isProposal(card) { return card.subtitle.isEmpty ? nil : card.subtitle }
         if let command = card.commandAllowlist?.command, !command.isEmpty { return command }
         let text = card.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty || technical(text) ? nil : card.subtitle
+        // the gate's `<tool> {json}` is arguments too (#426)
+        return text.isEmpty || GateArguments.isTechnical(card) ? nil : card.subtitle
     }
 
     static func technical(_ text: String) -> Bool { text.hasPrefix("{") || text.hasPrefix("[") }
 
     /// The arguments for the details, pretty JSON when they are JSON.
     static func arguments(_ card: OptionCard) -> String? {
-        let raw = card.toolInput ?? (technical(card.subtitle.trimmingCharacters(in: .whitespaces)) ? card.subtitle : nil)
+        let subtitle = card.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = card.toolInput
+            ?? GateArguments.split(subtitle, known: [card.tool, card.mcpTool])?.json
+            ?? (technical(subtitle) ? card.subtitle : nil)
         guard let raw, !raw.isEmpty else { return nil }
         guard let data = raw.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data),

@@ -64,7 +64,7 @@ const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "o
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences", "localModels"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -186,7 +186,8 @@ const bridge = {
   /** Per-loopback-server API keys for local models, kept encrypted on this
    * computer only. The renderer sets or clears a key and learns which bases
    * have one; the key value itself never crosses back over this bridge, and
-   * never reaches the organization server. Absent on remote server pages. */
+   * never reaches the organization server. Also on the bundled organization
+   * page (BUNDLED_EXTRA), where the Local models section is shown too. */
   localModels: {
     keyBases: () => ipcRenderer.invoke("local-models:key-bases"),
     setKey: (base, key) => ipcRenderer.invoke("local-models:set-key", base, key),
@@ -513,6 +514,8 @@ const bridge = {
   serverMode: {
     state: () => ipcRenderer.invoke("server-mode:state"),
     leave: () => ipcRenderer.invoke("server-mode:leave"),
+    /** The locked server's shown name: the person's own `label`, and the `orgName` it announced. */
+    setName: (input) => ipcRenderer.invoke("server-mode:set-name", input),
     /** Probe this computer's local model servers now (the model picker opened). */
     refreshLocalModels: () => ipcRenderer.invoke("server-mode:refresh-local-models"),
   },
@@ -525,6 +528,7 @@ const bridge = {
   environments: {
     state: () => ipcRenderer.invoke("environments:state"),
     switch: (id) => ipcRenderer.invoke("environments:switch", id),
+    setName: (id, input) => ipcRenderer.invoke("environments:set-name", id, input),
     addFromLink: (link, name) => ipcRenderer.invoke("environments:add-from-link", link, name),
     create: (name, dataDir) => ipcRenderer.invoke("environments:create", name, dataDir),
     pickDir: () => ipcRenderer.invoke("environments:pick-dir"),

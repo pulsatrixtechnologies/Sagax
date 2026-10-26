@@ -23,6 +23,12 @@ final class PeopleDirectory: ObservableObject {
     @Published private(set) var presence = PresenceBook()
     /// People's labels (#172), live through `person.label` frames.
     @Published private(set) var labels = PersonLabelBook()
+    /// People's Perspicax pictures by `/api/people/<id>/avatar` path, read
+    /// once with the pairing's bearer.
+    @Published private(set) var photos: [String: UIImage] = [:]
+    private var photoReads: Set<String> = []
+    /// The pairing the directory was read from, for the pictures.
+    private var photoClient: CompanionClient?
     private var loadedFor: String?
     private var heartbeat: Task<Void, Never>?
     private let pageId = PresenceHeartbeat.newPageId()
@@ -32,6 +38,9 @@ final class PeopleDirectory: ObservableObject {
         guard session.surfaceGate.allows(.people), let connection = session.connection else {
             directory = nil
             loadedFor = nil
+            photoClient = nil
+            photos = [:]
+            photoReads = []
             presence.reset()
             labels = PersonLabelBook()
             heartbeat?.cancel()
@@ -39,7 +48,12 @@ final class PeopleDirectory: ObservableObject {
             return
         }
         guard force || loadedFor != connection.id || directory == nil else { return }
+        if loadedFor != connection.id {
+            photos = [:]
+            photoReads = []
+        }
         loadedFor = connection.id
+        photoClient = session.settingsClient
         let loaded = await session.orgDirectory()
         directory = loaded
         var book = PersonLabelBook()
@@ -138,6 +152,22 @@ final class PeopleDirectory: ObservableObject {
         return chat.name
     }
 
+    /// `botSharer` (#985): who shared this bot with the viewer, nil for the
+    /// viewer's own bot, a local bot or someone the directory does not list.
+    func sharer(of bot: Bot, session: Session) -> BotSharer? {
+        BotSharerRules.sharer(ownerUserId: bot.ownerUserId, viewerId: session.roomViewer.actorId, directory: directory)
+    }
+
+    /// A person's picture, once read; the first ask starts the read.
+    func photo(_ path: String?) async {
+        guard let path = BotSharerRules.personAvatarPath(path), photos[path] == nil, !photoReads.contains(path),
+              let client = photoClient else { return }
+        photoReads.insert(path)
+        if let data = try? await client.personAvatar(path: path), let image = UIImage(data: data) {
+            photos[path] = image
+        }
+    }
+
     func showPerson(_ id: String) {
         Haptics.selection()
         sheetPersonId = id
@@ -173,20 +203,56 @@ struct PersonAvatar: View {
     var size: CGFloat = 28
     /// Draws the person's presence dot (#167) at the bottom right.
     var presenceId: String?
+    /// Their Perspicax picture (`/api/people/<id>/avatar`), else the initials.
+    var avatarUrl: String?
     @ObservedObject private var people = PeopleDirectory.shared
 
     var body: some View {
-        Text(verbatim: initials)
-            .font(.system(size: size * 0.4, weight: .semibold))
-            .foregroundStyle(Theme.textPrimary)
+        face
             .frame(width: size, height: size)
-            .background(Theme.inset, in: Circle())
             .overlay(alignment: .bottomTrailing) {
                 if let entry = people.presence.entry(presenceId) {
                     PresenceDot(entry: entry, size: max(8, size * 0.26))
                 }
             }
+            .task(id: avatarUrl) { await people.photo(avatarUrl) }
             .accessibilityHidden(true)
+    }
+
+    @ViewBuilder private var face: some View {
+        if let path = avatarUrl, let photo = people.photos[path] {
+            Image(uiImage: photo)
+                .resizable()
+                .scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else {
+            Text(verbatim: initials)
+                .font(.system(size: size * 0.4, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: size, height: size)
+                .background(Theme.inset, in: Circle())
+        }
+    }
+}
+
+/// The face of the person who shared a bot (#985, SidebarSharerBadge.tsx),
+/// on the bot's avatar's bottom-right corner, ringed in the surface. The
+/// id is never shown; VoiceOver reads "Shared by <name>".
+struct SharerBadge: View {
+    let sharer: BotSharer
+    let avatarSize: CGFloat
+    var ring: Color = Theme.bg
+
+    var body: some View {
+        let size = max(14, (avatarSize * 0.4).rounded())
+        PersonAvatar(initials: sharer.initials, size: size, avatarUrl: sharer.avatarUrl)
+            .padding(2)
+            .background(ring, in: Circle())
+            .offset(x: 2, y: 2)
+            .accessibilityElement()
+            .accessibilityLabel(Text("Shared by \(sharer.name)"))
+            .accessibilityIdentifier("sidebar-sharer")
     }
 }
 

@@ -44,6 +44,8 @@ struct SettingsSearchResults: View {
         )
         return SettingsDestination.allCases.filter { destination in
             switch destination {
+            // General is out of Settings (2026-10-26, as on the desktop).
+            case .general: return false
             case .organization: return sections.contains(.organization)
             case .achievements: return sections.contains(.achievements)
             case .privacy: return NavigationMenus.showsPrivacy(gate: gate, connected: connected)

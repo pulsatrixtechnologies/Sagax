@@ -1,7 +1,8 @@
 // Room info (matrix RM6, RM7, RM8, RM14-RM19; GroupPanel.tsx): the desktop
-// panel's tabs (`GROUP_PANEL_TABS`) as a segmented control — Details (the
-// room's faces and name, People, Bots and Manage, Leave), Instructions,
-// Memory, Advanced (Default responder, Working folder). Rename, Move to
+// panel's tabs (`GROUP_PANEL_TABS`) drawn as the iPhone's bot panel (#997):
+// Details is the panel itself (the room's faces and name, People, Bots and
+// Manage, Leave), then Instructions, Memory and Advanced (Default
+// responder, Working folder) as rows, each a page of its own. Rename, Move to
 // team, Copy ID and Delete are the row menu's (RoomRowMenu), as on the
 // desktop. Owner items follow `RoomInfoAccess` and are never drawn disabled.
 //
@@ -15,21 +16,36 @@ struct RoomInfoSheet: View {
     let roomId: String
     var openThreads: () -> Void = {}
     var onDeleted: () -> Void = {}
+    @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        // #997: the group's panel reads as the bot's (PhoneBotPanel): no
+        // navigation title, a round glass Back at the top left, the faces
+        // and the name as the header, and each other part a page of its own
         NavigationStack {
             RoomInfoView(roomId: roomId, openThreads: openThreads, onDeleted: onDeleted)
-                .navigationTitle(String(localized: "Group info"))
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button(String(localized: "Done")) { dismiss() }
-                            .accessibilityIdentifier("room-info-done")
-                    }
-                }
+                .toolbar(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) { topBar }
         }
+        .tint(Theme.accentText)
+    }
+
+    private var topBar: some View {
+        HStack(spacing: Theme.Metric.controlGap) {
+            GlassCircleButton(
+                systemImage: "chevron.left", accessibilityLabel: "Back",
+                glyphSize: 18, glyphOffset: CGSize(width: 0.85, height: -0.25)
+            ) { dismiss() }
+                .chatGlassRim(Circle())
+                .accessibilityIdentifier("room-info-done")
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Metric.screenEdge)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
+        .background(Theme.bg)
     }
 }
 
@@ -46,7 +62,6 @@ struct RoomInfoView: View {
     @State private var pickingPeople = false
     @State private var addingEmail = false
     @State private var emailDraft = ""
-    @State private var tab: RoomInfoTab = .details
 
     private var room: Room? { session.state.rooms.first { $0.id == roomId } }
 
@@ -71,25 +86,42 @@ struct RoomInfoView: View {
     @ViewBuilder
     private func content(_ room: Room) -> some View {
         let access = session.roomAccess(room)
-        let tabs = RoomInfoTab.available(access: access, gate: session.surfaceGate)
-        VStack(spacing: 0) {
-            Picker(String(localized: "Group info"), selection: $tab) {
-                ForEach(tabs, id: \.self) { tab in
-                    Text(tab.title).tag(tab)
+        AnyView(details(room, access: access))
+            .background(Theme.bg)
+            // the desktop's other tabs, each a page over the details, as the
+            // bot panel's Coding, Routines, Library and Computer
+            .navigationDestination(for: RoomInfoTab.self) { tab in
+                AnyView(page(tab, room: room, access: access))
+                    .navigationTitle(tab.title)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .background(Theme.bg)
+            }
+    }
+
+    @ViewBuilder
+    private func page(_ tab: RoomInfoTab, room: Room, access: RoomInfoAccess) -> some View {
+        switch tab {
+        case .details: details(room, access: access)
+        case .instructions: RoomInstructionsView(roomId: roomId, editable: access.editable)
+        case .memory: RoomMemoryView(room: room)
+        case .advanced: advanced(room, access: access)
+        }
+    }
+
+    /// Instructions, Memory and Advanced as one grouped list of rows.
+    @ViewBuilder
+    private func overview(_ room: Room, access: RoomInfoAccess) -> some View {
+        let pages = RoomInfoTab.available(access: access, gate: session.surfaceGate).filter { $0 != .details }
+        if !pages.isEmpty {
+            Section {
+                ForEach(pages, id: \.self) { tab in
+                    NavigationLink(value: tab) {
+                        row(tab.title, systemImage: tab.systemImage, value: "")
+                    }
+                    .accessibilityIdentifier("room-page.\(tab.rawValue)")
                 }
             }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .accessibilityIdentifier("room-tabs")
-            switch tabs.contains(tab) ? tab : .details {
-            case .details: AnyView(details(room, access: access))
-            case .instructions: AnyView(RoomInstructionsView(roomId: roomId, editable: access.editable))
-            case .memory: AnyView(RoomMemoryView(room: room))
-            case .advanced: AnyView(advanced(room, access: access))
-            }
         }
-        .background(Theme.bg)
     }
 
     private func advanced(_ room: Room, access: RoomInfoAccess) -> some View {
@@ -129,6 +161,7 @@ struct RoomInfoView: View {
                 addEmail: { emailDraft = ""; addingEmail = true }
             )
             RoomBotsSection(room: room, access: access, manageMembers: { managingMembers = true })
+            overview(room, access: access)
 
             Section {
                 // the phone's way into the room's threads (the header's tap)
@@ -171,8 +204,9 @@ struct RoomInfoView: View {
     }
 
     private func header(_ room: Room, members: [Bot], access: RoomInfoAccess) -> some View {
-        VStack(spacing: 8) {
-            ChatAvatarView(chat: .room(room), size: 96, background: Theme.bg)
+        VStack(spacing: 6) {
+            // the bot panel's 112 pt face, its name type and its gap
+            ChatAvatarView(chat: .room(room), size: 112, background: Theme.bg)
                 .frame(width: 112, height: 112)
                 .accessibilityHidden(true)
             Button {
@@ -180,7 +214,7 @@ struct RoomInfoView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text(verbatim: room.name)
-                        .font(.system(size: 20, weight: .semibold))
+                        .font(Theme.Font.profileName)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
@@ -196,11 +230,12 @@ struct RoomInfoView: View {
             .accessibilityIdentifier("room-info-name")
             .accessibilityHint(access.editable ? Text(String(localized: "Rename group chat")) : Text(verbatim: ""))
             Text(members.count == 1 ? String(localized: "1 bot") : String(localized: "\(members.count) bots"))
-                .font(.system(size: 13))
+                .font(Theme.Font.body)
                 .foregroundStyle(Theme.textSecondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
+        .padding(.top, 8)
+        .padding(.bottom, 6)
     }
 
     private func row(_ title: String, systemImage: String, value: String) -> some View {
@@ -283,6 +318,15 @@ enum RoomInfoTab: String, Hashable, CaseIterable {
         case .instructions: String(localized: "Instructions")
         case .memory: String(localized: "Memory")
         case .advanced: String(localized: "Advanced")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .details: "info.circle"
+        case .instructions: "text.alignleft"
+        case .memory: "brain"
+        case .advanced: "slider.horizontal.3"
         }
     }
 

@@ -55,7 +55,7 @@ describe("Plugins panel views", () => {
     expect(html).toContain('data-plugin-row="mcp:glitcho"');
   });
 
-  it("main view: Bot templates sits beside the search, and N connected stays in the title row", () => {
+  it("main view: Browse bots sits beside the search, and N connected stays in the title row", () => {
     const props = {
       items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any" as const, onType: noop,
@@ -63,7 +63,7 @@ describe("Plugins panel views", () => {
     };
     expect(renderToStaticMarkup(createElement(ConnectAppsView, props))).not.toContain("data-plugins-browse-bots");
     const html = renderToStaticMarkup(createElement(ConnectAppsView, { ...props, onBrowseBots: noop }));
-    expect(html).toMatch(/data-plugins-connected[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Bot templates/);
+    expect(html).toMatch(/data-plugins-connected[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
     const header = html.slice(0, html.indexOf("</header>"));
     expect(header).not.toContain("data-plugins-browse-bots");
   });
@@ -99,6 +99,15 @@ describe("Plugins panel views", () => {
     expect(html).not.toContain('data-plugin-card="skill:');
     expect(html).toContain("Private skills");
     expect(html).toContain("Created locally · Writes notes");
+  });
+
+  // 2026-10-26: Published pages moved here from Settings, under Connect apps.
+  it("manage page: Published pages sit after the skills, outside Advanced, and not on one bot's plugins", () => {
+    const base = { items, countLabel: () => "1 connector", sourceLabel: (source: string) => source, onBack: noop, onOpenItem: noop, onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop };
+    const html = renderToStaticMarkup(createElement(ManageView, { ...base, pages: createElement("div", { "data-pages-marker": "" }) }));
+    expect(html).toMatch(/data-plugins-skills[\s\S]*data-plugins-pages[\s\S]*Published pages[\s\S]*data-pages-marker[\s\S]*<details[^>]*data-plugins-advanced/);
+    const bot = renderToStaticMarkup(createElement(ManageView, { ...base, pluginsOnly: true, pages: createElement("div", { "data-pages-marker": "" }) }));
+    expect(bot).not.toContain("data-plugins-pages");
   });
 
   it("manage page: a card that is not connected says so, muted", () => {

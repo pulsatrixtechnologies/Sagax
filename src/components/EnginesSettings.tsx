@@ -5,7 +5,7 @@
 // asks before registering: the classic miss is a path the terminal sees
 // but this GUI app can't.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Loader2, Phone, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
+import { Check, Loader2, Phone, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
 
 import { api, useStore, type ConfigStatus, type InstanceInfo } from "@/state/store";
 import { EngineCard, RefreshEngines, engineReady } from "./EngineLibrary";
@@ -26,11 +26,11 @@ import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/li
 import { viewerIsOrgAdmin } from "@/lib/group-owner";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { DescribedRow, FoldRow, HelpTip, SettingsGroup } from "./SettingsPrimitives";
+import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
-import { MicrophoneSettings } from "./settings/MicrophoneSettings";
+import { MicrophonePermissionRow, MicrophoneSettings } from "./settings/MicrophoneSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
@@ -130,23 +130,17 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
   return (
     <div className="mt-2.5 flex flex-col gap-2">
       {candidates !== null && candidates.length > 0 && (
-        <div className="relative">
-          <select
+        <div className="flex">
+          <PillSelect
             value={manual.trim() ? "" : selected}
-            onChange={(e) => {
-              setSelected(e.target.value);
+            onChange={(next) => {
+              setSelected(next);
               setManual("");
             }}
-            aria-label={t("engines.detectedAria", { name: instance.displayName })}
+            ariaLabel={t("engines.detectedAria", { name: instance.displayName })}
             disabled={busy}
-            className="w-full appearance-none rounded-lg border border-hairline/40 bg-inset px-3 py-2 pr-8 font-mono text-[12px] text-ink focus:outline-none disabled:opacity-50"
-          >
-            <option value="">{t("engines.selectBinary")}</option>
-            {candidates.map((p) => (
-              <option key={p} value={p}>{p}</option>
-            ))}
-          </select>
-          <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-secondary" />
+            options={[{ value: "", label: t("engines.selectBinary") }, ...candidates.map((p) => ({ value: p, label: p }))]}
+          />
         </div>
       )}
       <input
@@ -163,10 +157,10 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
         aria-label={t("engines.customAria", { name: instance.displayName })}
         spellCheck={false}
         disabled={busy}
-        className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 font-mono text-[12px] text-ink placeholder:font-sans placeholder:text-ink-secondary focus:outline-none disabled:opacity-50"
+        className={cn(FIELD, "font-mono text-[12px] placeholder:font-sans")}
       />
       {probe && !probe.ok && probe.message && (
-        <div role="alert" className="flex gap-1.5 rounded-lg border border-warning/25 bg-warning/10 px-2.5 py-2 text-[12px] leading-relaxed text-warning">
+        <div role="alert" className="flex gap-1.5 text-[12px] leading-4 text-warning">
           <TriangleAlert size={13} className="mt-0.5 shrink-0" />
           <span>{t("engines.testFailed", { message: probe.message })}</span>
         </div>
@@ -179,7 +173,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
         <button
           onClick={onClose}
           disabled={busy}
-          className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50"
+          className={PILL}
         >
           {t("common.cancel")}
         </button>
@@ -188,14 +182,14 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
             <button
               onClick={() => setProbe(null)}
               disabled={busy}
-              className="rounded-lg px-3 py-1.5 text-[13px] text-ink-secondary hover:bg-raised/50 hover:text-ink disabled:opacity-50"
+              className={PILL}
             >
               {t("engines.editPath")}
             </button>
             <button
               onClick={() => persist()}
               disabled={busy}
-              className="flex items-center gap-1.5 rounded-lg bg-raised px-3 py-1.5 text-[13px] text-danger hover:bg-raised-hover disabled:opacity-50"
+              className={`${PILL} inline-flex items-center gap-1.5 text-danger`}
             >
               {saving ? <Loader2 size={13} className="animate-spin" /> : t("engines.saveAnyway")}
             </button>
@@ -204,11 +198,7 @@ function CustomPicker({ instance, cliDefault, onClose, onSaved }: {
           <button
             onClick={save}
             disabled={busy || !value || !dirty}
-            className={cn(
-              "flex w-[72px] items-center justify-center gap-1.5 rounded-lg py-1.5 text-[13px]",
-              "bg-raised text-ink hover:bg-raised-hover",
-              "disabled:cursor-not-allowed disabled:opacity-50",
-            )}
+            className={`${PILL} inline-flex items-center gap-1.5`}
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <><Check size={13} />{t("common.save")}</>}
           </button>
@@ -475,6 +465,7 @@ export function EnginesSettings() {
       {/* this computer's microphone: everyone's, whoever edits the installation */}
       <div data-settings-card="connections.audio">
         <SettingsGroup title={t("settings.audio.title")} groupId="audio">
+          <MicrophonePermissionRow />
           <MicrophoneSettings />
         </SettingsGroup>
       </div>

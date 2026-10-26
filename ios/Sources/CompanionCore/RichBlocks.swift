@@ -314,6 +314,26 @@ extension RichBlocks {
         return min(max(number, widgetMinHeight), widgetMaxHeight).rounded()
     }
 
+    /// An artifact's widget source: its HTML behind a small bridge that hands
+    /// it the source's last JSON as `window.sagax.data` (`artifact-document.ts`).
+    /// It runs in the same sandbox as a chat widget. `dataJSON` is JSON the
+    /// person's own bot saved.
+    public static func artifactSource(html: String, dataJSON: String?, dataAt: Double?) -> String {
+        // JSON safe inside an inline script: nothing can close the tag
+        let safe = (dataJSON ?? "null")
+            .replacingOccurrences(of: "<", with: "\\u003c")
+            .replacingOccurrences(of: ">", with: "\\u003e")
+            .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+            .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        let at = dataAt.map { String(Int($0)) } ?? "null"
+        let bridge = "<script>(function(){var handlers=[];var api={data:\(safe),updatedAt:\(at),onData:function(fn){if(typeof fn!==\"function\")return;handlers.push(fn);if(api.data!==null&&api.data!==undefined){try{fn(api.data,api.updatedAt);}catch(e){console.error(e);}}}};Object.defineProperty(window,\"sagax\",{value:api,writable:false,configurable:false});})();</script>"
+        return bridge + html
+    }
+
+    public static func artifactDocument(html: String, dataJSON: String?, dataAt: Double?, dark: Bool) -> String {
+        widgetDocument(artifactSource(html: html, dataJSON: dataJSON, dataAt: dataAt), dark: dark)
+    }
+
     /// The document a widget runs in. The CSP meta comes before any widget
     /// byte; the size reporter is ours and posts only a number.
     public static func widgetDocument(_ source: String, dark: Bool) -> String {

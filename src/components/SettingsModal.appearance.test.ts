@@ -325,7 +325,6 @@ describe("Settings → Appearance", () => {
   it("leaves non-appearance General settings in place", () => {
     fixture.section = "general";
     const html = render();
-    expect(html).toContain("Profile");
     expect(html).toContain('aria-label="App language"');
     // the technical cards are on General > Advanced (2026-10-14)
     expect(html).toContain('data-settings-card="general.advanced"');

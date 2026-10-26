@@ -60,10 +60,11 @@ import { useOrgApprovalsCount } from "@/lib/org-approvals";
 
 import { InitialsAvatar } from "./Avatar";
 import { AboutDialog } from "./AboutDialog";
+import { RenameServerDialog } from "./RenameServerDialog";
 import { SidebarPopoverMenu, type SidebarMenuItem, type SidebarSubmenuEntry } from "./SidebarPopoverMenu";
 import { useServerMode } from "./ServerModeSettings";
 import { api } from "@/state/store";
-import { accountChoices, businessAccount, SAGAX_MOBILE_URL, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type AccountChoice, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
+import { accountChoices, businessAccount, PERSONAL_ID, SAGAX_MOBILE_URL, switchTargets as listSwitchTargets, usageLines as planUsageLines, usagePercent as planUsagePercent, type AccountChoice, type SwitchTarget, type UsageLine } from "@/lib/account-menu";
 import { connectedPlanRows, type PlanRow, type PlanUsageReport } from "@/lib/plan-usage";
 import { costOf, formatCost, personalUsagePeriods, usageQuery, type PersonalUsageSummary } from "@/lib/usage-personal";
 import { requestReleaseNotes } from "@/lib/release-notes-ui";
@@ -291,6 +292,8 @@ export interface ProfileMenuHandlers {
   onAbout: () => void;
   onViewUsage: () => void;
   onSwitch: (id: string) => void;
+  /** Rename a server (Switch account ›): opens the rename dialog for it */
+  onRename: (account: { id: string; name: string; defaultName: string }) => void;
   onAddOrganization: () => void;
   onSignOut: () => void;
   onMobile: () => void;
@@ -348,6 +351,7 @@ export function profileMenuItems(input: {
     ...input.switchTargets.map((target) => ({
       key: `switch:${target.id}`,
       label: target.name,
+      title: target.host,
       icon: target.local ? <Laptop size={16} /> : <Building2 size={16} />,
       checked: target.active,
       onSelect: target.active ? undefined : () => input.handlers.onSwitch(target.id),
@@ -365,6 +369,13 @@ export function profileMenuItems(input: {
     label: account.name,
     icon: account.local ? <Laptop size={16} /> : <Building2 size={16} />,
     checked: account.active,
+    // the address stays visible, quiet, under a server's name
+    subtitle: account.host && account.host !== account.name ? account.host : undefined,
+    title: account.host || undefined,
+    rename: account.renamable ? {
+      label: t("sidebar.account.rename"),
+      onRename: () => input.handlers.onRename({ id: account.id, name: account.name, defaultName: account.defaultName ?? account.host ?? account.name }),
+    } : undefined,
     onSelect: account.active || !account.switchable ? undefined : () => input.handlers.onSwitch(account.id),
   }));
   const accountMenu = input.accounts != null;
@@ -488,7 +499,7 @@ interface AccountMenuData {
  * /api/me/usage, or /api/usage?mine=1 on an older server), the same reads
  * as Settings > Usage; and Switch organization ›'s saved servers. Read once
  * the menu first opens; each part stays empty when it cannot be read. */
-function useAccountMenuData(enabled: boolean): AccountMenuData {
+function useAccountMenuData(enabled: boolean, refresh = 0): AccountMenuData {
   const { state } = useStore();
   const org = usePerspicaxOrg();
   const plans = enabled && (org !== null || canViewUsage(state.config));
@@ -511,7 +522,7 @@ function useAccountMenuData(enabled: boolean): AccountMenuData {
     void Promise.resolve(window.ogb?.environments?.state())
       .then((next) => { if (alive && next) setEnvironments(next); }, () => {});
     return () => { alive = false; };
-  }, [enabled]);
+  }, [enabled, refresh]);
   return {
     percent: planUsagePercent(rows),
     lines: planUsageLines(rows, {
@@ -578,8 +589,11 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
     email: profile?.email?.trim() || viewer?.email?.trim(),
   });
 
-  const account = useAccountMenuData(menuOpened);
-  const serverMode = useServerMode();
+  // bumped when a server is renamed, so the lists read the new name
+  const [namesTick, setNamesTick] = useState(0);
+  const [renaming, setRenaming] = useState<{ id: string; name: string; defaultName: string } | null>(null);
+  const account = useAccountMenuData(menuOpened, namesTick);
+  const serverMode = useServerMode(namesTick);
   const lockedServer = serverMode?.active === true;
   // A business session is an organization server (Perspicax) or the desktop
   // locked to one. Its page is not given the saved-server list, and the
@@ -588,12 +602,30 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   // actually handed over.
   const business = lockedServer || perspicaxOrg !== null || viewer?.profileManagedBy === "perspicax";
   const canSwitch = !lockedServer && Boolean(window.ogb?.environments?.switch);
+  const leaveBridge = serverModeBridge(window.ogb);
+  const setServerName = lockedServer ? leaveBridge?.setName : window.ogb?.environments?.setName;
+  const announcedOrg = perspicaxOrg?.org.name?.trim() ?? "";
   const accounts = business
-    ? accountChoices(account.targets, businessAccount(serverMode, perspicaxOrg?.org.name)).map((entry) => ({
+    ? accountChoices(account.targets, businessAccount(serverMode, announcedOrg), t("sidebar.account.personal")).map((entry) => ({
         ...entry,
-        switchable: canSwitch && entry.switchable,
+        // Personal, from a locked server, is leaving it (the launch screen
+        // then opens this computer's own space)
+        switchable: entry.local ? (canSwitch || (lockedServer && Boolean(leaveBridge))) : canSwitch && entry.switchable,
+        renamable: entry.renamable === true && Boolean(setServerName),
       }))
     : null;
+  // The organization name the server announces becomes the default name of
+  // its saved entry (the person's own name still wins).
+  const announcedSaved = lockedServer && serverMode?.active ? serverMode.orgName ?? "" : null;
+  useEffect(() => {
+    if (announcedSaved === null || !announcedOrg || announcedOrg === announcedSaved || !leaveBridge?.setName) return;
+    void Promise.resolve(leaveBridge.setName({ orgName: announcedOrg })).then(() => setNamesTick((tick) => tick + 1), () => {});
+  }, [announcedSaved, announcedOrg, leaveBridge]);
+  const saveServerName = (id: string, label: string) => {
+    const done = () => setNamesTick((tick) => tick + 1);
+    if (lockedServer) void Promise.resolve(leaveBridge?.setName?.({ label })).then(done, () => {});
+    else void Promise.resolve(window.ogb?.environments?.setName?.(id, { label })).then(done, () => {});
+  };
   const profileItems = profileMenuItems({
     usagePercent: account.percent,
     usageLines: account.lines,
@@ -622,7 +654,14 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
       onReleaseNotes: () => requestReleaseNotes("browse"),
       onAbout: () => setAboutOpen(true),
       onViewUsage: () => dispatch({ type: "toggleAppSettings", open: true, section: "usage" }),
-      onSwitch: (id) => { void Promise.resolve(window.ogb?.environments?.switch(id)).catch(() => {}); },
+      onSwitch: (id) => {
+        if (lockedServer && id === PERSONAL_ID) {
+          void Promise.resolve(leaveBridge?.leave()).catch(() => {});
+          return;
+        }
+        void Promise.resolve(window.ogb?.environments?.switch(id)).catch(() => {});
+      },
+      onRename: (entry) => setRenaming(entry),
       onAddOrganization: () => dispatch({ type: "toggleAppSettings", open: true, section: "organization" }),
       onSignOut: () => {
         const bridge = serverModeBridge(window.ogb);
@@ -878,6 +917,14 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
         </div>
       )}
       <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
+      {renaming && (
+        <RenameServerDialog
+          current={renaming.name}
+          defaultName={renaming.defaultName}
+          onSave={(label) => saveServerName(renaming.id, label)}
+          onClose={() => setRenaming(null)}
+        />
+      )}
     </div>
   );
 }

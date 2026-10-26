@@ -196,6 +196,7 @@ struct NotificationsSettingsView: View {
                 )
             }
             SettingsFooter(text: "To keep notifications on screen until you close them, choose the Persistent banner style for Sagax in the iOS Settings app.")
+            NotificationSoundChoiceCard()
             SettingsCard {
                 SettingsRow(
                     title: "Nudge sound",
@@ -219,6 +220,7 @@ struct NotificationsSettingsView: View {
             if NavigationMenus.showsPrivacy(gate: session.surfaceGate, connected: session.connection != nil) {
                 SettingsSectionLabel(text: "Privacy")
                 PrivacyPresenceCard()
+                ReadReceiptsCard()
             }
         }
     }

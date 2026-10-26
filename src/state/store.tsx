@@ -1202,6 +1202,8 @@ export interface InstanceInfo {
 }
 
 export type AppSettingsSection =
+  /** Who is signed in, with Security keys and the vault under it (2026-10-26). */
+  | "account"
   | "general"
   | "memory"
   | "privacy"
@@ -1330,12 +1332,16 @@ export interface AppState {
   /** A place inside Connect apps to open at: "orgAccess" is Manage >
    * Advanced > Organization sources and access (an old link to Settings >
    * Organization > Plugins and GitHub lands there). */
-  pluginsPage: "orgAccess" | null;
+  pluginsPage: "orgAccess" | "pages" | null;
   /** The Triggers pop-up (webhooks, as a sentence: when this happens, that
    * bot should…). */
   triggersOpen: boolean;
   /** The "New bot" role picker. */
   newBotOpen: boolean;
+  /** The bot creation wizard (src/components/bot-wizard/BotWizard.tsx):
+   * `botId` null opens on the mode choice of a new bot; a bot's id resumes
+   * its draft or redoes the wizard on it. */
+  botWizard: { botId: string | null; redo?: boolean } | null;
   /** Creation continues even when the role picker is dismissed. */
   botCreationPending: boolean;
   computerOpen: boolean;
@@ -1754,9 +1760,11 @@ export type Action =
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null; focusApps?: string[] }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | "pages" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
+  | { type: "openBotWizard"; botId?: string | null; redo?: boolean }
+  | { type: "closeBotWizard" }
   | { type: "toggleComputer"; open?: boolean }
   | { type: "toggleInspector"; open?: boolean }
   | { type: "toggleActivity"; open?: boolean }
@@ -2931,7 +2939,7 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsSurface: action.surface ?? state.pluginsSurface,
         // A bot panel opens it on that bot; a change of surface while it is
         // open keeps the bot it is on.
-        pluginsBotId: !open ? null : action.page === "orgAccess" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
+        pluginsBotId: !open ? null : action.page === "orgAccess" || action.page === "pages" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? action.page ?? null : null,
         pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
@@ -2947,6 +2955,15 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "botCreationPending":
       return { ...state, botCreationPending: action.on };
+    case "openBotWizard":
+      // Its own screen over the app: what was open closes, as New bot does.
+      return {
+        ...state,
+        botWizard: { botId: action.botId ?? null, ...(action.redo ? { redo: true } : {}) },
+        newBotOpen: false, settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false,
+      };
+    case "closeBotWizard":
+      return { ...state, botWizard: null };
     case "toggleNewBot": {
       const open = (action.open ?? !state.newBotOpen) && state.config?.viewer?.canCreateBots !== false;
       return {
@@ -3541,12 +3558,13 @@ export const initialState: AppState = {
   pluginsPage: null,
   triggersOpen: false,
   newBotOpen: false,
+  botWizard: null,
   botCreationPending: false,
   computerOpen: false,
   inspectorOpen: false,
   activityOpen: false,
   appSettingsOpen: false,
-  appSettingsSection: "general",
+  appSettingsSection: "account",
   achievementsOpen: false,
   botCatalogOpen: false,
   botCatalogTarget: null,

@@ -941,6 +941,52 @@ export function FieldRow({ label, hint, hintId, children, rowId }: {
   );
 }
 
+/** A small editor a row opens ("Add a secret", "Add an item"): one compact
+ * row per field, the actions at the bottom right, in a thin rounded frame
+ * inside the group's card. With `onSubmit` it is a <form> (Enter submits). */
+export function EditorBox({ label, actions, onSubmit, className, children, ...data }: {
+  /** The editor's spoken name. */
+  label: string;
+  actions: React.ReactNode;
+  onSubmit?: () => void;
+  className?: string;
+  children: React.ReactNode;
+} & { [key: `data-${string}`]: string | undefined }) {
+  const body = (
+    <>
+      <div className="flex flex-col py-1">{children}</div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t-[0.5px] border-border px-3 py-2">{actions}</div>
+    </>
+  );
+  const frame = cn("flex min-w-0 flex-col rounded-lg border-[0.5px] border-border", className);
+  return onSubmit
+    ? <form {...data} aria-label={label} className={frame} onSubmit={(event) => { event.preventDefault(); onSubmit(); }}>{body}</form>
+    : <div {...data} role="group" aria-label={label} className={frame}>{body}</div>;
+}
+
+/** A field of an EditorBox: its label (and at most one grey line) at the
+ * left, the control at the right, stacked on a narrow window. A text field
+ * row is the <label>; a menu row (`menu`, a PillSelect) is a group, so a
+ * click on the words does not open the menu. */
+export function EditorField({ label, hint, menu, children }: {
+  label: React.ReactNode;
+  hint?: React.ReactNode;
+  menu?: boolean;
+  children: React.ReactNode;
+}) {
+  const labelId = useId();
+  const words = (
+    <span className="min-w-0">
+      <span id={labelId} className="block text-[13px] leading-[18px] text-ink">{label}</span>
+      {hint && <span className="mt-0.5 block text-[12px] leading-4 text-ink-secondary">{hint}</span>}
+    </span>
+  );
+  const grid = "grid min-w-0 grid-cols-1 items-center gap-1.5 px-3 py-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)] sm:gap-4";
+  return menu
+    ? <div role="group" aria-labelledby={labelId} data-editor-field="" className={grid}>{words}<div className="flex min-w-0 justify-start sm:justify-end">{children}</div></div>
+    : <label data-editor-field="" className={grid}>{words}<span className="flex min-w-0">{children}</span></label>;
+}
+
 /** A destructive action asked twice, in place: a grey pill with red words,
  * then, once clicked, the reference design's filled red pill that does it. Leaving the
  * pill (Tab, a click elsewhere) or Escape disarms it. */

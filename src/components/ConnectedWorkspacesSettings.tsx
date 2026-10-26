@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Cloud, Laptop, Loader2, Trash2 } from "lucide-react";
-import { Card, DANGER_PILL, DescribedRow, PILL } from "./SettingsPrimitives";
+import { Card, DANGER_PILL, DescribedRow, EditorBox, EditorField, FIELD, PILL, PRIMARY_PILL, SwitchRow } from "./SettingsPrimitives";
 import { t } from "@/lib/i18n";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
 import { useStore } from "@/state/store";
@@ -97,32 +97,28 @@ export function ConnectedWorkspacesSettings() {
                   if (result && result.ok === false) throw new Error("Couldn't switch.");
                   return true;
                 }, setEnvError)}
-                className="rounded-md px-2 py-1.5 text-[12px] text-ink hover:bg-control disabled:opacity-50">Switch</button>}
+                className={PILL}>Switch</button>}
             {!active && <button type="button" disabled={busy} aria-label={`Forget ${entry.name}`} title={`Forget ${entry.name}`}
               onClick={() => { setEnvForget(entry.id); setEnvPurge(false); }}
               className="rounded-md p-1.5 text-ink-secondary hover:bg-control hover:text-danger disabled:opacity-50"><Trash2 size={14} /></button>}
           </li>;
         })}
       </ul>}
-      {forgetEntry && <div className="mt-3 rounded-lg border border-hairline/40 p-3">
-        <label className="flex items-start gap-2 text-[12px] leading-relaxed text-ink-secondary">
-          <input type="checkbox" checked={envPurge} disabled={busy} className="mt-0.5" onChange={(event) => setEnvPurge(event.target.checked)} />
-          Also delete this folder and everything in it ({forgetEntry.dataDir}). Otherwise the folder, its bots and conversations stay on this computer.
-        </label>
-        <div className="mt-2 flex gap-2">
-          <button type="button" disabled={busy} onClick={() => void perform(async () => {
-            // Main answers {ok:false} when it refuses or the folder delete fails;
-            // the entry stays, so say so generically and leave the panel open.
-            const result = envPurge ? await bridge.forget(forgetEntry.id, true) : await bridge.forget(forgetEntry.id);
-            if (result && result.ok === false) throw new Error("Couldn't forget the environment.");
-            setEnvForget(null);
-          }, setEnvError)} className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-control disabled:opacity-50">Forget</button>
-          <button type="button" onClick={() => setEnvForget(null)} className="rounded-lg px-3 py-1.5 text-[12px] text-ink hover:bg-control">Cancel</button>
-        </div>
-      </div>}
-      <p className="mt-4 text-[13px] font-medium text-ink">New environment</p>
-      <form className="flex flex-col gap-3 pt-2" onSubmit={(event) => {
-        event.preventDefault();
+      {forgetEntry && <EditorBox label={`Forget ${forgetEntry.name}`} className="mt-3" actions={<>
+        <button type="button" onClick={() => setEnvForget(null)} className={PILL}>Cancel</button>
+        <button type="button" disabled={busy} onClick={() => void perform(async () => {
+          // Main answers {ok:false} when it refuses or the folder delete fails;
+          // the entry stays, so say so generically and leave the panel open.
+          const result = envPurge ? await bridge.forget(forgetEntry.id, true) : await bridge.forget(forgetEntry.id);
+          if (result && result.ok === false) throw new Error("Couldn't forget the environment.");
+          setEnvForget(null);
+        }, setEnvError)} className={`${DANGER_PILL} min-h-[44px] md:min-h-0`}>Forget</button>
+      </>}>
+        <SwitchRow className="px-3 py-1.5" label="Also delete this folder and everything in it"
+          description={<><span className="break-all">{forgetEntry.dataDir}</span>. Otherwise the folder, its bots and conversations stay on this computer.</>}
+          checked={envPurge} disabled={busy} onChange={setEnvPurge} />
+      </EditorBox>}
+      <EditorBox label="New environment" className="mt-4" onSubmit={() => {
         if (!envName.trim()) return;
         void perform(async () => {
           // A failure carries main's reason; none of them is a sentence the
@@ -131,25 +127,25 @@ export function ConnectedWorkspacesSettings() {
           if (!created?.ok) throw new Error("Couldn't create the environment.");
           setEnvName(""); setEnvDir("");
         }, setEnvError);
-      }}>
-        <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">Name
-          <input required value={envName} disabled={busy} maxLength={60} onChange={(event) => setEnvName(event.target.value)} placeholder="My environment"
-            className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50" />
-        </label>
-        <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">Data folder (optional)
-          <span className="flex gap-2">
-            <input value={envDir} disabled={busy} onChange={(event) => setEnvDir(event.target.value)} placeholder="Leave empty to create one in your home folder"
-              className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[14px] text-ink outline-none focus:border-accent/50" />
+      }} actions={
+        <button type="submit" disabled={busy || !envName.trim()} className={`${PRIMARY_PILL} inline-flex items-center gap-1.5`}>
+          {busy && <Loader2 size={13} className="animate-spin" />}Create
+        </button>
+      }>
+        <p className="px-3 py-1.5 text-[13px] leading-[18px] text-ink">New environment</p>
+        <EditorField label="Name">
+          <input required value={envName} disabled={busy} maxLength={60} onChange={(event) => setEnvName(event.target.value)} placeholder="My environment" aria-label="Name" className={FIELD} />
+        </EditorField>
+        <EditorField label="Data folder (optional)" hint="Leave empty to create one in your home folder">
+          <span className="flex min-w-0 flex-1 gap-2">
+            <input value={envDir} disabled={busy} onChange={(event) => setEnvDir(event.target.value)} aria-label="Data folder (optional)" className={FIELD} />
             <button type="button" disabled={busy} onClick={() => void perform(async () => {
               const picked = await bridge.pickDir();
               if (picked?.ok && picked.path) setEnvDir(picked.path);
-            }, setEnvError)} className="shrink-0 rounded-lg border border-hairline/40 px-3 text-[12px] text-ink hover:bg-control disabled:opacity-50">Choose…</button>
+            }, setEnvError)} className={`${PILL} shrink-0`}>Choose…</button>
           </span>
-        </label>
-        <button type="submit" disabled={busy || !envName.trim()} className="flex w-fit items-center gap-2 rounded-lg bg-accent px-3 py-2 text-[13px] font-medium text-accent-ink disabled:opacity-50">
-          {busy && <Loader2 size={14} className="animate-spin" />}Create
-        </button>
-      </form>
+        </EditorField>
+      </EditorBox>
     </Card>}
     {/* 0.5.6: one Grok-style row per server (name, address in grey,
         Switch and Forget at the right) under the page's Servers heading. */}
