@@ -2230,7 +2230,10 @@ export class Store {
   /** All setup fields and the Primary Bot's receipt commit before publishing any
    * mutation. A new model moves the threads that follow the bot, never a
    * thread's own model. */
-  applyTeamSetup(request: TeamSetupRequest): TeamSetupResult {
+  /** `newBotApprovalMode` (2026-10-26): the level a new bot starts on, Ask
+   * when the organization does not allow Auto for members' bots. */
+  applyTeamSetup(request: TeamSetupRequest, options: { newBotApprovalMode?: "ask" | "auto" } = {}): TeamSetupResult {
+    const newMode = options.newBotApprovalMode ?? "auto";
     const chief = this.bot(request.botId);
     if (!chief) throw new Error("The requesting Primary Bot no longer exists");
     if (chief.lastTeamSetupReceipt?.requestId === request.requestId) return chief.lastTeamSetupReceipt.result;
@@ -2249,7 +2252,7 @@ export class Store {
         next = { id: operation.botId, threadId: operation.threadId, name: operation.fields.name,
           title: "", description: "", soul: "", notifications: true, color: COLORS[nextBots.length % COLORS.length], unread: false,
           resumeCursors: {}, createdAt, ...operation.fields, modelSelection,
-          approvalMode: "auto", autoApprove: true, approvePeerComms: false,
+          approvalMode: newMode, autoApprove: newMode === "auto", approvePeerComms: false,
           // A Primary Bot's new teammate is seen by exactly the Primary Bot's audience:
           // a restricted Primary Bot never creates a bot everyone sees.
           ...(chief.visibility && chief.visibility !== "everyone" ? { visibility: structuredClone(chief.visibility) } : {}),
@@ -2258,7 +2261,7 @@ export class Store {
           // ...and remembers a bot made it (server/bot-creation.ts depth).
           createdByBot: createdByBotMark(chief, createdAt),
           tasks: [{ threadId: operation.threadId, title: UNTITLED_THREAD, createdAt, updatedAt: createdAt, resumeCursors: {},
-            approvalMode: "auto", autoApprove: true,
+            approvalMode: newMode, autoApprove: newMode === "auto",
             unread: false, activity: "idle", busy: false }],
         };
         // "" is the private-workspace spelling on proposal; the record

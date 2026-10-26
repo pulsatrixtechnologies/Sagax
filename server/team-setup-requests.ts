@@ -91,7 +91,7 @@ interface SetupStore {
   messagesFor(threadId: string): Array<{ id: string; card?: OptionCardData }>;
   appendMessage(threadId: string, message: { role: "bot"; kind: "options"; card: OptionCardData; from?: { botId: string; name: string; color: string } }): { id: string };
   patchMessage(threadId: string, messageId: string, patch: { card: OptionCardData }): unknown;
-  applyTeamSetup(request: TeamSetupRequest): TeamSetupResult;
+  applyTeamSetup(request: TeamSetupRequest, options?: { newBotApprovalMode?: "ask" | "auto" }): TeamSetupResult;
 }
 
 interface Options {
@@ -118,6 +118,9 @@ interface Options {
   mayCreateBots?(bot: BotRecord): boolean;
   ownsThread(botId: string, threadId: string): boolean;
   deleteBot(botId: string, revalidate: () => void, request: TeamSetupRequest): Promise<void>;
+  /** 2026-10-26: the level the plan's new bots start on (Ask when the
+   * organization does not allow Auto for this person's bots). Absent: Auto. */
+  newBotApprovalMode?(request: TeamSetupRequest): "ask" | "auto";
 }
 
 type RequestFrom = { botId: string; name: string; color: string };
@@ -402,7 +405,7 @@ export class TeamSetupRequestService {
         this.validate(request, true, immediate);
       };
       revalidate();
-      if (!request.deletion) return this.options.store.applyTeamSetup(request);
+      if (!request.deletion) return this.options.store.applyTeamSetup(request, { newBotApprovalMode: this.options.newBotApprovalMode?.(request) });
       await this.options.deleteBot(request.deletion.botId, revalidate, request);
       return { state: "applied", bots: [{ id: request.deletion.botId, name: request.deletion.name, action: "deleted" }], newTeams: [] };
     } catch (error) {

@@ -22217,6 +22217,12 @@ const teamSetupRequests = new TeamSetupRequestService({
   // create_bot from a bot that is not a Primary Bot (server/bot-creation.ts)
   mayCreateBots: (bot) => botCreationOffered(bot, ownerBotsReadOnly(bot)),
   autoApply: fullAccessForSource,
+  // 2026-10-26: a member's new bots start on Ask while the organization
+  // does not allow Auto for members' bots, instead of waiting on an admin.
+  newBotApprovalMode: (request) => {
+    const chief = store.bot(request.botId);
+    return chief && memberAutoRefused(chief, ["ask"], "auto") ? "ask" : "auto";
+  },
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
   targetBusy: (botId, sourceThreadId) => {
@@ -22317,8 +22323,6 @@ function teamSetupApplyRefusal(auth: RequestAuth, req: IncomingMessage) {
       sectionOf: (botId) => { const bot = store.bot(botId); return bot ? sectionKey(bot.section) : undefined; },
       mayCreateBots: botCreationAllowed(auth),
       can: (permission) => callerCan(auth, permission),
-      // applyTeamSetup starts a new bot on Auto
-      newBotAutoRefused: memberAutoRefused({ ownerUserId: caller }, ["ask"], "auto"),
     });
     return refusal ? { ...refusal } : null;
   };
@@ -28027,6 +28031,11 @@ ROUTES.push(createDesktopAppearanceRoutes({ store: createDesktopAppearanceStore(
 // store lookups — the 404 precheck and journal thread titles — stay explicit.
 ROUTES.push(createBotMemoryRoutes({
   bot: (id) => store.bot(id),
+  // the Soul edit's gate, as for the Files category below
+  mayEdit: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!) && !callerBotsReadOnly(auth);
+  },
   taskByThread: (botId, threadId) => store.taskByThread(botId, threadId),
   upkeep: memoryUpkeep,
   ...(lendingMemory ? {
@@ -32526,7 +32535,7 @@ function principalPermissions(principalId: string | undefined | null, options: {
  * this computer (everything). A local service holds nothing. On a solo
  * server an admin session holds everything and anyone else the defaults. */
 function callerPermissions(auth: RequestAuth): EffectivePermissions | undefined {
-  if (auth.kind === "loopback") return auth.trust === "service" ? effectivePermissions({ admin: false, fromDirectory: [] }) : undefined;
+  if (auth.kind === "loopback") return auth.trust === "service" ? effectivePermissions({ admin: false, fromDirectory: [], service: true }) : undefined;
   if (orgAdminCaller(auth)) return effectivePermissions({ admin: true, fromDirectory: null });
   if (IDENTITY.kind !== "perspicax") return effectivePermissions({ admin: auth.scopes.includes("admin"), fromDirectory: null });
   return principalPermissions(auth.session.principalId, { sessionAdmin: false });
@@ -32767,8 +32776,8 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
   }
-  // A member who owns the room adds only people the organization directory
-  // lists as active; never a team entry (those stay with admins).
+  // A member who owns the room adds people the organization directory lists
+  // as active and the organization's teams (checked just above).
   if (ownerChecked && IDENTITY.kind === "perspicax" && Array.isArray(after) && channelActorRole(auth) === "member") {
     const unseen = firstUnseenPerson({ actorId: channelActorId(auth), before, after, visible: (id) => resolveOrgGrantee(id).ok });
     if (unseen !== null) return "unknown person: choose someone from the organization directory";
@@ -43214,10 +43223,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const settings = template.profile;
       if (memberCreate) {
         // 2026-10-09: a field beyond MEMBER_BOT_FIELDS needs its permission
-        // (BOT_FIELD_PERMISSIONS); a preset stays an admin's.
+        // (BOT_FIELD_PERMISSIONS). 2026-10-26 (JC): a preset the server
+        // offers only fills the member's own new bot, so it is theirs to pick.
         const extra = ["visibility", "section", "cwd"].filter((key) => body[key] !== undefined);
-        const refused = memberBotFieldRefusal(auth, { ...settings, ...Object.fromEntries(extra.map((key) => [key, body[key]])) }) ??
-          (body.preset !== undefined ? { field: "preset" } : null);
+        const refused = memberBotFieldRefusal(auth, { ...settings, ...Object.fromEntries(extra.map((key) => [key, body[key]])) });
         if (refused) {
           if (refused.permission) return json(res, 403, { ...permissionRefusal(refused.permission), field: refused.field });
           return json(res, 403, { error: `forbidden: a member's new bot may set its name, look, instructions and model, not "${refused.field}"` });
@@ -44800,6 +44809,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, await botOverview(bot));
     }
 
+    // 2026-10-26 (JC): a member reads and undoes the history of their own
+    // bots (request-auth.ts lets a session through; the owner rule is here).
+    m = path.match(/^\/api\/bots\/([\w-]+)\/history(?:\/rollback)?$/);
+    if (m && (method === "GET" || method === "POST") && store.bot(m[1]) && !ownerOrAdminOf(auth, store.bot(m[1])!)) {
+      return json(res, 403, { error: "forbidden: only the bot owner or an admin can read or undo its history", code: "not_bot_owner" });
+    }
     m = path.match(/^\/api\/bots\/([\w-]+)\/history$/);
     if (m && method === "GET") {
       if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });

@@ -44,9 +44,9 @@ export function canEditBotField(
 }
 
 /** The Primary Bot switch. Taking and leaving the role is the owner's own
- * route (POST and DELETE /api/bots/:id/primary), not a member field. A
- * draft cannot send chiefOfStaff on create, so the switch stays hidden
- * until the bot exists. */
+ * route (POST and DELETE /api/bots/:id/primary) on a bot that exists; on a
+ * draft the owner sends chiefOfStaff with the new bot (2026-10-26: a member
+ * picks their own Primary Bot without an admin). */
 export function canStepPrimary(
   config: ConfigStatus | null | undefined,
   bot: { ownerUserId?: string | null },
@@ -54,7 +54,7 @@ export function canStepPrimary(
 ): boolean {
   if (viewerBotsReadOnly(config)) return false;
   if (!viewerIsOrgMember(config)) return true;
-  if (options?.draft) return false;
+  if (options?.draft) return canEditBotField(config, bot, "chiefOfStaff", options);
   return viewerOwnsBot(config, bot);
 }
 
@@ -66,11 +66,15 @@ export function showBotRename(
   return canEditBotField(config, bot, "name");
 }
 
-/** Archive writes `hidden`, which is not a member field. An organization
- * member is refused, including on a bot they own. An admin is not a member
- * here and the server still accepts the write. */
-export function showBotArchive(config: ConfigStatus | null | undefined): boolean {
-  return !viewerIsOrgMember(config);
+/** Archive and restore write `hidden`. 2026-10-26 (JC): an organization
+ * member archives and restores the bots they own (BOT_FIELD_PERMISSIONS),
+ * never someone else's. */
+export function showBotArchive(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null },
+): boolean {
+  if (!viewerIsOrgMember(config)) return true;
+  return canEditBotField(config, bot, "hidden");
 }
 
 /** Delete is the owner or an admin. A read-only person is refused even on
@@ -84,9 +88,16 @@ export function showBotDelete(
   return viewerOwnsBot(config, bot);
 }
 
-/** Moving a bot between server sections writes `section`, not a member field.
- * A personal sidebar section is this person's preference and stays. */
-export function showServerSectionMove(config: ConfigStatus | null | undefined, personal: boolean): boolean {
+/** Moving a bot between server sections writes `section`. A personal
+ * sidebar section is this person's preference and stays. 2026-10-26 (JC):
+ * a member moves the bots they own (every one of `bots`), never another
+ * person's. */
+export function showServerSectionMove(
+  config: ConfigStatus | null | undefined,
+  personal: boolean,
+  bots: ReadonlyArray<{ ownerUserId?: string | null }> = [],
+): boolean {
   if (personal) return true;
-  return !viewerIsOrgMember(config);
+  if (!viewerIsOrgMember(config)) return true;
+  return bots.length > 0 && bots.every((bot) => canEditBotField(config, bot, "section"));
 }

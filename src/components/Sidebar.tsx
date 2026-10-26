@@ -42,7 +42,7 @@ import { api, useStore, formatTime, visibleMessages, currentTaskBot, botOpensTo,
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
-import { otherAuthorName, viewerActorId } from "@/lib/viewer";
+import { otherAuthorName, viewerActorId, viewerIsOrgMember } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { ModelPicker } from "./ModelPicker";
@@ -1238,9 +1238,9 @@ export function BotContextMenu({
 
   if (!motion.shown || !bot || !shown) return null;
   const canRename = showBotRename(state.config, bot);
-  const canArchive = showBotArchive(state.config);
+  const canArchive = showBotArchive(state.config, bot);
   const canDelete = showBotDelete(state.config, bot);
-  const canMoveSection = showServerSectionMove(state.config, personal !== null);
+  const canMoveSection = showServerSectionMove(state.config, personal !== null, [bot]);
   const deleting = state.deletingBots[bot.id] === true;
   const visibleBotCount = state.bots.filter((candidate) => !candidate.hidden).length;
   const archiveBlocked = Boolean(bot.chiefOfStaff) || visibleBotCount <= 1;
@@ -2258,7 +2258,7 @@ export function ArchivedBotsPanel({
   const [error, setError] = useState("");
   const deleting = bots.some((bot) => Boolean(state.deletingBots[bot.id]));
   const locked = restoringAll || Boolean(busyId) || deleting || Boolean(pendingDelete);
-  const allowRestore = showBotArchive(state.config);
+  const allowRestore = (bot: Bot) => showBotArchive(state.config, bot);
   const allowDelete = (bot: Bot) => showBotDelete(state.config, bot);
 
   useEffect(() => {
@@ -2340,7 +2340,7 @@ export function ArchivedBotsPanel({
             <p className="mt-1 text-[13px] text-ink-secondary">{t("sidebar.archived.subtitle")}</p>
           </div>
           <div className="flex items-center gap-1">
-            {allowRestore && bots.length > 1 && (
+            {bots.length > 1 && bots.every(allowRestore) && (
               <button
                 onClick={() => void restoreAll()}
                 disabled={locked}
@@ -2381,7 +2381,7 @@ export function ArchivedBotsPanel({
                 restoring={busyId === bot.id}
                 deleting={Boolean(state.deletingBots[bot.id])}
                 disabled={locked}
-                showRestore={allowRestore}
+                showRestore={allowRestore(bot)}
                 showDelete={allowDelete(bot)}
                 onRestore={() => void restore(bot)}
                 onDelete={() => setPendingDelete(bot)}
@@ -2521,6 +2521,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const [batchModel, setBatchModel] = useState(false);
   const [batchSectionPicker, setBatchSectionPicker] = useState<MenuState | null>(null);
   const [batchArchiveConfirm, setBatchArchiveConfirm] = useState(false);
+  // a member archives only the bots they own (showBotArchive)
+  const archivableByViewer = (id: string) => {
+    const bot = state.bots.find((candidate) => candidate.id === id);
+    return Boolean(bot) && currentArchivableBot(state.bots, id) && showBotArchive(state.config, bot!);
+  };
   const clearSelection = () => {
     setSelecting(false);
     setSelectedBotIds([]);
@@ -3421,8 +3426,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         const chosen = selectedBotIds.flatMap((id) => state.bots.filter((bot) => bot.id === id));
         const count = chosen.length;
         const allPinned = count > 0 && chosen.every((bot) => bot.pinned);
-        const canMove = showServerSectionMove(state.config, personal !== null);
-        const archivable = chosen.filter((bot) => currentArchivableBot(state.bots, bot.id));
+        const canMove = showServerSectionMove(state.config, personal !== null, chosen);
+        const archivable = chosen.filter((bot) => currentArchivableBot(state.bots, bot.id) && showBotArchive(state.config, bot));
         const button = "flex h-8 min-w-0 flex-1 items-center justify-center rounded-full text-sidebar-ink-secondary hover:bg-sidebar-hover hover:text-sidebar-ink disabled:pointer-events-none disabled:opacity-40";
         return (
           <div className="px-4 pb-2">
@@ -3444,7 +3449,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               onClick={() => setBatchModel(true)}><SlidersHorizontal size={16} /></button>
             {canMove && <button type="button" className={button} disabled={count === 0} title={t("sidebar.select.move", { count })} aria-label={t("sidebar.select.move", { count })} aria-haspopup="menu"
               onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); setBatchSectionPicker({ botId: "", x: rect.left, y: rect.top - 260 }); }}><FolderInput size={16} /></button>}
-            {showBotArchive(state.config) && <button type="button" className={button} disabled={archivable.length === 0} title={t("sidebar.bot.archive")} aria-label={t("sidebar.bot.archive")}
+            {(!viewerIsOrgMember(state.config) || archivable.length > 0) && <button type="button" className={button} disabled={archivable.length === 0} title={t("sidebar.bot.archive")} aria-label={t("sidebar.bot.archive")}
               onClick={() => setBatchArchiveConfirm(true)}><Archive size={16} /></button>}
             <button type="button" className={button} title={t("sidebar.select.clear")} aria-label={t("sidebar.select.clear")} onClick={clearSelection}><X size={16} /></button>
           </div>
@@ -3661,7 +3666,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         />
       <ConfirmDialog
         open={batchArchiveConfirm}
-        title={t("sidebar.select.archiveTitle", { count: selectedBotIds.filter((id) => currentArchivableBot(state.bots, id)).length })}
+        title={t("sidebar.select.archiveTitle", { count: selectedBotIds.filter((id) => archivableByViewer(id)).length })}
         body={t("sidebar.select.archiveBody")}
         confirmLabel={t("sidebar.bot.archive")}
         icon={<Archive size={18} />}
@@ -3671,7 +3676,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           setBatchArchiveConfirm(false);
           // never the last active bot: the guard reads one snapshot, so cap here
           const keep = state.bots.filter((bot) => !bot.hidden).length - 1;
-          const ids = selectedBotIds.filter((id) => currentArchivableBot(state.bots, id)).slice(0, Math.max(0, keep));
+          const ids = selectedBotIds.filter((id) => archivableByViewer(id)).slice(0, Math.max(0, keep));
           clearSelection();
           void (async () => { for (const id of ids) await archiveBot({ id }); })();
         }}
