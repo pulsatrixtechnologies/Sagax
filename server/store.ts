@@ -53,6 +53,7 @@ import type {
 } from "../shared/wire.ts";
 import type { WireBotGrant } from "../shared/wire.ts";
 import { sameModelSelection } from "../shared/thread-model.ts";
+import { nextOpenThread } from "../shared/wire.ts";
 import { namesEngine } from "./bot-engine.ts";
 // Re-exported under their historical names so server-side importers keep working.
 export type {
@@ -3618,7 +3619,7 @@ export class Store {
     // leaves the task, its conversation and every subscriber as they were.
     this.deleteThreadRecord(threadId, () => this.commitBotChange(bot, "the thread deletion", () => {
       const kept = bot.tasks!.filter((t) => t.threadId !== threadId);
-      const visible = kept.find((task) => !task.routineRunId) ?? this.buildTask(bot);
+      const visible = nextOpenThread(kept) ?? this.buildTask(bot);
       bot.tasks = kept.includes(visible) ? kept : [visible, ...kept];
       if (bot.threadId === threadId || this.taskByThread(botId, bot.threadId)?.routineRunId) {
         this.mirrorActiveTask(bot, visible);
