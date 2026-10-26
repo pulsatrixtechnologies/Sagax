@@ -55,7 +55,7 @@ describe("Plugins panel views", () => {
     expect(html).toContain('data-plugin-row="mcp:glitcho"');
   });
 
-  it("main view: Bot templates sits beside the search, and N connected stays in the title row", () => {
+  it("main view: Browse bots sits beside the search, and N connected stays in the title row", () => {
     const props = {
       items, loading: false, search: "", onSearch: noop, filter: "all" as const, onFilter: noop,
       onOpenManage: noop, onOpenItem: noop, type: "any" as const, onType: noop,
@@ -63,7 +63,7 @@ describe("Plugins panel views", () => {
     };
     expect(renderToStaticMarkup(createElement(ConnectAppsView, props))).not.toContain("data-plugins-browse-bots");
     const html = renderToStaticMarkup(createElement(ConnectAppsView, { ...props, onBrowseBots: noop }));
-    expect(html).toMatch(/data-plugins-connected[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Bot templates/);
+    expect(html).toMatch(/data-plugins-connected[\s\S]*?placeholder="Search across apps and skills"[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
     const header = html.slice(0, html.indexOf("</header>"));
     expect(header).not.toContain("data-plugins-browse-bots");
   });

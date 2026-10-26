@@ -66,6 +66,8 @@ private struct PhoneBotPanelContent: View {
     @State private var pickingPrimary = false
     @State private var primaryWorking = false
     @State private var sharedFile: IdentifiedURL?
+    /// "Share as Template": a public template link of this bot.
+    @State private var sharingTemplate = false
     @StateObject private var owlHandle = OwlMascotHandle()
     @State private var draft: CharacterDraft
     @State private var libraryStart: BotLibraryChip = .files(.all)
@@ -138,6 +140,7 @@ private struct PhoneBotPanelContent: View {
             PrimaryBotPicker(currentId: current.id, viewerId: viewerId) { show($0) }
         }
         .sheet(item: $sharedFile) { file in ProfileShareSheet(items: [file.url]) }
+        .sheet(isPresented: $sharingTemplate) { ShareTemplateSheet(bot: current).environmentObject(session) }
         .sheet(isPresented: $exportingZip) { BotZipExportSheet(bot: current) { exportingZip = false } }
         .confirmationDialog(
             String(localized: "Archive \(current.name)?"),
@@ -303,6 +306,10 @@ private struct PhoneBotPanelContent: View {
             show(String(localized: "Copied"))
         }
         out.insert(copyId, at: out.firstIndex(where: \.dividerBefore) ?? out.endIndex)
+        let shareTemplate = GlassMenuItem(id: "share-template", title: Text("Share as Template"), systemImage: "link") {
+            sharingTemplate = true
+        }
+        out.insert(shareTemplate, at: out.firstIndex(where: \.dividerBefore) ?? out.endIndex)
         return out
     }
 

@@ -60799,6 +60799,454 @@
         }
       }
     },
+    "Browse Bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse Bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourir les bots"
+          }
+        }
+      }
+    },
+    "An agent is working. Update will be available when every agent is done. Your files and logins stay, installed apps and packages are removed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An agent is working. Update will be available when every agent is done. Your files and logins stay, installed apps and packages are removed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un agent travaille. La mise à jour sera possible quand chaque agent aura fini. Vos fichiers et vos connexions restent, les apps et paquets installés sont retirés."
+          }
+        }
+      }
+    },
+    "Stopping %@…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping %@…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêt de %@…"
+          }
+        }
+      }
+    },
+    "%@ could not be stopped. Try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ could not be stopped. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n'a pas pu être arrêté. Réessayez."
+          }
+        }
+      }
+    },
+    "A bot is working on this computer. Reset anyway? Its current task is cut short and the computer is rebuilt from the last snapshot. This cannot be undone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A bot is working on this computer. Reset anyway? Its current task is cut short and the computer is rebuilt from the last snapshot. This cannot be undone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un bot travaille sur cet ordinateur. Réinitialiser quand même ? Sa tâche en cours est coupée et l'ordinateur est reconstruit à partir du dernier instantané. C'est irréversible."
+          }
+        }
+      }
+    },
+    "New conversation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New conversation"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle conversation"
+          }
+        }
+      }
+    },
+    "You can only write in conversations you started on this Cloud.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can only write in conversations you started on this Cloud."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous ne pouvez écrire que dans les conversations que vous avez commencées sur ce Cloud."
+          }
+        }
+      }
+    },
+    "Share the link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share the link"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager le lien"
+          }
+        }
+      }
+    },
+    "Create a public link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a public link"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer un lien public"
+          }
+        }
+      }
+    },
+    "View the shared copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View the shared copy"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir la copie partagée"
+          }
+        }
+      }
+    },
+    "Update the template": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the template"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre à jour le modèle"
+          }
+        }
+      }
+    },
+    "Turn off the public link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn off the public link"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactiver le lien public"
+          }
+        }
+      }
+    },
+    "updated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "updated"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mis à jour"
+          }
+        }
+      }
+    },
+    "Template updated. The link now opens this version.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Template updated. The link now opens this version."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle mis à jour. Le lien ouvre maintenant cette version."
+          }
+        }
+      }
+    },
+    "This address works on this computer only. Share the link from your organization server, or set a public address, for others to open it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This address works on this computer only. Share the link from your organization server, or set a public address, for others to open it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette adresse fonctionne sur cet ordinateur seulement. Partagez le lien depuis le serveur de votre organisation, ou configurez une adresse publique, pour que d'autres puissent l'ouvrir."
+          }
+        }
+      }
+    },
+    "Anyone with the link sees a read-only card of this template and can import it into Sagax. Starter notes never go into a link.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anyone with the link sees a read-only card of this template and can import it into Sagax. Starter notes never go into a link."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toute personne qui a le lien voit une fiche en lecture seule de ce modèle et peut l'importer dans Sagax. Les notes de départ ne vont jamais dans un lien."
+          }
+        }
+      }
+    },
+    "Never in a link: starter notes, connected apps, keys and model choices. Turning a link off is immediate.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never in a link: starter notes, connected apps, keys and model choices. Turning a link off is immediate."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jamais dans un lien : les notes de départ, les apps connectées, les clés et les choix de modèle. La désactivation d'un lien est immédiate."
+          }
+        }
+      }
+    },
+    "Timing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timing"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horaire"
+          }
+        }
+      }
+    },
+    "Exact": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact"
+          }
+        }
+      }
+    },
+    "Flexible": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flexible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flexible"
+          }
+        }
+      }
+    },
+    "Early": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Early"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avant"
+          }
+        }
+      }
+    },
+    "Late": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Late"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après"
+          }
+        }
+      }
+    },
+    "min": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "min"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "min"
+          }
+        }
+      }
+    },
+    "Early window minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Early window minutes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutes de la fenêtre avant"
+          }
+        }
+      }
+    },
+    "Late window minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Late window minutes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutes de la fenêtre après"
+          }
+        }
+      }
+    },
+    "0 late means ready by the scheduled time.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 late means ready by the scheduled time."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 après veut dire prêt à l'heure prévue."
+          }
+        }
+      }
+    },
+    "Shared by %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared by %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partagé par %@"
+          }
+        }
+      }
+    },
+    "© 2026 Pulsatrix Technologies inc. Free for noncommercial use (PolyForm Noncommercial 1.0.0).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies inc. Free for noncommercial use (PolyForm Noncommercial 1.0.0)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies inc. Gratuit pour un usage non commercial (PolyForm Noncommercial 1.0.0)."
+          }
+        }
+      }
+    },
     "Classic": {
       "localizations": {
         "en": {

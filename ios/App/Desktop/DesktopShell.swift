@@ -325,6 +325,12 @@ struct DesktopShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .approvalEditRule)) { _ in
             model.showPersona(.access)
         }
+        // Connect apps' "Browse Bots": Settings closes, Browse Bots opens
+        .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { _ in
+            model.menu = nil
+            model.modal = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { model.modal = .templates }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .desktopOpenSettings)) { _ in
             model.menu = nil
             model.modal = .settings

@@ -1848,6 +1848,12 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     public var window: RoutineIntervalWindow? = nil
     /// `interval`: inclusive epoch-millisecond cutoff. Absent means never.
     public var endsAt: Int64? = nil
+    /// Repeating schedules (`shared/routine-timing.ts`): absent or "exact"
+    /// starts at the scheduled slot; "flexible" somewhere in
+    /// [slot - windowEarlyMinutes, slot + windowLateMinutes].
+    public var timing: String? = nil
+    public var windowEarlyMinutes: Int? = nil
+    public var windowLateMinutes: Int? = nil
 
     public init(
         type: Kind, at: Double? = nil, time: String? = nil, weekdays: [Int]? = nil,
