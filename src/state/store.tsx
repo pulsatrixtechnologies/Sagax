@@ -1695,7 +1695,7 @@ export type Action =
   /** Name the thread again from its conversation; the new title arrives with the bot event. */
   | { type: "regenerateTaskTitle"; botId: string; threadId: string; onSettled?: (ok: boolean) => void }
   | { type: "deleteTask"; botId: string; threadId: string }
-  | { type: "newBot"; role?: BotRole; visibility?: BotVisibility; section?: string; preserveSelection?: boolean; onCreated?: (bot: Bot) => void; onError?: (message: string) => void }
+  | { type: "newBot"; role?: BotRole; visibility?: BotVisibility; section?: string; settings?: Record<string, unknown>; preserveSelection?: boolean; onCreated?: (bot: Bot) => void; onError?: (message: string) => void }
   | { type: "botCreationPending"; on: boolean }
   | { type: "updateTask"; botId: string; threadId: string; patch: TaskUpdatePatch }
   /** The server confirmed a thread is now confidential. */
@@ -3617,7 +3617,7 @@ export class ApiError extends Error {
 /** Keep the created bot reachable even when applying its optional preset fails.
  * A restricted `visibility` rides the create itself, so the bot is never
  * announced to people who should not see it. */
-export async function createBotWithRole(role?: BotRole, request: typeof api = api, visibility?: BotVisibility, section?: string): Promise<{ bot: Bot; profileError?: string }> {
+export async function createBotWithRole(role?: BotRole, request: typeof api = api, visibility?: BotVisibility, section?: string, settings?: Record<string, unknown>): Promise<{ bot: Bot; profileError?: string }> {
   const restricted = visibility && visibility !== "everyone" ? { visibility } : {};
   const fields = { ...(role ? { name: role.name, title: role.title, description: role.description } : {}), ...restricted,
     ...(section !== undefined ? { section } : {}) };
@@ -3625,10 +3625,12 @@ export async function createBotWithRole(role?: BotRole, request: typeof api = ap
     method: "POST",
     ...(Object.keys(fields).length ? { body: JSON.stringify(fields) } : {}),
   });
-  if (!role) return { bot };
+  const chosen = settings && Object.keys(settings).length ? settings : undefined;
+  if (!role && !chosen) return { bot };
   try {
+    // Settings the person's permissions open (#1076) ride the follow-up patch.
     const { bot: patched } = await request(`/api/bots/${bot.id}`, {
-      method: "PATCH", body: JSON.stringify(roleProfilePatch(role)),
+      method: "PATCH", body: JSON.stringify({ ...(role ? roleProfilePatch(role) : {}), ...chosen }),
     });
     return { bot: { ...bot, ...patched, messages: bot.messages } };
   } catch (error) {
@@ -4706,7 +4708,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (creatingBot) break;
           creatingBot = true;
           rawDispatch({ type: "botCreationPending", on: true });
-          void createBotWithRole(action.role, api, action.visibility, action.section)
+          void createBotWithRole(action.role, api, action.visibility, action.section, action.settings)
             .then(({ bot, profileError }) => {
               rawDispatch({ type: "botAdded", bot, preserveSelection: action.preserveSelection });
               action.onCreated?.(bot);

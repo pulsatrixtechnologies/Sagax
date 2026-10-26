@@ -25,7 +25,7 @@ import { PermissionsSection } from "./bot-settings/PermissionsSection";
 import { VoiceSection } from "./bot-settings/VoiceSection";
 import { useBotSettingsDerived } from "./bot-settings/useBotSettingsDerived";
 import { BotEditorContext } from "./bot-settings/BotEditorContext";
-import { CompactRow, ConfirmPill, FIELD, FieldRow, PILL, PillSelect, PRIMARY_PILL, Switch, type PillOption, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
+import { CompactRow, ConfirmPill, DescribedRow, FIELD, FieldRow, PILL, PillSelect, PRIMARY_PILL, Switch, type PillOption, DIALOG, GROUP_CARD } from "./SettingsPrimitives";
 import { RoutineEditor } from "./RoutinesPage";
 import { FullAccessWarning } from "./FullAccessWarning";
 import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
@@ -33,6 +33,8 @@ import { SharePresetDialog } from "./SharePresetDialog";
 import { servedPage } from "@/lib/desktop";
 import { viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "@/lib/viewer";
 import { canEditBotField } from "@/lib/bot-capabilities";
+import { memberNewBotFields, memberNewBotSettings } from "@/lib/member-new-bot-settings";
+import { PROACTIVE_MODES, type ProactiveMode } from "../../shared/proactive-mode";
 import { botsReadOnlyText } from "@/lib/permissions";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { showBotZipImport } from "@/lib/bot-zip";
@@ -68,6 +70,10 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
     else dispatch({ type: "toggleNewBot", open: false });
   };
   const close = () => closeRef.current();
+  // What this member's permissions open (#1076); nothing else is shown.
+  const offered = memberNewBotFields(state.config);
+  const [approval, setApproval] = useState<"" | "ask" | "auto">("");
+  const [proactive, setProactive] = useState<ProactiveMode>("off");
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     dialog.current?.focus();
@@ -95,9 +101,24 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
       }}>
       <div className={DIALOG.header}><h2 className={DIALOG.title}>{t("newBot.create")}</h2></div>
       <p data-new-bot-quick className="px-5 pb-4 text-[13px] leading-[18px] text-ink-secondary">{t("newBot.quickCreate")}</p>
+      {(offered.approvalMode || offered.proactiveMode) && <div data-new-bot-member-settings className="px-5 pb-4">
+        {offered.approvalMode && <DescribedRow label={t("botPanel.permissions.approval")} help={t("botPanel.permissions.approvalDraft")} rowId="approvalLevel">
+          <PillSelect<"" | "ask" | "auto"> value={approval} ariaLabel={t("botPanel.permissions.approval")} onChange={setApproval}
+            options={[
+              { value: "", label: t("newBot.memberSettings.serverDefault") },
+              { value: "ask", label: t("approvalMode.simple.ask") },
+              { value: "auto", label: t("approvalMode.simple.decide") },
+            ]} />
+        </DescribedRow>}
+        {offered.proactiveMode && <DescribedRow label={t("botPanel.permissions.proactive")} help={t("botPanel.permissions.proactiveHelp")}
+          description={t(`botPanel.permissions.proactive.${proactive}.hint` as LocaleKey)} rowId="proactiveMode">
+          <PillSelect<ProactiveMode> value={proactive} ariaLabel={t("botPanel.permissions.proactive")} onChange={setProactive}
+            options={PROACTIVE_MODES.map(mode => ({ value: mode, label: t(`botPanel.permissions.proactive.${mode}` as LocaleKey) }))} />
+        </DescribedRow>}
+      </div>}
       <div className={DIALOG.footer}>
         <button type="button" onClick={close} className={PILL}>{t("common.cancel")}</button>
-        <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
+        <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", settings: memberNewBotSettings(state.config, { ...(approval ? { approvalMode: approval } : {}), ...(proactive !== "off" ? { proactiveMode: proactive } : {}) }), ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
           close();
           if (bot && onCreated) void Promise.resolve(onCreated(bot)).catch(cause => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
         } })}
