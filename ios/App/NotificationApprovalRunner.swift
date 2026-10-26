@@ -53,6 +53,9 @@ enum NotificationApprovalRunner {
         case let .confirmKey(threadId, requestId):
             _ = takePending()
             return await send(threadId: threadId, requestId: requestId, behavior: "allow", message: nil, forceCeremony: true)
+        case let .reply(threadId, requestId, text):
+            // a question's answer is the typed text (`behavior: "answer"`, as the card sends it)
+            return await send(threadId: threadId, requestId: requestId, behavior: "answer", message: text)
         }
     }
 

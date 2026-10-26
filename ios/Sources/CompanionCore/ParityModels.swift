@@ -197,6 +197,17 @@ public struct AuthSession: Decodable, Equatable, Sendable {
     /// Perspicax's, and the person changes their own photo through
     /// PUT /api/me/avatar (2026-10-16).
     public var profileManagedBy: String?
+    /// On a Cloud home, a device that is not one of the owner's own: it
+    /// writes only in `openedThreads`, the conversations it started
+    /// (src/lib/cloud-guest.ts).
+    public var cloudGuest: Bool = false
+    public var openedThreads: [String] = []
+
+    /// `canWriteIn`: whether this device may write in a conversation.
+    /// Everywhere but a Cloud guest, always.
+    public func canWrite(in threadId: String) -> Bool {
+        !cloudGuest || openedThreads.contains(threadId)
+    }
 
     /// Whether this person may change their own photo from the phone.
     public var ownPhotoEditable: Bool { profileManagedBy == "perspicax" && kind == "session" && principalId != nil }
@@ -206,6 +217,7 @@ public struct AuthSession: Decodable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case kind, id, label, scopes, expiresAt, environmentId, email, owner, name, principalId, role, avatarUrl, profileManagedBy
+        case cloudGuest, openedThreads
     }
 
     public init(from decoder: Decoder) throws {
@@ -227,6 +239,8 @@ public struct AuthSession: Decodable, Equatable, Sendable {
         let avatar = try? values.decodeIfPresent(String.self, forKey: .avatarUrl)
         avatarUrl = avatar.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         profileManagedBy = try? values.decodeIfPresent(String.self, forKey: .profileManagedBy)
+        cloudGuest = (try? values.decodeIfPresent(Bool.self, forKey: .cloudGuest)) == true && kind == "session"
+        openedThreads = ((try? values.decodeIfPresent([String].self, forKey: .openedThreads)) ?? nil) ?? []
     }
 
     public var isAdmin: Bool { scopes.contains("admin") }

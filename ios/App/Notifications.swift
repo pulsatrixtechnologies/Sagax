@@ -49,7 +49,18 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         let update = UNNotificationCategory(
             identifier: NotificationApproval.updateCategory, actions: [], intentIdentifiers: [], options: []
         )
-        center.setNotificationCategories([plain, keyed, update])
+        // a question answered from the banner, without opening the app
+        let reply = UNTextInputNotificationAction(
+            identifier: NotificationApproval.replyAction,
+            title: String(localized: "Reply"),
+            options: [.authenticationRequired],
+            textInputButtonTitle: String(localized: "Send"),
+            textInputPlaceholder: String(localized: "Type your answer")
+        )
+        let question = UNNotificationCategory(
+            identifier: NotificationApproval.questionCategory, actions: [reply], intentIdentifiers: [], options: []
+        )
+        center.setNotificationCategories([plain, keyed, update, question])
     }
 
     func authorizationStatus() async -> UNAuthorizationStatus {
@@ -191,7 +202,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         let strings = Self.strings(from: response.notification.request.content.userInfo)
-        guard let decision = NotificationApproval.decide(actionIdentifier: response.actionIdentifier, info: strings) else {
+        let typed = (response as? UNTextInputNotificationResponse)?.userText
+        guard let decision = NotificationApproval.decide(actionIdentifier: response.actionIdentifier, info: strings, replyText: typed) else {
             completionHandler()
             return
         }
@@ -199,7 +211,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         case let .open(target):
             responseHandler?(target)
             completionHandler()
-        case .allow, .deny, .confirmKey:
+        case .allow, .deny, .confirmKey, .reply:
             if case .confirmKey = decision, let target = NotificationTarget(payload: strings) {
                 responseHandler?(target)
             }

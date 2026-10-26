@@ -53,11 +53,30 @@ final class NotificationApprovalTests: XCTestCase {
         XCTAssertEqual(NotificationApproval.afterRefusal(appActive: false), .deferToApp)
     }
 
-    func testOnlyAnApprovalWithARequestGetsActions() {
+    func testOnlyAnApprovalOrAQuestionWithARequestGetsActions() {
         XCTAssertEqual(NotificationApproval.category(kind: "approval", requestId: "r1", needsKey: false), NotificationApproval.category)
         XCTAssertEqual(NotificationApproval.category(kind: "approval", requestId: "r1", needsKey: true), NotificationApproval.keyCategory)
-        XCTAssertEqual(NotificationApproval.category(kind: "question", requestId: "q1", needsKey: false), NotificationApproval.updateCategory)
+        XCTAssertEqual(NotificationApproval.category(kind: "question", requestId: "q1", needsKey: false), NotificationApproval.questionCategory)
+        XCTAssertEqual(NotificationApproval.category(kind: "question", requestId: nil, needsKey: false), NotificationApproval.updateCategory)
         XCTAssertEqual(NotificationApproval.category(kind: "approval", requestId: nil, needsKey: false), NotificationApproval.updateCategory)
         XCTAssertEqual(NotificationApproval.category(kind: "done", requestId: nil, needsKey: false), NotificationApproval.updateCategory)
+    }
+
+    func testReplyAnswersTheQuestionWithTheTypedText() {
+        let info = ["threadId": "t1", "botId": "b1", "requestId": "q1", "kind": "approval", "prompt": "question"]
+        XCTAssertEqual(
+            NotificationApproval.decide(actionIdentifier: NotificationApproval.replyAction, info: info, replyText: "  Tuesday  "),
+            .reply(threadId: "t1", requestId: "q1", text: "Tuesday")
+        )
+        XCTAssertEqual(
+            NotificationApproval.decide(actionIdentifier: NotificationApproval.replyAction, info: info, replyText: "   "),
+            .open(NotificationTarget(botId: "b1", threadId: "t1")!),
+            "nothing typed: the conversation opens"
+        )
+        XCTAssertEqual(
+            NotificationApproval.decide(actionIdentifier: NotificationApproval.replyAction, info: ["threadId": "t1", "botId": "b1"], replyText: "yes"),
+            .open(NotificationTarget(botId: "b1", threadId: "t1")!),
+            "no request: nothing is sent"
+        )
     }
 }

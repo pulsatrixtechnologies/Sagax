@@ -200,6 +200,10 @@ struct BotComputerSettingsView: View {
     @State private var running: Action?
     @State private var confirming: Action?
     @State private var failure: String?
+    /// #1001: the bots working on the computer, while Update is offered.
+    @State private var workers: [WorkingBot] = []
+    @State private var stopping: Set<String> = []
+    @State private var stopError: String?
 
     enum Action: String, Identifiable {
         case update, reset, recover
@@ -222,13 +226,22 @@ struct BotComputerSettingsView: View {
                 } else {
                     SettingsRow(
                         title: "Update Computer",
-                        subtitle: "Moves your Bots' shared computer to the latest version. Files and logins stay, but installed apps and packages are removed.",
+                        subtitle: busy
+                            ? "An agent is working. Update will be available when every agent is done. Your files and logins stay, installed apps and packages are removed."
+                            : "Moves your Bots' shared computer to the latest version. Files and logins stay, but installed apps and packages are removed.",
                         accessory: running == .update ? .progress : .none,
                         style: .action,
-                        height: 89.33,
+                        height: busy ? 104 : 89.33,
                         identifier: "computer-update"
-                    ) { if running == nil { confirming = .update } }
+                    ) { if running == nil, !busy { confirming = .update } }
+                    .opacity(busy ? 0.6 : 1)
                     CardHairline(leadingInset: SettingsMetrics.rowInset)
+                    if busy {
+                        ForEach(workers, id: \.self) { bot in
+                            workingRow(bot)
+                            CardHairline(leadingInset: SettingsMetrics.rowInset)
+                        }
+                    }
                 }
                 SettingsRow(
                     title: "Reset Computer",
@@ -252,6 +265,15 @@ struct BotComputerSettingsView: View {
             // itself stays as in the reference.
         }
         .task { await load() }
+        // the list follows the computer live: a bot that finishes leaves it
+        // and Update comes back without a refresh
+        .task(id: showsRecover || status == nil) {
+            guard status != nil, !showsRecover else { workers = []; return }
+            while !Task.isCancelled {
+                await refreshWorkers()
+                try? await Task.sleep(nanoseconds: UInt64(ComputerWorkingBots.pollSeconds * 1_000_000_000))
+            }
+        }
         .confirmationDialog(confirmTitle, isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }), titleVisibility: .visible) {
             if let action = confirming {
                 Button(confirmLabel(action), role: action == .reset ? .destructive : nil) {
@@ -278,8 +300,67 @@ struct BotComputerSettingsView: View {
         }
     }
 
+    private var busy: Bool { !showsRecover && !workers.isEmpty }
+
+    /// A working bot by its name, with Stop (the id stays out of sight).
+    private func workingRow(_ bot: WorkingBot) -> some View {
+        let isStopping = stopping.contains(bot.id)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Text(verbatim: bot.name)
+                    .font(Theme.Font.body)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button {
+                    Task { await stop(bot) }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isStopping { ProgressView().controlSize(.mini) }
+                        Text(isStopping ? String(localized: "Stopping \(bot.name)…") : String(localized: "Stop \(bot.name)"))
+                            .lineLimit(1)
+                    }
+                    .font(.footnote.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .disabled(isStopping)
+                .accessibilityIdentifier("computer-stop-bot")
+            }
+            if stopError == bot.id {
+                Text("\(bot.name) could not be stopped. Try again.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.danger)
+            }
+        }
+        .padding(.horizontal, SettingsMetrics.rowInset)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("computer-working-bot")
+    }
+
+    /// Best effort: a failed read keeps the last list.
+    private func refreshWorkers() async {
+        guard let client = session.settingsClient, let bots = try? await client.workingBots() else { return }
+        workers = bots
+    }
+
+    private func stop(_ bot: WorkingBot) async {
+        guard let client = session.settingsClient else { return }
+        stopError = nil
+        stopping.insert(bot.id)
+        defer { stopping.remove(bot.id) }
+        do {
+            try await client.stopWorkingBot(bot)
+            await refreshWorkers()
+        } catch {
+            stopError = bot.id
+        }
+    }
+
     private var confirmMessage: LocalizedStringKey {
         switch confirming {
+        case .reset where busy: "A bot is working on this computer. Reset anyway? Its current task is cut short and the computer is rebuilt from the last snapshot. This cannot be undone."
         case .reset: LocalizedStringKey(resetDescription)
         case .recover: LocalizedStringKey(recoverDescription)
         default: "Installed apps and packages are removed. Files and logins stay."

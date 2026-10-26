@@ -16,6 +16,8 @@ export type PushKind = "message" | "nudge" | "approval" | "achievement" | "routi
 export const APPROVAL_CATEGORY = "SAGAX_APPROVAL";
 export const APPROVAL_KEY_CATEGORY = "SAGAX_APPROVAL_KEY";
 export const UPDATE_CATEGORY = "SAGAX_UPDATE";
+/** A question that names its request: the phone offers Reply with a text field. */
+export const QUESTION_CATEGORY = "SAGAX_QUESTION";
 
 export interface PushMessage {
   kind: PushKind;
@@ -80,9 +82,13 @@ export const NUDGE_SOUND = "nudge.caf";
 /** A short chime, distinct from the system sound and from the nudge (ios/App/approval.caf). */
 export const APPROVAL_SOUND = "approval.caf";
 
-/** Which category the phone registered. Questions and ordinary news have no actions. */
-export function pushCategory(message: Pick<PushMessage, "kind" | "prompt" | "needsKey">): string {
-  if (message.kind !== "approval" || message.prompt === "question") return UPDATE_CATEGORY;
+/** Which category the phone registered. A question that names its request
+ * gets Reply; ordinary news has no actions. */
+export function pushCategory(message: Pick<PushMessage, "kind" | "prompt" | "needsKey" | "requestId">): string {
+  if (message.kind === "approval" && message.prompt === "question") {
+    return message.requestId?.trim() ? QUESTION_CATEGORY : UPDATE_CATEGORY;
+  }
+  if (message.kind !== "approval") return UPDATE_CATEGORY;
   return message.needsKey ? APPROVAL_KEY_CATEGORY : APPROVAL_CATEGORY;
 }
 

@@ -153,7 +153,7 @@ struct RoutineEditorView: View {
                         RoutineRunAsPicker(options: options, selected: $runAs)
                     } label: {
                         HStack(spacing: 10) {
-                            PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24)
+                            PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24, avatarUrl: chosen?.avatarUrl)
                             Text("Runs as")
                             Spacer(minLength: 8)
                             Text(verbatim: name).foregroundStyle(Theme.textSecondary).lineLimit(1)
@@ -162,7 +162,7 @@ struct RoutineEditorView: View {
                     .accessibilityIdentifier("routine-editor-run-as")
                 } else {
                     HStack(spacing: 10) {
-                        PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24)
+                        PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24, avatarUrl: chosen?.avatarUrl)
                         Text(String(localized: "Runs as \(name)")).lineLimit(1)
                     }
                     .accessibilityElement(children: .combine)
@@ -321,6 +321,7 @@ struct RoutineEditorView: View {
             }
             .accessibilityIdentifier("routine-editor-repeat")
             RoutineScheduleFields(form: $form)
+            if form.recurrence != .none { RoutineTimingFields(form: $form) }
             if !isTeamGoal {
                 Toggle(isOn: $onlyWhenPresent) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -568,6 +569,45 @@ struct RoutineEditorView: View {
         if await session.saveRoutine(input, original: routine) != nil {
             await onSaved()
             dismiss()
+        }
+    }
+}
+
+// MARK: - Timing (RoutineTimingFields.tsx)
+
+/// "Timing" under Repeat, for a repeating routine: Exact starts at the
+/// scheduled time; Flexible starts somewhere between Early minutes before
+/// and Late minutes after it.
+struct RoutineTimingFields: View {
+    @Environment(\.themePalette) var themePalette
+    @Binding var form: RoutineScheduleForm
+
+    var body: some View {
+        Picker("Timing", selection: $form.timing) {
+            Text("Exact").tag(RoutineTimingMode.exact)
+            Text("Flexible").tag(RoutineTimingMode.flexible)
+        }
+        .accessibilityIdentifier("routine-editor-timing")
+        if form.timing == .flexible {
+            minutesField("Early", value: $form.earlyMinutes, label: "Early window minutes", id: "routine-editor-timing-early")
+            minutesField("Late", value: $form.lateMinutes, label: "Late window minutes", id: "routine-editor-timing-late")
+            Text("0 late means ready by the scheduled time.")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    private func minutesField(_ title: LocalizedStringKey, value: Binding<Int>, label: LocalizedStringKey, id: String) -> some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 8)
+            TextField("0", value: Binding(get: { value.wrappedValue }, set: { value.wrappedValue = max(0, $0) }), format: .number)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.trailing)
+                .frame(minWidth: 56)
+                .accessibilityLabel(Text(label))
+                .accessibilityIdentifier(id)
+            Text("min").foregroundStyle(Theme.textSecondary)
         }
     }
 }
@@ -824,7 +864,7 @@ struct RoutineRunAsPicker: View {
                         dismiss()
                     } label: {
                         HStack(spacing: 10) {
-                            PersonAvatar(initials: People.initials(RoutineRunAsField.name(person)), size: 28)
+                            PersonAvatar(initials: People.initials(RoutineRunAsField.name(person)), size: 28, avatarUrl: person.avatarUrl)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(verbatim: RoutineRunAsField.name(person))
                                     .foregroundStyle(person.selectable ? Theme.textPrimary : Theme.textTertiary)

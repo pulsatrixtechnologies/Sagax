@@ -91,6 +91,8 @@ struct ChatView: View {
     @StateObject var follow = BottomFollow()
     @StateObject var citations = CitationDrafts()
     @State var shareFile: ShareFile?
+    /// The bot's "Share as Template" sheet (a public template link).
+    @State var sharingTemplate: Bot?
     @State var showingPhotoPicker = false
     /// The composer's "+" > Take Photo: the system camera.
     @State var showingCamera = false
@@ -284,6 +286,10 @@ struct ChatView: View {
         }
         .sheet(item: $shareFile) { file in
             ActivityShareSheet(items: [file.url])
+        }
+        .sheet(item: $sharingTemplate) { bot in
+            ShareTemplateSheet(bot: bot)
+                .environmentObject(session)
         }
         .photosPicker(
             isPresented: $showingPhotoPicker,

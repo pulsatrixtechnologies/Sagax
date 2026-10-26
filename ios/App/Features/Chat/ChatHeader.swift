@@ -166,6 +166,10 @@ extension ChatView {
         }
         .accessibilityIdentifier("chat-more.share")
         if case let .bot(bot) = current {
+            Button { sharingTemplate = bot } label: {
+                Label(String(localized: "Share as Template"), systemImage: "link")
+            }
+            .accessibilityIdentifier("chat-more.share-template")
             Button {
                 UIPasteboard.general.string = bot.id
                 Haptics.selection()
