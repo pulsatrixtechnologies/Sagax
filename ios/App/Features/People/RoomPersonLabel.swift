@@ -11,6 +11,8 @@ struct RoomPersonLabel: View {
     let name: String
     let initials: String
     let personId: String?
+    /// The conversation it sits in (no Message on their sheet inside theirs).
+    var roomId: String? = nil
 
     var body: some View {
         let face = HStack(spacing: 6) {
@@ -24,7 +26,7 @@ struct RoomPersonLabel: View {
         Group {
             if let personId {
                 Button {
-                    PeopleDirectory.shared.showPerson(personId)
+                    PeopleDirectory.shared.showPerson(personId, fromRoomId: roomId)
                 } label: { face }
                 .buttonStyle(.plain)
                 .accessibilityHint(Text(String(localized: "View \(name)'s profile")))

@@ -4,11 +4,16 @@
 // them, hide or show them in your sidebar, and for an admin, their page in
 // the Perspicax console). Nothing from a private thread shows here.
 // Profile is the default tab (email, teams, groups). The Achievements tab
-// is one Xbox-like member card: large avatar, chosen title, gamerscore and
-// the unlocked list in the same block, each only when the public card
-// carried it ("Show my title", "Show my points"). Title and points never
-// sit on the name line. A private card stays a private note: nobody reads
-// another person's record, and the tab says they keep achievements private.
+// (AchievementsPanel.tsx, 2026-10-26) is drawn for the narrow column: a
+// compact summary (level, chosen title, points and a bar to the next level),
+// the last unlocks, then every achievement as a grid of icons; title and
+// points only when the public card carried them ("Show my title", "Show my
+// points"). It never repeats the avatar and name of the header. Title and
+// points never sit on the name line. A private card stays a private note:
+// nobody reads another person's record, and the tab says they keep
+// achievements private. Message hides while the viewer is already in their
+// conversation with this person (2026-10-26); from a group or elsewhere it
+// stays.
 import { useState } from "react";
 import { ExternalLink, Mail, MessageSquare, PanelRight, Users } from "lucide-react";
 
@@ -33,8 +38,8 @@ import { hiddenKey, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden
 import { BotAvatar } from "./Avatar";
 import { PersonConnectionsSection } from "./PersonConnectionsSection";
 import { PersonAvatar } from "./MessageAuthor";
-import { achievementTitleName, MemberCard, publicMemberRows } from "./achievements/MemberCard";
-import { formatPoints } from "./achievements/AchievementsPage";
+import { achievementTitleName } from "./achievements/MemberCard";
+import { AchievementsPanel } from "./achievements/AchievementsPanel";
 import { usePublicAchievement } from "@/lib/public-achievements";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { useOrgDirectory } from "./GroupPeoplePicker";
@@ -82,7 +87,9 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const bots = personSharedBots(state.bots, personId);
   const dm = personDmGroup(state.groups, personId);
   const manageUrl = personManageUrl(person, org?.viewerRole ?? null);
-  const canMessage = canMessagePerson(person, viewerId);
+  // already in the conversation with them: Message would only reopen it
+  const inTheirDm = Boolean(dm && state.activeView === "chat" && state.selectedId === dm.id);
+  const canMessage = canMessagePerson(person, viewerId) && !inTheirDm;
   const isHidden = hidden.items.some((item) => hiddenKey(item.kind, item.id) === hiddenKey("person", personId));
   const label = usePersonLabel(personId);
   const mayEditLabel = canEditPersonLabel({
@@ -96,8 +103,7 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
   const titleName = publicCard ? achievementTitleName(publicCard.title) : null;
   // the person's own "Show my points" / "Show my title": the server leaves
   // what they hid off the card, for everyone, the viewer included
-  const pointsText = publicCard?.points !== undefined ? formatPoints(publicCard.points) : null;
-  const achievementRows = publicCard ? publicMemberRows(publicCard.unlocked) : [];
+  const ownPanel = personId.trim().toLowerCase() === viewerId;
   const [tab, setTab] = useState<"profile" | "achievements">("profile");
   const tabs = ["profile", "achievements"] as const;
   const dockedPanel = useDockedPanelWidth();
@@ -267,16 +273,11 @@ export function PersonPanel({ personId, directory: given }: { personId: string; 
           className="px-4 pb-6 pt-2"
         >
           {publicCard ? (
-            <MemberCard
-              variant="panel"
-              name={name}
-              initials={personInitials(name)}
-              avatarUrl={avatarUrl}
+            <AchievementsPanel
+              card={publicCard}
               title={titleName}
-              pointsText={pointsText}
-              level={publicCard.level}
-              rows={achievementRows}
-              emptyText={achievementRows.length === 0 ? t("personPanel.achievements.empty") : undefined}
+              emptyText={publicCard.unlocked.length === 0 ? t("personPanel.achievements.empty") : undefined}
+              onOpenPage={ownPanel ? () => dispatch({ type: "toggleAchievements", open: true }) : undefined}
             />
           ) : <p className="text-[12.5px] text-ink-secondary">{t("personPanel.achievements.private")}</p>}
         </div>

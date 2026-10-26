@@ -639,7 +639,7 @@ struct ChatView: View {
                                 }
                                 // WP15 (RM21): another person's name over their run
                                 if case let .person(_, name, initials, personId)? = roomPersonLabel(at: index, in: transcript) {
-                                    RoomPersonLabel(name: name, initials: initials, personId: personId)
+                                    RoomPersonLabel(name: name, initials: initials, personId: personId, roomId: { if case let .room(room) = current { return room.id } else { return nil } }())
                                 }
                                 switch row {
                                 case let .message(message):

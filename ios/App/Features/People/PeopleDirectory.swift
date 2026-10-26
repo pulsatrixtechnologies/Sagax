@@ -18,6 +18,9 @@ final class PeopleDirectory: ObservableObject {
     @Published private(set) var viewerIsAdmin = false
     /// The person whose sheet is open, wherever it was asked for.
     @Published var sheetPersonId: String?
+    /// The conversation the sheet was opened from, if any: inside their
+    /// direct conversation the sheet offers no Message.
+    @Published var sheetFromRoomId: String?
     @Published var opening = false
     /// Who is online, away or offline (#167); empty off an organization server.
     @Published private(set) var presence = PresenceBook()
@@ -168,8 +171,9 @@ final class PeopleDirectory: ObservableObject {
         }
     }
 
-    func showPerson(_ id: String) {
+    func showPerson(_ id: String, fromRoomId: String? = nil) {
         Haptics.selection()
+        sheetFromRoomId = fromRoomId
         sheetPersonId = id
     }
 
@@ -337,7 +341,7 @@ private struct PersonSheetPresenter: ViewModifier {
             get: { people.sheetPersonId.map(PersonRef.init) },
             set: { people.sheetPersonId = $0?.id }
         )) { ref in
-            PersonSheet(personId: ref.id) { chat in
+            PersonSheet(personId: ref.id, openedFromRoomId: people.sheetFromRoomId) { chat in
                 people.sheetPersonId = nil
                 onOpenChat(chat)
             }
