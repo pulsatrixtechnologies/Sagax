@@ -1008,6 +1008,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "quota" });
   });
 
+  it("settles a turn whose model's extra-usage credits ran out as quota, without holding the engine", async () => {
+    const resetsAt = Math.floor(Date.now() / 1000) + 11 * 86_400;
+    const credits = { status: "rejected", resetsAt, overageDisabledReason: "out_of_credits", isUsingOverage: false, errorCode: "credits_required" };
+    await create("usage-limit", { FAKE_CLAUDE_RATE_LIMIT: JSON.stringify(credits) });
+    await instance.adapter.sendTurn({ threadId: "t-credits", text: "continue" });
+    await recorder.until((event) => event.type === "turn.completed");
+    const errors = recorder.events.filter((event) => event.type === "runtime.error");
+    expect(errors).toEqual([expect.objectContaining({ message: claudeLimitMessage({ window: null, resetsAt, credits: true }), limitScope: "model" })]);
+    expect((errors[0] as any).message).toContain("those credits are used up");
+    expect(errors[0]).not.toHaveProperty("limitResetsAt");
+    expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "quota" });
+  });
+
   // Pesto on 2.1.272 (Oct 8-9): the CLI's rate_limit_event refused the
   // account's week while the call's error said "does not support this model".
   // The person was offered the update, took it, and met the same refusal.

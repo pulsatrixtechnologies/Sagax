@@ -234,6 +234,10 @@ export interface ClaudeLimit {
   window: string | null;
   /** when that window reopens, in epoch seconds; null when unsaid */
   resetsAt: number | null;
+  /** The plan still had room: this model runs on extra usage and its
+   * credits are used up, so `resetsAt` is the billing period's reset and
+   * other models on the same account keep working. */
+  credits?: true;
 }
 
 /** The window a CLI's `rate_limit_info` says refuses this account, or null
@@ -245,11 +249,12 @@ export interface ClaudeLimit {
  * the turn on usage credits, so only a refusal without them counts. */
 export function claudeLimitRefusal(info: unknown): ClaudeLimit | null {
   if (!info || typeof info !== "object") return null;
-  const { status, rateLimitType, resetsAt, isUsingOverage } = info as Record<string, unknown>;
+  const { status, rateLimitType, resetsAt, isUsingOverage, errorCode, overageDisabledReason } = info as Record<string, unknown>;
   if (status !== "rejected" || isUsingOverage === true) return null;
   return {
     window: typeof rateLimitType === "string" ? rateLimitType : null,
     resetsAt: typeof resetsAt === "number" && Number.isFinite(resetsAt) && resetsAt > 0 ? resetsAt : null,
+    ...(errorCode === "credits_required" || overageDisabledReason === "out_of_credits" ? { credits: true as const } : {}),
   };
 }
 
@@ -280,6 +285,26 @@ const CLAUDE_LIMIT_NAMES: Record<string, string> = {
   seven_day_sonnet: "weekly Sonnet limit",
 };
 
+/** A weekly window for one model family (seven_day_opus, seven_day_sonnet…),
+ * not the overage windows. */
+const modelWindow = (window: string | null | undefined): boolean => /^seven_day_(?!overage)[a-z]+$/.test(window ?? "");
+
+/** What a refused turn's runtime.error says about the engine. Only a window
+ * every model shares holds the whole engine until it resets; a credits
+ * refusal or one model's weekly window is `limitScope: "model"`, which
+ * leaves the engine free for its other models
+ * (server/limit-failover-host.ts). A credits refusal's reset is the billing
+ * period's, no countdown to wait for, so it carries no `limitResetsAt`. */
+export function claudeLimitFields(limit: ClaudeLimit | null | undefined, now = Date.now()): { limitResetsAt?: number; limitScope?: "model" } {
+  if (!limit) return {};
+  if (limit.credits) return { limitScope: "model" };
+  const resetsAt = limit.resetsAt ? limit.resetsAt * 1_000 : undefined;
+  return {
+    ...(resetsAt && resetsAt > now ? { limitResetsAt: resetsAt } : {}),
+    ...(modelWindow(limit.window) ? { limitScope: "model" as const } : {}),
+  };
+}
+
 /** One plain line for a turn its account's usage limit refused: which limit,
  * when it reopens, and what runs before then — a model's own weekly limit
  * leaves the account's other models running. Nothing to install, sign in to
@@ -287,8 +312,12 @@ const CLAUDE_LIMIT_NAMES: Record<string, string> = {
  * clock names it; with no reset to write, the CLI's own words (`said`) are
  * quoted, as they may carry one. */
 export function claudeLimitMessage(limit: ClaudeLimit | null, said?: string, now = Date.now(), timeZone = hostTimeZone()): string {
+  if (limit?.credits) {
+    return "Claude refused this turn because this model runs on extra usage for your account, and those credits are used up. " +
+      "Your plan's own usage is not affected: switch this bot to a model your plan includes, or add extra usage in your Claude account.";
+  }
   const name = limit?.window && Object.hasOwn(CLAUDE_LIMIT_NAMES, limit.window) ? CLAUDE_LIMIT_NAMES[limit.window] : "usage limit";
-  const meanwhile = /^seven_day_(?:opus|sonnet)$/.test(limit?.window ?? "") ? "choose another model for this bot" : "switch this bot to another engine or Claude account";
+  const meanwhile = modelWindow(limit?.window) ? "choose another model for this bot" : "switch this bot to another engine or Claude account";
   if (limit?.resetsAt && limit.resetsAt * 1000 > now) {
     let resets: string;
     try {
@@ -2603,9 +2632,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         t.limitReached = t.explained = true;
         t.limit = claudeLimitRefusal(frame.api_error_params?.rate_limit_info) ?? t.limit;
         const said = typeof words === "string" && USAGE_LIMIT.test(words) ? words : undefined;
-        const resetsAt = t.limit?.resetsAt ? t.limit.resetsAt * 1_000 : undefined;
         emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeLimitMessage(t.limit ?? null, said),
-          ...(resetsAt && resetsAt > Date.now() ? { limitResetsAt: resetsAt } : {}) });
+          ...claudeLimitFields(t.limit) });
       };
       // The process's first result with a cost says what --resume restored,
       // which its turns are measured from; every result is kept for a later

@@ -12374,7 +12374,7 @@ function limitClockText(at: number): string {
 }
 bus.subscribe((event: RuntimeEvent) => {
   if (shouldIgnoreProviderEvent(event)) return;
-  if (event.type === "runtime.error") limitFailover.noteError(event.threadId, event.message, event.limitResetsAt);
+  if (event.type === "runtime.error") limitFailover.noteError(event.threadId, event.message, event.limitResetsAt, event.limitScope);
   else if (event.type === "turn.completed" && event.ok) limitFailover.turnSucceeded(event.threadId);
 });
 /** Threads whose running turn a client abort ended (the abort sentence as
