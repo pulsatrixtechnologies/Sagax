@@ -86,7 +86,11 @@ describe("foot mode", () => {
     expect(source).toContain("shrink-0 px-1");
     expect(source).toContain("-space-x-[9px]");
     expect(source).toContain("size-[15px]");
-    expect(source).not.toContain("flex-wrap");
+    // stacked, the label is never cut: it does not shrink and the pill never
+    // gets narrower than its content (a really narrow row wraps instead)
+    expect(source).toContain("min-w-max flex-1");
+    expect(source).toContain('data-connect-apps-label="" className="shrink-0 whitespace-nowrap"');
+    expect(source).not.toContain("truncate");
   });
 
   it("Sidebar.tsx lays the foot out with SidebarFoot, not a bare text button", () => {

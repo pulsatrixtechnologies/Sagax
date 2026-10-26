@@ -119,11 +119,11 @@ export function FootConnectApps({ apps, mode, onOpen }: { apps: readonly PluginI
       title={label}
       className={cn(
         "flex h-[var(--foot-tile-h,2.25rem)] items-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card text-sidebar-ink-secondary transition-colors hover:bg-sidebar-elevated-hover hover:text-sidebar-ink",
-        stacked ? "min-w-0 flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1.5",
+        stacked ? "min-w-max flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1.5",
       )}
     >
       {apps.length === 0 && <Puzzle size={16} aria-hidden="true" className="shrink-0" />}
-      {stacked && <span data-connect-apps-label="" className="min-w-0 truncate">{label}</span>}
+      {stacked && <span data-connect-apps-label="" className="shrink-0 whitespace-nowrap">{label}</span>}
       {apps.length > 0 && <ConnectedAppsStack apps={apps} />}
     </button>
   );
@@ -141,7 +141,7 @@ export function SidebarFoot({ places, onOpenApps }: { places?: SidebarMenuItem[]
     <div
       ref={rowRef}
       data-sidebar-account-row
-      className="flex items-center gap-1.5 [container-type:inline-size]"
+      className={cn("flex items-center gap-1.5 [container-type:inline-size]", stacked && "flex-wrap")}
       data-foot-mode={mode}
     >
       {stacked ? <SidebarProfileMenu avatarOnly places={places} /> : <SidebarProfileMenu avatarOnly withName places={places} />}
