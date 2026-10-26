@@ -44,9 +44,9 @@ export interface ExportTranscriptMenuProps {
 }
 
 /**
- * The conversation's one "..." button (JC, 2026-10-14): Copy as Markdown,
+ * The conversation's one "..." button (2026-10-14): Copy as Markdown,
  * then Export (download the transcript, export the bot as a .zip; a
- * submenu once there are both, JC 2026-10-16), then the Inspector and the
+ * submenu once there are both, 2026-10-16), then the Inspector and the
  * Data window when they are on. It replaces the separate Share, Inspector
  * and Data buttons of the chat header and the bot panel.
  */
@@ -137,7 +137,7 @@ export function ExportTranscriptMenu({
     setOpen(false);
   };
 
-  // Grok Bot's sections, Cursor's rule (JC, 2026-10-16): Copy, then the
+  // The reference design's sections, Cursor's rule (2026-10-16): Copy, then the
   // exports (a submenu once there are two), then the tools. Nothing here
   // deletes, so there is no red last section.
   const exports: Array<{ key: string; label: string; icon: ReactNode; onSelect: () => void; attr?: Record<string, string> }> = [];

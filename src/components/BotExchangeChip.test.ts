@@ -7,7 +7,7 @@ import { setLocale } from "@/lib/i18n";
 import type { Message } from "@/state/store";
 import { BotExchangeChip } from "./BotExchangeChip";
 
-const NOTE = "[Message from @Cryptic, another bot in this Sagax workspace. Reply to them.]\n\nWhich database?";
+const NOTE = "[Message from @Quasar, another bot in this Sagax workspace. Reply to them.]\n\nWhich database?";
 
 beforeAll(() => {
   vi.stubGlobal("window", {});
@@ -18,9 +18,9 @@ afterAll(() => vi.unstubAllGlobals());
 function run(steps: Message[] = []) {
   const now = Date.now();
   const messages = [
-    { id: "p", role: "user", kind: "text", text: NOTE, at: now, peerAsk: { botId: "cry", name: "Cryptic" } },
+    { id: "p", role: "user", kind: "text", text: NOTE, at: now, peerAsk: { botId: "cry", name: "Quasar" } },
     ...steps,
-    { id: "r", role: "bot", kind: "text", text: "unRAID → Cryptic, pour info", at: now + 1000, requestMessageId: "p" },
+    { id: "r", role: "bot", kind: "text", text: "unRAID → Quasar, pour info", at: now + 1000, requestMessageId: "p" },
   ] as Message[];
   const items = collapseBotExchanges(messages, {
     selfBotId: "un",
@@ -36,7 +36,7 @@ describe("BotExchangeChip", () => {
     const markup = renderToStaticMarkup(createElement(BotExchangeChip, { run: run() }));
     expect(markup).toContain("Go to conversation");
     expect(markup).not.toContain("2 messages with");
-    expect(markup).toContain("Cryptic");
+    expect(markup).toContain("Quasar");
     expect(markup).not.toContain("Which database?");
     expect(markup).not.toContain("pour info");
     expect(markup).not.toContain("bot-exchange-sheet");
@@ -90,13 +90,13 @@ describe("BotExchangeChip", () => {
     expect(markup).toContain('data-testid="bot-exchange-close"');
     expect(markup).toContain("Which database?");
     expect(markup).not.toContain("another bot in this Sagax");
-    expect(markup).toContain("unRAID → Cryptic, pour info");
+    expect(markup).toContain("unRAID → Quasar, pour info");
     expect(markup).toContain("Close Chat");
     expect(markup).toContain("Today");
     expect(markup).toContain('data-testid="transcript-date"');
     expect(markup).toContain("self-end pb-1 text-[11px] tabular-nums");
     expect(markup).toContain(">unRAID<");
-    expect(markup).toContain(">Cryptic<");
+    expect(markup).toContain(">Quasar<");
     expect(markup).toContain("absolute inset-0");
     expect(markup).not.toContain("fixed");
     expect(markup).not.toContain("document.body");

@@ -192,7 +192,7 @@ export interface ScreenPickerItem {
   dot?: ScreenDot;
 }
 
-/** The one small dot of a screen, right of its name (JC 2026-10-15: never
+/** The one small dot of a screen, right of its name (2026-10-15: never
  * two). Its colour is the screen's state (src/lib/screen-status.ts: green
  * online, yellow asleep or waking, grey offline); where the bot works is said
  * in its label and tooltip ("Offline · this bot works here"). A screen whose

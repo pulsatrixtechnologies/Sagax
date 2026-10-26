@@ -133,7 +133,7 @@ export function installChoices(platform: string | undefined): InstallChoice[] {
 }
 
 /** Opening the Local VM row runs the one-click setup by itself when a check
- * is not ready and what is missing needs nothing from the person (JC,
+ * is not ready and what is missing needs nothing from the person (the maintainer,
  * 2026-10-16): create the VM, repair Sagax's own broken one, start a
  * stopped engine or VM. Never an install (no runtime), never a foreign
  * container (or one holding the viewer's port), never while the person

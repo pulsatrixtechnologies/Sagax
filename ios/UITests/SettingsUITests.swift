@@ -42,7 +42,7 @@ final class SettingsUITests: XCTestCase {
         return app
     }
 
-    /// The root's Bot card (auto-review, time zone), as Grok Bot iOS 1.14
+    /// The root's Bot card (auto-review, time zone), as the reference design iOS 1.14
     /// groups it.
     @MainActor
     private func launchBotCard() -> XCUIApplication {
@@ -206,7 +206,7 @@ final class SettingsUITests: XCTestCase {
         })
         // added: the row shows its status, no button
         XCTAssertTrue(eventually(15) { !app.element("connect-apps-action.featured:deepwiki").exists })
-        // its page, as Grok Bot iOS 1.14 draws the plugin sheet: the header,
+        // its page, as the reference design iOS 1.14 draws the plugin sheet: the header,
         // Added in the floating capsule, Uninstall in the "..." menu
         let row = app.descendants(matching: .any).matching(NSPredicate(
             format: "identifier BEGINSWITH 'connect-apps-row.' AND identifier CONTAINS 'deepwiki'"

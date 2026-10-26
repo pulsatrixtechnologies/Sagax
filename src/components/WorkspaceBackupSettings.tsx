@@ -36,7 +36,7 @@ export function WorkspaceBackupRestartNotice({ onRetry }: { onRetry?: () => void
   </div>;
 }
 
-/** What to reconnect after a restore (JC 2026-10-18: no secret in a
+/** What to reconnect after a restore (2026-10-18: no secret in a
  * backup): one line per category with its count, never a name or a value. */
 export function WorkspaceBackupReconnectList({ reconnect, title, intro }: { reconnect?: WorkspaceBackupReconnect | null; title: string; intro?: string }) {
   const entries = WORKSPACE_BACKUP_RECONNECT.flatMap((category) => {
@@ -178,7 +178,7 @@ function WorkspaceBackupForm() {
   });
 
   const disabled = busy !== null || !status || status.busy || Boolean(status.pendingRestore);
-  // 0.5.6 (JC): Grok Bot's layout. A grey "Full backup" heading (what is
+  // 0.5.6: the reference design's layout. A grey "Full backup" heading (what is
   // included behind its info button), then two rows, Export and Restore,
   // each a pill that opens its form under the row. Replacing the
   // installation is a red pill, after the typed REPLACE.

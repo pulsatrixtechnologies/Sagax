@@ -402,7 +402,7 @@ async function hoverControls(win, all) {
 }
 
 /** The fake call of scripts/verify-voice-mode.ts, as the brain would show it: the person's sentence, then the bot's answer in 4 s sentences. */
-const FAKE_HEARD = "Hello Cryptic from voice mode";
+const FAKE_HEARD = "Hello Quasar from voice mode";
 const FAKE_ANSWER = ["Hello! I can hear you clearly from the desktop mascot.", "Ask me anything and I will answer out loud."];
 function fakeCall(phase, extra = {}) {
   return {

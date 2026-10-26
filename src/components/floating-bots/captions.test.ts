@@ -10,8 +10,8 @@ describe("captionFeed", () => {
   it("the person's words as heard, the same caption while they grow", () => {
     const first = captionFeed(null, { phase: "hearing", line: "Hello", now: 100 });
     expect(first).toEqual({ who: "you", text: "Hello", since: 100 });
-    const more = captionFeed(first, { phase: "hearing", line: "Hello  Cryptic\nfrom", now: 400 });
-    expect(more).toEqual({ who: "you", text: "Hello Cryptic from", since: 100 });
+    const more = captionFeed(first, { phase: "hearing", line: "Hello  Quasar\nfrom", now: 400 });
+    expect(more).toEqual({ who: "you", text: "Hello Quasar from", since: 100 });
   });
 
   it("each sentence of the bot's answer starts revealing when it is heard", () => {

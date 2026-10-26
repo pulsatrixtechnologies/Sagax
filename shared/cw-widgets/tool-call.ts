@@ -48,7 +48,7 @@ export function isCwTool(toolName: string): boolean {
  * person's profile has "Vues interactives" on, and called only when a view
  * was wanted. The one ConnectWise call whose result is drawn as a widget on
  * its tool row; any other call stays an ordinary row and the bot answers in
- * text (JC 2026-10-20: vues CW seulement sur demande). */
+ * text (2026-10-20: vues CW seulement sur demande). */
 export function isCwViewTool(toolName: string | undefined): boolean {
   if (!toolName) return false;
   const words = cwToolWords(toolName);

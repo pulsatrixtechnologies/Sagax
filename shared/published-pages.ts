@@ -1,4 +1,4 @@
-// Published pages (2026-10-16, parity with Grok Bot's canvases): a bot
+// Published pages (2026-10-16, parity with the reference design's canvases): a bot
 // proposes a page (HTML, Markdown or a small one-file static app) from a
 // conversation; the person reviews it on its card and publishes it, choosing
 // who can see it. Shared by the server (server/published-pages.ts) and the
@@ -49,7 +49,7 @@ export const PAGE_LIMITS = {
   commentChars: 2000,
   /** Annotations kept in the viewer and sent in one message. */
   annotations: 50,
-  /** Reader comments (JC 2026-10-21): kept per page, waiting per page, the
+  /** Reader comments (2026-10-21): kept per page, waiting per page, the
    * name and text a reader may write, and posts per address per window. */
   readerComments: 200,
   readerCommentsPending: 50,

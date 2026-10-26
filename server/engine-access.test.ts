@@ -157,11 +157,11 @@ describe("the admin gate on a member's bot", () => {
   // their own rights; the admin only what goes beyond them.
   const ownerGate = (tool: string, command?: unknown) => memberBotAdminApproval({
     tool, command, workspaceRoot: root,
-    ownerScopedMcpServer: (server) => server === "perspicax_gox" || server === "my_remote",
+    ownerScopedMcpServer: (server) => server === "perspicax_quasar" || server === "my_remote",
   });
   it("lets the owner answer a tool of a remote or personal MCP server and a web search", () => {
-    expect(ownerGate("mcp__perspicax_gox__cw_psa__query")).toBe(false);
-    expect(ownerGate("perspicax_gox__cw_psa__write")).toBe(false);
+    expect(ownerGate("mcp__perspicax_quasar__cw_psa__query")).toBe(false);
+    expect(ownerGate("perspicax_quasar__cw_psa__write")).toBe(false);
     expect(ownerGate("mcp__my_remote__create_issue")).toBe(false);
     expect(ownerGate("WebSearch")).toBe(false);
     expect(ownerGate("TodoWrite")).toBe(false);
@@ -192,10 +192,10 @@ describe("the admin gate on a member's bot", () => {
     expect(ownerGate("other")).toBe(true);
     // a remote server tool named like a shell is still a command
     expect(ownerGate("mcp__my_remote__run_shell")).toBe(true);
-    expect(ownerGate("mcp__perspicax_gox__query", { command: "ls", cwd: root })).toBe(true);
+    expect(ownerGate("mcp__perspicax_quasar__query", { command: "ls", cwd: root })).toBe(true);
   });
   it("sends every MCP tool to an admin when nothing says which servers are the owner's", () => {
-    expect(gate("mcp__perspicax_gox__cw_psa__query")).toBe(true);
+    expect(gate("mcp__perspicax_quasar__cw_psa__query")).toBe(true);
   });
 });
 

@@ -71,7 +71,7 @@
 &lt;/ul&gt;
 &lt;p&gt;macOS builds are signed with a Developer ID and notarized by Apple. Windows (x64 and arm64, one installer) is unsigned: SmartScreen shows an unknown publisher; choose More info, then Run anyway.&lt;/p&gt;</content>
     <author>
-      <name>jencryzthers</name>
+      <name>sagax-maintainer</name>
     </author>
     <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/7398629?s=60&amp;v=4"/>
   </entry>
@@ -147,7 +147,7 @@
 &lt;h2&gt;Apparence&lt;/h2&gt;
 &lt;ul&gt;
 &lt;li&gt;&lt;strong&gt;Nouvelle icône&lt;/strong&gt; : le logo Pulsatrix devient l&#39;icône par défaut sur macOS, Windows, Linux, le web et iOS. Le hibou reste offert dans le sélecteur sous le nom « Hibou ».&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Midnight&lt;/strong&gt; : le thème Midnight reprend le thème sombre de Grok Bot, en gris neutres.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Midnight&lt;/strong&gt; : le thème Midnight reprend le thème sombre de référence, en gris neutres.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Skins de mascotte&lt;/strong&gt; : tous les skins sont visibles dans Réglages du bot &amp;gt; Apparence. Ceux qui restent à gagner portent un cadenas et nomment le succès qui les débloque ; un skin gagné débloque sa mascotte.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Raccourcis dans la barre latérale&lt;/strong&gt; (Réglages &amp;gt; Apparence, mode Avancé) : Applications connectées et Parcourir les bots au pied de la barre latérale.&lt;/li&gt;
 &lt;/ul&gt;
@@ -179,7 +179,7 @@
 &lt;li&gt;&lt;strong&gt;YouTube videos&lt;/strong&gt; play in a player in the thread instead of an Open card. &lt;strong&gt;ConnectWise widgets&lt;/strong&gt; render reliably: the bot knows the exact format.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Live videos and recordings&lt;/strong&gt; relayed by Sagax now play in Chrome, on Windows and on iPhone and iPad, not only in Safari. The relay refuses internal and private addresses; administrators can allow hosts with &lt;code&gt;SAGAX_MEDIA_PROXY_ALLOW_HOSTS&lt;/code&gt;.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;New icon&lt;/strong&gt;: the Pulsatrix logo is the default icon on macOS, Windows, Linux, the web and iOS. The owl stays available in the picker as &quot;Owl&quot;.&lt;/li&gt;
-&lt;li&gt;&lt;strong&gt;Midnight&lt;/strong&gt; now matches Grok Bot&#39;s dark theme, in neutral greys.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Midnight&lt;/strong&gt; now matches the reference dark theme, in neutral greys.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Tool permissions in observation&lt;/strong&gt;: every tool call now goes through a permission check that records what it would have refused, without blocking anything yet.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Security hardening&lt;/strong&gt;: a series of security fixes in how text, notes and transcripts are processed.&lt;/li&gt;
 &lt;li&gt;&lt;strong&gt;Updated terminal&lt;/strong&gt;: the built-in terminal moves to a new version of its display engine.&lt;/li&gt;
@@ -189,7 +189,7 @@
 &lt;/ul&gt;
 &lt;p&gt;macOS builds are signed with a Developer ID and notarized by Apple. Windows (x64 and arm64, one installer) is unsigned: SmartScreen shows an unknown publisher; choose More info, then Run anyway.&lt;/p&gt;</content>
     <author>
-      <name>jencryzthers</name>
+      <name>sagax-maintainer</name>
     </author>
     <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/7398629?s=60&amp;v=4"/>
   </entry>
@@ -255,7 +255,7 @@
 &lt;/ul&gt;
 &lt;p&gt;macOS builds are signed with a Developer ID and notarized by Apple. Windows (x64 and arm64, one installer) is unsigned: SmartScreen shows an unknown publisher; choose More info, then Run anyway.&lt;/p&gt;</content>
     <author>
-      <name>jencryzthers</name>
+      <name>sagax-maintainer</name>
     </author>
     <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/u/7398629?s=60&amp;v=4"/>
   </entry>

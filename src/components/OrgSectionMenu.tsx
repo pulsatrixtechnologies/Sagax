@@ -22,7 +22,7 @@ export interface OrgSectionMenuActions {
 /** Which items a section's menu shows: General and the empty list area
  * move and fold; one of the person's own sections also renames and deletes
  * (its items go back to General). A team is made from a bot's right-click
- * menu, Move to › New team… (JC, 2026-10-15), not typed in the sidebar. */
+ * menu, Move to › New team… (2026-10-15), not typed in the sidebar. */
 export function orgSectionMenuItems(input: { named: boolean; canMoveUp: boolean; canMoveDown: boolean; anyExpanded: boolean }): Array<keyof OrgSectionMenuActions> {
   const items: Array<keyof OrgSectionMenuActions> = [];
   if (input.named) items.push("onRename");
@@ -43,8 +43,8 @@ const ITEM_KEYS = {
 } as const satisfies Record<keyof OrgSectionMenuActions, { label: string; Icon: typeof Pencil }>;
 
 /** The section a menu item belongs to: organize (rename, move), view
- * (fold), then Delete alone in red, each set apart by a divider (Grok Bot's
- * sections, JC 2026-10-16). */
+ * (fold), then Delete alone in red, each set apart by a divider (the reference design's
+ * sections, 2026-10-16). */
 const ITEM_SECTION: Record<keyof OrgSectionMenuActions, number> = {
   onRename: 0, onMoveUp: 0, onMoveDown: 0, onCollapseAll: 1, onExpandAll: 1, onDelete: 2,
 };

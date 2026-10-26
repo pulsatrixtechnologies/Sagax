@@ -1,4 +1,4 @@
-// Every setting is an action (JC, 2026-10-19): "Tout doit être modifiable
+// Every setting is an action (2026-10-19): "Tout doit être modifiable
 // via les bots. Absolument tout. Même logique qu'un paiement, qu'un
 // changement de masse ou qu'une simple application."
 //
@@ -32,7 +32,7 @@
 //    Full or Custom (those need the owner's explicit consent on a card).
 // 6. Otherwise it runs, and the audit journal records it.
 //
-// 2026-10-20 (JC: "le bot principal doit pouvoir absolument tout faire"):
+// 2026-10-20 ("le bot principal doit pouvoir absolument tout faire"):
 // when the person's own Primary Bot makes the change because the person
 // asked for it in this turn's message (`personAsked`, proved by a quote of
 // their words, server/primary-approvals.ts), rules 4 and 5 do not apply and

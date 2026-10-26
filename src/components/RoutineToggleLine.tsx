@@ -1,4 +1,4 @@
-// "Disabled · 5 routines" (2026-10-15, JC, after Grok Bot): one quiet,
+// "Disabled · 5 routines" (2026-10-15, after the reference design): one quiet,
 // centered line in the conversation when a turn turned routines on or off
 // (server/routine-chat-events.ts writes it, one per action and per turn).
 // It opens a small menu of the routines it names; a routine the person can

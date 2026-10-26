@@ -98,7 +98,7 @@ private final class AuthStub: URLProtocol {
 final class StayingSignedInTests: XCTestCase {
     private let server = Connection(
         id: "org",
-        name: "GOX",
+        name: "Acme",
         host: "bot.example.org",
         port: 443,
         activeEndpoint: CompanionEndpoint(url: "https://bot.example.org", kind: .hosted, priority: 0)!,

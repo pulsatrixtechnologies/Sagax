@@ -19,7 +19,7 @@ Every ACP turn logs one line when it settles (server/drivers/acp/turn-latency.ts
 `grep turn-latency` on the server log gives the distribution; the native wire log
 ($SAGAX_DATA_DIR/native/<thread>.ndjson) has every ACP message with its time.
 
-## Baseline (Cryptic, Sagax approval gate on)
+## Baseline (Nova, Sagax approval gate on)
 
 | Stage | New thread "pong" | Follow-up "pong" | One tool (list_bots) |
 |---|---|---|---|

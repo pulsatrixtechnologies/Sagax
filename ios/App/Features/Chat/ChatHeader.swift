@@ -63,7 +63,7 @@ extension ChatView {
         .frame(maxWidth: .infinity)
     }
 
-    /// The "..." at the top right (Grok Bot iOS 1.14): the profile, the
+    /// The "..." at the top right (the reference design iOS 1.14): the profile, the
     /// computer (it had its own button before), the threads the name's
     /// long press offers, then sharing and the bot's id.
     /// A bot's threads, one touch away from its chat whatever Settings say

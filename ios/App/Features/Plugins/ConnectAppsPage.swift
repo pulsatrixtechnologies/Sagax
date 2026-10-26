@@ -3,7 +3,7 @@
 // the same rows (`ConnectApps` in CompanionCore, a port of plugins-model.ts):
 //
 // - Connect apps (main): search across apps and skills, one filter button
-//   (Grok Bot iOS 1.14's marketplace) whose menu holds All, the desktop's
+//   (the reference iOS app's marketplace) whose menu holds All, the desktop's
 //   categories in its order and the type filter, a section per category
 //   with View all, one row per app with Add or Connect, and "N connected >"
 //   to Manage.
@@ -450,7 +450,7 @@ struct ConnectAppsMain: View {
         .accessibilityIdentifier("connect-apps-manage")
     }
 
-    /// One filter button, as Grok Bot iOS 1.14's marketplace has it: a menu
+    /// One filter button, as the reference iOS app's marketplace has it: a menu
     /// with All, every category in the desktop's order (main, then the
     /// rest), then the type filter. The label names what is picked; All
     /// clears both.
@@ -752,7 +752,7 @@ struct ConnectAppDetail: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// Grok Bot iOS 1.14's plugin sheet, on our pushed page: the icon, name
+    /// the reference iOS app's plugin sheet, on our pushed page: the icon, name
     /// and description centred on top, the cards under it, Added or Add in a
     /// floating capsule at the bottom and Uninstall in the "..." menu.
     private func content(_ item: ConnectAppItem) -> some View {

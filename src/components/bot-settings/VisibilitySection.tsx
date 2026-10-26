@@ -113,7 +113,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
 
   return (
     <div className="flex flex-col gap-3" data-bot-visibility>
-      {/* 2026-10-16 (JC): drawn like Settings: one card row with the
+      {/* 2026-10-16: drawn like Settings: one card row with the
           audience in a pill menu, the list of people under it. */}
       <div className={GROUP_CARD}>
         <DescribedRow

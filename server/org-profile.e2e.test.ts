@@ -18,7 +18,7 @@ import { freePortBlock } from "./testing/ports.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const posixOnly = describe.skipIf(process.platform === "win32");
-const JC: FakeOidcUser = { sub: "01J9S8JCPROULX0000000000JC", email: "jcproulx@example.test", name: "Jean-Christophe Proulx", preferred_username: "jcproulx", role: "admin" };
+const JC: FakeOidcUser = { sub: "01J9S8AMARTIN00000000000JC", email: "amartin@example.test", name: "Alex Martin", preferred_username: "amartin", role: "admin" };
 // no display name: Perspicax's directory sends the login as the name
 const NONAME: FakeOidcUser = { sub: "01J9S8NONAME00000000000NN", email: "sam.t@example.test", preferred_username: "samt", role: "employee" };
 const PNG = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), Buffer.from("fake png body one")]);
@@ -151,11 +151,11 @@ posixOnly("a person's name and avatar on an organization server", () => {
 
   it("names the person by their Perspicax display name, not their login", async () => {
     const session = await api("/api/auth/session", jc);
-    expect(session.body).toMatchObject({ name: "Jean-Christophe Proulx", login: "jcproulx", profileManagedBy: "perspicax" });
+    expect(session.body).toMatchObject({ name: "Alex Martin", login: "amartin", profileManagedBy: "perspicax" });
     const config = await api("/api/config", jc);
-    expect(config.body.viewer.name).toBe("Jean-Christophe Proulx");
-    expect(config.body.profile.name).toBe("Jean-Christophe Proulx");
-    expect(config.text).not.toContain('"name":"jcproulx"');
+    expect(config.body.viewer.name).toBe("Alex Martin");
+    expect(config.body.profile.name).toBe("Alex Martin");
+    expect(config.text).not.toContain('"name":"amartin"');
   });
 
   it("falls back to the address, then the login, when Perspicax has no display name", async () => {
@@ -181,7 +181,7 @@ posixOnly("a person's name and avatar on an organization server", () => {
     expect(idp.avatarRequests.at(-1)).toEqual({ sub: JC.sub, authorized: true });
     // the directory lists it for pickers and room members
     const directory = await api("/api/org/directory", noname);
-    expect(directory.body.people.find((person: any) => person.login === "jcproulx")).toMatchObject({ name: "Jean-Christophe Proulx", avatarUrl: url });
+    expect(directory.body.people.find((person: any) => person.login === "amartin")).toMatchObject({ name: "Alex Martin", avatarUrl: url });
     // a person without one has no URL, and the route says so
     const sam = await api("/api/config", noname);
     expect(sam.body.viewer.avatarUrl).toBeUndefined();
@@ -232,10 +232,10 @@ posixOnly("a person's name and avatar on an organization server", () => {
   it("takes a new name and avatar from the directory sync, and a removed avatar too", async () => {
     idp.avatars.set(JC.sub, PNG2);
     const version = idp.avatarVersion(JC.sub)!;
-    idp.directoryPeople = [{ ...JC, name: "J-C Proulx" }, NONAME].map((user) => idp.personOf(user));
+    idp.directoryPeople = [{ ...JC, name: "J-C Martin" }, NONAME].map((user) => idp.personOf(user));
     const updated = await until(async () => {
       const viewer = (await api("/api/config", jc)).body.viewer;
-      return viewer?.name === "J-C Proulx" && viewer.avatarUrl?.endsWith(`v=${version}`) ? viewer : undefined;
+      return viewer?.name === "J-C Martin" && viewer.avatarUrl?.endsWith(`v=${version}`) ? viewer : undefined;
     });
     expect(updated, log.slice(-2000)).toBeTruthy();
     const res = await fetch(`${BASE}${updated.avatarUrl}`, { headers: { ...REMOTE, cookie: jc } });
@@ -263,6 +263,6 @@ posixOnly("a person's name and avatar on an organization server", () => {
     jc = await signIn(JC);
     const config = await api("/api/config", jc);
     expect(config.body.viewer.avatarUrl).toMatch(new RegExp(`v=${idp.avatarVersion(JC.sub)}$`));
-    expect(config.body.viewer.name).toBe("Jean-Christophe Proulx");
+    expect(config.body.viewer.name).toBe("Alex Martin");
   });
 });

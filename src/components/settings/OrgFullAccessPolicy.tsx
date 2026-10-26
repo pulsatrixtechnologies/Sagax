@@ -36,7 +36,7 @@ export function OrgFullAccessPolicy({ initial, onChanged }: { initial: boolean; 
     }
   };
 
-  // 0.5.6 (JC): a Grok-style row of the organization's bots group.
+  // 0.5.6: a Grok-style row of the organization's bots group.
   return (
     <div data-settings-card="organization.fullAccess" data-org-full-access={allowed ? "on" : "off"}>
       <DescribedRow

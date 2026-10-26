@@ -56,7 +56,7 @@ function personRow(pinned = false): Group {
     ...baseGroup,
     id: "dm-zach",
     threadId: "thread-zach",
-    name: "Zachary Sellam",
+    name: "Sam Taylor",
     humanIds: ["pr_me", "pr_zach"],
     peopleDm: true,
     ...(pinned ? { pinned: true } : {}),

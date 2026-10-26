@@ -149,8 +149,8 @@ export function CitationSelectionToolbar({
     viewportRef.current?.addEventListener("keyup", update);
     const focusAction = (event: KeyboardEvent) => {
       if (!captured || editing) return;
-      // ⌘L / Ctrl+L quotes the selection into the message at once (Grok
-      // Bot's "add selection to prompt"); Cite then Save does the same with a comment.
+      // ⌘L / Ctrl+L quotes the selection into the message at once (the reference
+      // design's "add selection to prompt"); Cite then Save does the same with a comment.
       if (appShortcutFor(event) === "quote-selection") {
         if (captured.citation.quote.length > CITATION_MAX_QUOTE_LENGTH) return;
         event.preventDefault();

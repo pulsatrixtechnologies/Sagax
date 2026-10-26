@@ -1,4 +1,4 @@
-// A message that asks for no action (JC 2026-10-20): a greeting, thanks, a
+// A message that asks for no action (2026-10-20): a greeting, thanks, a
 // goodbye or "how are you", alone. Such a turn never resumes unfinished
 // work and never wakes a sleeping cloud computer (server/index.ts).
 //

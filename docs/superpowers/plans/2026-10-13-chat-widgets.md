@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Two repos, two branches named `feat/chat-widgets`: server, shared and desktop in `OpenGrokBot-widgets` (milind-soni/OpenMausBot); iOS and Android in `mausbot-mobile-widgets` (SupaMaus/mausbot-mobile). Never put phone code in the first or desktop code in the second. No push, no PR.
+- Two repos, two branches named `feat/chat-widgets`: server, shared and desktop in `sagax-widgets` (milind-soni/OpenMausBot); iOS and Android in `mausbot-mobile-widgets` (SupaMaus/mausbot-mobile). Never put phone code in the first or desktop code in the second. No push, no PR.
 - Ratchets (`scripts/testing/file-size-ratchet.test.ts`, `index-route-ratchet.test.ts`): `server/index.ts`, `src/state/store.tsx`, `server/store.ts`, `server/config.ts`, `ChatView.tsx`, `GroupView.tsx`, `scripts/mcp-server.ts`, `server/drivers/agents-call.ts` may not gain a line; `server/index.ts` may not gain a path guard; no new file over 1,000 lines. Move code out to make room and lower the pinned number.
 - Server code runs on type stripping: type-only imports must be `import type`, no enums, no parameter properties.
 - Tests are colocated `*.test.ts` (never `.tsx`); React tests start with `// @vitest-environment happy-dom` and use `createElement`.

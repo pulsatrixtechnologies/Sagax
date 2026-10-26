@@ -1,4 +1,4 @@
-// Per-bot runtime settings (JC 2026-10-15). Three cards of Settings > General
+// Per-bot runtime settings (2026-10-15). Three cards of Settings > General
 // > Advanced became settings of each bot, edited in the bot editor:
 //
 // - Parallel conversations: `maxConcurrentThreads` (conversations of this bot

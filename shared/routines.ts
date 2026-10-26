@@ -149,7 +149,7 @@ export interface Routine {
   suspended?: { reason: RoutineSuspendReason; at: number };
   /** 2026-10-16: runs only while its person is there (server/routine-away.ts). */
   onlyWhenPresent?: boolean;
-  /** 2026-10-22 (JC): whether this routine's completed runs post their
+  /** 2026-10-22 whether this routine's completed runs post their
    * result message in the person's conversation. `true` posts (as a visible
    * report, never the prompt); `false`/absent is silent and the result lives
    * only in Automations. Approvals, questions and errors always surface, and

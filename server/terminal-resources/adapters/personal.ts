@@ -1,4 +1,4 @@
-// The person's own environments as terminal destinations (2026-10-15, JC):
+// The person's own environments as terminal destinations (2026-10-15):
 // their cloud computer (the server environment, "sandbox"), their Local VM
 // ("local-vm") and their own computer ("desktop"). Each one has a single id,
 // "mine": it always means the environment of the person who lists or opens

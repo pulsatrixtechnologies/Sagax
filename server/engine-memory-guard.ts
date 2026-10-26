@@ -1,6 +1,6 @@
 // Memory guard for the engine processes a server keeps.
 //
-// Incident 2026-10-19 (GOX organization server, 5 GiB container): the kernel
+// Incident 2026-10-19 (an organization server, 5 GiB container): the kernel
 // OOM-killed the container four times in three hours. The kernel's task
 // lists at each kill read the same: 11 to 15 `claude` CLIs (about 125 MiB
 // anonymous each) and 133 to 174 small Node processes (about 21 MiB each:

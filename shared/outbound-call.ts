@@ -1,4 +1,4 @@
-// An outbound phone call a bot places for the person (parité Grok Bot V4,
+// An outbound phone call a bot places for the person (parité the reference design V4,
 // spec docs/specs/bot-telephony.md, section 4.4 and 6.5). The call goes out
 // through the person's own Twilio profile on Perspicax (decision 1: Sagax
 // keeps no Twilio key), after an approval card the person answers once per

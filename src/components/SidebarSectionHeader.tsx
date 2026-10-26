@@ -9,7 +9,7 @@ import {
 
 // How focus last moved: a click (or a right click that opened the group's
 // menu and handed focus back on close) must not draw the blue focus frame on
-// the header; Tab or an arrow key does (JC, 2026-10-15). Chromium counts a
+// the header; Tab or an arrow key does (2026-10-15). Chromium counts a
 // programmatic focus() after a menu as :focus-visible, hence this flag.
 let lastInput: "pointer" | "keyboard" = "keyboard";
 let listening = false;
@@ -129,8 +129,8 @@ export function SidebarSectionHeader({
           // The reference window's header: the name in sentence case (as
           // upstream), 12px regular in the secondary ink, then the section's
           // attention marks; no chevron (a click folds it, aria-expanded
-          // says which way). Only the name, no count, as Grok Bot's "My
-          // Team" (JC, 2026-10-15)
+          // says which way). Only the name, no count, as the reference design's "My
+          // Team" (2026-10-15)
           className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
         >
           <span className="sidebar-section-label truncate text-[12px] font-normal leading-4">{name}</span>

@@ -15,10 +15,10 @@ afterEach(() => setLocale("en"));
 
 const TOOL = "mcp__perspicax_pulsatrix_flow_jc__cw_psa_schedule__query";
 const ARGS = JSON.stringify({
-  conditions: "member/identifier='jcproulx' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
+  conditions: "member/identifier='amartin' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
   orderBy: "dateStart asc",
 }, null, 2);
-const bot = { id: "bot-1", name: "Cryptic" } as never as Bot;
+const bot = { id: "bot-1", name: "Quasar" } as never as Bot;
 
 function ask(id: string, tool: string, input: string, extra: Record<string, unknown> = {}): Message {
   return {
@@ -50,8 +50,8 @@ describe("human approval card", () => {
     setLocale("fr");
     const [pending] = pendingApprovals([ask("a", TOOL, ARGS)]);
     const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
-    expect(html).toContain("Cryptic veut consulter l&#x27;horaire dans ConnectWise PSA");
-    expect(html).toContain("jcproulx");
+    expect(html).toContain("Quasar veut consulter l&#x27;horaire dans ConnectWise PSA");
+    expect(html).toContain("amartin");
     expect(html).toContain("Lecture seule");
     expect(html).not.toContain(TOOL);
     expect(html).not.toContain("conditions");
@@ -65,7 +65,7 @@ describe("human approval card", () => {
     expect(html).toContain("data-step-row");
     expect(html).toContain('data-tour="approval"');
     // the request is not shown a second time
-    expect(html).not.toContain("Autoriser Cryptic");
+    expect(html).not.toContain("Autoriser Quasar");
     expect(html).not.toContain("Lecture seule");
     expect(html).not.toContain("Voir la demande complète");
     expect(html).not.toContain("<button");
@@ -89,7 +89,7 @@ describe("human approval card", () => {
     };
     const [pending] = pendingApprovals([message]);
     const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: pending!, count: 1, index: 0, bot }));
-    expect(html).toContain("Cryptic wants to run a command");
+    expect(html).toContain("Quasar wants to run a command");
     expect(html).toContain("pnpm test");
     expect(html).toContain("Runs an action");
   });
@@ -142,7 +142,7 @@ describe("composer panel and stepper", () => {
     setLocale("fr");
     const approvals = pendingApprovals(messages);
     const html = renderToStaticMarkup(createElement(PendingApprovalPanel, { pending: approvals[0]!, count: 3, index: 0, bot, onNext: () => {} }));
-    expect(html).toContain("Cryptic veut consulter l&#x27;horaire dans ConnectWise PSA");
+    expect(html).toContain("Quasar veut consulter l&#x27;horaire dans ConnectWise PSA");
     expect(html).toContain("1 sur 3");
     expect(html).toContain('aria-label="Demande précédente"');
     // 2026-10-20 (JC): the details are folded under one short line
@@ -178,9 +178,9 @@ describe("composer panel and stepper", () => {
 
   it("speaks the summary, never the raw JSON", () => {
     const [pending] = pendingApprovals([messages[0]!]);
-    const spoken = spokenApprovalPrompt(pending!, "Cryptic");
-    expect(spoken).toContain("Cryptic wants to view the schedule in ConnectWise PSA");
-    expect(spoken).toContain("jcproulx");
+    const spoken = spokenApprovalPrompt(pending!, "Quasar");
+    expect(spoken).toContain("Quasar wants to view the schedule in ConnectWise PSA");
+    expect(spoken).toContain("amartin");
     expect(spoken).not.toContain("conditions");
   });
 });

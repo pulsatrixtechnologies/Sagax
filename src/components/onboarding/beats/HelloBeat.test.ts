@@ -57,7 +57,7 @@ describe("the greeting beat", () => {
   });
 });
 
-const JC: ManagedProfile = { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Jean-Christophe", email: "jc@example.test" };
+const JC: ManagedProfile = { by: "perspicax", url: "https://pulsatrix.example.test/console/me", name: "Alex", email: "jc@example.test" };
 
 describe("the greeting on an organization server", () => {
   it("never asks for a name or an email, and shows them read-only", () => {
@@ -90,7 +90,7 @@ describe("the managed identity block", () => {
     setLocale("fr");
     const html = markup(JC);
     expect(html).not.toContain("<input");
-    expect(html).toContain("Jean-Christophe");
+    expect(html).toContain("Alex");
     expect(html).toContain("jc@example.test");
     expect(html).toContain("Géré par votre organisation (Pulsatrix Perspicax)");
     expect(html).toContain("Modifier dans Perspicax");

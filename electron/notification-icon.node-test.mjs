@@ -51,7 +51,7 @@ test("notification options never reference an asset (old mascot or otherwise) on
       onClick: () => {},
       icon: "/old/ghost.png",
     });
-    attention.notify({ id: "a", title: "Cryptic finished", body: "done" });
+    attention.notify({ id: "a", title: "Quasar finished", body: "done" });
   }
   assert.equal(made[0].icon, undefined);
 });

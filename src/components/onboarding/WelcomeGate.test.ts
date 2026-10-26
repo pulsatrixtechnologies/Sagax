@@ -122,7 +122,7 @@ describe("who gets the welcome flow", () => {
     // special greeting here.
     vi.stubGlobal("window", REMOTE_PAGE);
     store.api.mockResolvedValueOnce({
-      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Jean-Christophe", email: "jc@example.test",
+      kind: "session", scopes: ["admin", "client"], identity: "perspicax", name: "Alex", email: "jc@example.test",
       profileManagedBy: "perspicax", profileManageUrl: "https://pulsatrix.example.test/console/me",
     });
     let viewer: WelcomeViewer | null = null;

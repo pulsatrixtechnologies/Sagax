@@ -1,10 +1,10 @@
 // "Create a Team Bot from this conversation" (thread menu, 2026-10-16; parity
-// with Grok Bot's team bot from a conversation, with or without its memory).
+// with the reference design's team bot from a conversation, with or without its memory).
 //
 // 1. The draft: name, role, description and instructions, written by the
 //    conversation's own bot model from the conversation
 //    (POST /api/bots/:id/team-bot-draft, server/team-bot-draft.ts); editable.
-// 2. What carries over (JC 2026-10-21: a copy, never the private memory):
+// 2. What carries over (2026-10-21: a copy, never the private memory):
 //    the source bot's persona (the instructions start from it), its rules,
 //    its plugins and connectors (one box each, ticked) and its team, whose
 //    shared memory the copy then reads. Never this conversation, other

@@ -249,7 +249,7 @@ export function isEngineCli(cli: string): boolean {
  *
  * Node also reports a missing working folder as the CLI's own ENOENT, so a
  * bot whose folder was moved or deleted read as "isn't installed" even
- * though the CLI was there (MOCA-309). Pass the spawn's `cwd` to tell the
+ * though the CLI was there. Pass the spawn's `cwd` to tell the
  * two apart. */
 type SpawnFailure = { message: string; setup: boolean };
 

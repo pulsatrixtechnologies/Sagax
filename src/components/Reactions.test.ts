@@ -93,13 +93,13 @@ describe("ReactionPicker", () => {
 
 describe("ReactionChips", () => {
   const ME = "pr_me";
-  const cryptic = { id: "cryptic", name: "Cryptic", color: "green", threadId: "t", messages: [] } as unknown as Bot;
+  const quasar = { id: "quasar", name: "Quasar", color: "green", threadId: "t", messages: [] } as unknown as Bot;
   const reactions = [
-    { emoji: "👍", actors: [{ id: "pr_zach", kind: "person", name: "Zachary Sellam" }, { id: ME, kind: "person", name: "Me" }], at: 1 },
-    { emoji: "✅", actors: [{ id: "bot:cryptic", kind: "bot", name: "Cryptic" }], at: 2 },
+    { emoji: "👍", actors: [{ id: "pr_zach", kind: "person", name: "Sam Taylor" }, { id: ME, kind: "person", name: "Me" }], at: 1 },
+    { emoji: "✅", actors: [{ id: "bot:quasar", kind: "bot", name: "Quasar" }], at: 2 },
   ];
   async function renderChips(onToggle = vi.fn(), end = false) {
-    await act(async () => root.render(createElement(ReactionChips, { reactions, selfIds: [ME], onToggle, end, bots: [cryptic] })));
+    await act(async () => root.render(createElement(ReactionChips, { reactions, selfIds: [ME], onToggle, end, bots: [quasar] })));
     return onToggle;
   }
   const chip = (emoji: string) => host.querySelector<HTMLButtonElement>(`[data-reaction-chip="${emoji}"]`)!;
@@ -126,16 +126,16 @@ describe("ReactionChips", () => {
 
   it("names who reacted, me as You, in the label and the tooltip", async () => {
     await renderChips();
-    expect(chip("👍").getAttribute("aria-label")).toBe("Zachary Sellam and You reacted with 👍");
+    expect(chip("👍").getAttribute("aria-label")).toBe("Sam Taylor and You reacted with 👍");
     const tip = await tipOf("👍");
-    expect([...tip.querySelectorAll("[data-reaction-actor]")].map((row) => row.textContent)).toEqual(["ZSZachary Sellam", "MYou"]);
+    expect([...tip.querySelectorAll("[data-reaction-actor]")].map((row) => row.textContent)).toEqual(["STSam Taylor", "MYou"]);
   });
 
   it("shows a bot's reaction like anyone's, with its mascot in the tooltip", async () => {
     await renderChips(vi.fn(), true);
-    expect(chip("✅").getAttribute("aria-label")).toBe("Cryptic reacted with ✅");
-    const row = (await tipOf("✅")).querySelector('[data-reaction-actor="bot:cryptic"]')!;
-    expect(row.textContent).toContain("Cryptic");
+    expect(chip("✅").getAttribute("aria-label")).toBe("Quasar reacted with ✅");
+    const row = (await tipOf("✅")).querySelector('[data-reaction-actor="bot:quasar"]')!;
+    expect(row.textContent).toContain("Quasar");
     // the mascot, not initials
     expect(row.querySelector("svg, img, canvas")).not.toBeNull();
     expect(host.querySelector('[data-testid="reaction-chips"]')!.className).toContain("justify-end");

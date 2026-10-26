@@ -80,7 +80,7 @@ export async function readSessionState(fetchImpl: typeof fetch = fetch): Promise
 }
 
 /** Whether this answer is reason enough to show the sign-in screen
- * (2026-10-20, JC: never for a deploy, a restart or a failed refresh): a
+ * (2026-10-20: never for a deploy, a restart or a failed refresh): a
  * definitive refusal (revoked, expired, disabled, the Pulsatrix sign-in
  * ended) or a 403 says so at once; an unknown session (or a 401 without a
  * code, from an older server) only after it repeats. */

@@ -103,7 +103,7 @@ public struct OptionCard: Codable, Hashable, Sendable {
     /// Catalog key for `held` when it is one of the fixed notes.
     public var heldCode: String? = nil
     /// The server's plain English words for a permission card ("Allow
-    /// Cryptic to run a command?" and one line), the same generator as its
+    /// Quasar to run a command?" and one line), the same generator as its
     /// push (shared/approval-describe.ts). Nil on older servers.
     public var plain: ApprovalPlainWords? = nil
     /// When the server declines it if nobody answers (milliseconds since

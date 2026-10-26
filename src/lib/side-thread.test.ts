@@ -1,4 +1,4 @@
-// The side thread (Grok Bot's threads beside the main chat): one at a time,
+// The side thread (the reference design's threads beside the main chat): one at a time,
 // its own copy of the messages from the newest page and the live stream.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/state/store";

@@ -448,7 +448,7 @@ show Usage. A bot's Overview is a client route since the iOS feature parity
 work, held to the bot's owner by its handler (see below). `/api/me/engines` is a client route
 on an organization server (`orgDirectory`), as before.
 
-## Phone tools (2026-10-21, Grok Bot parity row 81)
+## Phone tools (2026-10-21, the reference design parity row 81)
 
 A bot can ask the person's own iPhone for something only the phone knows:
 its position once, a contact by name (only the fields asked for), reminders
@@ -456,7 +456,7 @@ and calendar events (read, or add one), photos the person picks, one of
 their Shortcuts by name, the clipboard text, and battery, network and Focus.
 Health is not offered.
 
-- Only over a protected transport (JC 2026-10-21): hosted HTTPS or
+- Only over a protected transport (2026-10-21): hosted HTTPS or
   Tailscale, read from the connection, never from what the phone says
   (`shared/phone-transport.ts`; through the sidecar, `companion/src/transport.ts`
   sends `x-openmausbot-companion-transport`: the guardian's socket or a
@@ -518,7 +518,7 @@ Health is not offered.
 - **Scanner avec l'iPhone** (row 84): the vault's New card form on the
   computer asks the person's phone to read a card (`card_scan`, never a bot
   tool: `/api/me/phone-tools/card-scan`, the computer only, never a bot's
-  shell or session nor a phone). End to end (JC 2026-10-21): the form makes
+  shell or session nor a phone). End to end (2026-10-21): the form makes
   a one-time P-256 key and sends its public half; the phone reads the card
   on the device (`CardPhotoScanner`, Vision), shows the last four digits and
   seals the number, the expiry and the name for that key
@@ -542,7 +542,7 @@ Health is not offered.
 
 From the feature parity matrix
 (`docs/superpowers/specs/2026-10-03-ios-feature-parity-matrix.md`, packages S1,
-S2 and S3, with JC's decisions D1 yes, D3 yes, D4 keep).
+S2 and S3, with the decisions D1 yes, D3 yes, D4 keep).
 
 **Through the companion (S1, D1, D3).** A companion request is the computer's
 owner to the harness, so these get the owner checks the desktop's own renderer
@@ -602,7 +602,7 @@ Tests: `companion/test/routes.test.ts` ("iOS feature parity (S1, D1, D3)"),
 `companion/test/proxy.test.ts` (the routes reach a real harness; the voice
 engine route; the routine edit), `server/request-auth.test.ts`,
 `server/routes/tts-provider.test.ts`, `server/ios-parity.e2e.test.ts` ("holds
-the owner routes of a client session to the owner").
+The owner routes of a client session to the owner").
 
 ## Visual parity routes (2026-10)
 

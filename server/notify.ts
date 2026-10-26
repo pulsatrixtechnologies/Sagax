@@ -100,7 +100,7 @@ export function buildNotification(
   // is Scout, in that room. Name the room or the notification reads as if it
   // came from the 1:1 thread it will not open.
   const who = extra?.group ? `${bot.name} in ${extra.group.name}` : bot.name;
-  // An approval names what it allows ("Allow Cryptic to run a command?"):
+  // An approval names what it allows ("Allow Nova to run a command?"):
   // the caller passes the card's own plain title, never a tool id.
   const title = extra?.title ? summarize(extra.title, 120) :
     kind === "approval"

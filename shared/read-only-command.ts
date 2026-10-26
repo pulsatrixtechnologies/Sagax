@@ -1,4 +1,4 @@
-// 2026-10-20 (JC): a command that only reads, on the person's own computer
+// 2026-10-20: a command that only reads, on the person's own computer
 // (their PC through the desktop app, its Local VM, their cloud computer),
 // never asks for approval, whatever the engine or the level. This is the
 // strict test: every part of the command line must be a known reader with
@@ -161,7 +161,7 @@ const LAUNCHERS = new Set([
   "start-process", "invoke-expression", "iex",
 ]);
 
-/** 2026-10-20 (JC: "Toujours permettre" = this program, not the exact
+/** 2026-10-20 ("Toujours permettre" = this program, not the exact
  * string): the one program a plain command line runs (`cd` aside), when
  * it parses as plain programs (no substitution, redirect or background
  * job) and runs a single one. Undefined otherwise: such a line keeps an

@@ -1,4 +1,4 @@
-// Public share links for bot templates (2026-10-16, parity with Grok Bot's
+// Public share links for bot templates (2026-10-16, parity with the reference design's
 // "Share a link to the template" / "Turn off the public link").
 //
 // A template is the preset file Share preset already writes (package format

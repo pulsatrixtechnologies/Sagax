@@ -49,7 +49,7 @@ describe("what Settings > Usage asks the server", () => {
   });
 
   // 2026-10-15: the desktop 0.5.4 read GET /api/me/usage from a 0.5.3 server
-  // (GOX), which does not know it: the Cost card said "try again later".
+  // (a production server), which does not know it: the Cost card said "try again later".
   it("falls back once to GET /api/usage?mine=1 when the server does not know /api/me/usage (404)", async () => {
     const get = vi.fn(async (path: string) => {
       if (path.startsWith("/api/me/usage")) throw new ApiError("not found", 404, { error: "not found" });
@@ -237,9 +237,9 @@ describe("Plan card", () => {
   });
 });
 
-// 0.5.6: Grok Bot's Usage & Billing layout, grey headings outside rounded
+// 0.5.6: the reference design's Usage & Billing layout, grey headings outside rounded
 // cards, compact rows, the breakdown folded under a count pill.
-describe("Usage laid out as Grok Bot's", () => {
+describe("Usage laid out as the reference design's", () => {
   const usage: PersonalUsage = {
     month: summary(12, 4), previous: summary(10, 3), days30: summary(12, 4),
     byBot: summary(12, 4, [{ key: "b1", label: "Hibou", turns: 3, costUsd: 9 }, { key: "b2", label: "Dispatch", turns: 1, costUsd: 3 }]),

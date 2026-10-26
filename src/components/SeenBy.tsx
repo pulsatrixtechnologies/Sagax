@@ -1,7 +1,7 @@
 // Seen-by receipts under a message (src/lib/read-receipts.ts): the muted
 // label "Seen by", then the readers' tiny overlapping avatars (five at most,
 // then "+N"). Each avatar takes the keyboard focus and shows, on hover or
-// focus, who it is and when they read it ("Zachary Sellam · 2:46 PM"); the
+// focus, who it is and when they read it ("Sam Taylor · 2:46 PM"); the
 // same words are its aria-label. Never the viewer's own avatar.
 import type { ReactNode } from "react";
 

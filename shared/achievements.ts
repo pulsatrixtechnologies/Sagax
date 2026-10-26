@@ -537,7 +537,7 @@ export function characterUnlocked(unlocks: Unlocks, character: RewardCharacter):
   if (!unlocks.enforced) return true;
   if (isMasteryCharacter(character)) return !masteryLock(unlocks.keys, character).locked;
   if (DEFAULT_CHARACTERS.includes(character) || unlocks.keys.has(`character:${character}`)) return true;
-  // An earned skin lets its character be worn in it (JC, 2026-10-14): a skin
+  // An earned skin lets its character be worn in it (2026-10-14): a skin
   // rewarded on a character still locked was neither shown nor wearable.
   // Trombi stays the easter egg: only its hidden command reveals it.
   if (character === "trombi") return false;

@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 
 // Simple or Advanced, one choice per person. Advanced is the default for
 // everyone: a new install, a solo server, an organization owner, admin or
-// member (JC, 2026-10-16). An explicit choice (this key) always wins.
+// member (2026-10-16). An explicit choice (this key) always wins.
 // Nothing is deleted when the switch is off: a hidden setting keeps its value.
 // The choice is written only when the person toggles it. On an organization
 // server the key is one of USER_PREFERENCE_KEYS and follows the person; solo

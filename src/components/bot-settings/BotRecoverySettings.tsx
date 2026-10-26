@@ -1,4 +1,4 @@
-// Automatic recovery of this bot (JC 2026-10-15, formerly Settings > General
+// Automatic recovery of this bot (2026-10-15, formerly Settings > General
 // > Advanced for every bot): whether a backup model takes over when its
 // provider fails before starting, and which one. Its ordered backups
 // (FallbackChain in ModelSection) win over this backup when it has some.
@@ -29,7 +29,7 @@ export function BotRecoverySettings({ bot }: { bot: Bot }) {
     if (await save({ automaticRecovery: body })) setDraft(null);
   };
   const title = t("settings.recovery.title");
-  // 2026-10-16 (JC): drawn like Settings: the switch, the backup provider
+  // 2026-10-16 : drawn like Settings: the switch, the backup provider
   // and model as pill menus, Save as a pill; the detail behind the info
   // buttons.
   return (

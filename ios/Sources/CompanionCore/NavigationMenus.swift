@@ -173,7 +173,7 @@ public enum NavigationMenus {
         var groups: [[BotMenuItem]] = []
 
         var first: [BotMenuItem] = []
-        // Electron includes Primary in pinnedBots. Sidecar keeps Pin (Grok Bot);
+        // Electron includes Primary in pinnedBots. Sidecar keeps Pin (the reference design);
         // Electron remoteClient omits it.
         first.append(bot.pinned == true ? .unpin : .pin)
         if context.canMoveToSection { first.append(.moveTo) }

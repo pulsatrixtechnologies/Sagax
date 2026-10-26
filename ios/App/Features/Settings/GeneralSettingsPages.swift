@@ -10,7 +10,7 @@ import SwiftUI
 import UIKit
 
 /// Settings > General: what the root does not carry (#518 folded the
-/// phone's settings here; the root now holds them again, Grok Bot iOS 1.14).
+/// phone's settings here; the root now holds them again, the reference design iOS 1.14).
 struct GeneralSettingsView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var navigator: SettingsNavigator

@@ -136,7 +136,7 @@ Also fixed on the way: an approval answered from a thread
   skin? }`. What a bot already wears is never taken back. Until a Mastery
   character lands, the look schema refuses it anyway (400).
 - **Look editor.** Every character and every skin stays in the picker
-  (JC, 2026-10-14), a locked one greyed and not selectable: a padlock, the
+  (2026-10-14), a locked one greyed and not selectable: a padlock, the
   achievement's progress bar, and the hint "Unlock: Hands Off (7/10)" (a
   secret's hint for a secret achievement) as its tooltip and label. Trombi
   alone stays out until found (an easter egg).

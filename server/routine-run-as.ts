@@ -1,4 +1,4 @@
-// Who a routine runs as, chosen in the routine modal (JC, 2026-10-08). On an
+// Who a routine runs as, chosen in the routine modal (2026-10-08). On an
 // organization server a routine acts with one person's credentials: their
 // routine delegation (issued automatically at their sign-in since #149) and
 // their rights on the bot. By default that person is whoever wrote the

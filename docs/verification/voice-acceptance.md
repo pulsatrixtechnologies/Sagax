@@ -29,11 +29,11 @@ SAGAX_XAI_VOICE_KEY=... XAI_API_KEY=... \
   pnpm voice:acceptance:real -- --enforce --out /tmp/sagax-voice-real
 ```
 
-Optional Grok Bot reference. The sidecar is `<recording>.json` with
+Optional the reference design reference. The sidecar is `<recording>.json` with
 `version: 1`, `speechEndMs`, and `firstAudioMs` strictly after speech end.
 A missing sidecar is an error. Omitting `--reference` writes
 `reference.status: "not-provided"` and no numeric comparison. The harness
-never invents Grok Bot timings from an unmarked file.
+never invents the reference design timings from an unmarked file.
 
 ```sh
 pnpm voice:acceptance -- --reference /path/to/grok.wav

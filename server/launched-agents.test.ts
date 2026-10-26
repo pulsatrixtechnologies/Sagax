@@ -82,7 +82,7 @@ describe("launchedAgentsForBot", () => {
     const list = launchedAgentsForBot(deps({
       bots: () => [{ id: "dispatch", name: "Dispatch" }, { id: "orion", name: "Orion" }, { id: "scout", name: "Scout" }],
       tasks: (botId) => botId === "dispatch" ? [opened("d1", "@Dispatch · agent")]
-        : botId === "orion" ? [opened("o1", "@Cryptic · work")]
+        : botId === "orion" ? [opened("o1", "@Quasar · work")]
         : [opened("s1", "Split the lexer")],
       messages: (threadId) => threadId === "s1"
         ? [{ role: "user", kind: "text" }, { role: "bot", kind: "activity", tool: { name: "Bash", ok: true, input: { command: "git commit -m lexer" } } }, { role: "bot", kind: "text", turnSucceeded: true }]
@@ -92,7 +92,7 @@ describe("launchedAgentsForBot", () => {
     expect(byId["thread:s1"]?.coding).toBe(true);
     expect(byId["thread:d1"]?.coding).toBeUndefined();
     expect(byId["thread:o1"]?.coding).toBeUndefined();
-    expect(byId["thread:o1"]?.title).toBe("Orion: @Cryptic · work");
+    expect(byId["thread:o1"]?.title).toBe("Orion: @Quasar · work");
   });
 
   it("a run a person stopped reads stopped, not failed", () => {

@@ -82,7 +82,7 @@ export interface FloatingLabels {
   pin?: string;
   /** "Activity: normal", the menu item that cycles the activity level. */
   menuLively?: string;
-  /** The right-click menu as JC set it out (absent: the older, flat menu's labels). */
+  /** The right-click menu as the maintainer set it out (absent: the older, flat menu's labels). */
   menuTalk?: string;
   menuCloseChat?: string;
   menuCall?: string;

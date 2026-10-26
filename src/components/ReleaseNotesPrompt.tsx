@@ -113,7 +113,7 @@ export function ReleaseNotesPrompt() {
   const sinceEntries = browse && previous ? bundledNotesSince(previous, version, catalog) : [];
   const close = () => setOpen(false);
 
-  // 2026-10-16 (JC): drawn like Settings, in Settings' reading column: the
+  // 2026-10-16 : drawn like Settings, in Settings' reading column: the
   // title and the close button, the version menu and "since my last
   // version" as pills, then the version's title and date and its sections
   // under grey headings.

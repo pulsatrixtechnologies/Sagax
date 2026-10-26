@@ -1,4 +1,4 @@
-// The one look of every interactive question (JC 2026-10-20, from his
+// The one look of every interactive question (2026-10-20, from his
 // capture): under the bot's bubble, a separate card in the bubble's own fill,
 // 16px corners and padding, the question in bold, then one row per answer: a
 // small rounded key (A, B, C) and the label in plain text. No outline, no

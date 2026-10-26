@@ -199,7 +199,7 @@ export interface MasteryLock {
 
 /**
  * Has this person earned one of the character's own skins (not its free base
- * skin)? Earning a skin lets them wear the character in it (JC, 2026-10-14):
+ * skin)? Earning a skin lets them wear the character in it (2026-10-14):
  * a skin unlocked on a character still locked was listed as a reward yet
  * could be neither seen nor worn.
  */

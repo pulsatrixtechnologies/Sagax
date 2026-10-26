@@ -1,4 +1,4 @@
-/** Routine runs work in the background (JC 2026-10-22): "simply let it run
+/** Routine runs work in the background (2026-10-22): "simply let it run
  * in the background, just letting know by 'Handling it' is sufficient. If the
  * routine explicitly says to stay silent you don't tell me anything in the
  * chat. I can view the logs and status in the automation page anyway."
@@ -38,7 +38,7 @@ const NO_OP_PHRASES = [
   "aucune? (?:action|suivi|changement)s? (?:n'est )?(?:requis|requise|nécessaire)",
 ].join("|");
 
-/** The WHOLE message is one of those phrases (JC review 2026-10-22): a real
+/** The WHOLE message is one of those phrases (review 2026-10-22): a real
  * finding that merely contains a no-op phrase ("DB01 is down. Nothing to flag
  * on the others.") must still reach the person, so this matches the full
  * string, a short benign lead-in and trailing punctuation aside — never a
@@ -79,7 +79,7 @@ export interface RoutineRunReportFacts {
   quiet?: boolean;
   /** An approval or question card in the run's task waits on the person. */
   needsPerson?: boolean;
-  /** 2026-10-22 (JC): this routine posts its completed results in the
+  /** 2026-10-22 this routine posts its completed results in the
    * conversation. A completed run with a result posts only when this is on;
    * otherwise it is silent and stays in Automations. Approvals, questions and
    * errors surface whichever this is, and a quiet run never posts. */

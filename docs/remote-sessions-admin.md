@@ -1,6 +1,6 @@
 # Remote Sessions page and unattended access (Sagax control plane)
 
-This note is for JC. It covers the admin "Remote Sessions" page added to Sagax,
+This note is for the operator. It covers the admin "Remote Sessions" page added to Sagax,
 the unattended (ScreenConnect Access equivalent) model, the Loi 25 and code
 signing requirements, and exactly what must be tested on a real machine. The
 per OS persistence mechanics live in the Pulsatrix Assist helper repo, in
@@ -108,7 +108,7 @@ propagates so the key no longer resolves for that host. The helper exposes the
 
 - The deploying organization (the client) is the data controller and is
   responsible for informing its own users per its policy before enabling
-  unattended access. Sagax and GOX are the processor.
+  unattended access. Sagax and the deploying operator are the processor.
 - The log view states retention (90 days) and who can see it (a workspace
   admin or the session owner). The audit records who connected and what ran,
   by action and counts only, never keystrokes, file contents, secrets or the
@@ -123,7 +123,7 @@ propagates so the key no longer resolves for that host. The helper exposes the
 - An unsigned agent is flagged on the page (the Unattended column shows "Agent
   not code signed"). Ship signed builds for unattended.
 
-## What JC must test on a real host
+## What to test on a real host
 
 On the Sagax and Perspicax side:
 

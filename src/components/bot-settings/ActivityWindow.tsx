@@ -1,5 +1,5 @@
 // The task windows' frame (ActivityDetailModal, ActivityListModal): exactly
-// Settings' window (SETTINGS_WINDOW, JC 2026-10-16: "the same size as other
+// Settings' window (SETTINGS_WINDOW, 2026-10-16: "the same size as other
 // modal, ex: settings"), on the same dimmed layer, with its round close
 // button. It is a layer on document.body, not a native <dialog>: the live
 // conversation it can show (ActivityConversation, the real ChatView) opens

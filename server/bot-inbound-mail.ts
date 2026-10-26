@@ -1,4 +1,4 @@
-// Bot inbound mail, the Sagax side (B21 / iOS CO5, JC decision 2026-10-21:
+// Bot inbound mail, the Sagax side (B21 / iOS CO5 decision 2026-10-21:
 // option 1 of the #943 design note, the Perspicax relay). Wire contract v1:
 //
 //   POST /api/org/inbound-mail      Perspicax delivers one mail sent to a
@@ -186,7 +186,7 @@ export interface BotMailDeliveryRow {
   delivered: number;
   duplicate: number;
   ignored: number;
-  /** JC decision 3 (v2): the full sender address (never the subject or text). */
+  /** decision 3 (v2): the full sender address (never the subject or text). */
   sender: string;
 }
 

@@ -28,32 +28,32 @@ describe("approval audience", () => {
       audience,
       viewer: { userId: "jc", deviceId: "studio" },
       message: card,
-      ownerName: "Jean-Christophe",
+      ownerName: "Alex",
     })).toBe(card);
     const other = approvalDelivery({
       audience,
       viewer: { userId: "zachary@example.test", deviceId: null },
       message: card,
-      ownerName: "Jean-Christophe",
+      ownerName: "Alex",
     });
     expect(other).toEqual({
       id: "m1",
       kind: "options",
       state: "waiting-on-owner",
-      ownerName: "Jean-Christophe",
+      ownerName: "Alex",
     });
     expect(other).not.toHaveProperty("card");
     const settled = approvalDelivery({
       audience,
       viewer: { userId: "zachary@example.test", deviceId: null },
       message: { ...card, card: { ...card.card, answered: "allow" } },
-      ownerName: "Jean-Christophe",
+      ownerName: "Alex",
     });
     expect(settled).toEqual({
       id: "m1",
       kind: "options",
       state: "owner-settled",
-      ownerName: "Jean-Christophe",
+      ownerName: "Alex",
       card: { title: "", subtitle: "", options: [], answered: "allow" },
     });
   });

@@ -134,7 +134,7 @@ function serveCards(list: Array<Record<string, unknown>>, options: { thread?: st
 }
 const respondCalls = () => performed.filter((p) => p.request.path.endsWith("/respond")).map((p) => p.request.body);
 const bashCard = (extra: Record<string, unknown> = {}) => ({ title: "Run Bash?", subtitle: "uptime", options: ["Allow", "Deny"], requestId: "req_1", requestType: "permission", tool: "Bash", ...extra });
-/** The real case: Cryptic's ask_user with three options. */
+/** The real case: Quasar's ask_user with three options. */
 const deliveryCard = (extra: Record<string, unknown> = {}) => ({ title: "Your bot has a question", subtitle: "Where should I deliver?", options: ["Livrer ici", "Livrer ici et par le relais", "Non"], requestId: "req_q", requestType: "question", ...extra });
 
 async function call(method: string, path: string, bearer?: string, body?: unknown) {
@@ -693,7 +693,7 @@ describe("the AI-client approval loop (2026-10-17)", () => {
     confidentialThreads.add("t2");
     respond = (request) => {
       if (request.path === "/api/bots") return { status: 200, body: { bots: [
-        { id: "b1", name: "Cryptic", threadId: "t1", tasks: [{ threadId: "t1" }, { threadId: "t2" }] },
+        { id: "b1", name: "Quasar", threadId: "t1", tasks: [{ threadId: "t1" }, { threadId: "t2" }] },
         { id: "b2", name: "Atlas", threadId: "t3", tasks: [] },
       ] } };
       const thread = /\/api\/threads\/([\w-]+)\/messages/.exec(request.path)?.[1] ?? "";
@@ -705,7 +705,7 @@ describe("the AI-client approval loop (2026-10-17)", () => {
     expect(got.status, JSON.stringify(got.body)).toBe(200);
     expect(got.body.count).toBe(2);
     expect(got.body.approvals.map((a: { id: string }) => a.id)).toEqual(["req_h", "req_q"]);
-    expect(got.body.approvals[1]).toMatchObject({ threadId: "t1", botId: "b1", botName: "Cryptic", kind: "question", canAnswer: true, choices: [{ id: "1", label: "Livrer ici" }, expect.anything(), expect.anything()] });
+    expect(got.body.approvals[1]).toMatchObject({ threadId: "t1", botId: "b1", botName: "Quasar", kind: "question", canAnswer: true, choices: [{ id: "1", label: "Livrer ici" }, expect.anything(), expect.anything()] });
     expect(JSON.stringify(got.body)).not.toContain("req_secret");
     expect(JSON.stringify(got.body)).not.toContain("req_other");
     expect(performed.some((p) => p.request.path.includes("/t2/"))).toBe(false);

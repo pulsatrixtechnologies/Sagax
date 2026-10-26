@@ -86,7 +86,7 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
   ]),
 ];
 
-/** The app-wide chords added for parity with Grok Bot (2026-10-16). None was
+/** The app-wide chords added for parity with the reference design (2026-10-16). None was
  * bound before: ⌘B, ⌘I and ⌘L had no handler and no menu accelerator, ⌘⇧F
  * and ⌘⇧N were free (⌘F and ⌘N take only the unshifted chord). */
 export type AppShortcut = "toggle-sidebar" | "focus-composer" | "search-everything" | "quote-selection" | "new-group";

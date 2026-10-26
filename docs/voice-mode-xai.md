@@ -173,7 +173,7 @@ not get one.
 
 ## Full-duplex conversation (issue #292)
 
-The stacked answers JC heard were not the TTS sentence queue (that is
+The stacked answers the maintainer heard were not the TTS sentence queue (that is
 one reply's clauses, cancelled on barge-in). They were the harness
 steer queue: talking while the bot was thinking did not interrupt
 (`call-machine.ts`), a send that raced `stoppingThreads` was
@@ -737,7 +737,7 @@ The key never reaches the client. Order for the person who speaks
 - Solo server: the server's xAI key.
 
 Since 2026-10-14 Grok voice has no key of its own: it uses the xAI key, the
-one Grok bots use. A Grok voice key saved by an older build
+one bots on Grok use. A Grok voice key saved by an older build
 (`config.tts.xaiKey`, `SAGAX_XAI_VOICE_KEY`, the desktop's `xaiVoiceKey`)
 becomes the xAI key when none is saved; otherwise the xAI key stays and the
 duplicate is dropped. Both cases are logged without the value

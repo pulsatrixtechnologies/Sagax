@@ -1043,7 +1043,7 @@ export function composerTakesFocusOnOpen(active: OpenFocusNode | null, input: Co
 /**
  * Whether a change of reply target should put the caret in the composer.
  * Choosing a message to reply to means the next thing is typing the reply,
- * so a newly chosen target takes focus (MOCA-263). Clearing the reply, or the
+ * so a newly chosen target takes focus. Clearing the reply, or the
  * same target arriving again as the draft re-renders, does not.
  */
 export function replyTargetTakesFocus(previousId: string | null | undefined, nextId: string | null | undefined): boolean {

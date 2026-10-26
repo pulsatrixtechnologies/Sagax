@@ -2,7 +2,7 @@ import type { TerminalResource, TerminalProviderKind } from "../../shared/termin
 import type { TerminalAccess, TerminalListContext, TerminalOpenContext, TerminalResourceAdapter } from "./types.ts";
 
 /** Whether this person may open this resource for this bot (2026-10-15,
- * 2026-10-19 JC): a server host is an organization admin's, a solo
+ * 2026-10-19): a server host is an organization admin's, a solo
  * operator's, or a person's an admin gave `host.commands` to in Perspicax.
  * A personal environment (their cloud computer, their Local VM, their own
  * computer) is always the person's own: they open it for their own bot, and

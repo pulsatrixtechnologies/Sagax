@@ -5,14 +5,14 @@ import { cn } from "@/lib/cn";
 import { taskHiddenFromSidebar } from "@/lib/bot-unread";
 import type { Bot, Task } from "@/state/store";
 
-/** At most this many unread threads sit under a bot's row (Grok Bot: 3). */
+/** At most this many unread threads sit under a bot's row (the reference design: 3). */
 export const SIDEBAR_UNREAD_THREAD_LIMIT = 3;
 
-/** The threads listed under a bot's row, as Grok Bot does it: only the
+/** The threads listed under a bot's row, as the reference design does it: only the
  * unread ones a person can open, newest first, at most three, never the one
  * on screen. Every other thread is reached from the chat header's thread
  * button; the sidebar no longer unfolds a bot's whole thread list
- * (JC, 2026-10-15). */
+ * (2026-10-15). */
 export function sidebarUnreadThreads(bot: Pick<Bot, "id" | "tasks">, openThreadId: string | null): Task[] {
   return (bot.tasks ?? [])
     .filter((task) => task.unread && task.threadId !== openThreadId && !task.archivedAt && !taskHiddenFromSidebar(task, bot.id))

@@ -211,7 +211,7 @@ const definitions = [
       fr: "Utiliser Lancer maintenant sur une routine qu'ils voient, même s'ils ne possèdent pas son bot et ne sont pas la personne qui l'exécute.",
     },
   },
-  // 2026-10-09 (JC): who sees the automation schedule beyond their own
+  // 2026-10-09: who sees the automation schedule beyond their own
   // routines. Read side only: Run now, Edit and Runs as keep their own gates
   // (routines.runNowAny, routines.runAsAnyone, the bot's `run` level).
   {
@@ -246,7 +246,7 @@ const definitions = [
       fr: "Lire et exporter qui a changé les réglages, les personnes, les accès et les bots, et qui a répondu aux cartes d'approbation.",
     },
   },
-  // 2026-10-19 (JC): delegable. Nobody but an admin acts on an admin
+  // 2026-10-19: delegable. Nobody but an admin acts on an admin
   // (their sessions, codes, connections, bots or pages), and attaching an
   // interim person stays an admin's (it merges identities).
   {
@@ -265,7 +265,7 @@ const definitions = [
       fr: "Lire l'utilisation, les dépenses et le budget du serveur, et les exporter.",
     },
   },
-  // 2026-10-19 (JC): delegable for the export; a restore replaces sign-in,
+  // 2026-10-19: delegable for the export; a restore replaces sign-in,
   // people and sessions, so it stays an admin's.
   {
     key: "backup.workspace", group: "backup", memberDefault: false, adminOnly: false,
@@ -275,7 +275,7 @@ const definitions = [
       fr: "Exporter et télécharger les sauvegardes du serveur et voir leur état. Une sauvegarde contient les conversations et les fichiers de tout le monde. La restauration reste aux admins.",
     },
   },
-  // 2026-10-19 (JC): running commands on the organization's shared host is
+  // 2026-10-19: running commands on the organization's shared host is
   // a right an admin gives (a person, a team), never an admin's alone. A
   // person's own destinations (their cloud computer, their Local VM, their
   // own computer) never need it: those commands are theirs at their own
@@ -288,7 +288,7 @@ const definitions = [
       fr: "Ouvrir un terminal sur les hôtes du serveur de l'organisation (le serveur Sagax, ses hôtes SSH et unRAID) et approuver à la main les commandes serveur des bots qu'ils possèdent. Un terminal là-bas atteint tout le serveur, données de chacun comprises : ne la donnez qu'à des personnes à qui vous confieriez l'administration du serveur. Leur propre ordinateur infonuagique, leur VM locale et leur ordinateur n'en ont jamais besoin.",
     },
   },
-  // 2026-10-19 (JC): delegable. Equivalent to an admin on the server's
+  // 2026-10-19: delegable. Equivalent to an admin on the server's
   // machine: the label says so.
   {
     key: "host.shell", group: "host", memberDefault: false, adminOnly: false,
@@ -298,7 +298,7 @@ const definitions = [
       fr: "Approuver les commandes serveur des bots des autres, enregistrer des règles de commande, changer les serveurs MCP du serveur, le chemin du programme d'un moteur, ses ordinateurs et cet ordinateur. Elle exécute des programmes sur la machine du serveur : ne la donnez qu'à des personnes à qui vous confieriez l'administration du serveur.",
     },
   },
-  // 2026-10-19 (JC): delegable. Who is an admin (the sign-in lists), the
+  // 2026-10-19: delegable. Who is an admin (the sign-in lists), the
   // operator's own profile, tool grants, the interim attach window and the
   // server's provider keys stay with admins.
   {
@@ -309,7 +309,7 @@ const definitions = [
       fr: "Changer les réglages de l'installation, les webhooks, les valeurs par défaut des bots et les politiques de l'organisation (accès complet, marchés et leurs jetons, application GitHub). Elle change les réglages de sécurité et de paiement pour tout le monde. Qui est admin, les droits d'outils, la fenêtre de rattachement intérimaire et les clés de fournisseurs du serveur (OpenRouter, OpenAI, Anthropic, voix...) restent aux admins.",
     },
   },
-  // 2026-10-22 (JC): the experimental features of the server (Settings >
+  // 2026-10-22 the experimental features of the server (Settings >
   // Experimental), delegable on its own. It governs who sees and toggles the
   // early features there (skill authoring, the built-in browser, connected
   // apps, the decision model, the data window, the meeting notetaker). These

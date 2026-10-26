@@ -1,5 +1,5 @@
 // Settings > Computer > Your computer, on an organization server (0.5.6:
-// Grok Bot's Computer page, JC). Each bot's Works on decides (Auto and
+// The reference design's Computer page). Each bot's Works on decides (Auto and
 // Cloud: the person's server environment; Local VM and This computer: their
 // own computer through this desktop app); here, rows of the "Your computer"
 // group: whether routines may use it, which destinations bots may reach

@@ -45,11 +45,11 @@ export interface SidebarMenuItem {
   onSelect: () => void;
   /** `data-tour` id, so the guided tour can point at this item */
   tourId?: string;
-  /** a value in grey at the trailing edge, before the chevron (Grok Bot's
+  /** a value in grey at the trailing edge, before the chevron (the reference design's
    * "Weekly usage · 100% used") */
   value?: string;
   /** a second level, opened to the right on hover, click or the right arrow
-   * (Grok Bot's Usage ›, Support ›, Switch account ›); onSelect is unused */
+   * (the reference design's Usage ›, Support ›, Switch account ›); onSelect is unused */
   submenu?: SidebarSubmenuEntry[];
   /** where the second level lines up: the item's top (default) or, near the
    * bottom of the window, its bottom */

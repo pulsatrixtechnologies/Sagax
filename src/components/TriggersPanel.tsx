@@ -161,7 +161,7 @@ export function TriggersPanel() {
   };
 
   return (
-    // 2026-10-16 (JC): drawn like Settings: its frame, the title at the top
+    // 2026-10-16 : drawn like Settings: its frame, the title at the top
     // left, the round close button, grey headings over rounded cards, pill
     // menus and pill buttons.
     <div

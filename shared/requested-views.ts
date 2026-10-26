@@ -1,4 +1,4 @@
-// Views in the chat only on request (JC 2026-10-20: « je veux pas de widget
+// Views in the chat only on request (2026-10-20: « je veux pas de widget
 // qui pop dans le chat pour aucune raison ; ça doit fitter avec ce qu'on
 // demande »). One rule for every client: a view (a ConnectWise widget, a
 // video player, a settled screenshot) that a TOOL RESULT would add on its

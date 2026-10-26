@@ -1,5 +1,5 @@
-// The keyboard shortcuts cheat sheet. 2026-10-16 (JC): drawn like Settings
-// and like Grok Bot's own sheet: the title and the round close button, a
+// The keyboard shortcuts cheat sheet. 2026-10-16 : drawn like Settings
+// and like the reference design's own sheet: the title and the round close button, a
 // search field, then each category as a grey heading over one card of
 // compact rows (what the shortcut does at the left, its keys at the right).
 import { useLayoutEffect, useRef, useState } from "react";

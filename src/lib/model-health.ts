@@ -1,4 +1,4 @@
-// Which models can run a turn right now (JC, 2026-10-14: "check in the
+// Which models can run a turn right now (2026-10-14: "check in the
 // background that the model is set up and works, pick one that works, hide
 // the ones that do not").
 //

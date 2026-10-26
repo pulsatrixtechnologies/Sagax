@@ -102,7 +102,7 @@ describe("askInputSummary", () => {
 
 describe("askInputDetail", () => {
   it("keeps the full arguments as valid, redacted JSON for the card's technical details", () => {
-    const conditions = `member/identifier='jcproulx' and dateStart >= [2026-10-02T04:00:00Z] ${"x".repeat(300)}`;
+    const conditions = `member/identifier='amartin' and dateStart >= [2026-10-02T04:00:00Z] ${"x".repeat(300)}`;
     const text = askInputDetail({ conditions, apiKey: "sk-live-secret-value", pageSize: 100 });
     const parsed = JSON.parse(text!);
     expect(parsed.conditions).toBe(conditions);

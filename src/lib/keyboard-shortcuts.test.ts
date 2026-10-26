@@ -128,7 +128,7 @@ describe("keyboard shortcut opening guard", () => {
   });
 });
 
-describe("Grok Bot's app-wide chords", () => {
+describe("the reference design's app-wide chords", () => {
   const press = (key: string, overrides: Partial<KeyboardEvent> = {}) => ({
     key, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, isComposing: false, defaultPrevented: false, ...overrides,
   });

@@ -127,7 +127,7 @@ const purchaseSchema = z.object({
   cardId: z.string().regex(/^[a-z0-9]{8,40}$/),
   addressId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
   contactId: z.string().regex(/^[a-z0-9]{8,40}$/).optional(),
-  // "always" is only read from files written before JC's rule of
+  // "always" is only read from files written before the rule of
   // 2026-10-22 (every purchase its own card): it never covers a payment
   status: z.enum(["pending", "once", "always", "denied"]),
   createdAt: z.number(),
@@ -789,7 +789,7 @@ export class CredentialVault {
 
   /** The person's answer: deny, this time, or always for this bot on this site. */
   answerPurchase(principalId: string, purchaseId: string, decision: unknown, via?: string): { listing: PurchaseListing; note: string } {
-    // JC 2026-10-22: no standing grant for a purchase; each one is its own card
+    // 2026-10-22: no standing grant for a purchase; each one is its own card
     if (decision !== "deny" && decision !== "once") {
       throw new CredentialVaultError("decision must be deny or once: every purchase needs its own approval", "invalid_decision");
     }

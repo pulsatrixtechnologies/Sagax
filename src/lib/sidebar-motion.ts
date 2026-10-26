@@ -1,6 +1,6 @@
 /**
  * The sidebar's snap between the icons rail and the expanded width, drawn
- * with transforms only (Grok Bot's 200ms ease-out-quint, armed only while it
+ * with transforms only (the reference design's 200ms ease-out-quint, armed only while it
  * plays). The width itself changes at once, so the chat column is laid out a
  * single time; then, for 200ms:
  *

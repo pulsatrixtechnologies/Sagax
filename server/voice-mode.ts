@@ -35,7 +35,7 @@
 //   organization's xAI key (Settings > Models and voice, xai.key), else
 //   refused with an access card shown only to that person; a disabled
 //   person is refused. Solo server: the server's xAI key. Since
-//   2026-10-14 Grok voice and Grok bots share that one key.
+//   2026-10-14 Grok voice and bots on Grok share that one key.
 // Every request names a bot the person may use (the visibility gate already
 // hides the others) and, when given, a thread they may post to. Each speak
 // and transcribe is recorded in the usage ledger with `access` (the via).
@@ -184,7 +184,7 @@ export async function resolveVoiceKey(deps: Pick<VoiceModeDeps, "organization" |
     if (own.error !== "no_key") return { ok: false, cause: "perspicax_unreachable" };
   }
   if (!serverKey) return { ok: false, cause: "no_credentials" };
-  // 2026-10-16 (JC): the organization's xAI key serves voice only for the
+  // 2026-10-16: the organization's xAI key serves voice only for the
   // people it was given to (`sagax_server_engines` lists VOICE_SERVER_ENGINE).
   if (deps.serverKeyAllowed && !deps.serverKeyAllowed(speaker)) return { ok: false, cause: "server_engine_not_allowed" };
   return { ok: true, key: serverKey, via: "org-key" };

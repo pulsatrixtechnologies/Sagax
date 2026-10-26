@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// The account menu's second levels (Grok Bot's Usage ›, Help ›, Switch
+// The account menu's second levels (the reference design's Usage ›, Help ›, Switch
 // organization ›): a chevron and a grey value on the row, the level opens on
 // click or the right arrow, closes with the left arrow, and its actions run.
 import { createElement } from "react";

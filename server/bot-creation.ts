@@ -1,4 +1,4 @@
-// Any bot of a person creates bots (JC, 2026-10-17): "allow non primary bot
+// Any bot of a person creates bots (2026-10-17): "allow non primary bot
 // to create other bots". The rules only, with no store and no clock of their
 // own; server/index.ts applies them on /api/internal/create-bot and the
 // catalog (server/drivers/agents-catalog.ts) offers create_bot by them.

@@ -39,7 +39,7 @@ const FAKE_KEY = "xai-VERIFYfakeKq7Zp2Lw9Rt4Mn6Bv";
 const idp = await startFakeOidcProvider({ user: { sub: "01J9VERIFYVOICEMODE0000000", email: "ada@example.test", name: "Ada", preferred_username: "ada", role: "admin" } });
 // each streamed sentence of the answer lasts 4 s, made in real time: long
 // enough to talk over while it is still being made
-const xai = await startFakeXaiVoice({ transcript: "Hello Cryptic from voice mode", ttsSeconds: 4, ttsChunkMs: 100 });
+const xai = await startFakeXaiVoice({ transcript: "Hello Quasar from voice mode", ttsSeconds: 4, ttsChunkMs: 100 });
 const port = await freePortBlock([0, 1]);
 if (RESERVED.includes(port) || RESERVED.includes(port + 1)) throw new Error("reserved port, run again");
 const origin = `http://127.0.0.1:${port}`;

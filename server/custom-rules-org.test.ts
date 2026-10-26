@@ -1,6 +1,6 @@
 // The organization's approval policy (server/custom-rules-org.ts): admin
 // rules every member meets and cannot change, and "Toujours permettre" off
-// for everyone (Grok Bot parity lot 1A, 2026-10-21).
+// for everyone (the reference design parity lot 1A, 2026-10-21).
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";

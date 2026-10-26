@@ -158,7 +158,7 @@ export function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhoo
   };
 
   return (
-    // 2026-10-16 (JC): drawn like Settings (DIALOG): the app background, the
+    // 2026-10-16 : drawn like Settings (DIALOG): the app background, the
     // title at the top left, the round close button, pills at the bottom.
     <div className={DIALOG.backdrop} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={webhook ? t("webhookEditor.editTitle") : t("webhookEditor.newTitle")} tabIndex={-1} className={cn(DIALOG.frame, DIALOG.width.lg, "max-h-[90vh]")}>

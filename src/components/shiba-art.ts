@@ -1,5 +1,5 @@
 // Shiba's drawing, in a 0..100 box (src/components/ShibaMascot.tsx): direction
-// C, "aplat net", approved by JC on 2026-10-09. Two flat tones (the coat and
+// C, "aplat net", approved by the maintainer on 2026-10-09. Two flat tones (the coat and
 // the cream mask) plus one shade tone in a crescent, one uniform outline on
 // the silhouette and the features alike, geometric shapes. The body sits; the
 // face is three layers that every expression swaps (the eyes, the brow spots,

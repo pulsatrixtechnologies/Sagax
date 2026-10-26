@@ -17,7 +17,7 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
     public var keywords: [String] {
         switch self {
         // The links, feedback and the bot's settings sit on the root now
-        // (Grok Bot iOS 1.14); General keeps the chat's settings.
+        // (the reference design iOS 1.14); General keeps the chat's settings.
         case .general: return ["general", "chat", "quick replies", "call voice", "walkie"]
         case .experimental: return ["early", "preview", "skill", "authoring", "browser", "templates", "connected apps"]
         // Pair devices: the computers this phone is paired with

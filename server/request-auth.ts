@@ -587,7 +587,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots$/ },
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/direct-grants$/ },
-  // the owner removes a person's grant (server/direct-grants.ts checks ownership)
+  // The owner removes a person's grant (server/direct-grants.ts checks ownership)
   { methods: ["DELETE"], path: /^\/api\/bots\/[\w-]+\/direct-grants\/pr_[0-9a-f-]{36}$/ },
   // approvals and cards
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/respond$/ },
@@ -705,7 +705,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // like a routine. Server-side, webhookDelegateRefusal keeps a member off an
   // admin's bot and off a Microsoft trigger, and the create handler refuses a
   // non-admin a run target on the shared server (server/exec-target.ts
-  // webhookExecTargetAdminOnly). 2026-10-22 (JC): a normal user must be able
+  // webhookExecTargetAdminOnly). 2026-10-22 a normal user must be able
   // to use this basic bot feature without the server-settings right.
   { methods: ["GET"], path: /^\/api\/webhooks$/ },
   { methods: ["POST"], path: /^\/api\/webhooks$/ },
@@ -865,7 +865,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["GET", "POST"], path: /^\/api\/instances\/[\w.-]+\/api-key$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/[\w.-]+\/(?:refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out|claude-update)$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/(?:claude|chatgpt)-accounts$/, permission: "engines.manage" },
-  // 2026-10-19 (JC): the four admin keys an admin may now give in Perspicax.
+  // 2026-10-19: the four admin keys an admin may now give in Perspicax.
   // What changes admin rights stays admin scope (no row here): a backup
   // restore, the tool grants, the sign-in lists, attaching an interim
   // person. Handlers still refuse a delegate who acts on an admin
@@ -886,7 +886,7 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   // backup.workspace: the export, never the restore
   { methods: ["GET", "POST"], path: /^\/api\/workspace-backup\/(?:status|client-state|export|download\/[\w.-]{1,200})$/, permission: "backup.workspace" },
   // server.settings
-  // 2026-10-22 (JC): the config write opens to EITHER server.settings (the
+  // 2026-10-22 the config write opens to EITHER server.settings (the
   // whole installation) OR server.experimental (the switches of Settings >
   // Experimental only). The two are separate rights; any one admits the
   // request at the gate. The handler then holds a caller who lacks

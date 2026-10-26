@@ -245,7 +245,7 @@ export function PermissionsSection({
         />}
       </PaneSection>}
 
-      {/* 2026-10-16 (JC): one Approvals group of rows like Settings: the
+      {/* 2026-10-16: one Approvals group of rows like Settings: the
           approval level, the owner's permission mode (OwnerPermissionsCard)
           and contacting other bots. */}
       {showOwnerPermissions
@@ -345,7 +345,7 @@ function OutboundControl({ bot, onChange }: { bot: Bot; onChange: (policy: Outbo
   };
 
   const title = t("botPanel.permissions.outbound");
-  // 2026-10-16 (JC): drawn like Settings: the policy in a pill menu, the
+  // 2026-10-16 : drawn like Settings: the policy in a pill menu, the
   // daily cap as a small number field with its unit.
   return (
     <SettingsGroup title={title} groupId="outbound"

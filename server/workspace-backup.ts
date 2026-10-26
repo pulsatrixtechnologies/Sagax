@@ -65,7 +65,7 @@ const EXCLUDED = new Set([
   // machine's own, kept in place by a restore, which settles what it brought.
   "cloud-owner.json",
 ]);
-// JC 2026-10-18 15:55 « Exclure tout » (workspace-backup-policy.ts savedSignInPath)
+// 2026-10-18 15:55 « Exclure tout » (workspace-backup-policy.ts savedSignInPath)
 const NO_SECRET_NOTE = "No secret is included: engine sign-ins and API keys, provider keys, personal connections, the credential vault, MCP sign-ins, headers and environment values, GitHub tokens, cloud agent keys, trigger secrets, phone push registrations and signing keys. Settings are included. After a restore, reconnect what the reconnect list names; this device keeps its own.";
 const EXCLUSION_NOTES = [
   "Device pairing, server identity, live leases and runtime files (existing destination identities are preserved).",
@@ -623,7 +623,7 @@ export async function createWorkspaceBackupSnapshot(dataDir: string, options: Cr
         const path = prefix ? `${prefix}/${name}` : name;
         if (excludedWorkspaceAuthPath(path)) { reconnect.path(path); continue; }
         if (ephemeralWorkspaceTokenPath(path) || redownloadedOrgLibraryPath(path) || liveDataEnginePath(path) || confidentialDataScopePath(path)) continue;
-        // no secret in a backup (JC 2026-10-18 « Exclure tout »): an engine's
+        // no secret in a backup (2026-10-18, « Exclure tout »): an engine's
         // saved sign-in, a person's sealed stores, the workspace's keys, the
         // phones' push registrations; whoever restores reconnects them
         if (savedSignInPath(path)) { tallySecret(reconnect, join(directory, name), path); continue; }

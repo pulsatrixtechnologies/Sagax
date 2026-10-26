@@ -15,7 +15,7 @@ export interface WorkspaceBackupSummary {
   exclusions: string[];
   warnings: string[];
   /** What to reconnect after a restore, by category: how many sign-ins,
-   * keys or links the source held that the backup left out (JC,
+   * keys or links the source held that the backup left out (the maintainer,
    * 2026-10-18: no secret in a workspace backup). Counts only, never a
    * name or a value. Absent in archives made before it. */
   reconnect?: WorkspaceBackupReconnect;

@@ -15,15 +15,15 @@ const params = new URLSearchParams(location.search);
 setLocale(params.get("lang") ?? "fr");
 applySkin((params.get("skin") ?? "midnight") as SkinId);
 
-const BOT = { id: "preview-bot", name: "Cryptic", color: "green", soul: "" } as unknown as Bot;
+const BOT = { id: "preview-bot", name: "Quasar", color: "green", soul: "" } as unknown as Bot;
 
 const scheduleInput = {
-  conditions: "member/identifier='jcproulx' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
+  conditions: "member/identifier='amartin' and dateStart >= [2026-10-02T04:00:00Z] and dateStart < [2026-10-04T04:00:00Z]",
   fields: "id,dateStart,dateEnd,member/identifier,objectId,type/name,status/name",
   orderBy: "dateStart asc",
   pageSize: 100,
 };
-const writeInput = { resource: "time/entries", operation: "create", body: { chargeToType: "ServiceTicket", chargeToId: 287826, member: { identifier: "jcproulx" }, timeStart: "2026-10-02T13:00:00Z", timeEnd: "2026-10-02T14:00:00Z", notes: "Suivi" } };
+const writeInput = { resource: "time/entries", operation: "create", body: { chargeToType: "ServiceTicket", chargeToId: 287826, member: { identifier: "amartin" }, timeStart: "2026-10-02T13:00:00Z", timeEnd: "2026-10-02T14:00:00Z", notes: "Suivi" } };
 
 function card(id: string, tool: string, input: unknown): Message {
   const json = JSON.stringify(input);

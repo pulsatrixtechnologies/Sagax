@@ -5,7 +5,7 @@ import UserNotifications
 
 /// Turns an APNs (or local) banner into an iOS communication notification:
 /// the bot or person's name is the sender, and their avatar is the icon,
-/// the way Messages and Grok Bot look. Without a loaded avatar the name
+/// the way Messages and the reference design look. Without a loaded avatar the name
 /// still replaces "Sagax". The Communication Notifications entitlement
 /// (`com.apple.developer.usernotifications.communication`) has to be on
 /// the App ID; without it `updating(from:)` throws and the title fallback

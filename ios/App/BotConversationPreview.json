@@ -1,9 +1,9 @@
 {
  "bots": [
   {
-   "id": "katarina",
-   "threadId": "katarina-main",
-   "name": "Katarina",
+   "id": "ottoline",
+   "threadId": "ottoline-main",
+   "name": "Ottoline",
    "title": "Assistant",
    "description": "",
    "notifications": false,
@@ -17,7 +17,7 @@
    "createdAt": 1789088400000,
    "tasks": [
     {
-     "threadId": "katarina-main",
+     "threadId": "ottoline-main",
      "title": "Main",
      "createdAt": 1789088400000,
      "modelSelection": {

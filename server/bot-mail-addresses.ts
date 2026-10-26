@@ -125,7 +125,7 @@ export class BotMailAddresses {
     }
   }
 
-  /** v2 (JC decision 4): the owner picks the bot's local part. `ownerSub`
+  /** v2 (decision 4): the owner picks the bot's local part. `ownerSub`
    * is the Perspicax user id of the person acting, already checked to own
    * the bot here. */
   async setLocalPart(botId: string, ownerSub: string, localPart: string): Promise<LocalPartResult> {

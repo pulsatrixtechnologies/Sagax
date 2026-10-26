@@ -1,4 +1,4 @@
-// What one model of an engine accepts (JC, 2026-10-13): its reasoning
+// What one model of an engine accepts (2026-10-13): its reasoning
 // efforts and its default effort, and its fast twin. The engines say it per
 // model (Grok's initialize `reasoningEfforts`, Codex's model/list
 // `supportedReasoningEfforts`, Claude Code's initialize

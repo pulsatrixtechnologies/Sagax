@@ -14,7 +14,7 @@
 // Sagax). A `_dry_run` sends nothing and stays allowed.
 //
 // Tool names are compared with separators folded (`twilio_api__write`,
-// `twilio_api-write`, `mcp__perspicax_gox__twilio_api__write`) and with
+// `twilio_api-write`, `mcp__perspicax_example__twilio_api__write`) and with
 // per-resource names (`twilio_api__Calls_write`).
 //
 // Pure: no disk, no clock.

@@ -8,7 +8,7 @@ import UIKit
 
 // MARK: - Links (08)
 
-/// The bot's links, as Grok Bot's Links tab behaves: a row names the page
+/// The bot's links, as the reference design's Links tab behaves: a row names the page
 /// (its title and icon from `LinkPreviewStore`, else the link's text or
 /// the domain), with the domain, the day and the conversation under it. A
 /// tap opens a web page in the in-app browser (SFSafariViewController); a

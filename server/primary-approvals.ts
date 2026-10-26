@@ -1,11 +1,11 @@
 // sagax_approvals: a person's Primary Bot answers or cancels the approval
 // cards that wait on that person, when the person asks for it in this turn
-// (JC, 2026-10-20, Grok Bot parity: "le bot principal doit pouvoir
+// (2026-10-20, the reference design parity: "le bot principal doit pouvoir
 // absolument tout faire"). Exactly what a click does: the answer is the
 // same POST /api/threads/:id/respond (or Cancel turn's interrupt, or Always
 // allow this's custom rule) replayed with the person's own session, so every
 // check of the click applies (whose card, an admin's card, a security key).
-// A card of the person's own confidential thread is theirs too (JC
+// A card of the person's own confidential thread is theirs too (the maintainer
 // 2026-10-20): answered like any other, its content never shown to the
 // Primary Bot. Three rules are this module's:
 // - only the person's own Primary Bot (never a teammate, another bot or a
@@ -42,7 +42,7 @@ export type PrimaryCard = {
   botName: string;
   /** when the card appeared (ms) */
   at: number;
-  /** "Allow Katarina to run a command?" */
+  /** "Allow Maya to run a command?" */
   title: string;
   /** one line under it: the command, the file, the change */
   line: string;
@@ -87,13 +87,13 @@ export type PrimaryApprovalsDeps = {
  * the ones the person answers themselves (`mine`; `org` only when they may
  * decide it, an admin's card for an admin), never one they only watch (a
  * teammate's, an admin's for a member). Their own confidential thread's
- * cards included (JC 2026-10-20): the screen lists those to its owner only. */
+ * cards included (2026-10-20): the screen lists those to its owner only. */
 export function primaryAnswerable(item: { decidable: boolean; scope: string }): boolean {
   return item.decidable && (item.scope === "mine" || item.scope === "org");
 }
 
 /** The card a bare "oui" answers: the latest one the person could see when
- * they wrote (JC 2026-10-20). */
+ * they wrote (2026-10-20). */
 function latestSeen(cards: readonly PrimaryCard[], at: number): PrimaryCard | undefined {
   return cards.filter((card) => card.at <= at).sort((a, b) => b.at - a.at)[0];
 }
@@ -174,7 +174,7 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
     const cards = deps.pending(turn);
     const wanted = typeof ref === "string" ? ref.trim() : "";
     if (!wanted) {
-      // no card named: the latest one the person saw (JC 2026-10-20)
+      // no card named: the latest one the person saw (2026-10-20)
       const card = latestSeen(cards, turn.message.at) ?? (cards.length === 1 ? cards[0] : undefined);
       if (card && !(cards.length > 1 && card.at > turn.message.at - JUST_RAISED_MS)) return { card, others: cards.filter((row) => row !== card) };
       return refused(400, "card_required", cards.length ? `Pass card: one of ${cards.map((row) => cardRef(row.threadId, row.requestId)).join(", ")} (action list says which is which).` : "Nothing is waiting on the person.");
@@ -190,7 +190,7 @@ export function createPrimaryApprovals(deps: PrimaryApprovalsDeps) {
     }
     // A yes is bound to its card: the person's message names this one (its
     // bot, the bot that asked, or its handle), or it is the latest card they
-    // saw (JC 2026-10-20: a bare "oui" answers the latest, whatever the
+    // saw (2026-10-20: a bare "oui" answers the latest, whatever the
     // message's length and however many wait; the answer says which). A
     // bot's name names its card only when no other card is that bot's.
     const names = [

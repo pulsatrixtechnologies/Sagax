@@ -128,7 +128,7 @@ export function VoiceSettings({
     ...(hostConfigured || deviceProvider === "host" ? [{ value: "host" as const, label: hostProviderLabel }] : []),
   ];
 
-  // 2026-10-16 (JC): drawn like Settings: one card of compact rows (label
+  // 2026-10-16 : drawn like Settings: one card of compact rows (label
   // at the left, control at the right), the voice in a pill menu, the
   // explanations behind the info buttons.
   return (

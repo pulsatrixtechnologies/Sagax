@@ -232,9 +232,9 @@ posixOnly("org identity", () => {
     const token = await pairAs(["admin", "client"]);
     const session = await api("GET", "/api/auth/session", undefined, token);
     expect(session.body.profileManagedBy).toBeUndefined();
-    const saved = await api("PUT", "/api/config", { profile: { name: "JC Proulx", email: "jc@example.com" } }, token);
+    const saved = await api("PUT", "/api/config", { profile: { name: "JC Martin", email: "jc@example.com" } }, token);
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-    expect(saved.body.profile).toMatchObject({ name: "JC Proulx", email: "jc@example.com" });
+    expect(saved.body.profile).toMatchObject({ name: "JC Martin", email: "jc@example.com" });
     const config = await api("GET", "/api/config", undefined, token);
     expect(config.body.viewer.profileManagedBy).toBeUndefined();
     expect(config.body.viewer.profileManageUrl).toBeUndefined();

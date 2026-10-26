@@ -59,7 +59,7 @@ final class AccountAvatarTests: XCTestCase {
         let json = #"""
         {"kind":"session","id":"sess_1","label":"JC's iPhone","scopes":["client"],"via":"bearer","environmentId":"env",
          "identity":"perspicax","principalId":"pr_0b1c2d3e-0000-4000-8000-000000000001","email":"jc@example.test",
-         "name":"Jean-Christophe Proulx","login":"jcproulx","role":"admin","teams":[],
+         "name":"Alex Martin","login":"amartin","role":"admin","teams":[],
          "profileManagedBy":"perspicax","profileManageUrl":"https://px.example.test/console/me",
          "avatarUrl":"/api/people/pr_0b1c2d3e-0000-4000-8000-000000000001/avatar?v=0123456789abcdef"}
         """#
@@ -67,7 +67,7 @@ final class AccountAvatarTests: XCTestCase {
         XCTAssertEqual(auth.avatar?.route, .person(id: "pr_0b1c2d3e-0000-4000-8000-000000000001", version: "0123456789abcdef"))
         let identity = try JSONDecoder().decode(AccountIdentity.self, from: Data(json.utf8))
         XCTAssertEqual(identity.avatar, auth.avatar)
-        XCTAssertEqual(identity.displayName(fallback: "x"), "Jean-Christophe Proulx")
+        XCTAssertEqual(identity.displayName(fallback: "x"), "Alex Martin")
     }
 
     func testAPersonalComputerNamesNoPhoto() throws {

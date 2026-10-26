@@ -1,5 +1,5 @@
-// The person's own request, proved from their words (JC, 2026-10-20: "le bot
-// principal doit pouvoir absolument tout faire", Grok Bot parity). A
+// The person's own request, proved from their words (2026-10-20: "le bot
+// principal doit pouvoir absolument tout faire", the reference design parity). A
 // person's Primary Bot answers or cancels their approval cards, and turns
 // their cards off (approval levels, rules), only when the person asked for
 // it in the message that started this turn. The bot passes `quote`: the
@@ -44,7 +44,7 @@ const WORDS: Readonly<Record<Exclude<PrimaryIntent, "answer">, readonly string[]
 /** Words that say yes or no without saying to what ("oui", "ok", "go"):
  * for a setting they count only in a short reply, never picked out of a
  * longer message ("ok, résume ce courriel"). A card's answer takes them in
- * any message (`anyLength`, JC 2026-10-20: "oui" answers the latest card). */
+ * any message (`anyLength`, 2026-10-20: "oui" answers the latest card). */
 const WEAK: Readonly<Partial<Record<PrimaryIntent, readonly string[]>>> = {
   allow: ["oui", "ok", "okay", "go", "vas y", "d'accord", "dac", "fais le", "fais la", "lance", "roule", "laisse la", "yes", "yep", "sure", "go ahead", "do it", "proceed"],
   deny: ["non", "no", "nope"],

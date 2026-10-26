@@ -908,7 +908,7 @@ id).
   subscription", "Your key", "Owner's credentials", "Organization's key"),
   never the secret, and the usage rows carry `access` and
   `payerPrincipalId`.
-- **The organization's key, per person (2026-10-16, JC).** The accounts the
+- **The organization's key, per person (2026-10-16).** The accounts the
   organization provides (a key in Settings > Connections, and voice mode on
   its xAI key) serve an organization admin always, and a member only for
   the engine instances Perspicax lists on their person sheet
@@ -949,7 +949,7 @@ id).
   message...") with **Sign in with my subscription** and **Add my key in
   Perspicax**; an admin also reads where the organization's key lives. A
   refused organization key stays visible to everyone (its provider words to
-  the owner and admins only). Cards stored before this are filtered when
+  The owner and admins only). Cards stored before this are filtered when
   read, from `payerPrincipalId`, else the bot's owner.
 - **Keys live in Perspicax.** A person saves their Anthropic or OpenAI key
   in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot reads it

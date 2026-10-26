@@ -56,7 +56,7 @@ export function reactionActorName(actor: ReactionActor, selfIds: readonly string
   return actor.name || (actor.kind === "bot" ? t("reactions.aBot") : t("seen.someone"));
 }
 
-/** "Zachary Sellam and Cryptic reacted with 👍". */
+/** "Sam Taylor and Quasar reacted with 👍". */
 export function reactionTooltip(chip: Pick<ReactionChip, "emoji" | "actors">, selfIds: readonly string[]): string {
   const names = chip.actors.map((actor) => reactionActorName(actor, selfIds));
   const list = names.length <= 1 ? names.join("") : t("reactions.list", { names: names.slice(0, -1).join(", "), last: names.at(-1)! });

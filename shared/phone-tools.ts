@@ -1,4 +1,4 @@
-// Phone tools (Grok Bot parity, audit row 81, JC 2026-10-21): a bot asks
+// Phone tools (the reference design parity, audit row 81 2026-10-21): a bot asks
 // the person's own iPhone for something only the phone knows (where it is,
 // a contact, a reminder, the calendar, a photo the person picks, a
 // shortcut, the clipboard, battery and network). The person approves each
@@ -284,7 +284,7 @@ export const phoneDeviceSchema = z.object({
   deviceName: z.string().trim().max(80).default(""),
   tools: z.array(z.enum(PHONE_REQUEST_KINDS)).max(PHONE_REQUEST_KINDS.length),
   /** How the phone reaches this server: "protected" is HTTPS or Tailscale.
-   * On plain local Wi-Fi the phone offers nothing (JC 2026-10-21): the
+   * On plain local Wi-Fi the phone offers nothing (2026-10-21): the
    * answers would cross the network in clear. Absent is "local". */
   transport: z.enum(["protected", "local"]).default("local"),
 }).strict();

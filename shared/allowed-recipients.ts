@@ -1,4 +1,4 @@
-// A bot's allowed recipients (parité Grok Bot X3, JC 2026-10-21: « OUI, par
+// A bot's allowed recipients (parité avec la référence X3, 2026-10-21: « OUI, par
 // bot ; hors liste = carte »). The people and bots this bot may write to
 // without a card: an email address, a phone number (Messages, texts), or
 // another bot. A send to anyone else keeps its approval card.

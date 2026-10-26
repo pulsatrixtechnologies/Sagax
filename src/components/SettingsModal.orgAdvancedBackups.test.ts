@@ -1,5 +1,5 @@
-// Settings > Organization, General > Advanced and Backups laid out as Grok
-// Bot's (0.5.6, JC): grey headings over cards of rows, lists folded behind a
+// Settings > Organization, General > Advanced and Backups laid out as the reference
+// design's (0.5.6, JC): grey headings over cards of rows, lists folded behind a
 // count pill, destructive actions in a red pill, no help paragraphs, nothing
 // technical (host names, raw ids), and a search that finds them.
 import { createElement } from "react";
@@ -17,7 +17,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
 }));
 
 const org = (viewerRole: "admin" | "member", state: "ok" | "missing" = "ok"): PerspicaxOrg => ({
-  org: { name: "GOX Technologies", identity: { kind: "perspicax", issuer: "https://px.example.test" } },
+  org: { name: "Acme Corp", identity: { kind: "perspicax", issuer: "https://px.example.test" } },
   link: { state },
   viewerRole,
   settings: { allowFullAccess: true },
@@ -38,7 +38,7 @@ describe("Settings > Organization (Perspicax)", () => {
     const { OrganizationBotRows } = await import("./settings/OrganizationBotRules");
     const html = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("admin"), onChanged: () => {}, botRows: createElement(OrganizationBotRows) }));
     expect(html.indexOf('data-settings-group="organization"')).toBeLessThan(html.indexOf('data-settings-group="organizationBots"'));
-    expect(html).toContain("GOX Technologies");
+    expect(html).toContain("Acme Corp");
     expect(html).toContain("Linked to Pulsatrix · Admin");
     expect(html).toContain("Manage in Perspicax");
     // rows, not cards: Full access, commands waiting, routines, group turns, MCP calls

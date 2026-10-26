@@ -8,7 +8,7 @@ metadata:
     {{- include "sandboxes.labels" . | nindent 4 }}
     app.kubernetes.io/name: sagax-sandbox-warmer
 spec:
-  {{- /* 2026-10-19 (GOX): an upgrade during the day put the scaled-up
+  {{- /* 2026-10-19 (production): an upgrade during the day put the scaled-up
   warmer back to the chart's 0, the node pool fell to 0 and every routine
   waited for a cold node. The CronJobs own the count once installed. */}}
   {{- $live := lookup "apps/v1" "Deployment" .Values.systemNamespace "sagax-sandbox-warmer" }}

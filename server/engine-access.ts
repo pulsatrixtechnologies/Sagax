@@ -90,7 +90,7 @@ export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", 
   return `No ${engine} access for this turn: sign in with your own ${engine} subscription or add your key in Perspicax, or ask an admin to set the organization's key.`;
 }
 
-/** A bot owned by someone who is not an organization admin (JC rule until
+/** A bot owned by someone who is not an organization admin (rule until
  * per-owner containers): it never runs with full access, and its server
  * commands need an admin's approval. */
 export function memberOwnedBot(input: { identity: "solo" | "perspicax"; ownerOrgRole: "admin" | "member" | undefined }): boolean {
@@ -163,7 +163,7 @@ export function claudeAiOwnerScopedServer(server: string, via: string | undefine
 }
 
 /** Whether a permission card of a member's bot on an organization server
- * waits for an organization admin (JC rule until per-owner containers). Every
+ * waits for an organization admin (rule until per-owner containers). Every
  * bot shares one container, one user and one HOME, so a write to the shared
  * Claude settings or a read of a secret is as good as a server command.
  * The owner answers only a file tool (Read, Write, Edit, ...) whose every
@@ -194,7 +194,7 @@ export function memberBotAdminApproval(input: {
    * one of them could have spelled is never a built-in tool
    * (sagax-internal-tools.ts foreignToolSpelling). */
   foreignMcpServers?: Iterable<string>;
-  /** 2026-10-19 (JC): the call acts on one of the owner's own destinations
+  /** 2026-10-19: the call acts on one of the owner's own destinations
    * (their server environment, their own computer or its Local VM) mounted
    * for this turn (member-environment.ts ownDestinationCall): the owner's
    * card at their own level, never an admin's, whatever the tool. */
@@ -299,8 +299,8 @@ export function accessCardAudience(access: { reason: string; ownerPrincipalId: s
 /** The notifications of a refused or paused routine run, split by who can
  * open the thread its access card sits in (2026-10-01). A routine runs as a
  * person, in that person's private thread, but its card may be for the bot's
- * owner (the owner's credentials pay): the owner cannot read that thread, so
- * the owner's copy names no thread and carries `routineRunId`, which opens
+ * owner (The owner's credentials pay): the owner cannot read that thread, so
+ * The owner's copy names no thread and carries `routineRunId`, which opens
  * the run in the bot's Coding activity (the same card, its audience only).
  * Without an audience (a shared card) or a run, it is one notification, as
  * before. */
@@ -332,7 +332,7 @@ export function accessCardVisibleTo(message: { kind?: unknown; access?: { reason
 
 /** Who may answer a card on an organization server: "admin" lets an
  * organization admin answer an adminApproval card without being the bot's
- * owner; "refused" is anyone else on such a card (the owner included:
+ * owner; "refused" is anyone else on such a card (The owner included:
  * 403 admin_approval_required); null is every other card, answered as
  * before. A card already settled is no longer an admin approval. */
 export function adminApprovalDecision(input: {

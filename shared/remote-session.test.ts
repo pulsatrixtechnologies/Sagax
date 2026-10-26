@@ -31,7 +31,7 @@ describe("remote session inventory", () => {
   it("reads only the fixed keys and formats disk and memory", () => {
     const parsed = parseInventory([
       "hostname=GOXP103",
-      "user=gox\\zsellam",
+      "user=acme\\staylor",
       "model=OptiPlex",
       "serial=ABC123",
       "cpu=Intel Core i5",
@@ -43,7 +43,7 @@ describe("remote session inventory", () => {
       "address=tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd",
     ].join("\n"));
     expect(parsed.hostname).toBe("GOXP103");
-    expect(parsed.user).toBe("gox\\zsellam");
+    expect(parsed.user).toBe("acme\\staylor");
     expect(parsed.elevated).toBe(true);
     expect(parsed.ramGb).toBeCloseTo(16, 5);
     expect(parsed).not.toHaveProperty("address");
@@ -66,7 +66,7 @@ describe("remote session inventory", () => {
 
 describe("remote session paths", () => {
   it("refuses traversal and a tunnel token", () => {
-    expect(safeRemotePath("C:/Users/zsellam/Desktop/notes.txt")).toBe("C:/Users/zsellam/Desktop/notes.txt");
+    expect(safeRemotePath("C:/Users/staylor/Desktop/notes.txt")).toBe("C:/Users/staylor/Desktop/notes.txt");
     expect(safeRemotePath("C:/Users/../secret.txt")).toBeNull();
     expect(safeRemotePath("tcABCDEFGHJKMNPQRSTUVWXYZ234567890abcd")).toBeNull();
     expect(safeUploadName("../notes.txt")).toBeNull();

@@ -1632,7 +1632,7 @@ export function LocalComputerSection() {
       <ComputerCareSettings />
 
       {!orgBridge && manageComputers && <>
-      {/* 0.5.6 (JC): Grok Bot's "Bot's computer" group. One row: the
+      {/* 0.5.6: the reference design's "Bot's computer" group. One row: the
           Local VM's state in one short grey line, Recheck and Watch as
           pills; the automatic care and Reset under it. The setup,
           isolation and safety cards stay below, folded. */}

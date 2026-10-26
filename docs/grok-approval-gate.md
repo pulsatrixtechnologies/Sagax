@@ -50,7 +50,7 @@ PreToolUse hooks cannot pre-approve: per the docs, a hook "allow" only means "no
 
 ## Production finding: Grok's `use_tool` ask (2026-10-11)
 
-The first live gated turn (Cryptic, thread 84c81700…, 2026-10-12T01:04Z)
+The first live gated turn (Nova, thread 84c81700…, 2026-10-12T01:04Z)
 showed that with many MCP tools mounted (158 in production) Grok defers them
 behind its `use_tool` meta tool, whose `_meta["x.ai/tool"].read_only` is
 false. In `default` mode Grok therefore sends `session/request_permission`

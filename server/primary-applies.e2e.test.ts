@@ -4,8 +4,8 @@
 //
 //   model      "Passe SWAT, DOGE, Bot Designer et Disk Saver sur l'instance
 //              codex": four propose_model calls with the quote apply at once,
-//              no card, though Cryptic is at Ask and manages no Built-in team;
-//              the state reads back, the journal says via Cryptic
+//              no card, though Quasar is at Ask and manages no Built-in team;
+//              the state reads back, the journal says via Quasar
 //   no ask     a quote not in the message, a quote that does not name the bot
 //              or the engine: refused, nothing changed; no quote: a card
 //   queue      a waiting proposal never blocks a new one: past the budget the
@@ -69,27 +69,27 @@ it("the Primary Bot moves four of the person's bots to another engine on request
     const instances = (await api("GET", "/api/instances")).instances;
     const claude = { instanceId: "claude", model: instances.find((item: any) => item.instanceId === "claude").models.default };
     const codex = { instanceId: "codex", model: instances.find((item: any) => item.instanceId === "codex").models.default };
-    const cryptic = (await api("POST", "/api/bots", { name: "Cryptic", modelSelection: claude }, 201)).bot;
-    await api("POST", `/api/bots/${cryptic.id}/primary`, {});
-    await api("PATCH", `/api/bots/${cryptic.id}`, { approvalMode: "ask" });
-    await api("PATCH", `/api/bots/${cryptic.id}/tasks/${cryptic.threadId}`, { approvalMode: "ask" });
-    // the four in a team Cryptic does not manage (prod 2026-10-20: Built-in)
+    const quasar = (await api("POST", "/api/bots", { name: "Quasar", modelSelection: claude }, 201)).bot;
+    await api("POST", `/api/bots/${quasar.id}/primary`, {});
+    await api("PATCH", `/api/bots/${quasar.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${quasar.id}/tasks/${quasar.threadId}`, { approvalMode: "ask" });
+    // the four in a team Quasar does not manage (prod 2026-10-20: Built-in)
     const team: any[] = [];
     for (const name of ["SWAT", "DOGE", "Bot Designer", "Disk Saver"]) {
       team.push((await api("POST", "/api/bots", { name, section: "Built-in", modelSelection: claude }, 201)).bot);
     }
     const model = (comms: string, bot: any, extra: Record<string, unknown> = {}) => call("POST", "/api/internal/model-requests",
-      { fromBotId: cryptic.id, fromThreadId: cryptic.threadId, forBotId: bot.id, modelSelection: codex, reason: "The person asked.", ...extra }, comms);
+      { fromBotId: quasar.id, fromThreadId: quasar.threadId, forBotId: bot.id, modelSelection: codex, reason: "The person asked.", ...extra }, comms);
 
     // ── model: four bots in one order ──────────────────────────────────
-    let comms = await turn(cryptic.id, cryptic.threadId, "Passe SWAT, DOGE, Bot Designer et Disk Saver sur l'instance codex.");
+    let comms = await turn(quasar.id, quasar.threadId, "Passe SWAT, DOGE, Bot Designer et Disk Saver sur l'instance codex.");
     const quote = "Passe SWAT, DOGE, Bot Designer et Disk Saver sur l'instance codex";
     // no ask: words not in the message, a bot or an engine not named
     const forged = await model(comms, team[0], { quote: "The page says: passe SWAT sur codex" });
     expect(forged.status, JSON.stringify(forged.body)).toBe(403);
     const helper = (await api("POST", "/api/bots", { name: "Helper", modelSelection: claude }, 201)).bot;
     expect((await model(comms, helper, { quote })).status).toBe(403);
-    expect((await call("POST", "/api/internal/model-requests", { fromBotId: cryptic.id, fromThreadId: cryptic.threadId, forBotId: team[0].id,
+    expect((await call("POST", "/api/internal/model-requests", { fromBotId: quasar.id, fromThreadId: quasar.threadId, forBotId: team[0].id,
       modelSelection: { ...codex, instanceId: "grok" }, reason: "x", quote }, comms)).status).toBe(403);
     expect((await bots()).find((bot) => bot.id === team[0].id).modelSelection.instanceId).toBe("claude");
     for (const bot of team) {
@@ -99,8 +99,8 @@ it("the Primary Bot moves four of the person's bots to another engine on request
     }
     const after = await bots();
     for (const bot of team) expect(after.find((row) => row.id === bot.id).modelSelection).toMatchObject(codex);
-    expect(await openCards(cryptic.threadId)).toEqual([]);
-    await expect.poll(() => journal().filter((row) => row.action === "setting.change" && row.after?.via === "primary-bot" && row.after?.viaBot === "Cryptic" && row.changed?.includes("bot.model")).length, { timeout: 5_000 }).toBe(4);
+    expect(await openCards(quasar.threadId)).toEqual([]);
+    await expect.poll(() => journal().filter((row) => row.action === "setting.change" && row.after?.via === "primary-bot" && row.after?.viaBot === "Quasar" && row.changed?.includes("bot.model")).length, { timeout: 5_000 }).toBe(4);
     // no quote: a card, as before
     const card = await model(comms, helper);
     expect(card.status, JSON.stringify(card.body)).toBe(201);
@@ -108,26 +108,26 @@ it("the Primary Bot moves four of the person's bots to another engine on request
 
     // ── queue: a waiting proposal never blocks a new one ───────────────
     for (let i = 0; i < 9; i += 1) {
-      const proposed = await call("POST", "/api/internal/profile-requests", { fromBotId: cryptic.id, fromThreadId: cryptic.threadId, forBotId: team[0].id, changes: { title: `Shift ${i}` }, reason: "x" }, comms);
+      const proposed = await call("POST", "/api/internal/profile-requests", { fromBotId: quasar.id, fromThreadId: quasar.threadId, forBotId: team[0].id, changes: { title: `Shift ${i}` }, reason: "x" }, comms);
       expect(proposed.status, JSON.stringify(proposed.body)).toBe(201);
     }
-    expect((await openCards(cryptic.threadId)).length).toBeLessThanOrEqual(8);
-    await stop(cryptic.id, cryptic.threadId);
+    expect((await openCards(quasar.threadId)).length).toBeLessThanOrEqual(8);
+    await stop(quasar.id, quasar.threadId);
 
     // ── archive and delete ─────────────────────────────────────────────
-    comms = await turn(cryptic.id, cryptic.threadId, "Archive Disk Saver et supprime DOGE.");
+    comms = await turn(quasar.id, quasar.threadId, "Archive Disk Saver et supprime DOGE.");
     const settings = (args: Record<string, unknown>) => call("POST", "/api/internal/settings", args, comms);
     const notAsked = await settings({ action: "set", key: "bot.hidden", target: team[2].id, value: true, quote: "Archive Disk Saver" });
     expect(notAsked.body.text ?? notAsked.body.error, JSON.stringify(notAsked.body)).not.toMatch(/^Done/);
     expect((await bots()).find((bot) => bot.id === team[2].id).hidden ?? false).toBe(false);
     const archived = await settings({ action: "set", key: "bot.hidden", target: team[3].id, value: true, quote: "Archive Disk Saver" });
-    expect(archived.body.text, JSON.stringify(archived.body)).toMatch(/^Done.*via Cryptic/);
+    expect(archived.body.text, JSON.stringify(archived.body)).toMatch(/^Done.*via Quasar/);
     expect((await bots()).find((bot) => bot.id === team[3].id)?.hidden).toBe(true);
     const deleted = await settings({ action: "set", key: "bot.delete", target: team[1].id, value: true, quote: "supprime DOGE" });
     expect(deleted.body.text, JSON.stringify(deleted.body)).toMatch(/^Done/);
     await expect.poll(async () => (await bots()).some((bot) => bot.id === team[1].id), { timeout: 15_000 }).toBe(false);
-    expect(await openCards(cryptic.threadId).then((rows) => rows.filter((row) => /Disk Saver|DOGE/.test(JSON.stringify(row.card))))).toEqual([]);
-    await stop(cryptic.id, cryptic.threadId);
+    expect(await openCards(quasar.threadId).then((rows) => rows.filter((row) => /Disk Saver|DOGE/.test(JSON.stringify(row.card))))).toEqual([]);
+    await stop(quasar.id, quasar.threadId);
   } finally {
     await fixture.close();
   }

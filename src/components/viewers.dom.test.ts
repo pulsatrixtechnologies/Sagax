@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// File and diagram viewers (Grok Bot parity, 2026-10-16): Mermaid fits the
+// File and diagram viewers (the reference design parity, 2026-10-16): Mermaid fits the
 // column and opens full screen with pan, zoom and export; long table cells
 // expand; tables open full screen and copy as CSV; PDF and XLSX files get an
 // in-app preview.

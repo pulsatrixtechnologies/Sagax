@@ -1,4 +1,4 @@
-// start_thread on yourself as a sub-agent (Grok Bot parity D1). Grok Bot's
+// start_thread on yourself as a sub-agent (the reference design parity D1). the reference design's
 // sub-agent tool takes a type, a model, read-only, a background flag and the
 // id of an earlier sub-agent to resume. In Sagax a thread a bot opens on
 // itself is that sub-agent: `report_back` already runs it in the background

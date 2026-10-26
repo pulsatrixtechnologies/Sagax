@@ -1,6 +1,6 @@
 // Plugins > Manage > Providers: the engine accounts on this installation
 // and what each brings to bots. A Claude subscription lists its claude.ai
-// connectors. A Grok bot on an organization server sees the cloud connectors
+// connectors. A bot on Grok on an organization server sees the cloud connectors
 // of the xAI account it runs on. Codex and Gemini still have none to pass, and say so.
 export type ProviderId = "claude" | "openai" | "xai" | "google" | string;
 

@@ -1,5 +1,5 @@
 // sagax_settings: a bot reads and changes any setting of the app for the
-// person speaking to it (JC, 2026-10-19). The registry
+// person speaking to it (2026-10-19). The registry
 // (shared/settings-actions.ts) names the route the screen calls; the policy
 // (shared/settings-actions-policy.ts) decides run or card; the act engine
 // (server/bot-act.ts) replays the route with the person's own session, so
@@ -124,7 +124,7 @@ export function askedChange(message: string, key: string, value: unknown, botNam
   }
   if ((key.endsWith("approvalMode") || key === "bot.permissionMode") && typeof value === "string") {
     // security review 2026-10-20: the level and its bot are in the quote
-    // itself ("ne mets pas Katarina en Full, mets Zed en Full" sets Zed only)
+    // itself ("ne mets pas Maya en Full, mets Zed en Full" sets Zed only)
     const said = normalizeWords(quote);
     const words = LEVEL_WORDS[value] ?? [value];
     if (!words.some((word) => said.includes(` ${normalizeWords(word).trim()}`))) return `the person's words (quote) do not name the level ${value}`;
@@ -135,7 +135,7 @@ export function askedChange(message: string, key: string, value: unknown, botNam
   return true;
 }
 
-/** 2026-10-20 (JC: "le bot principal fait tout"): beyond levels and rules,
+/** 2026-10-20 ("le bot principal fait tout"): beyond levels and rules,
  * a Primary Bot changes these settings of the person's own bots and
  * routines at once when the person asks for it in their message. Each key
  * needs its own words in the quote (security review 2026-10-20: one quote
@@ -154,7 +154,7 @@ const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" |
   "bot.notifications": WORD("notif|alert|avis"), "bot.speakReplies": WORD("voix|voice|parle|lecture|speak|read aloud|a voix haute"),
   "bot.voiceNotes": WORD("note vocale|notes vocales|voice note"), "bot.pinned": WORD("epingl|pin"),
   "bot.managedSections": "teams", "bot.section": "teams", "bot.hidden": "archive", "bot.delete": "delete",
-  // 2026-10-20: "fais de Melonie mon bot principal"
+  // 2026-10-20: "fais de Quasar mon bot principal"
   "bot.primary": WORD("bot principal|robot principal|bot principale|primary bot|main bot|chief of staff|bras droit"),
   "routine.enabled": WORD("pause|suspend|desactiv|arret|stop|reprend|resume|reactiv|activ|enable|disable|coupe"),
   "routine.run": WORD("lance|roule|execute|run|demarre|start"), "routine.delete": "delete", "routine.name": "value",
@@ -429,7 +429,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // a person allows, or its keys and fingerprint when it is long; a
     // secret's value never
     const summary = `${spec.label} (${spec.key}${where ? `, ${where}` : ""})${secret ? `: ${Object.keys(value && typeof value === "object" ? value : {}).join(", ")}` : `: ${describe(value)}`}`;
-    // 2026-10-19 (JC: "Toujours permettre" on every card): what Always allow
+    // 2026-10-19 ("Toujours permettre" on every card): what Always allow
     // keeps: this setting of this target, and its exact value when the
     // change is more than a simple one
     const exactValue = classes.some((name) => name !== "own");

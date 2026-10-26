@@ -189,7 +189,7 @@ export function requestPeerApproval(
   if (bus.autoApply?.(from.id, sourceThreadId) || allowKeyAllowed(from, peerAllowKey(action, target.id))) {
     return Promise.resolve("allow");
   }
-  // 2026-10-21 (parité 1C, JC: « hors liste = carte, dans la liste = part
+  // 2026-10-21 (parité 1C, Decision: « hors liste = carte, dans la liste = part
   // sans carte »): a bot on the sender's allowed recipients is reached with
   // no card. A room (post_to_room) is not a recipient. A standing grant: off
   // while the organization turned standing grants off.

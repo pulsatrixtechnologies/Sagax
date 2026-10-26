@@ -6,7 +6,7 @@
 // (server/routes/bot-memory.ts), whose store reaches RULES.md and docs/ as
 // well, so every change lands in the memory journal.
 //
-// The same gate as the Soul edit (JC, 2026-10-09: members manage their own
+// The same gate as the Soul edit (2026-10-09: members manage their own
 // bots): an admin, the bot's owner, or someone granted edit on it; a person
 // who may only use shared bots is refused. The scope rule
 // (server/request-auth.ts CLIENT_ALLOW) lets a client session reach the

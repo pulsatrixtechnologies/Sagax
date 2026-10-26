@@ -72,7 +72,7 @@ export function delegatedApprovalMode(input: {
   recipientMode: ApprovalMode;
   recipientDriverKind: string | undefined;
   /** The recipient is a bot a member owns on an organization server: it never
-   * runs with Full access (JC rule until per-owner containers), whoever
+   * runs with Full access (rule until per-owner containers), whoever
    * delegates to it; a Full Primary Bot's level steps down past Full. */
   recipientMemberOwned?: boolean;
 }): ApprovalMode | null {
@@ -153,7 +153,7 @@ export type AutoVerdictSource =
   | "owner-auto"
   | "owner-bypass"
   | "owner-rule-deny"
-  /** 2026-10-19 (JC: "Toujours permettre" on every card): an allow rule an
+  /** 2026-10-19 ("Toujours permettre" on every card): an allow rule an
    * organization admin (or a holder of host.commands, for their own bot)
    * saved on an admin card of a member's bot; checked again at each use. */
   | "admin-rule"
@@ -242,7 +242,7 @@ export function autoVerdict(
      * works: answered at any level, after the safety hold and the person's
      * own rules, never when a security key protects it. */
     ownComputerChoice?: boolean;
-    /** 2026-10-20 (JC): a command that only reads (shared/read-only-command.ts)
+    /** 2026-10-20: a command that only reads (shared/read-only-command.ts)
      * on the person's own computer (their PC, its Local VM, their cloud
      * computer). Answered at any level and from any turn, after the safety
      * hold and the person's own rules, never when a security key protects it. */
@@ -317,7 +317,7 @@ export function autoVerdict(
   if (context?.customRule?.behavior === "allow" && !context.requiresExplicitApproval) {
     return { approve: `approved ${tool} (your rule)`, source: "custom-rule" };
   }
-  // The bot's allowed recipients (JC 2026-10-21: « dans la liste = part sans
+  // The bot's allowed recipients (2026-10-21: « dans la liste = part sans
   // carte »): the send is to people the person named ahead of time. It
   // answers the outbound guard and a gate card alike, never a widening or a
   // class the person protects with a security key.

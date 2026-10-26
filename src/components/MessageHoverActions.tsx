@@ -1,7 +1,7 @@
 // The quiet actions beside a chat message, shared by 1:1 chats (MessageBar)
 // and rooms (MessageActions), on a bot's answer and on a person's bubble.
 //
-// JC, 2026-10-15: the same shapes and measures as Grok Bot's message tray,
+// The maintainer, 2026-10-15: the same shapes and measures as the reference design's message tray,
 // in Sagax's skin tokens so every skin draws it:
 //
 // - the row: smiley (react), reply, "…"; 24px square buttons, 6px corners,
@@ -11,7 +11,7 @@
 //   reactions"): 32px round cells, 20px emoji, 4px apart, 6px inside;
 // - "…" opens a menu (12px corners, 6px inside, 200px wide at least) that
 //   starts with the same reactions, then Reply, Copy, Copy request ID, then
-//   Sagax's own entries in two sections under half-pixel dividers (JC,
+//   Sagax's own entries in two sections under half-pixel dividers (the maintainer,
 //   2026-10-16): what changes the message (edit, regenerate, pin), then how
 //   it is shown (read aloud, raw markdown). Rows are 30px high, 13px/18px text, 6px
 //   corners, 8px between the 16px icon and the label.
@@ -19,7 +19,7 @@
 // Keyboard: every popup takes focus on open, the arrows and Home/End move in
 // it, Escape closes it and gives focus back to the button that opened it.
 //
-// Placement (JC, 2026-10-18): the pill, the menu and the full picker are
+// Placement (2026-10-18): the pill, the menu and the full picker are
 // drawn in a portal on document.body, fixed beside the row, so neither the
 // transcript's scroller nor any other container cuts them. They open below
 // the row (the picker above), on the other side when there is no room, and
@@ -236,7 +236,7 @@ export function MessageHoverActions({
   const mirrored = side === "user";
   const barMotion = useMenuMotion(popup === "reactions");
   const menuMotion = useMenuMotion(popup === "menu");
-  // Grok Bot's placement: under the row, from the bubble's side
+  // The reference design's placement: under the row, from the bubble's side
   const align = mirrored ? "end" : "start";
   useAnchoredPopover(Boolean(react) && barMotion.shown, rootRef, barRef, { prefer: "below", align });
   useAnchoredPopover(menuMotion.shown, rootRef, menuRef, { prefer: "below", align });

@@ -13,7 +13,7 @@
 // decision that turns on a regex over them is a duplicate side effect
 // waiting for a vendor copy-edit.
 //
-// Lifted from #759 (aivsomkar), where the rebuild came from a context plan;
+// Lifted from upstream #759, where the rebuild came from a context plan;
 // here it is the recovery text the harness attaches to a resuming turn.
 
 export type ResumeFailureClass =

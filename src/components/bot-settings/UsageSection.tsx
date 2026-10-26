@@ -27,7 +27,7 @@ export function UsageSection({ bot }: { bot: Bot }) {
     </button>
   );
 
-  // 2026-10-16 (JC): drawn like Settings > Usage: a grey heading, one card
+  // 2026-10-16 : drawn like Settings > Usage: a grey heading, one card
   // of rows (label at the left, figure at the right), the price note in grey.
   if (usage.turns === 0) {
     return (

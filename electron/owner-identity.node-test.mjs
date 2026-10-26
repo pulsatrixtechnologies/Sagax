@@ -20,7 +20,7 @@ const answer = (status, body, type = "application/json") => ({
 /** A fake organization server: what /api/auth/session says and the image. */
 function orgServer() {
   const server = {
-    session: { kind: "session", identity: "perspicax", principalId: PERSON, name: "Jean-Christophe Proulx", email: "jc@example.test", avatarUrl: `/api/people/${PERSON}/avatar?v=v1` },
+    session: { kind: "session", identity: "perspicax", principalId: PERSON, name: "Alex Martin", email: "jc@example.test", avatarUrl: `/api/people/${PERSON}/avatar?v=v1` },
     images: new Map([["v1", PNG]]),
     status: 200,
     down: false,
@@ -47,7 +47,7 @@ test("asks the organization servers only, the one in use first", () => {
 test("reads who is signed in and their avatar, with the app's cookie, from the organization server only", async () => {
   const server = orgServer();
   const { identity } = await readOwnerIdentity(ORG, { fetch: server.fetch });
-  assert.deepEqual(identity, { origin: ORG, principalId: PERSON, name: "Jean-Christophe Proulx", email: "jc@example.test", avatar: { version: "v1", data: PNG.toString("base64") } });
+  assert.deepEqual(identity, { origin: ORG, principalId: PERSON, name: "Alex Martin", email: "jc@example.test", avatar: { version: "v1", data: PNG.toString("base64") } });
   assert.deepEqual(server.calls.map((call) => call.url), [`${ORG}/api/auth/session`, `${ORG}/api/people/${PERSON}/avatar?v=v1`]);
   assert.ok(server.calls.every((call) => call.credentials === "include"));
   // the same version is not downloaded again

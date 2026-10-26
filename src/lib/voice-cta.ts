@@ -1,5 +1,5 @@
 // The composer's round call to action (Voice, or Send once something is
-// typed) wears the open bot's color, like Grok Bot's tinted prompt button: a
+// typed) wears the open bot's color, like the reference design's tinted prompt button: a
 // full fill with a white glyph. The bot color is the mascot's own
 // (shared/mascot-colors.ts), so the button changes with the bot on screen.
 //
@@ -8,7 +8,7 @@
 // rule lives here instead: the fill is darkened toward black until the white
 // glyph reaches 3:1 (WCAG 1.4.11, a graphic that carries the meaning). A
 // colorless bot (white, grey, black...) keeps the default ink button, as
-// Grok Bot does for its grey bots.
+// the reference design does for its grey bots.
 import { contrastRatio, MASCOT_COLOR_HEX } from "../../shared/mascot-colors";
 
 export interface BotCtaColors {
@@ -67,7 +67,7 @@ export function ctaStyle(tone: BotCtaColors | null | undefined): Record<string, 
 
 /** A CTA in the bot's color (ctaStyle sets the values). */
 export const CTA_TONED = "bg-[var(--cta-fill)] text-white hover:bg-[var(--cta-hover)]";
-/** The default CTA: the skin's ink, as Grok Bot's grey bots. */
+/** The default CTA: the skin's ink, as the reference design's grey bots. */
 export const CTA_DEFAULT = "bg-ink text-app hover:brightness-110";
-/** Grok Bot's prompt circles: 28 px, round, glyph cross-fades. */
+/** The reference design's prompt circles: 28 px, round, glyph cross-fades. */
 export const CTA_CIRCLE = "relative flex size-7 shrink-0 items-center justify-center rounded-full transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus";
