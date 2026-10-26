@@ -12,12 +12,12 @@ import Foundation
 public enum PersonPrefKey {
     /// The app language: a locale code, "" for the system (src/lib/language-preference.ts).
     public static let language = "omb-language"
-    public static let skinTint = SkinTintKeys.tint
-    public static let skinDepth = SkinTintKeys.depth
+    public static let skinTint = DesktopAppearanceKeys.skinTint
+    public static let skinDepth = DesktopAppearanceKeys.skinDepth
     /// "1": the open bot's colour is the accent (src/lib/bot-accent.ts).
     public static let botAccent = BotAccent.key
     /// "on" | "off"; absent is on (src/lib/hd-mascots-preference.ts).
-    public static let hdMascots = HdMascots.key
+    public static let hdMascots = HdMascots.preferenceKey
     /// "1" | "0"; absent is shown (src/lib/panel-visibility.ts).
     public static let showSuggestions = "sagax.showSuggestions.v1"
     /// "off" stops read receipts both ways; absent is on (server/read-receipts.ts).
@@ -46,7 +46,7 @@ public extension SidebarPrefs {
     }
 
     var skinTint: String? { values[PersonPrefKey.skinTint] }
-    var skinDepth: SkinDepth { SkinTints.depth(values[PersonPrefKey.skinDepth]) }
+    var skinDepth: SkinDepth { values[PersonPrefKey.skinDepth].flatMap(SkinDepth.init(rawValue:)) ?? .accent }
 
     /// `botAccentEnabled`: on only when "1".
     var botAccent: Bool { values[PersonPrefKey.botAccent] == "1" }
@@ -110,50 +110,6 @@ public enum PersonLanguage {
         if let exact = available.first(where: { $0.lowercased() == wanted }) { return exact }
         let base = wanted.split(separator: "-").first.map(String.init) ?? wanted
         return available.first { $0.lowercased().split(separator: "-").first.map(String.init) == base }
-    }
-}
-
-// MARK: - HD mascots
-
-/// Settings > Appearance > Mascots > HD mascots (src/components/hd-mascots):
-/// a character that ships painted art shows it instead of its vector look.
-/// Shiba only for now. The art is painted: skins and bot colours leave it.
-public enum HdMascots {
-    public static let key = "sagax.hdMascots.v1"
-
-    /// On unless "off" (`localChoice(..., "on")`: any other value is the default).
-    public static func enabled(_ raw: String?) -> Bool { raw != "off" }
-
-    /// The characters with art.
-    public static let characters: Set<String> = ["shiba"]
-
-    /// The still a state shows (`HD_STATE_MAP`, a loop drawn as its
-    /// `loopStill`: idle "neutral", happy "happy", sad "sad", jump "jump").
-    /// Unknown states are the idle still.
-    public static func still(forState state: String) -> String {
-        switch state {
-        case "sleeping", "waking", "drowsy", "bored", "powering-down": "sleepy"
-        case "idle", "listening", "humming", "dictating", "sending", "receiving", "spawning": "neutral"
-        case "thinking", "working", "curious", "orbit", "progress", "loading", "writing", "uploading": "thinking"
-        case "searching", "radar": "look-right"
-        case "excited", "happy": "happy"
-        case "surprised", "scared", "notifying", "alerting", "dragging": "surprised"
-        case "suspicious": "sit"
-        case "angry": "angry"
-        case "confused": "confused"
-        case "proud": "front"
-        case "shy": "love"
-        case "sad": "sad"
-        case "laughing": "laughing"
-        case "playful": "wave"
-        case "celebrate", "bouncing": "jump"
-        default: "neutral"
-        }
-    }
-
-    /// The bundled file of a character's still (App/Mascots/HD).
-    public static func resource(character: String, still: String) -> String {
-        "\(character)-hd-still-\(still)"
     }
 }
 

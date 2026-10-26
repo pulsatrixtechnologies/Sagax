@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, Loader2, Plus, Trash2, X } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Trash2, Wand2, X } from "lucide-react";
 import { api, BotEditorStore, useStore, type Bot, type ConfigStatus, type ModelSelection } from "@/state/store";
 import { BotCreationDraft, EMPTY_BOT_DEFAULTS } from "@/lib/bot-creation-draft";
 import { createConfiguredBot, preparedBotTemplate } from "@/lib/create-configured-bot";
@@ -115,6 +115,10 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
         </DescribedRow>}
       </div>}
       <div className={DIALOG.footer}>
+        {/* 2026-10-26: the guided wizard beside the quick creation */}
+        <button type="button" data-new-bot-wizard onClick={() => { close(); dispatch({ type: "openBotWizard" }); }} className={cn(PILL, "mr-auto")}>
+          <Wand2 size={14} aria-hidden="true" />{t("newBot.wizard")}
+        </button>
         <button type="button" onClick={close} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", settings: memberNewBotSettings(state.config, { ...(approval ? { approvalMode: approval } : {}), ...(proactive !== "off" ? { proactiveMode: proactive } : {}) }), ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
           close();
@@ -386,6 +390,10 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
         </p>
       )}
       <div className={DIALOG.footer}>
+        {/* 2026-10-26: the bot creation wizard, beside this quick dialog */}
+        {!defaultsMode && <button type="button" data-new-bot-wizard disabled={saving} onClick={() => { closeRef.current(); parent.dispatch({ type: "openBotWizard" }); }} className={cn(PILL, "mr-auto")}>
+          <Wand2 size={14} aria-hidden="true" />{t("newBot.wizard")}
+        </button>}
         <button type="button" onClick={() => closeRef.current()} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={!ready || saving || (!defaultsMode && !bot.name.trim())} onClick={() => void save()}
           className={PRIMARY_PILL}>

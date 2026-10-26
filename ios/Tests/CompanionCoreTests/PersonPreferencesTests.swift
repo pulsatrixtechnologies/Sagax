@@ -77,31 +77,6 @@ final class PersonPreferencesTests: XCTestCase {
         XCTAssertTrue(HdMascots.enabled("maybe"))
     }
 
-    func testHdStillsFollowTheDesktopStateMap() {
-        XCTAssertEqual(HdMascots.still(forState: "idle"), "neutral")
-        XCTAssertEqual(HdMascots.still(forState: "excited"), "happy")
-        XCTAssertEqual(HdMascots.still(forState: "celebrate"), "jump")
-        XCTAssertEqual(HdMascots.still(forState: "searching"), "look-right")
-        XCTAssertEqual(HdMascots.still(forState: "suspicious"), "sit")
-        XCTAssertEqual(HdMascots.still(forState: "powering-down"), "sleepy")
-        XCTAssertEqual(HdMascots.still(forState: "unknown"), "neutral")
-        XCTAssertEqual(HdMascots.resource(character: "shiba", still: "sad"), "shiba-hd-still-sad")
-    }
-
-    /// Every still the map names is shipped in the app (App/Mascots/HD).
-    func testEveryMappedStillIsBundled() throws {
-        let folder = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("App/Mascots/HD")
-        guard FileManager.default.fileExists(atPath: folder.path) else { throw XCTSkip("App/ is not next to this package") }
-        let states = ["sleeping", "idle", "thinking", "searching", "excited", "surprised", "suspicious", "angry", "confused",
-                      "proud", "shy", "sad", "laughing", "playful", "celebrate"]
-        for state in states {
-            let name = HdMascots.resource(character: "shiba", still: HdMascots.still(forState: state))
-            XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("\(name).webp").path), name)
-        }
-    }
-
     // MARK: Suggestions (R7)
 
     func testSuggestionsHideWithZero() {

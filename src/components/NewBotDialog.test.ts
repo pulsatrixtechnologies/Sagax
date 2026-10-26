@@ -86,6 +86,17 @@ describe("bot draft dialog", () => {
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "botAdded", bot, preserveSelection: false });
     expect(fixture.dispatch).toHaveBeenCalledWith({ type: "error", message: "Caller failed" });
   });
+  it("offers the bot creation wizard beside the quick creation, and opens it in place of the dialog", () => {
+    let tree!: ReturnType<typeof CompanionNewBotDialog>;
+    function Capture() { tree = CompanionNewBotDialog(); return tree; }
+    const html = renderToStaticMarkup(createElement(Capture));
+    expect(html).toContain("data-new-bot-wizard");
+    expect(html).toContain("Wizard");
+    fixture.dispatch.mockReset();
+    (nodes(tree).find(node => (node.props as Record<string, unknown>)["data-new-bot-wizard"] !== undefined)!.props.onClick as () => void)();
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleNewBot", open: false });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "openBotWizard" });
+  });
   it("keeps initial backward keyboard navigation inside the companion dialog", () => {
     let tree!: ReturnType<typeof CompanionNewBotDialog>;
     function Capture() { tree = CompanionNewBotDialog(); return tree; }

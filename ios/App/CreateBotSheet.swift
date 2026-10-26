@@ -237,8 +237,25 @@ struct CreateBotSheet: View {
                 .font(HomeMetrics.name)
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
+            // 2026-10-26: the guided wizard, beside this quick creation
+            if !readOnly {
+                Button {
+                    close()
+                    BotWizardPresenter.shared.open()
+                } label: {
+                    Label("Wizard", systemImage: "wand.and.stars")
+                        .font(Theme.Font.bodyMedium)
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .frame(height: 34)
+                        .background(Theme.card, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("create-bot-wizard")
+            }
         }
         .padding(.leading, 17.33)
+        .padding(.trailing, 17.33)
         .padding(.top, 17.33)
         .frame(height: 59.6, alignment: .top)
     }

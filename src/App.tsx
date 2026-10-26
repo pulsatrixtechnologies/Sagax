@@ -17,6 +17,7 @@ import { GroupView } from "@/components/GroupView";
 import { PersonPanel } from "@/components/PersonPanel";
 import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
+import { BotWizard } from "@/components/bot-wizard/BotWizard";
 import { PluginsPanel } from "@/components/PluginsPanel";
 import {
   AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotSettingsDialog, CodePage, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
@@ -573,6 +574,8 @@ function Shell() {
       {state.achievementsOpen && <AchievementsModal />}
       {!remoteClient && state.personaEditor && <PersonaEditorModal />}
       {!remoteClient && <ModelWindowHost />}
+      {/* the bot creation wizard: its own screen, under Connect apps (opened from its Tools step) */}
+      {state.botWizard && <BotWizard />}
       {state.botCatalogOpen && <BotCatalogModal />}
       {state.pluginsOpen && <PluginsPanel />}
       {state.triggersOpen && <TriggersPanel />}

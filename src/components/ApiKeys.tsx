@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { SwitchRow } from "./SettingsPrimitives";
 
 export type ConfigSection = "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage";
 /** Sections whose key can be tried against the provider from the server. */
@@ -566,15 +567,13 @@ export function AnthropicEveryClaudeBot() {
   };
   return (
     <div data-anthropic-every-claude-bot className="-mt-2">
-      <label className="flex cursor-pointer items-start gap-2 text-[12.5px] text-ink">
-        <input type="checkbox" checked={on} disabled={saving} onChange={toggle} className="mt-0.5 accent-accent" />
-        <span>
-          {t("keys.anthropic.everyBot")}
-          <span className="block text-[11.5px] leading-[1.4] text-ink-secondary">
-            {on ? t("keys.anthropic.everyBotOn") : t("keys.anthropic.everyBotOff")}
-          </span>
-        </span>
-      </label>
+      <SwitchRow
+        label={t("keys.anthropic.everyBot")}
+        description={on ? t("keys.anthropic.everyBotOn") : t("keys.anthropic.everyBotOff")}
+        checked={on}
+        disabled={saving}
+        onChange={toggle}
+      />
       {on && (
         <div className="mt-1.5 flex gap-1.5 text-[11.5px] leading-[1.4] text-warning">
           <TriangleAlert size={13} className="mt-px shrink-0" aria-hidden="true" />

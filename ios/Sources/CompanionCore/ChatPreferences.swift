@@ -166,7 +166,9 @@ public func rosterPreview(_ messages: [Message], detail: ActivityDetail) -> Stri
     // preview of every chat and say nothing about any of them.
     // Tool steps are never the line under a chat either: only the bot's
     // words, or the "Worked for" of a turn whose narration folded.
-    let messages = messages.filter { $0.kind != .digest && !isToolActivityRow($0) }
+    // A settled ask's receipt is not the line either (it stays in the chat
+    // since issue #426; the roster said what came before it, as it did).
+    let messages = messages.filter { $0.kind != .digest && !isToolActivityRow($0) && !isSettledPermission($0) }
     guard let last = transcriptRows(messages, detail: detail).last else { return "" }
     switch last {
     case let .message(message):
@@ -202,7 +204,7 @@ public struct RosterPreviewLine: Hashable, Sendable {
 /// `rosterPreview` plus the icon kind, folded by the same rules.
 public func rosterPreviewLine(_ messages: [Message], detail: ActivityDetail) -> RosterPreviewLine {
     let text = rosterPreview(messages, detail: detail)
-    let visible = messages.filter { $0.kind != .digest && !isToolActivityRow($0) }
+    let visible = messages.filter { $0.kind != .digest && !isToolActivityRow($0) && !isSettledPermission($0) }
     guard case let .message(last)? = transcriptRows(visible, detail: detail).last else {
         return RosterPreviewLine(text: text, kind: .plain)
     }
@@ -306,6 +308,21 @@ public func isToolActivityRow(_ message: Message) -> Bool {
     return true
 }
 
+/// Threads off (Settings > Appearance > Show threads, the default): the
+/// single stream carries no thread receipt, so a chip that opens another
+/// conversation is left out of the chat (desktop ChatView `MessagesList`
+/// and ThreadChip, #1026). A bot-to-bot note (`comm`) without a thread
+/// stays: on an Apple phone it is the only trace a teammate was consulted.
+public func hidesThreadReceipt(_ message: Message, showThreads: Bool) -> Bool {
+    !showThreads && message.threadRef != nil && message.tool != nil
+}
+
+/// The transcript the chat draws: `messages` without the thread receipts
+/// the threads switch leaves out.
+public func chatMessages(_ messages: [Message], showThreads: Bool) -> [Message] {
+    showThreads ? messages : messages.filter { !hidesThreadReceipt($0, showThreads: false) }
+}
+
 public func isActivityReceipt(_ message: Message) -> Bool {
     switch message.kind {
     case .activity, .digest, .compaction: return true
@@ -313,12 +330,20 @@ public func isActivityReceipt(_ message: Message) -> Bool {
     }
 }
 
-/// A finished permission ask leaves the chat. The message stays stored.
-/// An open ask, a question and a quiz stay (they are not this), and so does
-/// one answered with Always allow: it shows the Allow rule it saved.
+/// A finished permission ask the engine closed on its own (nobody could
+/// answer it) or one put away leaves the chat; the message stays stored.
+/// One a person answered, or that expired, stays as its one-line receipt
+/// (issue #426, `approvalCardStaysInChat`). An open ask, a question and a
+/// quiz are not this.
+/// An answered, expired or closed permission ask (its receipt, if any).
+public func isSettledPermission(_ message: Message) -> Bool {
+    guard message.kind == .options, let card = message.card, card.isPermission else { return false }
+    return !card.isPending
+}
+
 public func settledPermissionLeavesChat(_ message: Message) -> Bool {
     guard message.kind == .options, let card = message.card, card.isPermission else { return false }
-    return !card.isPending && AllowRuleText.savedRule(card) == nil
+    return !card.isPending && !ApprovalReceiptRules.staysInChat(card)
 }
 
 /// Folds a transcript to the requested level of detail.

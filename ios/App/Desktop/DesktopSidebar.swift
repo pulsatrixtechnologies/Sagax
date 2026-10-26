@@ -81,7 +81,7 @@ struct DesktopSidebar: View {
             AnyView(DesktopSidebarFooter())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(theme.sidebar)
+        .background(theme.sidebar.skinTexture(theme.texture, ink: UIColor(theme.sidebarInk)))
         .overlay(alignment: .trailing) {
             // border-r-[0.5px] border-hairline-weak
             Rectangle().fill(theme.sidebarInk.opacity(0.10)).frame(width: 1)

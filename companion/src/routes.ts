@@ -410,6 +410,11 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   { method: "POST", path: /^\/api\/threads\/[\w-]+\/read$/ },
   { method: "GET", path: /^\/api\/threads\/[\w-]+\/export$/ },
   { method: "POST", path: /^\/api\/threads\/[\w-]+\/respond$/ },
+  // the card of a phone call or a purchase a bot asks for (OutboundCard):
+  // the person's one answer to that one action, never a card number or a
+  // grant; the server keeps its owner gate and security-key step-up
+  { method: "POST", path: /^\/api\/me\/phone-calls\/call_[a-f0-9]{16}\/answer$/ },
+  { method: "POST", path: /^\/api\/me\/credentials\/purchases\/pay_[a-f0-9]{16}\/answer$/ },
   { method: "GET", path: /^\/api\/search$/ },
 
   // App-owned profile images. Upload is image-only and capped at 10 MB by

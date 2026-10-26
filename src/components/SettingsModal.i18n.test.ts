@@ -39,27 +39,23 @@ describe("Settings → General", () => {
     setLocale("pt-br");
     const pt = await renderSettings();
     expect(pt).toContain("Configurações");
-    expect(pt).toContain("Geral");
-    expect(pt).toContain("Idioma do app");
 
     // same module instance, no reload: a frozen label would still say
     // "Geral" here
     setLocale("ja");
     const ja = await renderSettings();
     expect(ja).toContain("設定");
-    expect(ja).toContain("一般");
-    expect(ja).not.toContain(">Geral<");
+    expect(ja).toContain("外観");
+    expect(ja).not.toContain(">Aparência<");
   });
 
   it("says Réglages in French, with the Advanced row translated", async () => {
     setLocale("fr");
     const fr = await renderSettings();
     expect(fr).toContain(">Réglages<");
-    expect(fr).toContain("Accès des personnes aux outils, nettoyage des conversations");
-    // General is grouped as the reference design's: grey headings over the cards
+    // Account opens first: its group is a grey heading over the card
     expect(fr).toContain(">Compte</h3>");
-    expect(fr).toContain(">Apparence</h3>");
-    expect(fr).toContain(">Système</h3>");
+    expect(fr).toContain(">Apparence</button>");
     expect(fr).not.toMatch(/[\u2013\u2014]/);
   });
 
@@ -68,8 +64,7 @@ describe("Settings → General", () => {
     const en = await renderSettings();
     expect(en).toContain("Settings");
     expect(en).toContain("Models and voice");
-    // the technical cards are one row away, on General > Advanced
-    expect(en).toContain("tool access, conversation cleanup, diagnostics");
+    expect(en).toContain(">Account</h3>");
   });
 
   it("offers a labeled compact section picker without removing desktop navigation", async () => {

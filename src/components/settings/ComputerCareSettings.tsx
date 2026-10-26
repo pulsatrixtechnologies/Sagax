@@ -250,34 +250,33 @@ export function ComputerCareSettings() {
           below={(
             <>
               {preview && (
-                <div className="mt-3 flex flex-col gap-1.5" data-disk-saver-preview="">
+                <div className="mt-3 flex flex-col gap-2.5" data-disk-saver-preview="">
                   {!preview.computerRunning && <p className="text-[12px] text-ink-secondary">{t("computerCare.disk.notRunning")}</p>}
                   {preview.items.map((item) => (
-                    <label key={item.id} className="flex items-center justify-between gap-3 text-[13px] text-ink" data-disk-saver-item={item.id}>
-                      <span className="flex min-w-0 items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={selected.has(item.id)}
-                          disabled={cleaning || item.bytes === 0}
-                          onChange={(event) => {
-                            const next = new Set(selected);
-                            if (event.target.checked) next.add(item.id);
-                            else next.delete(item.id);
-                            setSelected(next);
-                          }}
-                        />
-                        <span className="min-w-0">
-                          {t(ITEM_KEYS[item.id])}
-                          {item.userFiles && <span className="ml-1.5 text-[12px] text-danger">{t("computerCare.disk.userFiles")}</span>}
-                        </span>
-                      </span>
-                      <span className="shrink-0 tabular-nums text-ink-secondary">{formatBytes(item.bytes)}</span>
-                    </label>
+                    <div key={item.id} data-disk-saver-item={item.id}>
+                      <SwitchRow
+                        label={(
+                          <>
+                            {t(ITEM_KEYS[item.id])}
+                            {item.userFiles && <span className="ml-1.5 text-[12px] text-danger">{t("computerCare.disk.userFiles")}</span>}
+                          </>
+                        )}
+                        description={<span className="tabular-nums">{formatBytes(item.bytes)}</span>}
+                        checked={selected.has(item.id)}
+                        disabled={cleaning || item.bytes === 0}
+                        onChange={(on) => {
+                          const next = new Set(selected);
+                          if (on) next.add(item.id);
+                          else next.delete(item.id);
+                          setSelected(next);
+                        }}
+                      />
+                    </div>
                   ))}
                   {freed !== null && <p role="status" className="text-[12px] text-success">{t("computerCare.disk.freed", { size: formatBytes(freed) })}</p>}
                 </div>
               )}
-              {error && <div role="alert" className="mt-3 rounded-lg bg-danger/10 px-3 py-2 text-[12px] text-danger">{error}</div>}
+              {error && <p role="alert" className="mt-2 text-[12px] leading-4 text-danger">{error}</p>}
             </>
           )}
         >

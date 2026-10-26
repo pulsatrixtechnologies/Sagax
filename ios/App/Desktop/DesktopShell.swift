@@ -21,12 +21,16 @@ struct HomeRoot: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        if UIDevice.current.userInterfaceIdiom != .pad {
-            // the iPhone: exactly the phone home, no measuring around it
-            AnyView(ChatListView().parityLauncher())
-        } else {
-            AnyView(padHome)
+        // the bot creation wizard over either home (2026-10-26)
+        Group {
+            if UIDevice.current.userInterfaceIdiom != .pad {
+                // the iPhone: exactly the phone home, no measuring around it
+                AnyView(ChatListView().parityLauncher())
+            } else {
+                AnyView(padHome)
+            }
         }
+        .botWizardHost()
     }
 
     private var padHome: some View {
@@ -325,6 +329,18 @@ struct DesktopShell: View {
         .onReceive(NotificationCenter.default.publisher(for: .approvalEditRule)) { _ in
             model.showPersona(.access)
         }
+        // a finished bot creation wizard opens the bot it made
+        .onReceive(BotWizardPresenter.shared.$finishedBotId) { id in
+            guard let id, let bot = session.state.bot(id) else { return }
+            BotWizardPresenter.shared.finishedBotId = nil
+            model.open(.bot(bot))
+        }
+        // Connect apps' "Browse Bots": Settings closes, Browse Bots opens
+        .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { _ in
+            model.menu = nil
+            model.modal = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { model.modal = .templates }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .desktopOpenSettings)) { _ in
             model.menu = nil
             model.modal = .settings
@@ -436,18 +452,20 @@ struct DesktopAppGlow: View {
         let glow = theme.glow
         return ZStack {
             theme.app
-            if glow.0 > 0 {
+            if glow.0 > 0 || glow.1 > 0 {
                 Canvas { context, size in
                     // radial-gradient(ellipse 110% 62% at 50% 0%, accent a, transparent 70%)
                     Self.ellipse(&context, centre: CGPoint(x: size.width * 0.5, y: 0),
                                  radii: CGSize(width: size.width * 1.10, height: size.height * 0.62),
-                                 color: accent, alpha: glow.0, end: 0.70)
+                                 color: theme.glowColors?.0 ?? accent, alpha: glow.0, end: 0.70)
                     // radial-gradient(ellipse 72% 44% at 80% 0%, accent b, transparent 68%)
                     Self.ellipse(&context, centre: CGPoint(x: size.width * 0.8, y: 0),
                                  radii: CGSize(width: size.width * 0.72, height: size.height * 0.44),
-                                 color: accent, alpha: glow.1, end: 0.68)
+                                 color: theme.glowColors?.1 ?? accent, alpha: glow.1, end: 0.68)
                 }
             }
+            // the skin's texture over the chat's ground, above the glow (skin-texture.css)
+            if theme.texture != .none { SkinTextureView(texture: theme.texture, ink: UIColor(theme.ink)) }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)

@@ -168,20 +168,12 @@ struct ChatListView: View {
                 DesktopTemplatesSheet { showingTemplates = false }
                     .environmentObject(session)
             }
-            // Connect apps' "Bot templates": Connect apps (and Settings around
-            // it) closes, then Templates or the new bot sheet opens
-            .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { note in
-                let destination = (note.object as? String).flatMap(BotTemplatesDestination.init(rawValue:)) ?? .newBot
+            // Connect apps' "Browse Bots": Connect apps (and Settings around
+            // it) closes, then Browse Bots opens
+            .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { _ in
                 showingConnectedApps = false
                 showingSettings = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    switch destination {
-                    case .templates: showingTemplates = true
-                    case .newBot:
-                        createBotSection = nil
-                        showingCreateBot = true
-                    }
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showingTemplates = true }
             }
             .sheet(item: $accountSheet) { sheet in
                 HomeAccountSheetView(sheet: sheet)
@@ -216,6 +208,12 @@ struct ChatListView: View {
                 sidebarPrefs.seedIfNeeded(session)
             }
             .roomActionsPresenter(roomActions)
+            // a finished bot creation wizard opens the bot it made
+            .onReceive(BotWizardPresenter.shared.$finishedBotId) { id in
+                guard let id, let bot = session.state.bot(id) else { return }
+                BotWizardPresenter.shared.finishedBotId = nil
+                path.append(Chat.bot(bot))
+            }
             .onValueChange(of: threadActions.created?.threadId) { threadId in
                 guard let created = threadActions.created, threadId != nil else { return }
                 threadActions.created = nil
@@ -840,6 +838,8 @@ struct ChatListView: View {
         case .createBot:
             createBotSection = nil
             showingCreateBot = true
+        case .createBotWizard:
+            BotWizardPresenter.shared.open()
         case .createGroup:
             showingNewGroup = true
         case let .bot(id):
@@ -1035,6 +1035,8 @@ struct AttentionRow: View {
 
 struct ChatRow: View {
     @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
     let chat: Chat
     let preview: String
     let at: Double
@@ -1057,6 +1059,10 @@ struct ChatRow: View {
 
             HStack(alignment: .top, spacing: 14) {
                 ChatAvatarView(chat: chat, size: 52, state: state, animated: state.showsActivity)
+                    // #985: a bot shared with the viewer wears its sharer's face
+                    .overlay(alignment: .bottomTrailing) {
+                        if let sharer { SharerBadge(sharer: sharer, avatarSize: 52) }
+                    }
                     .padding(.top, 12)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -1123,6 +1129,11 @@ struct ChatRow: View {
         }
         .padding(.leading, 6)
         .contentShape(Rectangle())
+    }
+
+    private var sharer: BotSharer? {
+        guard case let .bot(bot) = chat else { return nil }
+        return people.sharer(of: bot, session: session)
     }
 }
 
@@ -1408,7 +1419,7 @@ extension ChatListView {
 
     private func standardHomeScroll(headerClearance: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            Theme.bg.ignoresSafeArea()
+            Theme.bg.skinTexture(Theme.palette.texture, ink: Theme.palette.textPrimary.uiColor).ignoresSafeArea()
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {

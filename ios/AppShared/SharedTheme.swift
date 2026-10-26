@@ -13,7 +13,8 @@ extension SkinColor {
 enum SharedTheme {
     /// The skin an extension draws with in `scheme`.
     static func palette(for scheme: ColorScheme) -> SkinPalette {
-        SharedThemeKeys.skin(in: SagaxSharedConfiguration.sharedDefaults, deviceDark: scheme == .dark).palette
+        // the skin with the app's tint and intensity (SharedThemeKeys.look)
+        SharedThemeKeys.look(in: SagaxSharedConfiguration.sharedDefaults, deviceDark: scheme == .dark).palette
     }
 
     /// True when the app pins one skin (not following the phone).

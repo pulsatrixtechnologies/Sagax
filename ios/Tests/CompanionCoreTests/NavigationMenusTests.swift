@@ -172,10 +172,10 @@ final class NavigationMenusTests: XCTestCase {
     func testNewListsCreateThenBotsThenPeople() throws {
         let bots = [try bot("ara"), try bot("gone", hidden: true), try bot("pip")]
         XCTAssertEqual(NavigationMenus.new(gate: admin, bots: bots, people: ["pr_sam"]),
-                       [[.createBot, .createGroup], [.bot("ara"), .bot("pip")]])
+                       [[.createBot, .createBotWizard, .createGroup], [.bot("ara"), .bot("pip")]])
         XCTAssertEqual(NavigationMenus.new(gate: member, bots: bots, people: ["pr_sam"]),
-                       [[.createBot, .createGroup], [.bot("ara"), .bot("pip")], [.person("pr_sam")]])
-        XCTAssertEqual(NavigationMenus.new(gate: admin, bots: [], people: []), [[.createBot, .createGroup]])
+                       [[.createBot, .createBotWizard, .createGroup], [.bot("ara"), .bot("pip")], [.person("pr_sam")]])
+        XCTAssertEqual(NavigationMenus.new(gate: admin, bots: [], people: []), [[.createBot, .createBotWizard, .createGroup]])
     }
 
     func testPlacesFollowTheExperimentalSwitches() {

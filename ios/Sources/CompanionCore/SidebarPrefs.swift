@@ -533,6 +533,10 @@ public struct SidebarPrefs: Hashable, Sendable {
     /// The stored switch, or nil when never set on any device.
     public var showThreads: Bool? { values[SidebarPrefKey.showThreads].map { $0 == "1" } }
 
+    /// Threads are off until the person turns them on, as on the desktop
+    /// (src/lib/thread-preferences.ts `SHOW_THREADS_DEFAULT`).
+    public static let showThreadsDefault = false
+
     public mutating func setPersonalSections(_ value: PersonalSections) {
         values[SidebarPrefKey.personalSections] = value.serialized(over: values[SidebarPrefKey.personalSections])
     }

@@ -52,6 +52,12 @@ targets:
       - path: ../docs/releases
         type: folder
         buildPhase: resources
+      # HD mascots (#968, HdMascotView.swift): the desktop's own painted art,
+      # bundled as it is (a folder per character, read by name from the
+      # generated HdMascotData), so the phone never keeps a copy of its own.
+      - path: ../src/assets/mascots/shiba
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: CompanionCore
         product: CompanionCore
@@ -379,11 +385,12 @@ targets:
       - path: App/Mascots/TrombiMascotView.swift
       - path: App/Mascots/BunbuMascotView.swift
       - path: App/Mascots/ShibaMascotView.swift
-      - path: App/Mascots/HdMascotView.swift
       - path: App/Mascots/GrumpMascotView.swift
       - path: App/Mascots/OgreMascotView.swift
       - path: App/Mascots/FrogMascotView.swift
       - path: App/Mascots/CrabMascotView.swift
+      # HD art is not in the widget's bundle: a widget draws the vector look (HdOrVector's fallback).
+      - path: App/Mascots/HdMascotView.swift
       # MascotState resolves the face for the post-answer refresh a widget
       # performs; it is self-contained above Core, so it rides along.
       - path: App/MascotState.swift

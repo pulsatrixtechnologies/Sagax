@@ -50,7 +50,7 @@ describe("Settings Simple and Advanced", () => {
     expect(html).toContain('aria-checked="false"');
     expect(html).toContain("Show technical controls. Saved choices stay either way.");
     expect(html).not.toContain("data-settings-scope");
-    expect(html).toContain('<option value="general"');
+    expect(html).toContain('<option value="account"');
     expect(html).toContain('<option value="appearance"');
     for (const id of ["connections", "connectedApps", "engines", "computer", "experimental"]) {
       expect(html, id).not.toContain(`<option value="${id}"`);

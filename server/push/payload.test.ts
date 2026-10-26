@@ -176,7 +176,7 @@ describe("an approval push", () => {
     expect(body.requestId).toBe("req-1");
     expect(body.prompt).toBe("approval");
   });
-  it("a key-protected approval opens the app, and a question has no actions", () => {
+  it("a key-protected approval opens the app, and a question offers Reply", () => {
     const keyed = JSON.parse(buildApnsRequest({
       message: message({ kind: "approval", prompt: "approval", needsKey: true, requestId: "req-2", title: "Allow?" }),
       bundleId: "x", nowMs: 0,
@@ -184,11 +184,12 @@ describe("an approval push", () => {
     expect(keyed.aps.category).toBe("SAGAX_APPROVAL_KEY");
     expect(keyed.needsKey).toBe(true);
     expect(pushCategory({ kind: "approval", prompt: "question" })).toBe("SAGAX_UPDATE");
+    expect(pushCategory({ kind: "approval", prompt: "question", requestId: "q1" })).toBe("SAGAX_QUESTION");
     const question = JSON.parse(buildApnsRequest({
       message: message({ kind: "approval", prompt: "question", requestId: "q1", title: "Which?" }),
       bundleId: "x", nowMs: 0,
     }).body);
-    expect(question.aps.category).toBe("SAGAX_UPDATE");
+    expect(question.aps.category).toBe("SAGAX_QUESTION");
     expect(question.aps.sound).toBe("default");
     expect(question.needsKey).toBeUndefined();
   });

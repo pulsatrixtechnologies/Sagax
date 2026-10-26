@@ -13,6 +13,8 @@ import { t } from "@/lib/i18n";
 import { openExternalLink } from "@/lib/app-links";
 import { perspicaxKeysUrl, reloadMyEngines, type MyEngine } from "@/lib/perspicax-org";
 import { engineUnavailable } from "@/lib/model-payers";
+import { cn } from "@/lib/cn";
+import { FIELD } from "../SettingsPrimitives";
 
 interface LoginState {
   flowId: string | null;
@@ -183,7 +185,7 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
         )}
       </div>
       {login && (
-        <div className="flex flex-col gap-2 rounded-lg border border-hairline/40 p-3">
+        <div className="flex flex-col gap-2 rounded-lg border-[0.5px] border-border p-3">
           {login.userCode && <span className="font-mono text-[13px] text-ink">{t("myEngines.code", { code: login.userCode })}</span>}
           {signInPage(login.authorizationUrl) && (
             <button type="button" className="w-fit text-left text-[12px] text-accent underline" onClick={() => void openExternalLink(signInPage(login.authorizationUrl)!)}>{t("myEngines.openLink")}</button>
@@ -195,7 +197,7 @@ export function MyEngineAccess({ engine, label, onChanged = () => { void reloadM
                 onChange={(event) => setCode(event.target.value)}
                 placeholder={t("myEngines.pasteCode")}
                 aria-label={t("myEngines.pasteCode")}
-                className="min-w-0 flex-1 rounded-lg border border-hairline/40 bg-inset px-3 py-1.5 text-[13px] text-ink"
+                className={cn(FIELD, "flex-1")}
               />
               <button type="button" className="ui-button" disabled={!code.trim() || busy} onClick={() => void complete()}>{t("myEngines.complete")}</button>
             </div>

@@ -102,15 +102,9 @@ final class RoutineRunAsTests: XCTestCase {
 }
 
 final class BotTemplatesEntryTests: XCTestCase {
-    func testTemplatesWhenOnAndAllowedElseTheNewBotSheet() {
-        let admin = SurfaceGate(scope: .serverAdmin)
-        let client = SurfaceGate(scope: .serverClient)
-        var on = ServerFeatures()
-        on.templates = true
-        XCTAssertEqual(BotTemplatesEntry.destination(gate: admin, features: on), .templates)
-        XCTAssertEqual(BotTemplatesEntry.destination(gate: admin, features: ServerFeatures()), .newBot, "Templates off: the new bot sheet")
-        XCTAssertEqual(BotTemplatesEntry.destination(gate: client, features: on), .templates, "Browse Bots is a member's too")
-        XCTAssertEqual(BotTemplatesEntry.destination(gate: SurfaceGate(scope: .sidecar), features: on), .newBot, "the sidecar has no catalogue")
-        XCTAssertEqual(BotTemplatesEntry.destination(gate: admin, features: nil), .newBot)
+    func testBrowseBotsWheneverThePairingHasTheCatalogue() {
+        XCTAssertEqual(BotTemplatesEntry.destination(gate: SurfaceGate(scope: .serverAdmin)), .templates)
+        XCTAssertEqual(BotTemplatesEntry.destination(gate: SurfaceGate(scope: .serverClient)), .templates, "Browse Bots is a member's too")
+        XCTAssertNil(BotTemplatesEntry.destination(gate: SurfaceGate(scope: .sidecar)), "the sidecar has no catalogue: no button")
     }
 }

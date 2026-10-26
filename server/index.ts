@@ -1112,6 +1112,8 @@ import { TemplateLinks } from "./template-links.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
 import { createPublishedPageRoutes, handlePagesOriginRequest, handlePublishedPagePublic, type PageViewer, type PublicPageOptions } from "./routes/published-pages.ts";
 import { createTeamBotFromThreadRoutes } from "./routes/team-bot-from-thread.ts";
+import { createBotWizardRoutes } from "./routes/bot-wizard.ts";
+import { createBotWizardStore } from "./bot-wizard-store.ts";
 import { awaySkipsDetail, LocalAwayTracker, verdictFromPresence, type AwayVerdict } from "./routine-away.ts";
 import { createPersonLabelRoutes } from "./routes/person-labels.ts";
 import { createMeAvatarRoutes } from "./routes/me-avatar.ts";
@@ -1360,6 +1362,8 @@ setDesktopInjectModels(() => desktopLocalModels.modelsFor(null));
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);
 const bridgeAudit = createBridgeAudit(join(DATA_DIR, "desktop-bridge-audit.jsonl"));
 const userPreferenceStore = createUserPreferenceStore(DATA_DIR);
+// The bot creation wizard's drafts (server/bot-wizard-store.ts).
+const botWizardStore = createBotWizardStore(DATA_DIR);
 const viewerBotOverrideStore = createViewerBotOverrideStore(DATA_DIR);
 // Each person's achievements (server/achievements.ts). On first use a
 // person keeps every character and skin their bots already wear
@@ -7618,6 +7622,27 @@ ROUTES.push(createTeamBotFromThreadRoutes({
   },
   readNote: (botId, notePath) => readMemoryDoc(botId, notePath).text,
   writeNote: (_auth, botId, notePath, text) => { journalMemoryWrite(botId, notePath, text, { actor: "person", via: "api" }); },
+}));
+// The bot creation wizard (routes/bot-wizard.ts): the draft both apps
+// resume. The bot's fields, rules and routines keep their own routes; the
+// wizard's rights are the bot's owner's, never an administrator's.
+ROUTES.push(createBotWizardRoutes({
+  drafts: botWizardStore,
+  principal: (auth) => actorPrincipalId(auth).trim().toLowerCase(),
+  bot: (id) => {
+    const bot = store.bot(id);
+    return bot && !bot.hidden ? { id: bot.id, name: bot.name, title: bot.title, description: bot.description, soul: bot.soul } : undefined;
+  },
+  mayChange: (auth, botId) => {
+    const bot = store.bot(botId);
+    return Boolean(bot) && ownerOrAdminOf(auth, bot!);
+  },
+  generate: (botId) => {
+    const bot = store.bot(botId);
+    if (!bot) return null;
+    const gate = threadTitleGate(bot);
+    return gate.ok && gate.instance.generateText ? gate.instance.generateText.bind(gate.instance) : null;
+  },
 }));
 ROUTES.push(createBotPluginRoutes<BotRecord>({
   plugins: botPlugins,
@@ -15303,7 +15328,8 @@ bus.subscribe((event: RuntimeEvent) => {
       const questions = event.questions?.length ? event.questions : undefined;
       // One generator for the card and its push (shared/approval-describe.ts):
       // "Allow the bot to run a command?" and one plain line, never a raw id.
-      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(languageOfPerson(cardAnswerer))) : undefined;
+      const plainWords = permission ? serverApprovalWords(languageOfPerson(cardAnswerer)) : undefined;
+      const plain = plainWords ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, plainWords) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
       // answers in time instead of holding the turn forever.
@@ -15349,7 +15375,9 @@ bus.subscribe((event: RuntimeEvent) => {
           held: permission && event.engineConnector === true && !event.input ? HELD_NOTE["approval.held.connectorNoDetails"] : approvalHeldReason(heldContext),
           heldCode: permission && event.engineConnector === true && !event.input ? "approval.held.connectorNoDetails" : approvalHeldNote(heldContext),
           approvalScope: event.approvalScope,
-          ...(plain ? { plain: { title: plain.title, line: plain.line, ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
+          // action and locale: a phone words its own heading ("Nova wants
+          // to {action}") when the card is in its reader's language (#426)
+          ...(plain ? { plain: { title: plain.title, line: plain.line, action: plain.action, locale: plainWords?.locale ?? "en", ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(ownerRuleCandidate ? { ownerRule: ownerRuleCandidate } : {}),
           ...(ownerRuleFolderCandidate ? { ownerRuleFolder: ownerRuleFolderCandidate } : {}),
