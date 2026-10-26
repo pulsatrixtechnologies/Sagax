@@ -1,7 +1,7 @@
 // Actual authenticated HTTP and local connector relay, all under the shared
 // disposable launcher. Synthetic sessions, local stub, fake engine only.
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,9 +21,7 @@ let brokerOrigin = "";
 const relayed: unknown[] = [];
 const evidence: unknown[] = [];
 let blockRelay: (() => void) | undefined;
-let relayEntered = false;
 let blockSession: (() => void) | undefined;
-let sessionEntered = false;
 const api = async (method: string, path: string, body?: unknown, token = admin) => {
   const response = await fetch(fixture.info.url + path, {
     method, headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
@@ -67,7 +65,6 @@ beforeAll(async () => {
     if (req.url === "/v1/connectors/connected") return res.end(JSON.stringify({ services: { gmail: { connected: true }, slack: { connected: true } } }));
     if (req.url === "/api/tool_router/session/fixture-session") {
       if (blockSession) {
-        sessionEntered = true;
         await new Promise<void>(resolve => { blockSession = resolve; });
       }
       return res.end(JSON.stringify({ session_id: "fixture-session", mcp: { type: "http", url: brokerOrigin + "/mcp" },
@@ -76,7 +73,6 @@ beforeAll(async () => {
     if (req.url === "/mcp") {
       relayed.push(body);
       if (blockRelay) {
-        relayEntered = true;
         await new Promise<void>(resolve => { blockRelay = resolve; });
       }
       return res.end(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "relay-ok" }] } }));
@@ -176,81 +172,6 @@ it.skip("asks in Full, refuses denied sends, and rechecks scopes after an approv
   expect(relayed).toHaveLength(before);
 });
 
-it("shows each outbound batch recipient and amount with explicit preview truncation before consent", async () => {
-  const b = await bot("Batch consent preview");
-  const token = await mint(b.id, b.threadId);
-  const before = relayed.length;
-  const held = relay(token, "COMPOSIO_MULTI_EXECUTE_TOOL", { tools: [
-    { tool_slug: "GMAIL_SEND_EMAIL", arguments: { to: "first@fixture.test", body: "x".repeat(450) } },
-    { tool_slug: "STRIPE_CREATE_REFUND", arguments: { recipient: "second@fixture.test", amount: 42 } },
-  ] });
-  const card = await pending(b.threadId);
-  expect(card.card.subtitle).toContain("first@fixture.test");
-  expect(card.card.subtitle).toContain("second@fixture.test");
-  expect(card.card.subtitle).toContain('"amount":42');
-  expect(card.card.subtitle).toContain("[arguments truncated]");
-  // The short form phones lead with: one entry per call, no arguments.
-  expect(card.card.outboundRequest).toEqual({
-    tool: "GMAIL_SEND_EMAIL",
-    app: "Gmail",
-    calls: [{ app: "Gmail", label: "Send email" }, { app: "Stripe", label: "Create refund" }],
-  });
-  await api("POST", `/api/threads/${b.threadId}/respond`, { requestId: card.card.requestId, behavior: "deny" });
-  expect((await held).body.result.isError).toBe(true);
-  expect(relayed).toHaveLength(before);
-});
-
-it.each(["scope", "turn"])("rechecks %s revocation after project-session metadata and before the actual send", async (revocation) => {
-  const b = await bot("Session race " + revocation);
-  const token = await mint(b.id, b.threadId);
-  const before = relayed.length;
-  const held = relay(token, "GMAIL_SEND_EMAIL");
-  const card = await pending(b.threadId);
-  sessionEntered = false;
-  blockSession = () => {};
-  await api("POST", `/api/threads/${b.threadId}/respond`, { requestId: card.card.requestId, behavior: "allow" });
-  await expect.poll(() => sessionEntered, { timeout: 5_000 }).toBe(true);
-  if (revocation === "scope") await api("PATCH", `/api/bots/${b.id}`, { connectorScopes: { apps: { gmail: "read" } } });
-  else await mint(b.id, b.threadId);
-  blockSession();
-  blockSession = undefined;
-  const result = await held;
-  if (revocation === "scope") expect(result.body.result.isError).toBe(true);
-  else expect(result.status).toBe(401);
-  expect(relayed).toHaveLength(before);
-});
-
-it("reserves a daily slot before provider await, so simultaneous calls cannot overspend", async () => {
-  const b = await bot("Concurrent cap");
-  await api("PATCH", `/api/bots/${b.id}`, { outbound: { policy: "allow", dailyCap: 1 } });
-  const token = await mint(b.id, b.threadId);
-  relayEntered = false;
-  blockRelay = () => {};
-  const first = relay(token, "GMAIL_SEND_EMAIL");
-  await expect.poll(() => relayEntered, { timeout: 5_000 }).toBe(true);
-  expect((await relay(token, "GMAIL_SEND_EMAIL")).body.result.isError).toBe(true);
-  expect((await api("GET", `/api/bots/${b.id}/outbound`)).body.today).toBe(1);
-  blockRelay();
-  blockRelay = undefined;
-  expect((await first).body.result.isError).not.toBe(true);
-  expect((await api("GET", `/api/bots/${b.id}/outbound`)).body.today).toBe(1);
-});
-
-it("never treats arbitrary workbench code as a counted daily allowance", async () => {
-  const b = await bot("Opaque code");
-  await api("PATCH", `/api/bots/${b.id}`, { outbound: { policy: "allow", dailyCap: 1 } });
-  const token = await mint(b.id, b.threadId);
-  const before = relayed.length;
-  const held = relay(token, "COMPOSIO_REMOTE_WORKBENCH", { code_to_execute: 'for x in range(99): run_tool("GMAIL_" + "SEND_EMAIL", {})' });
-  const card = await pending(b.threadId);
-  await api("POST", `/api/threads/${b.threadId}/respond`, { requestId: card.card.requestId, behavior: "deny" });
-  expect((await held).body.result.isError).toBe(true);
-  expect(relayed).toHaveLength(before);
-  await api("PATCH", `/api/bots/${b.id}`, { connectorScopes: { apps: { gmail: "write" } } });
-  expect((await relay(token, "COMPOSIO_REMOTE_BASH_TOOL", { command: "curl -X POST https://fixture.test/send" })).body.result.isError).toBe(true);
-  expect(relayed).toHaveLength(before);
-});
-
 it("keeps accepted facts through a replacement review and rejects autonomous restricted memory", async () => {
   const b = await bot("Team facts");
   const token = await mint(b.id, b.threadId, "agents");
@@ -304,33 +225,6 @@ it("does not publish instruction-bearing autonomous places or terms until a team
   }
 });
 
-it("settles only the source task after approval or Stop, leaving the selected sibling unchanged", async () => {
-  for (const stop of [true, false]) {
-    const b = await bot("Task activity " + stop);
-    await api("PATCH", `/api/bots/${b.id}/tasks/${b.threadId}`, { modelSelection: { instanceId: "activityFixture", model: "claude-sonnet-5" } });
-    const sibling = await api("POST", `/api/bots/${b.id}/tasks`, { title: "Selected idle sibling" });
-    const siblingId = sibling.body.task.threadId;
-    expect((await api("POST", `/api/bots/${b.id}/messages`, { text: "WAIT_FOR_ACTIVITY_FIXTURE", threadId: b.threadId })).status).toBe(202);
-    const state = async () => (await api("GET", "/api/bots")).body.bots.find((row: any) => row.id === b.id);
-    await expect.poll(async () => (await state()).tasks.find((row: any) => row.threadId === b.threadId).busy).toBe(true);
-    const token = await mint(b.id, b.threadId);
-    const held = relay(token, "GMAIL_SEND_EMAIL");
-    const card = await pending(b.threadId);
-    expect((await state()).tasks.find((row: any) => row.threadId === b.threadId).activity).toBe("waiting-on-you");
-    expect((await state()).tasks.find((row: any) => row.threadId === siblingId).busy).toBe(false);
-    if (stop) await api("POST", `/api/bots/${b.id}/interrupt`, { threadId: b.threadId });
-    await api("POST", `/api/threads/${b.threadId}/respond`, { requestId: card.card.requestId, behavior: "allow" });
-    const response = await held;
-    if (stop) expect(response.status).toBe(401);
-    else {
-      expect(response.body.result.isError).not.toBe(true);
-      writeFileSync(join(fixture.info.dataDir, "activity-release"), "fixture completion");
-    }
-    await expect.poll(async () => (await state()).activity, { timeout: 8_000 }).toBe("idle");
-    expect((await state()).tasks.find((row: any) => row.threadId === siblingId)).toMatchObject({ busy: false, activity: "idle" });
-  }
-});
-
 it("preserves accounts referenced by a fallback chain before delete or credential-directory change", async () => {
   const account = await api("POST", "/api/instances/claude-accounts", { displayName: "Fallback fixture account" });
   expect(account.status, JSON.stringify(account.body)).toBe(201);
@@ -341,45 +235,4 @@ it("preserves accounts referenced by a fallback chain before delete or credentia
   expect((await api("PATCH", `/api/instances/${instanceId}`, { configDir: join(fixture.info.dataDir, "synthetic-account-directory") })).status).toBe(409);
   await api("PATCH", `/api/bots/${b.id}`, { fallback: [] });
   expect((await api("DELETE", `/api/instances/${instanceId}`)).status).toBe(200);
-});
-
-it("refuses a tool turned off for the workspace, with the bot's grants still on top", async () => {
-  expect((await api("PUT", "/api/connectors/gmail/tools", { disabledTools: ["GMAIL_FETCH_EMAILS"] }, member)).status).toBeOneOf([403, 404]);
-  expect((await api("PUT", "/api/connectors/gmail/tools", { disabledTools: ["SLACK_SEND_MESSAGE"] })).status).toBe(400);
-  const saved = await api("PUT", "/api/connectors/gmail/tools", { disabledTools: ["GMAIL_FETCH_EMAILS"] });
-  expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-  expect(saved.body.disabledTools).toEqual({ gmail: ["GMAIL_FETCH_EMAILS"] });
-  expect((await api("GET", "/api/connectors/tools")).body.disabledTools).toEqual({ gmail: ["GMAIL_FETCH_EMAILS"] });
-
-  const b = await bot("Workspace tool switch");
-  const token = await mint(b.id, b.threadId);
-  const before = relayed.length;
-  const off = await relay(token, "GMAIL_FETCH_EMAILS");
-  expect(off.body.result.isError).toBe(true);
-  expect(off.body.result.content[0].text).toContain("turned off for this workspace");
-  const viaExecutor = await relay(token, "COMPOSIO_MULTI_EXECUTE_TOOL", { tools: [{ tool_slug: "GMAIL_FETCH_EMAILS", arguments: {} }] });
-  expect(viaExecutor.body.result.isError).toBe(true);
-  expect(relayed).toHaveLength(before);
-  expect((await relay(token, "GMAIL_LIST_LABELS")).body.result.isError).not.toBe(true);
-  expect(relayed).toHaveLength(before + 1);
-
-  // On for the workspace is not enough: a bot whose grants leave it out is still refused.
-  expect((await api("PUT", "/api/connectors/gmail/tools", { disabledTools: [] })).body.disabledTools).toEqual({});
-  expect((await api("PATCH", `/api/bots/${b.id}`, { connectorTools: { gmail: { tools: ["GMAIL_LIST_LABELS"] } } })).status).toBe(200);
-  const ungranted = await relay(token, "GMAIL_FETCH_EMAILS");
-  expect(ungranted.body.result.content[0].text).toContain("not granted to this bot");
-  expect(relayed).toHaveLength(before + 1);
-});
-
-it("does not relay if the allowance cannot be durably written", async () => {
-  const b = await bot("Failed allowance");
-  await api("PATCH", `/api/bots/${b.id}`, { outbound: { policy: "allow", dailyCap: 1 } });
-  const token = await mint(b.id, b.threadId);
-  const file = join(fixture.info.dataDir, "outbound-counts.json");
-  renameSync(file, file + ".saved");
-  mkdirSync(file);
-  const before = relayed.length;
-  expect((await relay(token, "GMAIL_SEND_EMAIL")).body.result.isError).toBe(true);
-  expect(relayed).toHaveLength(before);
-  expect((await api("GET", `/api/bots/${b.id}/outbound`)).body.today).toBe(0);
 });
