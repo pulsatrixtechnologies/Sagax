@@ -53,10 +53,10 @@ it("takes cron through the real routine tools, applying the bot's own routine at
     };
     const schedule = { type: "cron" as const, expression: "0 9 1 * *", timeZone: "America/New_York" };
     const create = await proposal("propose_routine", {
-      name: "Monthly report", instructions: "Summarize last month's fixture activity; no external services.", schedule, overlap: "queue",
+      name: "Monthly report", instructions: "Summarize last month's fixture activity; no external services.", schedule, overlap: "queue", enabled: false,
     }, "Schedule a report at 9am New York time on the first of each month.");
     expect(create.routineRequest).toMatchObject({ version: 1, operation: { action: "create", routine: { schedule } }, undo: { name: "Monthly report", schedule } });
-    // New routines start paused (routines.newPaused, on by default).
+    // The creator asked for it paused (new routines start live by default).
     expect(create.subtitle).toContain("Created paused; resume it when ready.");
     expect(create.subtitle).not.toContain("Next 3 runs");
     expect(create.subtitle).toContain("Cron: 0 9 1 * *");

@@ -10,7 +10,12 @@
 //   - a tool of one of the bot's remote MCP servers that the person allowed
 //     for good ("Always allow": mcp:<server>__<tool>) and that is not
 //     switched off;
-//   - a command on the bot's own Local VM while the bot runs in Full access.
+//   - a command on the bot's own Local VM while the bot runs in Full access
+//     or, 2026-10-26, in Auto ("Approve for me") when the artifact is its
+//     owner's own (a bot of another person stays blocked at Auto). The
+//     person's server environment (cloud sandbox) is not reachable from
+//     here: its shell is a tool mounted for a turn, not an exec this runner
+//     can route, so a command there still waits for a turn.
 // Anything else is blocked, with the reason, and no call is made. Every
 // dependency comes from server/index.ts, so the rules are tested here.
 import { PERSPICAX_READ_ONLY_TOOLS } from "./drivers/acp/grok-read-only-tools.ts";
@@ -24,6 +29,9 @@ export interface ArtifactSourceBot {
   id: string;
   /** "vm" is the bot's own Local VM. */
   computer?: string;
+  /** The person who owns the bot. At Auto a command runs only for an
+   * artifact of that person (unknown: blocked). */
+  ownerPrincipalId?: string;
   perspicaxProfiles?: readonly string[];
 }
 
@@ -33,6 +41,9 @@ export interface ArtifactSourceDeps {
    * while that conversation is still the bot's; else the bot's main one. */
   threadFor(artifact: Artifact): string;
   fullAccess(botId: string, threadId: string): boolean;
+  /** The conversation's level (sourceApprovalMode). When given, Auto lets
+   * an owner's command refresh too; absent, only Full does. */
+  approvalLevel?(botId: string, threadId: string): string | undefined;
   alwaysAllowed(botId: string, threadId: string, key: string): boolean;
   /** The bot's MCP server by name, signed in, or undefined. */
   mcpServer(botId: string, threadId: string, server: string): Promise<McpServerSpec | undefined>;
@@ -59,7 +70,7 @@ export interface ToolAnswer {
 
 export const SOURCE_BLOCKED = {
   gone: "The bot that saved this artifact is gone.",
-  command: "A command refreshes alone only on the bot's own Local VM while the bot is in Full access. Ask the bot to use a read tool instead.",
+  command: "A command refreshes alone only on the bot's own Local VM while the bot is in Approve for me or Full access, for its owner's own artifact. Ask the bot to use a read tool instead.",
   tool: "This tool needs your approval each time, so it cannot refresh alone. Allow it always for this bot, or ask the bot to use a read tool.",
   disabled: "This tool is turned off for this workspace.",
   unknown: "This source is not one Sagax can run alone: workspace_read, a Perspicax read tool, an allowed tool of one of the bot's MCP servers, or a command on its Local VM.",
@@ -126,6 +137,13 @@ export function createArtifactSourceRunner(deps: ArtifactSourceDeps): (artifact:
   const answer = (result: ToolAnswer): ArtifactRun => result.isError
     ? { ok: false, error: errorText(result.value, "The tool answered with an error.") }
     : { ok: true, value: result.value };
+  // Full runs as before. Auto runs only the owner's own artifact on the
+  // owner's own bot: never another person's.
+  const commandMayRun = (bot: ArtifactSourceBot, artifact: Artifact, threadId: string): boolean => {
+    if (deps.fullAccess(bot.id, threadId)) return true;
+    if (deps.approvalLevel?.(bot.id, threadId) !== "auto") return false;
+    return Boolean(bot.ownerPrincipalId) && (artifact.ownerPrincipalId ?? bot.ownerPrincipalId) === bot.ownerPrincipalId;
+  };
   return async (artifact, signal) => {
     const source = artifact.source;
     if (!source) return blocked(SOURCE_BLOCKED.unknown);
@@ -134,7 +152,7 @@ export function createArtifactSourceRunner(deps: ArtifactSourceDeps): (artifact:
     const threadId = deps.threadFor(artifact);
 
     if (source.kind === "command") {
-      if (bot.computer !== "vm" || !deps.fullAccess(bot.id, threadId)) return blocked(SOURCE_BLOCKED.command);
+      if (bot.computer !== "vm" || !commandMayRun(bot, artifact, threadId)) return blocked(SOURCE_BLOCKED.command);
       const state = await deps.vm.state(bot.id);
       if (state === "stopped") return { ok: false, waiting: true, error: "The bot's Local VM is not running; the next refresh tries again." };
       if (state === "held") return { ok: false, waiting: true, error: "Someone is controlling the bot's computer; the next refresh tries again." };

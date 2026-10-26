@@ -142,8 +142,10 @@ describe("member admin audit, section 2: in-chat terminal", () => {
 });
 
 describe("member admin audit, section 3: MCP permission catalogue", () => {
-  const own = ["rules_update", "docs_update", "request_login", "select_computer", "manage_pairing", "propose_team_setup", "create_bot", "propose_bot_deletion", "create_room", "manage_room"];
-  const reserved = ["propose_team_memory", "create_agent", "delete_agent", "add_mcp_server", "request_credential", "shared_computer", "vm_exec", "act", "manage_settings", "api_reload", "review_write", "memory_promote", "memory_review"];
+  // 2026-10-26: create_agent and delete_agent on the member's own temporary
+  // agents are theirs too
+  const own = ["rules_update", "docs_update", "request_login", "select_computer", "manage_pairing", "propose_team_setup", "create_bot", "propose_bot_deletion", "create_room", "manage_room", "create_agent", "delete_agent"];
+  const reserved = ["propose_team_memory", "add_mcp_server", "request_credential", "shared_computer", "vm_exec", "act", "manage_settings", "api_reload", "review_write", "memory_promote", "memory_review"];
 
   it.each(own)("%s: a member's own work (self scope); an admin's too", (tool) => {
     expect(decide({ id: OWNER, role: "member" }, tool, "self").allowed).toBe(true);

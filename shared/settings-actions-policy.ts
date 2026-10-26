@@ -23,8 +23,13 @@
 //
 // Effect, in order (the first that applies wins):
 // 1. A class the person protects with a security key: card (the key signs it).
-// 2. secret, others, bulk, delete, org: card, at every level, Full included,
-//    like a payment or a mass change.
+// 2. secret, others, org: card, at every level, Full included, like a
+//    payment. bulk and delete too, unless the change is the owner's own work
+//    and the caller says it touches nobody else (`othersInvolved: false`: no
+//    other human in the group, no shared link): then the level decides, as
+//    for any other change of the person's own bot, conversation, routine,
+//    group or model (2026-10-26: what the bot does in the person's own
+//    environment is theirs).
 // 3. Not the owner's own work (the speaker does not own the bot speaking or
 //    the thing changed): card.
 // 4. The speaking bot at Ask or Auto-accept edits: card.
@@ -46,8 +51,12 @@ import type { ApprovalMode } from "./approval-mode.ts";
 export const SETTING_CLASSES = ["own", "rule-change", "secret", "others", "bulk", "delete", "org"] as const;
 export type SettingClass = (typeof SETTING_CLASSES)[number];
 
-/** Classes that always show a card, whatever the level. */
+/** Classes that show a card, whatever the level. bulk and delete only when
+ * the change reaches beyond the owner's own work (OWN_WHEN_ALONE). */
 export const CARD_CLASSES: ReadonlySet<SettingClass> = new Set(["secret", "others", "bulk", "delete", "org"]);
+/** Card classes the level decides when the owner changes only their own
+ * things and nobody else is involved. */
+export const OWN_WHEN_ALONE: ReadonlySet<SettingClass> = new Set(["bulk", "delete"]);
 
 const RANK: Readonly<Record<string, number>> = { ask: 0, edits: 1, auto: 2, full: 3, custom: 3 };
 
@@ -69,10 +78,16 @@ export function decideSettingEffect(input: {
   approvalTo?: ApprovalMode;
   /** The person asked their Primary Bot for this change in this turn. */
   personAsked?: boolean;
+  /** The change also reaches other people (a group with other humans, a
+   * shared link). Only an explicit false lets a delete or bulk change of the
+   * owner's own work follow the level; unknown keeps the card. */
+  othersInvolved?: boolean;
 }): SettingEffect {
   if (input.keyProtected) return { effect: "hold", reason: "security-key" };
   const asked = input.personAsked === true && input.ownerWork;
-  if (input.classes.some((name) => CARD_CLASSES.has(name) && !(asked && name === "delete"))) return { effect: "hold", reason: "sensitive" };
+  const alone = input.ownerWork && input.othersInvolved === false;
+  const exempt = (name: SettingClass) => (alone && OWN_WHEN_ALONE.has(name)) || (asked && name === "delete");
+  if (input.classes.some((name) => CARD_CLASSES.has(name) && !exempt(name))) return { effect: "hold", reason: "sensitive" };
   if (!input.ownerWork) return { effect: "hold", reason: "not-own" };
   if (asked) return { effect: "run" };
   const mode = input.mode ?? "ask";

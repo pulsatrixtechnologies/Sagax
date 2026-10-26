@@ -8108,6 +8108,29 @@ describe("harness HTTP API", () => {
     }
   });
 
+  // 2026-10-26: on Full access a bot's server is saved switched on (solo:
+  // the operator's own machine, a command included).
+  it("saves a bot's MCP server switched on when the bot is on Full access", async () => {
+    const bot = (await api("POST", "/api/bots")).body.bot;
+    const configFile = join(home, ".sagax", "config.json");
+    try {
+      const full = await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: "full", confirmFullAccess: true });
+      expect(full.status, JSON.stringify(full.body)).toBe(200);
+      const token = await mintTestCapability(BASE, bot.id, bot.threadId);
+      const filed = await fetch(`${BASE}/api/internal/mcp-servers`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ name: "botfull", command: "npx", args: ["-y", "notes-mcp"] }),
+      });
+      expect(filed.status).toBe(201);
+      expect(await filed.json()).toMatchObject({ name: "botfull", enabled: true, transport: "command" });
+      expect(JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botfull.enabled).toBe(true);
+    } finally {
+      await api("DELETE", "/api/mcp/servers/botfull").catch(() => undefined);
+      await api("DELETE", `/api/bots/${bot.id}`).catch(() => undefined);
+    }
+  });
+
   it("manages and probes a url MCP server, and the Claude Code servers switch", async () => {
     const secret = "Bearer mcp-header-that-must-never-render";
     const fake = await startFakeHttpMcp({ requireHeader: { name: "Authorization", value: secret } });
@@ -10143,8 +10166,8 @@ describe("harness HTTP API", () => {
       expect(crossConfirmed).toMatchObject({ status: 200, body: { routineAction: "create" } });
       const crossRoutine = (await api("GET", "/api/routines")).body.routines
         .find((routine: { id: string }) => routine.id === crossConfirmed.body.resultId);
-      // No `enabled` in the proposal, so the confirmed routine starts paused (routines.newPaused).
-      expect(crossRoutine).toMatchObject({ botId: teammate.id, sourceThreadId: bot.threadId, enabled: false });
+      // No `enabled` in the proposal, so the confirmed routine follows routines.newPaused (off by default): it starts live.
+      expect(crossRoutine).toMatchObject({ botId: teammate.id, sourceThreadId: bot.threadId, enabled: true });
       expect((await api("PATCH", `/api/bots/${teammate.id}`, {
         modelSelection: { instanceId: "ghost", model: "unavailable-fixture" },
       })).status).toBe(200);

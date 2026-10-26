@@ -102,8 +102,8 @@ function harness() {
     routines,
     now: () => now,
     timeZone: () => "UTC",
-    // The server default may already pause new routines. A trigger pauses
-    // even when that default is off and the proposal asks to start it.
+    // The server default starts new routines live; a trigger follows the
+    // proposal's `enabled` like any other routine.
     newPaused: () => false,
     bindTrigger: (routine) => {
       webhooks.createOwned({
@@ -113,6 +113,7 @@ function harness() {
         botId: routine.botId,
         runOn: routine.runOn,
         kind: routine.schedule.type === "event" ? "email" : "webhook",
+        enabled: routine.enabled,
       });
     },
     rotateTrigger: (routine) => {
@@ -134,6 +135,10 @@ async function confirmCreate(
   trigger: { type: "webhook" } | { type: "email" },
   name: string,
   instructions = "Summarize the delivery.",
+  // Most cases below exercise the paused, capturing trigger the creator
+  // asks for with `enabled: false`; "default" leaves it out, so the routine
+  // follows routines.newPaused.
+  enabled: boolean | "default" = false,
 ) {
   const proposed = await service.propose({
     botId: "bot-1",
@@ -143,7 +148,7 @@ async function confirmCreate(
       routine: {
         name,
         instructions,
-        enabled: true,
+        ...(enabled === "default" ? {} : { enabled }),
         trigger,
       },
     },
@@ -165,7 +170,7 @@ const delivery = (payload: WebhookEvent["payload"], deliveryId: string): Webhook
 });
 
 describe("routine webhook and email triggers", () => {
-  it("creates a paused capturing webhook and never returns its key to the model", async () => {
+  it("creates a paused capturing webhook when asked paused and never returns its key to the model", async () => {
     const { service, routines, webhooks } = harness();
     const { proposed, settled } = await confirmCreate(service, { type: "webhook" }, "Inbound lead");
     expect(proposed.detail).toContain(WEBHOOK_CARD);
@@ -201,6 +206,44 @@ describe("routine webhook and email triggers", () => {
     expect(routines.listRuns()).toHaveLength(0);
     expect(triggerOf(webhooks, routine!.id).verificationPending).toBe(false);
     expect(triggerOf(webhooks, routine!.id).enabled).toBe(false);
+  });
+
+  it("starts a person's own webhook routine live when the creator asks, and its key still guards it", async () => {
+    const { service, routines, webhooks } = harness();
+    const { settled } = await confirmCreate(service, { type: "webhook" }, "Live lead", "Summarize the delivery.", true);
+    expect(settled).toMatchObject({ state: "applied", ownerCopiesKey: true });
+    expect(JSON.stringify(settled)).not.toContain("whsec_");
+    const routine = routines.listRoutines().find((candidate) => candidate.name === "Live lead")!;
+    expect(routine).toMatchObject({ enabled: true, schedule: { type: "webhook" } });
+    const trigger = triggerOf(webhooks, routine.id);
+    expect(trigger).toMatchObject({ enabled: true, verificationPending: false, tokenPending: true });
+    const secret = webhooks.revealForRoutine(routine.id)!.secret;
+    // Live does not mean open: a caller without the key is still refused.
+    expect(() => webhooks.receive(trigger.endpointId, "", delivery({ ok: true }, "missing"))).toThrow(
+      expect.objectContaining({ status: 401 }),
+    );
+    expect(() => webhooks.receive(trigger.endpointId, "whsec_wrong", delivery({ ok: true }, "wrong"))).toThrow(
+      expect.objectContaining({ status: 401 }),
+    );
+    expect(routines.listRuns()).toHaveLength(0);
+    // With the key the delivery runs at once, still as a confined turn.
+    const accepted = webhooks.receive(trigger.endpointId, secret, delivery({ task: HOSTILE }, "live-1"));
+    expect(accepted.captured).toBeFalsy();
+    const run = routines.listRuns().find((candidate) => candidate.routineId === routine.id);
+    expect(run).toBeDefined();
+    const prompt = run?.prompt ?? "";
+    expect(prompt).toContain("[USER-CONFIGURED WEBHOOK INSTRUCTIONS]");
+    expect(prompt.indexOf(HOSTILE)).toBeGreaterThan(prompt.indexOf("[USER-CONFIGURED WEBHOOK INSTRUCTIONS]"));
+    expect(prompt).not.toContain(secret);
+  });
+
+  it("starts a trigger routine live by default when routines.newPaused is off", async () => {
+    const { service, routines, webhooks } = harness();
+    const { settled } = await confirmCreate(service, { type: "email" }, "Inbox live", "Summarize the delivery.", "default");
+    if (settled.state !== "applied") throw new Error("expected applied");
+    const routine = routines.routineById(settled.resultId)!;
+    expect(routine.enabled).toBe(true);
+    expect(triggerOf(webhooks, routine.id)).toMatchObject({ enabled: true, verificationPending: false, source: { type: "email" } });
   });
 
   it("records a delivery under the routine and keeps a payload inside the fence", async () => {

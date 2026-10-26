@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import type { ApprovalMode } from "../shared/approval-mode.ts";
 import type { TerminalDestinationPick, TerminalRequestCardData } from "../shared/terminal-request.ts";
 import {
   TERMINAL_DEFAULT_COLS,
@@ -40,6 +41,17 @@ export interface TerminalRequestServiceDeps {
   keptRule?(principalId: string, botId: string, candidate: { tool: string; scope: Record<string, string> }, threadId: string): { id: string } | null;
   /** One journal row for an offer a kept rule opened. */
   journalRule?(input: { threadId: string; botId: string; requestId: string; summary: string; rule: string }): void;
+  /** 2026-10-26 (JC: the person's own environment is theirs): the bot's
+   * approval level for this person's own turn in this conversation, or
+   * null when the turn is not theirs (a guest, a webhook, an email,
+   * someone else's routine) or the level is unknown. At Approve for me
+   * (auto) or Full access (full), a terminal on one of their own
+   * environments (scope `personal`: their cloud computer, their Local VM,
+   * their computer) opens with no card; a host of the organization's
+   * server keeps its card. */
+  ownLevel?(principalId: string, botId: string, threadId: string): ApprovalMode | null;
+  /** One journal row for an offer the person's own level opened. */
+  journalLevel?(input: { threadId: string; botId: string; requestId: string; summary: string; level: ApprovalMode }): void;
 }
 
 /** The card's choice when the bot names none: where the bot works, else the
@@ -168,6 +180,17 @@ export function createTerminalRequestService(deps: TerminalRequestServiceDeps) {
         const opened = await this.resolve({ threadId: args.threadId, requestId, behavior: "allow", principalId });
         if (opened.claimed && "outcome" in opened && opened.outcome === "allowed-once") {
           deps.journalRule?.({ threadId: args.threadId, botId: args.botId, requestId, summary: payload.reason, rule: kept.id });
+        }
+        return { requestId, messageId: message.id, resource };
+      }
+      // 2026-10-26: the person's own environment at Approve for me or Full
+      // access opens as them, with their own rights (resolve checks the
+      // destination again for them); the organization's hosts keep the card
+      const level = resource.scope === "personal" ? deps.ownLevel?.(principalId, args.botId, args.threadId) ?? null : null;
+      if (level === "auto" || level === "full") {
+        const opened = await this.resolve({ threadId: args.threadId, requestId, behavior: "allow", principalId });
+        if (opened.claimed && "outcome" in opened && opened.outcome === "allowed-once") {
+          deps.journalLevel?.({ threadId: args.threadId, botId: args.botId, requestId, summary: payload.reason, level });
         }
       }
       return { requestId, messageId: message.id, resource };

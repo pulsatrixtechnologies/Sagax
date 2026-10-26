@@ -47,11 +47,14 @@ describe("member tool scope on an organization server", () => {
     expect(memberOwnScopeTool("agents__claim_renew")).toBe("conversation");
     expect(memberOwnScopeTool("agents__claim_release")).toBe("conversation");
     expect(memberOwnScopeTool("agents__claim_list")).toBe("read");
+    // 2026-10-26: a pairing code for the member's own device
+    expect(memberOwnScopeTool("mcp__agents__manage_pairing")).toBe("own-setup");
+    expect(HOST_LEVEL_AGENT_TOOLS.has("manage_pairing")).toBe(false);
   });
 
   it("keeps the host-level agents tools, other servers and look-alikes behind the admin gate", () => {
     for (const name of [
-      "agents__act", "agents__add_mcp_server", "agents__attach_file", "agents__vm_exec", "agents__shared_computer",
+      "agents__act", "agents__manage_settings", "notes__manage_pairing", "agents__add_mcp_server", "agents__attach_file", "agents__vm_exec", "agents__shared_computer",
       "agents__unknown_tool", "notes__list_bots", "mcp__computer__click", "list_bots", "other", "shell",
       "agents__list_bots ", " agents__list_bots", "agents__list_bots; rm -rf /", "AGENTS__LIST_BOTS", "",
     ]) {

@@ -332,6 +332,27 @@ it("uses the same authenticated proxy for VPS and releases only its own connecti
   expect(holds).toBe(0);
 });
 
+// 2026-10-26: a bot's VPS desktop is its owner's (the target's `allows`
+// decides, index.ts: an admin, or the bot's owner with bots.computer); a
+// Local VM desktop stays admin.
+it("lets the owner of a bot's VPS watch it without admin scope, and refuses another member", async () => {
+  const other = sessions.issue({ label: "Other member", scopes: ["client"] });
+  vpsTarget = { key: "vps/test-bot", allows: (who: RequestAuth) => who.kind === "session" && who.session.id === member.session.id,
+    resolve: async () => ({ port: desktopPort, password: "fixture-secret" }) };
+  const path = "/api/desktop-viewer/vps/test-bot";
+  const owner = { cookie: `test_session=${member.token}` };
+  expect(await get(path, owner)).toMatchObject({ status: 200, body: { password: "fixture-secret" } });
+  const socket = await open(`${path}/websockify`, owner);
+  expect(socket.status).toBe(101);
+  socket.socket?.destroy();
+  const stranger = { cookie: `test_session=${other.token}` };
+  expect((await get(path, stranger)).status).toBe(403);
+  expect((await open(`${path}/websockify`, stranger)).status).toBe(403);
+  // the Local VM desktops stay admin
+  expect((await get(base, owner)).status).toBe(403);
+  expect(inspected).toEqual([]);
+});
+
 // A phone paired with the server directly drives the Local VM through this
 // proxy under its control lease, with no sidecar in between.
 const lease = "phone-lease-0123456789";

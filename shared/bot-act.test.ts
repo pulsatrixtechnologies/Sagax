@@ -52,13 +52,52 @@ describe("decideBotAct", () => {
     if (allowed.ok && allowed.target.kind === "route") expect(allowed.target.query).toEqual({ section: "general" });
   });
 
-  it("holds a write in ask and auto, and runs an ordinary write only in full", () => {
+  it("holds a write in ask and edits, and runs an ordinary write in full", () => {
     const held = decideBotAct({ raw: { method: "POST", path: "/api/bots", body: { name: "Ada" } }, mode: "ask", scopes: ["client"], neededScope: client });
     expect(held).toMatchObject({ ok: true, effect: "hold", summary: "POST /api/bots" });
     expect(decideBotAct({ raw: { method: "POST", path: "/api/bots", body: ["a"] }, mode: undefined, scopes: ["client"], neededScope: client })).toMatchObject({ effect: "hold" });
-    expect(decideBotAct({ raw: { method: "DELETE", path: "/api/bots/b1" }, mode: "auto", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ effect: "hold" });
+    expect(decideBotAct({ raw: { method: "DELETE", path: "/api/bots/b1" }, mode: "ask", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ effect: "hold" });
     expect(decideBotAct({ raw: { method: "PATCH", path: "/api/bots/b1", body: { name: "Bea" } }, mode: "full", scopes: ["admin", "client"], neededScope: client })).toMatchObject({ effect: "run" });
     expect(decideBotAct({ raw: { method: "POST", path: "/api/bots" }, mode: "edits", scopes: ["client"], neededScope: client })).toMatchObject({ effect: "hold" });
+  });
+
+  it("runs a write on the person's own bots, tasks, routines and plugins in auto", () => {
+    const auto = { mode: "auto" as const, scopes: ["client"] as const, neededScope: client };
+    for (const raw of [
+      { method: "POST", path: "/api/bots", body: { name: "Ada" } },
+      { method: "PATCH", path: "/api/bots/b1", body: { name: "Bea" } },
+      { method: "DELETE", path: "/api/bots/b1" },
+      { method: "PATCH", path: "/api/bots/b1/runtime-settings", body: { model: "x" } },
+      { method: "POST", path: "/api/routines", body: { name: "daily" } },
+      { plugins: { action: "install", botId: "b1", marketplace: "acme-tools", plugin: "reviewer" } },
+      { ui: "updateBot", input: { botId: "b1", patch: { name: "Bea" } } },
+      { ui: "deleteRoutine", input: { routineId: "r1" } },
+      { ui: "renameTask", input: { botId: "b1", threadId: "t1", title: "Notes" } },
+    ]) {
+      expect(decideBotAct({ raw, ...auto }), JSON.stringify(raw)).toMatchObject({ ok: true, effect: "run" });
+    }
+  });
+
+  it("still holds a write in auto that reaches other people or leaves the person's environment", () => {
+    const auto = { mode: "auto" as const, scopes: ["admin", "client"] as const, neededScope: client };
+    for (const raw of [
+      { method: "PATCH", path: "/api/bots/b1", body: { visibility: "everyone" } },
+      { ui: "updateBot", input: { botId: "b1", patch: { visibility: { people: ["bob"] } } } },
+      { ui: "newBot", input: { visibility: "everyone" } },
+      { method: "PATCH", path: "/api/bots/b1", body: { teamMemorySharing: "shared" } },
+      { method: "POST", path: "/api/bots/b1/vault-cards/m1/grant" },
+      { method: "POST", path: "/api/bots/b1/slack-management" },
+      { method: "POST", path: "/api/groups", body: { name: "team" } },
+      { method: "POST", path: "/api/admin/settings" },
+      { method: "POST", path: "/api/team-memory" },
+      { ui: "sendGroup", input: { groupId: "g1", text: "hi" } },
+      { ui: "openPeopleDm", input: { principalId: "pr_bob" } },
+      { ui: "nudgePerson", input: { principalId: "pr_bob" } },
+    ]) {
+      expect(decideBotAct({ raw, ...auto }), JSON.stringify(raw)).toMatchObject({ ok: true, effect: "hold" });
+    }
+    // an escalation stays refused in auto
+    expect(decideBotAct({ raw: { method: "PATCH", path: "/api/bots/b1", body: { alwaysAllow: { kinds: ["shell"] } } }, ...auto })).toMatchObject({ ok: false, status: 403 });
   });
 
   it("holds a write that widens team memory sharing even in full; narrowing to private runs", () => {

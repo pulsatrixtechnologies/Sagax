@@ -85,8 +85,15 @@ it("loads, queries, shows, pages, renders and exports through the real server", 
     expect(totals.data.rows).toHaveLength(3);
     expect(totals.data.table).toMatch(/^omb_results\./);
 
-    // Writes other than CREATE … AS are refused; bad SQL carries DuckDB's own words.
-    const refused = await call("data_sql", { sql: "DELETE FROM sales" });
+    // The bot's own tables are the person's to change; statements that
+    // reach past the database are refused; bad SQL carries DuckDB's own words.
+    const scratch = await call("data_sql", { sql: "CREATE TABLE scratch AS SELECT * FROM sales" });
+    expect(scratch.isError, scratch.text).toBe(false);
+    const deleted = await call("data_sql", { sql: "DELETE FROM scratch WHERE region = 'north'" });
+    expect(deleted.isError, deleted.text).toBe(false);
+    const dropped = await call("data_sql", { sql: "DROP TABLE scratch" });
+    expect(dropped.isError, dropped.text).toBe(false);
+    const refused = await call("data_sql", { sql: "COPY sales TO 'out.csv'" });
     expect(refused.isError).toBe(true);
     expect(refused.data.code).toBe("write_refused");
     const broken = await call("data_sql", { sql: "SELECT nope FROM sales" });

@@ -27,6 +27,9 @@ export type SettingsActionDeps = {
   botOfThread: (threadId: string) => string | null;
   routineBot: (routineId: string) => string | null;
   groupOwner: (groupId: string) => string | null;
+  /** The people (principal ids) in a group, or null when unknown. A group
+   * with someone else in it is not the owner's alone (othersInvolved). */
+  groupHumans?: (groupId: string) => readonly string[] | null;
   /** The speaking bot's level for this turn (approvalModeForTurn). */
   turnMode: (botId: string, threadId: string) => ApprovalMode;
   /** The step-up classes the person protects among these (security keys). */
@@ -296,6 +299,24 @@ export function createSettingsActions(deps: SettingsActionDeps) {
   }
 
   /** Who owns what the change touches, for "the owner's own work". */
+  /** Whether a change also reaches other people (2026-10-26): a delete or
+   * bulk change of the owner's own things follows the level only when this
+   * is false. Undefined when it cannot be told: the card stays. */
+  function othersInvolvedFor(spec: SettingSpec, ids: SettingIds, speaker: string | null): boolean | undefined {
+    // a shared template's link, and the server's teams, reach other people
+    if (spec.key === "template.remove" || spec.family === "section") return true;
+    if (spec.target === "group") {
+      if (!ids.target || !deps.groupHumans) return undefined;
+      const humans = deps.groupHumans(ids.target);
+      if (!humans) return undefined;
+      return humans.some((human) => human !== speaker);
+    }
+    // the person's own bot, conversation, routine, model, computers and MCP
+    // servers work in their own environment
+    if (["bot", "thread", "routine", "models", "computer", "connections"].includes(spec.family)) return false;
+    return undefined;
+  }
+
   function ownerOf(spec: SettingSpec, ids: SettingIds, speaker: string | null): string | null {
     if (spec.target === "bot" || spec.target === "thread" || spec.target === "routine") return ids.botId ? deps.botOwner(ids.botId) : null;
     if (spec.target === "group") return ids.target ? deps.groupOwner(ids.target) : null;
@@ -381,11 +402,13 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     const namedOwner = typeof named === "string" ? deps.botOwner(named) : undefined;
     const ownerWork = same(speaker, actingOwner) && same(speaker, targetOwner) && (namedOwner === undefined || same(speaker, namedOwner));
     const where = ids.target ? deps.targetName?.(spec.target, ids.target, ids.botId) : undefined;
+    const othersInvolved = othersInvolvedFor(spec, ids, speaker);
+    const reach = othersInvolved === undefined ? {} : { othersInvolved };
 
     if ("ui" in built) {
       // a preference on the person's device: at Approve for me or Full for
       // the person's own bot it is set at once, otherwise their card
-      const decidedUi = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected: false });
+      const decidedUi = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected: false, ...reach });
       if (decidedUi.effect === "hold") {
         const held = await deps.acts().handlePlanned({
           facts,
@@ -423,7 +446,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       : askedChange(proof.message, spec.key, value, subjectBot ? deps.targetName?.("bot", subjectBot) : undefined, !subjectBot || subjectBot === input.botId,
         spec.target === "rule" && ids.target ? deps.ruleText?.(speaker, spec.key.startsWith("rules.custom") ? "custom" : "owner", ids.target) : undefined,
         typeof args.quote === "string" ? args.quote : proof.message, input.botName);
-    const decided = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected, ...(approvalTo ? { approvalTo } : {}), personAsked: asked === true });
+    const decided = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected, ...(approvalTo ? { approvalTo } : {}), personAsked: asked === true, ...reach });
     const secret = classes.includes("secret");
     // the card says what and where (a name, never an id) and the whole value
     // a person allows, or its keys and fingerprint when it is long; a

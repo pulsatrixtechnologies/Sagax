@@ -46,6 +46,36 @@ describe("tool policy coverage", () => {
     expect(classifyRoute("POST", "^\\/api\\/billing\\/checkout$")).toMatchObject({ tier: "admin", billing: true, defaultEnabled: false });
   });
 
+  it("marks a deletion of the person's own resource owner-scoped, never an org, admin, billing or rights route", () => {
+    for (const [method, route] of [
+      ["DELETE", "^\\/api\\/bots\\/([\\w-]+)$"],
+      ["DELETE", "^\\/api\\/bots\\/([\\w-]+)\\/workspace\\/file$"],
+      ["DELETE", "^\\/api\\/bots\\/([\\w-]+)\\/projects(?:\\/([\\w-]+))?$"],
+      ["DELETE", "^\\/api\\/bots\\/([\\w-]+)\\/queue\\/([\\w-]+)$"],
+      ["DELETE", "^\\/api\\/webhooks\\/([\\w-]+)(\\/rotate)?$"],
+      ["DELETE", "/api/routine-runs"],
+    ] as const) {
+      expect(classifyRoute(method, route), route).toMatchObject({ tier: "admin", defaultEnabled: false, ownerScoped: true });
+    }
+    for (const [method, route] of [
+      ["DELETE", "^\\/api\\/bots\\/([\\w-]+)\\/direct-grants\\/([^/]+)$"],
+      ["DELETE", "^\\/api\\/bots\\/([\\w-]+)\\/command-allowlist(?:\\/([\\w-]+))?$"],
+      ["ANY", "^\\/api\\/bots\\/([\\w-]+)\\/tool-grants\\/(tg_[\\w-]+)\\/revoke$"],
+      ["ANY", "^\\/api\\/org\\/invites\\/([^/]+)\\/revoke$"],
+      ["GET", "/api/org/members"],
+      ["POST", "^\\/api\\/billing\\/checkout$"],
+      ["DELETE", "/api/keys/1"],
+      ["DELETE", "^\\/api\\/groups\\/([\\w-]+)$"],
+    ] as const) {
+      expect(classifyRoute(method, route).ownerScoped, route).toBeUndefined();
+    }
+    // The reviewed table predates the field: the request reads it from the route.
+    expect(policyFor("DELETE", "/api/bots/bot-1")).toMatchObject({ tier: "admin", ownerScoped: true, matched: true });
+    expect(policyFor("DELETE", "/api/bots/bot-1/workspace/file")).toMatchObject({ tier: "admin", ownerScoped: true });
+    expect(policyFor("DELETE", "/api/webhooks/wh-1")).toMatchObject({ ownerScoped: true });
+    expect(policyFor("DELETE", "/api/bots/bot-1/direct-grants/pr_bob").ownerScoped).toBeUndefined();
+  });
+
   it("treats an unknown route as a write, off by default", () => {
     expect(policyFor("GET", "/api/definitely-not-a-route")).toEqual({ ...UNKNOWN_ROUTE_POLICY, matched: false });
     expect(UNKNOWN_ROUTE_POLICY).toMatchObject({ tier: "write", readOnly: false, defaultEnabled: false });

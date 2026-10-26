@@ -26,18 +26,25 @@ describe("parsePhoneToolArgs", () => {
 });
 
 describe("phoneToolGrantKey", () => {
-  it("never offers Toujours permettre for a shortcut, the clipboard or photos", () => {
+  it("never offers Toujours permettre for a shortcut or photos", () => {
     expect(phoneToolGrantKey("shortcut", { name: "Pay" })).toBeNull();
-    expect(phoneToolGrantKey("clipboard", {})).toBeNull();
     expect(phoneToolGrantKey("photos", {})).toBeNull();
+  });
+
+  it("offers it on the person's own phone for the clipboard, a reminder, an event and the precise position", () => {
+    expect(phoneToolGrantKey("clipboard", {})).toBe("clipboard:read");
+    expect(phoneToolGrantKey("reminders", { action: "create", title: "x" })).toBe("reminders:write:create");
+    expect(phoneToolGrantKey("calendar", { action: "create", title: "x", start: "a", end: "b" })).toBe("calendar:write:create");
+    expect(phoneToolGrantKey("location", { precise: true })).toBe("location:read:precise");
   });
 
   it("covers exactly what was allowed, nothing wider (review of #960)", () => {
     expect(phoneToolGrantKey("reminders", { action: "list" })).toBe("reminders:read");
-    expect(phoneToolGrantKey("reminders", { action: "create", title: "x" })).toBeNull();
-    expect(phoneToolGrantKey("calendar", { action: "create", title: "x", start: "a", end: "b" })).toBeNull();
+    expect(phoneToolGrantKey("calendar", { action: "list", from: "a", to: "b" })).toBe("calendar:read");
+    // A write key never covers a read, nor a read a write; precise is not approximate.
+    expect(phoneToolGrantKey("reminders", { action: "create", title: "x" })).not.toBe(phoneToolGrantKey("reminders", { action: "list" }));
     expect(phoneToolGrantKey("location", {})).toBe("location:read:approximate");
-    expect(phoneToolGrantKey("location", { precise: true })).toBeNull();
+    expect(phoneToolGrantKey("location", { precise: true })).not.toBe(phoneToolGrantKey("location", {}));
     expect(phoneToolGrantKey("contacts", { query: "a", fields: ["phone"] })).toBe("contacts:read:phone");
     expect(phoneToolGrantKey("contacts", { query: "a", fields: ["phone", "address"] })).toBe("contacts:read:address+phone");
     expect(phoneToolGrantKey("contacts", { query: "a" })).toBe("contacts:read:email+phone");

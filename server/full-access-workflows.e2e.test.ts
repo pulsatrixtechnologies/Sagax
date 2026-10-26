@@ -141,7 +141,7 @@ it("applies requested Full Access workflows through MCP without duplicate approv
       "Set up my monthly reporting profile, save its reusable skill, schedule 9am New York time on the first of each month, and create Mira in Research.", [
         step("propose_profile", { title: "Monthly reporting Chief", soul: "Report only verified fixture results.", reason: "Requested reporting profile" }),
         step("list_routines", {}),
-        step("propose_routine", { name: "Monthly fixture report", instructions: "Summarize fixture-only monthly results.", schedule }),
+        step("propose_routine", { name: "Monthly fixture report", instructions: "Summarize fixture-only monthly results.", schedule, enabled: false }),
         step("skills_list", {}),
         step("skill_manage", { action: "create", skill_md: skill("monthly-fixture-review", "Read fixture notes and summarize the month."), source: "conversation" }),
         step("list_team_setup", {}),
@@ -165,7 +165,7 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     const mira = (await bots()).find(bot => bot.name === "Mira");
     expect(mira).toMatchObject({ section: "Research", approvalMode: "auto", autoApprove: true });
     const routine = (await api("GET", "/api/routines")).routines.find((item: any) => item.name === "Monthly fixture report");
-    // New routines start paused (routines.newPaused, on by default).
+    // The creator asked for it paused (new routines start live by default).
     expect(routine).toMatchObject({ botId: chief.id, enabled: false, nextRunAt: null, schedule });
     expect((await api("GET", `/api/bots/${chief.id}/skills`)).skills).toEqual(expect.arrayContaining([expect.objectContaining({ name: "monthly-fixture-review", enabled: true })]));
     // The decision log says Full access applied these, not the self rule.

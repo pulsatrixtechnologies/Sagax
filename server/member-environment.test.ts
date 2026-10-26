@@ -86,6 +86,35 @@ describe("the owner's own environment (2026-10-16)", () => {
 });
 
 describe("own-environment autonomy, security review 2026-10-16", () => {
+  it("the person's own routine on their own bot, or a hop between two of their bots, is theirs when the bot's owner is named (2026-10-26)", () => {
+    const lineage = { botOwnerPrincipalId: OWNER };
+    for (const trigger of ["schedule", "manual"]) {
+      expect(origin({ ...lineage, speaker: { origin: "owner-routine" }, routineLineage: true, automation: true, unattended: true, automationTrigger: trigger })).toBe("owner");
+      expect(origin({ ...lineage, speaker: { origin: "owner-routine", principalId: OWNER }, routineLineage: true, automation: true, automationTrigger: trigger })).toBe("owner");
+    }
+    expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER }, internalTurn: true, peerFromOwner: OWNER })).toBe("owner");
+  });
+
+  it("a webhook, a trigger, someone else's routine or bot, a routine's hop, a guest stay other", () => {
+    const lineage = { botOwnerPrincipalId: OWNER };
+    const routine = { routineLineage: true, automation: true, unattended: true };
+    expect(origin({ ...lineage, ...routine, speaker: { origin: "owner-routine" }, automationTrigger: "webhook" })).toBe("other");
+    expect(origin({ ...lineage, ...routine, speaker: { origin: "owner-routine" }, automationTrigger: "graph" })).toBe("other");
+    expect(origin({ ...lineage, ...routine, speaker: { origin: "owner-routine" } })).toBe("other");
+    // a routine run as someone else
+    expect(origin({ ...lineage, ...routine, speaker: { origin: "owner-routine", principalId: "pr_bob" }, automationTrigger: "schedule" })).toBe("other");
+    // a routine of someone else's bot (the destination is the person's, the bot is not)
+    expect(origin({ botOwnerPrincipalId: "pr_bob", ...routine, speaker: { origin: "owner-routine" }, automationTrigger: "schedule" })).toBe("other");
+    // a hop from someone else's bot, or one carrying someone else's words
+    expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER }, internalTurn: true, peerFromOwner: "pr_bob" })).toBe("other");
+    expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: "pr_bob" }, internalTurn: true, peerFromOwner: OWNER })).toBe("other");
+    // a hop from a routine (it may carry what a webhook brought in)
+    expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER, routine: true, routinePayer: OWNER }, internalTurn: true, routineLineage: true, peerFromOwner: OWNER })).toBe("other");
+    // a guest or another person, the operator's loopback in an automation
+    expect(origin({ ...lineage, speaker: { origin: "person", principalId: "pr_guest" }, internalTurn: true })).toBe("other");
+    expect(origin({ ...lineage, speaker: { origin: "operator" }, automation: true, automationTrigger: "schedule" })).toBe("other");
+  });
+
   it("only the owner's own request is the owner's turn", () => {
     expect(origin()).toBe("owner");
     expect(origin({ speaker: { origin: "operator" } })).toBe("owner");

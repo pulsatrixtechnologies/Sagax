@@ -222,6 +222,27 @@ posixOnly("an organization member's identity and bots", () => {
     expect((await api("DELETE", `/api/bots/${zaraBot}`, { as: "max" })).status).toBe(404);
   });
 
+  // 2026-10-26: a team file imported for herself lands as her own bots,
+  // with a member's defaults; a server folder, a visibility, a backup and
+  // the guest stay refused.
+  it("lets a member import a team file as her own bots, and keeps the server's parts an admin's", async () => {
+    const manifest = { format: "openmaus.team", version: 2, team: { name: "Zara imports", members: [{ key: "helper", name: "Imported helper", appearance: { color: "blue" } }] } };
+    const imported = await api("POST", "/api/teams/import", { as: "zara", body: manifest });
+    expect(imported.status, imported.text).toBe(201);
+    const id = imported.body.bots[0].id as string;
+    const me = (await api("GET", "/api/config", { as: "zara" })).body.viewer.principalId;
+    const mine = (await api("GET", "/api/bots", { as: "zara" })).body.bots.find((b: any) => b.id === id);
+    expect(mine?.ownerUserId).toBe(me);
+    expect(mine?.cwd ?? "").toBe("");
+    expect((await api("GET", "/api/bots", { as: "max" })).body.bots.map((b: any) => b.id)).not.toContain(id);
+    for (const path of ["/api/teams/import?mode=project&cwd=%2F", "/api/teams/import?visibility=admins"]) {
+      expect((await api("POST", path, { as: "zara", body: manifest })).status, path).toBe(403);
+    }
+    expect((await api("POST", "/api/teams/import", { as: "zara", body: { format: "openmaus.backup" } })).status).toBe(403);
+    expect((await api("POST", "/api/teams/import", { as: "guest", body: manifest })).status).toBe(403);
+    expect((await api("DELETE", `/api/bots/${id}`, { as: "zara" })).status).toBe(200);
+  });
+
   it("refuses a member's bot the settings that stay with server admins", async () => {
     for (const body of [
       { name: "Shell", settings: { computer: "local" } },
@@ -313,7 +334,7 @@ posixOnly("an organization member's identity and bots", () => {
       ["POST", "/api/org/invites", { email: "eve@example.test" }],
       ["PATCH", "/api/instances/claude", { cli: "" }],
       ["GET", "/api/mcp/servers", undefined],
-      ["POST", "/api/teams/import", {}],
+      ["POST", "/api/org-library/add", { packageId: "00000000-0000-4000-8000-000000000000" }],
     ] as const) {
       const res = await api(method, path, { as: "zara", ...(body !== undefined ? { body } : {}) });
       expect(res.status, `${method} ${path}: ${res.text}`).toBe(403);

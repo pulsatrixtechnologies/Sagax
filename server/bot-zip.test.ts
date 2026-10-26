@@ -392,20 +392,30 @@ describe("bot zip: team memory sharing", () => {
 });
 
 describe("bot zip import rules", () => {
-  it("a member's copy drops computer, browser and host tools, and Full access arrives as Ask", async () => {
+  it("a member's copy keeps its computer, browser and Always allow, drops the working folder and MCP servers, and Full access arrives as Ask", async () => {
     const fx = fixture({ organization: true });
     const source = richBot(fx);
     fx.store.patchBot(source.id, { approvalMode: "full" });
     const file = await exportToFile(fx.host, source.id);
     const inspected = inspectBotZip(file);
     const preview = await previewBotZip(fx.host, inspected, { asMember: true });
-    expect(preview.skipped.some((entry) => entry.part === "host")).toBe(true);
+    const hostSkipped = preview.skipped.find((entry) => entry.part === "host");
+    expect(hostSkipped?.detail).toContain("Working folder");
+    expect(hostSkipped?.detail).toContain("MCP servers");
+    expect(hostSkipped?.detail).not.toContain("Browser");
+    expect(preview.created.find((entry) => entry.part === "host")?.detail).toBe("Always allowed tools, Computer, Browser");
     expect(preview.skipped.some((entry) => entry.part === "approval")).toBe(true);
     const member = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000002", asMember: true, conversations: false, sharing: false });
     const copy = fx.store.bot(member.botId)!;
-    expect(copy).toMatchObject({ computer: "off", browser: false, mcpServers: [] });
+    // 2026-10-26: these work in the member's own environment
+    expect(copy).toMatchObject({ browser: true, alwaysAllow: ["Bash"] });
+    expect(copy.computer).toBeUndefined();
+    // what stays an admin's on the shared server does not travel; a package
+    // is not provably the member's own bot, so no MCP server either
+    expect(copy.mcpServers).toEqual([]);
     expect(copy.cwd).toBeUndefined();
-    expect(copy.alwaysAllow).toBeUndefined();
+    expect(copy.browserProfile).toBeUndefined();
+    expect(copy.cloudBackend).toBeUndefined();
     expect(copy.approvalMode).toBe("ask");
     expect(copy.tasks).toHaveLength(1);
     const admin = await importBotZip(fx.host, inspected, { ownerPrincipalId: "pr_00000000-0000-4000-8000-000000000001", asMember: false, conversations: false, sharing: false });

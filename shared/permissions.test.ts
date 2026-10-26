@@ -51,6 +51,12 @@ describe("the permission catalogue", () => {
     expect([...MEMBER_ALWAYS_PERMISSIONS].sort()).toEqual(own);
   });
 
+  it("lets the owner set Always allow on their own bot with bots.approvalLevel, never without it (2026-10-26)", () => {
+    expect(BOT_FIELD_PERMISSIONS.alwaysAllow).toBe("bots.approvalLevel");
+    expect(can({ admin: false, permissions: ["bots.approvalLevel"] }, BOT_FIELD_PERMISSIONS.alwaysAllow!)).toBe(true);
+    expect(can({ admin: false, permissions: ["bots.behaviour"] }, BOT_FIELD_PERMISSIONS.alwaysAllow!)).toBe(false);
+  });
+
   it("maps every bot field a permission opens, and none a member already sets", () => {
     for (const [field, key] of Object.entries(BOT_FIELD_PERMISSIONS)) {
       expect(isPermissionKey(key), field).toBe(true);

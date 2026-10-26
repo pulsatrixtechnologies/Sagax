@@ -51,7 +51,7 @@ export interface ChatToolSession {
 }
 
 type Server = { command: string; args: string[]; env: Record<string, string> };
-type RegisteredTool = { client: ChatMcpClient; server: string; launch: string; builtInBrowser: boolean; agents: boolean; data: boolean; hostComputer: boolean; name: string; schema: ValidateFunction; searched: boolean };
+type RegisteredTool = { client: ChatMcpClient; server: string; launch: string; builtInBrowser: boolean; agents: boolean; data: boolean; name: string; schema: ValidateFunction; searched: boolean };
 /** A provider-safe tool name: the server's name and the tool's, joined. */
 function chatToolName(server: string, tool: string): string {
   return `${server}_${tool}`.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64) || "mcp_tool";
@@ -373,8 +373,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
       // grants last a turn, as a warm engine restarts for it (perTurn).
       const launch = createHash("sha256").update(JSON.stringify(descriptor)).digest("hex");
       return { name, client, launch, builtInBrowser: descriptor === integrations?.browser, agents: descriptor === integrations?.agents, data: descriptor === integrations?.data,
-        computer: descriptor === integrations?.localComputer,
-        hostComputer: descriptor === integrations?.localComputer && integrations?.localComputer?.scope === "local-computer", tools };
+        computer: descriptor === integrations?.localComputer, tools };
     }));
     for (const [index, mount] of mounts.entries()) {
       const configured = servers[index]![0];
@@ -390,7 +389,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
         await skip(mount.reason);
         continue;
       }
-      const { name: server, client, launch, builtInBrowser, agents, data, hostComputer, tools } = mount.value;
+      const { name: server, client, launch, builtInBrowser, agents, data, tools } = mount.value;
       const hostTool = builtInBrowser || mount.value.computer;
       // Staged so a server that fails halfway leaves none of its tools behind.
       const staged: Array<{ tool: RegisteredTool; candidate: { definition: ChatToolDefinition; tier: number } }> = [];
@@ -415,7 +414,7 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
           let name = base;
           const taken = (candidate: string) => registered.has(candidate) || staged.some((entry) => entry.candidate.definition.function.name === candidate);
           for (let index = 2; taken(name); index += 1) { const suffix = `_${index}`; name = base.slice(0, 64 - suffix.length) + suffix; }
-          staged.push({ tool: { client, server, launch, builtInBrowser, agents, data, hostComputer, name: tool.name, schema, searched: searchable.has(server) },
+          staged.push({ tool: { client, server, launch, builtInBrowser, agents, data, name: tool.name, schema, searched: searchable.has(server) },
             candidate: { definition: { type: "function", function: { name, description, parameters } },
               tier: toolTier({ hostTool, agents, directory: searchable.has(server) && isDirectoryTool(tool.name) }) } });
         }
@@ -494,7 +493,11 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
     // reads only after the person turned Use Messages on. A broker card
     // would ask a second time.
     if (tool?.server === "messages") return { title: name, input: args, ask: false, ...(tool ? { mcpTool: `${tool.server}__${tool.name}` } : {}) };
-    const grant = tool && !tool.hostComputer ? JSON.stringify([tool.server, tool.launch, runs]) : undefined;
+    // "Always allow this session" covers this tool of this server as
+    // launched, for this thread and bot only (openai-chat.ts keys the set).
+    // The person's own computer has its own descriptor, so its grant is
+    // never the sandbox's or another machine's.
+    const grant = tool ? JSON.stringify([tool.server, tool.launch, runs]) : undefined;
     if (!tool?.searched || tool.name !== CALL_TOOL) return { title: name, input: args, ask: true, ...(grant ? { grant } : {}), ...(tool ? { mcpTool: `${tool.server}__${tool.name}` } : {}) };
     return { title: chatToolName(tool.server, runs), input: object(args.arguments) ? args.arguments : {}, ask: true, ...(grant ? { grant } : {}), mcpTool: `${tool.server}__${runs}` };
   };

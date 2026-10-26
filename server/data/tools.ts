@@ -91,7 +91,7 @@ export const DATA_TOOLS = [
   ),
   tool(
     "data_sql",
-    "Run one DuckDB statement. SELECT-like statements are kept as a result table (omb_results.q_<n>) you can show or export, and return columns, the exact row count and the first rows. CREATE [OR REPLACE] TABLE|VIEW … AS … is allowed; other writes are refused (load data with data_load instead).",
+    "Run one DuckDB statement. SELECT-like statements are kept as a result table (omb_results.q_<n>) you can show or export, and return columns, the exact row count and the first rows. The tables of this database are yours to change: CREATE TABLE|VIEW|INDEX, INSERT, UPDATE, DELETE, TRUNCATE, ALTER TABLE|VIEW and DROP TABLE|VIEW|INDEX run here. COPY, ATTACH, INSTALL, LOAD, SET, PRAGMA, EXPORT and other database-level statements are refused (load data with data_load, export with data_export).",
     {
       sql: { type: "string", minLength: 1, maxLength: 100000 },
       limit: { type: "integer", minimum: 1, maximum: DATA_LIMITS.sqlRowsMax, description: `Rows to return. Default ${DATA_LIMITS.sqlRowsDefault}.` },
@@ -201,6 +201,13 @@ function topLevelTokens(sql: string): { tokens: Token[]; statements: number } {
       push("ident", sql.slice(i, j));
       i = j; continue;
     }
+    if (ch === "." && depth === 0 && tokens.at(-1)?.kind === "ident") {
+      // "S".t and "S"."T": the dot after a quoted part belongs to the name.
+      const last = tokens.at(-1)!;
+      last.raw += ".";
+      last.text += ".";
+      i++; continue;
+    }
     if (ch === "(") { push("block", "(…)"); depth++; i++; continue; }
     if (ch === ")") { depth = Math.max(0, depth - 1); i++; continue; }
     if (ch === ";") {
@@ -229,11 +236,93 @@ const MATERIALISABLE = new Set(["SELECT", "WITH", "FROM", "PIVOT", "UNPIVOT", "V
 export type SqlClass =
   | { kind: "read"; materialisable: boolean }
   | { kind: "create"; target: string }
+  | { kind: "write"; verb: string; target: string }
   | { kind: "refused"; verb: string };
+
+/** Objects a write may name: the tables of this scope's own database. */
+const WRITE_OBJECTS = new Set(["TABLE", "VIEW", "INDEX"]);
+
+/** The name at `start` (up to a block, `ON`, `AS`, `SET`, `WHERE`, …) and
+ * the index after it. A three-part name (`catalog.schema.table`) reaches
+ * another database: not this scope's own tables. */
+function targetAt(tokens: readonly Token[], start: number): { name: string; next: number } | null {
+  const token = tokens[start];
+  if (!token || (token.kind !== "word" && token.kind !== "ident")) return null;
+  let name = token.raw;
+  let next = start + 1;
+  // A quoted part keeps its dot outside the token: s."T" or "S".t.
+  while (tokens[next] && (tokens[next]!.kind === "ident" || tokens[next]!.kind === "word") && (name.endsWith(".") || tokens[next]!.raw.startsWith("."))) {
+    name += tokens[next]!.raw;
+    next += 1;
+  }
+  name = name.replace(/\.$/, "");
+  if (splitName(name).length > 2) return null;
+  return { name, next };
+}
+
+/** Dotted name parts, quotes kept, dots inside quotes ignored. */
+function splitName(name: string): string[] {
+  const parts: string[] = [];
+  let current = "";
+  let quoted = false;
+  for (const ch of name) {
+    if (ch === '"') quoted = !quoted;
+    if (ch === "." && !quoted) { parts.push(current); current = ""; continue; }
+    current += ch;
+  }
+  parts.push(current);
+  return parts.filter(Boolean);
+}
+
+/** A write to this scope's own tables, or null when the statement is not one. */
+function writeClass(tokens: readonly Token[], i: number, verb: string): SqlClass | null {
+  const refused = { kind: "refused", verb } as const;
+  let j = i + 1;
+  const at = (k: number) => tokens[k]?.text;
+  if (verb === "INSERT") {
+    if (at(j) === "OR" && (at(j + 1) === "REPLACE" || at(j + 1) === "IGNORE")) j += 2;
+    if (at(j) !== "INTO") return refused;
+    const target = targetAt(tokens, j + 1);
+    return target ? { kind: "write", verb, target: target.name } : refused;
+  }
+  if (verb === "UPDATE") {
+    const target = targetAt(tokens, j);
+    return target ? { kind: "write", verb, target: target.name } : refused;
+  }
+  if (verb === "DELETE") {
+    if (at(j) !== "FROM") return refused;
+    const target = targetAt(tokens, j + 1);
+    return target ? { kind: "write", verb, target: target.name } : refused;
+  }
+  if (verb === "TRUNCATE") {
+    if (at(j) === "TABLE") j++;
+    const target = targetAt(tokens, j);
+    return target ? { kind: "write", verb, target: target.name } : refused;
+  }
+  if (verb === "ALTER" || verb === "DROP") {
+    const object = at(j);
+    if (!object || !WRITE_OBJECTS.has(object) || (verb === "ALTER" && object === "INDEX")) return { kind: "refused", verb: `${verb} ${object ?? ""}`.trim() };
+    j++;
+    if (at(j) === "IF" && at(j + 1) === "EXISTS") j += 2;
+    const target = targetAt(tokens, j);
+    if (!target) return { kind: "refused", verb: `${verb} ${object}` };
+    // DROP TABLE a, b: every name in the list is checked.
+    for (let k = target.next; verb === "DROP" && tokens[k]?.kind === "punct"; ) {
+      const more = targetAt(tokens, k + 1);
+      if (!more) return { kind: "refused", verb: `${verb} ${object}` };
+      k = more.next;
+    }
+    return { kind: "write", verb: `${verb} ${object}`, target: target.name };
+  }
+  return null;
+}
 
 /** What one statement is, judged by its verb (and the verb after a CTE
  * list), so a column called `comment` or `load` is never mistaken for a
- * write and a `WITH … DELETE` never passes as a read. */
+ * write and a `WITH … DELETE` never passes as a read. The tables of this
+ * scope's own database are the person's: a write to them is a `write`.
+ * Statements that reach past the database (COPY, ATTACH, INSTALL, LOAD,
+ * SET, PRAGMA, EXPORT, IMPORT, CALL, a three-part name) stay refused. */
 export function classifySql(sql: string): SqlClass {
   const { tokens, statements } = topLevelTokens(sql);
   if (statements > 1) throw fail("invalid_input", "One statement per call.", { hint: "Send each statement in its own data_sql call." });
@@ -258,6 +347,7 @@ export function classifySql(sql: string): SqlClass {
     verb = tokens[i]?.kind === "word" ? tokens[i]!.text : "";
     if (!verb) throw fail("invalid_input", "A WITH clause needs a statement after it.");
     if (verb === "WITH") return { kind: "refused", verb };
+    if (verb === "INSERT" || verb === "UPDATE" || verb === "DELETE") return writeClass(tokens, i, verb)!;
   }
   if (verb === "EXPLAIN") {
     // EXPLAIN plans without running; EXPLAIN ANALYZE runs the statement.
@@ -270,35 +360,56 @@ export function classifySql(sql: string): SqlClass {
     let j = i + 1;
     if (tokens[j]?.text === "OR" && tokens[j + 1]?.text === "REPLACE") j += 2;
     if (tokens[j]?.text === "TEMP" || tokens[j]?.text === "TEMPORARY") j++;
+    if (tokens[j]?.text === "UNIQUE" && tokens[j + 1]?.text === "INDEX") j++;
     const object = tokens[j]?.text;
+    if (object === "INDEX") {
+      // CREATE [UNIQUE] INDEX [IF NOT EXISTS] name ON table (cols)
+      let k = j + 1;
+      if (tokens[k]?.text === "IF" && tokens[k + 1]?.text === "NOT" && tokens[k + 2]?.text === "EXISTS") k += 3;
+      while (k < tokens.length && tokens[k]!.text !== "ON") k++;
+      const target = targetAt(tokens, k + 1);
+      return target ? { kind: "write", verb: "CREATE INDEX", target: target.name } : { kind: "refused", verb: "CREATE INDEX" };
+    }
     if (object !== "TABLE" && object !== "VIEW") return { kind: "refused", verb: `CREATE ${object ?? ""}`.trim() };
     j++;
     if (tokens[j]?.text === "IF" && tokens[j + 1]?.text === "NOT" && tokens[j + 2]?.text === "EXISTS") j += 3;
     const nameParts: string[] = [];
     while (j < tokens.length && tokens[j]!.kind !== "block" && tokens[j]!.text !== "AS") { nameParts.push(tokens[j]!.raw.replace(/\.$/, "")); j++; }
-    if (tokens[j]?.kind === "block") j++; // (col list) before AS
-    if (tokens[j]?.text !== "AS" || !nameParts.length) {
+    const name = nameParts.join(".");
+    if (!nameParts.length || splitName(name).length > 2) return { kind: "refused", verb: `CREATE ${object}` };
+    if (tokens[j]?.kind === "block") j++; // (col list) before AS, or a TABLE's column definitions
+    if (tokens[j]?.text !== "AS") {
+      // CREATE TABLE t (a INT): an empty table of the person's own.
+      if (object === "TABLE" && tokens[j - 1]?.kind === "block" && j >= tokens.length) return { kind: "create", target: name };
       return { kind: "refused", verb: `CREATE ${object}` };
     }
-    return { kind: "create", target: nameParts.join(".") };
+    return { kind: "create", target: name };
   }
+  const write = writeClass(tokens, i, verb);
+  if (write) return write;
   return { kind: "refused", verb };
 }
 
 /** Throws write_refused for anything but a read (and, when allowed, a
- * CREATE … AS); returns the class for the caller to branch on. */
-export function gateSql(sql: string, options: { allowCreate?: boolean } = {}): Exclude<SqlClass, { kind: "refused" }> {
+ * CREATE or a write to this database's own tables); returns the class for
+ * the caller to branch on. */
+export function gateSql(sql: string, options: { allowCreate?: boolean; allowWrite?: boolean } = {}): Exclude<SqlClass, { kind: "refused" }> {
   const kind = classifySql(sql);
   if (kind.kind === "refused") {
     throw fail("write_refused", `${kind.verb} is not allowed here.`, {
       sql,
-      hint: options.allowCreate
-        ? "Only SELECT-like statements and CREATE [OR REPLACE] TABLE|VIEW … AS … run here. Load data with data_load; export with data_export."
-        : "Only SELECT-like statements run here.",
+      hint: options.allowWrite
+        ? "SELECT-like statements and changes to this database's own tables run here. Load data with data_load; export with data_export."
+        : options.allowCreate
+          ? "Only SELECT-like statements and CREATE [OR REPLACE] TABLE|VIEW … AS … run here. Load data with data_load; export with data_export."
+          : "Only SELECT-like statements run here.",
     });
   }
   if (kind.kind === "create" && !options.allowCreate) {
     throw fail("write_refused", "CREATE is not allowed here.", { sql, hint: "Run CREATE TABLE … AS with data_sql, then show or export the table." });
+  }
+  if (kind.kind === "write" && !options.allowWrite) {
+    throw fail("write_refused", `${kind.verb} is not allowed here.`, { sql, hint: "Change a table with data_sql, then show or export it." });
   }
   return kind;
 }
@@ -773,7 +884,14 @@ export interface SqlOutput {
 export async function runSql(ctx: DataContext, input: SqlInput): Promise<SqlOutput> {
   const started = Date.now();
   const limit = Math.min(Math.max(1, Math.trunc(input.limit ?? DATA_LIMITS.sqlRowsDefault)), DATA_LIMITS.sqlRowsMax);
-  const kind = gateSql(input.sql, { allowCreate: true });
+  const kind = gateSql(input.sql, { allowCreate: true, allowWrite: true });
+  if (kind.kind === "write") {
+    // A change to this scope's own tables (the person's): DuckDB's own
+    // answer (the changed row count for INSERT, UPDATE and DELETE).
+    const result = await ctx.database.run(input.sql, runOptions(ctx, { maxRows: limit + 1 }));
+    const bounded = boundRows(result.rows, limit, DATA_LIMITS.sqlBytesMax);
+    return { table: null, columns: result.columns, rowCount: result.rowCount, rows: bounded.rows, truncated: bounded.truncated || result.truncated, elapsedMs: Date.now() - started };
+  }
   if (kind.kind === "create") {
     await ctx.database.run(input.sql, runOptions(ctx));
     const described = await ctx.database.describe(kind.target, runOptions(ctx));

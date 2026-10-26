@@ -1,8 +1,8 @@
 // What a bot may do in the signed-in person's name.
 // The caller is that person. A route they cannot call is refused.
 // Reads and screen changes run now. A write waits for Allow unless this
-// turn's mode is Full (`approvalModeForTurn`, never the stored Auto).
-// Auto holds writes the same way Ask does. Changing an approval mode,
+// turn's mode is Full, or Auto and the write stays in the person's own
+// environment (their bots, tasks, routines, plugins). Changing an approval mode,
 // answering a card, or calling a /respond route is refused in every mode.
 // This module decides. It does not perform.
 
@@ -292,17 +292,57 @@ export function decideBotAct(input: {
     return { ok: false, status: 403, error: "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, rules.*), which asks the person when it must." };
   }
   const write = target.kind === "route" ? target.method !== "GET" && target.method !== "HEAD" : target.write;
-  // Full still runs an ordinary write. Auto does not: it is "Approve for me"
-  // for the bot's own tools, not a pass for act to skip the card. A write
-  // that widens who gets a bot's team-memory cards waits at every level, as
-  // sagax_settings' bot.teamMemorySharing does.
-  const unattended = input.mode === "full" && !widensTeamMemorySharing(target);
+  // Full runs an ordinary write. Auto runs a write that stays in the
+  // person's own environment (their bots, tasks, projects, routines,
+  // plugins): the routes still check the bot is theirs, so another
+  // person's bot is refused there. A write that reaches other people
+  // (groups, DMs, nudges, sharing, admin routes) still waits in Auto. A
+  // write that widens who gets a bot's team-memory cards waits at every
+  // level, as sagax_settings' bot.teamMemorySharing does.
+  const unattended = (input.mode === "full" || (input.mode === "auto" && staysInOwnEnvironment(target))) && !widensTeamMemorySharing(target);
   return {
     ok: true,
     effect: write && !unattended ? "hold" : "run",
     summary: summaryOf(target),
     target,
   };
+}
+
+/** Screen writes on the person's own bots, tasks, projects and routines. */
+const OWN_UI_WRITES = new Set([
+  "createRoutine", "updateRoutine", "deleteRoutine", "runRoutine", "cancelRoutineRun", "markRoutineRunSeen", "markAllRoutineRunsSeen",
+  "send", "stopParallelTask", "cancelQueued", "steerQueued", "editMessage", "switchBranch", "dismissCard",
+  "newTask", "switchTask", "renameTask", "regenerateTaskTitle", "deleteTask", "updateTask",
+  "createProject", "updateProject", "deleteProject", "reorderProjects",
+  "newBot", "deleteBot", "duplicateBot", "markUnread", "playMascotMotion", "setModel", "interrupt", "updateBot",
+]);
+/** Routes on the person's own bots and routines. The route itself refuses
+ * a bot that is not theirs. Credentials (vault cards) and a third-party
+ * workspace link stay held. */
+const OWN_ROUTE = /^\/api\/(?:bots|routines|routine-runs)(?:\/|$)/;
+const OWN_ROUTE_HELD = /\/(?:vault-cards|slack-management)(?:\/|$)/;
+
+/** A write Auto runs without a card: it stays in the person's environment
+ * and does not change who else sees a bot. */
+function staysInOwnEnvironment(target: ActTarget): boolean {
+  if (target.kind === "ui") {
+    if (!OWN_UI_WRITES.has(target.command)) return false;
+    return !setsKey(target.input, "visibility");
+  }
+  const path = target.path.split("?")[0] ?? target.path;
+  if (!OWN_ROUTE.test(path) || OWN_ROUTE_HELD.test(path)) return false;
+  return !setsKey(target.query, "visibility") && !setsKey(target.body, "visibility");
+}
+
+function setsKey(value: unknown, name: string, depth = 0): boolean {
+  if (value === null || typeof value !== "object") return false;
+  if (depth > 8) return true;
+  if (Array.isArray(value)) return value.some((item) => setsKey(item, name, depth + 1));
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (key === name) return true;
+    if (setsKey(child, name, depth + 1)) return true;
+  }
+  return false;
 }
 
 /** A write that sets a bot's team memory sharing to anything but "private"

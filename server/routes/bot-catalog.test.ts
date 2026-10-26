@@ -69,7 +69,9 @@ async function serve(options: { organization?: boolean; bots?: FakeBot[] } = {})
     clone: async (botId, input) => {
       clones.push({ from: botId, owner: input.ownerPrincipalId, ...(input.name ? { name: input.name } : {}), asMember: input.asMember });
       const source = bots.find((candidate) => candidate.id === botId)!;
-      const copy = bot(`copy-${clones.length}`, input.ownerPrincipalId, { settings: { ...source.settings, ...(input.asMember ? memberImportReset() : {}) } });
+      // a remote (url) MCP server is named remote-* in these fixtures
+      const keep = input.ownSource ? { mcpServers: source.settings?.mcpServers as string[] | undefined, remote: (name: string) => name.startsWith("remote-") } : undefined;
+      const copy = bot(`copy-${clones.length}`, input.ownerPrincipalId, { settings: { ...source.settings, ...(input.asMember ? memberImportReset(keep) : {}) } });
       bots.push(copy);
       return copy.id;
     },
@@ -250,15 +252,28 @@ describe("importing a bot from the catalogue", () => {
 
   const hostSettings = {
     modelSelection: { instanceId: "claude", model: "opus" }, soul: "You sell.", skills: ["pricing"], perspicax: { profiles: ["cw-psa"] },
-    computer: "local", browser: true, browserProfile: "work", mcpServers: ["filesystem"], alwaysAllow: ["Bash"], cwd: "/srv/sales",
+    computer: "local", browser: true, browserProfile: "work", mcpServers: ["filesystem", "remote-github"], alwaysAllow: ["Bash"], cwd: "/srv/sales",
+    cloudBackend: "vps", autoStartVps: true,
   };
 
-  it("drops a member's copy back to a member's defaults: no computer, no browser, no host tools; engine, soul, skills and profiles stay", async () => {
+  it("keeps a member's computer, browser and Always allow on their copy; drops what stays an admin's on the shared server", async () => {
     const { call, bots } = await serve({ bots: [bot("ben-published", BEN, { catalog: { published: true }, settings: hostSettings })] });
     const { body } = await call(ANA, "/api/bot-catalog/ben-published/import", { method: "POST", body: {} });
     expect(bots.find((candidate) => candidate.id === body.botId)!.settings).toEqual({
       modelSelection: { instanceId: "claude", model: "opus" }, soul: "You sell.", skills: ["pricing"], perspicax: { profiles: ["cw-psa"] },
-      computer: "off", browser: false, browserProfile: undefined, mcpServers: [], alwaysAllow: undefined, cwd: undefined,
+      computer: "local", browser: true, alwaysAllow: ["Bash"],
+      // another person's bot: no MCP server comes along, remote or not
+      browserProfile: undefined, mcpServers: [], cwd: undefined, cloudBackend: "vps", autoStartVps: true,
+    });
+  });
+
+  it("keeps the remote MCP servers of a member's copy of their own bot, never a stdio one", async () => {
+    const { call, bots } = await serve({ bots: [bot("ana-own", ANA, { settings: hostSettings })] });
+    const { body } = await call(ANA, "/api/bot-catalog/ana-own/import", { method: "POST", body: {} });
+    expect(body.botId).toBeTruthy();
+    expect(bots.find((candidate) => candidate.id === body.botId)!.settings).toMatchObject({
+      mcpServers: ["remote-github"], computer: "local", browser: true, alwaysAllow: ["Bash"],
+      browserProfile: undefined, cwd: undefined, cloudBackend: "vps", autoStartVps: true,
     });
   });
 

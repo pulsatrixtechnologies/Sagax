@@ -257,7 +257,14 @@ export const ROLE_TIER_SCOPES: Record<McpRole, TierScopes> = {
  * denied; a scope replaces the tier's. */
 export const ROLE_OVERRIDES: Partial<Record<McpRole, Record<string, McpScope | null>>> = {
   // A member may start a bot of their own, nothing wider.
-  member: { "bots:create": "self", "bots:delete.propose": "self", "rooms:create": "self", "rooms:manage": "self" },
+  // 2026-10-26 (JC): archiving one of their own bots, and Perspicax's
+  // temporary agents they create and archive for themselves, are their own
+  // work too. Someone else's bot reaches the team scope (scopeForCall) and
+  // stays refused.
+  member: {
+    "bots:create": "self", "bots:delete.propose": "self", "bots:archive": "self", "rooms:create": "self", "rooms:manage": "self",
+    "agents:create": "self", "agents:delete": "self",
+  },
   // Automation never creates bots, widens access or runs host commands.
   // 2026-10-19: no person speaks in a service turn (a routine, a webhook):
   // pairing a device or asking a person for a login needs that person, a
@@ -301,22 +308,53 @@ export function decide(principal: McpPrincipal, tool: string, target: McpScope =
   return { allowed: true, permission: perm.key, requiredScope: target, grantedScope: granted, reason: "ok" };
 }
 
+/** 2026-10-26 (JC: a person's bots and rooms are theirs): who owns a bot or
+ * a room the call names, for the principal the call acts for. A bot or a
+ * room this principal owns is the call's own scope ("self"); an unknown
+ * owner is someone else's. */
+export interface ScopeOwners {
+  /** The person the call acts for (McpPrincipal.id). */
+  principalId: string;
+  botOwner?(botId: string): string | undefined;
+  roomOwner?(roomId: string): string | undefined;
+}
+
 /** The scope a call reaches, read from its arguments. Anything naming a bot
- * other than the caller, a room or a team is team; an explicit org scope or
- * an all-organization flag is org. Otherwise self. Conservative on purpose:
- * a wider guess only ever needs a wider grant. */
-export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId: string): McpScope {
+ * other than the caller, a room or a team is team, unless `owners` says
+ * that bot or room is the acting person's own (then self); an explicit org
+ * scope or an all-organization flag is org. Otherwise self. Conservative on
+ * purpose: a wider guess only ever needs a wider grant. */
+export function scopeForCall(args: Record<string, unknown> | undefined, ownBotId: string, owners?: ScopeOwners): McpScope {
   if (!args) return "self";
   if (args.scope === "org" || args.all === true || args.organization === true) return "org";
   if (args.scope === "team") return "team";
+  const person = owners?.principalId.trim().toLowerCase() ?? "";
+  const mine = (owner: string | undefined) => Boolean(person) && typeof owner === "string" && owner.trim().toLowerCase() === person;
   for (const key of ["bot_id", "for_bot_id", "agent_id", "to_bot_id", "target_bot_id"]) {
     const value = args[key];
-    if (typeof value === "string" && value && value !== ownBotId) return "team";
+    if (typeof value === "string" && value && value !== ownBotId && !mine(owners?.botOwner?.(value))) return "team";
   }
   for (const key of ["room_id", "group_id", "team_id", "section"]) {
-    if (typeof args[key] === "string" && args[key]) return "team";
+    const value = args[key];
+    if (typeof value !== "string" || !value) continue;
+    if (key === "room_id" && mine(owners?.roomOwner?.(value))) continue;
+    return "team";
   }
   return "self";
+}
+
+/** The acting person's own bots and rooms, as the harness hands them to the
+ * agents proxy (SAGAX_MCP_OWN_BOTS, SAGAX_MCP_OWN_ROOMS, comma separated):
+ * a resolver for scopeForCall. Nothing listed: nothing is the person's. */
+export function scopeOwnersFromEnv(env: NodeJS.ProcessEnv, principalId: string): ScopeOwners {
+  const list = (value: string | undefined) => new Set((value ?? "").split(",").map((id) => id.trim()).filter(Boolean));
+  const bots = list(env.SAGAX_MCP_OWN_BOTS);
+  const rooms = list(env.SAGAX_MCP_OWN_ROOMS);
+  return {
+    principalId,
+    botOwner: (botId) => (bots.has(botId) ? principalId : undefined),
+    roomOwner: (roomId) => (rooms.has(roomId) ? principalId : undefined),
+  };
 }
 
 const SEGMENT = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -415,6 +453,8 @@ export interface GuardOptions {
   /** Resource deny rules (see resourceDenied) and the catalog that vets names. */
   deniedResources?: readonly string[];
   catalog?: ApiCatalog;
+  /** Who owns the bots and rooms a call names (scopeForCall). */
+  owners?: ScopeOwners;
   /** Shadow mode only: the share of allowed calls audited, 0 (default) to 1.
    * Enforce audits every call; shadow audits every denial. */
   allowedSample?: number;
@@ -452,7 +492,7 @@ export function auditSampleFromEnv(env: NodeJS.ProcessEnv): number {
 /** Wraps one tool call. The audit hook never throws into the call. */
 export async function guardToolCall<R extends GuardedResult>(options: GuardOptions, tool: string, args: Record<string, unknown> | undefined, run: () => Promise<R>): Promise<R | GuardedResult> {
   if (options.mode === "off") return run();
-  const scope = scopeForCall(args, options.ownBotId);
+  const scope = scopeForCall(args, options.ownBotId, options.owners);
   let decision = decide(options.principal, tool, scope);
   const resource = resourceKeyForCall(tool, args, options.catalog) ?? undefined;
   if (decision.allowed && resource && resourceDenied(resource, options.deniedResources ?? [])) {
@@ -497,12 +537,18 @@ export function mcpPolicyEnv(env: NodeJS.ProcessEnv): Record<string, string> {
  * rule 5). A turn with no person speaking (a routine, a webhook) is a
  * service; the Perspicax role maps admin to admin, manager to operator,
  * anyone else to member. Nothing here is a credential. */
-export function mcpIdentityEnv(input: { botId: string; principalId?: string; perspicaxRole?: string; teamIds?: readonly string[] }): Record<string, string> {
+export function mcpIdentityEnv(input: { botId: string; principalId?: string; perspicaxRole?: string; teamIds?: readonly string[]; ownBotIds?: readonly string[]; ownRoomIds?: readonly string[] }): Record<string, string> {
   const role: McpRole = !input.principalId ? "service" : input.perspicaxRole === "admin" ? "admin" : input.perspicaxRole === "manager" ? "operator" : "member";
+  const ids = (list: readonly string[] | undefined) => (list ?? []).filter((id) => /^[\w.:-]{1,128}$/.test(id)).join(",");
+  // the person's own bots and rooms (scopeOwnersFromEnv), only when a person speaks
+  const ownBots = input.principalId ? ids(input.ownBotIds) : "";
+  const ownRooms = input.principalId ? ids(input.ownRoomIds) : "";
   return {
     SAGAX_MCP_ROLE: role,
     SAGAX_MCP_PRINCIPAL: input.principalId || input.botId,
-    SAGAX_MCP_TEAMS: (input.teamIds ?? []).filter((id) => /^[\w.:-]{1,128}$/.test(id)).join(","),
+    SAGAX_MCP_TEAMS: ids(input.teamIds),
+    ...(ownBots ? { SAGAX_MCP_OWN_BOTS: ownBots } : {}),
+    ...(ownRooms ? { SAGAX_MCP_OWN_ROOMS: ownRooms } : {}),
   };
 }
 

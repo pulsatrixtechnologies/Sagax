@@ -3,7 +3,8 @@
 // them without an explicit grant. A signed-in person reaches them from the
 // account menu; the aggregator then enforces who may see each session (a
 // workspace admin sees the organization's sessions, anyone else only their
-// own), who may record unattended consent (admins) and who may revoke it (the
+// own), who may record unattended consent (any signed-in person for a host of
+// their own, recorded under their principal) and who may revoke it (the
 // person who recorded it, or an admin). The enrolled hosts (/hosts) are
 // Perspicax's: any person here lists them, revokes the ones Perspicax lets
 // them (their own, or any as an admin), and opens one when
@@ -29,7 +30,9 @@ const grantBody = z.object({
   host_key: z.string().min(1).max(200),
   host_label: z.string().max(200).optional(),
   org: z.string().min(1).max(200),
-  installed_by: z.string().min(1).max(200),
+  /** Accepted for older clients and ignored: the consent is recorded under
+   * the signed-in caller's principal. */
+  installed_by: z.string().max(200).optional(),
   scope: z.string().max(400).optional(),
   expires_at: z.string().max(40).optional(),
   banner_visible: z.boolean().optional(),
@@ -111,12 +114,11 @@ export function createRemoteSessionsAdminRoutes(deps: {
     if (UNATTENDED.test(path)) {
       if (method !== "POST") return json(res, 405, { error: "method not allowed" });
       const parsed = grantBody.safeParse(await readBody(req));
-      if (!parsed.success) return json(res, 400, { error: "Send host_key, org and installed_by. Consent is never silent." });
+      if (!parsed.success) return json(res, 400, { error: "Send host_key and org. Consent is never silent." });
       const granted = deps.admin.grantUnattended(viewer, {
         hostKey: parsed.data.host_key,
         hostLabel: parsed.data.host_label,
         org: parsed.data.org,
-        installedBy: parsed.data.installed_by,
         scope: parsed.data.scope,
         expiresAt: parsed.data.expires_at,
         bannerVisible: parsed.data.banner_visible,
@@ -125,8 +127,8 @@ export function createRemoteSessionsAdminRoutes(deps: {
         keyBound: parsed.data.key_bound,
       });
       if (granted === "disabled") return json(res, 501, { error: "Unattended access is not available yet (not enabled on this server)." });
-      if (granted === "forbidden") return json(res, 403, { error: "Only a workspace admin records unattended consent." });
-      if (!granted) return json(res, 400, { error: "That consent is incomplete (host, org or installer missing)." });
+      if (granted === "forbidden") return json(res, 403, { error: "That host belongs to another person. Ask a workspace admin." });
+      if (!granted) return json(res, 400, { error: "That consent is incomplete (host or org missing)." });
       return json(res, 200, { consent: granted });
     }
 

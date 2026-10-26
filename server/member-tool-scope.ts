@@ -111,6 +111,10 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   sagax_settings: "own-setup",
   // the member's own cards, at their request (server/primary-approvals.ts)
   sagax_approvals: "own-setup",
+  // 2026-10-26: a pairing code for the member's own device; the route binds
+  // the code to the person the turn speaks for, never anyone else, and a
+  // turn no person speaks in never calls it (mcp-permissions.ts service)
+  manage_pairing: "own-setup",
   // The in-chat terminal (2026-10-15): the list is what THIS person may
   // open (their own environments; the server's hosts for an admin only), and
   // the offer only stages a card the person approves; the server checks the
@@ -139,7 +143,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
  *   archive_cloud_agent
  *                   a cloud coding agent run on a provider account */
 export const HOST_LEVEL_AGENT_TOOLS: ReadonlySet<string> = new Set([
-  "act", "manage_pairing", "manage_settings", "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
+  "act", "manage_settings", "api_reload", "review_write", "add_mcp_server", "attach_file", "vm_exec", "shared_computer",
   "launch_cloud_agent", "cloud_agent_follow_up", "cancel_cloud_agent", "archive_cloud_agent",
 ]);
 

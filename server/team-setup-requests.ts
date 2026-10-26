@@ -45,6 +45,39 @@ function creatorPlan(bot: BotRecord, request: Pick<TeamSetupRequest, "operations
     section(operation.fields.section) === section(bot.section);
 }
 
+/** 2026-10-26 (the person's own environment: "tout ce qui s'y passe est à
+ * elle"): whether a prepared team setup, create_bot or bot deletion applies
+ * without a card, and why. Full access applies it as it always has. Approve
+ * for me applies it when the person drives this turn themselves (not a
+ * routine, a webhook, another bot or a guest) and every bot it changes or
+ * deletes is theirs. A suggestion, a bot of someone else, and a new team on
+ * an organization server (a structure the organization shares) keep the
+ * card; so does every other level. */
+export function teamSetupDirectApply(input: {
+  request: Pick<TeamSetupRequest, "operations" | "newTeams" | "deletion" | "suggestion">;
+  fullAccess: boolean;
+  /** a guest-driven or mail-confined turn, or a conversation no longer the bot's */
+  blocked: boolean;
+  mode: string;
+  /** the bot's own person sent this turn's message */
+  ownerTurn: boolean;
+  orgServer: boolean;
+  /** the requesting bot's person, normalized; empty when nobody owns it */
+  requesterOwner: string;
+  /** a target bot's person, normalized; null when the bot is gone */
+  ownerOf(botId: string): string | null;
+}): "full-access" | "owner-auto" | null {
+  if (input.request.suggestion) return null;
+  if (input.fullAccess) return "full-access";
+  if (input.blocked || input.mode !== "auto" || !input.ownerTurn) return null;
+  if (input.orgServer && (input.request.newTeams.length || !input.requesterOwner)) return null;
+  const targets = [
+    ...input.request.operations.filter((operation) => operation.action === "update").map((operation) => operation.botId),
+    ...(input.request.deletion ? [input.request.deletion.botId] : []),
+  ];
+  return targets.every((id) => input.ownerOf(id) === input.requesterOwner) ? "owner-auto" : null;
+}
+
 export class TeamSetupError extends Error {
   readonly status: number;
   constructor(message: string, status = 400) { super(message); this.status = status; }
@@ -106,8 +139,11 @@ interface Options {
   canPersist(botId: string, threadId: string): { ok: true } | { ok: false; status: number; error: string };
   validateModel(selection: ModelSelection, current?: BotRecord): string | null;
   targetBusy(botId: string, sourceThreadId?: string): boolean;
-  /** The caller resolves the effective mode of this exact conversation. */
-  autoApply?(botId: string, threadId: string): boolean;
+  /** The caller resolves the effective mode of this exact conversation and
+   * whether this prepared request applies without a card (Full access; or
+   * 2026-10-26, Approve for me on the person's own turn when every bot it
+   * touches is theirs). A suggestion never reaches it. */
+  autoApply?(botId: string, threadId: string, request: TeamSetupRequest): boolean;
   /** Per-driver capability resolver for engine-switch warnings on the card. */
   driverCapabilities?(instanceId: string): DriverCapabilities | undefined;
   validateChange?(before: BotRecord, fields: TeamSetupFields): void;
@@ -193,7 +229,7 @@ export class TeamSetupRequestService {
   private validate(request: TeamSetupRequest, confirming: boolean, immediate = false): void {
     const chief = this.requester(request.botId, request);
     if (!this.options.ownsThread(request.botId, request.threadId)) throw new TeamSetupError("The requesting conversation no longer exists", 409);
-    if (immediate && !this.options.autoApply?.(request.botId, request.threadId)) throw new TeamSetupError("Full Access is no longer enabled for this conversation", 409);
+    if (immediate && (request.suggestion || !this.options.autoApply?.(request.botId, request.threadId, request))) throw new TeamSetupError("This conversation's approval level no longer applies this setup directly", 409);
     if (confirming && !immediate && !this.options.store.messagesFor(request.threadId).some((message) => message.card?.requestId === request.requestId && !message.card.answered && !message.card.dismissed)) throw new TeamSetupError("This setup card is no longer pending", 409);
     if (confirming && teamSetupRevision(chief, this.requesterScope(request)) !== request.requesterRevision) throw new TeamSetupError("The Primary Bot's settings changed. This setup was cancelled; review a new proposal.", 409);
     const existingTeams = new Set(this.options.teams().map(section));
@@ -293,8 +329,9 @@ export class TeamSetupRequestService {
   proposeDeletion(args: DeletionArgs) { return this.card(this.prepareDeletion(args), args.from); }
 
   async submit(args: SetupArgs & SubmitAuthority) {
-    if (this.options.autoApply?.(args.botId, args.threadId)) return this.applyImmediately(this.prepare(args), args.from, args.canCommit);
-    return { ...this.propose(args), applied: false, state: "pending" as const };
+    const request = this.prepare(args);
+    if (!request.suggestion && this.options.autoApply?.(args.botId, args.threadId, request)) return this.applyImmediately(request, args.from, args.canCommit);
+    return { ...this.card(request, args.from), applied: false, state: "pending" as const };
   }
 
   /** A specialist the Chief suggests on its own. Nobody asked for it, so it
@@ -315,8 +352,9 @@ export class TeamSetupRequestService {
   }
 
   async submitDeletion(args: DeletionArgs & SubmitAuthority) {
-    if (this.options.autoApply?.(args.botId, args.threadId)) return this.applyImmediately(this.prepareDeletion(args), args.from, args.canCommit);
-    return { ...this.proposeDeletion(args), applied: false, state: "pending" as const };
+    const request = this.prepareDeletion(args);
+    if (this.options.autoApply?.(args.botId, args.threadId, request)) return this.applyImmediately(request, args.from, args.canCommit);
+    return { ...this.card(request, args.from), applied: false, state: "pending" as const };
   }
 
   private cardData(request: TeamSetupRequest, immediate = false): OptionCardData {
@@ -373,7 +411,7 @@ export class TeamSetupRequestService {
       }
       lines.push("Existing execution permissions are unchanged.");
     }
-    lines.push(immediate ? "Full Access applies this request in the current turn without another confirmation." : `After this decision ${chief.chiefOfStaff ? "the Primary Bot" : `@${chief.name}`} continues once with the result.`);
+    lines.push(immediate ? "This conversation's approval level applies this request in the current turn without another confirmation." : `After this decision ${chief.chiefOfStaff ? "the Primary Bot" : `@${chief.name}`} continues once with the result.`);
     const title = request.deletion ? `Delete @${request.deletion.name}?`
       : request.suggestion ? `Add @${request.operations[0]?.fields.name} to the team?`
         : `Apply setup for ${request.operations.length} ${request.operations.length === 1 ? "bot" : "bots"}?`;

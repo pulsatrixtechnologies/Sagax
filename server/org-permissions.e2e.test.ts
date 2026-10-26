@@ -202,12 +202,15 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect(allowed.status, allowed.text).toBe(200);
     const moved = await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder });
     expect(moved.status, moved.text).toBe(200);
-    // still never the fields no permission opens
-    expect((await api("PATCH", `/api/bots/${id}`, bob, { alwaysAllow: [] })).status).toBe(403);
+    // 2026-10-26: the owner's own Always allow list goes with bots.approvalLevel
+    const allowList = await api("PATCH", `/api/bots/${id}`, bob, { alwaysAllow: [] });
+    expect(allowList.status, allowList.text).toBe(200);
     // an admin passes without any permission list (an admin opens no one
     // else's bot without a grant, so on their own)
     const elm = await api("POST", "/api/bots", alice, { name: "Elm" });
     expect(elm.status, elm.text).toBe(201);
+    // never on another person's bot (it is not even visible to them)
+    expect([403, 404]).toContain((await api("PATCH", `/api/bots/${elm.body.bot.id}`, bob, { alwaysAllow: [] })).status);
     const adminPatch = await api("PATCH", `/api/bots/${elm.body.bot.id}`, alice, { approvalMode: "auto", cwd: folder });
     expect(adminPatch.status, adminPatch.text).toBe(200);
   }, 60_000);

@@ -65,8 +65,8 @@ function harness(
     opensCard: boolean,
   ) => { ok: true } | { ok: false; status: number; error: string },
   autoApply?: DirectApplyCheck,
-  // Most cases here exercise a live routine, so they keep the setting off;
-  // "new routines start paused" below covers the default.
+  // Most cases here exercise a live routine, the default; "routines.newPaused"
+  // below covers the setting.
   newPaused = false,
 ) {
   const clock = { now: start };
@@ -1884,7 +1884,7 @@ describe("consequenceLine", () => {
   });
 });
 
-describe("new routines start paused", () => {
+describe("routines.newPaused", () => {
   const confirm = (service: RoutineRequestService, requestId: string, threadId = "thread-a") =>
     service.resolve({ botId: "bot-a", threadId, requestId, behavior: "allow" });
   const paused = () => harness(undefined, undefined, undefined, undefined, true);
@@ -1900,7 +1900,7 @@ describe("new routines start paused", () => {
     expect(routines.listRoutines()[0]).toMatchObject({ enabled: false, nextRunAt: null });
   });
 
-  it("is the service's default when no setting is passed", async () => {
+  it("starts live by default when no setting is passed", async () => {
     const dir = mkdtempSync(join(tmpdir(), "omb-routine-paused-"));
     tempDirs.push(dir);
     const now = Date.parse("2026-08-28T10:00:00Z");
@@ -1913,8 +1913,9 @@ describe("new routines start paused", () => {
     });
     const service = new RoutineRequestService({ store: new MemoryStore(), routines, now: () => now, timeZone: () => "UTC" });
     const card = await service.propose({ botId: "bot-a", threadId: "thread-a", proposal: createProposal() });
+    expect(card.detail).not.toContain(CREATED_PAUSED_LINE);
     expect(confirm(service, card.requestId)).toMatchObject({ state: "applied" });
-    expect(routines.listRoutines()[0]).toMatchObject({ enabled: false, nextRunAt: null });
+    expect(routines.listRoutines()[0]).toMatchObject({ enabled: true, nextRunAt: expect.any(Number) });
   });
 
   it("keeps the old behaviour when the setting is off", async () => {
@@ -2281,7 +2282,7 @@ describe("a bot's own routine changes", () => {
     expect(cards[1]!.routineRequest?.undo).toMatchObject({ name: "Renamed brief", before: { name: "Morning brief" } });
   });
 
-  it("keeps the card for another bot's routine at Ask, and in a guest-driven turn", async () => {
+  it("keeps the card for another bot's routine at Ask without an owner lookup, and in a guest-driven turn", async () => {
     const { service, routines, store } = own();
     const proposal = createProposal();
     if (proposal.action !== "create") throw new Error("Expected create");
@@ -2297,6 +2298,28 @@ describe("a bot's own routine changes", () => {
     expect(await service.submit({ botId: "bot-a", threadId: "ask-thread", proposal: { action: "pause", routineId: peers.id, forBot: { botId: "bot-b", name: "Peer" } } }))
       .toMatchObject({ state: "pending" });
     expect(routines.listRoutines().find((routine) => routine.id === peers.id)?.enabled).toBe(true);
+  });
+
+  it("applies a change to another bot of the same person at Ask, but keeps the card for another person's bot", async () => {
+    const owners: Record<string, string> = { "bot-a": "alice", "bot-a2": "alice", "bot-b": "bob" };
+    const ownerRule: DirectApplyCheck = (botId, threadId, targetBotId) => directApply({
+      fullAccess: false, botId, targetBotId, blocked: threadId === "guest-thread", ownerOf: (id) => owners[id],
+    });
+    const { service, routines, store } = harness(undefined, undefined, undefined, ownerRule);
+    const proposal = createProposal();
+    if (proposal.action !== "create") throw new Error("Expected create");
+    expect(await service.submit({ botId: "bot-a", threadId: "ask-thread", proposal: { ...proposal, forBot: { botId: "bot-a2", name: "Mine" } } }))
+      .toMatchObject({ state: "applied", appliedBy: "self" });
+    expect(routines.listRoutines()).toEqual([expect.objectContaining({ botId: "bot-a2", enabled: true })]);
+    const theirs = createProposal({ name: "Their brief", instructions: "For someone else." });
+    if (theirs.action !== "create") throw new Error("Expected create");
+    expect(await service.submit({ botId: "bot-a", threadId: "ask-thread", proposal: { ...theirs, forBot: { botId: "bot-b", name: "Peer" } } }))
+      .toMatchObject({ state: "pending" });
+    expect(routines.listRoutines().filter((routine) => routine.botId === "bot-b")).toHaveLength(0);
+    expect(openCards(store, "ask-thread")).toHaveLength(1);
+    // A guest-driven turn keeps its card even for the same person's bot.
+    expect(await service.submit({ botId: "bot-a", threadId: "guest-thread", proposal: { ...createProposal({ name: "Guest", instructions: "Guest asks." }), forBot: { botId: "bot-a2", name: "Mine" } } as RoutineProposalInput }))
+      .toMatchObject({ state: "pending" });
   });
 
   it("shows the card past 20 enabled routines at Ask, but not at Full access", async () => {

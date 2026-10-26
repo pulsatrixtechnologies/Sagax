@@ -43,9 +43,10 @@ export type PhoneToolDecision = typeof PHONE_TOOL_DECISIONS[number];
 export type PhoneToolAccess = "read" | "write";
 
 /** Tools whose card never offers "Toujours permettre": a shortcut can do
- * anything the person's Shortcuts can (send a message, pay), the clipboard
- * may hold a password, and a photo is picked by hand each time anyway. */
-export const PHONE_TOOLS_ONCE_ONLY: ReadonlySet<PhoneRequestKind> = new Set(["shortcut", "clipboard", "photos", "card_scan"]);
+ * anything the person's Shortcuts can (send a message, pay), so its effect
+ * may reach past the phone, and a photo is picked by hand each time anyway.
+ * The clipboard is the person's own phone: they may let one bot read it. */
+export const PHONE_TOOLS_ONCE_ONLY: ReadonlySet<PhoneRequestKind> = new Set(["shortcut", "photos", "card_scan"]);
 
 /** How long a request waits for the phone before it expires. */
 export const PHONE_TOOL_REQUEST_TTL_MS = 5 * 60_000;
@@ -124,13 +125,17 @@ export function phoneToolAccess(tool: PhoneRequestKind, args: Record<string, unk
 
 /** The key a "Toujours permettre" is saved under, or null when the card
  * never offers one (review of #960): exactly what was allowed, nothing
- * wider. Status; the approximate position (never precise); contacts with
- * that very set of fields; reading reminders or the calendar. Anything
- * that changes the phone (creating a reminder or an event), a precise
- * position, a shortcut, the clipboard and photos are asked each time. */
+ * wider, for one bot (the grant is saved per bot, so another bot asks
+ * again). Status; the approximate and the precise position, each its own
+ * key; contacts with that very set of fields; reading reminders, the
+ * calendar or the clipboard; creating a reminder or creating an event,
+ * each its own key, never a read. A shortcut and photos are asked each
+ * time. */
 export function phoneToolGrantKey(tool: PhoneRequestKind, args: Record<string, unknown>): string | null {
-  if (PHONE_TOOLS_ONCE_ONLY.has(tool) || phoneToolAccess(tool, args) === "write") return null;
-  if (tool === "location") return args.precise === true ? null : "location:read:approximate";
+  if (PHONE_TOOLS_ONCE_ONLY.has(tool)) return null;
+  if ((tool === "reminders" || tool === "calendar") && phoneToolAccess(tool, args) === "write") return `${tool}:write:create`;
+  if (phoneToolAccess(tool, args) === "write") return null;
+  if (tool === "location") return args.precise === true ? "location:read:precise" : "location:read:approximate";
   if (tool === "contacts") {
     const fields = [...new Set((args.fields as string[] | undefined) ?? ["phone", "email"])].sort();
     return `contacts:read:${fields.join("+")}`;

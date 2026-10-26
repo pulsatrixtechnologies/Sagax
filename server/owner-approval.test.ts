@@ -223,6 +223,33 @@ describe("a destructive shell command is a delete, in every mode (2026-10-22)", 
       .toEqual({ kind: "allow", source: "owner-auto" });
   });
 
+  it("in the person's own isolated environment, auto and bypass run a delete or a bulk change (2026-10-26)", () => {
+    const SANDBOX = "mcp__sagax-environment__run_command";
+    const bulk = JSON.stringify({ command: "true", ids: ["a", "b"] });
+    for (const mode of ["auto", "bypass"] as const) {
+      const source = mode === "auto" ? "owner-auto" : "owner-bypass";
+      expect(ownerDecision({ mode, rules: [], call: shellCall(SANDBOX, "rm -rf build"), ownEnvironment: true })).toEqual({ kind: "allow", source });
+      expect(ownerDecision({ mode, rules: [], call: { ...shellCall(SANDBOX, "true"), input: bulk }, ownEnvironment: true })).toEqual({ kind: "allow", source });
+      // a hold, a security key and a deny rule still come first
+      expect(ownerDecision({ mode, rules: [], call: shellCall(SANDBOX, "rm -rf build"), ownEnvironment: true, personMustAnswer: true })).toEqual({ kind: "card", reason: "hold" });
+      expect(ownerDecision({ mode, rules: [], call: shellCall(SANDBOX, "rm -rf build"), ownEnvironment: true, stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+    }
+  });
+
+  it("outside it (another person's, the real computer, a connector), at Approval, or for a message to a third party, the delete card stays", () => {
+    for (const mode of ["auto", "bypass"] as const) {
+      // not the person's own environment
+      expect(ownerDecision({ mode, rules: [], call: shellCall(BASH, "rm -rf /tmp/zzz") })).toMatchObject({ kind: "card", reason: "destructive", destructive: "delete" });
+      expect(ownerDecision({ mode, rules: [], call: call(ticketDelete) })).toMatchObject({ kind: "card", reason: "destructive" });
+      // someone else's environment
+      expect(ownerDecision({ mode, rules: [], call: shellCall(BASH, "rm -rf build"), ownEnvironment: true, crossPerson: true })).toEqual({ kind: "card", reason: "cross-person" });
+      // a message that leaves the organization, even sent from the sandbox
+      expect(ownerDecision({ mode, rules: [], call: { ...call(smsSend), tool: "mcp__perspicax_quasar__twilio_api__write" }, ownEnvironment: true }))
+        .toMatchObject({ kind: "card", reason: "destructive", destructive: "external-message" });
+    }
+    expect(ownerDecision({ mode: "approval", rules: [], call: shellCall(BASH, "rm -rf build"), ownEnvironment: true })).toMatchObject({ kind: "card", reason: "destructive" });
+  });
+
   it("a deny rule still denies it and a hold still holds, as for any destructive call", () => {
     const denyShell: OwnerRule = { id: "d1", ownerId: ALICE, botId: "bot-a", tool: "Bash", scope: {}, behavior: "deny", description: "no shell", createdAt: 1, updatedAt: 1 };
     expect(ownerDecision({ mode: "bypass", rules: [denyShell], call: shellCall(BASH, "rm -rf /tmp/zzz") }))
@@ -601,13 +628,22 @@ describe("Bypass on the owner's own computer, and what always wins over it (#106
     }
   });
 
-  it("Auto and Approval keep the card there, and another origin keeps it under Bypass", () => {
-    for (const mode of ["auto", "approval"] as const) {
-      expect(ownerDecision({ mode, rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true, ownComputerOwnTurn: true }))
-        .toMatchObject({ kind: "card", reason: "origin" });
+  it("Auto answers it too from the owner's own turn (2026-10-26), journaled as auto", () => {
+    for (const [tool, input] of [[DESKTOP_READ, readme], [DESKTOP_RUN, listing]] as const) {
+      expect(ownerDecision({ mode: "auto", rules: [], call: desktop(tool, input), autonomyRefused: true, ownComputerOwnTurn: true }))
+        .toEqual({ kind: "allow", source: "owner-auto" });
     }
-    expect(ownerDecision({ mode: "bypass", rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true }))
+  });
+
+  it("Approval keeps the card there, and another origin (a webhook, another person's bot) keeps it under Auto and Bypass", () => {
+    expect(ownerDecision({ mode: "approval", rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true, ownComputerOwnTurn: true }))
       .toMatchObject({ kind: "card", reason: "origin" });
+    for (const mode of ["auto", "bypass"] as const) {
+      expect(ownerDecision({ mode, rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true }))
+        .toMatchObject({ kind: "card", reason: "origin" });
+      expect(ownerDecision({ mode, rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true, ownComputerOwnTurn: true, crossPerson: true }))
+        .toEqual({ kind: "card", reason: "cross-person" });
+    }
   });
 
   it("a delete, a hold, a security key and the owner's deny rule still stop Bypass on the owner's computer", () => {

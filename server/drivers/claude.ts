@@ -2453,9 +2453,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   ? permissionCommand(ask.input.command, commandCwd) : undefined,
                 paths: ask.kind === "permission" ? permissionPaths(ask.tool, ask.input, cwd) : undefined,
                 requiresExplicitApproval: ask.kind === "permission" && ask.tool === "Bash" && ask.input.dangerouslyDisableSandbox === true || undefined,
-                // the proxy hands Claude its own suggested rules on `always`;
-                // host control stays one action at a time
-                allowSession: ask.kind === "permission" && !(controlsHost && typeof ask.tool === "string" && ask.tool.startsWith("mcp__computer")) ? true : undefined,
+                // the proxy hands Claude its own suggested rules on `always`,
+                // on the person's own computer too: they live in this
+                // thread's process only, which another thread, bot or
+                // person never reuses (see the spawn contract)
+                allowSession: ask.kind === "permission" ? true : undefined,
                 approvalScope:
                   typeof ask.tool === "string" && controlsHost && ask.tool.startsWith("mcp__computer")
                     ? "local-computer"

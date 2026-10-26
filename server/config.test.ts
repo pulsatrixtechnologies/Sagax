@@ -702,9 +702,9 @@ describe("configuration boundaries", () => {
     expect(routineGroupSettingsEnabled({ features: { routineGroupSettings: true } })).toBe(true);
   });
 
-  it("starts approval-flow routines paused unless routines.newPaused is false", () => {
-    expect(newRoutinesPaused({})).toBe(true);
-    expect(newRoutinesPaused({ routines: {} })).toBe(true);
+  it("starts a bot's new routines live unless routines.newPaused is true", () => {
+    expect(newRoutinesPaused({})).toBe(false);
+    expect(newRoutinesPaused({ routines: {} })).toBe(false);
     expect(newRoutinesPaused({ routines: { newPaused: true } })).toBe(true);
     expect(newRoutinesPaused({ routines: { newPaused: false } })).toBe(false);
     expect(parseConfigPatch({ routines: { newPaused: false } })).toEqual({ routines: { newPaused: false } });

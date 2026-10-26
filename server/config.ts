@@ -1109,9 +1109,9 @@ export function tidyHour(cfg: AppConfig): number {
   return cfg.memory?.tidyHour ?? DEFAULT_TIDY_HOUR;
 }
 
-/** Routines created through the approval flow start paused unless
- * `routines.newPaused` is false. */
-export const DEFAULT_NEW_ROUTINES_PAUSED = true;
+/** Routines a bot creates for its own person start live unless
+ * `routines.newPaused` is true. The creator's explicit `enabled` wins. */
+export const DEFAULT_NEW_ROUTINES_PAUSED = false;
 
 export function newRoutinesPaused(cfg: AppConfig): boolean {
   return cfg.routines?.newPaused ?? DEFAULT_NEW_ROUTINES_PAUSED;

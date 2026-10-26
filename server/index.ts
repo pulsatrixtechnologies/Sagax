@@ -701,7 +701,7 @@ import { createAgentCard, prepareWidgetPress, reopenCancelledPress } from "./cha
 import { buildBotOverview, type BotOverview } from "./bot-overview.ts";
 import { ProfileRequestService } from "./profile-requests.ts";
 import { ModelRequestService } from "./model-requests.ts";
-import { TeamSetupError, TeamSetupRequestService } from "./team-setup-requests.ts";
+import { TeamSetupError, TeamSetupRequestService, teamSetupDirectApply } from "./team-setup-requests.ts";
 import type { TeamSetupRequest } from "../shared/team-setup.ts";
 import { profileRevision, profileSnapshot } from "./profile-revision.ts";
 import { flushAllProfileHistory, flushProfileHistory, readHistory, recordProfileChange } from "./profile-versions.ts";
@@ -8082,14 +8082,35 @@ function selfApplyBlocked(threadId: string): boolean {
 /** Whether a bot's routine, skill, profile or model change applies without
  * a person, and why: Full access applies everything as it always has, and
  * at any level a change to the bot itself applies, shown as a one-line
- * receipt with Undo (server/direct-apply.ts). Team setup and peer approvals
- * stay Full access only (fullAccessForSource). */
+ * receipt with Undo (server/direct-apply.ts). Peer approvals stay Full
+ * access only (fullAccessForSource); team setup follows teamSetupDirectSource. */
 function appliesDirectly(botId: string, threadId: string, targetBotId: string): DirectApply | null {
   return directApply({
     fullAccess: fullAccessForSource(botId, threadId),
     botId,
     targetBotId,
     blocked: selfApplyBlocked(threadId) || !connectorThread(botId, threadId),
+    // another bot of the same person applies like the bot itself
+    ownerOf: (id) => { const bot = store.bot(id); return bot ? effectiveBotOwner(bot) : undefined; },
+  });
+}
+
+/** 2026-10-26: team setup, create_bot and a bot deletion apply without a
+ * card at Full access, and at Approve for me on the person's own turn when
+ * every bot they touch is theirs (team-setup-requests.ts teamSetupDirectApply). */
+function teamSetupDirectSource(botId: string, threadId: string, request: TeamSetupRequest): "full-access" | "owner-auto" | null {
+  const from = store.bot(botId);
+  if (!from) return null;
+  const ownerOf = (bot: BotRecord) => effectiveBotOwner(bot).trim().toLowerCase();
+  return teamSetupDirectApply({
+    request,
+    fullAccess: fullAccessForSource(botId, threadId),
+    blocked: selfApplyBlocked(threadId) || !connectorThread(botId, threadId),
+    mode: sourceApprovalMode(botId, threadId),
+    ownerTurn: ownEnvironmentOrigin(from, threadId) === "owner",
+    orgServer: IDENTITY.kind === "perspicax",
+    requesterOwner: ownerOf(from),
+    ownerOf: (id) => { const target = store.bot(id); return target ? ownerOf(target) : null; },
   });
 }
 
@@ -10495,7 +10516,14 @@ const desktopViewer = createDesktopViewer({
     if (id.startsWith("vps/")) {
       const botId = id.slice(4);
       if (store.bot(botId)?.cloudBackend !== "vps") return;
-      return { key: id, resolve: async () => {
+      // 2026-10-26: an admin, or the bot's own owner who may run its
+      // computer (bots.computer): the VPS is that bot's. Anyone else, no.
+      return { key: id, allows: (who: RequestAuth) => {
+        if (who.scopes.includes("admin")) return true;
+        const current = store.bot(botId);
+        const actor = actorPrincipalId(who).trim().toLowerCase();
+        return Boolean(current && actor && effectiveBotOwner(current).trim().toLowerCase() === actor && callerCan(who, "bots.computer"));
+      }, resolve: async () => {
         const connection = vps.vpsDesktopConnection(botId);
         if (!connection) throw Object.assign(new Error("VPS viewer is not open"), { status: 409 });
         return connection;
@@ -22029,6 +22057,8 @@ const routineRequests = new RoutineRequestService({
       botId: routine.botId,
       runOn: routine.runOn,
       kind: routine.schedule.type === "event" ? "email" : "webhook",
+      // the trigger starts as its routine does (active unless created paused)
+      enabled: routine.enabled,
     });
   },
   rotateTrigger: (routine) => {
@@ -22443,7 +22473,7 @@ const teamSetupRequests = new TeamSetupRequestService({
   store, teams: teamSetupTeams, canAccessTeam, covers: primaryCovers, sameOwner: primaryBotSameOwner, canPersist: proposalPersistence, maxBots: MAX_WORKSPACE_BOTS,
   // create_bot from a bot that is not a Primary Bot (server/bot-creation.ts)
   mayCreateBots: (bot) => botCreationOffered(bot, ownerBotsReadOnly(bot)),
-  autoApply: fullAccessForSource,
+  autoApply: (botId, threadId, request) => teamSetupDirectSource(botId, threadId, request) !== null,
   validateChange: (before, fields) => assertTeamComputerChangeIdle(before, { ...before, ...fields }),
   ownsThread: (botId, threadId) => Boolean(connectorThread(botId, threadId)),
   targetBusy: (botId, sourceThreadId) => {
@@ -34702,14 +34732,12 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
       const ended = routineConsents?.reconcile(present, fetchStartedAt) ?? 0;
       if (ended) console.log(`perspicax directory: ${ended} routine delegation(s) ended in Perspicax`);
     },
-    // sagax_integrations flipped: stop use at once, or put GitHub back.
-    // Saved connections are not deleted. MCP and plugins mount on the next turn.
+    // sagax_integrations flipped. Off (#1107) no longer cuts the person's
+    // own connections: their running servers and their GitHub in their own
+    // environment stay; saved connections are not deleted. Manage puts
+    // GitHub back. MCP and plugins mount on the next turn.
     onIntegrationRights: (principalId, rights) => {
-      if (rights === "off") {
-        stdioRelay.closePerson(principalId);
-        void syncGithubToSandbox(principalId, null);
-        return;
-      }
+      if (rights === "off") return;
       const connection = personGithub(principalId);
       if (connection) void syncGithubToSandbox(principalId, connection);
     },
@@ -39462,7 +39490,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           bots: setupBots,
           instances: orgOfferedEngines(instances).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
-          scope: "Every bot of the person is listed, whatever its team. A new default model: threads following the bot (main, routines) move at their next turn. Full Access applies requested team setup immediately; other modes return a review card.",
+          scope: "Every bot of the person is listed, whatever its team. A new default model: threads following the bot (main, routines) move at their next turn. Full Access applies requested team setup immediately; Approve for me applies it too when the person asked in their own message and every bot it touches is theirs; other modes, and a suggestion, return a review card.",
         });
       }
       if (method === "POST" && path === "/api/internal/team-setup-requests") {
@@ -39477,7 +39505,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
         if (proposed.state === "applied" || proposed.state === "pending") appendDecision(DATA_DIR, { threadId: internalCapability.threadId, requestId: proposed.requestId, botId: chief.id,
           tool: "set_up_team", summary: proposed.detail, decision: proposed.state === "applied" ? "auto-approved" : "card-shown",
-          source: proposed.state === "pending" ? "profile" : "full-access" });
+          source: proposed.state === "pending" ? "profile" : fullAccessForSource(chief.id, internalCapability.threadId) ? "full-access" : "owner-auto" });
         return json(res, 201, proposed);
       }
       if (method === "POST" && path === "/api/internal/bot-deletion-requests") {
@@ -39492,7 +39520,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           ...(owner.group ? { from: { botId: chief.id, name: chief.name, color: chief.color } } : {}) });
         if (proposed.state === "applied" || proposed.state === "pending") appendDecision(DATA_DIR, { threadId: internalCapability.threadId, requestId: proposed.requestId, botId: chief.id,
           tool: "delete_bot", summary: proposed.detail, decision: proposed.state === "applied" ? "auto-approved" : "card-shown",
-          source: proposed.state === "pending" ? "profile" : "full-access" });
+          source: proposed.state === "pending" ? "profile" : fullAccessForSource(chief.id, internalCapability.threadId) ? "full-access" : "owner-auto" });
         return json(res, 201, proposed);
       }
       // session_search: ranked recall over the calling bot's OWN threads,
@@ -40996,8 +41024,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // The Primary Bot's person owns the new bot and it keeps the
         // Primary Bot's audience: applyTeamSetup records both (the request
         // is the agents proxy on loopback, never the person).
-        // The same reviewed path propose_team_setup takes: Full Access applies
-        // it in this turn, anything below shows one card and creates nothing
+        // The same reviewed path propose_team_setup takes: Full Access (or
+        // Approve for me on the person's own turn, teamSetupDirectSource)
+        // applies it in this turn, anything below shows one card and creates nothing
         // until the person applies it. The instructions become the
         // specialist's standing instructions (soul).
         // A suggestion (nobody asked for this bot) always waits on the card.
@@ -41029,7 +41058,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           internalCapability.createdBots += 1;
           appendDecision(DATA_DIR, { threadId: fromThreadId, requestId: proposed.requestId, botId: chief.id,
             tool: "create_bot", summary: proposed.detail, decision: proposed.state === "applied" ? "auto-approved" : "card-shown",
-            source: proposed.state === "pending" ? "profile" : "full-access" });
+            source: proposed.state === "pending" ? "profile" : fullAccessForSource(chief.id, fromThreadId) ? "full-access" : "owner-auto" });
         }
         if (proposed.state === "pending") return json(res, 201, proposed);
         const createdId = "result" in proposed ? proposed.result.bots.find((bot) => bot.action === "created")?.id : undefined;
@@ -41139,12 +41168,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!added.ok) return json(res, added.status, { error: added.error });
           const refusal = mcpPolicyRefusal(added.name, added.server);
           if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
-          persistMcpServers(added.next);
           const server = added.server;
           const remote = isRemoteMcpServer(server);
+          // 2026-10-26: a bot on Full access (bypass) adds the server
+          // switched on; below Full it stays off until the person turns it
+          // on. On an organization server a command (stdio) would run on the
+          // shared host, so it stays off there whatever the level; a remote
+          // URL is switched on. The list itself stays where it was.
+          const enabled = fullAccessForSource(internalSender.id, internalCapability.threadId) && (IDENTITY.kind !== "perspicax" || remote);
+          persistMcpServers(enabled ? { ...added.next, [added.name]: { ...server, enabled: true } } : added.next);
           return json(res, 201, {
             name: added.name,
-            enabled: false,
+            enabled,
             transport: remote ? server.type : "command",
             target: remote ? server.url : server.command,
             envKeys: remote ? [] : Object.keys(server.env).sort(),
@@ -42825,7 +42860,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, { directory });
     }
     // ── the organization library (server/org-library.ts) ─────────────────
-    // Admin scope, as import is. With no organization every read answers
+    // Admin scope: one install per server that the organization keeps up to
+    // date, its skills and connections server-wide (unlike a person's own
+    // team file import, /api/teams/import). With no organization every read answers
     // {organization: null} and nothing else changes.
     if (method === "GET" && path === "/api/org-library") {
       return json(res, 200, orgLibrary?.list() ?? { organization: null, packages: [] });
@@ -42888,6 +42925,22 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (importMode !== "add" && importMode !== "project") {
         return json(res, 400, { error: "Team import mode must be add or project" });
       }
+      // 2026-10-26: a person who may create bots imports a team file for
+      // themselves (request-auth.ts lets a member's session in). Like a zip
+      // import, every bot is theirs and starts from a member's defaults
+      // (memberImportReset); a folder of the server, who sees the bots
+      // beyond them, a backup restore and the server's MCP list stay an
+      // admin's.
+      const memberImport = auth.kind === "session" && !auth.scopes.includes("admin");
+      const memberOwner = memberImport ? creatingBotOwnerId(auth) : "";
+      if (memberImport) {
+        if (!botCreationAllowed(auth) || !memberOwner) {
+          if (personBotsReadOnly(auth.session.principalId)) return json(res, 403, botsReadOnlyRefusal(auth.session.principalId));
+          return json(res, 403, { error: "forbidden: only a member of the organization can import bots" });
+        }
+        if (url.searchParams.get("cwd") !== null) return json(res, 403, { error: "Choosing a folder of the server for imported bots stays an admin's.", code: "admin_only" });
+        if (url.searchParams.get("visibility") !== null) return json(res, 403, { error: "Choosing who sees imported bots stays an admin's; your imported bots are yours.", code: "admin_only" });
+      }
       // `project` adds the team AND opens a caller-owned room on a folder.
       // Legacy team manifests remain people-only. Full bot packages may add
       // their own new rooms, but neither format can point at an existing room
@@ -42921,6 +42974,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       const body = await readBody(req, MAX_TEAM_BACKUP_BYTES);
       if (body?.format === "openmaus.backup") {
+        if (memberImport) return json(res, 403, { error: "Restoring a backup stays an admin's. Import a bot or a team file instead.", code: "admin_only" });
         if (importMode !== "add") return json(res, 400, { error: "Import backups alongside your existing bots; project mode is only for templates" });
         try {
           // Organization server (slice 8, D7): no ownerless bots. The
@@ -42961,7 +43015,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       } catch (error) {
         return json(res, 400, { error: error instanceof Error ? error.message : "Invalid bot package" });
       }
-      const deps = packageImportDeps(await defaultSelection());
+      const baseDeps = packageImportDeps(await defaultSelection());
+      // a member's file adds no server to the server's MCP list
+      const deps: PackageImportDeps = memberImport
+        ? { ...baseDeps, mcp: { ...baseDeps.mcp, refusal: () => "A member's import adds no server to the server's MCP list" } }
+        : baseDeps;
       const options = {
         mode: importMode as "add" | "project",
         cwd: projectCwd,
@@ -42980,6 +43038,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       } catch (error) {
         if (error instanceof PackageImportError) return json(res, error.status, { error: error.message, code: error.code });
         throw error;
+      }
+      if (memberImport) {
+        for (const bot of imported.bots) {
+          const patched = store.patchBot(bot.id, { ownerUserId: memberOwner, ...memberImportReset() });
+          if (patched) broadcast({ kind: "bot", bot: publicBot(patched) });
+        }
+        for (const created of [...imported.groups, ...(imported.group ? [imported.group] : [])]) store.patchGroup(created.id, { createdBy: memberOwner });
       }
       return json(res, 201, {
         name: imported.name,
@@ -44154,8 +44219,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!pending) {
         return json(res, 409, { error: "that grant is not on a pending approval for this bot" });
       }
-      // A server command of a member's bot is approved once, by an admin.
-      if (pending.card?.adminApproval || memberOwnedInOrg(bot)) return json(res, 403, ADMIN_APPROVAL_REQUIRED);
+      // A card an admin answers (a command on the shared server) is approved
+      // once, by an admin. 2026-10-26: any other card of a member's own bot
+      // is hers, Always allow included (her bot, her environment); the
+      // answerer checks below still refuse anyone else's bot, and an
+      // organization that turned standing grants off keeps them off.
+      if (pending.card?.adminApproval) return json(res, 403, ADMIN_APPROVAL_REQUIRED);
+      if (memberOwnedInOrg(bot) && !standingGrantsAllowed()) {
+        return json(res, 409, { error: "Your organization requires an approval each time, so this cannot be always allowed.", code: "standing_grants_off" });
+      }
       // A standing grant is an approval: the same people who may approve
       // the card it came from may remember it (security review 2026-10-19:
       // its answerer, not only whoever started the thread).

@@ -283,6 +283,49 @@ describe("terminal request service", () => {
     expect(kept.every((row) => row.principalId === OWNER)).toBe(true);
   });
 
+  it("2026-10-26: at Approve for me or Full access, a terminal on the person's own environment opens as them with no card", async () => {
+    for (const level of ["auto", "full"] as const) {
+      messages = [];
+      calls.opened = [];
+      const journal: string[] = [];
+      const asked: string[] = [];
+      const { requests } = setup({
+        ownLevel: (principalId) => { asked.push(principalId); return level; },
+        journalLevel: ({ level: used }) => journal.push(used),
+      });
+      for (const provider of ["sandbox", "desktop"] as const) {
+        messages = [];
+        const submitted = await requests.submit({ botId, threadId, provider, reason: "x" });
+        expect("requestId" in submitted).toBe(true);
+        expect(card().answered).toBe("allow");
+      }
+      expect(calls.opened).toHaveLength(2);
+      expect(calls.opened.every((row) => row.principalId === OWNER)).toBe(true);
+      expect(journal).toEqual([level, level]);
+      expect(asked.every((who) => who === OWNER)).toBe(true);
+    }
+  });
+
+  it("2026-10-26: Ask, Auto-accept edits, Custom, a turn that is not the person's own, and an organization host keep the card", async () => {
+    for (const level of ["ask", "edits", "custom", null] as const) {
+      messages = [];
+      const { requests } = setup({ ownLevel: () => level });
+      const submitted = await requests.submit({ botId, threadId, provider: "sandbox", reason: "x" });
+      expect("requestId" in submitted).toBe(true);
+      expect(card().answered).toBeUndefined();
+    }
+    expect(calls.opened).toEqual([]);
+    // a host of the organization's server, for an admin at Full access
+    messages = [];
+    const asked: string[] = [];
+    const { requests } = setup({ ownLevel: (principalId) => { asked.push(principalId); return "full"; } });
+    const host = await requests.submit({ botId, threadId, provider: "test", resourceId: "echo", reason: "x", principalId: ADMIN });
+    expect("requestId" in host).toBe(true);
+    expect(card().answered).toBeUndefined();
+    expect(calls.opened).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
   it("audits a refusal of the card", async () => {
     const { requests, auditRows } = setup();
     const submitted = await requests.submit({ botId, threadId, reason: "x" });

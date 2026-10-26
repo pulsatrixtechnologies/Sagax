@@ -11,6 +11,7 @@ import {
   classifySandboxPath,
   misuseRefusalText,
   type MisuseCategory,
+  type MisuseScope,
   type MisuseVerdict,
 } from "../shared/misuse-guardrails.ts";
 
@@ -20,6 +21,9 @@ export interface MisuseContext {
   /** `security.triage` on the person this turn acts for. */
   triage: boolean;
   principalId?: string;
+  /** `shell` is a tool in the speaker's own environment: their server
+   * sandbox (the capability names it) or their own computer through the
+   * desktop bridge (Local VM included). A lent computer is `terminal`. */
   surface: "message" | "shell" | "file" | "terminal" | "mcp" | "flow";
   botId?: string;
   threadId?: string;
@@ -123,10 +127,18 @@ function refusalFor(verdict: MisuseVerdict, locked: boolean): MisuseRefusal {
   return { status: 403, code: "misuse_blocked", message: misuseRefusalText(verdict.category, "block"), verdict };
 }
 
+/** The classifier scope of a surface: a chat message runs nothing, and the
+ * `shell` surface is the speaker's own environment. */
+export function misuseScopeFor(surface: MisuseContext["surface"]): MisuseScope {
+  if (surface === "message") return "message";
+  if (surface === "shell") return "own_environment";
+  return "default";
+}
+
 /** Classify `text`. Off: nothing. Shadow: a log row, no refusal. Enforce:
  * a refusal, and a lock after repeated attempts. `verdict` lets a path
  * check pass a block the text alone would not name. */
-export function misuseRefusal(text: string, context: MisuseContext, now = Date.now(), verdict = classifyMisuse(text, context.triage)): MisuseRefusal | null {
+export function misuseRefusal(text: string, context: MisuseContext, now = Date.now(), verdict = classifyMisuse(text, context.triage, misuseScopeFor(context.surface))): MisuseRefusal | null {
   const mode = misuseGuardrailMode();
   if (mode === "off") return null;
   const key = bucketKey(context);
@@ -156,10 +168,12 @@ export function misuseRefusal(text: string, context: MisuseContext, now = Date.n
   return refusal;
 }
 
-/** A file tool in the server environment. The path allowlist follows the
- * same mode as the classifier. */
+/** A file tool in the speaker's own server environment. The path allowlist
+ * follows the same mode as the classifier and still refuses platform and
+ * host paths; the path text is read in the own-environment scope (a file
+ * named `reboot-notes.md` is theirs). */
 export function misusePathRefusal(path: string, context: Omit<MisuseContext, "surface">, now = Date.now()): MisuseRefusal | null {
-  return misuseRefusal(path, { ...context, surface: "file" }, now, classifySandboxPath(path, context.triage));
+  return misuseRefusal(path, { ...context, surface: "file" }, now, classifySandboxPath(path, context.triage, "own_environment"));
 }
 
 /** Text of a JSON-RPC tools/call, or null when the frame is not a call. */

@@ -2,9 +2,10 @@
 // routines, skills, profile and default model, on the desktop, a server and
 // a Cloud home alike:
 // - Full access applies everything it always has, with no new limits;
-// - at any other level a bot's change to ITSELF applies directly (its own
-//   routines, skills, profile, model), and the person sees a one-line
-//   receipt with Undo. A change for another bot keeps its card.
+// - at any other level a bot's change to ITSELF, or to another bot of the
+//   same person, applies directly (routines, skills, profile, model), and
+//   the person sees a one-line receipt with Undo. A change for a bot of
+//   another person keeps its card.
 // The one exception is a Cloud home's guest-driven turn, which keeps today's
 // card for everything (`blocked`). Team setup and peer approvals are not
 // changes to the bot itself and stay Full access only.
@@ -24,12 +25,31 @@ export const UNDO_STALE = "Changed since, so it can't be undone here.";
  * enabled; past it, a create or resume shows today's card instead. */
 export const SELF_ROUTINE_CAP = 20;
 
+/** The person a bot belongs to, normalized; undefined or empty when the
+ * bot is unknown or has no owner on record. */
+export type BotOwnerOf = (botId: string) => string | undefined;
+
+/** Whether `targetBotId` is the requesting bot itself or another bot of the
+ * same person. An unknown or ownerless side never matches, so a bot of
+ * another person (or one nobody owns) keeps its card. */
+export function samePersonBot(botId: string, targetBotId: string, ownerOf?: BotOwnerOf): boolean {
+  if (targetBotId === botId) return true;
+  if (!ownerOf) return false;
+  const owner = ownerOf(botId)?.trim().toLowerCase();
+  const targetOwner = ownerOf(targetBotId)?.trim().toLowerCase();
+  return !!owner && owner === targetOwner;
+}
+
 export function directApply(args: {
   fullAccess: boolean;
   botId: string;
   targetBotId: string;
   blocked: boolean;
+  /** Owner lookup: with it, a change to another bot of the same person
+   * applies as "self". Without it only the bot itself does. */
+  ownerOf?: BotOwnerOf;
 }): DirectApply | null {
   if (args.fullAccess) return "full-access";
-  return args.targetBotId === args.botId && !args.blocked ? "self" : null;
+  if (args.blocked) return null;
+  return samePersonBot(args.botId, args.targetBotId, args.ownerOf) ? "self" : null;
 }

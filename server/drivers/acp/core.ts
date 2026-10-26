@@ -1581,14 +1581,19 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           }
           // Sagax approval gate: the agent asks about an MCP call that the gate
           // itself holds unless it is a reviewed read. Allow once (never
-          // always), so the gate's decision is the only one.
-          if (!isQuestion && !current.controlsHost && gatedMcpAsk(toolCall, current.gatedServers)) {
+          // always), so the gate's decision is the only one, on the person's
+          // own computer too: one card per call, never two.
+          if (!isQuestion && gatedMcpAsk(toolCall, current.gatedServers)) {
             const allow = optionFor("allow");
             if (allow) return send({ jsonrpc: "2.0", id: msg.id, result: { outcome: { outcome: "selected", optionId: allow } } });
           }
           const kind = String(toolCall.kind ?? "");
-          // an earlier "Always allow this session" on this exact operation
-          const operationKey = isQuestion || current.controlsHost ? null : sessionOperationKey(toolCall);
+          // an earlier "Always allow this session" on this exact operation.
+          // On the person's own computer the key carries that scope, so a
+          // grant made in the sandbox never answers a call on the computer
+          // (or the reverse); it stays this thread's only.
+          const exactOperation = isQuestion ? null : sessionOperationKey(toolCall);
+          const operationKey = exactOperation && current.controlsHost ? `local-computer:${exactOperation}` : exactOperation;
           if (operationKey && sessionAllows.get(threadId)?.has(operationKey)) {
             const allow = optionFor("allow");
             if (allow) {
@@ -1622,6 +1627,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // so the card must not offer a free-text "Other" it cannot send
             ? parseAskQuestions({ questions: [{ question: summary, options: questionChoices, custom: false }] }) ?? undefined
             : undefined;
+          // "Always allow this session": never for an outward call (sending
+          // to a third party); on the person's own computer only when the
+          // exact operation can be remembered
+          const canAllowSession = !isQuestion && !connector.outward && (!current.controlsHost || operationKey !== null);
           const requestId = newId();
           const finish = (
             behavior: string,
@@ -1632,7 +1641,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             if (!current.asks.delete(requestId)) return "unavailable";
             clearTimeout(timer);
             const want = behavior === "allow" ? "allow" : "reject";
-            const forSession = want === "allow" && always === true && !isQuestion && !current.controlsHost && !connector.outward;
+            const forSession = want === "allow" && always === true && canAllowSession;
             // A structured card replies in the Q:/A: block format; recover the
             // picked label from it so exact-match keeps working. Flat clients
             // send the bare label, which the single-question fallback inside
@@ -1648,14 +1657,18 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               : isQuestion
                 ? named.length === 1 && typeof named[0].optionId === "string" ? named[0].optionId : null
                 : forSession
-                  ? optionAlways ?? optionFor("allow")
+                  // on the person's computer the engine's allow_always could
+                  // cover more than this exact call: allow once, and the
+                  // driver keeps the exact operation instead
+                  ? (current.controlsHost ? null : optionAlways) ?? optionFor("allow")
                   // an outward call is allowed once, never Grok's allow_always
                   : connector.outward && want === "allow"
                     ? options.find((o) => o.kind === "allow_once" && typeof o.optionId === "string")?.optionId ?? null
                     : optionFor(want);
-            // the agent keeps its own allow_always; when it offered none, the
-            // driver keeps the operation for the session instead
-            if (forSession && !optionAlways && optionId && operationKey) {
+            // the agent keeps its own allow_always; when it offered none (or on
+            // the person's computer), the driver keeps the exact operation
+            // for the session instead
+            if (forSession && (current.controlsHost || !optionAlways) && optionId && operationKey) {
               const remembered = sessionAllows.get(threadId) ?? new Set<string>();
               remembered.add(operationKey);
               sessionAllows.set(threadId, remembered);
@@ -1711,8 +1724,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             ...(askQuestions ? { questions: askQuestions } : {}),
             approvalScope: current.controlsHost ? "local-computer" : undefined,
             // the driver can honor a session-wide allow either way, except
-            // for an outward call (review of #943): once each time
-            allowSession: !isQuestion && !current.controlsHost && !connector.outward ? true : undefined,
+            // for an outward call (review of #943): once each time. On the
+            // person's computer it needs an exact operation to remember.
+            allowSession: canAllowSession ? true : undefined,
             ...(connector.input ? { input: connector.input } : {}),
             ...(connector.engineConnector ? { engineConnector: true } : {}),
             ...(connector.outward ? { outbound: true } : {}),

@@ -140,6 +140,8 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/browser/action"], // take over that session (same check)
       ["POST", "/api/bots/x/direct-grants"],
       ["POST", "/api/bots"], ["DELETE", "/api/bots/x"], // a member's own bots: the handler checks role and owner
+      ["POST", "/api/teams/import"], // 2026-10-26: a team file for oneself; the handler checks the right to create bots
+      ["GET", "/api/desktop-viewer/vps/b1"], ["GET", "/api/desktop-viewer/vps/b1/websockify"], // 2026-10-26: the owner's own bot VPS; the target decides
       ["POST", "/api/bots/x/primary"], ["DELETE", "/api/bots/x/primary"], // the owner's own Primary Bot, both ways
       ["POST", "/api/org/invites/tok/accept"],
       ["GET", "/api/org"],
@@ -171,7 +173,7 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/local-computer/join"], ["POST", "/api/bots/x/local-computer/screenshot"],
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
       ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
-      ["PATCH", "/api/bots/x/model"], ["POST", "/api/teams/import"], ["GET", "/api/teams/scout"],
+      ["PATCH", "/api/bots/x/model"], ["GET", "/api/teams/scout"], ["POST", "/api/org-library/add"],
       ["PUT", "/api/section-context"], ["GET", "/api/threads/t/events"],
       // shared team memory: direct reads and writes stay admin; a member only
       // answers the team-memory card of their own team (the respond routes)

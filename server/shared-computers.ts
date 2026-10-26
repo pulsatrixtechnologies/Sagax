@@ -176,7 +176,7 @@ export class SharedComputers {
   /** One bot operation for the person the turn acts for. Another person's
    * computer answers exactly like one that does not exist. */
   request(operation: Operation, principal: string | null, active: () => boolean): Promise<unknown> {
-    if (!principal) return Promise.reject(failure("This conversation cannot use a shared computer: only a conversation started by the person who shared it can.", 403));
+    if (!principal) return Promise.reject(failure("This conversation cannot use a shared computer: only the person who shared it can, in their own conversation or through a routine of their own bot. A webhook, an email or someone else's routine cannot.", 403));
     const entry = [...this.computers.values()].find(candidate => candidate.registration.id === operation.computer_id && candidate.owner.person === principal && this.online(candidate));
     if (!entry) return Promise.reject(failure(OFFLINE));
     const refusal = sharedComputerScopeRefusal(entry.registration, operation);

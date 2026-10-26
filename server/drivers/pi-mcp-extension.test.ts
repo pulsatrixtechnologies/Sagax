@@ -412,6 +412,59 @@ describe("Pi MCP extension registration", () => {
     } finally { await handlers.get("session_shutdown")?.(); }
   });
 
+  it.each([["ask", 1], ["auto", 1], ["edits", 1], ["full", 0]] as const)("asks before each tool on the person's own computer at %s, and not under her Full access", async (approvalMode, cards) => {
+    const receipt = join(tempDir(), "computer-call.txt");
+    const script = fakeMcpScript(`
+      import { createInterface } from "node:readline";
+      import { writeFileSync } from "node:fs";
+      createInterface({input:process.stdin}).on("line", line => {
+        const m = JSON.parse(line); if (m.id === undefined) return;
+        let result = {};
+        if (m.method === "tools/list") result = {tools:[{name:"click",inputSchema:{type:"object"}}]};
+        if (m.method === "tools/call") { writeFileSync(process.env.RECEIPT, m.params.name); result = {content:[{type:"text",text:"ran"}]}; }
+        process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result}) + "\\n");
+      });
+    `);
+    const servers = buildMcpServers({ threadId: "pi-computer", text: "Go", approvalMode, integrations: { localComputer: { command: process.execPath, args: [script], env: { RECEIPT: receipt }, scope: "local-computer" } } });
+    expect(servers?.computer).toMatchObject({ scope: "local-computer" });
+    scopeConfig(undefined, { mcpServers: servers, approvalMode });
+    const tools: RegisteredTool[] = [];
+    const handlers = new Map<string, ShutdownHandler>();
+    await extension({ registerTool(tool) { tools.push(tool); }, on(event, handler) { handlers.set(event, handler); } });
+    try {
+      const asked: string[] = [];
+      const ui = { confirm: async (title: string) => { asked.push(title); return false; } };
+      await tools[0].execute("call", { x: 1 }, undefined, undefined, { ui });
+      expect(asked).toEqual(cards ? ["Allow click on your computer?"] : []);
+      expect(existsSync(receipt)).toBe(cards === 0);
+    } finally { await handlers.get("session_shutdown")?.(); }
+  });
+
+  it("still asks on the person's own computer when the turn names no mode (legacy callers)", async () => {
+    const receipt = join(tempDir(), "computer-legacy.txt");
+    const script = fakeMcpScript(`
+      import { createInterface } from "node:readline";
+      import { writeFileSync } from "node:fs";
+      createInterface({input:process.stdin}).on("line", line => {
+        const m = JSON.parse(line); if (m.id === undefined) return;
+        let result = {};
+        if (m.method === "tools/list") result = {tools:[{name:"click",inputSchema:{type:"object"}}]};
+        if (m.method === "tools/call") { writeFileSync(process.env.RECEIPT, m.params.name); result = {content:[{type:"text",text:"ran"}]}; }
+        process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result}) + "\\n");
+      });
+    `);
+    scopeConfig(undefined, { mcpServers: { computer: { command: process.execPath, args: [script], env: { RECEIPT: receipt }, scope: "local-computer" } } });
+    const tools: RegisteredTool[] = [];
+    const handlers = new Map<string, ShutdownHandler>();
+    await extension({ registerTool(tool) { tools.push(tool); }, on(event, handler) { handlers.set(event, handler); } });
+    try {
+      const asked: string[] = [];
+      await tools[0].execute("call", {}, undefined, undefined, { ui: { confirm: async (title: string) => { asked.push(title); return false; } } });
+      expect(asked).toEqual(["Allow click on your computer?"]);
+      expect(existsSync(receipt)).toBe(false);
+    } finally { await handlers.get("session_shutdown")?.(); }
+  });
+
   it("registers a big URL server as three tools, asking only about the tool call_tool runs", async () => {
     const remote = await startFakeHttpMcp({ tools: whopLikeCatalog(300) });
     try {

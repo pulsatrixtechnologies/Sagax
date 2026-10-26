@@ -17,6 +17,7 @@ import {
   permissionModeFromEnv,
   principalFromEnv,
   scopeForCall,
+  scopeOwnersFromEnv,
   type McpAuditRecord,
 } from "./mcp-permissions.ts";
 
@@ -131,6 +132,65 @@ describe("scopeForCall", () => {
     expect(scopeForCall({ for_bot_id: "c" }, "b")).toBe("team");
     expect(scopeForCall({ room_id: "r" }, "b")).toBe("team");
     expect(scopeForCall({ scope: "org" }, "b")).toBe("org");
+  });
+
+  // 2026-10-26 (JC): a person's own bots and rooms are their own scope
+  const owners = { principalId: "pr_alice", botOwner: (id: string) => ({ b2: "pr_alice", b3: "PR_ALICE", bob1: "pr_bob" } as Record<string, string>)[id], roomOwner: (id: string) => ({ r1: "pr_alice", rb: "pr_bob" } as Record<string, string>)[id] };
+  it("is self for another bot or a room of the same person", () => {
+    for (const key of ["bot_id", "for_bot_id", "agent_id", "to_bot_id", "target_bot_id"]) {
+      expect(scopeForCall({ [key]: "b2" }, "b", owners)).toBe("self");
+      expect(scopeForCall({ [key]: "b3" }, "b", owners)).toBe("self");
+    }
+    expect(scopeForCall({ room_id: "r1" }, "b", owners)).toBe("self");
+    expect(scopeForCall({ room_id: "r1", to_bot_id: "b2" }, "b", owners)).toBe("self");
+  });
+  it("stays team for someone else's bot or room, an unknown one, a group or a team", () => {
+    expect(scopeForCall({ bot_id: "bob1" }, "b", owners)).toBe("team");
+    expect(scopeForCall({ bot_id: "unknown" }, "b", owners)).toBe("team");
+    expect(scopeForCall({ room_id: "rb" }, "b", owners)).toBe("team");
+    expect(scopeForCall({ room_id: "r1", to_bot_id: "bob1" }, "b", owners)).toBe("team");
+    expect(scopeForCall({ group_id: "g", room_id: "r1" }, "b", owners)).toBe("team");
+    expect(scopeForCall({ team_id: "t" }, "b", owners)).toBe("team");
+    expect(scopeForCall({ bot_id: "b2", scope: "org" }, "b", owners)).toBe("org");
+    expect(scopeForCall({ bot_id: "b2" }, "b", { ...owners, principalId: "" })).toBe("team");
+  });
+  it("reads the person's own bots and rooms from the harness environment", () => {
+    const fromEnv = scopeOwnersFromEnv({ SAGAX_MCP_OWN_BOTS: "b2, b3", SAGAX_MCP_OWN_ROOMS: "r1" }, "pr_alice");
+    expect(scopeForCall({ bot_id: "b2" }, "b", fromEnv)).toBe("self");
+    expect(scopeForCall({ room_id: "r1" }, "b", fromEnv)).toBe("self");
+    expect(scopeForCall({ bot_id: "bob1" }, "b", fromEnv)).toBe("team");
+    expect(scopeForCall({ bot_id: "b2" }, "b", scopeOwnersFromEnv({}, "pr_alice"))).toBe("team");
+    expect(mcpIdentityEnv({ botId: "b", principalId: "pr_alice", ownBotIds: ["b2", "bad id!"], ownRoomIds: ["r1"] })).toMatchObject({ SAGAX_MCP_OWN_BOTS: "b2", SAGAX_MCP_OWN_ROOMS: "r1" });
+    // no person speaks (a service turn): nothing is listed as anyone's own
+    expect(mcpIdentityEnv({ botId: "b", ownBotIds: ["b2"] })).not.toHaveProperty("SAGAX_MCP_OWN_BOTS");
+  });
+});
+
+describe("a member's own bots (2026-10-26)", () => {
+  const member = { id: "pr_alice", role: "member" };
+  it("asks, delegates, sends to and coordinates their own other bot, and posts in their own room, under enforce", async () => {
+    const owners = { principalId: "pr_alice", botOwner: (id: string) => (id === "b2" ? "pr_alice" : id === "bob1" ? "pr_bob" : undefined), roomOwner: (id: string) => (id === "r1" ? "pr_alice" : undefined) };
+    const options = { principal: member, mode: "enforce" as const, ownBotId: "b", audit: () => {}, owners };
+    const run = async () => ({ text: "ok" });
+    for (const tool of ["ask_bot", "delegate_bot", "send_to_bot", "coordinate_bots"]) {
+      expect(await guardToolCall(options, tool, { bot_id: "b2" }, run), tool).toEqual({ text: "ok" });
+      expect(await guardToolCall(options, tool, { bot_id: "bob1" }, run), tool).toMatchObject({ isError: true });
+    }
+    expect(await guardToolCall(options, "post_to_room", { room_id: "r1" }, run)).toEqual({ text: "ok" });
+    expect(await guardToolCall(options, "manage_room", { room_id: "r1" }, run)).toEqual({ text: "ok" });
+    expect(await guardToolCall(options, "post_to_room", { room_id: "r9" }, run)).toMatchObject({ isError: true });
+  });
+  it("archives their own bot and creates or archives their own temporary agent; never someone else's", () => {
+    for (const tool of ["archive_bot", "create_agent", "delete_agent"]) {
+      expect(decide(member, tool, "self").allowed, tool).toBe(true);
+      expect(decide(member, tool, "team").allowed, tool).toBe(false);
+      expect(decide({ id: "bot", role: "service" }, tool, "self").allowed, tool).toBe(false);
+    }
+  });
+  it("creates a pairing code for themselves, never for a turn no person speaks in", () => {
+    expect(decide(member, "manage_pairing", "self").allowed).toBe(true);
+    expect(decide(member, "manage_pairing", "team").allowed).toBe(false);
+    expect(decide({ id: "bot", role: "service" }, "manage_pairing", "self").allowed).toBe(false);
   });
 });
 

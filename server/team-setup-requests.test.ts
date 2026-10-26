@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { TeamSetupError, TeamSetupRequestService } from "./team-setup-requests.ts";
+import { TeamSetupError, TeamSetupRequestService, teamSetupDirectApply } from "./team-setup-requests.ts";
 import { canAccessTeam } from "./peer-roster.ts";
 import type { BotRecord, OptionCardData } from "./store.ts";
 import type { TeamSetupRequest, TeamSetupResult } from "../shared/team-setup.ts";
@@ -412,7 +412,7 @@ describe("Full Access team setup", () => {
     expect(response).toMatchObject({ applied: true, state: "applied", result: { state: "applied", newTeams: ["Research"], bots: [
       { name: "Mira", action: "created" }, { name: "Ada", action: "updated" },
     ] } });
-    expect(h.autoApply).toHaveBeenCalledWith(h.chief.id, h.chief.threadId);
+    expect(h.autoApply).toHaveBeenCalledWith(h.chief.id, h.chief.threadId, expect.objectContaining({ botId: h.chief.id, newTeams: ["Research"] }));
     expect(h.peer.title).toBe("Research lead");
     expect(h.apply).toHaveBeenCalledTimes(1);
     expect(h.messages).toHaveLength(1);
@@ -545,13 +545,13 @@ describe("Full Access team setup", () => {
     expect(h.messages).toHaveLength(0); expect(h.apply).not.toHaveBeenCalled(); expect(h.deleteBot).not.toHaveBeenCalled();
   });
 
-  it("keeps shared-computer change guards and rechecks Full Access before mutation", async () => {
+  it("keeps shared-computer change guards and rechecks the direct apply before mutation", async () => {
     const h = harness(); h.autoApply.mockReturnValue(true);
     h.validateChange.mockImplementation(() => { throw new TeamSetupError("Team computer is in use", 409); });
     expect(await h.submit([{ action: "update", botId: h.peer.id, fields: { section: "Engineering" } }])).toMatchObject({ state: "cancelled", applied: false, result: { error: "Team computer is in use" } });
     expect(h.validateChange).toHaveBeenCalledWith(h.peer, expect.objectContaining({ section: "Engineering" }));
     h.autoApply.mockReset().mockReturnValueOnce(true).mockReturnValue(false);
-    expect(await h.submit([specialist("Mira", "Work")])).toMatchObject({ state: "cancelled", applied: false, result: { error: expect.stringContaining("Full Access") } });
+    expect(await h.submit([specialist("Mira", "Work")])).toMatchObject({ state: "cancelled", applied: false, result: { error: expect.stringContaining("no longer applies this setup directly") } });
     expect(h.apply).not.toHaveBeenCalled();
   });
 
@@ -643,5 +643,47 @@ describe("one new bot asked for by a bot that is not a Primary Bot (2026-10-17)"
   it("refuses a bot the server does not let create bots", async () => {
     const h = creatorHarness(false);
     await expect(h.submit([specialist("Theo", "Work")])).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("team setup on Approve for me (2026-10-26, the person's own environment)", () => {
+  const owners: Record<string, string> = { alice1: "alice@example.test", alice2: "alice@example.test", bob1: "bob@example.test" };
+  const base = { fullAccess: false, blocked: false, mode: "auto", ownerTurn: true, orgServer: true, requesterOwner: "alice@example.test",
+    ownerOf: (id: string) => owners[id] ?? null };
+  const create = { action: "create" as const, botId: "new", fields: { name: "Mira" } };
+  const update = (botId: string) => ({ action: "update" as const, botId, fields: { title: "Lead" } });
+  const plan = (operations: any[], extra: Record<string, unknown> = {}) => ({ operations, newTeams: [], ...extra }) as any;
+
+  it("applies the person's own create, update and deletion on their own turn", () => {
+    expect(teamSetupDirectApply({ ...base, request: plan([create]) })).toBe("owner-auto");
+    expect(teamSetupDirectApply({ ...base, request: plan([create, update("alice2")]) })).toBe("owner-auto");
+    expect(teamSetupDirectApply({ ...base, request: plan([], { deletion: { botId: "alice2", name: "alice2", expectedRevision: "r" } }) })).toBe("owner-auto");
+    // a solo server: new teams are the operator's own too
+    expect(teamSetupDirectApply({ ...base, orgServer: false, request: plan([create], { newTeams: ["Research"] }) })).toBe("owner-auto");
+    expect(teamSetupDirectApply({ ...base, mode: "ask", fullAccess: true, request: plan([update("bob1")]) })).toBe("full-access");
+  });
+
+  it("keeps the card for someone else's bot, a suggestion, another level, a turn that is not theirs, and a new organization team", () => {
+    expect(teamSetupDirectApply({ ...base, request: plan([update("bob1")]) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, request: plan([create, update("bob1")]) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, request: plan([], { deletion: { botId: "bob1", name: "bob1", expectedRevision: "r" } }) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, request: plan([update("gone")]) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, fullAccess: true, request: plan([create], { suggestion: true }) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, request: plan([create], { suggestion: true }) })).toBeNull();
+    for (const mode of ["ask", "edits", "custom"]) expect(teamSetupDirectApply({ ...base, mode, request: plan([create]) }), mode).toBeNull();
+    expect(teamSetupDirectApply({ ...base, ownerTurn: false, request: plan([create]) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, blocked: true, request: plan([create]) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, request: plan([create], { newTeams: ["Research"] }) })).toBeNull();
+    expect(teamSetupDirectApply({ ...base, requesterOwner: "", ownerOf: () => "", request: plan([update("alice2")]) })).toBeNull();
+  });
+
+  it("re-checks the prepared request at apply time and never auto-applies a suggestion through submit", async () => {
+    const h = harness(); h.autoApply.mockImplementation(((_bot: string, _thread: string, request: TeamSetupRequest) => !request.operations.some((op) => op.botId === h.peer.id)) as any);
+    const own = await h.submit([specialist("Mira", "Work")]);
+    expect(own).toMatchObject({ applied: true, state: "applied" });
+    const other = await h.submit([{ action: "update", botId: h.peer.id, fields: { title: "Research lead" } }]);
+    expect(other).toMatchObject({ applied: false, state: "pending" });
+    const suggested = await h.service.submit({ botId: h.chief.id, threadId: h.chief.threadId, suggestion: true, plan: { reason: "Maybe", operations: [specialist("Theo", "Work")] } });
+    expect(suggested).toMatchObject({ applied: false, state: "pending" });
   });
 });
