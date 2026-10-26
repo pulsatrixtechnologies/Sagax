@@ -162,7 +162,7 @@ describe("mcp-gate", () => {
     const answer = await call("search_products");
     const text = answer.result.content[0].text;
     expect(text.length).toBeLessThan(full.length / 10);
-    expect(text).toContain("TRUNCATED by Sagax");
+    expect(text).toContain("SHAPED by Sagax");
 
     const spillDir = join(scratch, "spill");
     const [file] = readdirSync(spillDir);
@@ -172,7 +172,7 @@ describe("mcp-gate", () => {
     // never trimming. It is there for the person and the harness.
     expect(text).not.toContain(join(spillDir, file));
 
-    const kept = JSON.parse(text.split("\n\n")[1]);
+    const kept = JSON.parse(text.slice(text.indexOf("\n\n") + 2, text.lastIndexOf("\n\n⚠️")));
     expect(kept.products[0]).toEqual(products[0]);
     expect(kept.nextOffset).toBe("1");
   });
@@ -198,9 +198,9 @@ describe("mcp-gate", () => {
 
     const answer = await call("search_products");
     const text = answer.result.content[0].text as string;
-    expect(text.startsWith("⚠️ TRUNCATED by Sagax")).toBe(true);
-    expect(text.endsWith(text.split("\n\n")[0]!)).toBe(true);
-    const kept = JSON.parse(text.split("\n\n")[1]!);
+    expect(text.startsWith("⚠️ SHAPED by Sagax")).toBe(true);
+    expect(text.slice(text.lastIndexOf("\n\n") + 2).startsWith("⚠️ SHAPED by Sagax")).toBe(true);
+    const kept = JSON.parse(text.slice(text.indexOf("\n\n") + 2, text.lastIndexOf("\n\n⚠️")));
     expect(kept.products.length).toBeLessThan(300);
     expect(answer.result.structuredContent).toEqual(kept);
   });
@@ -350,7 +350,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     const scope = { SAGAX_GATE_TOOL_SCOPE: JSON.stringify({ allow: ["mcp:shop:read"] }), SAGAX_GATE_BUDGET: "600" };
     start({}, { ...scope, SAGAX_GATE_DIRECTORY: "1" }, DIRECTORY_UPSTREAM);
     send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
-    expect(JSON.parse(await nextLine()).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["search_tools", "describe_tool", "call_tool", "read"]);
+    expect(JSON.parse(await nextLine()).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["search_tools", "describe_tool", "call_tool", "read", "query_result"]);
     expect((await callWith("call_tool", { name: "write", arguments: {} }, 2)).error).toMatchObject({ code: -32602 });
     expect(ran()).toEqual([]);
     // the directory's own answers pass whole: its reads, and a call_tool
@@ -364,10 +364,98 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   it("treats those names as ordinary tools for any other upstream", async () => {
     start({}, { SAGAX_GATE_TOOL_SCOPE: JSON.stringify({ allow: ["mcp:shop:read"] }), SAGAX_GATE_BUDGET: "600" }, DIRECTORY_UPSTREAM);
     send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
-    expect(JSON.parse(await nextLine()).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["read"]);
+    expect(JSON.parse(await nextLine()).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["read", "query_result"]);
     expect((await callWith("call_tool", { name: "read", arguments: {} }, 2)).error).toMatchObject({ code: -32602 });
     expect((await callWith("describe_tool", { name: "read" }, 3)).error).toMatchObject({ code: -32602 });
     expect(ran()).toEqual([]);
+  });
+
+  describe("shaping an oversized result", () => {
+    const products = Array.from({ length: 300 }, (_, i) => ({ id: `p${i}`, name: `Bar ${i}`, price: 100 + i, blurb: "x".repeat(300) }));
+    const full = JSON.stringify({ nextOffset: "1", products });
+    const query = async (args: unknown, id: number) => {
+      send({ jsonrpc: "2.0", id, method: "tools/call", params: { name: "query_result", arguments: args } });
+      return JSON.parse(await nextLine());
+    };
+
+    it("lists query_result beside the server's tools only while it trims", async () => {
+      start({ text: full }, {}, SCOPED_UPSTREAM);
+      send({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+      const first = JSON.parse(await nextLine()).result;
+      expect(first.tools.map((tool: { name: string }) => tool.name)).toEqual(["read", "write"]);
+      send({ jsonrpc: "2.0", id: 2, method: "tools/list", params: { cursor: "second" } });
+      const last = JSON.parse(await nextLine()).result;
+      expect(last.tools.map((tool: { name: string }) => tool.name)).toEqual(["write", "query_result"]);
+      expect(last.tools[1].annotations.readOnlyHint).toBe(true);
+    });
+
+    it("never lists it when the budget is zero", async () => {
+      start({ text: full }, { SAGAX_GATE_BUDGET: "0" }, SCOPED_UPSTREAM);
+      send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { cursor: "second" } });
+      expect(JSON.parse(await nextLine()).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["write"]);
+    });
+
+    it("holds the whole result and answers a query locally with just the selection", async () => {
+      start({ text: full }, {}, SCOPED_UPSTREAM);
+      const shaped: string = (await call("read")).result.content[0].text;
+      expect(shaped.startsWith("⚠️ SHAPED by Sagax:")).toBe(true);
+      expect(shaped).toContain('query_result {"result":"r1","query":');
+      expect(shaped).toContain("products: 300 items{id, name, price, blurb}");
+      expect(shaped.length).toBeLessThan(8_200);
+
+      const answer = await query({ result: "r1", query: "products[?price > `397`].{name: name, price: price}" }, 2);
+      expect(answer.result.isError).toBeUndefined();
+      expect(JSON.parse(answer.result.content[0].text)).toEqual([{ name: "Bar 298", price: 398 }, { name: "Bar 299", price: 399 }]);
+      // the upstream saw the original call and nothing else
+      expect(readFileSync(join(scratch, "reply.json.calls"), "utf8")).toBe("read\n");
+    });
+
+    it("cuts a query answer to the same budget, so the whole thing never comes back", async () => {
+      start({ text: full }, { SAGAX_GATE_BUDGET: "2000" }, SCOPED_UPSTREAM);
+      await call("read");
+      const answer = await query({ result: "r1", query: "@" }, 2);
+      expect(answer.result.content[0].text.length).toBeLessThan(2_400);
+      expect(answer.result.content[0].text).toContain("Narrow the query");
+    });
+
+    it("answers a bad handle or query as a tool error without touching upstream", async () => {
+      start({ text: full }, {}, SCOPED_UPSTREAM);
+      expect((await query({ result: "r9", query: "@" }, 1)).result).toMatchObject({ isError: true });
+      expect((await query({ query: "@" }, 2)).result).toMatchObject({ isError: true });
+      expect(existsSync(join(scratch, "reply.json.calls"))).toBe(false);
+    });
+
+    it("answers without an approval card, which the server's own tools still need", async () => {
+      // an approval socket that does not exist: any call that asks it fails
+      start({ text: full }, { SAGAX_GATE_APPROVAL_SOCKET: join(scratch, "no-such.sock"), SAGAX_GATE_APPROVAL_TOKEN: "t" }, SCOPED_UPSTREAM);
+      expect((await query({ result: "r1", query: "@" }, 1)).result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("no longer held") }] });
+      expect(existsSync(join(scratch, "reply.json.calls"))).toBe(false);
+    });
+
+    it("keeps query_result listed and callable under a tool selection that never names it", async () => {
+      start({ text: full }, { SAGAX_GATE_TOOL_SCOPE: JSON.stringify({ allow: ["mcp:shop:read"] }) }, SCOPED_UPSTREAM);
+      send({ jsonrpc: "2.0", id: 1, method: "tools/list", params: { cursor: "second" } });
+      expect(JSON.parse(await nextLine()).result.tools.map((tool: { name: string }) => tool.name)).toEqual(["query_result"]);
+      await call("read", 2);
+      const answer = await query({ result: "r1", query: "length(products)" }, 3);
+      expect(answer.result.content[0].text).toBe("300");
+    });
+
+    it("never hands one connection's result to another: a new gate holds nothing", async () => {
+      // the first conversation's gate holds r1
+      start({ text: full }, {}, SCOPED_UPSTREAM);
+      await call("read");
+      expect((await query({ result: "r1", query: "length(products)" }, 2)).result.content[0].text).toBe("300");
+      const first = gate!;
+      const closed = once(first, "close");
+      first.kill();
+      await closed;
+      // another conversation (or person) gets its own gate on its own connection: r1 is not there
+      lines = [];
+      waiting = [];
+      start({ text: "{}" }, {}, SCOPED_UPSTREAM);
+      expect((await query({ result: "r1", query: "length(products)" }, 1)).result).toMatchObject({ isError: true });
+    });
   });
 
   it("strips policy from the upstream environment without losing its own configuration", async () => {

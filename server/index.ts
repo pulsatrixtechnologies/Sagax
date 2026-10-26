@@ -122,7 +122,7 @@ import { configuredAccountDirectory, assertSeparateClaudeAccount, claudeAccountI
 import { providerIconPatchSchema, withInstanceIcon } from "./provider-icon.ts";
 import { providerIconError } from "../shared/provider-icon.ts";
 import {
-  BrowserCleanupCoordinator, BrowserSweep, browserIdleMs,
+  BrowserCleanupCoordinator, BrowserSweep, browserIdleMs, engineBrowsers,
   finalizeBrowserCleanupMutation,
   requireBrowserCleanupAcknowledged,
   type BrowserCleanupRequest,
@@ -12723,7 +12723,8 @@ async function holdBootEngineSlot(threadId: string, label: string, instance: Pro
     // usage falls back (server/engine-memory-guard.ts); a person's own
     // turn never waits here.
     if (memoryWatch.current() === "critical") console.log(`[memory] routine ${label} waits: memory critical`);
-    await memoryWatch.whenBelowCritical(ROUTINE_MEMORY_WAIT_MS);
+    // A bot that will start its browser also waits for room for it.
+    await memoryWatch.whenRoom(threadId, ROUTINE_MEMORY_WAIT_MS);
     turnTrace(threadId, "memory-guard");
     // During boot the boot gate; after it, the steady routine limit.
     const gate = engineStartGate.booting ? engineStartGate : routineEngineGate;
@@ -13960,6 +13961,23 @@ const memoryWatch = new MemoryWatch({
   childOomScoreAdj: memoryGuard.childOomScoreAdj,
   liveEngines: () => runningTurnEngines.size,
 });
+// The bots' browsers count too (server/browser-lifecycle-cleanup.ts engineBrowsers).
+memoryWatch.useBrowsers(engineBrowsers({
+  threadBrowser: (threadId) => {
+    const bot = store.botByThread(threadId);
+    if (!bot || bot.browser === false || !builtInBrowserEnabled(cfg) || browserEngineAttachCdpUrl(cfg)) return null;
+    const confidential = store.isConfidentialThread(threadId);
+    const profile = effectiveBrowserProfile(bot.id, bot.browserProfile);
+    if (!confidential && profile === MY_CHROME_PROFILE) return null;
+    // A temporary or confidential browser is never created here, only looked up.
+    const session = confidential ? confidentialBrowserSessions.get(threadId)
+      : profile === "guest" ? temporaryBrowserSessions.get(bot.id) : currentBrowserSession(bot.id, profile, threadId);
+    return { session, spec: session === undefined ? undefined : usedBrowserSessions.get(session) };
+  },
+  sessions: () => usedBrowserSessions,
+  held: (session) => !turnResources.free(`browser:${session}`),
+  closeUnused: (session, spec) => browserRuntime.closeUnused(session, spec),
+}));
 memoryWatch.start();
 function runningTurnInstance(bot: BotRecord | null | undefined, threadId: string): ReturnType<typeof registry.get> {
   // A turn always runs on the bot's own engine, wherever it works.

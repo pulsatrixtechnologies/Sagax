@@ -1762,6 +1762,7 @@
   "chat.editMessage": "Edit message",
   "chat.emptyPrompt": "Send a message to start the conversation.",
   "chat.error.details": "Details",
+  "chat.error.requestTooLarge": "This message is too large for {model}. Start a new chat or pick a model that accepts more.",
   "chat.error.dismiss": "Dismiss",
   "chat.error.signedOut": "{name} isn't signed in yet. Sign in below, then send your message again.",
   "chat.exchange.close": "Close Chat",

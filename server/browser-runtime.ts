@@ -1336,10 +1336,24 @@ export class BrowserRuntime {
    * is its launch settings for one nothing here has called yet (a turn
    * that has not used it): its idle time starts at this first look. */
   async closeIfIdle(session: string, idleMs: number, spec?: { command: string; args?: readonly string[]; env: Record<string, string | undefined> }): Promise<boolean> {
+    if (!(idleMs > 0)) return false;
+    return this.closeQuiet(session, spec, (lastUsed) => Date.now() - lastUsed >= idleMs);
+  }
+
+  /** Close a browser now unless something uses it: a bot call, a person's
+   * hold or input, an open live view (the caller checks that no turn holds
+   * it). For memory: its bot's engine was closed for memory, or the kernel
+   * killed one. The same close as an idle one, so its bot hears why on its
+   * next call and saved sign-ins stay. */
+  async closeUnused(session: string, spec?: { command: string; args?: readonly string[]; env: Record<string, string | undefined> }): Promise<boolean> {
+    return this.closeQuiet(session, spec, () => true);
+  }
+
+  private async closeQuiet(session: string, spec: { command: string; args?: readonly string[]; env: Record<string, string | undefined> } | undefined, quietEnough: (lastUsed: number) => boolean): Promise<boolean> {
     const gate = spec ? this.gate(session) : this.gates.get(session);
     if (gate && !gate.spec && spec) gate.spec = { command: spec.command, args: [...spec.args ?? []], env: { ...spec.env } } as BrowserSpawnSpec;
     const launch = gate?.spec;
-    if (!gate || !launch || launch.env.AGENT_BROWSER_CDP || launch.env.AGENT_BROWSER_AUTO_CONNECT || !(idleMs > 0) || Date.now() - gate.lastUsed < idleMs) return false;
+    if (!gate || !launch || launch.env.AGENT_BROWSER_CDP || launch.env.AGENT_BROWSER_AUTO_CONNECT || !quietEnough(gate.lastUsed)) return false;
     if (gate.calls || gate.agents || gate.humans || gate.owner !== null || gate.closing || gate.releasing || gate.watchers || gate.exclusive) return false;
     gate.closing = true;
     gate.ready = false;

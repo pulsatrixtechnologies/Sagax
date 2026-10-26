@@ -466,7 +466,7 @@ describe("remote MCP tool directory", () => {
     start(gated!);
     await initialize();
     const listed = (await request("tools/list")).result.tools;
-    expect(listed.map((tool: { name: string }) => tool.name)).toEqual([SEARCH_TOOL, DESCRIBE_TOOL, CALL_TOOL]);
+    expect(listed.map((tool: { name: string }) => tool.name)).toEqual([SEARCH_TOOL, DESCRIBE_TOOL, CALL_TOOL, "query_result"]);
     expect(listed[0].description).toContain(`${selected.length} tools`);
     const found = json(await call(SEARCH_TOOL, { query: "create payments", limit: 20 })).matches.map((match: { name: string }) => match.name);
     expect(found.every((name: string) => selected.includes(name))).toBe(true);
