@@ -29,10 +29,9 @@ const enabled = process.env.SAGAX_UI_E2E === "1";
     for (const advanced of [false, true]) {
       await evaluate(`localStorage.setItem('omb-advanced-mode', '${advanced ? "1" : "0"}'); location.reload(); true`);
       await expect.poll(() => evaluate("document.querySelector('textarea[aria-label=\"Message Cline specialist\"]') !== null"), { timeout: 15_000 }).toBe(true);
-      // the model window: + menu, Model, then Edit… (2026-10-18)
-      await evaluate("document.querySelector('[data-composer-plus]').click(); true");
-      await expect.poll(() => evaluate("document.querySelector('[data-composer-plus-row=\"model\"]') !== null")).toBe(true);
-      await evaluate("document.querySelector('[data-composer-plus-row=\"model\"]').click(); true");
+      // the model window: the headless picker (omb:composer-model), then Edit…
+      await expect.poll(() => evaluate("document.querySelector('[data-composer-model]') !== null"), { timeout: 15_000 }).toBe(true);
+      await evaluate(`window.dispatchEvent(new CustomEvent("omb:composer-model", { detail: { botId: ${JSON.stringify(bot.id)} } })); true`);
       await expect.poll(() => evaluate("document.querySelector('[data-model-edit]') !== null")).toBe(true);
       await evaluate("document.querySelector('[data-model-edit]').click(); true");
       await expect.poll(() => evaluate("document.querySelector('[data-model-picker-content]') !== null")).toBe(true);
