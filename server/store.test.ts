@@ -580,6 +580,16 @@ describe("Store", () => {
     expect(bot.modelSelection).toEqual(selection());
   });
 
+  it("greets in the language of the person who owns the new bot (#1075)", () => {
+    const asked: Array<string | undefined> = [];
+    const store = new Store(selection, undefined, undefined, (owner) => { asked.push(owner); return owner === "pr_fr" ? "fr" : "en"; });
+    const french = store.createBot({ name: "Juno", ownerUserId: "pr_fr" });
+    const english = store.createBot({ name: "Rocket", ownerUserId: "pr_en" });
+    expect(store.messagesFor(french.threadId)[0]?.text).toBe("Bonjour, je suis Juno. Que puis-je faire pour vous ?");
+    expect(store.messagesFor(english.threadId)[0]?.text).toBe("Hi, I'm Rocket. What would you like me to do?");
+    expect(asked).toEqual(["pr_fr", "pr_en"]);
+  });
+
   it("clears provider-owned voice ids as one durable mutation", () => {
     const store = new Store(selection);
     const first = store.createBot();

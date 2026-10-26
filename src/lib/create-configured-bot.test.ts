@@ -61,6 +61,20 @@ describe("configured bot creation", () => {
     expect(f.events.some((event) => event.includes("/memory/"))).toBe(false);
   });
 
+  it("keeps the permission settings a member's profile opens (#1076)", async () => {
+    const f = fixture("auto");
+    f.draft.patch({ computer: "vm", proactiveMode: "off", voiceNotes: false, acknowledgeLocalAuto: true, confirmFullAccess: true });
+    const approvalLevel = new Set(["approvalMode", "autoApprove", "acknowledgeLocalAuto", "proactiveMode"]);
+    await createConfiguredBot(f.draft, f.request, persistBotUpdate, f.approvals, undefined, {
+      memberFieldsOnly: true, memberMayWrite: field => approvalLevel.has(field),
+    });
+    expect(f.bodies[1]).toMatchObject({ approvalMode: "auto", proactiveMode: "off", acknowledgeLocalAuto: true });
+    // what the profile does not open stays out, as before
+    expect(f.bodies[1]).not.toHaveProperty("computer");
+    expect(f.bodies[1]).not.toHaveProperty("voiceNotes");
+    expect(f.bodies[1]).not.toHaveProperty("confirmFullAccess");
+  });
+
   it("keeps the server-completed workspace effort when applying draft settings", async () => {
     const selection = { instanceId: "claude", model: "sonnet", effort: "high" as const };
     const f = fixture("ask", 0, selection);
