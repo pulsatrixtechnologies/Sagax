@@ -16,7 +16,6 @@ import { cn } from "@/lib/cn";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { BotActionsMenu, type BotActionsMenuAnchor } from "./bot-settings/BotActionsMenu";
-import { WizardPanelButton } from "./bot-wizard/WizardPanelButton";
 import { LibraryTab } from "./bot-settings/LibraryTab";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
 import { RemoteSessionsSection } from "./remote-session/RemoteSessionsSection";
@@ -154,8 +153,7 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
         {(macInset || browser) && <div className="content-topbar-strip" />}
         {/* Top bar: only the controls, the way the reference design's panel opens. On
             Windows it drops below the caption buttons (padClass). */}
-        <div {...dragProps} className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
-          <WizardPanelButton bot={bot} />
+        <div {...dragProps} className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-end px-3", padClass)}>
           <div className="flex items-center gap-2">
             <BotActionsMenu
               bot={bot}

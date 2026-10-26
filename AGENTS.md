@@ -411,7 +411,7 @@ the guided first run (#1035). Desktop `src/components/bot-wizard/`, iOS
   person's session). The panel reads the draft back every 2.5 s.
 - Mode switch, skip and resume never lose anything (one field of the draft).
   Entries: the creation menu (ComposeToPicker, iOS "+"), New bot's Wizard
-  button, the bot panel's "Redo the wizard" (resumes an open draft).
+  button, the "Redo the wizard" entry of the iOS bot "..." menu (resumes an open draft).
 - Captures: `node --experimental-strip-types scripts/testing/capture-bot-wizard.ts <outDir> [skin] [lang]`
   (headless; `SAGAX_CAPTURE_CHROME` names another headless shell).
 
