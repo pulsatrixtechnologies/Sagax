@@ -186,7 +186,7 @@ public enum ModelMenu {
         if let follows {
             top.append(ModelMenuRow(
                 key: "follow", kind: .follow, label: labels.useBotModel(botName),
-                detail: botOption?.displayLabel ?? botModel.model, current: follows,
+                detail: botOption?.label ?? botModel.model, current: follows,
                 keywords: botName,
                 notResponding: botInstance.map { !modelUsable($0, modelId: botModel.model, organization: organization) } ?? false
             ))
@@ -219,7 +219,7 @@ public enum ModelMenu {
                 if option.loaded == true { tags.append(labels.loadedTag) }
                 rows.append(ModelMenuRow(
                     key: ModelFavorites.key(instanceId: instance.instanceId, modelId: option.id), kind: .model,
-                    instanceId: instance.instanceId, modelId: option.id, label: option.displayLabel, detail: groups.local.contains(where: { $0.id == option.id }) ? option.server : nil, tags: tags,
+                    instanceId: instance.instanceId, modelId: option.id, label: option.label, detail: groups.local.contains(where: { $0.id == option.id }) ? option.subtext : nil, tags: tags,
                     current: isCurrent, keywords: [instance.displayName, option.id].compactMap { $0 }.joined(separator: " "),
                     notResponding: isCurrent && !usable
                 ))
@@ -235,7 +235,7 @@ public enum ModelMenu {
 
     /// Every engine may offer the same local model: each once, the one in
     /// use kept. The label is the model name alone; the server shows as the
-    /// detail only when two servers of one computer share a name.
+    /// detail (shared by, server) only when it applies.
     static func uniqueLocalRows(_ rows: [ModelMenuRow], localTag: String) -> [ModelMenuRow] {
         var order: [String] = []
         var kept: [String: ModelMenuRow] = [:]

@@ -8,6 +8,7 @@
 // the person making it, so the chat header and the settings dialog render the
 // same row and write through the same action.
 import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { localModelSubtext } from "@/lib/local-model-label";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, LogOut, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { api, useStore, type Bot, type ConfigStatus, type InstanceInfo, type ModelSelection } from "@/state/store";
@@ -1120,7 +1121,7 @@ export function ModelPicker({
     const effortLevel = instance.capabilities?.modelVariants ? undefined
       : effortForModel(sameEngine ? selection.effort : undefined, runs, levels) ?? modelDefaultEffort(runs, levels);
     const runsWith = [variant ?? (effortLevel ? effortLabel(effortLevel) : undefined), onTwin ? t("model.fastTag") : undefined].filter(Boolean).join(" ");
-    const detail = [option.provider, option.server, runsWith || undefined, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined;
+    const detail = [option.provider, runsWith || undefined, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined;
     return {
       key: favoriteKey(instance.instanceId, option.id),
       kind: "model",
@@ -1128,6 +1129,7 @@ export function ModelPicker({
       modelId: runs.id,
       label: option.label,
       detail,
+      subtext: local ? localModelSubtext(option) : undefined,
       title: [option.label, detail, runs.id].filter(Boolean).join(" · "),
       tags: [
         option.id === instance.models.default ? t("model.defaultTag") : undefined,

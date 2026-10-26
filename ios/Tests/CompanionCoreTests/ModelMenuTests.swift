@@ -48,10 +48,11 @@ final class ModelMenuTests: XCTestCase {
 
     func testASharedLocalModelNamesWhoSharesIt() {
         let option = ModelOption(id: "d::ornith", label: "Ornith-1.5-122B-oQ4e-mtp", custom: true, local: true, sharedBy: "Camille Tremblay")
-        XCTAssertTrue(option.displayLabel.hasPrefix("Ornith-1.5-122B-oQ4e-mtp ("), option.displayLabel)
-        XCTAssertTrue(option.displayLabel.contains("Camille Tremblay"), option.displayLabel)
+        XCTAssertEqual(option.label, "Ornith-1.5-122B-oQ4e-mtp", "the name stays whole, no suffix")
+        XCTAssertTrue(option.subtext?.contains("Camille Tremblay") == true, option.subtext ?? "")
         XCTAssertEqual(option.id, "d::ornith", "the technical id stays")
-        XCTAssertEqual(ModelOption(id: "d::ornith", label: "Ornith-1.5-122B-oQ4e-mtp").displayLabel, "Ornith-1.5-122B-oQ4e-mtp")
+        XCTAssertNil(ModelOption(id: "d::ornith", label: "Ornith-1.5-122B-oQ4e-mtp").subtext)
+        XCTAssertEqual(ModelOption(id: "d::g", label: "Gemma-4", server: "oMLX").subtext, "oMLX")
     }
 
     func testTheModelInUseStaysAndSaysItDoesNotRespond() {

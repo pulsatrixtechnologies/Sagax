@@ -102,6 +102,7 @@ describe("model picker in Simple mode", () => {
     instance.models.options.push(
       { id: "desk8000abc::Ornith-1.5-122B-oQ4e-mtp", label: "Ornith-1.5-122B-oQ4e-mtp", custom: true, local: true },
       { id: "desk8000abc::Twin-Model", label: "Twin-Model", server: "oMLX", custom: true, local: true },
+      { id: "desk8000cd::Shared-Model-With-A-Long-Name", label: "Shared-Model-With-A-Long-Name", sharedBy: "Camille Tremblay", custom: true, local: true },
       { id: "desk8002abc::Twin-Model", label: "Twin-Model", server: ":8002", custom: true, local: true },
     );
     fixture.instances = [instance];
@@ -110,6 +111,9 @@ describe("model picker in Simple mode", () => {
     expect(markup).not.toContain(":8000:");
     expect(markup).toContain("oMLX");
     expect(markup).toContain(":8002");
+    // who shares it: a second line under the whole name, not appended to it
+    expect(markup).toMatch(/Shared-Model-With-A-Long-Name<\/span>.*data-model-row-sub[^>]*>Shared by Camille Tremblay</s);
+    expect(markup).not.toContain("Shared-Model-With-A-Long-Name (Shared by");
     // the full technical id stays in the tooltip
     expect(markup).toContain("desk8000abc::Ornith-1.5-122B-oQ4e-mtp");
   });

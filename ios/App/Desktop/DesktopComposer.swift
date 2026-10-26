@@ -258,7 +258,7 @@ struct DesktopComposerPill: View {
         let instances = await DesktopModelCatalog.shared.instances(session)
         let instance = instances.first { $0.instanceId == selection.instanceId }
         let modelId = selection.model.isEmpty ? (instance?.models.default ?? "") : selection.model
-        let label = instance?.models.options.first { $0.id == modelId }?.displayLabel ?? modelId
+        let label = instance?.models.options.first { $0.id == modelId }?.label ?? modelId
         modelLabel = label.isEmpty ? nil : label
     }
 }

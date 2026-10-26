@@ -2,7 +2,6 @@
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
-import { withLocalModelLabels } from "@/lib/local-model-label";
 import { devPodsTurnField } from "@/components/dev-pods/prefs";
 import { restoreComposerDraft } from "@/lib/drafts";
 import { beginLocalSend, claimInFlightSend, finishSend } from "@/lib/send-cancel";
@@ -2492,7 +2491,7 @@ export function reducer(state: AppState, action: Action): AppState {
         : next;
     }
     case "instances":
-      return { ...state, instances: withLocalModelLabels(action.instances) };
+      return { ...state, instances: action.instances };
     case "configStatus":
       return { ...state, config: action.config };
     case "liveCall":

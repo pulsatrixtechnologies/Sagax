@@ -6,7 +6,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "../components/ModelMenu";
 import { setLocale, t } from "../lib/i18n";
-import { localModelLabel } from "../lib/local-model-label";
+import { localModelSubtext } from "../lib/local-model-label";
 import { favoriteKey, toggleModelFavorite, useModelFavorites, writeModelFavorites } from "../lib/model-favorites";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
@@ -44,9 +44,9 @@ const sections: ModelMenuSection[] = [
   { key: "local:this-computer", label: t("model.localGroup"), rows: [
     model("claude", "desk8000ab::Ornith-1.5-122B-oQ4e-mtp", "Ornith-1.5-122B-oQ4e-mtp"),
     model("claude", "desk8000ab::Ornith-1.5-35B-A3B-oQ4e-mtp", "Ornith-1.5-35B-A3B-oQ4e-mtp"),
-    model("claude", "desk8000cd::Qwen3-Coder-Next", localModelLabel({ label: "Qwen3-Coder-Next", sharedBy: "Camille Tremblay" })),
-    model("claude", "desk8000ab::Gemma-4", "Gemma-4", { detail: "oMLX" }),
-    model("claude", "desk8002ab::Gemma-4", "Gemma-4", { detail: ":8002" }),
+    model("claude", "desk8000cd::Qwen3-Coder-Next", "Qwen3-Coder-Next", { subtext: localModelSubtext({ sharedBy: "Camille Tremblay-Lachance" }) }),
+    model("claude", "desk8000ab::Gemma-4", "Gemma-4", { subtext: "oMLX" }),
+    model("claude", "desk8002ab::Gemma-4", "Gemma-4", { subtext: ":8002" }),
   ] },
 ];
 

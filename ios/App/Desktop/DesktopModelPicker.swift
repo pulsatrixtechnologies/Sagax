@@ -375,10 +375,18 @@ struct DesktopModelPicker: View {
     private func modelRow(_ rail: Instance, _ option: ModelOption, current: String?) -> some View {
         Button { pick(rail, option) } label: {
             HStack(spacing: 8) {
-                Text(verbatim: option.displayLabel)
-                    .font(theme.font(13))
-                    .foregroundStyle(theme.ink)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: option.label)
+                        .font(theme.font(13))
+                        .foregroundStyle(theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let sub = option.subtext {
+                        Text(verbatim: sub)
+                            .font(theme.font(10.5))
+                            .foregroundStyle(theme.inkSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                 if option.id == rail.models.default {
                     Text("Default")
                         .font(theme.font(10))

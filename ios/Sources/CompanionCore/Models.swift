@@ -1485,11 +1485,14 @@ public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
     /// A model on another person's computer: that person's display name.
     public var sharedBy: String? = nil
 
-    /// What a person reads: the model name, with "(Shared by <Name>)" when
-    /// another person's computer serves it. The id stays the technical one.
-    public var displayLabel: String {
-        guard let name = sharedBy?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return label }
-        return String(localized: "\(label) (Shared by \(name))")
+    /// The quiet second line under the name: "Shared by <Name>" when another
+    /// person's computer serves it, then the server when a name is duplicated.
+    /// The name itself is never prefixed or cut.
+    public var subtext: String? {
+        let name = sharedBy?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let host = server?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let parts = [name.isEmpty ? "" : String(localized: "Shared by \(name)"), host].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

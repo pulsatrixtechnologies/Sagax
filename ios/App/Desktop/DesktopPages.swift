@@ -391,7 +391,7 @@ private struct DesktopTeamCanvas: View {
             let selection = bot.modelSelection
             let instance = instances.first { $0.instanceId == selection.instanceId }
             let id = selection.model.isEmpty ? (instance?.models.default ?? "") : selection.model
-            let label = instance?.models.options.first { $0.id == id }?.displayLabel ?? id
+            let label = instance?.models.options.first { $0.id == id }?.label ?? id
             if !label.isEmpty { labels[bot.id] = label }
         }
         modelLabels = labels

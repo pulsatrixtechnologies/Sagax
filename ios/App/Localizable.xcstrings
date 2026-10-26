@@ -35049,18 +35049,18 @@
         }
       }
     },
-    "%@ (Shared by %@)": {
+    "Shared by %@": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (Shared by %2$@)"
+            "value": "Shared by %@"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ (Partagé par %2$@)"
+            "value": "Partagé par %@"
           }
         }
       }
