@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Check, Copy, ExternalLink, Globe, Lock, Users } from "lucide-react";
 
 import { copyText } from "@/lib/copy-text";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, ApiError } from "@/state/store";
 import {
@@ -42,7 +42,7 @@ function expiryLabel(hours: number): string {
 }
 
 export function when(at: number): string {
-  return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function openPage(url: string) {

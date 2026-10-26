@@ -149,7 +149,7 @@ import { CallOverlay, VoiceCallDock } from "./CallView";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
 import { viewerActorId } from "@/lib/viewer";
@@ -713,7 +713,7 @@ const Bubble = memo(function Bubble({
                         : "bg-card px-3 py-[7px] text-ink",
                 ),
           )}
-          title={new Date(message.at).toLocaleString()}
+          title={new Date(message.at).toLocaleString(activeLocale())}
         >
           {replyTarget && (
             <div className="mb-2">

@@ -358,7 +358,7 @@ import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-dr
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
 import { memberOwnScopeTool } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
-import { personLanguage } from "./person-language.ts";
+import { personLanguageOf } from "./person-language.ts";
 import {
   isModelVariant,
   TurnNotStartedError,
@@ -15091,7 +15091,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(event.command?.command ? { command: event.command.command } : {}),
           ...(event.command?.cwd ? { cwd: event.command.cwd } : {}),
           ...(offeredApp && !strictCall ? { app: offeredApp } : {}),
-        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
+        }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(languageOfPerson(cardAnswerer)))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
       // auto` for any model and starts in Manual without a word when auto is
@@ -15184,7 +15184,7 @@ bus.subscribe((event: RuntimeEvent) => {
       const questions = event.questions?.length ? event.questions : undefined;
       // One generator for the card and its push (shared/approval-describe.ts):
       // "Allow the bot to run a command?" and one plain line, never a raw id.
-      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(cfg.language)) : undefined;
+      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(languageOfPerson(cardAnswerer))) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
       // answers in time instead of holding the turn forever.
@@ -15240,7 +15240,7 @@ bus.subscribe((event: RuntimeEvent) => {
           // turn, a safety hold, a sandbox widening or under an ask rule
           ...(permission && customReview && !adminApproval && !guestDriven && safetyEffect?.kind !== "hold" && !event.requiresExplicitApproval && customDecision?.kind !== "ask"
             ? (() => {
-              const candidate = customRuleCandidate(customReview.facts, cfg.language);
+              const candidate = customRuleCandidate(customReview.facts, languageOfPerson(cardAnswerer));
               return candidate ? { customRuleCandidate: candidate } : {};
             })()
             : {}),
@@ -21250,6 +21250,12 @@ function routineAwayVerdict(principalId: string | undefined): AwayVerdict {
   return localRoutineAway.verdict(Date.now());
 }
 routines = new RoutineManager({
+  languageFor: (routine) => {
+    const person = IDENTITY.kind === "perspicax" && routine.botId
+      ? effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) })
+      : undefined;
+    return languageOfPerson(person && isPrincipalId(person) ? person : undefined);
+  },
   timeZoneFor: (routine) => {
     if (IDENTITY.kind !== "perspicax" || !routine.botId) return undefined;
     const person = effectiveRunAs({ botId: routine.botId, ...(routine.runAs ? { runAs: routine.runAs } : {}) });
@@ -28300,7 +28306,7 @@ ROUTES.push(createOwnerApprovalRoutes({
     const bot = store.bot(botId);
     return bot ? effectiveBotOwner(bot) : null;
   },
-  describeLegacy: (key) => describeAllowRule(key, serverApprovalWords(cfg.language), (id) => store.bot(id)?.name ?? store.groups.find((group) => group.id === id)?.name),
+  describeLegacy: (key, personId) => describeAllowRule(key, serverApprovalWords(languageOfPerson(personId)), (id) => store.bot(id)?.name ?? store.groups.find((group) => group.id === id)?.name),
   revokeLegacy: (botId, key) => {
     const bot = store.bot(botId);
     if (bot) revokeLegacyKey(bot, key);
@@ -30090,11 +30096,7 @@ const cwActionPasses = createCwActionPasses();
 /** The language to word a text for the person behind this request: their own
  * `omb-language`, else the server's default (server/person-language.ts). */
 function languageOfPerson(person: string | null | undefined): string {
-  let preference: unknown;
-  try {
-    if (person) preference = userPreferenceStore.get(person).preferences["omb-language"];
-  } catch { /* the server default */ }
-  return personLanguage(preference, cfg.language);
+  return personLanguageOf(person, (id) => userPreferenceStore.get(id).preferences, cfg.language);
 }
 
 function languageOfRequest(auth: RequestAuth): string {

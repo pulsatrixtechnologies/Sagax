@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { allowBotAlways, answerPurchase, createCredential, deleteCredential, importOnePasswordItem, loadCredentials, loadOnePasswordItems, parseDomains, revealCredential, revealCredentialNotes, revokeBot, updateCredential, type CredentialVaultState, type OnePasswordItem, type PurchaseListing, type VaultItemDraft, type VaultItemListing } from "@/lib/credential-vault";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { useStore } from "@/state/store";
 import type { VaultItemKind } from "../../../shared/credential-vault";
 import { FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow } from "../SettingsPrimitives";
@@ -76,7 +76,7 @@ function draftBody(draft: Draft, editing: boolean): Partial<VaultItemDraft> {
 
 function when(at: number | undefined): string {
   if (!at) return t("vault.settings.never");
-  return new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 export function CredentialsSettings() {

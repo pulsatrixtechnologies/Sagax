@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { grantTier, sortGrants, type ToolGrantRow } from "@/lib/tool-grants";
 import type { OrgDirectoryPerson } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
@@ -81,7 +81,7 @@ export function PeopleToolAccessSettings({ confirm = (text: string) => window.co
                     <div className="truncate text-[13px] text-ink">{who(row.subject.id)} · {what(row.scope)}</div>
                     <div className="text-[12px] text-ink-secondary">
                       {t(STATE_KEY[row.state])}
-                      {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString() })}` : ""}
+                      {row.expiresAt && row.state === "active" ? ` · ${t("settings.toolAccess.expires", { date: new Date(row.expiresAt).toLocaleDateString(activeLocale()) })}` : ""}
                     </div>
                   </div>
                   {row.state === "active" && (

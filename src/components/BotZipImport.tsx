@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { FileArchive, Loader2, X } from "lucide-react";
 
 import { useStore } from "@/state/store";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { cn } from "@/lib/cn";
 import { botZipLineText, discardStagedBotZip, importStagedBotZip, previewStagedBotZip, uploadBotZip, type StagedBotZip } from "@/lib/bot-zip";
@@ -130,7 +130,7 @@ export function BotZipImportPanel({ onImported, onCancel, autoFocus = false }: {
             <div className="text-[12px] text-ink-secondary">
               {preview.kind === "legacy"
                 ? t("botZip.legacy")
-                : t("botZip.exportedBy", { version: preview.appVersion ?? "?", date: preview.exportedAt ? new Date(preview.exportedAt).toLocaleDateString() : "?" })}
+                : t("botZip.exportedBy", { version: preview.appVersion ?? "?", date: preview.exportedAt ? new Date(preview.exportedAt).toLocaleDateString(activeLocale()) : "?" })}
             </div>
           </div>
           <label className="flex flex-col gap-1 text-[12.5px] text-ink-secondary">

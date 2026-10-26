@@ -77,7 +77,7 @@ import { isEarlierSegment, isStreamSegment, streamHomeThread } from "@/lib/singl
 import { freshTopicLanding, noteBackAtBot, noteLeftBot, onScreenBot, setOnScreenBot } from "@/lib/fresh-topic";
 import { speaker } from "@/lib/tts";
 import { roleProfilePatch, type BotRole } from "@/lib/bot-roles";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { teamMemorySettled } from "@/lib/team-memory-settled";
 import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-up-client";
 import type { StepUpTarget } from "../../shared/step-up";
@@ -5788,13 +5788,18 @@ export function BotEditorStore({ value, children }: { value: ReturnType<typeof u
 }
 
 // Building a formatter costs far more than formatting with one, and every
-// row shows a time: build it once. No locale given, as before: times follow
-// the system's clock style, not the app language.
-const TIME_FORMAT = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+// row shows a time: build it once per app language (the person's choice in
+// Settings, not the system's, #1077).
+let timeFormat: { locale: string; format: Intl.DateTimeFormat } | undefined;
+function timeFormatter(): Intl.DateTimeFormat {
+  const locale = activeLocale();
+  if (timeFormat?.locale !== locale) timeFormat = { locale, format: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }) };
+  return timeFormat.format;
+}
 
 export function formatTime(at: number) {
   const date = new Date(at);
   // what toLocaleTimeString says, where a formatter would throw
-  return Number.isNaN(date.getTime()) ? "Invalid Date" : TIME_FORMAT.format(date);
+  return Number.isNaN(date.getTime()) ? "Invalid Date" : timeFormatter().format(date);
 }
 

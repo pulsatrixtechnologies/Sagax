@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Clock3, Loader2, MoreHorizontal, Pin } from "lucide-react";
 import type { BotProject, Task } from "@/state/store";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { nextRename } from "@/lib/rename";
 import { threadRefUrl } from "@/lib/thread-refs";
 import { copyText } from "@/lib/copy-text";
@@ -32,7 +32,7 @@ type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "a
  * onto UTC. */
 export function formatUpdatedAt(at: number): string {
   if (!Number.isFinite(at) || at <= 0) return "";
-  return new Date(at).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
+  return new Date(at).toLocaleString(activeLocale(), { dateStyle: "short", timeStyle: "short" });
 }
 
 /** The visible stamp on a thread row: "just now" for the freshest work, then

@@ -418,6 +418,18 @@ function routineRequestOwnerKey(owner: RoutineRequestOwner): string {
   return JSON.stringify([owner.requestId, owner.messageId, owner.botId, owner.threadId]);
 }
 
+/** The date at the end of a run's thread title, in the person's language
+ * (English when none is known or the tag is not valid). */
+export function runTitleDate(at: number, language?: string): string {
+  const options = { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" } as const;
+  const date = new Date(at);
+  try {
+    return date.toLocaleString(language?.trim() || "en-US", options);
+  } catch {
+    return date.toLocaleString("en-US", options);
+  }
+}
+
 export interface RoutineManagerOptions {
   file?: string;
   now?: () => number;
@@ -433,6 +445,9 @@ export interface RoutineManagerOptions {
   /** The zone a routine's daily times, windows and weekdays are read in (the
    * person's on an organization server), or undefined for the default. */
   timeZoneFor?: (routine: { botId?: string; runAs?: string }) => string | undefined;
+  /** The language the person a routine runs for reads the app in: a run's
+   * thread title writes its date in it (#1077). Undefined: English. */
+  languageFor?: (routine: { botId?: string; runAs?: string }) => string | undefined;
   /** A bot routine is due within PREWAKE_LEAD_MS: wake what its run needs
    * (the person's server environment) now. Once per occurrence, best
    * effort; the run itself still waits for whatever is not up yet. */
@@ -2218,7 +2233,7 @@ export class RoutineManager {
       let reserved = false;
       if (!threadId) {
         if (!this.options.reserveTask) continue;
-        const task = this.options.reserveTask(routine.botId, this.runTitle(routine.name, dueAt), pseudoRun);
+        const task = this.options.reserveTask(routine.botId, this.runTitle(routine.name, dueAt, routine), pseudoRun);
         if (!task) continue;
         threadId = task.threadId;
         reserved = true;
@@ -2243,8 +2258,8 @@ export class RoutineManager {
     return entry.threadId;
   }
 
-  private runTitle(name: string, startedAt: number): string {
-    const suffix = ` · ${new Date(startedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`;
+  private runTitle(name: string, startedAt: number, who: { botId?: string; runAs?: string } = {}): string {
+    const suffix = ` · ${runTitleDate(startedAt, this.options.languageFor?.(who))}`;
     return `${name.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
   }
 
@@ -2519,7 +2534,7 @@ export class RoutineManager {
         // chat immediately. Scheduled work stays in its own task unless the
         // workspace has asked for runs to join the conversation they report to.
         const startedAt = this.now();
-        const title = this.runTitle(run.routineName, startedAt);
+        const title = this.runTitle(run.routineName, startedAt, run);
         const unstarted = this.unstartedTasks.get(run.id);
         this.unstartedTasks.delete(run.id);
         const joined = joinedEarly || unstarted || null;
