@@ -611,6 +611,9 @@ struct SettingsSearchField: View {
     let prompt: LocalizedStringKey
     @Binding var text: String
     var identifier: String
+    /// Set when the field shares a row with a round button: same height, no
+    /// optical nudge, so both centre on one line.
+    var rowHeight: CGFloat?
 
     var body: some View {
         HStack(spacing: 7.67) {
@@ -634,10 +637,10 @@ struct SettingsSearchField: View {
                 .accessibilityLabel("Clear")
             }
         }
-        .offset(y: -0.33)
+        .offset(y: rowHeight == nil ? -0.33 : 0)
         .padding(.leading, 12.67)
         .padding(.trailing, 12)
-        .frame(height: 40.67)
+        .frame(height: rowHeight ?? 40.67)
         .themeGlass(Capsule())
     }
 }

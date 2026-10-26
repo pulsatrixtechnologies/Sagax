@@ -19,8 +19,8 @@ const admin: RequestAuth = { kind: "loopback", scopes: ["admin"] };
 const session = (principalId: string, admin = false): RequestAuth =>
   ({ kind: "session", scopes: admin ? ["admin", "client"] : ["client"], session: { id: `s-${principalId}`, principalId } } as unknown as RequestAuth);
 
-async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Record<string, unknown> } = {}) {
-  const bots = new Map<string, { id: string; name: string; owner: string } & BotRuntimeSettings>([
+async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Record<string, unknown>; turnPayerDefault?: "owner" | "speaker" } = {}) {
+  const bots = new Map<string, { id: string; name: string; owner: string; turnPayer?: "owner" | "speaker" } & BotRuntimeSettings>([
     ["bot-1", { id: "bot-1", name: "One", owner: "pr_owner" }],
     ["bot-2", { id: "bot-2", name: "Two", owner: "pr_other" }],
   ]);
@@ -35,6 +35,7 @@ async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Re
     isAdmin: (a) => a.kind === "loopback" || a.scopes.includes("admin"),
     checkBackup: (selection) => selection.instanceId === "codex" ? { ok: true, selection } : { ok: false, status: 400, error: "unavailable" },
     save: (id, patch) => { const bot = bots.get(id); if (!bot) return null; Object.assign(bot, patch); return bot; },
+    ...(opts.turnPayerDefault ? { turnPayerDefault: () => opts.turnPayerDefault! } : {}),
     grants,
     audit: (action, _a, _r, detail) => audits.push({ action, detail }),
     now: () => NOW,
@@ -56,7 +57,7 @@ describe("a bot's runtime settings (JC 2026-10-15)", () => {
   it("reads the effective values: the server default until the bot has its own", async () => {
     const { send } = await serve(admin);
     const body = await (await send("GET", "/api/bots/bot-1/runtime-settings")).json() as { settings: Record<string, unknown>; stored: Record<string, unknown> };
-    expect(body.settings).toEqual({ maxConcurrentThreads: 4, maxParallelPerPerson: 3, busySend: null, automaticRecovery: { enabled: false } });
+    expect(body.settings).toEqual({ maxConcurrentThreads: 4, maxParallelPerPerson: 3, busySend: null, automaticRecovery: { enabled: false }, turnPayer: "speaker" });
     expect(body.stored).toEqual({});
   });
 
@@ -160,5 +161,29 @@ describe("gate and tool policy", () => {
       expect(row.tier).toBe("admin");
       expect(row.defaultEnabled).toBe(false);
     }
+  });
+});
+
+describe("who pays for a bot's replies (#1137)", () => {
+  it("reads the default until the bot has its own choice, which the owner sets without an admin", async () => {
+    const { send, bots, audits } = await serve(session("pr_owner"), { turnPayerDefault: "owner" });
+    const read = async () => await (await send("GET", "/api/bots/bot-1/runtime-settings")).json() as { settings: { turnPayer: string }; stored: Record<string, unknown> };
+    expect((await read()).settings.turnPayer).toBe("owner");
+    const res = await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnPayer: "speaker" });
+    expect(res.status).toBe(200);
+    expect(bots.get("bot-1")!.turnPayer).toBe("speaker");
+    expect(await read()).toMatchObject({ settings: { turnPayer: "speaker" }, stored: { turnPayer: "speaker" } });
+    expect(audits.at(-1)).toMatchObject({ action: "bot.runtime_settings", detail: { changed: ["turnPayer"], before: { turnPayer: null }, after: { turnPayer: "speaker" } } });
+    // null goes back to the default
+    expect((await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnPayer: null })).status).toBe(200);
+    expect(bots.get("bot-1")!.turnPayer).toBeUndefined();
+    expect(await read()).toMatchObject({ settings: { turnPayer: "owner" }, stored: {} });
+  });
+
+  it("refuses another person's bot and an unknown value", async () => {
+    const { send, bots } = await serve(session("pr_owner"));
+    expect((await send("PATCH", "/api/bots/bot-2/runtime-settings", { turnPayer: "owner" })).status).toBe(403);
+    expect(bots.get("bot-2")!.turnPayer).toBeUndefined();
+    expect((await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnPayer: "admin" })).status).toBe(400);
   });
 });

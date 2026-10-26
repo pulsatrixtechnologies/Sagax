@@ -11,12 +11,20 @@
 // right to run the bot). Since 2026-10-08 a routine always acts in its
 // owner's name: there is no delegation card and no button, and an old card
 // for a missing, ended or revoked delegation shows nothing.
+//
+// #1137: a person writing to someone else's bot whose replies each person
+// pays for reads that the person who writes pays, with the bot's name, and
+// may choose a model they can pay for (the model window, their own model
+// for that bot). When the owner pays, a turn on the owner's computer's
+// model that is offline says so by name; a refusal of the owner's own
+// access tells the person who wrote that the owner pays.
 import { KeyRound } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { SettingsText } from "./SettingsLink";
 import type { WireAccessCard } from "../../shared/wire";
 import { permissionMissingText } from "@/lib/permissions";
+import { openModelWindow } from "@/lib/model-window";
 
 export type AccessViewer = { principalId: string | null; admin: boolean };
 
@@ -36,6 +44,8 @@ export interface AccessCardLines {
   signIn?: boolean;
   /** A routine the server paused: one neutral status line, no card. */
   plain?: boolean;
+  /** #1137: offer to choose a model the viewer can pay for. */
+  chooseModel?: boolean;
 }
 
 const same = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
@@ -64,6 +74,12 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
     };
   }
   const engine = access.engine;
+  const bot = access.botName?.trim() || t("access.thisBot");
+  // #1137: the owner pays, and their computer's model is offline.
+  if (access.cause === "owner_model_offline") {
+    const name = access.ownerName?.trim();
+    return { text: name ? t("access.ownerModelOffline", { owner: name }) : t("access.ownerModelOffline.unnamed") };
+  }
   // whose credentials the turn needed: the speaker, or the owner for a
   // routine; a card from before payerPrincipalId is the owner's (as on the server)
   const payer = access.payerPrincipalId || access.ownerPrincipalId;
@@ -71,6 +87,11 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
   const admin = viewer.admin ? { hint: t("access.noAccess.admin.orgKey") } : {};
   // the person it is about, an admin: the organization's key is theirs to set too
   const mineAdmin = viewer.admin ? { hint: t("access.noAccess.mine.admin") } : {};
+  // #1137: the owner pays for this bot, and the viewer is the person who
+  // wrote, not the owner: the owner's access is what is missing.
+  if (access.ownerPays && !mine) {
+    return { text: t(access.cause === "payer_disabled" ? "access.ownerPays.disabled" : "access.ownerPays.other", { bot, engine }) };
+  }
   if (access.cause === "payer_disabled") {
     if (access.routine || access.payer === "owner") return { text: t(mine ? "access.payerDisabled.routineMine" : "access.payerDisabled.owner") };
     return mine ? { text: t("access.payerDisabled.speaker") } : { text: t("access.noAccess.other", { engine }) };
@@ -81,6 +102,7 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
       ...(access.subscriptionSignIn ? { signIn: true } : {}),
     };
     if (!mine) return { text: t("access.noAccess.other", { engine }), ...(viewer.admin ? { hint: t("access.serverEngine.admin") } : {}) };
+    if (access.speakerPays && !access.routine) return { text: t("access.speakerPays.serverEngine", { bot, engine }), ...ownWays, chooseModel: true };
     return { text: t(access.routine ? "access.serverEngine.routineMine" : "access.serverEngine.mine", { engine }), ...ownWays };
   }
   const own = {
@@ -92,6 +114,8 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
       ? { text: t("access.noAccess.routineMine", { engine }), ...mineAdmin, ...own }
       : { text: t("access.noAccess.routine", { engine }), ...admin };
   }
+  if (mine && access.speakerPays) return { text: t("access.speakerPays", { bot, engine }), ...mineAdmin, ...own, chooseModel: true };
+  if (mine && access.ownerPays) return { text: t("access.ownerPays.mine", { bot, engine }), ...mineAdmin, ...own };
   if (mine) return { text: t("access.noAccess.mine", { engine }), ...mineAdmin, ...own };
   return { text: t("access.noAccess.other", { engine }), ...admin };
 }
@@ -112,8 +136,13 @@ export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCar
             ? <SettingsText text={lines.hint} links={{ settings: { section: "engines", cardId: "engines.keys" } }} className="break-words text-[12px] text-ink-secondary" />
             : <span className="break-words text-[12px] text-ink-secondary">{lines.hint}</span>
         )}
-        {(lines.signIn && onSignIn) || lines.link ? (
+        {(lines.signIn && onSignIn) || lines.link || lines.chooseModel ? (
           <div className="flex flex-wrap items-center gap-2">
+            {lines.chooseModel && (
+              <button type="button" className="ui-button min-h-[44px] w-fit md:min-h-0" onClick={() => openModelWindow(access.botId)} data-access-choose-model>
+                {t("access.chooseModel")}
+              </button>
+            )}
             {lines.signIn && onSignIn && (
               <button type="button" className="ui-button min-h-[44px] w-fit md:min-h-0" onClick={onSignIn} data-access-sign-in>
                 {t("access.signIn")}

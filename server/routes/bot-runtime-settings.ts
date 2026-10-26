@@ -4,7 +4,13 @@
 //
 //   GET   /api/bots/:id/runtime-settings -> { settings, stored }
 //   PATCH /api/bots/:id/runtime-settings { maxConcurrentThreads?,
-//         maxParallelPerPerson?, busySend?, automaticRecovery? } -> same
+//         maxParallelPerPerson?, busySend?, automaticRecovery?,
+//         turnPayer?: "owner" | "speaker" | null } -> same
+//
+// `turnPayer` (#1137, shared/turn-payer.ts): who pays for the bot's replies
+// to the people it is shared with; null goes back to the default, which
+// `settings.turnPayer` reads when nothing is stored. The bot's owner sets it
+// without an admin (bots.behaviour is always theirs).
 //   GET   /api/bots/:id/tool-grants -> { grants } (this bot's, with state)
 //   POST  /api/bots/:id/tool-grants { scope, expiresAt? } -> 201 { grant }
 //   POST  /api/bots/:id/tool-grants/:grantId/revoke -> { ok }
@@ -29,14 +35,16 @@ import {
   type GlobalRuntimeSettings,
 } from "../bot-runtime-settings.ts";
 import { PASS, type RouteHandler } from "./table.ts";
+import type { TurnPayerMode } from "../../shared/turn-payer.ts";
 
 const SETTINGS = /^\/api\/bots\/([\w-]+)\/runtime-settings$/;
 const GRANTS = /^\/api\/bots\/([\w-]+)\/tool-grants$/;
 const REVOKE = /^\/api\/bots\/([\w-]+)\/tool-grants\/(tg_[\w-]+)\/revoke$/;
 const MAX_ADMIN_DAYS = 30;
-const RUNTIME_FIELDS = ["maxConcurrentThreads", "maxParallelPerPerson", "busySend", "automaticRecovery"] as const;
+const RUNTIME_FIELDS = ["maxConcurrentThreads", "maxParallelPerPerson", "busySend", "automaticRecovery", "turnPayer"] as const;
 
-type RuntimeBot = { id: string; name?: string } & BotRuntimeSettings;
+type StoredRuntime = BotRuntimeSettings & { turnPayer?: TurnPayerMode };
+type RuntimeBot = { id: string; name?: string } & StoredRuntime;
 
 export interface BotRuntimeSettingsRouteDeps {
   bot(id: string): RuntimeBot | null | undefined;
@@ -48,8 +56,12 @@ export interface BotRuntimeSettingsRouteDeps {
   isAdmin(auth: RequestAuth): boolean;
   /** A backup model the server can run: the checked selection, or why not. */
   checkBackup(selection: NonNullable<BotAutomaticRecovery["backup"]>): { ok: true; selection: NonNullable<BotAutomaticRecovery["backup"]> } | { ok: false; status: number; error: string; code?: string };
-  /** Store the fields on the bot and tell the clients. */
-  save(botId: string, patch: BotRuntimeSettings): RuntimeBot | null;
+  /** Store the fields on the bot and tell the clients. A field set to
+   * undefined is cleared (turnPayer back to its default). */
+  save(botId: string, patch: StoredRuntime): RuntimeBot | null;
+  /** #1137: the bot's default "who pays" when it has no choice of its own.
+   * Absent: "speaker" (solo server, tests). */
+  turnPayerDefault?(bot: RuntimeBot): TurnPayerMode;
   grants: Pick<ToolGrantStore, "all" | "grant" | "revoke">;
   audit(action: "bot.runtime_settings" | "tool_grants.grant" | "tool_grants.revoke", auth: RequestAuth, req: IncomingMessage, detail: Record<string, unknown>): void;
   now?: () => number;
@@ -64,7 +76,7 @@ function actor(auth: RequestAuth): string {
   return auth.kind === "session" ? auth.session.principalId ?? `session:${auth.session.id}` : "loopback";
 }
 
-function stored(bot: RuntimeBot): BotRuntimeSettings {
+function stored(bot: RuntimeBot): StoredRuntime {
   return Object.fromEntries(RUNTIME_FIELDS.filter((field) => bot[field] !== undefined).map((field) => [field, structuredClone(bot[field])]));
 }
 
@@ -84,7 +96,10 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
     if (settings) {
       if (method !== "GET" && method !== "PATCH") return json(res, 405, { error: "GET or PATCH" });
       if (!deps.mayManage(auth, bot, "behaviour")) return json(res, 403, { error: "forbidden: only the bot's owner or an admin can change its settings" });
-      const answer = (current: RuntimeBot) => json(res, 200, { settings: effectiveBotRuntimeSettings(current, deps.global()), stored: stored(current) });
+      const answer = (current: RuntimeBot) => json(res, 200, {
+        settings: { ...effectiveBotRuntimeSettings(current, deps.global()), turnPayer: current.turnPayer ?? deps.turnPayerDefault?.(current) ?? "speaker" },
+        stored: stored(current),
+      });
       if (method === "GET") return answer(bot);
       const parsed = botRuntimeSettingsPatchSchema.safeParse(await readBody(req));
       if (!parsed.success) {
@@ -92,7 +107,9 @@ export function createBotRuntimeSettingsRoutes(deps: BotRuntimeSettingsRouteDeps
         const message = issue?.code === "unrecognized_keys" ? `unknown setting: ${issue.keys[0]}` : issue?.message ?? "invalid settings";
         return json(res, 400, { error: message });
       }
-      const patch: BotRuntimeSettings = { ...parsed.data } as BotRuntimeSettings;
+      const { turnPayer, ...runtime } = parsed.data;
+      const patch: StoredRuntime = { ...runtime } as BotRuntimeSettings;
+      if (turnPayer !== undefined) patch.turnPayer = turnPayer ?? undefined;
       const recovery = parsed.data.automaticRecovery;
       if (recovery?.backup) {
         const checked = deps.checkBackup(recovery.backup);

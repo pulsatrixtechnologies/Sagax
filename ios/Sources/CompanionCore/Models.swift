@@ -987,6 +987,18 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// Bot-to-bot conversations this viewer may read, both ends (`shared/wire.ts`
     /// WireBotConversation). Absent: none. Read only; see `BotConversations`.
     public var botConversations: [BotConversation]? = nil
+    /// #1137, organization server: who pays for this bot's replies
+    /// ("owner" or "speaker"); absent is the default `turnPayerDefault`,
+    /// which only an organization server sends.
+    public var turnPayer: String? = nil
+    public var turnPayerDefault: String? = nil
+
+    /// #1137: who pays now (its own choice, else the default), or nil on a
+    /// solo server.
+    public var effectiveTurnPayer: String? {
+        guard let fallback = turnPayerDefault else { return nil }
+        return turnPayer ?? fallback
+    }
 
     /// The look the renderers draw: the stored one, or the owl.
     public var resolvedMascotLook: CompleteMascotLook {

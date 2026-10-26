@@ -169,12 +169,12 @@ describe("routine lines in the conversation", () => {
 
     const askCreate = thread.say("t1", "Crée une routine de revue des billets");
     const created = routines.create(
-      { name: "Revue des billets GECKO", prompt: "Revois les billets", botId: "bot-a", schedule: { type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] } },
+      { name: "Revue des billets ACME", prompt: "Revois les billets", botId: "bot-a", schedule: { type: "daily", time: "09:00", weekdays: [1, 2, 3, 4, 5] } },
       card("t1", askCreate.id, "create"),
     );
     let lines = thread.lines("t1");
     expect(lines).toHaveLength(1);
-    expect(lines[0].routineToggle).toMatchObject({ action: "created", turnKey: askCreate.id, routines: [{ id: created.id, name: "Revue des billets GECKO" }] });
+    expect(lines[0].routineToggle).toMatchObject({ action: "created", turnKey: askCreate.id, routines: [{ id: created.id, name: "Revue des billets ACME" }] });
     expect(lines[0].text).toBe("Created a routine");
 
     const askRename = thread.say("t1", "Renomme-la");

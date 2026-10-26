@@ -240,9 +240,11 @@ export interface MyEngine {
   myTurns: "subscription" | "key" | "org-key" | "none";
 }
 
-/** `<issuer>/console/pulsabot/keys`, where an owner sets their model keys. */
+/** `<issuer>/console/credentials?kind=model`, where a person sets their model keys
+ * (#1137: the console page itself; the old /console/pulsabot/keys only
+ * redirects there). */
 export function perspicaxKeysUrl(issuer: string): string {
-  return `${issuer.replace(/\/+$/, "")}/console/pulsabot/keys`;
+  return `${issuer.replace(/\/+$/, "")}/console/credentials?kind=model`;
 }
 
 let enginesPending: Promise<MyEngine[] | null> | null = null;

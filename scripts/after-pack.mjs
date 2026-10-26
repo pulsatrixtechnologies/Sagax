@@ -9,6 +9,7 @@ import { tailcatExecutableTarget, verifyTailcatExecutable } from "./prepare-tail
 import { fileURLToPath } from "node:url";
 import { verifyBrowserBundle } from "./prepare-browser.mjs";
 import { verifyWindowsNatives } from "./verify-win-natives.mjs";
+import { isVendorExecutable, signFile, signingConfig } from "./win-trusted-signing.mjs";
 import { pinnedDuckdbVersion, pinnedResvgVersion, verifyDuckdbTree } from "./prepare-duckdb.mjs";
 import { LIPO_ARCH, isMachO, writeThinMachO } from "./mac-thin.mjs";
 
@@ -135,6 +136,26 @@ async function thinMacPlatformTools(resources, arch) {
   }
 }
 
+/** Our .exe files under resources/ that electron-builder does not sign itself. */
+async function signLooseWindowsExecutables(resources) {
+  const config = signingConfig();
+  const visit = async (directory) => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        // app.asar.unpacked is signed by electron-builder.
+        if (entry.name !== "app.asar.unpacked") await visit(file);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".exe")) {
+        // electron-builder signs its own elevate.exe through the sign hook.
+        if (isVendorExecutable(file) || file === path.join(resources, "elevate.exe")) continue;
+        signFile(file, config);
+        console.log(`  • trusted signing  signed  file=${entry.name}`);
+      }
+    }
+  };
+  await visit(resources);
+}
+
 // electron-builder normalizes copied resource directories to 0775. That is
 // unsafe for a root-owned executable path after DEB/AppImage installation, so
 // repair and revalidate the exact tree after resources are copied and before
@@ -172,6 +193,10 @@ export default async function afterPack(context) {
     if (problems.length) {
       throw new Error(`Windows ${arch} package has binaries for the wrong target:\n  ${problems.join("\n  ")}`);
     }
+    // A signed release build (package-fork.mjs): electron-builder's sign hook
+    // never sees the single-file extraResources (the CUA driver executables),
+    // so they are signed here, before the zip and the installer are made.
+    if (process.env.SAGAX_WIN_SIGN_REQUIRED === "1") await signLooseWindowsExecutables(resources);
   }
   // Windows arm64 has no DuckDB or resvg binding to stage (prepare-duckdb):
   // that package may ship without the Data engine; every other one must not.

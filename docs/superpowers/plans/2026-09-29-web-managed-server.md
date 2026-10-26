@@ -71,50 +71,50 @@ function store(start = 1_000) {
 describe("email one-time codes", () => {
   it("accepts the code once, for that address only", () => {
     const { s } = store();
-    const issued = s.issue("Zach@example.com", "10.0.0.1");
+    const issued = s.issue("Morgan@example.com", "10.0.0.1");
     expect(issued).toEqual({ ok: true, code: "12345678" });
     expect(s.verify("other@example.com", "12345678").ok).toBe(false);
-    expect(s.verify("zach@example.com", "12345678")).toEqual({ ok: true });
-    expect(s.verify("zach@example.com", "12345678").ok).toBe(false);
+    expect(s.verify("morgan@example.com", "12345678")).toEqual({ ok: true });
+    expect(s.verify("morgan@example.com", "12345678").ok).toBe(false);
   });
 
   it("expires after ten minutes", () => {
     const { s, tick } = store();
-    s.issue("zach@example.com", "src");
+    s.issue("morgan@example.com", "src");
     tick(OTP_TTL_MS + 1);
-    expect(s.verify("zach@example.com", "12345678")).toMatchObject({ ok: false, status: 401 });
+    expect(s.verify("morgan@example.com", "12345678")).toMatchObject({ ok: false, status: 401 });
   });
 
   it("burns the code after five wrong tries", () => {
     const { s } = store();
-    s.issue("zach@example.com", "src");
-    for (let i = 0; i < 5; i++) expect(s.verify("zach@example.com", "00000000").ok).toBe(false);
-    expect(s.verify("zach@example.com", "12345678")).toMatchObject({ ok: false });
+    s.issue("morgan@example.com", "src");
+    for (let i = 0; i < 5; i++) expect(s.verify("morgan@example.com", "00000000").ok).toBe(false);
+    expect(s.verify("morgan@example.com", "12345678")).toMatchObject({ ok: false });
   });
 
   it("refuses a malformed code without counting it as a guess", () => {
     const { s } = store();
-    s.issue("zach@example.com", "src");
-    expect(s.verify("zach@example.com", "12ab")).toMatchObject({ ok: false, status: 400 });
-    expect(s.verify("zach@example.com", "12345678")).toEqual({ ok: true });
+    s.issue("morgan@example.com", "src");
+    expect(s.verify("morgan@example.com", "12ab")).toMatchObject({ ok: false, status: 400 });
+    expect(s.verify("morgan@example.com", "12345678")).toEqual({ ok: true });
   });
 
   it("limits sends per address and per source", () => {
     const { s, tick } = store();
-    for (let i = 0; i < 3; i++) expect(s.issue("zach@example.com", `s${i}`).ok).toBe(true);
-    expect(s.issue("zach@example.com", "s9")).toMatchObject({ ok: false, status: 429 });
+    for (let i = 0; i < 3; i++) expect(s.issue("morgan@example.com", `s${i}`).ok).toBe(true);
+    expect(s.issue("morgan@example.com", "s9")).toMatchObject({ ok: false, status: 429 });
     for (let i = 0; i < 10; i++) s.issue(`p${i}@example.com`, "office");
     expect(s.issue("p99@example.com", "office")).toMatchObject({ ok: false, status: 429 });
     tick(15 * 60_000 + 1);
-    expect(s.issue("zach@example.com", "s10").ok).toBe(true);
+    expect(s.issue("morgan@example.com", "s10").ok).toBe(true);
   });
 
   it("keeps only the newest code for an address", () => {
     const { s } = store();
-    s.issue("zach@example.com", "a");
-    s.issue("zach@example.com", "b");
-    expect(s.verify("zach@example.com", "12345678").ok).toBe(false);
-    expect(s.verify("zach@example.com", "87654321")).toEqual({ ok: true });
+    s.issue("morgan@example.com", "a");
+    s.issue("morgan@example.com", "b");
+    expect(s.verify("morgan@example.com", "12345678").ok).toBe(false);
+    expect(s.verify("morgan@example.com", "87654321")).toEqual({ ok: true });
   });
 });
 ```
@@ -275,11 +275,11 @@ describe("mailer", () => {
   it("sends through SendGrid's HTTP API", async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 202 }));
     const mailer = createMailer({ provider: "sendgrid", from: "pulsa@example.com", sendgrid: { apiKey: "SG.k" } }, { fetchImpl: fetchImpl as unknown as typeof fetch })!;
-    await mailer.send({ to: "zach@example.com", subject: "Code", text: "12345678" });
+    await mailer.send({ to: "morgan@example.com", subject: "Code", text: "12345678" });
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://api.sendgrid.com/v3/mail/send");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer SG.k");
-    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@example.com" }, personalizations: [{ to: [{ email: "zach@example.com" }] }], subject: "Code" });
+    expect(JSON.parse(String(init.body))).toMatchObject({ from: { email: "pulsa@example.com" }, personalizations: [{ to: [{ email: "morgan@example.com" }] }], subject: "Code" });
   });
 
   it("reports a SendGrid refusal without leaking the key", async () => {
@@ -346,10 +346,10 @@ describe("server-issued email sign-in", () => {
     const otp = new EmailOtpStore({ random: () => "24681357" });
     const signIn = createServerEmailSignIn({ allow, otp, mailer: () => ({ send }), publicUrl: () => "https://sagax.example.com" });
     expect(signIn.enabled()).toBe(true);
-    expect(await signIn.start("zach@example.com", "src")).toEqual({ ok: true });
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "zach@example.com", text: expect.stringContaining("24681357") }));
+    expect(await signIn.start("morgan@example.com", "src")).toEqual({ ok: true });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "morgan@example.com", text: expect.stringContaining("24681357") }));
     expect(send.mock.calls[0]![0].text).toContain("https://sagax.example.com/pair");
-    expect(await signIn.verify("zach@example.com", "24681357")).toEqual({ ok: true, email: "zach@example.com", userId: "", scopes: ["client"] });
+    expect(await signIn.verify("morgan@example.com", "24681357")).toEqual({ ok: true, email: "morgan@example.com", userId: "", scopes: ["client"] });
   });
   it("never mails an address that is not on the list", async () => {
     const send = vi.fn(async () => undefined);
@@ -359,8 +359,8 @@ describe("server-issued email sign-in", () => {
   });
   it("reports a mail failure as 502 and keeps the code unusable", async () => {
     const signIn = createServerEmailSignIn({ allow, otp: new EmailOtpStore({ random: () => "11112222" }), mailer: () => ({ send: async () => { throw new Error("the mail server refused the message: 550"); } }) });
-    expect(await signIn.start("zach@example.com", "src")).toMatchObject({ ok: false, status: 502 });
-    expect((await signIn.verify("zach@example.com", "11112222")).ok).toBe(false);
+    expect(await signIn.start("morgan@example.com", "src")).toMatchObject({ ok: false, status: 502 });
+    expect((await signIn.verify("morgan@example.com", "11112222")).ok).toBe(false);
   });
 });
 ```

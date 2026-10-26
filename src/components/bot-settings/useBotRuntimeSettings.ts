@@ -12,9 +12,11 @@ export function useBotRuntimeSettings(bot: Bot) {
   const [error, setError] = useState("");
   const inFlight = useRef(false);
   // A newer bot frame (this save's, or someone else's change) wins.
-  const signature = JSON.stringify([bot.maxConcurrentThreads, bot.maxParallelPerPerson, bot.busySend, bot.automaticRecovery]);
+  const signature = JSON.stringify([bot.maxConcurrentThreads, bot.maxParallelPerPerson, bot.busySend, bot.automaticRecovery, bot.turnPayer]);
   useEffect(() => { setSaved({}); }, [signature]);
-  const shown: Bot = { ...bot, ...saved };
+  // a cleared turnPayer (null) shows the default again
+  const { turnPayer: savedPayer, ...savedRest } = saved;
+  const shown: Bot = { ...bot, ...savedRest, ...(savedPayer !== undefined ? { turnPayer: savedPayer ?? undefined } : {}) };
   const save = async (patch: BotRuntimePatch): Promise<boolean> => {
     if (inFlight.current) return false;
     inFlight.current = true;
@@ -25,7 +27,7 @@ export function useBotRuntimeSettings(bot: Bot) {
         method: "PATCH",
         body: JSON.stringify(patch),
       });
-      setSaved(answer.stored ?? {});
+      setSaved({ ...(patch.turnPayer === null ? { turnPayer: null } : {}), ...answer.stored });
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t("botPanel.parallel.error"));

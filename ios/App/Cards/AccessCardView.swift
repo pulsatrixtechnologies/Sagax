@@ -4,6 +4,10 @@
 // in Perspicax. Signing in with a subscription and reconnecting routines
 // happen on the computer, so the phone says so instead of drawing a button
 // it cannot honour.
+//
+// #1137: a card about who pays (a bot whose replies each person pays for,
+// the owner who pays, the owner's computer offline) words it the same way,
+// and "Choose a model" opens the model menu for that bot's conversation.
 import SwiftUI
 import CompanionCore
 
@@ -11,6 +15,7 @@ struct AccessCardView: View {
     @Environment(\.themePalette) var themePalette
     let access: AccessCard
     @EnvironmentObject private var session: Session
+    @State private var choosingModel = false
 
     private var lines: AccessCardLines {
         AccessCardLines.of(access, viewerPrincipalId: session.account?.principalId, admin: session.canAdminister)
@@ -46,6 +51,17 @@ struct AccessCardView: View {
                         .font(.system(size: 11.5, design: .monospaced))
                         .foregroundStyle(Theme.textSecondary)
                         .textSelection(.enabled)
+                }
+                if lines.chooseModel, let bot = session.state.bot(access.botId) {
+                    Button { choosingModel = true } label: {
+                        Label("Choose a model", systemImage: "cpu")
+                            .font(.system(size: 12.5, weight: .medium))
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityIdentifier("access-choose-model")
+                    .sheet(isPresented: $choosingModel) {
+                        NavigationStack { ModelMenuSheet(bot: bot, close: { choosingModel = false }) }
+                    }
                 }
                 if lines.signIn || lines.reconnect {
                     Label("Finish on your computer", systemImage: "desktopcomputer")
@@ -105,6 +121,27 @@ struct AccessCardView: View {
             case "no_right": String(localized: "This person can no longer run this bot's routines.")
             default: reason
             }
+        case let .ownerModelOffline(owner):
+            if let owner {
+                String(localized: "\(owner)'s model isn't reachable right now.")
+            } else {
+                String(localized: "The owner's model isn't reachable right now.")
+            }
+        case let .ownerPaysOther(bot, engine):
+            String(localized: "\(botName(bot))'s owner pays for its replies, and their \(engine) access isn't available right now.")
+        case let .ownerPaysDisabled(bot):
+            String(localized: "\(botName(bot))'s owner pays for its replies, and their account is disabled.")
+        case let .ownerPaysMine(bot, engine):
+            String(localized: "You pay for \(botName(bot))'s replies to everyone who writes to it, and you don't have \(engine) access: connect your \(engine) subscription or add your key in Perspicax.")
+        case let .speakerPays(bot, engine):
+            String(localized: "Replies from \(botName(bot)) are paid by the person who writes, and you don't have \(engine) access: connect your \(engine) subscription, add your key in Perspicax, or choose a model you can pay for.")
+        case let .speakerPaysServerEngine(bot, engine):
+            String(localized: "Replies from \(botName(bot)) are paid by the person who writes, and your organization has not given you \(engine) on its account: connect your own \(engine) subscription, add your key in Perspicax, or choose a model you can pay for.")
         }
+    }
+
+    /// The card's bot, or "this bot" when it names none (#1137).
+    static func botName(_ name: String) -> String {
+        name.isEmpty ? String(localized: "this bot") : name
     }
 }

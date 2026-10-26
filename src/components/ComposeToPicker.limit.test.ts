@@ -36,10 +36,10 @@ const person = (principalId: string, name: string): OrgDirectoryPerson => ({ pri
 
 const bots = [bot("koda", "Koda"), bot("rocket", "Rocket")];
 const people = [
-  person("pr_francis", "Francis Beaulieu"),
-  person("pr_gregory", "Gregory Jeanne"),
-  person("pr_maxime", "Maxime Charbonneau"),
-  person("pr_zachary", "Sam Taylor"),
+  person("pr_felix", "Felix Roy"),
+  person("pr_gaby", "Gaby Pelletier"),
+  person("pr_mallory", "Mallory Dupuis"),
+  person("pr_morgan", "Sam Taylor"),
   person("pr_marc", "Marc Roy"),
   person("pr_julie", "Julie Tremblay"),
 ];
@@ -50,16 +50,16 @@ describe("ComposeToPicker result limit", () => {
   it("keeps the two create rows first and at most six results after them", () => {
     expect(COMPOSE_RESULT_LIMIT).toBe(6);
     const rows = composeRows("browse", bots, true, people);
-    expect(rows.map(label)).toEqual(["create-bot", "create-bot-wizard", "create-group", "koda", "rocket", "pr_francis", "pr_gregory", "pr_maxime", "pr_zachary"]);
-    expect(composeRows("browse", bots, false, people).map(label)).toEqual(["create-group", "koda", "rocket", "pr_francis", "pr_gregory", "pr_maxime", "pr_zachary"]);
+    expect(rows.map(label)).toEqual(["create-bot", "create-bot-wizard", "create-group", "koda", "rocket", "pr_felix", "pr_gaby", "pr_mallory", "pr_morgan"]);
+    expect(composeRows("browse", bots, false, people).map(label)).toEqual(["create-group", "koda", "rocket", "pr_felix", "pr_gaby", "pr_mallory", "pr_morgan"]);
     const many = Array.from({ length: 9 }, (_, i) => bot(`b${i}`, `Bot ${i}`));
     expect(composeRows("group", many).map(label)).toEqual(["create-group", "b0", "b1", "b2", "b3", "b4", "b5"]);
   });
 
   it("filters among everyone, then shows the six best matches", () => {
-    // "ma" matches Maxime and Marc by their first name, the bot Puma only inside.
+    // "ma" matches Mallory and Marc by their first name, the bot Puma only inside.
     const matching = [...people].filter((p) => `${p.name} ${p.login}`.toLowerCase().includes("ma"));
-    expect(composeRows("browse", [bot("puma", "Puma")], true, matching, "ma").map(label)).toEqual(["create-bot", "create-bot-wizard", "create-group", "pr_maxime", "pr_marc", "puma"]);
+    expect(composeRows("browse", [bot("puma", "Puma")], true, matching, "ma").map(label)).toEqual(["create-bot", "create-bot-wizard", "create-group", "pr_mallory", "pr_marc", "puma"]);
     // Name prefix beats a word prefix, which beats a match inside a word.
     const ro = [bot("aurora", "Aurora"), bot("rocket", "Rocket")];
     const roPeople = [person("pr_marc", "Marc Roy")];

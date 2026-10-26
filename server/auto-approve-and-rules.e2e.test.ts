@@ -68,7 +68,7 @@ it("auto level + auto mode auto-approves ordinary and read-only work and a rule-
     expect(a.answer(), "a carded request is not answered for the person").toBeUndefined();
   };
   try {
-    const bot = (await api("POST", "/api/bots", { name: "Zachary", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
+    const bot = (await api("POST", "/api/bots", { name: "Morgan", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
     // level = Approve for me (auto): since 2026-10-26 the owner route reads
     // it as automatic approval (one approval level, no second mode)
     await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "auto" });

@@ -391,6 +391,8 @@ export interface Group {
   memoryEnabled?: boolean;
   /** A room: @all notifies every person in it (server/room-mentions.ts). */
   mentionAll?: boolean;
+  /** #1137: per bot of this room, who pays for its replies here. */
+  botPayers?: Record<string, "owner" | "speaker">;
   busyBotId?: string | null;
   /** when the busy member's turn started — the group-side twin of a task's
    * turnStartedAt; stamped by the server when the speaker claims the turn */
@@ -693,6 +695,10 @@ export interface Bot {
   maxParallelPerPerson?: number;
   busySend?: "ask" | "steer" | "parallel" | "after";
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
+  /** #1137, organization server: who pays for this bot's replies (its own
+   * choice; absent: `turnPayerDefault`, which the server computes). */
+  turnPayer?: "owner" | "speaker";
+  turnPayerDefault?: "owner" | "speaker";
   /** Whether this bot gets the app's built-in browser (Browser tab). On unless switched off. */
   browser?: boolean;
   /** Memory upkeep (Bot settings → Memory): background capture and the

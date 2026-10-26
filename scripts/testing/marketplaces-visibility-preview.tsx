@@ -8,7 +8,7 @@ import "../../src/styles.css";
 
 const marketplaces: MarketplaceSummary[] = [
   {
-    name: "devjc", source: "jencryzthers/marketplace", visibility: "private", mine: true,
+    name: "devjc", source: "example-owner/marketplace", visibility: "private", mine: true,
     plugins: [{ name: "px-flow-devjc", installed: true }, { name: "homelab", installed: false }],
   },
   {

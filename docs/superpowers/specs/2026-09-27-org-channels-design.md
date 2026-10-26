@@ -6,9 +6,9 @@
 
 ## Goal
 
-Alex invite Zachary dans sa flotte. Zachary parle aux bots qu'on lui a ouverts, dans des canaux. Chacun possède ses bots et choisit où ils tournent. L'approbation reste au propriétaire du bot, sur la machine qui exécute le tour.
+Alex invite Morgan dans sa flotte. Morgan parle aux bots qu'on lui a ouverts, dans des canaux. Chacun possède ses bots et choisit où ils tournent. L'approbation reste au propriétaire du bot, sur la machine qui exécute le tour.
 
-Succès: Zachary accepte une invitation, voit seulement ses canaux et sa zone Direct, fait travailler un bot posé dans un canal, et ne peut ni approuver à la place du propriétaire, ni voir les bots qu'on ne lui a pas ouverts.
+Succès: Morgan accepte une invitation, voit seulement ses canaux et sa zone Direct, fait travailler un bot posé dans un canal, et ne peut ni approuver à la place du propriétaire, ni voir les bots qu'on ne lui a pas ouverts.
 
 ## Background
 
@@ -78,7 +78,7 @@ Droits:
 
 Créer l'organisation se fait sur l'hôte de la flotte. Le créateur devient `owner`. L'hôte enregistré est ce poste, ou l'adresse du serveur déjà configurée.
 
-Inviter produit un lien à usage unique, révocable, valable 7 jours. Zachary ouvre l'app, accepte, et devient `member`. Son client se branche sur l'hôte comme le client distant d'aujourd'hui, avec son `userId`. Il ne reçoit pas une copie des bots.
+Inviter produit un lien à usage unique, révocable, valable 7 jours. Morgan ouvre l'app, accepte, et devient `member`. Son client se branche sur l'hôte comme le client distant d'aujourd'hui, avec son `userId`. Il ne reçoit pas une copie des bots.
 
 Il crée ses bots. Tant qu'il ne les partage pas, ils restent dans sa zone Direct. L'hôte se choisit à la création et se change ensuite, par le propriétaire seulement. Avant la tranche Workers, ce choix n'existe pas: tout bot est `fleet`. `fleet` exécute sur l'hôte de l'organisation. `machine` exige que cette machine soit enregistrée comme worker auprès de l'hôte. Le transcript d'un canal est toujours écrit sur l'hôte de la flotte, même si le tour tourne sur un worker.
 

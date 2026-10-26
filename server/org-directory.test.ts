@@ -3,7 +3,7 @@ import { INVITE_TTL_MS, acceptInvite, inviteStatus, roleOf, type OrgInvite } fro
 
 const invite = (over: Partial<OrgInvite> = {}): OrgInvite => ({
   token: "tok",
-  email: "zachary@example.test",
+  email: "morgan@example.test",
   createdAt: 0,
   expiresAt: INVITE_TTL_MS,
   ...over,
@@ -33,20 +33,20 @@ describe("acceptInvite", () => {
 
 describe("roleOf", () => {
   it("gives the creator owner and keeps admins distinct from members", () => {
-    const lists = { ownerUserId: "jc", admins: ["jc", "ada@example.test"], members: ["zachary@example.test"] };
+    const lists = { ownerUserId: "jc", admins: ["jc", "ada@example.test"], members: ["morgan@example.test"] };
     expect(roleOf({ ...lists, userId: "jc" })).toBe("owner");
     expect(roleOf({ ...lists, userId: "ada@example.test" })).toBe("admin");
-    expect(roleOf({ ...lists, userId: "zachary@example.test" })).toBe("member");
+    expect(roleOf({ ...lists, userId: "morgan@example.test" })).toBe("member");
     expect(roleOf({ ...lists, userId: "stranger" })).toBeNull();
   });
 });
 
 describe("roles by principal", () => {
-  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@example.com"], members: ["zach@example.com", "@client.com"] };
+  const lists = { ownerUserId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", admins: ["ana@example.com"], members: ["morgan@example.com", "@client.com"] };
   it("finds the owner by principal id and others by email", () => {
     expect(roleOf({ ...lists, userId: "pr_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" })).toBe("owner");
     expect(roleOf({ ...lists, userId: "pr_bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", email: "Ana@example.com" })).toBe("admin");
-    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "zach@example.com" })).toBe("member");
+    expect(roleOf({ ...lists, userId: "pr_cccccccc-cccc-4ccc-8ccc-cccccccccccc", email: "morgan@example.com" })).toBe("member");
     expect(roleOf({ ...lists, userId: "pr_dddddddd-dddd-4ddd-8ddd-dddddddddddd", email: "stranger@example.com" })).toBeNull();
   });
   it("never makes someone owner because of their email", () => {

@@ -39,7 +39,7 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
     if (!browser) return;
     const page = await browser.newPage({ viewport: { width: 380, height: 260 } });
     await page.route("**/api/**", (route: any) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(((p: string) => (p === "/api/bots" ? { bots: [] } : p.includes("routines") ? { routines: [], runs: [] } : {}))(new URL(route.request().url()).pathname)) }));
-    await page.goto(`${base}?view=foot&lang=${lang}&apps=3&name=Jean%20Proulx&update=${update}`, { waitUntil: "load" });
+    await page.goto(`${base}?view=foot&lang=${lang}&apps=3&name=Jean%20Exemplar&update=${update}`, { waitUntil: "load" });
     await page.waitForSelector("[data-connected-apps-stack]", { timeout: 45_000 });
     await page.locator("[data-sidebar-connect-apps]").hover();
     await page.waitForTimeout(600);
@@ -82,7 +82,7 @@ describe("foot at rest, real data shape", () => {
     if (!browser) return;
     const page = await browser.newPage({ viewport: { width: 420, height: 260 } });
     await page.route("**/api/**", (route: any) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(((p: string) => (p === "/api/bots" ? { bots: [] } : p.includes("routines") ? { routines: [], runs: [] } : {}))(new URL(route.request().url()).pathname)) }));
-    await page.goto(`${base}?view=foot&data=real&lang=fr&name=${encodeURIComponent("Jean-Philippe Exemplar")}`, { waitUntil: "load" });
+    await page.goto(`${base}?view=foot&data=real&lang=fr&name=${encodeURIComponent("Jean-Michel Exemplar")}`, { waitUntil: "load" });
     await page.waitForSelector("[data-connected-app]", { timeout: 45_000 });
     await page.evaluate(() => document.fonts.ready);
     await page.waitForTimeout(300);

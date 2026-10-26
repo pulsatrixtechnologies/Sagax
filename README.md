@@ -156,8 +156,8 @@ Get the latest build from the
 - New to Sagax? The [10-minute MSP quickstart](docs/quickstart-msp.md) takes
   you from install to a working first message.
 - macOS builds are signed and notarized by Apple.
-- The Windows installer is not signed yet: in SmartScreen choose
-  **More info**, then **Run anyway**.
+- The Windows installer is code signed from 0.8.3. If SmartScreen still
+  warns, choose **More info**, then **Run anyway**.
 - Your bots need at least one engine installed and signed in, such as
   [Claude Code](https://claude.com/claude-code) or
   [Codex](https://github.com/openai/codex). Settings > Model providers shows

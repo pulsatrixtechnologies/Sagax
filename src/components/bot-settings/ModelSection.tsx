@@ -19,6 +19,7 @@ import { useBotEditor } from "./BotEditorContext";
 import { ThreadModelsLine } from "../ThreadModelsLine";
 import { botRecovery } from "@/lib/bot-runtime-settings";
 import { BotRecoverySettings } from "./BotRecoverySettings";
+import { BotPayerSettings } from "./BotPayerSettings";
 
 export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
@@ -83,6 +84,9 @@ export function ModelSection({ bot }: { bot: Bot }) {
           }
         />}
       </SettingsGroup>
+      {/* #1137: who pays for this bot's replies (organization server, the
+          owner or an admin; Simple and Advanced). */}
+      {!draft && bot.turnPayerDefault && canEditBotField(state.config, bot, "automaticRecovery") && <BotPayerSettings key={`payer:${bot.id}`} bot={bot} />}
       {/* 2026-10-15: this bot's automatic recovery (it was Settings >
           General > Advanced for every bot), then its ordered backups. */}
       {advanced && !draft && canEditBotField(state.config, bot, "automaticRecovery") && <BotRecoverySettings key={`recovery:${bot.id}`} bot={bot} />}

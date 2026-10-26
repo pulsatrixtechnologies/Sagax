@@ -9,25 +9,25 @@ import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
 describe("ChannelMembers", () => {
   it("hides add controls from a member who cannot edit", () => {
     const html = renderToStaticMarkup(createElement(ChannelMembers, {
-      humans: [{ id: "zachary@example.test" }],
+      humans: [{ id: "morgan@example.test" }],
       bots: [{ id: "aurora", name: "Aurora" }],
       canAddHuman: false,
       canAddBot: false,
     }));
     expect(html).toContain("Aurora");
-    expect(html).toContain("zachary@example.test");
+    expect(html).toContain("morgan@example.test");
     expect(html).not.toContain("Ajouter");
   });
 
   it("shows Ajouter only on the list whose boolean is true", () => {
     const humans = renderToStaticMarkup(createElement(ChannelMembers, {
-      humans: [{ id: "zachary@example.test" }],
+      humans: [{ id: "morgan@example.test" }],
       bots: [{ id: "aurora", name: "Aurora" }],
       canAddHuman: true,
       canAddBot: false,
     }));
     const bots = renderToStaticMarkup(createElement(ChannelMembers, {
-      humans: [{ id: "zachary@example.test" }],
+      humans: [{ id: "morgan@example.test" }],
       bots: [{ id: "aurora", name: "Aurora" }],
       canAddHuman: false,
       canAddBot: true,
@@ -47,7 +47,7 @@ describe("ChannelMembers", () => {
   it("calls onAddHuman when Ajouter is clicked", () => {
     const onAddHuman = vi.fn();
     const tree = ChannelMembers({
-      humans: [{ id: "zachary@example.test" }],
+      humans: [{ id: "morgan@example.test" }],
       bots: [{ id: "aurora", name: "Aurora" }],
       canAddHuman: true,
       canAddBot: false,
@@ -62,7 +62,7 @@ describe("ChannelMembers", () => {
     expect(channelRosterActions({
       actorRole: "admin",
       actorId: "Ada@Example.test",
-      bots: [{ id: "aurora", ownerUserId: "zachary@example.test" }],
+      bots: [{ id: "aurora", ownerUserId: "morgan@example.test" }],
     })).toEqual({ canAddHuman: true, canAddBot: false });
     expect(channelRosterActions({
       actorRole: "owner",
@@ -86,12 +86,12 @@ describe("ChannelMembers", () => {
     })).toEqual({ canAddHuman: false, canAddBot: false });
     expect(channelRosterActions({
       actorRole: "member",
-      actorId: "zachary@example.test",
-      bots: [{ id: "aurora", ownerUserId: "zachary@example.test" }],
+      actorId: "morgan@example.test",
+      bots: [{ id: "aurora", ownerUserId: "morgan@example.test" }],
     })).toEqual({ canAddHuman: true, canAddBot: true });
     expect(channelRosterActions({
       actorRole: "member",
-      actorId: "zachary@example.test",
+      actorId: "morgan@example.test",
       bots: [{ id: "aurora", ownerUserId: "jc" }],
     })).toEqual({ canAddHuman: true, canAddBot: false });
   });

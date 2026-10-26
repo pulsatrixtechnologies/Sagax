@@ -4,7 +4,7 @@ import { turnDestination } from "./turn-route.ts";
 describe("turn destination", () => {
   it("queues a message when the chosen machine is offline", () => {
     expect(turnDestination({
-      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      host: { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" },
       workerOnline: false,
     })).toEqual({ kind: "queued" });
   });
@@ -13,7 +13,7 @@ describe("turn destination", () => {
   });
   it("sends a machine-hosted turn to that worker when it is online", () => {
     expect(turnDestination({
-      host: { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" },
+      host: { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" },
       workerOnline: true,
     })).toEqual({ kind: "worker", deviceId: "laptop" });
   });

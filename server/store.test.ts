@@ -969,13 +969,13 @@ describe("Store", () => {
     const first = store.createBot();
     const second = store.createBot();
     const dm = store.createGroup("Pair", [first.id, second.id], true);
-    expect(() => store.patchGroup(dm.id, { humanIds: ["zachary@example.test"], name: "nope" })).toThrow(/dm-has-no-humans/);
+    expect(() => store.patchGroup(dm.id, { humanIds: ["morgan@example.test"], name: "nope" })).toThrow(/dm-has-no-humans/);
     expect(dm.humanIds).toBeUndefined();
     expect(dm.name).toBe("Pair");
 
     const room = store.createGroup("Channel", [first.id]);
-    expect(store.patchGroup(room.id, { humanIds: ["jc", "zachary@example.test"] })?.humanIds).toEqual(["jc", "zachary@example.test"]);
-    expect(new Store(selection).group(room.id)?.humanIds).toEqual(["jc", "zachary@example.test"]);
+    expect(store.patchGroup(room.id, { humanIds: ["jc", "morgan@example.test"] })?.humanIds).toEqual(["jc", "morgan@example.test"]);
+    expect(new Store(selection).group(room.id)?.humanIds).toEqual(["jc", "morgan@example.test"]);
     expect(new Store(selection).group(dm.id)?.humanIds).toBeUndefined();
   });
 
@@ -1122,18 +1122,18 @@ describe("Store", () => {
     expect(missing.host).toEqual({ kind: "fleet" });
     const raw: BotRecord[] = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
     delete raw.find((bot) => bot.id === missing.id)!.host;
-    raw.find((bot) => bot.id === machine.id)!.host = { kind: "machine", userId: "zachary@example.test", deviceId: "laptop" };
+    raw.find((bot) => bot.id === machine.id)!.host = { kind: "machine", userId: "morgan@example.test", deviceId: "laptop" };
     raw.find((bot) => bot.id === fleet.id)!.host = { kind: "fleet" };
     writeFileSync(join(DATA_DIR, "bots.json"), JSON.stringify(raw));
 
     const reloaded = new Store(selection);
     expect(reloaded.bot(missing.id)?.host).toEqual({ kind: "fleet" });
-    expect(reloaded.bot(machine.id)?.host).toEqual({ kind: "machine", userId: "zachary@example.test", deviceId: "laptop" });
+    expect(reloaded.bot(machine.id)?.host).toEqual({ kind: "machine", userId: "morgan@example.test", deviceId: "laptop" });
     expect(reloaded.bot(fleet.id)?.host).toEqual({ kind: "fleet" });
 
     const saved: BotRecord[] = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"));
     expect(saved.find((bot) => bot.id === missing.id)?.host).toEqual({ kind: "fleet" });
-    expect(saved.find((bot) => bot.id === machine.id)?.host).toEqual({ kind: "machine", userId: "zachary@example.test", deviceId: "laptop" });
+    expect(saved.find((bot) => bot.id === machine.id)?.host).toEqual({ kind: "machine", userId: "morgan@example.test", deviceId: "laptop" });
     expect(saved.find((bot) => bot.id === fleet.id)?.host).toEqual({ kind: "fleet" });
   });
 

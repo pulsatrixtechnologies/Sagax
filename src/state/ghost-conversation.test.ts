@@ -23,8 +23,8 @@ class FixtureEventSource {
   send(frame: object, id?: string) { this.onmessage?.({ data: JSON.stringify(frame), lastEventId: id }); }
 }
 
-const dmWithGreg = {
-  id: "dm-greg", threadId: "t-dm-greg", name: "Gregory Jeanne", memberIds: [], humanIds: ["pr_me", "pr_greg"], peopleDm: true,
+const dmWithGaby = {
+  id: "dm-gaby", threadId: "t-dm-gaby", name: "Gaby Pelletier", memberIds: [], humanIds: ["pr_me", "pr_gaby"], peopleDm: true,
   defaultResponder: { kind: "everyone" }, bulletin: "", unread: false, createdAt: 1, messages: [],
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -53,7 +53,7 @@ beforeAll(() => {
   });
   vi.stubGlobal("EventSource", FixtureEventSource);
   vi.stubGlobal("fetch", (path: string) => {
-    if (path.startsWith("/api/bots?")) return Promise.resolve(json({ bots: [], groups: [structuredClone(dmWithGreg)] }));
+    if (path.startsWith("/api/bots?")) return Promise.resolve(json({ bots: [], groups: [structuredClone(dmWithGaby)] }));
     if (path === "/api/routines") return Promise.resolve(json({ routines: [], runs: [] }));
     if (path === "/api/webhooks") return Promise.resolve(json({ webhooks: [], attempts: [] }));
     if (path === "/api/instances") return Promise.resolve(json({ instances: [] }));
@@ -76,11 +76,11 @@ async function launch() {
 describe("launch with only a closed direct conversation", () => {
   it("shows the empty state and forgets the remembered conversation", async () => {
     saved.clear();
-    saved.set(LAST_CONVERSATION_KEY, dmWithGreg.id);
-    saved.set(SIDEBAR_HIDDEN_KEY, JSON.stringify({ items: [{ kind: "person", id: "pr_greg", at: 1 }], unhideOnMessage: { people: true, bots: false } }));
+    saved.set(LAST_CONVERSATION_KEY, dmWithGaby.id);
+    saved.set(SIDEBAR_HIDDEN_KEY, JSON.stringify({ items: [{ kind: "person", id: "pr_gaby", at: 1 }], unhideOnMessage: { people: true, bots: false } }));
     await launch();
     expect(state.hydrated).toBe(true);
-    expect(state.groups.map((group) => group.id)).toEqual([dmWithGreg.id]);
+    expect(state.groups.map((group) => group.id)).toEqual([dmWithGaby.id]);
     expect(state.selectedId).toBe("");
     expect(shown).toEqual({});
     expect(saved.has(LAST_CONVERSATION_KEY)).toBe(false);
@@ -90,11 +90,11 @@ describe("launch with only a closed direct conversation", () => {
 describe("the open direct conversation disappears", () => {
   it("empties the page when the server deletes it", async () => {
     saved.clear();
-    saved.set(LAST_CONVERSATION_KEY, dmWithGreg.id);
+    saved.set(LAST_CONVERSATION_KEY, dmWithGaby.id);
     await launch();
-    expect(state.selectedId).toBe(dmWithGreg.id);
-    expect(shown.group?.id).toBe(dmWithGreg.id);
-    stream().send({ kind: "group.deleted", groupId: dmWithGreg.id }, "run:1");
+    expect(state.selectedId).toBe(dmWithGaby.id);
+    expect(shown.group?.id).toBe(dmWithGaby.id);
+    stream().send({ kind: "group.deleted", groupId: dmWithGaby.id }, "run:1");
     await settle();
     expect(state.selectedId).toBe("");
     expect(shown).toEqual({});

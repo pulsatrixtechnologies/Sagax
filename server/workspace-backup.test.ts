@@ -390,7 +390,7 @@ describe("encrypted full workspace backups", () => {
     const source = directory();
     const sourceRegistry = new PrincipalRegistry({ path: join(source, "principals.json") });
     const sourceLocal = sourceRegistry.localOperator("old@example.com");
-    const zach = sourceRegistry.forAccount({ email: "zach@example.com" });
+    const morgan = sourceRegistry.forAccount({ email: "morgan@example.com" });
     const exported = await createWorkspaceBackup(source, { password: PASSWORD });
     const target = directory();
     const targetRegistry = new PrincipalRegistry({ path: join(target, "principals.json") });
@@ -401,7 +401,7 @@ describe("encrypted full workspace backups", () => {
     const after = new PrincipalRegistry({ path: join(target, "principals.json") });
     expect(after.local()?.id).toBe(local.id);
     expect(after.list().filter((p) => p.local)).toHaveLength(1);
-    expect(after.byId(zach.id)).toMatchObject({ email: "zach@example.com" });
+    expect(after.byId(morgan.id)).toMatchObject({ email: "morgan@example.com" });
     expect(after.byId(sourceLocal.id)).toMatchObject({ email: "old@example.com" });
     expect(after.byId(sourceLocal.id)?.local).toBeUndefined();
   });

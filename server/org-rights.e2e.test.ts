@@ -13,12 +13,15 @@
 //   S4-4  removal from the team through the directory, then through a
 //         refreshed id_token, narrows at once
 //   S4-9  a person's own Codex subscription pays for their own turns, on
-//         their bots and on bots shared with them, never for someone else
+//         their bots and on bots shared with them; for someone else only
+//         when its owner pays (#1137: the default on the owner's own
+//         subscription), and each person pays (with their own default
+//         model) once the owner chooses so
 //   S4-10 a section shared with a team; a room with a team
 //   S4-12 a shared section opens only what its owners consented to; a
 //         read-only member changes nothing; moving rooms needs moderators
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -372,12 +375,43 @@ posixOnly("Perspicax organization, slice 4: rights, teams, owner keys, sections"
     expect((await api("GET", `/api/me/engines/codex/login/status?flowId=${encodeURIComponent(flowId)}`, bob)).status).toBe(404);
     // Codex has no organization key (login-backed): bob's turns there need his own
     expect((await api("GET", "/api/me/engines", bob)).body.engines.find((e: { instanceId: string }) => e.instanceId === "codex")).toMatchObject({ subscription: { signedIn: false }, orgKey: false, myTurns: "none" });
-    // bob speaking to erin's codex bot: not her subscription; the card is his to act on
+    // #1137: a bot on its owner's own subscription is paid by its owner by
+    // default: bob writes to erin's codex bot and gets an answer on erin's
+    // subscription, needing none of his own
     const w = await createBot(erin, "Wendy", "codex");
     expect((await api("PUT", `/api/bots/${w.id}/grants`, erin, { target: `user:${ids.bob}`, level: "use" })).status).toBe(200);
+    expect((await api("GET", `/api/bots/${w.id}/runtime-settings`, erin)).body.settings.turnPayer).toBe("owner");
+    expect((await api("GET", "/api/bots", bob)).body.bots.find((b: { id: string }) => b.id === w.id)).toMatchObject({ turnPayerDefault: "owner" });
+    // only erin chooses who pays for her bot
+    expect((await api("PATCH", `/api/bots/${w.id}/runtime-settings`, bob, { turnPayer: "speaker" })).status).toBe(403);
     expect((await api("POST", `/api/bots/${w.id}/messages`, bob, { text: "hi wendy" })).status).toBe(202);
+    await waitFor(async () => (await botOf(bob, w.id))?.messages.some((m) => m.role === "bot" && m.kind === "text" && m.text), 30_000);
+    const ownerPaid = await waitFor(async () => (await botOf(bob, w.id))?.messages.find((m) => m.kind === "digest" && (m as { digest?: { access?: unknown } }).digest?.access) ?? null, 15_000);
+    expect((ownerPaid as unknown as { digest: { access: unknown } }).digest.access).toEqual({ via: "subscription", payer: "owner", payerPrincipalId: ids.erin });
+    expect((await botOf(bob, w.id))?.messages.some((m) => m.kind === "access")).toBe(false);
+    // isolation: bob's conversation stays his; erin paying gives her no read of it
+    expect(JSON.stringify((await botOf(erin, w.id))?.messages ?? [])).not.toContain("hi wendy");
+    // erin chooses that each person pays: bob's next message is his to pay,
+    // and the card says so, names the bot and offers to choose a model
+    expect((await api("PATCH", `/api/bots/${w.id}/runtime-settings`, erin, { turnPayer: "speaker" })).status).toBe(200);
+    expect((await api("POST", `/api/bots/${w.id}/messages`, bob, { text: "hi again wendy" })).status).toBe(202);
     const card = await waitFor(async () => (await botOf(bob, w.id))?.messages.find((m) => m.kind === "access") ?? null);
-    expect(card.access).toMatchObject({ reason: "no_access", payer: "speaker", payerPrincipalId: ids.bob, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/pulsabot/keys` });
+    expect(card.access).toMatchObject({ reason: "no_access", payer: "speaker", payerPrincipalId: ids.bob, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/credentials?kind=model`, botName: "Wendy", speakerPays: true });
+    expect(card.access).not.toHaveProperty("ownerPays");
+    // with a default model of his own (his first starred one: Claude, on his
+    // own key), the bot answers bob on it instead of the card
+    const starred = await api("PATCH", "/api/me/preferences", bob, { set: { "sagax.modelFavorites.v1": JSON.stringify([["claude", "fake-model"]]) } });
+    expect(starred.status, starred.text).toBe(200);
+    const accessCards = async () => ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.kind === "access").length;
+    const repliesBefore = ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.role === "bot" && m.kind === "text" && m.text).length;
+    const cardsBefore = await accessCards();
+    rmSync(dump, { force: true });
+    expect((await api("POST", `/api/bots/${w.id}/messages`, bob, { text: "third time wendy" })).status).toBe(202);
+    await waitFor(async () => ((await botOf(bob, w.id))?.messages ?? []).filter((m) => m.role === "bot" && m.kind === "text" && m.text).length > repliesBefore, 30_000);
+    await waitFor(async () => existsSync(dump));
+    expect((JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe(BOB_KEY);
+    expect(await accessCards()).toBe(cardsBefore);
+    expect(log).not.toContain(BOB_KEY);
     expect((await api("POST", "/api/me/engines/codex/login/sign-out", erin, {})).status).toBe(200);
     expect(existsSync(join(dir, ".pulsabot-login.json"))).toBe(false);
   }, 60_000);

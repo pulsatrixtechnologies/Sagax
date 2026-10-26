@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { resolveEngineAccess } from "./engine-credentials.ts";
+
 import {
   ClaudeAiConnectorInventory,
   claudeAiConnectorsForTurn,
@@ -82,6 +84,17 @@ describe("whose account connectors a turn reaches (review of #943, point 5)", ()
       expect(claudeAiConnectorsForTurn(input)).toBe(false);
       expect(grokCloudConnectorsForTurn(input)).toBe(false);
     }
+  });
+  it("#1137: the owner pays with their subscription for someone else: foreign, the owner's connectors never mount", () => {
+    const plan = resolveEngineAccess({
+      identity: "perspicax", speaker: { origin: "person", principalId: BOB }, owner: { principalId: ADA }, payerMode: "owner",
+      instance: { instanceId: "claude", driver: "claudeAgent", installed: true },
+      subscriptionSignedIn: (pid) => pid === ADA, hasKey: () => false, keyBacked: false,
+    });
+    expect(plan).toMatchObject({ ok: true, via: "subscription", payerPrincipalId: ADA, ownerPays: true });
+    const input = { ...base, driver: "claudeAgent", via: "subscription" as const, payerPrincipalId: plan.ok ? plan.payerPrincipalId! : "", speaker: { origin: "person" as const, principalId: BOB } };
+    expect(accountConnectorsForTurn(input)).toBe("foreign");
+    expect(claudeAiConnectorsForTurn(input)).toBe(false);
   });
   it("a key, a solo Grok turn or another engine: none", () => {
     expect(accountConnectorsForTurn({ ...base, driver: "grokAgent", via: "org-key", speaker: { origin: "person", principalId: BOB } })).toBe("none");

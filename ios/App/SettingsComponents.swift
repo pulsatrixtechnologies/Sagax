@@ -41,6 +41,8 @@ struct SettingsPage<Trailing: View, Content: View>: View {
     var leading: Leading = .back
     var contentTop: CGFloat = SettingsMetrics.firstCardTop
     var scrollable = true
+    /// The trailing view takes the rest of the header row (the root's search).
+    var trailingFills = false
     @ViewBuilder var trailing: () -> Trailing
     @ViewBuilder var content: () -> Content
 
@@ -95,8 +97,14 @@ struct SettingsPage<Trailing: View, Content: View>: View {
                     .padding(.leading, SettingsMetrics.titleGap)
                     .accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: 8)
-            trailing()
+            if trailingFills {
+                trailing()
+                    .frame(maxWidth: .infinity)
+                    .padding(.leading, SettingsMetrics.titleGap)
+            } else {
+                Spacer(minLength: 8)
+                trailing()
+            }
         }
         .padding(.leading, SettingsMetrics.headerInset)
         .padding(.trailing, SettingsMetrics.headerInset)

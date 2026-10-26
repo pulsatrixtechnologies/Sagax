@@ -1490,6 +1490,61 @@ them with the link token (`server/perspicax-memory.ts`, `linkPostJson` in
   token, prompt or answer body is logged. `feedback` (`POST
   /api/v1/memory/feedback`) is in the client, not wired to a turn yet.
 
+## Who pays for a shared bot's replies (#1137, 2026-10-26)
+
+Decision, revising 2026-10-01 ("the owner's credentials never pay for
+the people the bot is shared with"): each bot says who pays for its replies
+on an organization server (`shared/turn-payer.ts`), and a group may override
+it for one of its bots.
+
+- "Le propriétaire" (`owner`): the owner's engine, subscription, key or the
+  local model of the owner's computer serve every known person who writes to
+  the bot, and the hops that speak for them (`turnPayer` in
+  `server/engine-credentials.ts`, plan `ownerPays`). The owner's model is
+  used, never a viewer's own pin. An unknown person never makes the owner
+  pay. Routines are unchanged (always the owner).
+- "Chaque personne" (`speaker`): each person pays (the 2026-10-01 rule).
+  When the bot's model cannot run for them (no credentials of theirs, or a
+  local model of someone else's computer not shared with them), the bot
+  answers with their default model: the first model they starred
+  (`sagax.modelFavorites.v1`) that they can run, for that turn only
+  (`speakerDefaultSelection` in `server/index.ts`, direct and room turns).
+- Default when the bot has no choice: the owner when the bot runs on a
+  local model of the owner's computer or on an engine the owner signed in to
+  with their own subscription; otherwise each person
+  (`defaultTurnPayerFor`, sent as `turnPayerDefault` on the wire bot).
+- Local model of the owner: when the owner pays, the turn runs under the
+  owner's desktop-model grant (`desktopModelPersonFor`), so the relay of the
+  owner's Mac serves it even with Modèles locaux > share off; nobody else
+  reaches the model directly. The owner's Mac offline: the card
+  `cause: "owner_model_offline"` with the owner's name ("Le modèle de X n'est
+  pas joignable en ce moment"), for the owner and the person who wrote
+  (`accessCardAudience` adds `speakerPrincipalId` when `ownerPays`).
+- The access card for a person writing to someone else's bot that each
+  person pays for says so, names the bot (`botName`, `speakerPays`) and
+  offers "Choisir un modèle" (the model window: their own model for that
+  bot). "Ajouter ma clé dans Perspicax" points at the console page itself,
+  `/console/credentials?kind=model` (anthropic, openai, xai, google,
+  moonshot); `/console/pulsabot/keys` only redirected there.
+- Isolation: who pays changes no visibility, and the owner's engine
+  connectors are never mounted for someone else (payer is not the speaker:
+  "foreign", `server/harness-connectors.ts`). Keys stay in the turn's
+  environment on the server, host tools withheld as before.
+- Setting: `PATCH /api/bots/:id/runtime-settings { turnPayer: owner | speaker
+  | null }` (the owner without an admin, or an admin; audited), bot editor >
+  Model > Qui paie les réponses (`BotPayerSettings.tsx`; iOS
+  `BotPayerSetting.swift`). Group: `PUT /api/groups/:id/bot-payer { botId,
+  turnPayer }`, the bot's owner or an admin (`server/routes/group-bot-payer.ts`,
+  `GroupBotPayers.tsx` in the group panel's Details). `sagax_settings`:
+  `bot.turnPayer`, `group.botPayer`.
+- Tests: `shared/turn-payer.test.ts`, `server/engine-credentials.test.ts`
+  (owner pays), `server/desktop-local-models.test.ts` (owner's grant, offline),
+  `server/engine-access.test.ts`, `server/harness-connectors.test.ts`
+  (isolation), `server/routes/bot-runtime-settings.test.ts`,
+  `server/routes/group-bot-payer.test.ts`, `src/components/AccessCard.payer.test.ts`,
+  S4-9 in `server/org-rights.e2e.test.ts` (owner's subscription by default,
+  each person with their default model).
+
 ## Per-bot runtime settings (2026-10-15)
 
 Parallel conversations, Automatic recovery and Tool access are each bot's
@@ -1614,7 +1669,7 @@ Covered by `src/components/SettingsModal.orgCleanup.test.ts`,
   `updateBotDefault` (it writes the bot's model) answer the same 403, and so
   do legacy `POST` and `DELETE /api/bots/:id/direct-grants` (MA-5, MA-6).
   A thread title stays allowed. They still talk to the bots shared with
-  them (speaker pays). An organization admin is never narrowed. The UI hides
+  them (who pays: the bot's setting, #1137). An organization admin is never narrowed. The UI hides
   New bot and says "Votre administrateur vous permet d'utiliser les robots
   partagés seulement" (`bots.readOnly.notice`; MA-3, MA-4,
   `server/authz.test.ts`).

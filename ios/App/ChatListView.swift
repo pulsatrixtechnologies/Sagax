@@ -1323,6 +1323,13 @@ extension ChatListView {
                 AnyView(legacyHome)
             }
         }
+        // Settings open full screen (JC, 2026-10-26): the home (avatar, search,
+        // bottom bar, island) hides at once, with no animation, so nothing of
+        // it crosses the Settings header. It comes back when Settings closes.
+        .opacity(showingSettings ? 0 : 1)
+        .allowsHitTesting(!showingSettings)
+        .accessibilityHidden(showingSettings)
+        .animation(nil, value: showingSettings)
         .overlay { AnyView(homeOverlays) }
         .task(id: session.connection?.id) {
             await session.loadAccount()
@@ -1493,15 +1500,27 @@ extension ChatListView {
 
     // MARK: Header
 
+    /// The avatar, taken out of the tree (not just hidden) while Settings is
+    /// open: the account menu folds back into it, and that fold, drawn by the
+    /// system, would otherwise cross the Settings header (JC, 2026-10-26).
+    @ViewBuilder
+    private var homeAccountButton: some View {
+        if showingSettings {
+            Color.clear.frame(width: Theme.Metric.glassLarge, height: Theme.Metric.glassLarge)
+        } else {
+            HomeAccountButton(select: selectAccount)
+        }
+    }
+
     private var standardHeader: some View {
         VStack(spacing: Theme.Metric.controlGap) {
             HStack(spacing: Theme.Metric.controlGap) {
                 if avatarAtTrailingCorner {
                     // the iPad: the window controls own the leading corner
                     Spacer(minLength: 0)
-                    HomeAccountButton(select: selectAccount)
+                    homeAccountButton
                 } else {
-                    HomeAccountButton(select: selectAccount)
+                    homeAccountButton
                     Spacer(minLength: 0)
                     if rosterChromeAtTop {
                         standardChromeTrailing
@@ -1826,7 +1845,9 @@ extension ChatListView {
                 })
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .background(Theme.bg.ignoresSafeArea())
-                .transition(.move(edge: .bottom))
+                // No slide: the home is gone at once, and Settings takes its
+                // place whole, so no animation crosses another.
+                .transition(.identity)
                 .zIndex(1)
             }
             if showingCreateBot {

@@ -4,25 +4,25 @@ import { requiredScope } from "./request-auth.ts";
 
 describe("direct grants", () => {
   it("lets the owner open a direct and refuses anyone else", () => {
-    const opened = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "zachary@example.test", grants: [] });
+    const opened = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] });
     expect(opened.ok).toBe(true);
-    expect(grantDirect({ actorId: "ada@example.test", ownerUserId: "jc", botId: "aurora", userId: "zachary@example.test", grants: [] })).toEqual({
+    expect(grantDirect({ actorId: "ada@example.test", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] })).toEqual({
       ok: false,
       error: "not-owner",
     });
   });
 
   it("does not duplicate the same pair", () => {
-    const first = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "zachary@example.test", grants: [] });
+    const first = grantDirect({ actorId: "jc", ownerUserId: "jc", botId: "aurora", userId: "morgan@example.test", grants: [] });
     expect(first).toEqual({
       ok: true,
-      grants: [{ botId: "aurora", userId: "zachary@example.test" }],
+      grants: [{ botId: "aurora", userId: "morgan@example.test" }],
     });
     expect(grantDirect({
       actorId: "jc",
       ownerUserId: "jc",
       botId: "aurora",
-      userId: "zachary@example.test",
+      userId: "morgan@example.test",
       grants: first.ok ? first.grants : [],
     })).toEqual(first);
   });
@@ -31,24 +31,24 @@ describe("direct grants", () => {
     expect(grantDirectRoute({
       actorId: "jc",
       bot: { id: "aurora", ownerUserId: "jc", directGrants: [] },
-      userId: "zachary@example.test",
-    })).toEqual({ status: 200, directGrants: ["zachary@example.test"] });
+      userId: "morgan@example.test",
+    })).toEqual({ status: 200, directGrants: ["morgan@example.test"] });
     expect(grantDirectRoute({
       actorId: "jc",
-      bot: { id: "aurora", ownerUserId: "jc", directGrants: ["zachary@example.test"] },
-      userId: "zachary@example.test",
-    })).toEqual({ status: 200, directGrants: ["zachary@example.test"] });
+      bot: { id: "aurora", ownerUserId: "jc", directGrants: ["morgan@example.test"] },
+      userId: "morgan@example.test",
+    })).toEqual({ status: 200, directGrants: ["morgan@example.test"] });
     expect(grantDirectRoute({
       actorId: "jc",
       bot: { id: "aurora" },
-      userId: "zachary@example.test",
+      userId: "morgan@example.test",
     })).toEqual({ status: 403, error: "not-owner" });
     expect(grantDirectRoute({
       actorId: "ada@example.test",
       bot: { id: "aurora", ownerUserId: "jc" },
-      userId: "zachary@example.test",
+      userId: "morgan@example.test",
     })).toEqual({ status: 403, error: "not-owner" });
-    expect(grantDirectRoute({ actorId: "jc", userId: "zachary@example.test" })).toEqual({ status: 404 });
+    expect(grantDirectRoute({ actorId: "jc", userId: "morgan@example.test" })).toEqual({ status: 404 });
   });
 
   it("lets a member owner post a grant at client scope", () => {
@@ -62,7 +62,7 @@ describe("direct grants", () => {
       bot: (id) => (id === "aurora" ? { id, ownerUserId: "pr_owner", directGrants: [] } : undefined),
       patchBot: (id, patch) => patched.push({ id, ...patch }),
       actorId: (auth) => (auth as unknown as { actor: string }).actor,
-      resolveUserId: (ref) => { resolved.push(ref); return ref.includes("@") && ref.length <= 320 ? "pr_zach" : null; },
+      resolveUserId: (ref) => { resolved.push(ref); return ref.includes("@") && ref.length <= 320 ? "pr_morgan" : null; },
     });
     const call = async (actor: string, userId: string) => {
       let answer: { status: number; body: unknown } | undefined;
@@ -80,12 +80,12 @@ describe("direct grants", () => {
     };
     const huge = `${"a".repeat(400)}@example.com`;
     expect(await call("", huge)).toEqual({ status: 403, body: { error: "not-owner" } });
-    expect(await call("pr_other", "zach@example.com")).toEqual({ status: 403, body: { error: "not-owner" } });
+    expect(await call("pr_other", "morgan@example.com")).toEqual({ status: 403, body: { error: "not-owner" } });
     expect(resolved).toEqual([]);
     expect((await call("pr_owner", huge)).status).toBe(400);
     expect((await call("pr_owner", "bob")).status).toBe(400);
-    expect(await call("pr_owner", "zach@example.com")).toEqual({ status: 200, body: { directGrants: ["pr_zach"] } });
-    expect(patched).toEqual([{ id: "aurora", directGrants: ["pr_zach"] }]);
+    expect(await call("pr_owner", "morgan@example.com")).toEqual({ status: 200, body: { directGrants: ["pr_morgan"] } });
+    expect(patched).toEqual([{ id: "aurora", directGrants: ["pr_morgan"] }]);
   });
 
   it("removes a grant: owner only, 404 when absent", () => {

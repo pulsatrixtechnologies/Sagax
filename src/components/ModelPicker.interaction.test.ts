@@ -497,7 +497,7 @@ describe("on an organization server", () => {
     expect(html).not.toContain("kept on the organization server for you only");
     // The small link to their keys, while no subscription is signed in.
     expect(html).toContain("data-engine-keys-link");
-    expect(html).toContain(`${issuer}/console/pulsabot/keys`);
+    expect(html).toContain(`${issuer}/console/credentials?kind=model`);
     // The server's sign-in card is not the person's: models stay listed.
     expect(html).toContain(">Opus 5.5<");
     expect(html).not.toContain("2 models will appear after setup.");

@@ -37,8 +37,8 @@ Téléchargez Sagax depuis la page **Download** du dépôt :
 - **macOS** : ouvrez le `.dmg` (Apple Silicon `arm64` ou Intel `x64`) et
   glissez Sagax dans Applications. Signée et notariée par Apple.
 - **Windows** (x64 et arm64, un seul programme d'installation) : lancez le
-  `-setup.exe`. Non signé pour l'instant : dans SmartScreen, choisissez
-  **Informations complémentaires**, puis **Exécuter quand même**.
+  `-setup.exe`. Signé depuis la 0.8.3 ; si SmartScreen avertit quand même,
+  choisissez **Informations complémentaires**, puis **Exécuter quand même**.
 
 Au premier lancement, un **Premier démarrage** guidé enchaîne les trois vraies
 étapes ci-dessous. Il est refermable : un bouton **Plus tard** et la touche
@@ -119,8 +119,8 @@ Download Sagax from the repo's **Download** section:
 
 - **macOS**: open the `.dmg` (Apple Silicon `arm64` or Intel `x64`) and drag
   Sagax into Applications. Signed and notarized by Apple.
-- **Windows** (x64 and arm64, one installer): run the `-setup.exe`. Unsigned
-  for now: in SmartScreen choose **More info**, then **Run anyway**.
+- **Windows** (x64 and arm64, one installer): run the `-setup.exe`. Signed
+  from 0.8.3; if SmartScreen still warns, choose **More info**, then **Run anyway**.
 
 On first launch, a guided **First run** walks the three real steps below. It is
 dismissible: a **Later** button and Escape close it, and it does not come back
