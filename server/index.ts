@@ -167,6 +167,7 @@ import {
   openMessageFolderEntry,
   referencedFileName,
 } from "./message-file.ts";
+import { createThreadFilePins } from "./thread-file-pins.ts";
 import { activePath, listThreadFiles, threadFileRefs, writtenFilesForMessage, type ThreadFileRef } from "./thread-files.ts";
 import {
   avatarGenerationRequestSchema,
@@ -1739,6 +1740,8 @@ const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // Artifacts: the widgets bots saved (server/artifacts.ts). Clients get ids
 // only and fetch the change with their own rights.
 const artifactStore = createArtifactStore({ file: join(DATA_DIR, "artifacts.json"), onChange: (frame) => broadcast({ ...frame }) });
+// The files pinned in a conversation's Library tab (server/thread-file-pins.ts).
+const threadFilePins = createThreadFilePins({ file: join(DATA_DIR, "thread-file-pins.json") });
 // 2026-10-16: people's custom auto-review rules, in their own words
 // (shared/custom-rules.ts, server/custom-rules-review.ts).
 const customRules = new CustomRuleStore(join(DATA_DIR, "custom-approval-rules.json"));
@@ -41743,7 +41746,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         threadFileRefsFor(threadId),
         (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref)),
       );
-      return json(res, 200, { files });
+      const pinned = threadFilePins.ids(threadId);
+      return json(res, 200, { files: files.map((file) => pinned.has(file.id) ? { ...file, pinned: true } : file) });
+    }
+
+    // Pin or unpin one of those files: `{ "pinned": true | false }`. The pin
+    // is kept on the server so it follows the person to their other devices.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/files\/([a-f0-9]{24})\/pin$/);
+    if (m && method === "POST") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      const body = await readBody(req, 1024);
+      if (typeof body?.pinned !== "boolean") return json(res, 400, { error: "pinned must be true or false" });
+      if (!threadFileRefsFor(threadId).some((candidate) => candidate.id === m![2])) {
+        return json(res, 404, { error: "no such file in this conversation" });
+      }
+      if (!threadFilePins.set(threadId, m[2]!, body.pinned)) return json(res, 409, { error: "too many pinned files in this conversation" });
+      return json(res, 200, { ok: true, pinned: body.pinned });
     }
 
     // One of those files by its opaque id: `preview=1` streams an image
