@@ -1202,6 +1202,8 @@ export interface InstanceInfo {
 }
 
 export type AppSettingsSection =
+  /** Who is signed in, with Security keys and the vault under it (2026-10-26). */
+  | "account"
   | "general"
   | "memory"
   | "privacy"
@@ -1330,7 +1332,7 @@ export interface AppState {
   /** A place inside Connect apps to open at: "orgAccess" is Manage >
    * Advanced > Organization sources and access (an old link to Settings >
    * Organization > Plugins and GitHub lands there). */
-  pluginsPage: "orgAccess" | null;
+  pluginsPage: "orgAccess" | "pages" | null;
   /** The Triggers pop-up (webhooks, as a sentence: when this happens, that
    * bot should…). */
   triggersOpen: boolean;
@@ -1754,7 +1756,7 @@ export type Action =
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null; focusApps?: string[] }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | "pages" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "toggleComputer"; open?: boolean }
@@ -2931,7 +2933,7 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsSurface: action.surface ?? state.pluginsSurface,
         // A bot panel opens it on that bot; a change of surface while it is
         // open keeps the bot it is on.
-        pluginsBotId: !open ? null : action.page === "orgAccess" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
+        pluginsBotId: !open ? null : action.page === "orgAccess" || action.page === "pages" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? action.page ?? null : null,
         pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),
@@ -3546,7 +3548,7 @@ export const initialState: AppState = {
   inspectorOpen: false,
   activityOpen: false,
   appSettingsOpen: false,
-  appSettingsSection: "general",
+  appSettingsSection: "account",
   achievementsOpen: false,
   botCatalogOpen: false,
   botCatalogTarget: null,

@@ -5981,6 +5981,7 @@
   "settings.section.decisionModel": "Decision model",
   "settings.section.experimental": "Experimental",
   "settings.section.general": "General",
+  "settings.section.account": "Account",
   "settings.section.mail": "Email",
   "settings.section.notifications": "Notifications",
   "settings.section.organization": "Organization",

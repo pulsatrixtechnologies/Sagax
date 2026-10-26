@@ -101,6 +101,15 @@ describe("Plugins panel views", () => {
     expect(html).toContain("Created locally · Writes notes");
   });
 
+  // 2026-10-26: Published pages moved here from Settings, under Connect apps.
+  it("manage page: Published pages sit after the skills, outside Advanced, and not on one bot's plugins", () => {
+    const base = { items, countLabel: () => "1 connector", sourceLabel: (source: string) => source, onBack: noop, onOpenItem: noop, onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop };
+    const html = renderToStaticMarkup(createElement(ManageView, { ...base, pages: createElement("div", { "data-pages-marker": "" }) }));
+    expect(html).toMatch(/data-plugins-skills[\s\S]*data-plugins-pages[\s\S]*Published pages[\s\S]*data-pages-marker[\s\S]*<details[^>]*data-plugins-advanced/);
+    const bot = renderToStaticMarkup(createElement(ManageView, { ...base, pluginsOnly: true, pages: createElement("div", { "data-pages-marker": "" }) }));
+    expect(bot).not.toContain("data-plugins-pages");
+  });
+
   it("manage page: a card that is not connected says so, muted", () => {
     const offline = buildPluginItems({ servers: [{ name: "vault", enabled: true, url: "https://vault.example.net/mcp", auth: "required" }] });
     const html = renderToStaticMarkup(createElement(ManageView, {

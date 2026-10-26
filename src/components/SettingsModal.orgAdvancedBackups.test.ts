@@ -100,7 +100,7 @@ describe("Settings search", () => {
     const section = (id: string) => SECTIONS.find((entry) => entry.id === id)!;
     for (const query of ["accès complet", "full access", "approbations", "invitation", "cet ordinateur"]) expect(sectionMatches(section("organization"), query), query).toBe(true);
     for (const query of ["sauvegarde", "restaurer", "mot de passe"]) expect(sectionMatches(section("backups"), query), query).toBe(true);
-    for (const query of ["nettoyage", "journaux", "diagnostic"]) expect(sectionMatches(section("general"), query), query).toBe(true);
+    for (const query of ["nettoyage", "journaux", "diagnostic"]) expect(sectionMatches(section("account"), query), query).toBe(true);
     // 2026-10-26: no Full access card any more
     expect(cardsMatching("accès complet")).not.toContain("organization.fullAccess");
     expect(cardsMatching("restaurer")).toContain("backups.import");

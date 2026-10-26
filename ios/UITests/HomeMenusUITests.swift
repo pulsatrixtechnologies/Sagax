@@ -174,7 +174,7 @@ final class HomeMenusUITests: XCTestCase {
             XCTAssertTrue(app.buttons["account-menu.\(id)"].waitForExistence(timeout: 5), id)
         }
         app.buttons["account-menu.settings"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["settings-general"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-appearance"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.descendants(matching: .any)["settings-advanced"].exists, "no Advanced junk drawer")
     }
 
