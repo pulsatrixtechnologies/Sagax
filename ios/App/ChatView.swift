@@ -749,6 +749,12 @@ struct ChatView: View {
                 }
                 .overlay(alignment: .top) { pinnedBanner }
                 .overlay(alignment: .top) { chatHeaderSlot }
+                // a failed routine run or a routine's access card: a passing
+                // banner under the top bar, never a row (TransientNotices)
+                .overlay(alignment: .top) {
+                    TransientNoticeBanner(chat: current, messages: messages, openLink: openLink, openThread: openThread)
+                        .padding(.top, Self.topBarHeight + 6)
+                }
                 .overlay(alignment: .bottom) {
                     if !follow.following, !transcript.isEmpty {
                         JumpToLatestButton {

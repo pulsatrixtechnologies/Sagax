@@ -425,6 +425,9 @@ public func transcriptRows(_ messages: [Message], detail: ActivityDetail, showTh
             break
         }
         if isHiddenStatusNotice(message) { continue }
+        // A failed routine run and a routine's access card pass as a
+        // banner (TransientNotices), never a row.
+        if TransientNotices.isTransient(message) { continue }
         if !showThreads, message.threadRef != nil, message.tool != nil { continue }
         if hiddenIDs.contains(message.id) {
             join(message)

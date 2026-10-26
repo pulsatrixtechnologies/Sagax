@@ -293,6 +293,22 @@ describe("thread control placement", () => {
     }
   });
 
+  // A failed routine run and a routine's access card pass as a banner
+  // (TransientNotice), never a row (shared/transient-notices.ts).
+  it("draws no row for a failed routine run or a routine's access card", () => {
+    const messages: Bot["messages"] = [
+      { id: "run-failed", role: "bot", kind: "routine.run", at: 1, text: "Morning digest failed", routineRun: { runId: "r1", routineId: "rt1", routineName: "Morning digest", status: "failed", error: "engine unavailable" } },
+      { id: "run-access", role: "bot", kind: "access", at: 2, access: { reason: "no_access", engine: "Claude", botId: bot.id, ownerPrincipalId: "p1", routine: true, subscriptionSignIn: true } },
+      { id: "run-done", role: "bot", kind: "routine.run", at: 3, routineRun: { runId: "r2", routineId: "rt1", routineName: "Weekly summary", status: "completed", summary: "All good" } },
+    ] as Bot["messages"];
+    const markup = renderToStaticMarkup(createElement(ChatView, { bot: { ...bot, busy: false, messages } }));
+    expect(markup).not.toContain('data-mid="run-failed"');
+    expect(markup).not.toContain('data-mid="run-access"');
+    expect(markup).not.toContain("Morning digest");
+    expect(markup).not.toContain("can't run");
+    expect(markup).toContain('data-mid="run-done"');
+  });
+
   it("hides tool-call chips on iOS even when the server flag is on", () => {
     fixture.showToolCalls = true;
     const previous = globalThis.navigator;

@@ -1,0 +1,47 @@
+// Which passing notice the chat shows now (shared/transient-notices.ts): a
+// routine run that failed, or a routine's access card. Each shows once: an id
+// is remembered as shown the moment it appears, so a reload, another window
+// or the thread opened later never brings it back.
+import { isRoutineAccessNotice, isTransientChatNotice, routineAccessSettled, TRANSIENT_NOTICE_RULES } from "../../shared/transient-notices";
+import type { Message } from "@/state/store";
+
+const STORAGE_KEY = "sagax.transientNotices.shown";
+const KEEP = 200;
+
+/** The newest notice not shown yet that is still news. */
+export function pickTransientNotice(messages: readonly Message[], now: number, shown: ReadonlySet<string>): Message | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (!isTransientChatNotice(message) || shown.has(message.id)) continue;
+    if (now - message.at > TRANSIENT_NOTICE_RULES.freshMs) return null;
+    if (isRoutineAccessNotice(message) && routineAccessSettled(message, messages.slice(index + 1))) continue;
+    return message;
+  }
+  return null;
+}
+
+/** The notice on screen leaves as soon as its access is settled. */
+export function transientNoticeSettled(notice: Message, messages: readonly Message[]): boolean {
+  if (!isRoutineAccessNotice(notice)) return false;
+  const index = messages.findIndex((message) => message.id === notice.id);
+  return index >= 0 && routineAccessSettled(notice, messages.slice(index + 1));
+}
+
+export function readShownNotices(): Set<string> {
+  try {
+    const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(list) ? list.filter((id): id is string => typeof id === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function rememberShownNotice(shown: Set<string>, id: string): void {
+  shown.add(id);
+  try {
+    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify([...shown].slice(-KEEP)));
+  } catch {
+    // private window or blocked storage: this window still remembers it
+  }
+}

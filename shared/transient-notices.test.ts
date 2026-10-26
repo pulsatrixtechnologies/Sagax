@@ -1,0 +1,34 @@
+// The passing notices (shared/transient-notices.ts) and the fixture the iOS
+// core reads the same rules from.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { isTransientChatNotice, routineAccessSettled, TRANSIENT_NOTICE_RULES } from "./transient-notices.ts";
+
+type FixtureMessage = Parameters<typeof isTransientChatNotice>[0] & { id: string; at: number; from?: { botId?: string } };
+const fixture = JSON.parse(readFileSync(join(import.meta.dirname, "../ios/Tests/CompanionCoreTests/Fixtures/transient-notices.json"), "utf8")) as {
+  routineRunStatuses: string[]; routineGoalStatuses: string[]; visibleMs: number; freshMs: number;
+  transient: FixtureMessage[]; rows: FixtureMessage[];
+};
+
+describe("transient notices", () => {
+  it("is the list the iOS core reads (Fixtures/transient-notices.json)", () => {
+    expect(fixture.routineRunStatuses).toEqual([...TRANSIENT_NOTICE_RULES.routineRunStatuses]);
+    expect(fixture.routineGoalStatuses).toEqual([...TRANSIENT_NOTICE_RULES.routineGoalStatuses]);
+    expect(fixture.visibleMs).toBe(TRANSIENT_NOTICE_RULES.visibleMs);
+    expect(fixture.freshMs).toBe(TRANSIENT_NOTICE_RULES.freshMs);
+  });
+
+  it("passes a failed or missed routine run and a routine's access card, keeps the rest as rows", () => {
+    for (const message of fixture.transient) expect(isTransientChatNotice(message), message.id).toBe(true);
+    for (const message of fixture.rows) expect(isTransientChatNotice(message), message.id).toBe(false);
+  });
+
+  it("settles a routine access notice once the same bot's routine has run since", () => {
+    const access = fixture.transient.find((message) => message.id === "access")! as FixtureMessage & { access: { botId: string } };
+    const done = { ...fixture.rows[0]!, at: 2000, from: { botId: "b1" } };
+    expect(routineAccessSettled(access, [done])).toBe(true);
+    expect(routineAccessSettled(access, [{ ...done, from: { botId: "b2" } }])).toBe(false);
+    expect(routineAccessSettled(access, [{ ...fixture.transient[0]!, at: 2000, from: { botId: "b1" } }])).toBe(false);
+  });
+});
