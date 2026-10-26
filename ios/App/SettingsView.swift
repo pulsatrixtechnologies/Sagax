@@ -14,7 +14,7 @@ import UIKit
 import MessageUI
 
 /// The sheet's pages.
-enum SettingsRoute: Hashable {
+enum SettingsRoute: String, Hashable {
     case account, usage, plugins, rules, approvalGrants, timeZone, botComputer, pages, appearance, language, haptics, general, experimental, notifications, privacy, vault, securityKeys
 }
 
@@ -65,27 +65,32 @@ struct SettingsView: View {
         }
         .task {
             model.attach(session)
-            if let route = Self.initialRoute, navigator.routes.isEmpty {
+            if !Self.initialRoutes.isEmpty, navigator.routes.isEmpty {
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
-                withTransaction(transaction) { navigator.routes = [route] }
+                withTransaction(transaction) { navigator.routes = Self.initialRoutes }
             }
             await model.load()
         }
     }
 
-    /// The parity harness opens 15, 16 and 21 one level in.
-    private static var initialRoute: SettingsRoute? {
+    /// The parity harness opens 15, 16 and 21 one level in; a capture of
+    /// any level passes `-paritySettingsRoute bots/rules` (route names,
+    /// outermost first) with 12-settings-top.
+    private static var initialRoutes: [SettingsRoute] {
 #if DEBUG
+        if ParityLaunch.current != nil, let path = UserDefaults.standard.string(forKey: "paritySettingsRoute") {
+            return path.split(separator: "/").compactMap { SettingsRoute(rawValue: String($0)) }
+        }
         switch ParityLaunch.current?.screen {
-        case .plugins?: return .plugins
-        case .account?: return .account
-        case .botComputer?: return .botComputer
-        case .appearance?: return .appearance
-        default: return nil
+        case .plugins?: return [.plugins]
+        case .account?: return [.account]
+        case .botComputer?: return [.botComputer]
+        case .appearance?: return [.appearance]
+        default: return []
         }
 #else
-        return nil
+        return []
 #endif
     }
 }
