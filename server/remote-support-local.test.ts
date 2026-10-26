@@ -340,6 +340,16 @@ describe("remote support on this computer", () => {
     expect(readFileSync(join(dir, "sessions", CODE, "open.json"), "utf8")).not.toContain("Ticket 1234");
   });
 
+  it("an unattended open names the enrolled host by host_id, never a hostname", () => {
+    const base = { nodekey: PUBLIC, person: "Ada", now: NOW, sessionId: "0123456789ab", args: {} };
+    const host = `h_${"ab".repeat(16)}`;
+    expect(prepareOpen({ ...base, hostId: host.toUpperCase() })).toMatchObject({ ok: true, args: { host_id: host, nodekey: PUBLIC } });
+    expect(prepareOpen({ ...base, hostId: "PC-01" }).ok).toBe(false);
+    expect(prepareOpen({ ...base, hostId: "h_123" }).ok).toBe(false);
+    const coded = prepareOpen(base);
+    expect(coded.ok && "host_id" in coded.args).toBe(false);
+  });
+
   it("connects with the session's own key and does not hand the address back", async () => {
     const dir = tempDir();
     const { calls, run } = fakeRun();
