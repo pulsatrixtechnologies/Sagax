@@ -604,6 +604,7 @@ import {
 import { fetchSkillFromSource } from "./skill-fetch.ts";
 import { pickBotName } from "./names.ts";
 import { botSkillTemplateSchema, newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
+import { greetingLanguage } from "./new-bot-greeting.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -6476,6 +6477,7 @@ const store = new Store(
   () => bootSelection,
   (selection) => withNewBotEffort(selection, cfg.newBotDefaults?.profile.modelSelection?.effort, registry.get(selection.instanceId)?.adapter.capabilities.effortLevels),
   newBotApprovalMode,
+  newBotGreetingLanguage,
 );
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
@@ -31541,6 +31543,16 @@ function bypassRefusal(auth: RequestAuth): string | null {
 /** 2026-10-11: the level a new bot starts on. A solo server keeps Approve
  * for me; an organization server follows its policy (`defaults.approvalMode`)
  * and starts on Ask when it names none. */
+/** The language a new bot greets its person in (#1075): on an organization
+ * server the owner's own language preference (kept per person), then the
+ * server's language, the same default the app falls back to. */
+function newBotGreetingLanguage(ownerUserId: string | undefined): "fr" | "en" {
+  let person = "";
+  try {
+    if (IDENTITY.kind === "perspicax" && ownerUserId) person = userPreferenceStore.get(ownerUserId).preferences["omb-language"] ?? "";
+  } catch { /* no preference of their own */ }
+  return greetingLanguage([person, cfg.language]);
+}
 function newBotApprovalMode(): "ask" | "auto" {
   return IDENTITY.kind === "perspicax" ? orgNewBotApprovalMode(cfg.newBotDefaults?.profile.approvalMode) : "auto";
 }
