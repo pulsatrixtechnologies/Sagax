@@ -56,7 +56,9 @@ describe("ElevenLabs redirects", () => {
 
   it("does not send the key or the text to another origin when speaking", async () => {
     reached.length = 0;
-    await expect(synthesize("private words", "v-1", "el-secret", api)).rejects.toThrow();
+    const speaking = synthesize("private words", "v-1", "el-secret", api);
+    await expect(speaking.firstAudio).rejects.toThrow();
+    await expect(speaking.audio).rejects.toThrow();
     expect(reached).toEqual([]);
   });
 });
