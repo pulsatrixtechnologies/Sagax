@@ -123,7 +123,8 @@ export function ManageView(props: ManageViewProps) {
         className="min-h-0 flex-1 overflow-y-auto px-6 pb-7 pt-3 sm:px-8"
         data-plugins-manage={shown}
       >
-        {scope && <div className="mb-4">{scope}</div>}
+        {/* the install scope is about plugins: My accounts is the person's own */}
+        {scope && shown !== "accounts" && <div className="mb-4">{scope}</div>}
         {shown === "installed" && <InstalledTab {...props} />}
         {shown === "discover" && props.discover}
         {shown === "accounts" && (props.accounts ?? <EmptyLine>{t("connectApps.manage.accountsEmpty")}</EmptyLine>)}
