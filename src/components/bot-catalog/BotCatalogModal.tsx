@@ -587,6 +587,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
         </div>
       ) : (
         <BotCatalogView
+          trail={trail}
           organization={organization}
           categories={categories}
           category={category}

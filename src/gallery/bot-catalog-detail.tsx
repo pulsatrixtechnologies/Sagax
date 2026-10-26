@@ -75,7 +75,7 @@ const item: CatalogItem = {
   key: "bot:dumpling",
   entry: {
     id: "dumpling", name: "Dumpling", title: "", description: lang === "fr" ? "Assistante du service de dépannage." : "Help desk assistant.",
-    look: { color: "orange" }, owner: { principalId: "pr_1", name: "Zachary Sellam" }, source: "shared", archived: false, primary: false,
+    look: { color: "orange" }, owner: { principalId: "pr_1", name: "Alex Exemple" }, source: "shared", archived: false, primary: false,
   },
 };
 
