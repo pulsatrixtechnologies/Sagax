@@ -172,7 +172,9 @@ struct DesktopAppearanceSettings: View {
                     }
                 }
             }
-            if session.surfaceGate.allows(.inspector) {
+            // a display preference: an organization member opens the
+            // Inspector on the bots they own (2026-10-26)
+            if session.surfaceGate.allows(.inspector) || session.surfaceGate.isOrgMemberSession {
                 DesktopSettingRow(
                     title: Text("Inspector button"),
                     subtitle: Text("Show the Inspector (run log, events, raw) button in the chat header.")

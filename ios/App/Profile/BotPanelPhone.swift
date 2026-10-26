@@ -106,7 +106,7 @@ private struct PhoneBotPanelContent: View {
     private var current: Bot { session.state.bot(bot.id) ?? bot }
     private var gate: SurfaceGate { session.surfaceGate }
     private var tabs: [DesktopPanelTab] { DesktopPanelTab.visible(gate: gate, slack: slackURL != nil) }
-    private var sections: [DesktopPanelSection] { DesktopPanelSection.visible(gate: gate, slack: slackURL != nil) }
+    private var sections: [DesktopPanelSection] { DesktopPanelSection.visible(gate: gate, slack: slackURL != nil, bot: current) }
     private var botRoutines: [Routine] { DesktopRoutineList.of(botId: bot.id, in: routines) }
 
     var body: some View {

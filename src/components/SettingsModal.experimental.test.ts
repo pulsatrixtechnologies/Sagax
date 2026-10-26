@@ -103,7 +103,7 @@ describe("Settings > Experimental", () => {
     expect(html).toContain('data-settings-group="experimental"');
     expect(html).toContain(">Experimental features</h3>");
     // skill authoring and the decision model are on
-    expect(html).toContain("· 2 of 6 on");
+    expect(html).toContain("· 2 of 7 on");
     for (const feature of ["skillAuthoring", "browser", "decisionModel", "dataWindow", "meetingNotetaker", "devPods"]) {
       expect(html, feature).toContain(`data-experimental-feature="${feature}"`);
     }
@@ -132,6 +132,17 @@ describe("Settings > Experimental", () => {
     switchNamed("Turn on the Data window")!.onClick!({} as never);
     expect(fixture.api).toHaveBeenLastCalledWith("/api/config", { method: "PATCH", body: JSON.stringify({ features: { dataWindow: true } }) });
     await vi.waitFor(() => expect(fixture.dispatch).toHaveBeenCalled());
+  });
+
+  it("gives generated conversation titles a switch: no more hand edit of config.json (2026-10-26)", async () => {
+    fixture.section = "experimental";
+    fixture.features = { llmThreadTitles: false };
+    fixture.api.mockResolvedValue({ features: {} });
+    const html = await render();
+    expect(html).toContain('data-experimental-feature="llmThreadTitles"');
+    expect(html).not.toMatch(/[–—]/);
+    switchNamed("Turn on generated conversation titles")!.onClick!({} as never);
+    expect(fixture.api).toHaveBeenLastCalledWith("/api/config", { method: "PATCH", body: JSON.stringify({ features: { llmThreadTitles: true } }) });
   });
 });
 

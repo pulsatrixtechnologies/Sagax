@@ -34,7 +34,10 @@ struct BotPanelAccess: View {
     @State private var webhooks: [WebhookListing]?
     @State private var saving = false
 
-    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit) }
+    /// An admin session, or the bot's owner on an organization server
+    /// (2026-10-26); each control then asks for its own field.
+    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: bot) }
+    private func edits(_ field: String) -> Bool { canEdit && session.canEditBotField(bot, field) }
     private var organization: Bool { session.surfaceGate.organization }
     private var worksOn: DesktopWorksOn { DesktopWorksOn.of(bot) }
     private var engine: Instance? { instances.first { $0.instanceId == bot.modelSelection.instanceId } }
@@ -108,7 +111,7 @@ struct BotPanelAccess: View {
 
     private var worksOnGrid: some View {
         let options = DesktopWorksOnRules.choices(config: config, organization: organization).map { place in
-            (place, label(place), canEdit)
+            (place, label(place), edits("computer"))
         }
         // A place an older build saved reads as Auto here (the server moves
         // it back to Auto at start).
@@ -166,7 +169,7 @@ struct BotPanelAccess: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!canEdit)
+        .disabled(!edits("cloudBackend"))
     }
 
     // MARK: The other cards
@@ -189,7 +192,7 @@ struct BotPanelAccess: View {
                 PanelTextField(placeholder: "Private bot folder — or an absolute path", text: $folder, mono: true)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .disabled(!canEdit)
+                    .disabled(!edits("cwd"))
                 Button {
                     Task {
                         saving = true
@@ -202,8 +205,8 @@ struct BotPanelAccess: View {
                         .background(theme.control, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(!canEdit || saving || folder == (bot.cwd ?? ""))
-                .opacity(!canEdit || saving || folder == (bot.cwd ?? "") ? 0.5 : 1)
+                .disabled(!edits("cwd") || saving || folder == (bot.cwd ?? ""))
+                .opacity(!edits("cwd") || saving || folder == (bot.cwd ?? "") ? 0.5 : 1)
             }
             .padding(.top, 12)
         }
@@ -238,7 +241,7 @@ struct BotPanelAccess: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 PanelSwitch(label: "Let this bot use \(server.name)", isOn: mounted.contains(server.name),
-                                            disabled: !canEdit || server.enabled == false || bot.busy == true || saving) { _ in
+                                            disabled: !edits("mcpServers") || server.enabled == false || bot.busy == true || saving) { _ in
                                     access(BotAccessPatch(mcpServers: AccessRules.toggledMcp(servers, own: bot.mcpServers, name: server.name)))
                                 }
                             }
@@ -273,7 +276,7 @@ struct BotPanelAccess: View {
                 }
                 .buttonStyle(.plain)
                 .hoverEffect(.highlight)
-                if canEdit, bot.mcpServers != nil, let servers, !servers.isEmpty {
+                if edits("mcpServers"), bot.mcpServers != nil, let servers, !servers.isEmpty {
                     Button { clearMcp() } label: {
                         Text("Use every enabled server").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
                             .padding(.horizontal, 8).frame(height: 35.5)
@@ -297,7 +300,7 @@ struct BotPanelAccess: View {
         return PanelCard {
             PanelSettingRow(title: "Browser", detail: Text(browserDetail)) {
                 PanelSwitch(label: "Give this bot a built-in browser", isOn: on,
-                            disabled: !canEdit || worksOn == .off || (!on && !browserSelectable)) { value in
+                            disabled: !edits("browser") || worksOn == .off || (!on && !browserSelectable)) { value in
                     access(BotAccessPatch(browser: value))
                 }
             }
@@ -358,7 +361,7 @@ struct BotPanelAccess: View {
                         HStack(spacing: 12) {
                             Text(verbatim: entry).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(theme.ink).lineLimit(1)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                            if canEdit {
+                            if edits("alwaysAllow") {
                                 Button { access(BotAccessPatch(alwaysAllow: always.filter { $0 != entry })) } label: {
                                     Text("Remove").font(theme.font(12)).foregroundStyle(theme.inkSecondary)
                                         .padding(.horizontal, 8).frame(height: 26)

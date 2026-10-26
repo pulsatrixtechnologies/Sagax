@@ -191,7 +191,10 @@ struct BotPanelPermissions: View {
     @State private var allowlist = false
     @State private var grants = false
 
-    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit) }
+    /// An admin session, or the bot's owner on an organization server
+    /// (2026-10-26); each switch asks for its own field.
+    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: bot) }
+    private func edits(_ field: String) -> Bool { canEdit && session.canEditBotField(bot, field) }
     private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: bot.autoApprove) }
     private var sectionName: String {
         let name = bot.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -202,13 +205,13 @@ struct BotPanelPermissions: View {
         VStack(alignment: .leading, spacing: 16) {
             // I-sync: the current renderer's Primary Bot (one per person,
             // PermissionsSection.tsx), in place of the per-team Chief of Staff.
-            AnyView(BotPanelPrimaryCard(bot: bot, canEdit: canEdit, sectionName: sectionName))
+            AnyView(BotPanelPrimaryCard(bot: bot, canEdit: edits("chiefOfStaff"), sectionName: sectionName))
             PanelCard {
                 PanelSettingRow(title: "Ask me before contacting other bots",
                                 detail: Text(bot.approvePeerComms == true
                                              ? "This bot will stop and ask before it reaches out to another bot."
                                              : "Let this bot talk to teammates on its own, without a confirmation step.")) {
-                    PanelSwitch(label: "Ask me before contacting other bots", isOn: bot.approvePeerComms == true, disabled: !canEdit) { on in
+                    PanelSwitch(label: "Ask me before contacting other bots", isOn: bot.approvePeerComms == true, disabled: !edits("approvePeerComms")) { on in
                         Task { _ = await sendPanelPatch(BotPanelPatch(approvePeerComms: on), bot: bot, session: session) }
                     }
                 }
@@ -251,7 +254,7 @@ struct BotPanelPermissions: View {
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline40, lineWidth: 1))
                     .contentShape(Rectangle())
                 }
-                .disabled(!canEdit || bot.busy == true)
+                .disabled(!edits("approvalMode") || bot.busy == true)
                 .padding(.top, 12)
                 .accessibilityLabel(Text("Approval level"))
                 Text(DesktopApprovalButton.detail(level))
@@ -346,7 +349,7 @@ struct BotPanelVoice: View {
                     }
                 }
                 .padding(.top, 16)
-                if session.surfaceGate.allows(.voiceNotesSetting) {
+                if session.surfaceGate.allows(.voiceNotesSetting, bot: bot) {
                     PanelSettingRow(title: "Voice notes",
                                     detail: Text("Let this agent send spoken notes; on unless switched off here."),
                                     detailSize: 11.5, detailLine: 18.69) {

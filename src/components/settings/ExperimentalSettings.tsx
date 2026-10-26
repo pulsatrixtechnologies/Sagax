@@ -7,7 +7,7 @@
 // (2026-10-15): one way to reach them, no second switch here.
 import { useEffect, useState } from "react";
 import { api, useStore, type ConfigStatus } from "@/state/store";
-import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, decisionModelEnabled, meetingNotetakerEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
+import { browserAvailable, builtInBrowserEnabled, dataWindowEnabled, decisionModelEnabled, llmThreadTitlesEnabled, meetingNotetakerEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import type { LocaleKey } from "@/locales";
@@ -19,7 +19,7 @@ import { DisclosurePill } from "./AppearanceSettings";
 import { setDevPodsEnabled, useDevPodPrefs } from "../dev-pods/prefs";
 import { canEditConfig } from "@/lib/viewer";
 
-type ExperimentalFeature = "skillAuthoring" | "browser" | "decisionModel" | "dataWindow" | "meetingNotetaker";
+type ExperimentalFeature = "skillAuthoring" | "browser" | "decisionModel" | "dataWindow" | "meetingNotetaker" | "llmThreadTitles";
 
 /** One feature: its label, and a grey "Not available on this server" line
  * with the reason on demand when the server cannot run it. */
@@ -106,6 +106,10 @@ export function ExperimentalSettings() {
   // them. A server.experimental-only delegate keeps the feature switches,
   // which are all this right opens (shared/permissions.ts).
   const editConfig = canEditConfig(state.config);
+  // 2026-10-26 (JC): generated conversation titles were on only after a
+  // hand edit of config.json; they get their switch here.
+  const llmThreadTitles = llmThreadTitlesEnabled(state.config);
+  const llmThreadTitlesServed = typeof state.config?.features?.llmThreadTitles === "boolean";
   const [saving, setSaving] = useState<ExperimentalFeature | null>(null);
   const [error, setError] = useState("");
 
@@ -136,14 +140,15 @@ export function ExperimentalSettings() {
   const busy = saving !== null;
   // The dev context pods are this computer's own choice: no server round trip.
   const devPods = useDevPodPrefs().enabled;
-  const on = Number(skillAuthoring) + Number(browser) + Number(decisionModel) + Number(dataWindow) + Number(meetingNotetaker) + Number(devPods);
+  const on = Number(skillAuthoring) + Number(browser) + Number(decisionModel) + Number(dataWindow) + Number(meetingNotetaker) + Number(devPods)
+    + Number(llmThreadTitles);
 
   return (
     <div data-settings-card="experimental.features" className="flex flex-col gap-2">
       <SettingsGroup
         title={t("settings.experimental.title")}
         groupId="experimental"
-        accessory={<span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary" data-experimental-count="">· {t("settings.card.countOn", { count: on, total: 6 })}</span>}
+        accessory={<span className="min-w-0 truncate text-[13px] leading-[18px] text-ink-secondary" data-experimental-count="">· {t("settings.card.countOn", { count: on, total: 7 })}</span>}
       >
         <FeatureRow
           feature="skillAuthoring"
@@ -195,6 +200,16 @@ export function ExperimentalSettings() {
           note={t("settings.experimental.meetingNotetakerHint")}
           busy={busy}
           onToggle={() => void toggle("meetingNotetaker", !meetingNotetaker)}
+        />
+        <FeatureRow
+          feature="llmThreadTitles"
+          label={t("settings.experimental.llmThreadTitles")}
+          ariaKey="settings.experimental.llmThreadTitlesAria"
+          checked={llmThreadTitles}
+          unavailable={!llmThreadTitlesServed}
+          reason={t("settings.experimental.serverOld")}
+          busy={busy}
+          onToggle={() => void toggle("llmThreadTitles", !llmThreadTitles)}
         />
         <div data-experimental-feature="devPods">
           <DescribedRow label={t("settings.experimental.devPods")} rowId="devPods">

@@ -326,7 +326,7 @@ struct HomeAccountMenuItems: View {
     var body: some View {
         let groups = NavigationMenus.account(
             gate: session.surfaceGate,
-            hasArchivedBots: session.state.bots.contains { $0.hidden == true },
+            hasArchivedBots: !session.surfaceGate.restorableArchivedBots(session.state.bots).isEmpty,
             achievementsReady: session.connection != nil && achievements.status != .unavailable,
             connected: session.connection != nil
         )
@@ -412,7 +412,8 @@ struct ArchivedBotsView: View {
     @State private var deleting: Bot?
 
     private var archived: [Bot] {
-        session.state.bots.filter { $0.hidden == true }.sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
+        // an admin restores every archived bot, a member their own (2026-10-26)
+        session.surfaceGate.restorableArchivedBots(session.state.bots).sorted { $0.name.localizedCompare($1.name) == .orderedAscending }
     }
 
     var body: some View {
@@ -439,7 +440,7 @@ struct ArchivedBotsView: View {
                     .accessibilityIdentifier("archived-restore.\(bot.id)")
                 }
                 .swipeActions {
-                    if session.surfaceGate.allows(.botOwnerExtras) {
+                    if session.surfaceGate.allows(.botOwnerExtras, bot: bot) {
                         Button(String(localized: "Delete"), role: .destructive) { deleting = bot }
                     }
                 }

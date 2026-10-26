@@ -38,7 +38,7 @@ struct BotOverviewPage: View {
     @EnvironmentObject private var session: Session
 
     var body: some View {
-        BotOverviewView(bot: bot, showsPromptPreview: session.surfaceGate.allows(.advancedBotPanel))
+        BotOverviewView(bot: bot, showsPromptPreview: session.surfaceGate.allows(.promptPreview))
             .navigationTitle(Text(DesktopPanelSection.overview.title))
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("panel-page.overview")
@@ -47,8 +47,9 @@ struct BotOverviewPage: View {
 
 // MARK: - Model
 
-/// Model (`ModelSection.tsx`): provider, model, variant or effort. The
-/// provider list is an admin's; other pairings read the current model.
+/// Model (`ModelSection.tsx`): provider, model, variant or effort. An admin
+/// and the bot's owner on an organization server pick it (`modelSelection`
+/// is a member field, 2026-10-26); other pairings read the current model.
 /// One mode (#261): a change runs the open thread and becomes the bot's
 /// model; models under Cloud and Local; an organization lists only the
 /// providers its admin allows.
@@ -89,6 +90,9 @@ struct BotModelSection: View {
     /// The open thread follows the bot's model (nil: an older server).
     private var follows: Bool? { current.tasks?.first { $0.threadId == bot.threadId }?.followsBotModel }
     private var profile: Bot { session.state.bot(bot.id) ?? bot }
+    /// An admin, the owner's sidecar, or the bot's owner on an organization
+    /// server (`modelSelection` is a member field).
+    private var canPick: Bool { session.canAdminister || session.canEditBotField(profile, "modelSelection") }
     private var instanceChoices: [Instance] {
         guard let saved = instances.first(where: { $0.instanceId == self.saved.instanceId }), !saved.snapshot.isAvailable else { return available }
         return [saved] + available
@@ -122,7 +126,7 @@ struct BotModelSection: View {
 
     var body: some View {
         Section {
-            if !session.canAdminister {
+            if !canPick {
                 let model = saved.model.isEmpty ? String(localized: "Default") : saved.model
                 LabeledContent(String(localized: "Model"), value: saved.auto == true ? String(localized: "Auto · \(model)") : model)
             } else if !loaded {
@@ -205,7 +209,7 @@ struct BotModelSection: View {
         }
         .overlay { if busy { ProgressView() } }
         .task {
-            instances = session.canAdminister ? await session.modelInstances() : []
+            instances = canPick ? await session.modelInstances() : []
             allowedEngines = await session.configStatus()?.allowedEngines
             loaded = true
         }
@@ -241,7 +245,9 @@ struct BotModelSection: View {
 
 /// Permissions (`PermissionsSection.tsx`): Chief of Staff, ask before
 /// contacting other bots, the approval level, and the command allowlist.
-/// The writes are an admin session's; other pairings read them.
+/// An admin session and the bot's owner on an organization server change
+/// them (each switch asks for its own field, 2026-10-26); other pairings
+/// read them.
 struct BotPermissionsSection: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
@@ -250,7 +256,8 @@ struct BotPermissionsSection: View {
     @State private var viewerId = "local-owner"
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
-    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit) }
+    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: current) }
+    private func edits(_ field: String) -> Bool { canEdit && session.canEditBotField(current, field) }
     private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: current.approvalMode, autoApprove: current.autoApprove) }
     private var sectionName: String {
         let name = current.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -269,7 +276,7 @@ struct BotPermissionsSection: View {
                 Label("Chief of Staff", systemImage: "crown")
             }
             .tint(Theme.toggleOn)
-            .disabled(!canEdit)
+            .disabled(!edits("chiefOfStaff"))
             .accessibilityIdentifier("permissions-chief")
         } footer: {
             Text(current.chiefOfStaff == true
@@ -281,7 +288,7 @@ struct BotPermissionsSection: View {
                 send(BotPanelPatch(approvePeerComms: on))
             }))
             .tint(Theme.toggleOn)
-            .disabled(!canEdit)
+            .disabled(!edits("approvePeerComms"))
             .accessibilityIdentifier("permissions-peers")
         } footer: {
             Text(current.approvePeerComms == true
@@ -296,7 +303,7 @@ struct BotPermissionsSection: View {
                 }
                 if level == .custom { Text(verbatim: level.rawValue.capitalized).tag(ApprovalLevel.custom) }
             }
-            .disabled(!canEdit || current.busy == true)
+            .disabled(!edits("approvalMode") || current.busy == true)
             .accessibilityIdentifier("permissions-approval")
             if showsAllowlist {
                 NavigationLink {
@@ -358,7 +365,7 @@ struct BotWorksOnSection: View {
     @State private var config: ConfigStatus?
 
     private var current: Bot { session.state.bot(bot.id) ?? bot }
-    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit) }
+    private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: current) && session.canEditBotField(current, "computer") }
     private var organization: Bool { session.surfaceGate.organization }
     /// Auto and Off only (JC 2026-10-18): the bot picks where each task runs.
     private var choices: [DesktopWorksOn] { DesktopWorksOnRules.choices(config: config, organization: organization) }
@@ -486,7 +493,7 @@ struct BotVoiceSections: View {
         } footer: {
             Text("Give this agent a voice for calls and spoken replies. The voice choice belongs to this agent; provider keys stay on your computer and never come to this device.")
         }
-        if session.surfaceGate.allows(.voiceNotesSetting) {
+        if session.surfaceGate.allows(.voiceNotesSetting, bot: current) {
             BotVoiceNotesSection(bot: current)
         }
         Section {

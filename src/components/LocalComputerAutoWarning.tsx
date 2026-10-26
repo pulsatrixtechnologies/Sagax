@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import { t } from "@/lib/i18n";
+import { localAutoAcknowledged, rememberLocalAutoAck } from "@/lib/local-auto-ack";
 
 export const LOCAL_COMPUTER_AUTO_WARNING =
   "Auto mode will let this bot click, type, and run tools on this computer without asking first. Destructive and sensitive actions still stop. Continue only if you are watching.";
@@ -15,9 +16,22 @@ export function LocalComputerAutoWarning({
   onConfirm: () => void;
 }) {
   const confirmRef = useRef<HTMLButtonElement>(null);
+  // 2026-10-26 (JC): read once per computer. Once confirmed, the next
+  // switch to Auto here goes through without the card (src/lib/local-auto-ack.ts).
+  const acknowledged = open && localAutoAcknowledged();
+  const autoConfirmed = useRef(false);
+  useEffect(() => {
+    if (!open) {
+      autoConfirmed.current = false;
+      return;
+    }
+    if (!acknowledged || autoConfirmed.current) return;
+    autoConfirmed.current = true;
+    onConfirm();
+  }, [open, acknowledged, onConfirm]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || acknowledged) return;
     confirmRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -27,9 +41,9 @@ export function LocalComputerAutoWarning({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
+  }, [open, acknowledged, onCancel]);
 
-  if (!open) return null;
+  if (!open || acknowledged) return null;
 
   return (
     <div
@@ -65,7 +79,7 @@ export function LocalComputerAutoWarning({
           <button
             ref={confirmRef}
             type="button"
-            onClick={onConfirm}
+            onClick={() => { rememberLocalAutoAck(); onConfirm(); }}
             className="rounded-xl bg-accent px-4 py-2 text-[13px] font-medium text-accent-ink hover:brightness-110"
           >
             {t("localAuto.ok")}

@@ -175,7 +175,7 @@ private struct BotPanelContent: View {
     private var menuPlan: BotActionsMenuPlan {
         let gate = session.surfaceGate
         return BotActionsMenuPlan(
-            gate: gate, bot: current, viewerId: viewerId, editable: DesktopPersonaEditor.offered(gate: gate, slack: slackURL != nil),
+            gate: gate, bot: current, viewerId: viewerId, editable: DesktopPersonaEditor.offered(gate: gate, slack: slackURL != nil, bot: current),
             zipExport: gate.scope != .sidecar && (session.canAdminister || PrimaryBotRules.viewerOwns(current, viewerId: session.roomViewer.actorId)),
             inspector: true,
             activeBotCount: session.state.bots.filter { $0.hidden != true }.count,
@@ -391,7 +391,7 @@ private struct BotPanelIdentity: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Edit avatar"))
                 .accessibilityIdentifier("desktop-panel-avatar")
-                if DesktopPersonaEditor.offered(gate: session.surfaceGate) {
+                if DesktopPersonaEditor.offered(gate: session.surfaceGate, bot: bot) {
                     Button { model.showPersona() } label: {
                         Image(systemName: "pencil")
                             .font(.system(size: 12, weight: .semibold))

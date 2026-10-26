@@ -351,7 +351,7 @@ struct DesktopSidebarMenus {
         out.append(DesktopMenuEntry(id: "hide", title: String(localized: "Hide from sidebar"), icon: .eyeOff, kind: .action {
             prefs.hide(session, .bot, bot.id)
         }))
-        if gate.allows(.botOwnerExtras) {
+        if gate.allows(.botOwnerExtras, bot: bot) {
             let block = DesktopBotArchive.block(bot, in: session.state.bots)
             out.append(DesktopMenuEntry(id: "archive", title: String(localized: "Archive"), icon: .archive, disabled: block != nil, kind: .action {
                 model.archivingBot = bot
@@ -583,8 +583,9 @@ struct DesktopSidebarMenus {
                 break
             }
         }
-        let archived = DesktopBotArchive.archived(session.state.bots)
-        if gate.allows(.botOwnerExtras), !archived.isEmpty {
+        // an admin restores every archived bot, a member their own (2026-10-26)
+        let archived = DesktopBotArchive.archived(session.state.bots).filter { gate.allows(.botOwnerExtras, bot: $0) }
+        if !archived.isEmpty {
             // Archived bots (the desktop's account place): each one restores.
             let children = archived.map { bot in
                 DesktopMenuEntry(id: "restore.\(bot.id)", title: String(localized: "Restore \(bot.name)"), kind: .action {

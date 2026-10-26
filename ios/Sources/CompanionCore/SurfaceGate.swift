@@ -77,7 +77,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case reactions
     /// Pin a message, the pinned banner (MS9, RM17 pin; D2).
     case messagePin
-    /// Inspector: run log, events, raw (MS24). Admin only.
+    /// Inspector: run log, events, raw (MS24), read from the conversation
+    /// the app holds: an admin's, and the bot's owner on an organization
+    /// server (`allows(_:bot:)`).
     case inspector
     /// Find in this conversation, `GET /api/search?threadId=` (MS11).
     case findInConversation
@@ -106,18 +108,24 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case parallelTaskStop
 
     // Bot panel
-    /// "What this bot does" (`GET /api/bots/:id/overview`, BA1): admin only
-    /// for a client session.
+    /// "What this bot does" (`GET /api/bots/:id/overview`, BA1): the
+    /// handler answers a client session for a bot it owns
+    /// (`allows(_:bot:)`).
     case botOverview
     /// The workspace voice engine (BA12). `PUT /api/config` is refused by
     /// every sidecar and is admin only on a server.
     case voiceEngineSettings
-    /// Skills, memory, history, prompt preview, presets (D1, WP16).
+    /// Skills, memory, history, presets (D1, WP16). An organization member
+    /// reaches them on a bot they own (`allows(_:bot:)`, 2026-10-26).
     case advancedBotPanel
+    /// The prompt preview (`GET /api/bots/:id/system-prompt`): admin scope
+    /// on a server, the owner's sidecar with D1.
+    case promptPreview
     /// The advanced panel's Access section with its switches (browser,
-    /// connected apps, MCP servers, always allowed): an admin session only.
-    /// Every other pairing reads it (BA6): the sidecar and a client session
-    /// refuse those fields.
+    /// connected apps, MCP servers, always allowed): an admin session, and
+    /// the bot's owner on an organization server for the fields their
+    /// permissions open (`allows(_:bot:)`, `canEditBotField`). The sidecar
+    /// and anyone else read it (BA6).
     case botAccessEdit
     /// Who can see it (BA14): `PATCH {visibility}` is an admin's, and only
     /// on a served workspace that is not an organization server (the
@@ -152,7 +160,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// Saved command rules (BA9): read and remove pass both gates (the
     /// handler holds a client session to the bot's owner).
     case commandAllowlist
-    /// Adding a command rule stays admin.
+    /// Adding a command rule: an admin, or a person an admin gave
+    /// host.shell (`canManageCommandAllowlist`; the rule runs unasked on
+    /// whatever computer the bot uses, the shared server included).
     case commandAllowlistAdd
     /// Duplicate a bot (BA19): `POST /api/bots` and a member-field PATCH;
     /// a client session only on an organization server (its own bots).
@@ -162,9 +172,10 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case botOwnerExtras
     /// New bot (SB31): `POST /api/bots` passes both gates.
     case createBot
-    /// New bot's team, and "New bot here" on a team (NB3): a member's new
-    /// bot may not name a section (server `memberBotFieldViolation`); the
-    /// owner's sidecar and an admin may.
+    /// New bot's team, and "New bot here" on a team (NB3): the owner's
+    /// sidecar, an admin, and an organization member for their own new bot
+    /// (`section` needs sharing.visibility, which every member holds since
+    /// 2026-10-26).
     case createBotTeam
     /// New bot's presets as starting roles (NB2): `GET /api/bot-presets` is
     /// admin scoped on a server and opened on the sidecar by D1. The
@@ -195,8 +206,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     case routineDelete
     /// Per-bot usage (BP14): read from the bot's own threads.
     case botUsage
-    /// Voice notes allowed (BA11): a member may not set it; the owner's
-    /// sidecar may (S1).
+    /// Voice notes allowed (BA11): the owner's sidecar (S1), an admin, and
+    /// an organization member on a bot they own (`voiceNotes`,
+    /// bots.behaviour).
     case voiceNotesSetting
     /// Skin rarities, locks, style 2D / 3D and moves of the character
     /// editor (BP6-BP8): the look fields pass every gate.
@@ -281,8 +293,9 @@ public enum SurfaceFeature: String, CaseIterable, Hashable, Sendable {
     /// on an organization server (member fields), which the menu checks.
     case renameBot
     /// Archive a bot and the Archived bots list (`PATCH /api/bots/:id`
-    /// `{hidden}`): an admin session only; the sidecar and a client
-    /// session refuse the field, and the remote client hides both.
+    /// `{hidden}`): an admin session, and an organization member on a bot
+    /// they own (`allows(_:bot:)`, `hidden` is bots.create since
+    /// 2026-10-26); the sidecar refuses the field.
     case archiveBot
     /// Settings > Experimental (`PUT /api/config` features): admin scope.
     case experimentalSettings
@@ -294,16 +307,21 @@ public struct SurfaceGate: Hashable, Sendable {
     public var organization: Bool
     /// Approved sidecar routes the paired desktop is known to serve.
     public var sidecarRoutes: SidecarRoutes
+    /// Who is asking (`/api/config` `viewer`): their principal, role and
+    /// permissions. The bot owner's rights read it (BotFieldRules.swift).
+    public var viewer: ConfigViewer?
 
-    public init(scope: PairingScope, organization: Bool = false, sidecarRoutes: SidecarRoutes = .current) {
+    public init(scope: PairingScope, organization: Bool = false, sidecarRoutes: SidecarRoutes = .current, viewer: ConfigViewer? = nil) {
         self.scope = scope
         self.organization = organization
         self.sidecarRoutes = sidecarRoutes
+        self.viewer = viewer
     }
 
     /// The gate for a live pairing. `account` (`GET /api/auth/session`)
-    /// marks an organization server by naming a principal.
-    public init(connection: Connection, account: AuthSession? = nil, sidecarRoutes: SidecarRoutes = .current) {
+    /// marks an organization server by naming a principal; `viewer` is the
+    /// config's, else the account's principal and role.
+    public init(connection: Connection, account: AuthSession? = nil, viewer: ConfigViewer? = nil, sidecarRoutes: SidecarRoutes = .current) {
         let scope: PairingScope
         if !connection.pairedWithServer {
             scope = .sidecar
@@ -312,10 +330,17 @@ public struct SurfaceGate: Hashable, Sendable {
         } else {
             scope = .serverClient
         }
+        var known = viewer
+        if known == nil, let account {
+            known = ConfigViewer(principalId: account.principalId, role: account.role)
+        } else if known?.principalId?.isEmpty != false, let principal = account?.principalId, !principal.isEmpty {
+            known?.principalId = principal
+        }
         self.init(
             scope: scope,
             organization: connection.pairedWithServer && account?.principalId?.isEmpty == false,
-            sidecarRoutes: sidecarRoutes
+            sidecarRoutes: sidecarRoutes,
+            viewer: known
         )
     }
 
@@ -368,14 +393,14 @@ public struct SurfaceGate: Hashable, Sendable {
             case .sidecar: return sidecarRoutes.contains(.voiceEngine)
             }
         case .createBotTeam:
-            return scope != .serverClient
+            return scope != .serverClient || (isOrgMemberSession && !botsReadOnly && can("sharing.visibility"))
         case .createBotPresets:
             switch scope {
             case .serverAdmin: return true
             case .serverClient: return false
             case .sidecar: return sidecarRoutes.contains(.advancedPanel)
             }
-        case .advancedBotPanel:
+        case .advancedBotPanel, .promptPreview:
             switch scope {
             case .serverAdmin: return true
             case .serverClient: return false
@@ -383,8 +408,10 @@ public struct SurfaceGate: Hashable, Sendable {
             }
         case .roomMemory:
             return scope != .sidecar || sidecarRoutes.contains(.roomMemory)
-        case .botAccessEdit, .orgSkillsLibrary, .commandAllowlistAdd:
+        case .botAccessEdit, .orgSkillsLibrary:
             return scope == .serverAdmin
+        case .commandAllowlistAdd:
+            return scope == .serverAdmin || (scope == .serverClient && can("host.shell"))
         case .botVisibility:
             return scope == .serverAdmin && !organization
         case .botSharing, .botPerspicax:

@@ -1571,12 +1571,38 @@ public struct ConfigViewer: Codable, Hashable, Sendable {
     public var botsReadOnly: Bool?
     /// Whether this person may make bots; absent on an older server (yes).
     public var canCreateBots: Bool?
+    /// Organization server (2026-10-09): the permission keys this person
+    /// holds (shared/permissions.ts), every key for an admin. Absent on an
+    /// older server: a member then holds the member defaults (`viewerCan`).
+    public var permissions: [String]?
+    /// The operator at the server's own computer (`viewer.operator`).
+    public var isOperator: Bool?
 
-    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil, canCreateBots: Bool? = nil) {
+    public init(principalId: String? = nil, role: String? = nil, botsReadOnly: Bool? = nil, canCreateBots: Bool? = nil,
+                permissions: [String]? = nil, isOperator: Bool? = nil) {
         self.principalId = principalId
         self.role = role
         self.botsReadOnly = botsReadOnly
         self.canCreateBots = canCreateBots
+        self.permissions = permissions
+        self.isOperator = isOperator
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case principalId, role, botsReadOnly, canCreateBots, permissions
+        case isOperator = "operator"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        principalId = try? c.decodeIfPresent(String.self, forKey: .principalId)
+        role = try? c.decodeIfPresent(String.self, forKey: .role)
+        botsReadOnly = try? c.decodeIfPresent(Bool.self, forKey: .botsReadOnly)
+        canCreateBots = try? c.decodeIfPresent(Bool.self, forKey: .canCreateBots)
+        // An odd value reads as no list (the member defaults), never as a
+        // failed config.
+        permissions = try? c.decodeIfPresent([String].self, forKey: .permissions)
+        isOperator = try? c.decodeIfPresent(Bool.self, forKey: .isOperator)
     }
 }
 

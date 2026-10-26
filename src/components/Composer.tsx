@@ -15,6 +15,7 @@ import { pendingQuestions } from "@/lib/pending-question";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
+import { canTeachInBrowser } from "@/lib/bot-capabilities";
 import { imeComposing, sendKeyLabel, sendsMessage, useSendKey } from "@/lib/send-key";
 import {
   draftRevision,
@@ -414,7 +415,7 @@ export function Composer({
     (group ? (members ?? []).some(supportsAgents) : supportsAgents(bot));
   // ...which can also be shown in the bot's browser (a recording) when this
   // person can open that browser (the Browser panel's own conditions).
-  const browserTeach = Boolean(bot && !group && bot.browser !== false && ownerOrAdmin
+  const browserTeach = Boolean(bot && !group && bot.browser !== false && canTeachInBrowser(config, bot, ownerOrAdmin)
     && (builtInBrowserEnabled(config) || browserAvailable(config)) && config?.browserEngine?.kind === "engine");
   const [teachChooser, setTeachChooser] = useState(false);
   const showInBrowser = () => {

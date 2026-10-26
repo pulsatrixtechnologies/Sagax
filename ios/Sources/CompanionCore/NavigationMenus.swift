@@ -191,14 +191,14 @@ public enum NavigationMenus {
 
         var third: [BotMenuItem] = [.hide]
         var block: BotArchiveBlock?
-        if gate.allows(.archiveBot) {
+        if gate.allows(.archiveBot, bot: bot) {
             third.append(.archive)
             if bot.chiefOfStaff == true { block = .primary } else if context.activeBotCount <= 1 { block = .lastActive }
         }
         // Delete and the Primary Bot entry: the same rules as the bot
         // panel's own menu (`BotPanelAction`), in the sidebar's place.
         let panel = context.viewerId.map { BotPanelAction.available(gate: gate, bot: bot, viewerId: $0) } ?? []
-        if gate.allows(.botOwnerExtras) { third.append(.delete) }
+        if gate.allows(.botOwnerExtras, bot: bot) { third.append(.delete) }
         groups.append(third)
 
         if panel.contains(.replacePrimary) {
@@ -271,7 +271,9 @@ public enum NavigationMenus {
     /// shortcuts are the iPad menu's own extra rows.
     public static func account(gate: SurfaceGate, hasArchivedBots: Bool, achievementsReady: Bool, connected: Bool) -> [[AccountMenuItem]] {
         var groups: [[AccountMenuItem]] = []
-        if gate.allows(.archiveBot), hasArchivedBots { groups.append([.archivedBots]) }
+        // An organization member restores the bots they own (2026-10-26):
+        // `hasArchivedBots` counts what this person may restore.
+        if gate.allows(.archiveBot) || gate.archivesOwnBots, hasArchivedBots { groups.append([.archivedBots]) }
         var main: [AccountMenuItem] = [.settings] + accountShortcuts(gate: gate, connected: connected)
         if gate.allows(.achievements), achievementsReady { main.append(.achievements) }
         groups.append(main)
