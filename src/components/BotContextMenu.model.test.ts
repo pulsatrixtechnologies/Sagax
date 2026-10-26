@@ -3,6 +3,7 @@
 // Hide from sidebar, Archive, Delete. No More, no Copy conversation ID, and
 // (for 0.5.7) no New thread in a working folder, Mark as Unread, Mark all as
 // read or Model….
+import { readFileSync } from "node:fs";
 import { createElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ const fixture = vi.hoisted(() => ({
   state: {} as Partial<AppState>,
   toggled: [] as string[],
   models: [] as string[],
+  dispatched: [] as unknown[],
 }));
 vi.mock("react-dom", async (importOriginal) => {
   const original = await importOriginal<typeof import("react-dom")>();
@@ -32,7 +34,7 @@ vi.mock("@/lib/model-window", async (importOriginal) => ({
 }));
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
-  return { ...original, useStore: () => ({ state: { ...original.initialState, ...fixture.state }, dispatch: vi.fn() }) };
+  return { ...original, useStore: () => ({ state: { ...original.initialState, ...fixture.state }, dispatch: (action: unknown) => { fixture.dispatched.push(action); } }) };
 });
 
 const { BotContextMenu } = await import("./Sidebar");
@@ -81,6 +83,7 @@ beforeEach(() => {
   fixture.state = {};
   fixture.toggled = [];
   fixture.models = [];
+  fixture.dispatched = [];
   fixture.portal = null;
   vi.stubGlobal("document", { body: {}, activeElement: null });
   vi.stubGlobal("window", { innerWidth: 1000, innerHeight: 800, addEventListener() {}, removeEventListener() {} });
@@ -157,5 +160,38 @@ describe("the sidebar's bot menu", () => {
     expect(main).not.toContain(">Plus<");
     expect(main).not.toContain("Copier l'ID");
     expect(main).not.toContain("robot");
+  });
+});
+
+describe("Share in the sidebar's bot menu", () => {
+  const organization = { config: { viewer: { principalId: "member-1" } } } as unknown as Partial<AppState>;
+
+  it("sits after Edit bot and opens the bot's Sharing page, for any member", () => {
+    fixture.state = organization;
+    const { html } = render();
+    expect(items(html)).toEqual(["new-thread", "pin", "move", "rename", "edit", "share", "put-on-desktop", "hide", "archive", "delete"]);
+    expect(html).toContain(">Share<");
+    buttons().get("share")!.props.onClick();
+    expect(fixture.dispatched).toEqual([{ type: "toggleSettings", open: true, botId: bot.id, section: "sharing" }]);
+  });
+
+  it("says Partager in French", () => {
+    setLocale("fr");
+    fixture.state = organization;
+    expect(render().html).toContain(">Partager<");
+  });
+
+  it("is absent where no organization can share", () => {
+    expect(items(render().html)).not.toContain("share");
+  });
+
+  it("is in both menus: the right-click and the ... button open the same BotContextMenu", () => {
+    const source = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
+    const row = source.slice(source.indexOf("const onContextMenu = (event: React.MouseEvent) => {"));
+    expect(row.slice(0, 200)).toContain("openBotContextMenu(onMenu, bot.id, event)");
+    expect(row).toMatch(/aria-haspopup="menu" onClick=\{\(event\) => \{[^}]*onMenu\(\{ botId: bot\.id/);
+    // one menu component builds the entries for both
+    expect(source.match(/data-menu-item/g)?.length).toBeGreaterThan(0);
+    expect(source).toContain('t("sidebar.bot.share")');
   });
 });

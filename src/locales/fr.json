@@ -4682,6 +4682,7 @@
   "sidebar.bot.duplicate": "Dupliquer",
   "sidebar.bot.editProfile": "Modifier le profil",
   "sidebar.bot.makePrimary": "Définir comme bot principal",
+  "sidebar.bot.share": "Partager",
   "sidebar.bot.markUnread": "Marquer comme non lu",
   "sidebar.bot.pin": "Épingler",
   "sidebar.bot.replacePrimary": "Confier le rôle à un autre bot",
