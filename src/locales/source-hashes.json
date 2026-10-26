@@ -14097,6 +14097,8 @@
       "connectFromEngine.notConnected": "09eeedb545d3a7d84dfe3c4b041419ac3178c03d667588a4f76715b2b2fe9d51",
       "connectFromEngine.open": "3ccda600c9e3389d269f386c0b695c06c30e537fdcb5f25e51121e5c3595aa8c",
       "connectFromEngine.dismiss": "48845bff334a50a59aaecf499f28a7a24c3b4b891b8b18a9f1169ad8e8a6b261",
+      "teamSetup.error.adminRequired": "93726095200a3a070cc46ec8071f66ec0b4a47fbd876259a555099bfe8a80485",
+      "teamSetup.error.desktopOnly": "3ef4467416ccc05be95acbf2173b5530dacf71814827aa0b294f8b58b2a52a67",
       "serverError.notGroupOwner": "2a4915117c620cb77d1c9c098f400f180fd07748c2e575139b9a0f7674f5bd24",
       "serverError.notChannelEditor": "b7582941492b87ae95aaaddf4240fa6dd92f89d92a85721eea164c7a088520ce",
       "serverError.threadBusy": "c725fc9b3927d1e8324ea6f30b6928e254adc1fa33608ff0150698d9e1dc1ca7",

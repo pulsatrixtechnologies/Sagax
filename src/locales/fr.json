@@ -10232,6 +10232,8 @@
   "botPanel.email.error.rate_limited": "Trop de changements d'adresse. Attendez une minute, puis réessayez.",
   "triggers.botmail.fullTools": "Donner à ces exécutions les outils habituels du bot",
   "triggers.botmail.fullToolsHelp": "Désactivé : une exécution réveillée par un courriel n'a pas de terminal, et chaque changement ou envoi vous demande d'abord, quel que soit le niveau du bot. À activer seulement si vous faites confiance à tous ceux qui peuvent écrire à cette adresse.",
+  "teamSetup.error.adminRequired": "Cette configuration demande un administrateur de l'organisation sur ce serveur : elle crée une équipe, change le rôle de bot principal, supprime un bot ou modifie un bot qui n'est pas à vous. Demandez à un administrateur de l'appliquer.",
+  "teamSetup.error.desktopOnly": "Approuvez la configuration ou la suppression d'équipe depuis l'app de bureau ou un appareil jumelé en Accès complet. Dans un navigateur local, attendez que tous les bots soient inactifs.",
   "serverError.notGroupOwner": "Seul le propriétaire du groupe peut le faire.",
   "serverError.notChannelEditor": "Seul un propriétaire ou un admin peut changer les personnes d'un canal.",
   "serverError.threadBusy": "Le bot travaille déjà ici. Interrompez-le ou attendez qu'il termine.",

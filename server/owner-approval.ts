@@ -380,14 +380,23 @@ export function ownerDecision(input: {
    * another person's destination): no rule of anyone answers it and none is
    * offered. 2026-10-19 : the one situation "Always allow" never widens. */
   crossPerson?: boolean;
+  /** 2026-10-26 (#1065): `autonomyRefused` holds only because the call acts
+   * on the owner's real computer (sagax-desktop), and the turn is the
+   * owner's own words on their own bot. Bypass, which the owner chose with
+   * its confirmation (and bots.fullAccess on an organization server),
+   * answers it like any other call of the owner route: deny rules, the
+   * destructive rule, holds and security keys still come first. Auto and
+   * Approval keep the card. */
+  ownComputerOwnTurn?: boolean;
 }): OwnerDecision {
   if (input.adminRoute) return { kind: "card", reason: "admin" };
   if (input.crossPerson) return { kind: "card", reason: "cross-person" };
+  const bypassOwnComputer = input.mode === "bypass" && input.autonomyRefused === true && input.ownComputerOwnTurn === true;
   // 2026-10-19 ("Toujours permettre" on every card): a held card (a
   // safety hold, a sandbox widening) and a turn that is not the person's own
   // are answered only by an allow rule the person saved from that same kind
   // of card; deny and ask rules answer as before.
-  const situation: RuleSituation | undefined = input.personMustAnswer ? "hold" : input.autonomyRefused ? "origin" : undefined;
+  const situation: RuleSituation | undefined = input.personMustAnswer ? "hold" : input.autonomyRefused && !bypassOwnComputer ? "origin" : undefined;
   const rule = matchOwnerRule(input.rules.filter((candidate) => candidate.behavior !== "allow" || ruleCoversSituation(candidate, situation)), input.call);
   if (rule?.behavior === "deny") return { kind: "deny", source: "owner-rule-deny", rule };
   if (input.stepUpRequired) return { kind: "card", reason: "step-up", ...(rule ? { rule } : {}) };
@@ -402,6 +411,28 @@ export function ownerDecision(input: {
   if (rule?.behavior === "ask") return { kind: "card", reason: "ask-rule", rule };
   if (input.mode === "auto") return { kind: "allow", source: "owner-auto" };
   return { kind: "card", reason: "no-rule" };
+}
+
+/** 2026-10-26 (#1065): the order of precedence once the owner decided.
+ * An organization rule ("Refuser", "Demander d'abord", ids `orule_`) and the
+ * person's own rule in their words (custom rules) are read first by
+ * autoVerdict: a deny refuses and an ask keeps the card, so neither the
+ * owner's mode (Auto, Bypass) nor an Always allow ever answers past them.
+ * Otherwise the owner's allow replaces the base verdict. */
+export function ownerVerdictOver<V extends { approve: string | null; source: string }>(
+  base: V | null,
+  owner: OwnerDecision | null,
+  tool: string,
+): V | { approve: string; source: Exclude<OwnerDecisionSource, "owner-rule-deny">; rule?: string } | null {
+  if (base?.source === "custom-rule-deny" || base?.source === "custom-rule-ask") return base;
+  if (owner?.kind !== "allow") return base;
+  return {
+    approve: owner.source === "owner-rule"
+      ? `approved ${tool} (your rule)`
+      : owner.source === "owner-auto" ? `approved ${tool} (automatic approval)` : `approved ${tool} (bypass)`,
+    source: owner.source,
+    ...(owner.rule ? { rule: owner.rule.id } : {}),
+  };
 }
 
 /** Whether an allow rule answers a call in this situation: an ordinary

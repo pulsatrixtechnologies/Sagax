@@ -9,6 +9,7 @@ import {
   matchOwnerRule,
   normalizeRuleTool,
   ownerDecision,
+  ownerVerdictOver,
   ruleCandidateFor,
   ruleCoversExactScope,
   WHOLE_CALL_KEY,
@@ -22,6 +23,7 @@ import {
   type RuleCall,
 } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
+import { autoVerdict } from "./auto-approve.ts";
 
 const ALICE = "pr_alice";
 const BOB = "pr_bob";
@@ -579,5 +581,58 @@ describe("app rules on the person's own computer (parité R10, ligne 80)", () =>
     for (const situation of [{ held: true }, { from: "admin" as const }, { from: "origin" as const }]) {
       expect(cardRuleCandidate({ tool: CLICK, input: clickSafari, app: SAFARI }, situation)?.tool).not.toBe(APP_RULE_TOOL);
     }
+  });
+});
+
+describe("Bypass on the owner's own computer, and what always wins over it (#1065)", () => {
+  const DESKTOP_READ = "mcp__sagax-desktop__read_file";
+  const DESKTOP_RUN = "mcp__sagax-desktop__run_command";
+  const readme = JSON.stringify({ path: "C:/repo/README.md" });
+  const listing = JSON.stringify({ command: "Get-ChildItem -Recurse docs", cwd: "C:/repo", timeout_seconds: 30 });
+  const desktop = (tool: string, input: string): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool, input });
+
+  it("Bypass answers a read or a command on the owner's real computer from their own turn, with no card", () => {
+    for (const [tool, input] of [[DESKTOP_READ, readme], [DESKTOP_RUN, listing]] as const) {
+      expect(ownerDecision({ mode: "bypass", rules: [], call: desktop(tool, input), autonomyRefused: true, ownComputerOwnTurn: true }))
+        .toMatchObject({ kind: "allow", source: "owner-bypass" });
+    }
+  });
+
+  it("Auto and Approval keep the card there, and another origin keeps it under Bypass", () => {
+    for (const mode of ["auto", "approval"] as const) {
+      expect(ownerDecision({ mode, rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true, ownComputerOwnTurn: true }))
+        .toMatchObject({ kind: "card", reason: "origin" });
+    }
+    expect(ownerDecision({ mode: "bypass", rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true }))
+      .toMatchObject({ kind: "card", reason: "origin" });
+  });
+
+  it("a delete, a hold, a security key and the owner's deny rule still stop Bypass on the owner's computer", () => {
+    const rm = JSON.stringify({ command: "rm -rf docs", cwd: "C:/repo" });
+    const own = { mode: "bypass" as const, autonomyRefused: true, ownComputerOwnTurn: true };
+    expect(ownerDecision({ ...own, rules: [], call: desktop(DESKTOP_RUN, rm) })).toMatchObject({ kind: "card", reason: "destructive" });
+    expect(ownerDecision({ ...own, rules: [], call: desktop(DESKTOP_READ, readme), personMustAnswer: true })).toMatchObject({ kind: "card", reason: "hold" });
+    expect(ownerDecision({ ...own, rules: [], call: desktop(DESKTOP_READ, readme), stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+    const deny: OwnerRule = { id: "d1", ownerId: ALICE, botId: null, tool: "sagax-desktop__read_file", scope: {}, behavior: "deny", description: "never", createdAt: 1, updatedAt: 1 };
+    expect(ownerDecision({ ...own, rules: [deny], call: desktop(DESKTOP_READ, readme) })).toMatchObject({ kind: "deny" });
+  });
+
+  it("an organization rule Refuser or Demander d'abord wins over Bypass, Auto and an Always allow", () => {
+    const allowed = ownerDecision({ mode: "bypass", rules: [], call: desktop(DESKTOP_READ, readme), autonomyRefused: true, ownComputerOwnTurn: true });
+    expect(allowed.kind).toBe("allow");
+    for (const mode of ["full", "auto", "ask"] as const) {
+      const orgAsk = autoVerdict(mode, DESKTOP_READ, { sagaxGate: true, customRule: { behavior: "ask", id: "orule_ask" } });
+      expect(orgAsk.source).toBe("custom-rule-ask");
+      expect(ownerVerdictOver(orgAsk, allowed, DESKTOP_READ)).toMatchObject({ approve: null, source: "custom-rule-ask" });
+      const orgDeny = autoVerdict(mode, DESKTOP_READ, { sagaxGate: true, emailDraftApproved: true, customRule: { behavior: "deny", id: "orule_deny" } });
+      expect(orgDeny.source).toBe("custom-rule-deny");
+      expect(ownerVerdictOver(orgDeny, allowed, DESKTOP_READ)).toMatchObject({ approve: null, source: "custom-rule-deny" });
+    }
+    const ruleAllow = ownerDecision({ mode: "auto", rules: [{ id: "a1", ownerId: ALICE, botId: null, tool: "sagax-desktop__read_file", scope: {}, behavior: "allow", description: "ok", createdAt: 1, updatedAt: 1 }], call: desktop(DESKTOP_READ, readme) });
+    expect(ruleAllow.kind).toBe("allow");
+    expect(ownerVerdictOver(autoVerdict("auto", DESKTOP_READ, { customRule: { behavior: "ask", id: "orule_ask" } }), ruleAllow, DESKTOP_READ)?.approve).toBeNull();
+    // with no rule in the way, the owner's Bypass answers
+    expect(ownerVerdictOver(autoVerdict("full", DESKTOP_READ, { sagaxGate: true }), allowed, DESKTOP_READ))
+      .toMatchObject({ approve: `approved ${DESKTOP_READ} (bypass)`, source: "owner-bypass" });
   });
 });
