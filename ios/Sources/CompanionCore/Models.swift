@@ -57,10 +57,43 @@ public struct ApprovalPlainWords: Codable, Hashable, Sendable {
     public var title: String
     public var line: String
     public var risk: String? = nil
-    public init(title: String, line: String, risk: String? = nil) {
+    /// The verb phrase after "wants to" ("view the schedule in ConnectWise
+    /// PSA"), in `locale`. Nil on older servers.
+    public var action: String? = nil
+    /// The language the server worded these in (the person's own, #1089).
+    /// Nil on older servers, which word them in English.
+    public var locale: String? = nil
+    public init(title: String, line: String, risk: String? = nil, action: String? = nil, locale: String? = nil) {
         self.title = title
         self.line = line
         self.risk = risk
+        self.action = action
+        self.locale = locale
+    }
+}
+
+/// The rule an answer saved (`OptionCardData.ruleSaved`).
+public struct SavedOwnerRule: Codable, Hashable, Sendable {
+    public var id: String?
+    /// "allow", "ask" or "deny".
+    public var behavior: String
+    public var description: String
+    public init(id: String? = nil, behavior: String, description: String) {
+        self.id = id
+        self.behavior = behavior
+        self.description = description
+    }
+}
+
+/// Who answered a card when it was not a tap (`CardAnswerer`): `via` is
+/// "call", "ai-client", "primary-bot" or "auto-review"; `bot` names the
+/// Primary Bot that answered.
+public struct CardAnsweredBy: Codable, Hashable, Sendable {
+    public var via: String?
+    public var bot: String?
+    public init(via: String? = nil, bot: String? = nil) {
+        self.via = via
+        self.bot = bot
     }
 }
 
@@ -132,6 +165,16 @@ public struct OptionCard: Codable, Hashable, Sendable {
     /// Organization server: a server command of a member's bot that only an
     /// organization admin answers. Never remembered.
     public var adminApproval: Bool? = nil
+    /// 2026-10-14: the person's own rule saved with this answer (Always allow
+    /// on the card, `OptionCardData.ruleSaved`). Nil on older servers.
+    public var ruleSaved: SavedOwnerRule? = nil
+    /// A change the person took back (Undo).
+    public var undone: Bool? = nil
+    /// How the card was answered when not by a tap (`CardAnswerer.via`).
+    public var answeredBy: CardAnsweredBy? = nil
+    /// The engine's own `<server>__<tool>` when `tool` is only a kind (ACP
+    /// "other") or a bare name.
+    public var mcpTool: String? = nil
     /// Durable proposals. Only their presence matters to the phone: a
     /// proposal is confirmed or cancelled, never remembered or batched.
     public var routineRequest: ProposalRequestMarker? = nil
@@ -483,6 +526,9 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var access: AccessCard? = nil
     /// `kind == .goalRun`: the room goal's receipt.
     public var goalRun: GoalRunCard? = nil
+    /// A phone call or a purchase the bot asks for (`Message.outbound`,
+    /// shared/wire.ts `OutboundCard`): drawn as its own card.
+    public var outbound: OutboundCardData? = nil
     /// The request line, live card or result of a parallel task.
     public var parallelTask: ParallelTaskRef? = nil
     /// Flat reply reference for an inline quote; unrelated to `parentId`.

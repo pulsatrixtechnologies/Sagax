@@ -200,6 +200,15 @@ public struct PendingApproval: Hashable, Sendable, Identifiable {
 
     public var id: String { requestId }
 
+    public init(message: Message, card: OptionCard, requestId: String, tool: String, threadId: String? = nil, parallelTitle: String? = nil) {
+        self.message = message
+        self.card = card
+        self.requestId = requestId
+        self.tool = tool
+        self.threadId = threadId
+        self.parallelTitle = parallelTitle
+    }
+
     /// The thread the answer goes to.
     public func answerThread(conversation: String) -> String { threadId ?? conversation }
 }
@@ -783,10 +792,19 @@ public enum ApprovalHeading: Hashable, Sendable {
     /// ConnectWise PSA?") for a plain tool ask, when the phone reads English:
     /// those words are English, and a mixed sentence is worse than the app's
     /// own localized "wants to" heading.
+    ///
+    /// Since #1089 the server words the card in its person's language and
+    /// says which (`plain.locale`): those words are used when they are in
+    /// the reader's. An older server sends English without saying so.
     public static func plainTitle(_ card: OptionCard, language: String? = Locale.preferredLanguages.first) -> String? {
         guard case .wantsTo = of(card), let title = card.plain?.title.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else { return nil }
-        guard (language ?? "en").lowercased().hasPrefix("en") else { return nil }
+        guard sameLanguage(card.plain?.locale ?? "en", language ?? "en") else { return nil }
         return title
+    }
+
+    static func sameLanguage(_ a: String, _ b: String) -> Bool {
+        let first = { (tag: String) in tag.lowercased().split(whereSeparator: { $0 == "-" || $0 == "_" }).first.map(String.init) ?? "en" }
+        return first(a) == first(b)
     }
 
     /// The server's plain line under the title, on the same terms.
@@ -803,8 +821,10 @@ public enum ApprovalHeading: Hashable, Sendable {
         if let command = card.commandAllowlist?.command { return command }
         let text = card.subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
-        guard text.hasPrefix("{") || text.hasPrefix("[") else { return card.subtitle }
-        return argumentSummary(card.toolInput ?? card.subtitle) ?? plainLine(card)
+        guard GateArguments.isTechnical(card) else { return card.subtitle }
+        // the gate's `<tool> {json}` is arguments: its JSON only
+        let json = card.toolInput ?? GateArguments.split(text, known: [card.tool, card.mcpTool])?.json ?? text
+        return argumentSummary(json) ?? plainLine(card)
     }
 
     /// Raw JSON arguments are not shown as such: the one argument a person

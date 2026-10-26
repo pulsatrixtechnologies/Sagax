@@ -204,6 +204,9 @@ struct MessageRow: View {
         // (OwnerWait.tsx): who it waits on, or who settled it. No controls.
         if message.ownerWait != nil {
             OwnerWaitView(message: message)
+        } else if let outbound = message.outbound, outbound.isDrawable, message.role == .bot {
+            // a phone call or a purchase on its card (OutboundCard.tsx)
+            OutboundCardView(card: outbound, accent: Theme.readable(MausPalette.color(chat.color)))
         } else {
             kindContent
         }
