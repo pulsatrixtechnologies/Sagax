@@ -8193,7 +8193,7 @@
   "chat.routineChange.updated": "Routine modifiée",
   "chat.routineChange.deleted": "Routine supprimée",
   "chat.routineChange.aria": "{action} : {name}. L'ouvrir",
-  "chat.connectApps.pill": "Connecter des applications",
+  "chat.connectApps.pill": "Connecter des apps",
   "chat.connectApps.aria": "Connecter des applications : {apps}",
   "connectApps.section.needed": "Nécessaires dans cette conversation",
   "modelsVoice.key.uses": "Utilise la clé {name} de la section Clés.",

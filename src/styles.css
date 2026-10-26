@@ -3261,12 +3261,12 @@ button:disabled.bg-danger {
   margin-inline-start: -4px;
   overflow: hidden;
 }
-.sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) {
+.sidebar-update-pill:is([data-layout="wide"], :not([data-layout="compact"]):is(:hover, :focus-visible, [data-wide])) {
   /* the word needs the icon plus its text; the pill grows in the row, so
      Connect apps shifts left rather than disappearing under it */
   width: auto;
 }
-.sidebar-update-pill:is(:hover, :focus-visible, [data-wide]) [data-update-text] {
+.sidebar-update-pill:is([data-layout="wide"], :not([data-layout="compact"]):is(:hover, :focus-visible, [data-wide])) [data-update-text] {
   max-width: 11rem;
   opacity: 1;
   padding-inline-end: 14px;

@@ -697,7 +697,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
           data-sidebar-account-pill=""
           data-menu-opened={open || undefined}
           className={cn(
-            "flex h-[var(--foot-tile-h,2.25rem)] w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1.5 text-left transition-colors [button:focus-visible:not([data-pointer-focus])>&]:ring-2 [button:focus-visible:not([data-pointer-focus])>&]:ring-focus",
+            "flex h-[var(--foot-tile-h,2.25rem)] w-full min-w-0 items-center gap-1 rounded-full border border-sidebar-hairline-weak bg-sidebar-card py-1 pl-1 pr-1 text-left transition-colors [button:focus-visible:not([data-pointer-focus])>&]:ring-2 [button:focus-visible:not([data-pointer-focus])>&]:ring-focus",
             open ? "bg-sidebar-elevated-hover ring-2 ring-accent/60" : "hover:bg-sidebar-elevated-hover",
           )}
         >
