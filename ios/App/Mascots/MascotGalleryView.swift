@@ -30,6 +30,7 @@ struct MascotGalleryView: View {
                 case "shape-volume": ShapeVolumeGallery()
                 case "trombi": trombis
                 case "shiba": shibas
+                case "shiba-hd": shibaHD
                 case "frog": frogs
                 case "crab": crabs
                 case "group": groups
@@ -123,7 +124,8 @@ struct MascotGalleryView: View {
         }
     }
 
-    private var shibas: some View {
+    /// HD mascots (#968): the painted shiba, its loop, stills and the small bust; the vector look beside it.
+    private var shibaHD: some View {
         VStack(alignment: .leading, spacing: 10) {
             row("HD: idle (loop), thinking, sleeping, 42 pt bust") {
                 let look = CompleteMascotLook(character: .shiba)
@@ -132,6 +134,25 @@ struct MascotGalleryView: View {
                 character(look, "orange", .none, 60, .sleeping, hd: true)
                 character(look, "orange", .none, 42, .happy, hd: true)
             }
+            row("vector (HD off): idle, thinking, sleeping, 42 pt") {
+                let look = CompleteMascotLook(character: .shiba)
+                character(look, "orange", .none, 85, .idle)
+                character(look, "orange", .none, 60, .thinking)
+                character(look, "orange", .none, 60, .sleeping)
+                character(look, "orange", .none, 42, .happy)
+            }
+            row("HD: happy (loop), surprised, angry, 24 pt") {
+                let look = CompleteMascotLook(character: .shiba)
+                character(look, "orange", .none, 85, .happy, hd: true, animated: true)
+                character(look, "orange", .none, 60, .surprised, hd: true)
+                character(look, "orange", .none, 60, .angry, hd: true)
+                character(look, "orange", .none, 24, .idle, hd: true)
+            }
+        }
+    }
+
+    private var shibas: some View {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(ShibaSkin.allCases, id: \.self) { skin in
                 row(skin.rawValue) {
                     let look = CompleteMascotLook(character: .shiba, shibaSkin: skin)
