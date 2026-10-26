@@ -216,6 +216,18 @@ describe("the detail pane", () => {
     expect(html).not.toContain("<textarea");
   });
 
+  it("opened from Connect apps, the detail's breadcrumb goes back to Connect apps and to Browse Bots (2026-10-26)", () => {
+    const onSelect = vi.fn();
+    const html = renderToStaticMarkup(createElement(BotCatalogDetailView, {
+      item: pixel, content: null, tab: "soul", onTab: () => {}, onBack: () => {}, actions: null,
+      trail: [{ label: "Connect Apps", onSelect }],
+    }));
+    expect(html).toMatch(/data-breadcrumb[\s\S]*?>Connect Apps<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Pixel</);
+    expect(html).toContain("data-catalog-back");
+    const alone = renderToStaticMarkup(createElement(BotCatalogDetailView, { item: pixel, content: null, tab: "soul", onTab: () => {}, onBack: () => {}, actions: null }));
+    expect(alone).not.toContain("data-breadcrumb");
+  });
+
   it("draws the instructions as markdown, not as raw text", () => {
     const soul = "# Responsabilités\n\n- Répondre **vite**\n- Garder un ton *clair*\n\n1. Accuser réception\n\nAvec `une date`.";
     const html = renderToStaticMarkup(createElement(BotCatalogDetailView, {

@@ -6,7 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BotCatalogDetailView, type CatalogDetailContent, type CatalogTab, CATALOG_TABS } from "../components/bot-catalog/BotCatalogDetailView";
 import { CATEGORY_MODAL } from "../components/category-modal";
-import { setLocale } from "../lib/i18n";
+import { setLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
 import type { CatalogItem } from "../lib/bot-catalog";
@@ -102,6 +102,7 @@ createRoot(document.getElementById("root")!).render(
               tab={tab}
               onTab={() => {}}
               onBack={() => {}}
+              trail={params.get("inApps") ? [{ label: t("connectApps.title"), onSelect: () => {} }] : undefined}
               actions={<>
                 <button type="button" className="rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-app">Ouvrir</button>
                 <button type="button" className="rounded-full border border-border px-4 py-2 text-[13px] font-medium text-ink">Publier au catalogue de l'organisation</button>

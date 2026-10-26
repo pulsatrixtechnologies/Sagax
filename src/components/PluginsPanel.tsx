@@ -20,7 +20,7 @@
 // This panel is the only place that adds, removes, configures or lists
 // plugins, servers, apps, skills and marketplaces. Other screens link here
 // or choose among them for one bot; keys stay in Settings > API keys.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, Loader2, X } from "lucide-react";
 
 import { api, ApiError, useStore } from "@/state/store";
@@ -206,7 +206,14 @@ export function PluginsPanel() {
   const [stack, setStack] = useState<Page[]>([{ page: "main" }]);
   const page = stack[stack.length - 1]!;
   /** Open a page above the current one. */
-  const push = useCallback((next: Page) => setStack((current) => [...current, next]), []);
+  // Connect apps' list scroll, kept while a page opened from it covers it
+  // (Browse Bots) and put back when the breadcrumb returns (2026-10-26).
+  const listScroll = useRef(0);
+  const push = useCallback((next: Page) => {
+    const list = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-list]");
+    if (list) listScroll.current = list.scrollTop;
+    setStack((current) => [...current, next]);
+  }, []);
   /** Back to the page at this depth (0: Connect apps). */
   const popTo = useCallback((depth: number) => setStack((current) => current.slice(0, Math.max(1, depth + 1))), []);
   /** A detail page after an install: in place of the detail it came from
@@ -328,6 +335,14 @@ export function PluginsPanel() {
   }, [orgAccessRequested, orgAdmin, page.page]);
   const skillsLibraryOn = skillsLibraryEnabled(state.config);
   const back = useCallback(() => setStack((current) => current.length > 1 ? current.slice(0, -1) : current), []);
+  const lastPage = useRef(page.page);
+  useLayoutEffect(() => {
+    const from = lastPage.current;
+    lastPage.current = page.page;
+    if (from !== "bots" || page.page === "bots") return;
+    const list = dialogRef.current?.querySelector<HTMLElement>("[data-plugins-list]");
+    if (list) list.scrollTop = listScroll.current;
+  }, [page.page]);
   useEffect(() => { void BotCatalogPane.preload().catch(() => undefined); }, []);
 
   // Focus and keys: Escape steps back one page (Browse Bots' own steps
