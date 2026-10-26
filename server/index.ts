@@ -15573,10 +15573,12 @@ bus.subscribe((event: RuntimeEvent) => {
       });
       break;
     case "runtime.notice":
-      // informational: the turn carries on. The prefix keeps it a status row
-      // the person always sees (src/lib/activity-runs.ts), never a tool step
-      // hidden with Tool calls off.
-      pushMessage({ role: "bot", kind: "activity", tool: { name: `notice: ${event.message.slice(0, 240)}`, ok: true } });
+      // An engine's technical note (an MCP server skipped, a session
+      // rebuilt, a model fallback, a quiet engine, a Codex slot): the turn
+      // carries on. It goes to the server log and the Events lens (the
+      // runtime stream, server/thread-events.ts), never into the chat
+      // (the maintainer, 2026-10-26, shared/chat-notices.ts).
+      console.info(`[notice] ${event.threadId}: ${redactSecretsInText(event.message.slice(0, 240))}`);
       break;
     case "runtime.error": {
       // A stop the person asked for is not a row in the chat.

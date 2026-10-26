@@ -105,7 +105,7 @@ describe("GroupView: computer/browser session visibility", () => {
             { id: "ok", role: "bot", kind: "activity", at: 1, tool: { name: "Read", ok: true }, from },
             { id: "run", role: "bot", kind: "activity", at: 2, tool: { name: "Bash" }, from },
             { id: "bad", role: "bot", kind: "activity", at: 3, tool: { name: "Write", ok: false }, from },
-            { id: "notice", role: "bot", kind: "activity", at: 4, tool: { name: "notice: waiting on the model", ok: true }, from },
+            { id: "notice", role: "bot", kind: "activity", at: 4, tool: { name: "notice: Waiting for 1Password: approve the request in 1Password on your computer.", ok: true }, from },
             { id: "err", role: "bot", kind: "activity", at: 5, tool: { name: "error: boom", ok: false }, from },
             { id: "comm", role: "bot", kind: "activity", at: 6, tool: { name: "Messaged @Ada" }, comm: { groupId: "g", withBotId: "ada", withName: "Ada", withColor: "teal" }, from },
             { id: "txt", role: "bot", kind: "text", at: 7, text: "hello there", from },
@@ -117,7 +117,7 @@ describe("GroupView: computer/browser session visibility", () => {
       expect(markup).not.toContain('data-mid="ok"');
       expect(markup).not.toContain('data-mid="run"');
       expect(markup).not.toContain('data-mid="bad"');
-      expect(markup).toContain("waiting on the model");
+      expect(markup).toContain("1Password");
       expect(markup).toContain("boom");
       expect(markup).toContain("Messaged @Ada");
       expect(markup).toContain("hello there");

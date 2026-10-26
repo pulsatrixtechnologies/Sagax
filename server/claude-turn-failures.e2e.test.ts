@@ -196,9 +196,9 @@ it("goes on in a new session started from the chat when Claude cannot reopen the
     expect((await control(["wait", "--bot", marketer.id, "--timeout", "30"])).status).toBe("settled");
     const thread = await messages(marketer.activeTaskId);
     const after = thread.slice(thread.findIndex((m) => m.role === "user" && m.text?.includes("what this")));
-    expect(after.filter((m) => m.kind === "activity" && (m.tool?.name ?? "").startsWith("notice: ")).map((m) => m.tool.name)).toEqual([
-      `notice: ${rebuiltSessionNotice("Claude Code")}`,
-    ]);
+    // the rebuilt session is a technical note: the log has it, the chat does not (the maintainer, 2026-10-26)
+    expect(after.filter((m) => m.kind === "activity" && (m.tool?.name ?? "").startsWith("notice: ")).map((m) => m.tool.name)).toEqual([]);
+    expect(after.some((m) => (m.tool?.name ?? "").includes(rebuiltSessionNotice("Claude Code")))).toBe(false);
     expect(after.some((m) => m.kind === "activity" && m.tool?.ok === false)).toBe(false);
     expect(after.some((m) => m.role === "bot" && m.kind === "text" && m.text)).toBe(true);
   } finally {

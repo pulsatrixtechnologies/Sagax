@@ -1,4 +1,5 @@
 import { isQuietWorkspaceLine } from "../../shared/workspace-line";
+import { isTechnicalNoticeName } from "../../shared/chat-notices";
 
 // The harness's receipts about a turn (Phase 0): the work digest written
 // after every settled turn, and a compaction record. A finished Live call's
@@ -22,11 +23,14 @@ function isStoppedNotice(message: { kind: string }): boolean {
   return typeof name === "string" && name.replace(/^error:\s*/, "").trim() === "turn stopped";
 }
 
-/** The "On your computer" line: stored, never drawn, so never the preview
- * (isHiddenStatusActivity in activity-runs.ts). */
+/** The "On your computer" line and a technical notice (shared/chat-notices.ts):
+ * stored, never drawn, so never the preview (isHiddenStatusActivity in
+ * activity-runs.ts). */
 function isHiddenWorkspaceLine(message: { kind: string }): boolean {
   if ((message.kind === "screen" || message.kind === "video") && !(message as { requested?: boolean }).requested) return true; // a view nobody asked for is not drawn (shared/requested-views.ts)
-  return message.kind === "activity" && isQuietWorkspaceLine((message as { tool?: { name?: string } }).tool?.name);
+  if (message.kind !== "activity") return false;
+  const name = (message as { tool?: { name?: string } }).tool?.name;
+  return isQuietWorkspaceLine(name) || isTechnicalNoticeName(name);
 }
 
 /** The newest message that is not a receipt, or undefined. */
