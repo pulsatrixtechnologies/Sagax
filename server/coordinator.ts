@@ -51,6 +51,9 @@ export interface ComposedTurn {
   text: string;
   note: string;
   restartNote: string;
+  /** A resume a teammate's question made due while other work is still
+   * out: the bots whose questions it passes on. */
+  asked?: string[];
 }
 
 export interface LiveHandoffEdge {

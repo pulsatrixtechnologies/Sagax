@@ -9284,17 +9284,20 @@ const coordinator: Coordinator = createCoordinator({
       // result): this review answers, from a clean stream.
       if (resumed && relayShown.delete(node.threadId)) clearRelayedStream(node.threadId);
       if (resumed && !group) {
-        const settledFrom = [...new Set(coordinator.children(node.id)
-          .map(child => store.bot(child.botId)?.name ?? "Teammate"))];
+        // A teammate's question resumes it while other work is still out:
+        // named as a question, and no "results in" notification.
+        const asking = composed.asked ?? [];
+        const settledFrom = [...new Set((asking.length ? asking : coordinator.children(node.id).map(child => child.botId))
+          .map(botId => store.bot(botId)?.name ?? "Teammate"))];
         const who = settledFrom.length ? settledFrom.join(", ") : "delegated work";
         store.appendMessage(node.threadId, {
           role: "bot", kind: "activity",
-          tool: { name: `Resumed with ${who} results${node.restart ? " after a restart" : ""}, reviewing`, ok: true },
+          tool: { name: `${asking.length ? `Resumed with a question from ${who}` : `Resumed with ${who} results`}${node.restart ? " after a restart" : ""}, reviewing`, ok: true },
         });
         // A cut resume running again already sent its notification, and a
         // quiet report's review stays quiet (turnAnswers).
         const quiet = turnAnswers(node.threadId, { cardContinuation: true, coordination: node }).quiet;
-        if (node.restart !== "rerun" && !quiet) {
+        if (node.restart !== "rerun" && !quiet && asking.length === 0) {
           notify(deliverableNotification("delegation-settled", bot, node.threadId, `Results in from ${who}`, { avatarUrl: bot.avatarUrl }));
         }
         if (!node.parentId && !quiet) reviewAnswerThreads.add(node.threadId);

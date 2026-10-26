@@ -257,4 +257,29 @@ describe("runtime store: request marks", () => {
     store.insert(child("bad", root, { approved: "yes" as unknown as boolean }), { kind: "enqueued", at: 4_000 });
     expect(() => store.get("bad")).toThrow(/does not match the record schema/);
   });
+
+  it("round-trips carrying, and reads a row an earlier build wrote without it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-runtime-carrying-"));
+    try {
+      const path = join(dir, "runtime.db");
+      const store = open(path);
+      const root = assignment("root", { status: "running" });
+      store.insert(root, { kind: "enqueued", at: 1_000 });
+      const carrying = assignment("carrying", { ...root, id: "carrying", rootId: "carrying", carrying: ["a", "b"] });
+      store.insert(carrying, { kind: "enqueued", at: 2_000 });
+      expect(store.get("carrying")?.carrying).toEqual(["a", "b"]);
+      // the record travels in the json column: no column, no migration;
+      // a row an earlier build wrote simply has no carrying
+      const db = new DatabaseSync(path, { readOnly: true });
+      const columns = (db.prepare("PRAGMA table_info(assignments)").all() as Array<{ name: string }>).map(c => c.name);
+      db.close();
+      expect(columns).not.toContain("carrying");
+      expect("carrying" in store.get("root")!).toBe(false);
+      store.insert(child("bad", root, { carrying: "a" as unknown as string[] }), { kind: "enqueued", at: 3_000 });
+      expect(() => store.get("bad")).toThrow(/does not match the record schema/);
+    } finally {
+      for (const s of stores.splice(0)) s.close();
+      removeTempDir(dir);
+    }
+  });
 });
