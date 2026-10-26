@@ -935,7 +935,7 @@ import {
 import { serviceThreadViewer, serviceViewerClosed } from "./service-viewer.ts";
 import { browserNavigationRefusal } from "./browser-navigation.ts";
 import { describeBrand, loadBrand } from "./brand.ts";
-import { deliverSseFrame } from "./sse-fanout.ts";
+import { deliverSseFrame, openSseHeartbeat } from "./sse-fanout.ts";
 import {
   PHONE_SECRET_PROTOCOL_VERSION,
   PhoneSecretBridge,
@@ -10233,6 +10233,9 @@ interface SseClient {
   presence?: boolean;
   /** APNs token this phone sent on the stream (`x-sagax-push-token`). */
   pushToken?: string;
+  /** Stops the heartbeat and leaves `sseClients` before ending the response;
+   * every way a stream ends goes through it (sse-fanout.ts openSseHeartbeat). */
+  close: () => void;
 }
 const sseClients = new Set<SseClient>();
 
@@ -10245,13 +10248,7 @@ let audienceChangedAt = 0;
 function audienceChanged(): void {
   audienceChangedAt = lastSeq;
   for (const client of sseClients) {
-    if (client.viewer.kind !== "member") continue;
-    sseClients.delete(client);
-    try {
-      client.res.end();
-    } catch {
-      /* already gone */
-    }
+    if (client.viewer.kind === "member") client.close();
   }
 }
 // The person drives their server environment desktop: bots' clicks there wait.
@@ -10603,13 +10600,7 @@ function closeSessionStreams(sessionId: string): void {
   browserNetworkDebug.clearOwner(sessionId);
   desktopViewer.closeForOwner(sessionId);
   for (const client of sseClients) {
-    if (client.sessionId !== sessionId) continue;
-    sseClients.delete(client);
-    try {
-      client.res.end();
-    } catch {
-      /* already gone */
-    }
+    if (client.sessionId === sessionId) client.close();
   }
 }
 sessions.onSessionRevoked((sessionId) => {
@@ -10707,9 +10698,7 @@ function broadcast(payload: Record<string, unknown>, options: { adminOnly?: bool
     if (out === null) continue;
     // Screen frames are replaceable and durable events are not: see
     // ./sse-fanout.ts for the backpressure/bound decision this makes.
-    if (deliverSseFrame(client, kind, out) === "disconnected") {
-      sseClients.delete(client);
-    }
+    if (deliverSseFrame(client, kind, out) === "disconnected") client.close();
   }
   if (kind === "bot" && payload.bot && typeof payload.bot === "object") {
     const id = (payload.bot as { id?: unknown }).id;
@@ -41075,6 +41064,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (method === "GET" && path === "/api/events") {
       const viewer = viewerFor(auth, path);
       const visibleNow = visibleTo(viewer);
+      // A person of the organization: this stream is one of their clients.
+      const presenceOf = presenceViewer(auth);
+      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
       const client: SseClient = {
         res,
         admin: auth.scopes.includes("admin"),
@@ -41087,6 +41079,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           bots: new Set(store.bots.filter((bot) => visibleNow.bot(bot.id) && listedBotVisible(bot, viewerId)).map((bot) => bot.id)),
           groups: new Set(store.groups.filter((group) => visibleNow.group(group.id) && groupVisible(group, viewerId)).map((group) => group.id)),
         },
+        // A comment keeps intermediaries from idling the connection, while a
+        // data frame is visible to EventSource clients and resets their own
+        // liveness watchdog. Heartbeats carry no id and never advance replay.
+        // An expired session's stream ends at the next heartbeat.
+        close: openSseHeartbeat(res, {
+          everyMs: SSE_HEARTBEAT_MS,
+          live: () => !client.sessionId || sessions.isLive(client.sessionId),
+          onBeat: () => { if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId); },
+          onClose: () => {
+            sseClients.delete(client);
+            presenceClose?.();
+          },
+        }),
       };
       if (auth.kind === "session") {
         client.sessionId = auth.session.id;
@@ -41096,9 +41101,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!(auth.kind === "loopback" && auth.trust === "service")) client.identity = () => viewerIdentity(auth);
       if (viewerId) client.viewerId = viewerId;
-      // A person of the organization: this stream is one of their clients.
-      const presenceOf = presenceViewer(auth);
-      const presenceClose = presenceOf.ok ? presence.connect(presenceOf.id, presenceOf.sessionId) : null;
       if (presenceOf.ok) client.presence = true;
       res.writeHead(200, {
         "content-type": "text/event-stream",
@@ -41148,29 +41150,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         }
       }
 
-      sseClients.add(client);
+      // A stream that already failed (its close ran) never joins the fan-out.
+      if (!res.writableEnded && !res.destroyed) sseClients.add(client);
       // Keep this long-lived response out of socket idle-timeout handling
       // without weakening timeouts for every other API request.
       req.socket.setTimeout(0);
-      // A comment keeps intermediaries from idling the connection, while a
-      // data frame is visible to EventSource clients and resets their own
-      // liveness watchdog. Heartbeats carry no id and never advance replay.
-      const keepalive = setInterval(() => {
-        // an expired session's stream ends at the next heartbeat
-        if (client.sessionId && !sessions.isLive(client.sessionId)) {
-          res.end();
-          return;
-        }
-        try {
-          res.write(`: keepalive\n\ndata: ${JSON.stringify({ kind: "ping" })}\n\n`);
-          if (presenceOf.ok) presence.touch(presenceOf.id, presenceOf.sessionId);
-        } catch {}
-      }, SSE_HEARTBEAT_MS);
-      req.on("close", () => {
-        clearInterval(keepalive);
-        sseClients.delete(client);
-        presenceClose?.();
-      });
+      req.on("close", client.close);
       return;
     }
 
@@ -41321,8 +41306,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       res.writeHead(200, {
         "content-type": message.mime ?? "image/png",
         "content-length": String(bytes.byteLength),
-        // a settled message's image never changes
-        "cache-control": "private, max-age=31536000, immutable",
+        // Never cached: a room's screen is shown only to the person whose
+        // turn holds the workplace, and access to a thread can be withdrawn;
+        // a browser cache would keep the image past both.
+        "cache-control": "private, no-store",
       });
       return res.end(bytes);
     }
@@ -41446,7 +41433,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         ...(streamsMessageImage
           ? { "content-disposition": "inline" }
           : { "content-disposition": messageFileDisposition(messageFileDownloadName(downloadName, file.name)) }),
-        "cache-control": streamsMessageImage ? "private, max-age=3600" : "private, no-store",
+        // previews too: access to the thread can be withdrawn
+        "cache-control": "private, no-store",
         "cdn-cache-control": "no-store",
         "cloudflare-cdn-cache-control": "no-store",
         pragma: "no-cache",
@@ -41517,7 +41505,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         "content-disposition": preview
           ? "inline"
           : messageFileDisposition(messageFileDownloadName(ref.source === "upload" || ref.source === "attachment" ? ref.name : undefined, file.name)),
-        "cache-control": preview ? "private, max-age=3600" : "private, no-store",
+        // previews too: access to the thread can be withdrawn
+        "cache-control": "private, no-store",
         "cdn-cache-control": "no-store",
         "cloudflare-cdn-cache-control": "no-store",
         pragma: "no-cache",

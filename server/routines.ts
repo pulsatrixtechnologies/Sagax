@@ -1208,6 +1208,9 @@ export class RoutineManager {
   private readonly prewoken = new Map<string, number>();
   /** routine id -> the task reserved and warmed for its next occurrence. */
   private readonly reserved = new Map<string, { dueAt: number; botId: string; threadId: string; runAs?: string }>();
+  /** run id -> the task a run got when the write that would start it
+   * failed: the run went back to queued and starts on that task next tick. */
+  private readonly unstartedTasks = new Map<string, string>();
   /** The file existed but could not be read (corrupt JSON or a schema
    * failure). Saves are refused while set so a fresh empty state can never
    * overwrite whatever is on disk. Missing means a first run. */
@@ -1593,7 +1596,7 @@ export class RoutineManager {
     const run = this.runs.find((r) => r.id === id && ["running", "waiting"].includes(r.status));
     if (!run) return;
     this.failRun(run, message);
-    queueMicrotask(() => void this.tick());
+    queueMicrotask(() => this.tickInBackground());
   }
 
   create(input: RoutineInput, request?: RoutineRequestCommitFor<"create">, meta?: RoutineWriteMeta): Routine {
@@ -1920,7 +1923,7 @@ export class RoutineManager {
     }, () => this.discardResultsThreads(allocations));
     if (routine.resultsThreadId !== previousDestination) this.emitRoutine(routine);
     this.emitRun(run);
-    queueMicrotask(() => void this.tick());
+    queueMicrotask(() => this.tickInBackground());
     return cloneRun(run);
   }
 
@@ -1997,7 +2000,7 @@ export class RoutineManager {
       throw error;
     }
     this.emitRun(run);
-    queueMicrotask(() => void this.tick());
+    queueMicrotask(() => this.tickInBackground());
     return cloneRun(run);
   }
 
@@ -2068,7 +2071,7 @@ export class RoutineManager {
         await this.options.interruptTurn?.(run.botId, run.threadId).catch(() => {});
       }
     }
-    queueMicrotask(() => void this.tick());
+    queueMicrotask(() => this.tickInBackground());
     return cloneRun(run);
   }
 
@@ -2136,9 +2139,9 @@ export class RoutineManager {
     // Repair: a wall-clock routine whose next run was stored in the wrong
     // zone (a default that was the host's UTC) is recomputed once, here.
     try { this.rescheduleWallClock((routine) => { const found = this.routines.find((candidate) => candidate === routine); return found?.schedule.type === "daily"; }); } catch (error) { console.warn("routines: wall-clock repair failed", error); }
-    this.timer = setInterval(() => void this.tick(), 10_000);
+    this.timer = setInterval(() => this.tickInBackground(), 10_000);
     this.timer.unref?.();
-    void this.tick();
+    this.tickInBackground();
   }
 
   stop() {
@@ -2162,7 +2165,7 @@ export class RoutineManager {
       if (routine.enabled && !routine.suspended && dueAt != null && dueAt > now && dueAt < next) next = dueAt;
     }
     if (next - now >= 10_000) return;
-    this.dueWake = setTimeout(() => { this.dueWake = null; void this.tick(); }, next - now + 5);
+    this.dueWake = setTimeout(() => { this.dueWake = null; this.tickInBackground(); }, next - now + 5);
     this.dueWake.unref?.();
   }
 
@@ -2245,6 +2248,13 @@ export class RoutineManager {
     return `${name.slice(0, 80 - suffix.length).trimEnd()}${suffix}`;
   }
 
+  /** A scheduler pass nobody awaits (the timer, a wake, a settled run). A
+   * failure in it (a save on a full disk) is logged here: unhandled, the
+   * rejection would take the server down. */
+  private tickInBackground(): void {
+    this.tick().catch((error) => console.error("routines: a scheduler pass failed", error));
+  }
+
   async tick(): Promise<void> {
     if (this.ticking || this.paused) return;
     this.ticking = true;
@@ -2291,6 +2301,11 @@ export class RoutineManager {
         const stale = this.runs.filter((run) => run.routineId === routine.id && supersededBy(routine.nextRunAt!, run, this.options.handedOffWorkLive));
         for (const run of stale) await this.cancelRun(run.id, ROUTINE_SUPERSEDED);
       }
+      // Cancelling awaited the engine: a routine deleted, paused or
+      // rescheduled meanwhile is no longer due.
+      const stillDue = dueRoutines.filter((routine) => this.routines.includes(routine) && routine.enabled &&
+        !routine.suspended && routine.nextRunAt != null && routine.nextRunAt <= now);
+      dueRoutines.splice(0, dueRoutines.length, ...stillDue);
       const scheduledRuns: RoutineRun[] = [];
       const allocations: ResultsThreadAllocation[] = [];
       if (dueRoutines.length > 0) {
@@ -2505,7 +2520,9 @@ export class RoutineManager {
         // workspace has asked for runs to join the conversation they report to.
         const startedAt = this.now();
         const title = this.runTitle(run.routineName, startedAt);
-        const joined = joinedEarly;
+        const unstarted = this.unstartedTasks.get(run.id);
+        this.unstartedTasks.delete(run.id);
+        const joined = joinedEarly || unstarted || null;
         const reservedThread = joined || run.target === "room-goal" ? null : this.takeReserved(run);
         const task = joined
           ? { threadId: joined }
@@ -2525,7 +2542,15 @@ export class RoutineManager {
         run.threadId = task.threadId;
         run.startedAt = startedAt;
         run.status = "running";
-        this.save();
+        try {
+          this.save();
+        } catch (error) {
+          // Not running unless that is on disk: back to queued, on its task.
+          run.status = "queued";
+          run.startedAt = undefined;
+          this.unstartedTasks.set(run.id, task.threadId);
+          throw error;
+        }
         this.emitRun(run);
         turnTrace(task.threadId, "routine-run", true);
         try {
@@ -2700,7 +2725,7 @@ export class RoutineManager {
     }
     this.save();
     this.emitRun(run);
-    if (event.type === "turn.completed") queueMicrotask(() => void this.tick());
+    if (event.type === "turn.completed") queueMicrotask(() => this.tickInBackground());
     return cloneRun(run);
   }
 
@@ -2730,7 +2755,7 @@ export class RoutineManager {
       this.options.onRunRequeued?.(cloneRun(run));
       if (recovery.alert) this.options.onRunDeferred?.(cloneRun(run), recovery.alert);
     }
-    queueMicrotask(() => void this.tick());
+    queueMicrotask(() => this.tickInBackground());
   }
 
   finishGoalRun(runId: string, status: GroupGoalRunStatus, detail: string): RoutineRun | null {
@@ -2769,7 +2794,7 @@ export class RoutineManager {
       this.save();
       this.emitRun(run);
     }
-    queueMicrotask(() => void this.tick());
+    queueMicrotask(() => this.tickInBackground());
     return cloneRun(run);
   }
 

@@ -2,6 +2,7 @@
 // travel in environment variables, never command-line arguments or logs.
 import { runMcpBridge } from "./mcp-bridge.ts";
 import { augmentedPath } from "./env-path.ts";
+import { localComputerResultLine } from "./local-computer-guidance.ts";
 
 const {
   SAGAX_CUA_COMMAND: command,
@@ -33,4 +34,5 @@ runMcpBridge({
   env: { ...childEnv, PATH: augmentedPath() },
   label: "Local Cua Driver",
   gate: { url: url!, token: token! },
+  rewriteResponse: localComputerResultLine,
 });

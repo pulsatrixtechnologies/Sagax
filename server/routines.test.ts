@@ -201,6 +201,56 @@ describe("bounded scheduled overlap and run health", () => {
     expect(h.manager.listRoutines()[0].skippedRuns).toBe(1);
   });
 
+  it.each(["start", "a settled turn"] as const)("reports a failed write from the scheduler that %s triggers, then runs the occurrence once it can write", async (trigger) => {
+    const h = harness(start);
+    h.manager.create(input());
+    if (trigger === "a settled turn") { h.manager.runNow(h.manager.listRoutines()[0].id); await h.manager.tick(); }
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.setNow(start + 5 * 60_000);
+    // A settled turn writes its receipt, then queues a tick; only that tick's write fails.
+    if (trigger === "a settled turn") finish(h, "thread-1", true);
+    const save = vi.spyOn(h.manager as unknown as { save(): void }, "save").mockImplementation(() => { throw new Error("fixture disk full"); });
+    try {
+      if (trigger === "start") h.manager.start();
+      await vi.waitFor(() => expect(logged).toHaveBeenCalledWith(expect.stringMatching(/^routines: /), expect.objectContaining({ message: "fixture disk full" })));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(unhandled).toEqual([]);
+    } finally {
+      h.manager.stop();
+      process.off("unhandledRejection", onUnhandled);
+    }
+    save.mockRestore();
+    await h.manager.tick();
+    expect(h.started).toHaveLength(trigger === "start" ? 1 : 2);
+    expect(h.manager.listRoutines()[0].nextRunAt).toBe(start + 10 * 60_000);
+  });
+
+  it.each(["bot", "room-goal"] as const)("keeps a %s run queued on its task when the write that starts it fails, and starts it there at the next tick", async (target) => {
+    const h = harness(start);
+    h.manager.create(target === "bot" ? input() : { ...input(), target, botId: "chief-1", groupId: "room-1" });
+    const manager = h.manager as unknown as { save(): void };
+    const write = manager.save.bind(h.manager);
+    let saves = 0;
+    vi.spyOn(manager, "save").mockImplementation(() => {
+      if (++saves === 2) throw new Error("fixture disk full");
+      write();
+    });
+    h.setNow(start + 5 * 60_000);
+    await expect(h.manager.tick()).rejects.toThrow("fixture disk full");
+    const thread = target === "bot" ? "thread-1" : "goal-thread-1";
+    expect(h.manager.listRuns()).toEqual([expect.objectContaining({ status: "queued" })]);
+    expect(h.manager.listRuns()[0].startedAt).toBeUndefined();
+    expect([...h.started, ...h.startedGoals]).toEqual([]);
+
+    await h.manager.tick();
+    expect(h.taskTitles.length + h.goalTasks.length).toBe(1);
+    expect([...h.started, ...h.startedGoals].map((turn) => turn.threadId)).toEqual([thread]);
+    expect(h.manager.listRuns()[0]).toMatchObject({ status: "running", threadId: thread });
+  });
+
   it("lets different scheduled routines on the same bot run independently", async () => {
     const h = harness(start);
     h.manager.create(input());
@@ -343,6 +393,31 @@ describe("a run left waiting for the person", () => {
     expect(asked).toMatchObject({ status: "cancelled", error: ROUTINE_SUPERSEDED, threadId: "thread-1" });
     expect(next).toMatchObject({ status: "running", scheduledFor: first + minutes(120), threadId: "thread-2" });
     expect(h.interruptedTurns).toEqual([{ botId: "maus-1", threadId: "thread-1" }]);
+  });
+
+  it.each(["deleted", "paused", "rescheduled"] as const)("starts nothing from a routine %s while its unanswered run is being replaced", async (change) => {
+    const h = harness(monday);
+    const routine = h.manager.create({ ...daily, schedule: { type: "interval", everyMinutes: 60, anchorAt: monday } });
+    const first = routine.nextRunAt!;
+    h.setNow(first); await h.manager.tick();
+    h.setNow(first + minutes(5)); ask(h, "thread-1");
+    h.options.interruptTurn = async (botId, threadId) => {
+      h.interruptedTurns.push({ botId, threadId });
+      await Promise.resolve();
+      if (change === "deleted") h.manager.remove(routine.id);
+      else if (change === "paused") h.manager.update(routine.id, { enabled: false });
+      else h.manager.update(routine.id, { schedule: { type: "interval", everyMinutes: 240, anchorAt: monday } });
+    };
+
+    h.setNow(first + minutes(120)); await h.manager.tick();
+    expect(h.interruptedTurns).toEqual([{ botId: "maus-1", threadId: "thread-1" }]);
+    expect(h.started).toHaveLength(1);
+    expect(h.manager.listRuns()).toEqual([expect.objectContaining({ status: "cancelled", error: ROUTINE_SUPERSEDED, threadId: "thread-1" })]);
+
+    await h.manager.tick();
+    expect(h.started).toHaveLength(1);
+    expect(h.manager.listRuns()).toHaveLength(1);
+    if (change === "rescheduled") expect(h.manager.listRoutines()[0].nextRunAt).toBe(monday + minutes(240));
   });
 
   it.each(["skip", "queue"] as const)("keeps today's %s overlap behind a run that was answered and is still working", async (overlap) => {

@@ -15,6 +15,10 @@
 // (SAGAX_ELEVENLABS_API overrides it for dev and tests), Cloud Pro's relay for
 // its included token (included-services.ts). Only a key being saved is
 // verified, and that is always an own key.
+//
+// Every request refuses redirects (`redirect: "error"`): fetch follows them
+// and keeps custom headers, so a redirect would hand `xi-api-key` (and the
+// text being spoken) to whatever host it points at.
 import { elevenLabsProviderApi } from "../included-services.ts";
 
 const MODEL = "eleven_flash_v2_5";
@@ -73,6 +77,7 @@ export async function verifyKey(key: string): Promise<VerifyResult> {
   try {
     const res = await fetch(`${elevenLabsProviderApi()}/voices`, {
       headers: { "xi-api-key": key },
+      redirect: "error",
       signal: AbortSignal.timeout(20_000),
     });
     if (res.ok) return { ok: true };
@@ -85,6 +90,7 @@ export async function verifyKey(key: string): Promise<VerifyResult> {
 export async function listVoices(key: string, api: string): Promise<Voice[]> {
   const res = await fetch(`${api}/voices`, {
     headers: { "xi-api-key": key },
+    redirect: "error",
     signal: AbortSignal.timeout(20_000),
   });
   const body = await safeJson(res);
@@ -124,6 +130,7 @@ export function synthesize(text: string, voiceId: string, key: string, api: stri
         method: "POST",
         headers: { "xi-api-key": key, "content-type": "application/json", accept: "audio/mpeg" },
         body: JSON.stringify({ text, model_id: MODEL }),
+        redirect: "error",
         signal: AbortSignal.timeout(60_000),
       });
       if (!res.ok) throw new Error(message(res.status, "speaking", await safeJson(res)));
