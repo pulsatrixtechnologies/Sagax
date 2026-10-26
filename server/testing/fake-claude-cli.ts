@@ -1221,6 +1221,11 @@ const playReply = (prompt: JsonValue, mcpNote: string) => {
       if (index === replyParts.length - 1) content.push({ type: "tool_use", id: defaultToolId, name: "Bash", input: { command: "echo hi" } });
       out({ type: "assistant", message: { content, usage } });
     });
+    if (mode === "tool-heartbeat") {
+      // Claude Code 2.1.306 sends this every 30 s while a tool runs.
+      out({ type: "tool_progress", tool_use_id: `${defaultToolId}-heartbeat-0`, tool_name: "Bash",
+        parent_tool_use_id: defaultToolId, elapsed_time_seconds: 30, heartbeat: true });
+    }
     out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: defaultToolId, is_error: false, content: [{ type: "text", text: "hi" }] }] } });
     runHooks("PostToolUse", { tool_name: "Bash", tool_input: { command: "echo hi" }, tool_response: "hi", tool_use_id: defaultToolId });
   }

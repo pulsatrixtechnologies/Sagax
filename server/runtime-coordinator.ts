@@ -275,13 +275,13 @@ export class RuntimeCoordinator implements Coordinator {
 
   // ── the requesting turn ──────────────────────────────────────────────
 
-  sourceSettled(generation: string, ok: boolean): void {
+  sourceSettled(generation: string, ok: boolean, stalled = false): void {
     this.ready();
     const root = this.store.get(generation);
     // Only the host's own turn ends here; a resume the runtime dispatched
     // settles through run(), and anything else is ignored as legacy does.
     if (!root || !isSourceTurn(root)) return;
-    this.runtime.end(generation, { ok, text: ok ? "" : SOURCE_FAILED });
+    this.runtime.end(generation, { ok, text: ok ? "" : SOURCE_FAILED, ...(!ok && stalled ? { stalled: true } : {}) });
   }
 
   // ── stops ────────────────────────────────────────────────────────────
@@ -458,7 +458,7 @@ export class RuntimeCoordinator implements Coordinator {
     const result = await this.host.run(node, resumed, signal,
       { text: `${input.restartNote}${body}`, note: `${input.restartNote}${note}`, restartNote: input.restartNote });
     if (signal.aborted) return { kind: "failed", outcome: "stopped", text: result.text };
-    if (!result.ok) return { kind: "failed", outcome: "provider_error", text: result.text };
+    if (!result.ok) return { kind: "failed", outcome: result.stalled ? "stalled" : "provider_error", text: result.text };
     const question = needsInputQuestion(result.text);
     if (question !== undefined) return { kind: "needs_input", question };
     return { kind: "completed", text: result.text };

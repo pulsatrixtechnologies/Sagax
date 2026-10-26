@@ -462,6 +462,8 @@ export interface AcpSupport {
   warmSession?: boolean;
   /** Route workspace file access through ACP so edits retain approval cards. */
   clientFileSystem?: boolean;
+  /** Sent as `clientCapabilities._meta` on initialize, where agents read vendor capabilities. */
+  clientCapabilitiesMeta?: Record<string, unknown>;
   /** Do not retain stderr from providers that may place OAuth material there. */
   redactStderr?: boolean;
   /** The agent's own debug log for a native session, read while a prompt is
@@ -562,6 +564,8 @@ export interface AcpSupport {
     sessionModels: Array<{ modelId?: string; name?: string }>;
     /** Last model acknowledged by session/new/load/set_model, preserved for pooled turns. */
     currentModelId?: string;
+    /** session/new's or session/load's `configOptions`, verbatim. */
+    configOptions: Array<{ id?: unknown; currentValue?: unknown }>;
     /** Show the person one plain line (a runtime.notice) for this turn:
      * for instance that the session runs another model than the one picked.
      * Said once per conversation for the same message. */
@@ -1225,6 +1229,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         let notices = 0;
         let probing = false;
         let state: QuietState | null = null;
+        // A reused session's last inbound message may predate this prompt:
+        // idle time between turns is not the agent being quiet on this one.
+        const promptStartedAt = Date.now();
         const tick = async () => {
           if (probing || current.state.settled || session.current !== current) return;
           const now = Date.now();
@@ -1234,7 +1241,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             if (signal?.kind === "context") context = { tokens: signal.tokens, threshold: signal.threshold };
             else if (signal) logged = { signal, at: now };
           }
-          const quietMs = now - session.acp.lastInboundAt;
+          const quietMs = now - Math.max(promptStartedAt, session.acp.lastInboundAt);
           // A running tool or an open question is already on screen.
           if (quietMs < noticeAfterMs || current.asks.size || current.runningTools.size) {
             if (quietMs < noticeAfterMs) logged = null;
@@ -2163,6 +2170,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 writeTextFile: support.clientFileSystem === true,
               },
               terminal: false,
+              ...(support.clientCapabilitiesMeta ? { _meta: support.clientCapabilitiesMeta } : {}),
             },
           },
           INIT_TIMEOUT,
@@ -2605,6 +2613,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     ? session.sessionConfigResult.models.availableModels
                     : [],
                   currentModelId: session.sessionConfigResult?.models?.currentModelId,
+                  configOptions: Array.isArray(session.sessionConfigResult?.configOptions)
+                    ? session.sessionConfigResult.configOptions
+                    : [],
                   notice: (message) => {
                     // once per conversation: a model switch opens a new
                     // process (a new session record), so the live session
@@ -3056,6 +3067,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             pickAuthMethod: (methods) => support.pickAuthMethod(methods, spawnEnv),
             authRequired: support.authFailure === "fail-request" ? "if-requested" : support.authFailure === "fail",
             loginNote: support.loginNote,
+            clientCapabilitiesMeta: support.clientCapabilitiesMeta,
             clientName,
             ...(support.configureSession ? {
               configure: ({ request, sessionId, session }) => support.configureSession!({
@@ -3066,6 +3078,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 turn,
                 sessionModels: Array.isArray(session?.models?.availableModels) ? session.models.availableModels : [],
                 currentModelId: session?.models?.currentModelId,
+                configOptions: Array.isArray(session?.configOptions) ? session.configOptions : [],
                 notice: () => undefined,
               }),
             } : {}),

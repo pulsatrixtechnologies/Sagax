@@ -175,14 +175,15 @@ export class Runtime {
   }
 
   /** That requesting turn ended. */
-  end(rootId: string, result: { ok: boolean; text: string; evidence?: TurnEvidence }): void {
+  end(rootId: string, result: { ok: boolean; text: string; evidence?: TurnEvidence; stalled?: boolean }): void {
     const n = this.store.get(rootId);
     if (!n || n.status !== "running") { this.log(`end(${rootId}): not a running root`); return; }
     // A turn the teardown fails is left for the next open() to find cut.
     if (!result.ok && this.closing) return;
     const outcome: RunResult = result.ok
       ? { kind: "completed", text: result.text, ...(result.evidence ? { evidence: result.evidence } : {}) }
-      : { kind: "failed", outcome: "provider_error", text: result.text, ...(result.evidence ? { evidence: result.evidence } : {}) };
+      // The host's stall watchdog stopped it: its requester is woken as stalled.
+      : { kind: "failed", outcome: result.stalled ? "stalled" : "provider_error", text: result.text, ...(result.evidence ? { evidence: result.evidence } : {}) };
     this.withBatch(() => this.finishTurn(n, outcome));
   }
 

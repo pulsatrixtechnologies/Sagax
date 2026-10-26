@@ -908,6 +908,18 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect((settled[0] as any).text).toBe("hello from fake claude");
   });
 
+  it("passes on a running tool's heartbeat as tool activity, so a long tool is not taken for a stall", async () => {
+    await create("tool-heartbeat");
+    await instance.adapter.sendTurn({ threadId: "t-heartbeat", text: "hi" });
+    await recorder.until((e) => e.type === "turn.completed");
+
+    const types = recorder.events.map((e) => e.type);
+    const beat = types.indexOf("item.updated");
+    expect(recorder.events[beat]).toMatchObject({ itemType: "tool" });
+    expect(beat).toBeGreaterThan(types.indexOf("item.started"));
+    expect(beat).toBeLessThan(types.lastIndexOf("item.completed"));
+  });
+
   it("turns a signed-out CLI into a setup error, not a bot reply", async () => {
     // issue #674: the CLI answers a signed-out turn with "Please run /login",
     // a command this app has no terminal to run. Relaying it as assistant
@@ -993,6 +1005,19 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(errors[0]).not.toHaveProperty("claudeUpdate");
     expect(recorder.events.some((event) => event.type === "item.completed" && event.itemType === "assistant_text")).toBe(false);
     expect(recorder.events.some((event) => event.type === "content.delta")).toBe(false);
+    expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "quota" });
+  });
+
+  it("settles a turn whose model's extra-usage credits ran out as quota, without holding the engine", async () => {
+    const resetsAt = Math.floor(Date.now() / 1000) + 11 * 86_400;
+    const credits = { status: "rejected", resetsAt, overageDisabledReason: "out_of_credits", isUsingOverage: false, errorCode: "credits_required" };
+    await create("usage-limit", { FAKE_CLAUDE_RATE_LIMIT: JSON.stringify(credits) });
+    await instance.adapter.sendTurn({ threadId: "t-credits", text: "continue" });
+    await recorder.until((event) => event.type === "turn.completed");
+    const errors = recorder.events.filter((event) => event.type === "runtime.error");
+    expect(errors).toEqual([expect.objectContaining({ message: claudeLimitMessage({ window: null, resetsAt, credits: true }), limitScope: "model" })]);
+    expect((errors[0] as any).message).toContain("those credits are used up");
+    expect(errors[0]).not.toHaveProperty("limitResetsAt");
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "quota" });
   });
 
