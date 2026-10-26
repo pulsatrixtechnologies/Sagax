@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  BROWSER_BYTES,
   IdleEnginePool,
   MemoryWatch,
   markOomVictim,
@@ -9,6 +10,7 @@ import {
   readCgroupMemory,
   sweepOomScores,
   type CgroupMemory,
+  type EngineBrowsers,
   type ProcFs,
 } from "./engine-memory-guard.ts";
 
@@ -156,7 +158,7 @@ describe("OOM priority", () => {
 });
 
 describe("MemoryWatch", () => {
-  function watch(reading: { current: number }, extra: { oomKills?: number } = {}) {
+  function watch(reading: { current: number }, extra: { oomKills?: number; now?: () => number } = {}) {
     const pool = new IdleEnginePool({ maxIdle: 10, ttlMs: 600_000 });
     const log = vi.fn();
     const warn = vi.fn();
@@ -171,9 +173,69 @@ describe("MemoryWatch", () => {
       sweep,
       log,
       warn,
+      ...(extra.now ? { now: extra.now } : {}),
     });
     return { pool, w, log, warn, sweep };
   }
+
+  function fakeBrowsers(starting: Set<string>) {
+    const stopped: string[] = [];
+    const closeUnused = vi.fn(async () => 2);
+    const browsers: EngineBrowsers = { starts: (threadId) => starting.has(threadId), stopped: (threadId) => { stopped.push(threadId); }, closeUnused };
+    return { browsers, stopped, closeUnused };
+  }
+
+  it("counts the browsers a burst of routine turns would start: they start one after another", async () => {
+    let at = 0;
+    // 3.8 GiB of 5: room below the critical mark (4.4 GiB) for one more browser, not two
+    const reading = { current: 3.8 * GiB };
+    const { w } = watch(reading, { now: () => at });
+    const starting = new Set(["a", "b", "c"]);
+    w.useBrowsers(fakeBrowsers(starting).browsers);
+    w.start();
+    try {
+      const order: string[] = [];
+      const a = w.whenRoom("a", 60_000).then(() => order.push("a"));
+      const b = w.whenRoom("b", 60_000).then(() => order.push("b"));
+      // a turn that starts no browser is never held behind them
+      const plain = w.whenRoom("plain", 60_000).then(() => order.push("plain"));
+      await a; await plain;
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(order).toEqual(["a", "plain"]);
+      expect(w.browserHeldBytes()).toBe(BROWSER_BYTES);
+      // a's browser runs, but it is still growing: b waits
+      starting.delete("a");
+      at += 10_000;
+      w.tick();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(order).toEqual(["a", "plain"]);
+      // a settled (its growth is now in the reading): b goes
+      at += 30_000;
+      w.tick(); // a's browser is seen running; its settle time starts at the earlier tick
+      await b;
+      expect(order).toEqual(["a", "plain", "b"]);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it("closes the browser of an idle engine closed for memory, and every unused one after an OOM kill", async () => {
+    const reading = { current: 2 * GiB };
+    const extra = { oomKills: 0 };
+    const { pool, w } = watch(reading, extra);
+    const { browsers, stopped, closeUnused } = fakeBrowsers(new Set());
+    w.useBrowsers(browsers);
+    pool.noteIdle("idle-thread", () => {});
+    w.tick();
+    expect(stopped).toEqual([]);
+    reading.current = 4 * GiB;
+    w.tick();
+    expect(stopped).toEqual(["idle-thread"]);
+    expect(closeUnused).not.toHaveBeenCalled();
+    extra.oomKills = 1;
+    w.tick();
+    expect(closeUnused).toHaveBeenCalledTimes(1);
+  });
 
   it("closes idle sessions at the high mark and alerts once at critical", () => {
     const reading = { current: 2 * GiB };

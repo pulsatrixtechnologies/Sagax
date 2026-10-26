@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 import { z } from "zod";
@@ -7,6 +7,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { browserDaemonPidPath, browserProfilesRoot, closeBrowserSession, runningBrowserSessionNames } from "./browser-engine.ts";
 import { orphanedBrowsers, stopBrowserProcesses } from "./browser-processes.ts";
 import { browserRuntimeEnv } from "./browser-runtime.ts";
+import type { EngineBrowsers } from "./engine-memory-guard.ts";
 
 const BOT_ID = /^[A-Za-z0-9_-]{1,120}$/;
 const PROFILE_ID = /^[a-z0-9_-]{1,40}$/;
@@ -531,4 +532,76 @@ export class BrowserSweep {
       }
     }));
   }
+}
+
+type LaunchSpec = { command: string; args?: readonly string[]; env: Record<string, string | undefined> };
+
+/** Whether an agent-browser daemon runs for this session: it writes `<session>.pid` while it runs. */
+export function browserDaemonRuns(session: string, spec: LaunchSpec | undefined): boolean {
+  return existsSync(browserDaemonPidPath(browserRuntimeEnv({ ...spec?.env, AGENT_BROWSER_SESSION: session })));
+}
+
+/**
+ * The bots' browsers as the engine memory guard sees them
+ * (server/engine-memory-guard.ts). A bot's browser and its Chrome (270 to
+ * 390 MB) start during a turn, outside the engine: the guard asks whether a
+ * thread's turn will start one, and tells when a thread's engine was closed
+ * for memory so its browser closes too once nothing uses it. Closing saves
+ * the browser's sign-ins, and its bot hears why on its next call. The
+ * person's own Chrome (My Chrome, or a Chrome attached over CDP) is never
+ * counted nor closed: `threadBrowser` returns null for it.
+ */
+export function engineBrowsers(deps: {
+  /** The session a thread's bot browses in and its launch settings, or null
+   * when it has no built-in browser of ours. A temporary or confidential
+   * browser has no session until its first call. */
+  threadBrowser(threadId: string): { session: string | undefined; spec: LaunchSpec | undefined } | null;
+  /** Every session this run used, with its launch settings. */
+  sessions(): Iterable<[string, LaunchSpec]>;
+  /** A turn holds this browser until it finishes. */
+  held(session: string): boolean;
+  /** Close it unless a call, a person or a view uses it (BrowserRuntime.closeUnused). */
+  closeUnused(session: string, spec: LaunchSpec): Promise<boolean>;
+  running?: (session: string, spec: LaunchSpec | undefined) => boolean;
+  sleep?: (ms: number) => Promise<void>;
+  /** Tries for a stopped thread's browser, 2 s apart: its turn may still be settling. */
+  attempts?: number;
+  log?: (line: string) => void;
+}): EngineBrowsers {
+  const running = deps.running ?? browserDaemonRuns;
+  const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => { setTimeout(resolve, ms).unref?.(); }));
+  const attempts = deps.attempts ?? 15;
+  const log = deps.log ?? ((line: string) => console.info(line));
+  const closing = new Set<string>();
+  const closeIfFree = async (session: string, spec: LaunchSpec): Promise<boolean> => {
+    if (deps.held(session) || !await deps.closeUnused(session, spec)) return false;
+    log(`browser ${session}: closed to free memory`);
+    return true;
+  };
+  return {
+    starts: (threadId) => {
+      const browser = deps.threadBrowser(threadId);
+      return browser !== null && (browser.session === undefined || !running(browser.session, browser.spec));
+    },
+    stopped: (threadId) => {
+      const browser = deps.threadBrowser(threadId);
+      const session = browser?.session, spec = browser?.spec;
+      if (session === undefined || !spec || closing.has(session)) return;
+      closing.add(session);
+      void (async () => {
+        for (let attempt = 0; attempt < attempts && running(session, spec); attempt++) {
+          if (await closeIfFree(session, spec).catch(() => false)) return;
+          await sleep(2_000);
+        }
+      })().finally(() => closing.delete(session));
+    },
+    closeUnused: async () => {
+      let closed = 0;
+      for (const [session, spec] of deps.sessions()) {
+        if (closing.has(session) || !running(session, spec)) continue;
+        if (await closeIfFree(session, spec).catch(() => false)) closed += 1;
+      }
+      return closed;
+    },
+  };
 }
