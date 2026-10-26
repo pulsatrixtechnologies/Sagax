@@ -214,6 +214,18 @@ test("the preload gives the bundled organization page the desktop-UI parts, and 
   assert.ok(local.bridge.serverMode && local.bridge.environments);
 });
 
+test("the bundled organization page gets localModels (keyBases/setKey/clearKey) and nothing that returns the key", async () => {
+  const remote = preloadBridge({ pageOrigin: ORG, bundled: false });
+  const bundled = preloadBridge({ pageOrigin: ORG, bundled: true });
+  assert.equal(remote.bridge.localModels, undefined, "a plain remote page has no localModels");
+  assert.deepEqual(Object.keys(bundled.bridge.localModels).sort(), ["clearKey", "keyBases", "setKey"]);
+  const preload = readFileSync(new URL("./preload.cjs", import.meta.url), "utf8");
+  const block = preload.match(/localModels: \{[\s\S]*?\n  \},/)[0];
+  assert.doesNotMatch(block, /get-key|getKey|local-models:get/);
+  const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
+  for (const ch of ["key-bases", "set-key", "clear-key"]) assert.match(main, new RegExp(`desktopUiOnly\\("local-models:${ch}"`));
+});
+
 test("a CRLF checkout of main.mjs still matches the bundled-ui wiring", () => {
   const crlf = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8")).replace(/\n/g, "\r\n");
   assert.match(sourceText(crlf), /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);

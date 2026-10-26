@@ -3752,17 +3752,18 @@ ipcMain.handle("engine:open-terminal", localOnly("engine:open-terminal", async (
 ipcMain.handle("clipboard:write-text", localOnly("clipboard:write-text", (_event, text) => writeClipboardText(clipboard, text)));
 
 // Per-loopback-server API keys for local models (Settings > Computer). These
-// run through the local shell only: a key is kept encrypted on THIS computer
+// run through the desktop UI only (the local page, or this app's bundle on an
+// organization server): a key is kept encrypted on THIS computer
 // and never leaves it. The renderer only ever learns WHICH bases have a key,
 // never the key value. Setting or clearing a key re-probes at once, so a
 // server that was "needs an API key" turns into a listed one without waiting.
-ipcMain.handle("local-models:key-bases", localOnly("local-models:key-bases", () => desktopBridgeLocalModelKeys().bases()));
-ipcMain.handle("local-models:set-key", localOnly("local-models:set-key", async (_event, base, key) => {
+ipcMain.handle("local-models:key-bases", desktopUiOnly("local-models:key-bases", () => desktopBridgeLocalModelKeys().bases()));
+ipcMain.handle("local-models:set-key", desktopUiOnly("local-models:set-key", async (_event, base, key) => {
   const ok = await desktopBridgeLocalModelKeys().set(base, key);
   if (ok) await desktopBridge().refreshLocalModels({ force: true }).catch(() => {});
   return ok;
 }));
-ipcMain.handle("local-models:clear-key", localOnly("local-models:clear-key", async (_event, base) => {
+ipcMain.handle("local-models:clear-key", desktopUiOnly("local-models:clear-key", async (_event, base) => {
   await desktopBridgeLocalModelKeys().clear(base);
   await desktopBridge().refreshLocalModels({ force: true }).catch(() => {});
   return true;
