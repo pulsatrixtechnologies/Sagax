@@ -88,7 +88,10 @@ Sagax releases are built on a Mac, not by the workflows above:
    `node scripts/embed-feed-release-notes.mjs release/latest-mac.yml`, then
    regenerate again.
 3. Windows x64 + arm64: `pnpm package:fork:win:cross` (one NSIS installer for
-   both arches, two portable zips, `latest.yml`). After-pack refuses a
+   both arches, two portable zips, `latest.yml`), signed with Azure Trusted
+   Signing (Windows signing, below). Without the signing settings or the az
+   login the build stops before packaging: there is no unsigned Windows
+   release build. After-pack refuses a
    package whose `.node` addons or `Sagax.exe` are not PE images for that
    arch; recheck a built or downloaded package with
    `node scripts/verify-win-natives.mjs <win-unpacked or unzipped dir> x64|arm64`.
@@ -105,7 +108,10 @@ Sagax releases are built on a Mac, not by the workflows above:
    the Windows and macOS vitest jobs on this SHA have succeeded. A green
    push only ran Ubuntu. Then `node scripts/check-release-notes.mjs`,
    `node scripts/embed-feed-release-notes.mjs --check release/latest-mac.yml release/latest.yml`
-   (both feeds must carry exactly `docs/releases/X.Y.Z.md`), and
+   (both feeds must carry exactly `docs/releases/X.Y.Z.md`),
+   `node scripts/verify-win-signatures.mjs release` (every Windows `.exe`
+   signed and timestamped, `latest.yml` sha512 and sizes match the signed
+   files), and
    `gh release create pulsa-vX.Y.Z --notes-file docs/releases/X.Y.Z.md`
    with every installer, zip, blockmap and both feeds, as a full release.
    The release body is that file. Do not write a different body: the
@@ -118,6 +124,69 @@ Sagax releases are built on a Mac, not by the workflows above:
    not possible. A Latest release without `latest.yml` breaks the Windows
    update check, so never publish without both feeds (0.4.11 shipped macOS
    only for this reason).
+
+### Windows signing
+
+From 0.8.3, every Windows release build is signed with Azure Trusted Signing
+(Artifact Signing) from the Mac, with [jsign](https://ebourg.github.io/jsign/).
+Releases published before 0.8.3 stay unsigned: releases are immutable and are
+never re-signed.
+
+Prerequisites on the build Mac:
+
+- `brew install jsign osslsigncode` and the Azure CLI.
+- An `az login` in the signing tenant, in the az profile the build uses
+  (`AZURE_CONFIG_DIR` when it is not the default one), by an account that has
+  the "Artifact Signing Certificate Profile Signer" role on the certificate
+  profile.
+- These variables, kept outside the repository (a private env file you
+  source, never committed):
+
+  | Variable | Value |
+  |---|---|
+  | `SAGAX_WIN_SIGN_ENDPOINT` | the account's regional endpoint host, e.g. `eus.codesigning.azure.net` |
+  | `SAGAX_WIN_SIGN_ACCOUNT` | the Trusted Signing account name |
+  | `SAGAX_WIN_SIGN_PROFILE` | the certificate profile name |
+  | `SAGAX_WIN_SIGN_TENANT` | the tenant id the az login must be in |
+  | `SAGAX_WIN_SIGN_PUBLISHER` | the profile's subject CN, as Windows shows the publisher |
+
+What the build does (`scripts/package-fork.mjs` with
+`scripts/win-sign-trusted.cjs` and `scripts/win-trusted-signing.mjs`):
+
+1. Before packaging, it checks jsign, the az login, its tenant and that az can
+   mint a code signing token. Any of them missing stops the build with the
+   reason.
+2. electron-builder calls the sign hook for every executable it signs:
+   `Sagax.exe`, `elevate.exe`, the NSIS uninstaller and the setup, for x64
+   and arm64. It never calls it for single-file extra resources, so
+   `scripts/after-pack.mjs` signs those (the CUA driver executables, whose
+   upstream signature is replaced) before the zips and the installer are
+   made. Each is signed in place
+   (SHA-256, RFC 3161 timestamp from `http://timestamp.acs.microsoft.com`)
+   before electron-builder computes the blockmaps and the sha512 of
+   `latest.yml`, so the feed describes the signed files. Vendor binaries
+   whose bytes after-pack checks against a pinned digest (browser engine,
+   cloudflared, tailcat) and the Android platform tools keep their vendor
+   signature and are not re-signed.
+3. The access token is requested once per build, kept in memory and handed
+   to jsign through its environment (`--storepass env:...`), never on a
+   command line, in a file or in a log.
+4. After the feed gets its release notes, `scripts/verify-win-signatures.mjs`
+   runs `osslsigncode verify` on the setup and on every `.exe` of
+   `win-unpacked`, `win-arm64-unpacked` and both zips (signer CN must be
+   `SAGAX_WIN_SIGN_PUBLISHER`, signature and timestamp valid, against the
+   Microsoft roots it downloads and checks by pinned SHA-256), then checks
+   every sha512 and size of `latest.yml` against the files. A failure fails
+   the build. Run it again before `gh release create` (step 5).
+
+A certificate from a new publisher can still meet SmartScreen until the
+publisher has reputation; the signature is what lets it build.
+
+Auto-update: `publisherName` is not set, so electron-updater does not check
+the update's signer. Setting it later makes every installed signed build
+reject an update signed by any other subject; list every subject the
+releases will use (old and new) before changing the certificate's
+organization.
 
 ### Windows
 
@@ -136,8 +205,9 @@ profile. Note the Windows build (`winver`) and the arch.
   Select-String -Path .\latest.yml -Pattern 'sha512'
   ```
 
-- Install: the build is unsigned, so SmartScreen needs More info, then Run
-  anyway; no UAC prompt (per-user install); Sagax opens by itself; the Start
+- Install: the setup's Properties > Digital Signatures tab shows the
+  publisher with a timestamp (from 0.8.3; earlier builds are unsigned and
+  SmartScreen needs More info, then Run anyway); no UAC prompt (per-user install); Sagax opens by itself; the Start
   menu and desktop shortcut read "Pulsatrix Sagax" and Installed apps lists
   "Pulsatrix Sagax X.Y.Z"; Task Manager's Architecture column shows
   `Sagax.exe` as ARM64 on arm64 and x64 on x64 (not emulated).
