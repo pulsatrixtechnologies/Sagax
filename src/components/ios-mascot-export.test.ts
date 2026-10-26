@@ -70,7 +70,7 @@ import { MASCOT_COLOR_GROUPS, MASCOT_COLOR_HEX, MASCOT_COLOR_PALETTES } from "..
 import { expressionForMood, IDLE_FRAME_S, uprightPose, type ShapeMood } from "./ShapeMascot";
 import { BLINK, blinkSchedule, gazeFrame, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, EYE_FADE, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
 import { MOVE_TIMING, ORBIT_RINGS, SHAPE_MOVES, SWIRL_RINGS, type RingSpec } from "./shape-moves";
-import { BODY_3D, EYE_DOME, EYE_INK, EYE_INK_ON_DARK, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, POSE, poseMatrices, REST_POSE, SHAPE_FIT, styledEyes, TURN_SQUASH, VOLUME_SIZES, warpPath, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
+import { BODY_3D, EYE_DOME, EYE_INK, EYE_INK_ON_DARK, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, poseMatrices, REST_POSE, SHAPE_FIT, styledEyes, TURN_SQUASH, VOLUME_SIZES, warpPath, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
 import { BASE_DROP, GLANCE, MOTION_BLEND, MOTION_MOODS, MOTIONS, motionForMood, POKE, ROLL_LIMIT, ShapeMotion, TURN_TOWARD, type MotionSpec } from "./shape-motion";
 import { BODY, MOVE_RADII, RADII_COUNT, SHAPE_RADII } from "./shape-art";
 import { legOps, SHIBA_ART, SHIBA_BUST, SHIBA_BUST_MAX, SHIBA_EXPRESSIONS, SHIBA_HIPS, SHIBA_LEGS, SHIBA_PIVOTS, SHIBA_ROLES, shibaOutline, shibaParts, STANCE_HEAD, MOUTHS, mouthOps, type ShibaOp, type ShibaStance } from "./shiba-art";
