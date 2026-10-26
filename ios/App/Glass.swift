@@ -81,3 +81,51 @@ struct GlassButton: View {
         .glassCapsule()
     }
 }
+
+// MARK: - Bottom bar scrim
+
+/// Soft blur and dimming behind the floating bottom bar, so bots scrolling
+/// under it stay out of the way of its controls. It starts a little above the
+/// bar and strengthens toward the bottom edge, like an iOS material. The bar
+/// itself is untouched. With Reduce Transparency on, it is an opaque fade to
+/// the page background instead.
+private struct BottomBarScrim: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// How far the fade reaches above the bar.
+    private static let reach: CGFloat = 44
+
+    func body(content: Content) -> some View {
+        content.background(alignment: .bottom) {
+            scrim
+                .padding(.top, -Self.reach)
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder
+    private var scrim: some View {
+        let fade = LinearGradient(
+            stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.55)],
+            startPoint: .top, endPoint: .bottom
+        )
+        if reduceTransparency {
+            Theme.bg.mask(fade)
+        } else {
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                // darker in dark mode, a light veil in light mode
+                (colorScheme == .dark ? Color.black.opacity(0.45) : Color.white.opacity(0.35))
+            }
+            .mask(fade)
+        }
+    }
+}
+
+extension View {
+    /// Blur and dim whatever scrolls under a floating bottom bar.
+    func bottomBarScrim() -> some View { modifier(BottomBarScrim()) }
+}
