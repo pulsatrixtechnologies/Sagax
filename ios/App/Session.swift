@@ -1012,6 +1012,7 @@ final class Session: ObservableObject {
         Keychain.remove(id)
         BrandMascotCache.forget(id)
         AccountPhotoStore.shared.forget(id)
+        AccountNameStore.shared.forget(id)
         registry.remove(id: id)
         persistRegistry()
         connections = registry.connections

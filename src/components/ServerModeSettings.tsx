@@ -13,11 +13,11 @@ import { useStore } from "@/state/store";
 import { ComputerSharingSettings } from "./ComputerSharingSettings";
 import { Card, DescribedRow, PILL } from "./SettingsPrimitives";
 
-export type ServerModeState = { active: false } | { active: true; id: string; name: string; origin: string };
+export type ServerModeState = { active: false } | { active: true; id: string; name: string; origin: string; label?: string; orgName?: string };
 
 /** Server mode as the desktop reports it; null in a browser, on another
  * page, and until the desktop answers. */
-export function useServerMode(): ServerModeState | null {
+export function useServerMode(refresh = 0): ServerModeState | null {
   const bridge = typeof window === "undefined" ? null : serverModeBridge(window.ogb);
   const [state, setState] = useState<ServerModeState | null>(null);
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useServerMode(): ServerModeState | null {
     let alive = true;
     void bridge.state().then((next) => { if (alive) setState(next); }).catch(() => {});
     return () => { alive = false; };
-  }, [bridge]);
+  }, [bridge, refresh]);
   return bridge ? state : null;
 }
 
