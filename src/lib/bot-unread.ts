@@ -66,3 +66,10 @@ export function offscreenUnread(
 export function toggleSelected(selection: readonly string[], id: string): string[] {
   return selection.includes(id) ? selection.filter((entry) => entry !== id) : [...selection, id];
 }
+
+/** Icons-only density: the unread dot sits at the row's bottom-right, which
+ * is where the primary-bot star and a sharer's face sit on the avatar. With
+ * one of them the dot moves to the top-right so it stays visible (#1057). */
+export function iconUnreadDotPosition(badged: boolean): string {
+  return badged ? "top-1.5 right-1.5" : "bottom-1.5 right-1.5";
+}
