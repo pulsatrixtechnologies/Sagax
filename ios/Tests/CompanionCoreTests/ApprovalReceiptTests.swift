@@ -58,15 +58,18 @@ final class ApprovalReceiptTests: XCTestCase {
 
     // MARK: Held note
 
-    func testTheProviderAndGateNotesAreNotShownTheOthersAre() throws {
-        let native = try card(#"{"title":"t","subtitle":"ls","options":["Allow"],"requestId":"r","tool":"Bash","held":"The provider requires your approval for this action.","heldCode":"approval.held.native"}"#)
-        let gate = try card(#"{"title":"t","subtitle":"ls","options":["Allow"],"requestId":"r","tool":"Bash","held":"Confirm","heldCode":"approval.held.gate"}"#)
-        let outbound = try card(#"{"title":"t","subtitle":"ls","options":["Allow"],"requestId":"r","tool":"Bash","held":"Sends on your behalf","heldCode":"approval.held.outbound"}"#)
-        let safety = try card(#"{"title":"t","subtitle":"ls","options":["Allow"],"requestId":"r","tool":"Bash","held":"Safety","heldCode":"approval.held.safety"}"#)
-        XCTAssertFalse(ApprovalHeldNote.shows(native))
-        XCTAssertFalse(ApprovalHeldNote.shows(gate))
-        XCTAssertTrue(ApprovalHeldNote.shows(outbound))
-        XCTAssertTrue(ApprovalHeldNote.shows(safety))
+    func testAWaitingAskShowsOnlyTheNoteOfThePersonsRule() throws {
+        func held(_ code: String, extra: String = "") throws -> OptionCard {
+            let base = #"{"title":"t","subtitle":"ls","options":["Allow"],"requestId":"r","tool":"Bash","held":"Note","heldCode":"CODE""#
+            return try card(base.replacingOccurrences(of: "CODE", with: code) + extra + "}")
+        }
+        XCTAssertTrue(ApprovalHeldNote.shows(try held("approval.held.customRule")))
+        for code in ["approval.held.native", "approval.held.gate", "approval.held.outbound", "approval.held.sandbox", "approval.held.safety", "approval.held.undelivered"] {
+            XCTAssertFalse(ApprovalHeldNote.shows(try held(code)), code)
+        }
+        // a receipt keeps the note it was held with, never the provider's own
+        XCTAssertTrue(ApprovalHeldNote.shows(try held("approval.held.outbound", extra: #","answered":"allow""#)))
+        XCTAssertFalse(ApprovalHeldNote.shows(try held("approval.held.native", extra: #","answered":"allow""#)))
     }
 
     // MARK: Receipt

@@ -150,12 +150,16 @@ public enum GateArguments {
 
 public enum ApprovalHeldNote {
     /// The provider's own note and the routine gate's say nothing the
-    /// title does not: not shown.
+    /// title does not: never shown.
     public static let silent: Set<String> = ["approval.held.native", "approval.held.gate"]
 
-    /// Whether the card shows its held note (one quiet line).
+    /// Whether the card shows its held note (one quiet line). An ask that
+    /// waits shows only the note of the person's own rule that stopped it,
+    /// as on the desktop since 2026-10-20 (PendingApproval.tsx `heldNote`,
+    /// decision 2026-10-26); a receipt keeps the note it was held with.
     public static func shows(_ card: OptionCard) -> Bool {
         guard let held = card.held?.trimmingCharacters(in: .whitespacesAndNewlines), !held.isEmpty else { return false }
+        if card.isPending { return card.heldCode == "approval.held.customRule" }
         if let code = card.heldCode, silent.contains(code) { return false }
         return true
     }
