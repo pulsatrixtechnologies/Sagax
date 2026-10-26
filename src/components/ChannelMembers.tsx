@@ -19,7 +19,9 @@ export function channelRosterActions(input: {
   memberIds?: readonly string[];
 }): { canAddHuman: boolean; canAddBot: boolean } {
   const actor = input.actorId.trim().toLowerCase();
-  const canAddHuman = input.ownsRoom !== false && (input.actorRole === "owner" || input.actorRole === "admin");
+  // A member owning the room adds coworkers too; the server limits them to
+  // people the organization directory shows them (#1061).
+  const canAddHuman = input.ownsRoom !== false && input.actorRole !== null;
   const inRoom = new Set(input.memberIds ?? []);
   const canAddBot = actor !== "" && input.bots.some((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actor && !inRoom.has(bot.id));
   return { canAddHuman, canAddBot };

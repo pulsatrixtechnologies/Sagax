@@ -945,7 +945,7 @@ import {
   phoneSecretOperationId,
   type PhoneSecretContext,
 } from "./phone-secret.ts";
-import { applyHumanIds, canEditHumans, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
+import { applyHumanIds, canEditHumans, firstUnseenPerson, canPlaceBot, ownerUserIdForPlacement } from "./channel-membership.ts";
 import { channelViewerId, liveFramesNeedChannelFilter, searchHitVisible, seesBotForViewer, seesChannel, sseFrameProjection } from "./channel-visibility.ts";
 import { atLeast, botLevel, canEditRoomHumans, canOnBot, canInChannel, canModerateSection, levelRank, roleRank, sectionRole, type BotFacts, type BotGrant, type Level, type SectionAccess, type TeamRef, type Viewer as AuthzViewer } from "./authz.ts";
 import { canOnThread, migrationLogLine, threadOwner as privateThreadOwner, narrowBotForViewer, ownsThread, ownThreads, planThreadOwners, viewerThread, type ThreadAction } from "./thread-privacy.ts";
@@ -32566,8 +32566,15 @@ function botUserName(bot: { ownerUserId?: unknown }): string {
  * needs humanIds). An explicit humanIds list is kept as sent. */
 function withCreatorListed(auth: RequestAuth, body: unknown): unknown {
   if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return body;
-  if (!body || typeof body !== "object" || Array.isArray(body) || Object.prototype.hasOwnProperty.call(body, "humanIds")) return body;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
   const principalId = auth.session.principalId?.trim();
+  if (Object.prototype.hasOwnProperty.call(body, "humanIds")) {
+    // A member naming coworkers stays in the room they create.
+    const named = (body as { humanIds?: unknown }).humanIds;
+    if (channelActorRole(auth) !== "member" || !principalId || !Array.isArray(named)) return body;
+    const listed = named.some((id) => typeof id === "string" && id.trim().toLowerCase() === principalId.toLowerCase());
+    return listed ? body : { ...(body as Record<string, unknown>), humanIds: [principalId, ...named] };
+  }
   return principalId ? { ...(body as Record<string, unknown>), humanIds: [principalId] } : body;
 }
 
@@ -32606,6 +32613,12 @@ function refuseHumanEdit(auth: RequestAuth, body: unknown, before: readonly stri
       const id = entry.slice(5);
       if (!/^[0-9A-Za-z]{1,64}$/.test(id) || !(orgTeams.has(id) || principals.membersOfTeam(id).length)) return "unknown team: choose a team from the organization directory";
     }
+  }
+  // A member who owns the room adds only people the organization directory
+  // lists as active; never a team entry (those stay with admins).
+  if (ownerChecked && IDENTITY.kind === "perspicax" && Array.isArray(after) && channelActorRole(auth) === "member") {
+    const unseen = firstUnseenPerson({ actorId: channelActorId(auth), before, after, visible: (id) => resolveOrgGrantee(id).ok });
+    if (unseen !== null) return "unknown person: choose someone from the organization directory";
   }
   // Organization server: the group's owner rule already decided (group-ownership.ts).
   if (ownerChecked) return null;
@@ -41862,8 +41875,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const placed = refusePlacedBots(auth, body.memberIds, new Set());
         if (placed) return json(res, 403, { error: placed });
       }
-      const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      // On an organization server the creator owns the new room, so a member
+      // may name coworkers they can see in the directory (#1061).
+      const memberCreates = IDENTITY.kind === "perspicax" && auth.kind === "session" && channelActorRole(auth) === "member";
+      const humans = refuseHumanEdit(auth, body, [], memberCreates);
+      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -42449,7 +42465,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (refusal) return json(res, 403, { error: refusal, code: "not_group_owner" });
       }
       const humans = refuseHumanEdit(auth, body, existingGroup?.humanIds ?? [], ownerRule);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      if (humans) return json(res, humans.startsWith("unknown team") || humans.startsWith("unknown person") ? 400 : 403, { error: humans });
       // A paired phone's companion edits a room like a member session does.
       if ((auth.kind === "session" && !auth.scopes.includes("admin")) || companionRequest(req, auth)) {
         // The owner of an organization group also picks its default responder,
