@@ -107,6 +107,7 @@ beforeEach(() => {
   hiddenThread = () => "t1";
   confidentialThreads = new Set();
   agentReply = () => ({ status: 404, body: {} });
+  deps.readBotMemory = undefined;
 });
 
 /** A Sagax holding these cards in thread t1 (or `thread`): the page read
@@ -177,7 +178,7 @@ describe("the member API gate", () => {
     expect(first.status).toBe(200);
     expect(first.headers.get("x-sagax-member-api")).toBe("1");
     expect(first.body).toMatchObject({ api: 1, version: "0.4.16" });
-    expect(first.body.routes).toEqual(expect.arrayContaining(["GET bots", "POST bots/{id}/messages", "GET threads/{id}", "POST routines/{id}/run", "GET routines/runs/{id}", "POST approvals/{id}", "POST people/{id}/nudge"]));
+    expect(first.body.routes).toEqual(expect.arrayContaining(["GET bots", "POST bots/{id}/messages", "GET threads/{id}", "GET routines", "GET routines/{id}", "POST routines/{id}/run", "GET routines/runs/{id}", "GET bots/{id}/rules", "GET bots/{id}/docs", "GET bots/{id}/memory", "GET bots/{id}/connectors", "POST approvals/{id}", "POST people/{id}/nudge"]));
     expect((await call("GET", "capabilities", once)).body.code).toBe("assertion_replayed");
     expect((await call("GET", "nowhere", token("bob"))).status).toBe(404);
     expect((await call("POST", "bots", token("bob"), {})).status).toBe(405);
@@ -732,5 +733,198 @@ describe("the AI-client approval loop (2026-10-17)", () => {
     agentReply = () => ({ status: 200, body: { thread_id: "t1", finished: false, status: "waiting_for_approval", reply: "" } });
     confidentialThreads.add("t1");
     expect((await call("POST", "agents/send_prompt", token("bob"), { agent_id: "b1", prompt: "x" })).body.approval).toBeUndefined();
+  });
+});
+
+const PLANTED_KEY = "sk-ant-abcdefghijklmnopqrstuvwxyz";
+const PLANTED_WEBHOOK = "whsec_plantedkeyvalue";
+const LONG = "A".repeat(2500);
+
+function routineFixture() {
+  return {
+    routines: [
+      {
+        id: "r_bob", name: "Morning", botId: "b1", enabled: true, nextRunAt: 50,
+        owner: { id: "pr_bob", name: "Bob" },
+        suspended: { reason: "paused", at: 4 },
+        prompt: `${LONG} ${PLANTED_KEY} ${PLANTED_WEBHOOK}`,
+        schedule: { type: "webhook", hour: 9, token: PLANTED_WEBHOOK, signingSecret: "keep-me-out" },
+      },
+      { id: "r_ann", name: "Ann's", botId: "b2", enabled: true, owner: { id: "pr_ann", name: "Ann" }, prompt: `ANN PROMPT ${PLANTED_KEY}`, schedule: { type: "daily" } },
+      { id: "r_red", name: "Hidden", botId: "b1", enabled: true, owner: { id: "pr_bob" }, redacted: true, prompt: "SHOULD NOT LEAK" },
+      { id: "r_none", name: "Nobody", botId: "b1", enabled: true, prompt: "NO OWNER" },
+    ],
+    runs: [
+      { id: "run_old", routineId: "r_bob", status: "completed", startedAt: 10, finishedAt: 20, output: "SECRET OUTPUT" },
+      { id: "run_new", routineId: "r_bob", status: "failed", startedAt: 30, endedAt: 40, output: "NEWER SECRET", error: "boom" },
+      { id: "run_ann", routineId: "r_ann", status: "completed", startedAt: 99, output: "ANN OUTPUT" },
+      { id: "run_redacted", routineId: "r_bob", redacted: true, status: "completed", startedAt: 100, output: "REDACTED OUTPUT" },
+    ],
+  };
+}
+
+function catalogFixture() {
+  return {
+    entries: [
+      { id: "b1", source: "mine", name: "Orion", owner: { principalId: "pr_bob", name: "Bob" } },
+      { id: "b2", source: "shared", name: "Beacon", owner: { principalId: "pr_ann", name: "Ann" } },
+    ],
+  };
+}
+
+describe("owner-scoped routine and bot reads", () => {
+  it("refuses the reads without their permission and performs nothing", async () => {
+    expect((await call("GET", "routines", token("bob"))).body).toMatchObject({ code: "forbidden_permission", permission: "clients.routinesRead" });
+    people.get("bob")!.permissions = ["clients.botsMessage"];
+    expect((await call("GET", "bots/b1/rules", token("bob"))).body).toMatchObject({ code: "forbidden_permission", permission: "clients.botsRead" });
+    expect((await call("GET", "bots/b1/memory", token("bob"))).status).toBe(403);
+    expect(performed).toEqual([]);
+    expect(recorded).toEqual([]);
+  });
+
+  it("lists only the caller's routines, and the detail keeps the full redacted instructions", async () => {
+    people.get("bob")!.permissions.push("clients.routinesRead");
+    respond = (request) => request.path === "/api/routines" ? { status: 200, body: routineFixture() } : { status: 404, body: { error: "no" } };
+    const listed = await call("GET", "routines", token("bob"));
+    expect(listed.status).toBe(200);
+    expect(listed.body.routines.map((row: { id: string }) => row.id)).toEqual(["r_bob"]);
+    expect(listed.body.routines[0]).toEqual({
+      id: "r_bob", name: "Morning", botId: "b1", enabled: true, suspended: { reason: "paused", at: 4 },
+      schedule: { type: "webhook", hour: 9 }, nextRunAt: 50,
+      lastRun: { id: "run_new", status: "failed", startedAt: 30, endedAt: 40 },
+    });
+    expect(JSON.stringify(listed.body)).not.toContain("instructions");
+    expect(JSON.stringify(listed.body)).not.toContain("ANN PROMPT");
+    expect(JSON.stringify(listed.body)).not.toContain("SHOULD NOT LEAK");
+    expect(JSON.stringify(listed.body)).not.toContain("NO OWNER");
+    expect(JSON.stringify(listed.body)).not.toContain(PLANTED_WEBHOOK);
+    expect(JSON.stringify(listed.body)).not.toContain("SECRET OUTPUT");
+
+    const detail = await call("GET", "routines/r_bob", token("bob"));
+    expect(detail.status).toBe(200);
+    expect(detail.body.routine.instructions.length).toBeGreaterThan(2000);
+    expect(detail.body.routine.instructions).toContain("«redacted");
+    expect(detail.body.routine.instructions).not.toContain(PLANTED_KEY);
+    expect(detail.body.routine.instructions).not.toContain(PLANTED_WEBHOOK);
+    expect(detail.body.routine.schedule).toEqual({ type: "webhook", hour: 9 });
+    expect(detail.body.routine.lastRun).toEqual({ id: "run_new", status: "failed", startedAt: 30, endedAt: 40 });
+    expect(JSON.stringify(detail.body)).not.toContain("output");
+    expect(JSON.stringify(detail.body)).not.toContain("signingSecret");
+    expect(recorded).toEqual([]);
+  });
+
+  it("hides another person's routine, an admin's view included, without returning its text", async () => {
+    people.get("bob")!.permissions.push("clients.routinesRead");
+    respond = () => ({ status: 200, body: routineFixture() });
+    const missing = await call("GET", "routines/r_ann", token("bob"));
+    expect(missing.status).toBe(404);
+    expect(JSON.stringify(missing.body)).not.toContain("ANN PROMPT");
+    const admin = await call("GET", "routines/r_bob", token("ann", "admin"));
+    expect(admin.status).toBe(404);
+    expect(JSON.stringify(admin.body)).not.toContain(PLANTED_KEY);
+    expect(recorded).toEqual([]);
+  });
+
+  it("reads rules, documents, memory and connector names only for a bot the caller owns", async () => {
+    const secretText = `${LONG} ${PLANTED_KEY} ${PLANTED_WEBHOOK}`;
+    deps.readBotMemory = (botId) => botId === "b1" ? { text: secretText } : { text: "OTHER MEMORY" };
+    respond = (request) => {
+      if (request.path === "/api/bot-catalog") return { status: 200, body: catalogFixture() };
+      if (request.path === "/api/bot-catalog/b1") {
+        return { status: 200, body: {
+          soul: "SOUL SECRET", memories: ["MEMORY SECRET"],
+          integrations: [
+            { name: "mail", kind: "mcp", url: "https://example.invalid/hook?token=abc" },
+            { name: "browser", kind: "browser" },
+            { name: "off", kind: "mcp", enabled: false },
+          ],
+        } };
+      }
+      if (request.path === "/api/bots/b1/workspace") {
+        return { status: 200, body: {
+          workspacePath: "/data/secret/path",
+          soul: { path: "SOUL.md" },
+          entries: [
+            { path: "docs/notes.md", kind: "file" },
+            { path: "RULES.md", kind: "file" },
+            { path: "MEMORY.md", kind: "file" },
+            { path: "docs", kind: "dir" },
+            { path: "SOUL.md", kind: "file" },
+          ],
+        } };
+      }
+      if (request.path === "/api/bots/b1/workspace/file") {
+        return { status: 200, body: { path: request.query?.path, text: secretText, hash: "deadbeefhash" } };
+      }
+      if (request.path === "/api/bots/b1/rules") {
+        return { status: 200, body: { template: "TEMPLATE SECRET", sets: [{ id: "s1", name: "Hours", enabled: true, file: "rules/hours.md", text: secretText, hash: "abc" }] } };
+      }
+      return { status: 404, body: { error: "no" } };
+    };
+
+    const rules = await call("GET", "bots/b1/rules", token("bob"));
+    expect(rules.status).toBe(200);
+    expect(rules.body.rules).toContain("«redacted");
+    expect(rules.body.rules).not.toContain(PLANTED_KEY);
+    expect(rules.body.sets).toEqual([{ id: "s1", name: "Hours", enabled: true, text: expect.stringContaining("«redacted") }]);
+    expect(JSON.stringify(rules.body)).not.toContain("deadbeefhash");
+    expect(JSON.stringify(rules.body)).not.toContain("TEMPLATE SECRET");
+    expect(JSON.stringify(rules.body)).not.toContain("rules/hours.md");
+
+    const docs = await call("GET", "bots/b1/docs", token("bob"));
+    expect(docs.body).toEqual({ docs: ["docs/notes.md"] });
+    expect(JSON.stringify(docs.body)).not.toContain("workspacePath");
+    expect(JSON.stringify(docs.body)).not.toContain("/data/secret");
+
+    const one = await call("GET", "bots/b1/docs?path=docs/notes.md", token("bob"));
+    expect(one.status).toBe(200);
+    expect(one.body.path).toBe("docs/notes.md");
+    expect(one.body.text.length).toBeGreaterThan(2000);
+    expect(one.body.text).not.toContain(PLANTED_WEBHOOK);
+    expect(one.body.hash).toBeUndefined();
+
+    const memory = await call("GET", "bots/b1/memory", token("bob"));
+    expect(memory.body.text).toContain("«redacted");
+    expect(memory.body.text).not.toContain(PLANTED_KEY);
+    expect(performed.some((row) => row.request.path.includes("/memory"))).toBe(false);
+
+    const connectors = await call("GET", "bots/b1/connectors", token("bob"));
+    expect(connectors.body.connectors).toEqual([
+      { name: "mail", kind: "mcp", enabled: true, scope: "bot" },
+      { name: "browser", kind: "browser", enabled: true, scope: "bot" },
+      { name: "off", kind: "mcp", enabled: false, scope: "bot" },
+    ]);
+    const dumped = JSON.stringify(connectors.body);
+    expect(dumped).not.toContain("token=");
+    expect(dumped).not.toContain("SOUL SECRET");
+    expect(dumped).not.toContain("MEMORY SECRET");
+    expect(dumped).not.toContain("https://");
+    expect(recorded).toEqual([]);
+  });
+
+  it("rejects a document path that is not docs/<name>.md before any read", async () => {
+    for (const path of ["docs/../RULES.md", "RULES.md", "memory/topic.md", "docs/../../MEMORY.md"]) {
+      performed = [];
+      const got = await call("GET", `bots/b1/docs?path=${encodeURIComponent(path)}`, token("bob"));
+      expect(got.status, path).toBe(400);
+      expect(got.body.code).toBe("bad_request");
+      expect(performed, path).toEqual([]);
+    }
+  });
+
+  it("answers 404 for a bot the caller does not own and does not open its files", async () => {
+    respond = (request) => request.path === "/api/bot-catalog" ? { status: 200, body: catalogFixture() } : { status: 200, body: { text: "LEAKED", sets: [], entries: [], integrations: [] } };
+    for (const path of ["bots/b2/rules", "bots/b2/docs", "bots/b2/memory", "bots/b2/connectors"]) {
+      performed = [];
+      const got = await call("GET", path, token("bob"));
+      expect(got.status, path).toBe(404);
+      expect(JSON.stringify(got.body), path).not.toContain("LEAKED");
+      expect(performed.map((row) => row.request.path), path).toEqual(["/api/bot-catalog"]);
+    }
+    performed = [];
+    const admin = await call("GET", "bots/b1/rules", token("ann", "admin"));
+    expect(admin.status).toBe(404);
+    expect(performed.map((row) => row.request.path)).toEqual(["/api/bot-catalog"]);
+    expect(recorded).toEqual([]);
   });
 });

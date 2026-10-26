@@ -36107,6 +36107,13 @@ const orgMember = createOrgMemberRoutes({
   },
   botOfThread: (threadId) => store.botByThread(threadId)?.id ?? null,
   confidential: (threadId) => store.isConfidentialThread(threadId),
+  readBotMemory: (botId) => {
+    try {
+      return { text: readMemoryDoc(botId, MEMORY_INDEX).text };
+    } catch {
+      return null;
+    }
+  },
   hiddenThreadOf: (botId, principalId) => {
     const person = principalId.trim().toLowerCase();
     const at = (task: TaskRecord) => task.updatedAt ?? task.createdAt;
