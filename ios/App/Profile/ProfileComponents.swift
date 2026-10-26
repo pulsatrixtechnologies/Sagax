@@ -361,6 +361,30 @@ enum RoutineWording {
         return routine.enabled ? base : String(localized: "\(base) · Paused")
     }
 
+    /// The list row's short line (the full wording with the zone stays in
+    /// the editor): "Weekdays around 8:30 AM", "Every Monday around 8:06 AM",
+    /// "Once October 29 at 5:57 PM". The zone shows only when it is not the
+    /// phone's own. A schedule that does not reduce keeps its full wording.
+    static func compact(_ schedule: RoutineSchedule) -> String {
+        switch schedule.type {
+        case .cron:
+            if let wording = schedule.cronWording, wording.minutesOfDay.count == 1, let minutes = wording.minutesOfDay.first {
+                return sentence(wording.days, time: clockText(hour: minutes / 60, minute: minutes % 60), around: true) + zoneSuffix(wording.timeZone)
+            }
+            return Self.schedule(schedule)
+        case .once:
+            guard let at = schedule.at else { return Self.schedule(schedule) }
+            let date = Date(timeIntervalSince1970: at / 1_000)
+            let day = date.formatted(.dateTime.month(.wide).day())
+            let time = date.formatted(date: .omitted, time: .shortened).replacingOccurrences(of: "\u{202F}", with: " ")
+            return String(localized: "Once \(day) at \(time)")
+        case .daily:
+            return sentence(schedule.dayPattern, time: timeText(schedule), around: true)
+        default:
+            return Self.schedule(schedule)
+        }
+    }
+
     static func schedule(_ schedule: RoutineSchedule) -> String {
         switch schedule.type {
         case .cron:
@@ -402,7 +426,15 @@ enum RoutineWording {
     }
 
     /// Which days, then when: "Weekdays at 8:11 AM".
-    private static func sentence(_ days: RoutineSchedule.DayPattern, time: String) -> String {
+    private static func sentence(_ days: RoutineSchedule.DayPattern, time: String, around: Bool = false) -> String {
+        if around {
+            switch days {
+            case .everyDay: return String(localized: "Every day around \(time)")
+            case .weekdays: return String(localized: "Weekdays around \(time)")
+            case let .days(days) where days.count == 1: return String(localized: "Every \(weekdayName(days[0])) around \(time)")
+            default: break
+            }
+        }
         switch days {
         case .everyDay: return String(localized: "Every day at \(time)")
         case .weekdays: return String(localized: "Weekdays at \(time)")

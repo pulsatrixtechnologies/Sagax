@@ -149,3 +149,36 @@ export function scheduleSentence(schedule: RoutineSchedule): string {
   // Custom multi-day selection
   return `${days.map((day) => dayNames()[day]).join(", ")} ${when}`;
 }
+
+/** The compact line of a routine list row (the full label, with its zone,
+ * stays in the tooltip and the detail): "Weekdays around 8:30 AM", "Every
+ * Monday around 8:06 AM", "Once October 29 at 5:57 PM", "Every hour", "When a
+ * webhook fires". The time follows the locale (12 h in English, 24 h in
+ * French); the zone shows only when it is not the person's own. A schedule
+ * that does not reduce to one of these keeps its full label. */
+export function scheduleLabelCompact(schedule: RoutineSchedule | { type: "once"; at: number } | { type: "daily"; time: string; weekdays: number[] }): string {
+  const locale = activeLocale();
+  const clock = (hour: number, minute: number) => new Date(2000, 0, 1, hour, minute).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+  if (schedule.type === "webhook") return t("schedule.compact.webhook");
+  if (schedule.type === "event") return t("schedule.compact.email");
+  if (schedule.type === "once") {
+    const sameYear = new Date(schedule.at).getFullYear() === new Date().getFullYear();
+    const date = new Date(schedule.at).toLocaleDateString(locale, sameYear ? { month: "long", day: "numeric" } : { month: "long", day: "numeric", year: "numeric" });
+    return t("schedule.compact.once", { date, time: niceTime(schedule.at) });
+  }
+  if (schedule.type === "interval" && schedule.everyMinutes === 60 && !schedule.weekdays && !schedule.window && schedule.endsAt == null) return t("schedule.everyHour");
+  if (schedule.type !== "cron") return scheduleLabel(schedule);
+  const [minute, hour, day, month, weekday] = schedule.expression.trim().split(/\s+/);
+  if (!/^\d+$/.test(minute ?? "") || !/^\d+$/.test(hour ?? "") || Number(minute) > 59 || Number(hour) > 23 || day !== "*" || month !== "*") return scheduleLabel(schedule);
+  const time = clock(Number(hour), Number(minute));
+  let label: string | null = null;
+  if (weekday === "*") label = t("schedule.compact.dailyAround", { time });
+  else if (weekday === "1-5" || weekday?.toUpperCase() === "MON-FRI") label = t("schedule.compact.weekdaysAround", { time });
+  else if (/^[0-7]$/.test(weekday ?? "")) {
+    const dayName = new Date(2023, 0, 1 + (Number(weekday) % 7)).toLocaleDateString(locale, { weekday: "long" });
+    label = t("schedule.compact.weeklyAround", { day: dayName, time });
+  }
+  if (!label) return scheduleLabel(schedule);
+  const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return schedule.timeZone && schedule.timeZone !== local ? t("schedule.compact.zone", { label, zone: schedule.timeZone }) : label;
+}
