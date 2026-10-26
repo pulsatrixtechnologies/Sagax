@@ -4,8 +4,10 @@
 // achievement banners alike. On an organization server it follows the
 // person between devices as the desktop's `omb-notification-sounds`
 // (shared/user-preferences.ts, GET/PUT /api/me/preferences).
+import AVFoundation
 import CompanionCore
 import SwiftUI
+import UserNotifications
 
 enum NotificationSounds {
     /// Per device, as `omb-notification-sounds` is in a desktop's storage.
@@ -17,6 +19,33 @@ enum NotificationSounds {
     static var isEnabled: Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
     }
+
+    /// Which sound a notification plays (`sagax.notificationSound.v1`, the
+    /// person's record through SidebarPrefsModel), kept here for the
+    /// coordinator.
+    static let choiceKey = "companion.prefs.notificationSoundChoice"
+
+    static var choice: NotificationSoundChoice {
+        NotificationSoundChoice.parse(UserDefaults.standard.string(forKey: choiceKey))
+    }
+
+    static func applyChoice(_ choice: NotificationSoundChoice) {
+        UserDefaults.standard.set(choice.rawValue, forKey: choiceKey)
+    }
+
+    /// The chosen tone as a notification's sound: a bundled file, or the system's.
+    static var platformSound: UNNotificationSound {
+        choice.fileName.map { UNNotificationSound(named: UNNotificationSoundName($0)) } ?? .default
+    }
+
+    /// Plays the chosen tone once (the picker's preview).
+    @MainActor static func preview(_ choice: NotificationSoundChoice) {
+        guard let file = choice.fileName, let url = Bundle.main.url(forResource: file, withExtension: nil) else { return }
+        previewPlayer = try? AVAudioPlayer(contentsOf: url)
+        previewPlayer?.play()
+    }
+
+    @MainActor private static var previewPlayer: AVAudioPlayer?
 
     /// The person's synced value, when the server keeps one.
     @MainActor static func pull(_ session: Session) async {
@@ -57,5 +86,38 @@ struct NotificationSoundsCard: View {
         }
         SettingsFooter(text: "Turn it off to keep the banners but lose the chime, handy on a call where the agent is already talking to you.")
             .task { await NotificationSounds.pull(session) }
+        NotificationSoundChoiceCard()
+    }
+}
+
+/// Settings > Notifications > Notification sound (parity 2E): the system's
+/// sound or one of the desktop's five tones, for the person on every device.
+struct NotificationSoundChoiceCard: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var prefs = SidebarPrefsModel.shared
+    @AppStorage(NotificationSounds.key) private var on = true
+
+    var body: some View {
+        SettingsCard {
+            Menu {
+                Picker(selection: Binding(get: { prefs.notificationSound }, set: { choice in
+                    prefs.setNotificationSound(session, choice)
+                    NotificationSounds.preview(choice)
+                })) {
+                    ForEach(NotificationSoundChoice.allCases, id: \.self) { choice in
+                        Text(LocalizedStringKey(choice.label)).tag(choice)
+                    }
+                } label: { EmptyView() }
+            } label: {
+                SettingsRow(
+                    title: "Notification sound",
+                    accessory: .valueChevron(String(localized: String.LocalizationValue(prefs.notificationSound.label))),
+                    height: 43.67
+                )
+            }
+            .disabled(!on)
+            .accessibilityIdentifier("settings-notification-sound")
+        }
     }
 }

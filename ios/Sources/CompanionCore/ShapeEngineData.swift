@@ -158,7 +158,9 @@ public enum ShapeEngineData {
         .idle: .neutral,
         .thinking: .curious,
         .working: .attentive,
+        .streaming: .attentive,
         .happy: .excited,
+        .blocked: .curious,
         .sleeping: .sleepy,
     ]
 }

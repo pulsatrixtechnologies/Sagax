@@ -115,7 +115,12 @@ final class SkinsTests: XCTestCase {
 
     func testComputerAppearance() {
         let read = ComputerAppearance(preferences: ["omb-skin": "lagoon", "omb-font": "serif", "omb.retro98.unlocked": "1"])
-        XCTAssertEqual(read, ComputerAppearance(skin: .lagoon, font: .serif, retroUnlocked: true))
+        // a legacy skin: its mapped base and colour (LEGACY_SKINS)
+        XCTAssertEqual(read, ComputerAppearance(skin: .atelier, font: .serif, retroUnlocked: true, tint: .blue))
+        XCTAssertEqual(ComputerAppearance(preferences: ["omb-skin": "meadow"]).skin, .daylight, "Meadow, never on the phone, is Daylight in Green")
+        XCTAssertEqual(ComputerAppearance(preferences: ["omb-skin": "meadow"]).tint, .green)
+        XCTAssertNil(ComputerAppearance(preferences: ["omb-skin": "retro98", "omb-skin-tint": "red"]).tint, "a tint the family lacks is dropped")
+        XCTAssertEqual(ComputerAppearance(preferences: ["omb-skin": "retro98", "omb-skin-tint": "xp"]).tint, .xp)
         XCTAssertEqual(ComputerAppearance(preferences: [:]).skin, .pulsatrix, "the desktop's default")
         XCTAssertEqual(ComputerAppearance(preferences: ["omb-skin": "black"]).skin, .pulsatrix, "phone-only ids are not desktop skins")
         let written = ComputerAppearance.preferences(skin: .black, font: .skin, retroUnlocked: false)
@@ -129,7 +134,8 @@ final class SkinsTests: XCTestCase {
         XCTAssertFalse(SkinID.visible(retroUnlocked: false).contains(.retro98))
         XCTAssertFalse(SkinID.visible(retroUnlocked: false, active: .retro98).contains(.retro98))
         XCTAssertFalse(SkinID.visible(retroUnlocked: true).contains(.retro98))
-        XCTAssertEqual(SkinID.visible(retroUnlocked: true).count, 12)
+        // the legacy skins are worn as a base and a colour, never listed
+        XCTAssertEqual(Set(SkinID.visible(retroUnlocked: true)), [.black, .dim, .pulsatrix, .pulsatrixLight, .midnight, .atelier, .foundry, .daylight])
     }
 
     func testSharedDefaults() throws {

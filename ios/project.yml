@@ -52,6 +52,12 @@ targets:
       - path: ../docs/releases
         type: folder
         buildPhase: resources
+      # HD mascots (#968, HdMascotView.swift): the desktop's own painted art,
+      # bundled as it is (a folder per character, read by name from the
+      # generated HdMascotData), so the phone never keeps a copy of its own.
+      - path: ../src/assets/mascots/shiba
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: CompanionCore
         product: CompanionCore
@@ -62,8 +68,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax
-        MARKETING_VERSION: "0.8.0"
-        CURRENT_PROJECT_VERSION: "76"
+        MARKETING_VERSION: "0.8.1"
+        CURRENT_PROJECT_VERSION: "77"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         # The catalog lives in App/, which is already a source path.
@@ -259,8 +265,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.share
-        MARKETING_VERSION: "0.8.0"
-        CURRENT_PROJECT_VERSION: "76"
+        MARKETING_VERSION: "0.8.1"
+        CURRENT_PROJECT_VERSION: "77"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -317,8 +323,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.notification
-        MARKETING_VERSION: "0.8.0"
-        CURRENT_PROJECT_VERSION: "76"
+        MARKETING_VERSION: "0.8.1"
+        CURRENT_PROJECT_VERSION: "77"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -383,6 +389,8 @@ targets:
       - path: App/Mascots/OgreMascotView.swift
       - path: App/Mascots/FrogMascotView.swift
       - path: App/Mascots/CrabMascotView.swift
+      # HD art is not in the widget's bundle: a widget draws the vector look (HdOrVector's fallback).
+      - path: App/Mascots/HdMascotView.swift
       # MascotState resolves the face for the post-answer refresh a widget
       # performs; it is self-contained above Core, so it rides along.
       - path: App/MascotState.swift
@@ -395,8 +403,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.widgets
-        MARKETING_VERSION: "0.8.0"
-        CURRENT_PROJECT_VERSION: "76"
+        MARKETING_VERSION: "0.8.1"
+        CURRENT_PROJECT_VERSION: "77"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES

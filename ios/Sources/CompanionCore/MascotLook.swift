@@ -635,16 +635,28 @@ public enum MascotStates {
 
 /// `ShapeMood` in `ShapeMascot.tsx`.
 public enum ShapeMood: String, CaseIterable, Sendable {
-    case idle, thinking, working, happy, sleeping
+    case idle, thinking, working, streaming, happy, blocked, sleeping
 
     /// `shapeMoodFor` in `Avatar.tsx`.
     public static func forState(_ state: String?) -> ShapeMood {
         guard let state else { return .idle }
         if ["thinking", "searching", "loading", "curious", "confused"].contains(state) { return .thinking }
-        if ["working", "progress", "orbit", "radar", "writing", "uploading", "sending", "receiving", "dictating", "humming"].contains(state) { return .working }
-        if ["happy", "celebrate", "proud", "laughing", "excited", "playful"].contains(state) { return .happy }
+        if state == "alerting" { return .blocked }
+        if ["writing", "sending", "receiving", "dictating"].contains(state) { return .streaming }
+        if ["working", "progress", "orbit", "radar", "uploading", "humming"].contains(state) { return .working }
+        if ["happy", "celebrate", "proud", "laughing", "excited", "playful", "notifying"].contains(state) { return .happy }
         if ["sleeping", "drowsy", "powering-down"].contains(state) { return .sleeping }
         return .idle
+    }
+
+    /// The five moods Bunbu, Trombi and the other characters keep: the
+    /// shapes' newer ones fold back onto them (`bunbuMoodFor`, `trombiPoseFor`).
+    public var folded: ShapeMood {
+        switch self {
+        case .streaming: return .working
+        case .blocked: return .idle
+        default: return self
+        }
     }
 }
 
@@ -654,11 +666,11 @@ public enum TrombiPose: String, CaseIterable, Sendable {
 
     /// `trombiPoseFor` in `Avatar.tsx`.
     public static func forState(_ state: String?) -> TrombiPose {
-        let mood = ShapeMood.forState(state)
+        if state == "listening" || state == "notifying" { return .speak }
+        let mood = ShapeMood.forState(state).folded
         if mood == .thinking || mood == .working { return .think }
         if mood == .happy { return .celebrate }
         if mood == .sleeping { return .sleep }
-        if state == "listening" || state == "notifying" { return .speak }
         return .idle
     }
 }

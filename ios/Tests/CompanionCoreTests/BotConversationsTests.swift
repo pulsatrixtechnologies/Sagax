@@ -25,6 +25,15 @@ final class BotConversationsTests: XCTestCase {
         XCTAssertTrue(a.before.isEmpty && a.after.isEmpty)
     }
 
+    func testRowsOlderThanTheFirstLineFoldAndShowOncePerBot() {
+        let split = BotConversations.split([row("a", at: 1), row("b", at: 5), row("c", at: 20)], firstStart: 10, hasMore: false)
+        XCTAssertEqual(split.leading.map(\.threadId), ["a", "b"])
+        XCTAssertEqual(split.inline.map(\.threadId), ["c"])
+        XCTAssertEqual(BotConversations.deduped(split.leading).map(\.threadId), ["b"])
+        XCTAssertTrue(BotConversations.split([row("a", at: 1)], firstStart: 10, hasMore: true).leading.isEmpty)
+        XCTAssertEqual(BotConversations.split([row("a", at: 1)], firstStart: nil, hasMore: false).leading.count, 1)
+    }
+
     func testLinesCreditEachBotAndSkipTools() {
         var user = Message(id: "1", role: .user, kind: .text, at: 1); user.text = "Hi"
         var reply = Message(id: "2", role: .bot, kind: .text, at: 2); reply.text = "Hello"

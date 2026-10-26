@@ -48,7 +48,7 @@ struct CompanionApp: App {
     /// The paired app. The debug preview is a separate branch of the
     /// window, so a screenshot launch never opens the event stream.
     private var liveRoot: some View {
-        MascotGalleryGate { BrowserGalleryGate { RootView() } }
+        MascotGalleryGate { BrowserGalleryGate { RootView().overlay { LaunchMascotOverlay() } } }
                 .environmentObject(session)
                 // One modifier is the whole language seam. SwiftUI resolves a
                 // `LocalizedStringKey` against the environment's locale, so
@@ -68,6 +68,9 @@ struct CompanionApp: App {
                 // person changes deliberately and almost never. `session` lives
                 // on the App, not here, so the connection survives.
                 .id(language)
+                // the language picked here is the person's (`omb-language`):
+                // the server words pushes and rule texts in it, the desktop follows
+                .onValueChange(of: language) { SidebarPrefsModel.shared.setLanguage(session, $0) }
                 // Settings > App > Appearance: the skin, everywhere (ThemeStore.swift).
                 .themeRoot()
                 // Settings > Achievements: reads, reports and unlock banners (ST9).

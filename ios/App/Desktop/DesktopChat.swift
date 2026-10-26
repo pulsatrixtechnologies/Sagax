@@ -183,7 +183,7 @@ extension ChatView {
             if desktopChat != nil {
                 AnyView(DesktopAppGlow())
             } else {
-                AnyView(Theme.bg.ignoresSafeArea())
+                AnyView(Theme.bg.skinTexture(Theme.palette.texture, ink: Theme.palette.textPrimary.uiColor).ignoresSafeArea())
             }
         }
     }

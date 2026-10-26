@@ -44,7 +44,7 @@ vi.mock("@/lib/thread-preferences", async (importOriginal) => ({
 }));
 
 const { ChatView } = await import("./ChatView");
-const { conversationAnchors } = await import("./BotConversations");
+const { conversationAnchors, EarlierConversationList, splitLeadingConversations, dedupeConversations } = await import("./BotConversations");
 afterAll(() => vi.unstubAllGlobals());
 
 const message = (id: string, text: string, at: number, role: "user" | "bot" = "user"): Message => ({ id, role, kind: "text", text, at }) as Message;
@@ -93,5 +93,44 @@ describe("bot-to-bot conversations in the chat", () => {
     expect(after).toEqual([]);
     expect(conversationAnchors(rows, [T + 50 * MIN], true).before.size).toBe(0);
     expect(conversationAnchors(rows, [T - MIN], false).after.map((row) => row.threadId)).toEqual(["w1", "w2"]);
+  });
+
+  describe("conversations older than the topic's first line", () => {
+    const old: NonNullable<Bot["botConversations"]> = [
+      { threadId: "o1", otherBotId: "mel", otherName: "Melonie", direction: "out", startedAt: T - 90 * MIN, updatedAt: T - 80 * MIN },
+      { threadId: "o2", otherBotId: "mel", otherName: "Melonie", direction: "in", startedAt: T - 60 * MIN, updatedAt: T - 50 * MIN },
+      { threadId: "o3", otherBotId: "bru", otherName: "Brunhilde", direction: "out", startedAt: T - 30 * MIN, updatedAt: T - 20 * MIN },
+      { threadId: "o4", otherBotId: "mel", otherName: "Melonie", direction: "out", startedAt: T - 10 * MIN, updatedAt: T - 5 * MIN },
+    ];
+    const bru = { id: "bru", threadId: "bru-main", name: "Brunhilde", color: "orange" };
+
+    it("folded: no link is drawn above the first message", () => {
+      const self = ottoline([message("a", "hello", T)], old);
+      fixture.bots = [self, melonie, bru];
+      const markup = renderToStaticMarkup(createElement(ChatView, { bot: self }));
+      expect(markup).not.toContain("Go to conversation");
+      expect(markup).not.toContain("data-thread-chip");
+      expect(markup).toContain('data-previous-topics="closed"');
+      expect(markup).toContain("Earlier topics");
+    });
+
+    it("splits what opens the topic from what sits inside it", () => {
+      const { leading, inline } = splitLeadingConversations([...old, { threadId: "mid", otherBotId: "mel", otherName: "Melonie", direction: "out", startedAt: T + MIN }], T, false);
+      expect(leading.map((row) => row.threadId)).toEqual(["o1", "o2", "o3", "o4"]);
+      expect(inline.map((row) => row.threadId)).toEqual(["mid"]);
+      expect(splitLeadingConversations(old, T, true).leading).toEqual([]);
+      expect(splitLeadingConversations(old, undefined, false).leading).toHaveLength(4);
+    });
+
+    it("unfolded: one compact line per bot, the most recent, newest first", () => {
+      expect(dedupeConversations(old).map((row) => row.threadId)).toEqual(["o4", "o3"]);
+      const self = ottoline([], old);
+      fixture.bots = [self, melonie, bru];
+      const markup = renderToStaticMarkup(createElement(EarlierConversationList, { self, rows: old, bots: fixture.bots as Bot[] }));
+      expect(markup.match(/data-thread-chip=/g)).toHaveLength(2);
+      expect(markup.indexOf('data-thread-chip="o4"')).toBeLessThan(markup.indexOf('data-thread-chip="o3"'));
+      expect(markup).toContain("justify-start");
+      expect(markup).not.toContain("justify-center");
+    });
   });
 });

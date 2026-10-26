@@ -205,6 +205,10 @@ private struct PhoneBotPanelContent: View {
                     AnyView(identity)
                     BotPanelNoticesView(bot: current)
                         .padding(.top, 20)
+                    // the desktop's Details > Suggestions (Hide turns it off everywhere)
+                    BotSuggestionsCard(bot: current) { runSuggestion($0) }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
                     AnyView(overviewCard)
                         .padding(.top, 8)
                     if let mailRow {
@@ -739,6 +743,20 @@ private struct PhoneBotPanelContent: View {
     private func loadRoutines() async {
         routines = await session.loadRoutines().routines
         routinesLoaded = true
+    }
+
+    /// A suggestion: its conversation, or the settings section it names.
+    private func runSuggestion(_ action: BotSuggestion.Action) {
+        switch action {
+        case let .openThread(threadId):
+            openThread(threadId)
+        case .openSection("routines"):
+            path.append(PanelOverviewPage.routines)
+        case let .openSection(name):
+            guard let section = DesktopPanelSection(rawValue: name), sections.contains(section) else { return }
+            path.append(PanelPersonaRoute())
+            path.append(section)
+        }
     }
 
     /// An activity entry's thread: this chat is under the panel, so the
