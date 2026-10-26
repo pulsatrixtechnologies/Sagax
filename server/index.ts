@@ -344,6 +344,7 @@ import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from 
 import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
 import { proposalReplacements } from "./proposal-budget.ts";
+import { memberTeamSetupRefusal, TEAM_SETUP_DESKTOP_MESSAGE, TEAM_SETUP_DESKTOP_ONLY } from "./team-setup-review.ts";
 import { cardRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
@@ -22203,10 +22204,36 @@ function drainTeamSetupResumes(): void {
     dispatchTeamSetupResume(entry);
   }
 }
-async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: string; threadId: string; requestId: string; behavior: string }, ownerReview: boolean): Promise<boolean> {
+/** Who may apply a team setup from this request (#1058): the desktop app
+ * or an idle local browser on loopback, an organization admin, or on an
+ * organization server the member a member-sized plan belongs to
+ * (server/team-setup-review.ts). Null: allowed; else the 403 body. */
+function teamSetupApplyRefusal(auth: RequestAuth, req: IncomingMessage) {
+  return (request: TeamSetupRequest): Record<string, unknown> | null => {
+    if (auth.kind === "loopback") {
+      const trusted = DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id));
+      return trusted ? null : { error: TEAM_SETUP_DESKTOP_MESSAGE, code: TEAM_SETUP_DESKTOP_ONLY };
+    }
+    if (auth.scopes.includes("admin")) return null;
+    if (IDENTITY.kind !== "perspicax" || auth.kind !== "session") return { error: TEAM_SETUP_DESKTOP_MESSAGE, code: TEAM_SETUP_DESKTOP_ONLY };
+    const caller = approvalCallerUserId(auth).trim().toLowerCase();
+    const refusal = memberTeamSetupRefusal(request, {
+      callerId: caller,
+      ownerOf: (botId) => { const bot = store.bot(botId); return bot ? effectiveBotOwner(bot).trim().toLowerCase() : undefined; },
+      sectionOf: (botId) => { const bot = store.bot(botId); return bot ? sectionKey(bot.section) : undefined; },
+      mayCreateBots: botCreationAllowed(auth),
+      can: (permission) => callerCan(auth, permission),
+      // applyTeamSetup starts a new bot on Auto
+      newBotAutoRefused: memberAutoRefused({ ownerUserId: caller }, ["ask"], "auto"),
+    });
+    return refusal ? { ...refusal } : null;
+  };
+}
+async function resolveAndSendTeamSetup(res: ServerResponse, args: { botId: string; threadId: string; requestId: string; behavior: string }, applyRefusal: (request: TeamSetupRequest) => Record<string, unknown> | null): Promise<boolean> {
   const card = store.messagesFor(args.threadId).find((item) => item.card?.requestId === args.requestId && item.card.teamSetupRequest)?.card;
   if (!card) return false;
-  if (args.behavior === "allow" && !ownerReview) { json(res, 403, { error: "Approve team setup or deletion from the desktop app or a paired Full-access device. In a local browser, wait until every bot is idle." }); return true; }
+  const refused = args.behavior === "allow" ? applyRefusal(card.teamSetupRequest!) : null;
+  if (refused) { json(res, 403, refused); return true; }
   if (args.behavior === "allow" && !card.answered && !card.dismissed && !card.expired) {
     // Confirmed Primary Bot setup can move bots without the ordinary PATCH route.
     // Keep that atomic Store operation behind the same shared-machine fence.
@@ -45392,7 +45419,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (await resolveImessageCard(res, bot.threadId, String(body.requestId), behavior)) return;
         if (await resolveAndSendTeamSetup(res, {
           botId: bot.id, threadId: bot.threadId, requestId: String(body.requestId), behavior,
-        }, auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
+        }, teamSetupApplyRefusal(auth, req))) return;
         if (resolveAndSendRoutine(res, {
           botId: bot.id,
           botName: bot.name,
@@ -45567,8 +45594,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (setupCard) {
           const setupBotId = setupCard.from?.botId ?? store.botByThread(threadId)?.id;
           if (!setupBotId) return json(res, 400, { error: "This team setup has no valid owner" });
-          if (await resolveAndSendTeamSetup(res, { botId: setupBotId, threadId, requestId, behavior },
-            auth.kind === "loopback" ? DESKTOP_MANAGED || Boolean(req.headers.origin) && !store.bots.some((bot) => bot.busy || activeGroupTurnForBot(bot.id)) : auth.scopes.includes("admin"))) return;
+          if (await resolveAndSendTeamSetup(res, { botId: setupBotId, threadId, requestId, behavior }, teamSetupApplyRefusal(auth, req))) return;
         }
         const profileCard = store.messagesFor(threadId).find(
           (message) => message.card?.requestId === requestId && message.card.profileRequest,

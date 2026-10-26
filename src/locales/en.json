@@ -10229,5 +10229,7 @@
   "botPanel.email.error.unavailable": "The address couldn't be changed right now. Try again later.",
   "botPanel.email.error.rate_limited": "Too many address changes. Wait a minute, then try again.",
   "triggers.botmail.fullTools": "Give these runs the bot's usual tools",
-  "triggers.botmail.fullToolsHelp": "Off: a run woken by an email has no shell, and every change or send asks you first, whatever the bot's level. Turn on only if you trust everyone who can write to this address."
+  "triggers.botmail.fullToolsHelp": "Off: a run woken by an email has no shell, and every change or send asks you first, whatever the bot's level. Turn on only if you trust everyone who can write to this address.",
+  "teamSetup.error.adminRequired": "This setup needs an organization admin on this server: it creates a team, changes the Primary Bot role, deletes a bot, or changes a bot that is not yours. Ask an admin to apply it.",
+  "teamSetup.error.desktopOnly": "Approve team setup or deletion from the desktop app or a paired Full-access device. In a local browser, wait until every bot is idle."
 }
