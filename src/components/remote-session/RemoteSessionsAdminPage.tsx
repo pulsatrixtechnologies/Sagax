@@ -11,7 +11,9 @@ import {
   fetchRemoteSessionLog,
   revokeUnattended,
   useRemoteSessionsAdmin,
+  useUnattendedHosts,
 } from "./use-remote-sessions-admin";
+import { UnattendedHostsSection } from "./UnattendedHostsSection";
 
 /** A minimal chat-safe view, so the live-screen overlay can be reused from the
  * admin page. It carries no address or key, only what the card already shows. */
@@ -79,7 +81,8 @@ function LogsPanel({ row, onClose }: { row: RemoteSessionAdminRow; onClose: () =
   );
 }
 
-function UnattendedCell({ row, admin, enabled, onRevoke }: { row: RemoteSessionAdminRow; admin: boolean; enabled: boolean; onRevoke: (row: RemoteSessionAdminRow) => void }) {
+// Revoke shows whatever the flag says (M2): only recording consent is gated.
+function UnattendedCell({ row, admin, onRevoke }: { row: RemoteSessionAdminRow; admin: boolean; onRevoke: (row: RemoteSessionAdminRow) => void }) {
   if (!row.unattended) return <span className="text-ink-secondary">{t("remoteSessionsAdmin.unattended.no")}</span>;
   return (
     <div data-remote-admin-unattended="" className="flex flex-col gap-0.5">
@@ -88,7 +91,7 @@ function UnattendedCell({ row, admin, enabled, onRevoke }: { row: RemoteSessionA
       {row.unattendedExpiresAt && <span className="text-[12px] text-ink-secondary">{t("remoteSessionsAdmin.unattended.expires", { date: startedLabel(row.unattendedExpiresAt) })}</span>}
       <span className="text-[12px] text-ink-secondary">{row.bannerVisible === false ? t("remoteSessionsAdmin.unattended.bannerOff") : t("remoteSessionsAdmin.unattended.bannerOn")}</span>
       {row.signed === false && <span className="text-[12px] text-warning">{t("remoteSessionsAdmin.unattended.unsigned")}</span>}
-      {admin && enabled && <button type="button" data-remote-admin-revoke="" onClick={() => onRevoke(row)} className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg border border-danger/50 px-2 py-0.5 text-[12px] text-danger hover:bg-raised"><ShieldOff size={12} /> {t("remoteSessionsAdmin.unattended.revoke")}</button>}
+      {admin && <button type="button" data-remote-admin-revoke="" onClick={() => onRevoke(row)} className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg border border-danger/50 px-2 py-0.5 text-[12px] text-danger hover:bg-raised"><ShieldOff size={12} /> {t("remoteSessionsAdmin.unattended.revoke")}</button>}
     </div>
   );
 }
@@ -103,6 +106,17 @@ export function RemoteSessionsAdminPage() {
   const [controlling, setControlling] = useState<RemoteSessionAdminRow | null>(null);
   const [confirmEnd, setConfirmEnd] = useState<string | null>(null);
   const [confirmRevoke, setConfirmRevoke] = useState<RemoteSessionAdminRow | null>(null);
+  const hosts = useUnattendedHosts();
+  // An unattended open from the hosts section: once its row connects (the
+  // host picked the session at its beat), take control as from a chat card.
+  const [awaiting, setAwaiting] = useState<{ code: string; botId: string } | null>(null);
+  useEffect(() => {
+    if (!awaiting) return;
+    const row = rows.find((candidate) => candidate.code === awaiting.code && (!awaiting.botId || candidate.botId === awaiting.botId));
+    if (!row || row.status !== "connected" || !row.reachable || !remoteControllable(viewFromRow(row))) return;
+    setAwaiting(null);
+    setControlling(row);
+  }, [awaiting, rows]);
 
   const toggle = (key: "activeOnly" | "unattendedOnly") => setFilters((f) => ({ ...f, [key]: !f[key] }));
 
@@ -154,6 +168,7 @@ export function RemoteSessionsAdminPage() {
       {!unattendedEnabled && !loading && (
         <p data-remote-admin-unattended-note="" className="border-b border-hairline/40 bg-raised/40 px-5 py-2 text-[12.5px] text-ink-secondary">{t("remoteSessionsAdmin.unattended.notReady")}</p>
       )}
+      <UnattendedHostsSection state={hosts} onOpened={(opened) => { setAwaiting(opened); reload(); }} />
       <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
         {rows.length === 0 && <p data-remote-admin-empty="" data-loading={loading ? "" : undefined} className="text-[13px] text-ink-secondary">{t("remoteSessionsAdmin.empty")}</p>}
         {rows.length > 0 && (
@@ -180,7 +195,7 @@ export function RemoteSessionsAdminPage() {
                       <td className="px-2 py-2 text-ink-secondary">{row.elevated ? t("remoteSessionsAdmin.rights.elevated") : t("remoteSessionsAdmin.rights.standard")}</td>
                       <td className="px-2 py-2 text-ink" title={row.botId}>{row.botLabel}</td>
                       <td className="px-2 py-2 text-ink-secondary">{row.openedBy ?? "-"}</td>
-                      <td className="px-2 py-2"><UnattendedCell row={row} admin={admin} enabled={unattendedEnabled} onRevoke={revoke} /></td>
+                      <td className="px-2 py-2"><UnattendedCell row={row} admin={admin} onRevoke={revoke} /></td>
                       <td className="px-2 py-2">
                         <div className="flex flex-wrap gap-1.5">
                           {canControl && <button type="button" data-remote-admin-control="" onClick={() => setControlling(row)} className="inline-flex items-center gap-1 rounded-lg border border-hairline/50 bg-panel px-2 py-1 text-[12px] text-ink hover:bg-raised"><Monitor size={12} /> {t("remoteSessionsAdmin.action.control")}</button>}
