@@ -2,6 +2,7 @@
 // The bar beside a 1:1 message: react, reply and … in a row (the tray of
 // MessageHoverActions, Grok Bot's shapes), the time under them. Copy, Copy
 // request ID and every other control are labelled entries of the … menu.
+import { readFileSync } from "node:fs";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +55,9 @@ describe("MessageBar", () => {
     await render("bot", vi.fn(), true);
     const buttons = [...bar().querySelectorAll("[data-hover-actions] > button")].map((button) => button.getAttribute("aria-label"));
     expect(buttons).toEqual(["Add reaction", "Reply to message", "Message actions"]);
-    expect(bar().querySelector("[data-message-time]")!.textContent).toBe("1:54 PM");
+    const time = bar().querySelector("[data-message-time]")!;
+    expect(time.textContent).toBe("");
+    expect(time.getAttribute("data-time")).toBe("1:54 PM");
     expect(bar().className).toContain("flex-col");
     expect(items()).toEqual([]);
     expect(handle().getAttribute("aria-haspopup")).toBe("menu");
@@ -111,12 +114,17 @@ describe("MessageBar", () => {
   });
 
   // Dragging right to left across one's own message reaches the bar that
-  // sits before its text in the DOM: the hidden time must not be copied.
+  // sits before its text in the DOM. The time is an attribute painted by
+  // CSS, so that drag has no time text to copy.
   it("keeps the time out of a text selection", async () => {
     await render("user");
     const time = bar().querySelector<HTMLElement>("[data-message-time]")!;
-    expect(time.textContent).toBe("1:54 PM");
+    expect(time.textContent).toBe("");
+    expect(time.getAttribute("data-time")).toBe("1:54 PM");
+    expect(time.childNodes).toHaveLength(0);
     expect(bar().className).toContain("select-none");
     expect(time.className).toContain("select-none");
+    const css = readFileSync("src/styles.css", "utf8");
+    expect(css).toContain("[data-message-time]::after { content: attr(data-time); }");
   });
 });
