@@ -6,6 +6,7 @@
 import type { BusySendPreference } from "../../shared/parallel-tasks";
 import { DEFAULT_MAX_PARALLEL_PER_PERSON } from "../../shared/parallel-tasks";
 import type { Bot, ConfigStatus } from "@/state/store";
+import type { TurnPayerMode } from "../../shared/turn-payer";
 
 type RuntimeBot = Pick<Bot, "maxConcurrentThreads" | "maxParallelPerPerson" | "busySend" | "automaticRecovery">;
 type RuntimeConfig = Pick<ConfigStatus, "threads" | "automaticRecovery"> | null | undefined;
@@ -17,6 +18,20 @@ export interface BotRuntimePatch {
   maxParallelPerPerson?: number;
   busySend?: BusySendPreference;
   automaticRecovery?: BotRecovery;
+  /** #1137: who pays for the bot's replies; null goes back to the default. */
+  turnPayer?: TurnPayerMode | null;
+}
+
+/** #1137: who pays for this bot's replies now (its own choice, else the
+ * server's default), or null on a solo server (the default is not sent). */
+export function botTurnPayer(bot: Pick<Bot, "turnPayer" | "turnPayerDefault">): TurnPayerMode | null {
+  if (!bot.turnPayerDefault) return null;
+  return bot.turnPayer ?? bot.turnPayerDefault;
+}
+
+/** PUT /api/groups/:id/bot-payer (#1137). */
+export function groupBotPayerPath(groupId: string): string {
+  return `/api/groups/${encodeURIComponent(groupId)}/bot-payer`;
 }
 
 export const BOT_THREAD_LIMITS = Array.from({ length: 16 }, (_, i) => i + 1);

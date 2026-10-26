@@ -21,6 +21,7 @@ import { DescriptionInfo } from "./bot-settings/DescriptionInfo";
 import { useCaptionChrome, useMacInsetChrome } from "./DesktopCapabilities";
 import { normalizeState } from "@/lib/mascot";
 import { HelpTip } from "./SettingsPrimitives";
+import { GroupBotPayers } from "./GroupBotPayers";
 
 export const GROUP_PANEL_TABS = ["details", "instructions", "memory", "advanced"] as const;
 export type GroupPanelTab = (typeof GROUP_PANEL_TABS)[number];
@@ -218,6 +219,8 @@ export function GroupPanel({
         {tab === "details" && (
           <div className="flex flex-col gap-6 px-4 pb-6 pt-2">
             {details}
+            {/* #1137: who pays for the replies of the viewer's own bots here */}
+            <GroupBotPayers group={group} />
           </div>
         )}
 

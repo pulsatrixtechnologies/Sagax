@@ -614,6 +614,18 @@ public enum AccessLine: Hashable, Sendable {
     case payerDisabledOwner
     case routineDelegation(routine: String, person: String?)
     case routineDelegationReason(String)
+    /// #1137: the owner pays and their computer's model is offline (nil:
+    /// the owner's name is unknown).
+    case ownerModelOffline(owner: String?)
+    /// #1137: the owner pays; the viewer wrote, and the owner's access is
+    /// what is missing.
+    case ownerPaysOther(bot: String, engine: String)
+    case ownerPaysDisabled(bot: String)
+    /// #1137: the viewer is the owner who pays for everyone.
+    case ownerPaysMine(bot: String, engine: String)
+    /// #1137: each person pays, and the viewer has no access to the engine.
+    case speakerPays(bot: String, engine: String)
+    case speakerPaysServerEngine(bot: String, engine: String)
 }
 
 public struct AccessCardLines: Hashable, Sendable {
@@ -626,6 +638,8 @@ public struct AccessCardLines: Hashable, Sendable {
     public var signIn = false
     /// The viewer could reconnect their routines on the computer.
     public var reconnect = false
+    /// #1137: offer to choose a model the viewer can pay for.
+    public var chooseModel = false
 
     public static func of(_ access: AccessCard, viewerPrincipalId: String?, admin: Bool) -> AccessCardLines {
         func same(_ a: String?, _ b: String?) -> Bool {
@@ -655,8 +669,19 @@ public struct AccessCardLines: Hashable, Sendable {
             break
         }
         let engine = access.engine
+        // "" when the card names no bot: the app words it ("this bot").
+        let bot = access.botName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        // #1137: the owner pays, and their computer's model is offline.
+        if access.cause == "owner_model_offline" {
+            let name = access.ownerName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return AccessCardLines(text: .ownerModelOffline(owner: name.isEmpty ? nil : name))
+        }
         let payer = (access.payerPrincipalId?.isEmpty == false) ? access.payerPrincipalId : access.ownerPrincipalId
         let mine = same(viewerPrincipalId, payer)
+        // #1137: the owner pays; the viewer is the person who wrote.
+        if access.ownerPays == true && !mine {
+            return AccessCardLines(text: access.cause == "payer_disabled" ? .ownerPaysDisabled(bot: bot) : .ownerPaysOther(bot: bot, engine: engine))
+        }
         if access.cause == "payer_disabled" {
             if access.routine == true || access.payer == "owner" {
                 return AccessCardLines(text: mine ? .payerDisabledRoutineMine : .payerDisabledOwner)
@@ -666,6 +691,13 @@ public struct AccessCardLines: Hashable, Sendable {
         var own = AccessCardLines(text: .noAccessMine(engine: engine))
         own.keysUrl = access.keysUrl
         own.signIn = access.subscriptionSignIn == true
+        // #1137: each person pays for this bot, and the viewer has no access
+        // that the organization gave them.
+        if access.cause == "server_engine_not_allowed" && mine && access.speakerPays == true && access.routine != true {
+            own.text = .speakerPaysServerEngine(bot: bot, engine: engine)
+            own.chooseModel = true
+            return own
+        }
         if access.routine == true {
             if mine {
                 own.text = .noAccessRoutineMine(engine: engine)
@@ -676,6 +708,12 @@ public struct AccessCardLines: Hashable, Sendable {
         }
         if mine {
             own.hint = admin ? .noAccessMineAdmin : nil
+            if access.speakerPays == true {
+                own.text = .speakerPays(bot: bot, engine: engine)
+                own.chooseModel = true
+            } else if access.ownerPays == true {
+                own.text = .ownerPaysMine(bot: bot, engine: engine)
+            }
             return own
         }
         return AccessCardLines(text: .noAccessOther(engine: engine), hint: admin ? .noAccessAdminOrgKey : nil)

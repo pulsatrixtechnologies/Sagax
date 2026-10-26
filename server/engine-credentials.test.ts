@@ -309,3 +309,65 @@ describe("resolveEngineAccess: the organization's key per person", () => {
       .toEqual({ ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB });
   });
 });
+
+// #1137 (shared/turn-payer.ts): the owner may pay for the people a bot is
+// shared with. The same order, judged on the owner's credentials.
+describe("resolveEngineAccess: the owner pays (#1137)", () => {
+  const ownerPays = { payerMode: "owner" as const };
+
+  it("a person writing to a bot the owner pays for runs on the owner's subscription", () => {
+    const plan = resolveEngineAccess(input({ ...ownerPays, speaker: bob, instance: CODEX, signedIn: [`${OWNER}/codex`] }));
+    expect(plan).toEqual({ ok: true, via: "subscription", payer: "owner", payerPrincipalId: OWNER, ownerPays: true });
+    expect(turnPayer({ ...ownerPays, speaker: bob, owner: { principalId: OWNER } })).toEqual({ principalId: OWNER, routine: false, ownerPays: true });
+  });
+
+  it("the owner's key (pi on the owner's keys serves a local model of the owner's computer too)", () => {
+    expect(resolveEngineAccess(input({ ...ownerPays, speaker: bob, instance: PI, keys: ["SUB-OWNER/openai"] }))).toEqual({ ok: true, via: "owner-key", payer: "owner", payerPrincipalId: OWNER, provider: "openai", ownerPays: true });
+  });
+
+  it("the person who writes needs nothing of their own, and their own key is not read", () => {
+    const plan = resolveEngineAccess(input({ ...ownerPays, speaker: bob, keys: ["SUB-OWNER/anthropic", "SUB-BOB/anthropic"] }));
+    expect(plan).toMatchObject({ ok: true, via: "owner-key", payerPrincipalId: OWNER, ownerPays: true });
+  });
+
+  it("the organization's key is judged as the owner's, and still marks that the owner pays", () => {
+    const plan = resolveEngineAccess(input({ ...ownerPays, speaker: bob, keyBacked: true, serverEngineAllowed: (pid) => pid === OWNER }));
+    expect(plan).toEqual({ ok: true, via: "org-key", payer: "organization", ownerPays: true });
+  });
+
+  it("the owner without access: refused as the owner's, flagged so the person who wrote learns why", () => {
+    expect(resolveEngineAccess(input({ ...ownerPays, speaker: bob }))).toEqual({ ok: false, reason: "no_access", cause: "no_credentials", payer: "owner", payerPrincipalId: OWNER, ownerPays: true });
+    expect(resolveEngineAccess(input({ ...ownerPays, speaker: bob, owner: { principalId: OWNER, sub: "SUB-OWNER", disabled: true }, signedIn: [`${OWNER}/claudeAgent`] })))
+      .toMatchObject({ ok: false, cause: "payer_disabled", payer: "owner", ownerPays: true });
+  });
+
+  it("never an unknown person, never the owner's own turn, and routines are unchanged", () => {
+    const unknown = resolveEngineAccess(input({ ...ownerPays, speaker: { origin: "person" }, signedIn: [`${OWNER}/claudeAgent`] }));
+    expect(unknown).toMatchObject({ ok: false, reason: "no_access" });
+    expect(unknown).not.toHaveProperty("ownerPays");
+    expect(resolveEngineAccess(input({ ...ownerPays, signedIn: [`${OWNER}/claudeAgent`] }))).toEqual({ ok: true, via: "subscription", payer: "owner", payerPrincipalId: OWNER });
+    expect(resolveEngineAccess(input({ ...ownerPays, speaker: routine, signedIn: [`${OWNER}/claudeAgent`] }))).toEqual({ ok: true, via: "subscription", payer: "owner", payerPrincipalId: OWNER, routine: true });
+  });
+
+  it("a hop that speaks for the person is paid by the owner too", () => {
+    const hop: TurnSpeaker = { origin: "peer", fromBotId: "b2", principalId: BOB };
+    expect(resolveEngineAccess(input({ ...ownerPays, speaker: hop, signedIn: [`${OWNER}/claudeAgent`] }))).toMatchObject({ ok: true, via: "subscription", payerPrincipalId: OWNER, ownerPays: true });
+  });
+
+  it("each person pays: the rule since 2026-10-01, unchanged", () => {
+    expect(resolveEngineAccess(input({ payerMode: "speaker", speaker: bob, signedIn: [`${OWNER}/claudeAgent`] }))).toEqual({ ok: false, reason: "no_access", cause: "no_credentials", payer: "speaker", payerPrincipalId: BOB });
+  });
+
+  it("isolation: the owner's key reaches the turn on the server only, read with the owner's subject", async () => {
+    const inp = input({ ...ownerPays, speaker: bob, keys: ["SUB-OWNER/anthropic"] });
+    const resolved: string[] = [];
+    const out = await materializeEngineAccess(inp, resolveEngineAccess(inp), {
+      dataDir: "/data",
+      resolveKey: async (sub, provider) => { resolved.push(`${sub}/${provider}`); return { ok: true, key: "sk-ant-test-owner-key-0001", fingerprint: "fp" }; },
+      invalidate: () => {},
+      loginDir: (principalId, driver) => `/data/principals/${principalId}/${driver}`,
+    });
+    expect(resolved).toEqual(["SUB-OWNER/anthropic"]);
+    expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp` }, plan: { ownerPays: true } });
+  });
+});

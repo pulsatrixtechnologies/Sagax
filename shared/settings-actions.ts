@@ -193,6 +193,14 @@ add({
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/runtime-settings` }),
   write: (ids, v) => ({ method: "PATCH", path: `/api/bots/${enc(ids.target!)}/runtime-settings`, body: v }),
 });
+// #1137: who pays for the bot's replies to the people it is shared with
+// (shared/turn-payer.ts); "default" goes back to the server's default.
+add({
+  key: "bot.turnPayer", family: "bot", target: "bot", value: "enum:owner|speaker|default",
+  label: "Who pays for replies (owner, speaker = each person, default)", where: "Bot editor > Model > Who pays for replies",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/runtime-settings`, field: "settings.turnPayer" }),
+  write: (ids, v) => ({ method: "PATCH", path: `/api/bots/${enc(ids.target!)}/runtime-settings`, body: { turnPayer: v === "default" ? null : v } }),
+});
 add({
   key: "bot.memory", family: "bot", target: "bot", value: "text", label: "Memory text", where: "Bot editor > Memory",
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/memory` }),
@@ -371,6 +379,17 @@ groupField("group.turnTimeout", "turnTimeoutMinutes", "number?", "Turn limit", "
 groupField("group.defaultResponder", "defaultResponder", "string?", "Default responder", "Group panel");
 groupField("group.mentionAll", "mentionAll", "boolean", "@all reaches every bot", "Group panel");
 groupField("group.cwd", "cwd", "string?", "Working folder", "Group panel > Folder");
+// #1137: who pays for one of its bots' replies in this group ({botId, turnPayer: owner|speaker|null}).
+add({
+  key: "group.botPayer", family: "group", target: "group", value: "object",
+  label: "Who pays for a bot's replies here ({botId, turnPayer: owner, speaker or null})", where: "Group panel > Details > Who pays for replies",
+  read: () => ({ path: "/api/groups", list: "groups", match: "id", field: "botPayers" }),
+  write: (ids, v) => {
+    const choice = v as { botId?: unknown; turnPayer?: unknown } | null;
+    if (!choice || typeof choice.botId !== "string" || !(choice.turnPayer === null || choice.turnPayer === "owner" || choice.turnPayer === "speaker")) return "value is {botId, turnPayer: owner, speaker or null}.";
+    return { method: "PUT", path: `/api/groups/${enc(ids.target!)}/bot-payer`, body: { botId: choice.botId, turnPayer: choice.turnPayer } };
+  },
+});
 add({
   key: "group.memory", family: "group", target: "group", value: "object", label: "Group memory ({text?, enabled?})", where: "Group panel > Memory",
   read: (ids) => ({ path: `/api/groups/${enc(ids.target!)}/memory` }),

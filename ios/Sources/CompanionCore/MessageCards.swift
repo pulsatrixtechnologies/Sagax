@@ -37,6 +37,17 @@ public struct AccessCard: Codable, Hashable, Sendable {
     public var routineId: String?
     public var routineName: String?
     public var suspendReason: String?
+    /// #1137: the bot's name when the card was written.
+    public var botName: String?
+    /// #1137: the owner pays for this bot's replies; the card is also for
+    /// the person who wrote (`speakerPrincipalId`).
+    public var ownerPays: Bool?
+    public var speakerPrincipalId: String?
+    /// #1137: the owner's display name, on an `owner_model_offline` card.
+    public var ownerName: String?
+    /// #1137: replies are paid by the person who writes, and the bot is not
+    /// theirs: the card offers to choose a model they can pay for.
+    public var speakerPays: Bool?
 
     public init(reason: String, engine: String, botId: String, ownerPrincipalId: String, detail: String? = nil) {
         self.reason = reason

@@ -402,6 +402,49 @@ final class CardActionsTests: XCTestCase {
         XCTAssertTrue(lines.reconnect)
     }
 
+    // #1137: who pays for a shared bot's replies.
+    func testAccessCardLinesWhoPays() throws {
+        // each person pays: the viewer wrote to someone else's bot
+        let speaker = try decode(AccessCard.self, #"""
+        {"reason":"no_access","engine":"pi","botId":"b","ownerPrincipalId":"p1","payer":"speaker",
+         "payerPrincipalId":"p2","keysUrl":"https://console.example/credentials?kind=model","botName":"Helper",
+         "speakerPays":true,"cause":"no_credentials"}
+        """#)
+        let mine = AccessCardLines.of(speaker, viewerPrincipalId: "p2", admin: false)
+        XCTAssertEqual(mine.text, .speakerPays(bot: "Helper", engine: "pi"))
+        XCTAssertTrue(mine.chooseModel)
+        XCTAssertEqual(mine.keysUrl, "https://console.example/credentials?kind=model")
+        var notGiven = speaker
+        notGiven.cause = "server_engine_not_allowed"
+        let given = AccessCardLines.of(notGiven, viewerPrincipalId: "p2", admin: false)
+        XCTAssertEqual(given.text, .speakerPaysServerEngine(bot: "Helper", engine: "pi"))
+        XCTAssertTrue(given.chooseModel)
+
+        // the owner pays and their computer is offline: one line, no advice
+        let offline = try decode(AccessCard.self, #"""
+        {"reason":"no_access","engine":"pi","botId":"b","ownerPrincipalId":"p1","payer":"owner","payerPrincipalId":"p1",
+         "cause":"owner_model_offline","ownerPays":true,"speakerPrincipalId":"p2","ownerName":"Sam"}
+        """#)
+        let down = AccessCardLines.of(offline, viewerPrincipalId: "p2", admin: false)
+        XCTAssertEqual(down.text, .ownerModelOffline(owner: "Sam"))
+        XCTAssertNil(down.keysUrl)
+        XCTAssertFalse(down.chooseModel)
+
+        // the owner pays and lacks access: the person who wrote is told so,
+        // the owner reads their own line
+        let ownerPays = try decode(AccessCard.self, #"""
+        {"reason":"no_access","engine":"Claude","botId":"b","ownerPrincipalId":"p1","payer":"owner","payerPrincipalId":"p1",
+         "cause":"no_credentials","ownerPays":true,"speakerPrincipalId":"p2"}
+        """#)
+        XCTAssertEqual(AccessCardLines.of(ownerPays, viewerPrincipalId: "p2", admin: false).text, .ownerPaysOther(bot: "", engine: "Claude"))
+        let owner = AccessCardLines.of(ownerPays, viewerPrincipalId: "p1", admin: false)
+        XCTAssertEqual(owner.text, .ownerPaysMine(bot: "", engine: "Claude"))
+        XCTAssertFalse(owner.chooseModel)
+        var disabled = ownerPays
+        disabled.cause = "payer_disabled"
+        XCTAssertEqual(AccessCardLines.of(disabled, viewerPrincipalId: "p2", admin: false).text, .ownerPaysDisabled(bot: ""))
+    }
+
     // MARK: Goal run card
 
     func testGoalRunText() throws {

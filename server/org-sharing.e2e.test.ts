@@ -356,7 +356,7 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       return bot?.messages.find((m) => m.kind === "access") ?? null;
     });
     // bob spoke: the card is his to act on (his subscription, his key)
-    expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: shared.id, payer: "speaker", payerPrincipalId: bobId, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/pulsabot/keys` });
+    expect(card.access).toMatchObject({ reason: "no_access", engine: "Claude", botId: shared.id, payer: "speaker", payerPrincipalId: bobId, cause: "no_credentials", subscriptionSignIn: true, keysUrl: `${idp.issuer}/console/credentials?kind=model` });
     expect(readFileSync(dump, "utf8")).toBe(before);
     // private threads: bob hears his own thread's failure; alice, the bot's
     // owner, hears nothing of bob's conversation
@@ -442,6 +442,11 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     mkdirSync(aliceLogin, { recursive: true, mode: 0o700 });
     writeFileSync(join(aliceLogin, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }), { mode: 0o600 });
     const held = await createBot(alice, "Holder", "stuck");
+    // #1137: on alice's own subscription, alice would pay for bob by
+    // default; this case is about bob's own refused turns, so each person
+    // pays on both of her bots
+    expect((await api("PATCH", `/api/bots/${held.id}/runtime-settings`, alice, { turnPayer: "speaker" })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${shared.id}/runtime-settings`, alice, { turnPayer: "speaker" })).status).toBe(200);
     expect((await api("POST", `/api/bots/${held.id}/direct-grants`, alice, { userId: bobId })).status).toBe(200);
     expect((await api("POST", `/api/bots/${held.id}/messages`, alice, { text: "hold on, alice" })).status).toBe(202);
     await waitFor(async () => promptsNow().includes("hold on, alice"));

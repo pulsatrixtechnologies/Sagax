@@ -748,9 +748,10 @@ Each speak and transcribe is booked in the usage ledger (`driverKind`
 `xai-voice`, model `grok-tts` or `grok-stt`, `access` = the via,
 `payerPrincipalId` when the speaker's own key paid; no price: unpriced).
 
-Perspicax does not list `xai` keys yet (its provider keys are `anthropic`
-and `openai`), so today the organization's key serves everyone. Sagax
-already reads an `xai` key from the directory when Perspicax offers one.
+Perspicax lists `xai` keys since its migration 0043 (its provider keys are
+`anthropic`, `openai`, `xai`, `google` and `moonshot`, on the console page
+`/console/credentials?kind=model`), and Sagax reads a person's `xai` key from
+the directory.
 
 ## The call button on an organization server
 

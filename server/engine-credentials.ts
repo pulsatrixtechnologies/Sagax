@@ -9,7 +9,14 @@
 //     a run after someone edited the routine): always the bot's OWNER, never
 //     whoever created, edited or started it;
 //   - a bot hop a routine started: that routine's bot owner, carried along
-//     the hops (TurnSpeaker routinePayer); else the person it speaks for.
+//     the hops (TurnSpeaker routinePayer); else the person it speaks for;
+//   - 2026-10-26 (#1137): a bot whose "who pays" is the owner
+//     (shared/turn-payer.ts, `payerMode: "owner"`): the bot's OWNER for every
+//     known person who writes to it (and the hops that speak for them). The
+//     plan then carries `ownerPays`. An unknown person never makes the owner
+//     pay. Visibility never changes, and the owner's engine connectors are
+//     never mounted for the person who writes (harness-connectors.ts: the
+//     payer is not the speaker, so they are "foreign").
 //
 // Order, first match wins:
 //   1. the instance's CLI is not installed              -> engine_missing
@@ -40,7 +47,10 @@
 // for the org key any more (it serves whenever an admin set one); and the
 // server's own sign-ins no longer serve admins' bots: everyone, admins
 // included, signs in their own subscription. Solo mode is unchanged: the
-// server's own configuration serves every turn.
+// server's own configuration serves every turn. 2026-10-26 (#1137): the
+// owner may now choose to pay for the people the bot is shared with (per
+// bot, or per group for one bot); by default the owner pays when the bot
+// runs on the owner's local model or own subscription.
 //
 // The key itself is fetched at dispatch (materializeEngineAccess) through
 // the Perspicax link, kept in memory 60 s at most, and put into that one
@@ -52,6 +62,7 @@ import { join } from "node:path";
 
 import { routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
 import type { ModelProvider, ProviderKeyResult } from "./perspicax-link.ts";
+import type { TurnPayerMode } from "../shared/turn-payer.ts";
 
 /** `server` is solo mode only (and rows written before 2026-10-01). */
 export type AccessVia = "subscription" | "owner-key" | "speaker-key" | "server" | "org-key";
@@ -65,7 +76,9 @@ export const ACCESS_VIAS: readonly AccessVia[] = ["subscription", "owner-key", "
 export type AccessPayer = "speaker" | "owner" | "organization";
 
 /** Why no credentials serve a turn. */
-export type NoAccessCause = "payer_disabled" | "no_credentials" | "server_engine_not_allowed";
+/** `owner_model_offline` (#1137) is decided by the server around the plan:
+ * the owner pays and their computer, whose model the bot runs on, is offline. */
+export type NoAccessCause = "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline";
 
 /** A key of the payer's in Perspicax. */
 export function keyVia(via: AccessVia | undefined): via is "owner-key" | "speaker-key" {
@@ -173,24 +186,34 @@ export interface EngineCredentialInput {
    * it in their `sagax_server_engines`). Absent means allowed (solo, tests
    * written before). Their own subscription and keys never ask it. */
   serverEngineAllowed?: (principalId: string, instanceId: string) => boolean;
+  /** 2026-10-26 (#1137): who pays for this bot's replies (shared/turn-payer.ts).
+   * Absent means "speaker" (the rule since 2026-10-01). */
+  payerMode?: TurnPayerMode;
 }
 
 export type EngineCredentialPlan =
-  | { ok: true; via: AccessVia; payer: AccessPayer; payerPrincipalId?: string; provider?: ModelProvider; localKey?: true; routine?: true }
-  | { ok: false; reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true };
+  | { ok: true; via: AccessVia; payer: AccessPayer; payerPrincipalId?: string; provider?: ModelProvider; localKey?: true; routine?: true; ownerPays?: true }
+  | { ok: false; reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true; ownerPays?: true };
 
 const key = (id: string | undefined) => id?.trim().toLowerCase() ?? "";
 
 /** The person whose credentials a turn uses ("" for an unknown person, who
  * has none), and whether that is the bot's owner because the turn is the
  * bot's own routine. */
-export function turnPayer(input: Pick<EngineCredentialInput, "speaker" | "owner" | "peerOwnerPrincipalId">): { principalId: string; routine: boolean } {
+export function turnPayer(input: Pick<EngineCredentialInput, "speaker" | "owner" | "peerOwnerPrincipalId" | "payerMode">): { principalId: string; routine: boolean; ownerPays?: true } {
   // The bot's routine: its owner pays, whoever started, created or edited
   // the run (its runAs is who it acts as for MCP, not who pays).
   if (input.speaker.origin === "owner-routine") return { principalId: input.owner.principalId.trim(), routine: true };
   // A hop the routine started: still the routine's bot owner, carried along.
   if (input.speaker.origin === "peer" && input.speaker.routine && input.speaker.routinePayer) return { principalId: input.speaker.routinePayer.trim(), routine: true };
-  return { principalId: speakerPrincipal(input.speaker, input.owner.principalId, input.peerOwnerPrincipalId).trim(), routine: routineLineage(input.speaker) };
+  const speaker = speakerPrincipal(input.speaker, input.owner.principalId, input.peerOwnerPrincipalId).trim();
+  const routine = routineLineage(input.speaker);
+  // #1137: the owner pays for every known person who writes to the bot.
+  const owner = input.owner.principalId.trim();
+  if (input.payerMode === "owner" && !routine && owner && speaker && key(speaker) !== key(owner)) {
+    return { principalId: owner, routine, ownerPays: true };
+  }
+  return { principalId: speaker, routine };
 }
 
 /** The resolution order above, pure. `skip.key` drops step 4 (the key went
@@ -198,7 +221,7 @@ export function turnPayer(input: Pick<EngineCredentialInput, "speaker" | "owner"
 export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: boolean } = {}): EngineCredentialPlan {
   if (input.identity !== "perspicax") return { ok: true, via: "server", payer: "organization" };
   const payer = turnPayer(input);
-  const routine = payer.routine ? { routine: true as const } : {};
+  const routine = { ...(payer.routine ? { routine: true as const } : {}), ...(payer.ownerPays ? { ownerPays: true as const } : {}) };
   const isOwner = payer.principalId !== "" && key(payer.principalId) === key(input.owner.principalId);
   const who = { payer: isOwner ? "owner" as const : "speaker" as const, ...(payer.principalId ? { payerPrincipalId: payer.principalId } : {}), ...routine };
   // who it is for: the card goes to that person only (accessCardAudience)
@@ -321,7 +344,7 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     if (result.error === "user_inactive") {
       // Perspicax says the payer is out: refused, never the organization's
       deps.invalidate(sub, plan.provider);
-      const refused = { ok: false as const, reason: "no_access" as const, cause: "payer_disabled" as const, payer: plan.payer === "owner" ? "owner" as const : "speaker" as const, payerPrincipalId: payer, ...(plan.routine ? { routine: true as const } : {}) };
+      const refused = { ok: false as const, reason: "no_access" as const, cause: "payer_disabled" as const, payer: plan.payer === "owner" ? "owner" as const : "speaker" as const, payerPrincipalId: payer, ...(plan.routine ? { routine: true as const } : {}), ...(plan.ownerPays ? { ownerPays: true as const } : {}) };
       return { ok: false, reason: "no_access", plan: refused };
     }
     return { ok: false, reason: "no_access", detail: "perspicax_unreachable" };

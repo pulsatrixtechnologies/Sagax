@@ -68,8 +68,12 @@ export const botRuntimeSettingsShape = {
   automaticRecovery: botAutomaticRecoverySchema.optional(),
 };
 
+/** #1137: who pays for the bot's replies (shared/turn-payer.ts); null goes
+ * back to the default. Not a New bot defaults field. */
+export const turnPayerSchema = z.enum(["owner", "speaker"]).nullable();
+
 /** PATCH /api/bots/:id/runtime-settings: at least one field. */
-export const botRuntimeSettingsPatchSchema = z.object(botRuntimeSettingsShape).strict()
+export const botRuntimeSettingsPatchSchema = z.object({ ...botRuntimeSettingsShape, turnPayer: turnPayerSchema.optional() }).strict()
   .refine((patch) => Object.keys(patch).length > 0, { message: "nothing to save" });
 
 export type BotRuntimeSettingsPatch = z.infer<typeof botRuntimeSettingsPatchSchema>;

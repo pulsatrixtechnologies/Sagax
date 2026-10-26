@@ -617,7 +617,7 @@ struct BotPanelSectionPage: View {
                 BotAccessSection(bot: bot)
             })
         case .worksOn: AnyView(BotPanelFormPage(section: section) { BotWorksOnSection(bot: bot) })
-        case .model: AnyView(BotPanelFormPage(section: section) { BotModelSection(bot: bot) })
+        case .model: AnyView(BotPanelFormPage(section: section) { BotModelSection(bot: bot); BotPayerSection(bot: bot) })
         case .permissions: AnyView(BotPanelFormPage(section: section) { BotPermissionsSection(bot: bot) })
         case .voice: AnyView(BotPanelFormPage(section: section) { BotVoiceSections(bot: bot) })
         case .visibility: AnyView(BotVisibilityPage(bot: bot))

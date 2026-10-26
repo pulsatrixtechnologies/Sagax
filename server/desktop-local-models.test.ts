@@ -372,4 +372,38 @@ describe("desktop local models", () => {
     expect(() => service.assertAvailable(owner, modelId)).toThrow(DESKTOP_MODEL_UNAVAILABLE);
     expect(() => service.assertAvailable(owner, "claude-sonnet-5")).not.toThrow();
   });
+  // #1137: a bot shared by its owner and running on the owner's computer's
+  // model: when the owner pays, the turn of someone else runs under the
+  // owner's grant (index.ts desktopModelPersonFor), so the relay serves it
+  // even with sharing off. The other person still never reaches the model
+  // directly, and an offline computer is named as the owner's.
+  it("serves the owner's grant with sharing off, never the other person's (owner pays, #1137)", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    const other = "pr_other";
+    bridge.online.add(owner);
+    expect(service.update(owner, { expose: true, share: false }).ok).toBe(true);
+    expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "oMLX", models: ["qwen3"] }] }).ok).toBe(true);
+    const hostId = injectHostId(owner, "desk8002");
+    const modelId = encodeInjectId(hostId, "qwen3");
+    expect(service.personOfModel(modelId)).toBe(owner);
+    expect(service.personOfModel("claude-sonnet-5")).toBeNull();
+    // the other person's own grant: refused, as before
+    expect((await post(service.portNumber(), hostId, grant(other))).status).toBe(403);
+    expect(() => service.assertAvailable(other, modelId)).toThrow(DESKTOP_MODEL_UNAVAILABLE);
+    // the owner pays: the turn carries the owner's grant, the relay answers
+    expect(() => service.assertAvailable(owner, modelId)).not.toThrow();
+    const served = await post(service.portNumber(), hostId, grant(owner));
+    expect(served.status).toBe(200);
+    expect(bridge.calls.at(-1)?.person).toBe(owner);
+    expect(service.ownerComputerOffline(owner, modelId)).toBe(false);
+    // the owner's computer goes offline: said as the owner's, not as access
+    bridge.online.delete(owner);
+    expect(service.ownerComputerOffline(owner, modelId)).toBe(true);
+    expect(service.ownerComputerOffline("PR_OWNER", modelId)).toBe(true);
+    // another person's model, or a cloud model, is never "the owner's offline"
+    expect(service.ownerComputerOffline(other, modelId)).toBe(false);
+    expect(service.ownerComputerOffline(owner, "claude-sonnet-5")).toBe(false);
+    expect(() => service.assertAvailable(owner, modelId)).toThrow(DESKTOP_MODEL_UNAVAILABLE);
+  });
 });

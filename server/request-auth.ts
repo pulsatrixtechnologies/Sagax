@@ -539,6 +539,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // bot's owner (with bots.behaviour / bots.tools) or an admin; an
   // admin-tier grant stays an admin's.
   { methods: ["GET", "PATCH"], path: /^\/api\/bots\/[\w-]+\/runtime-settings$/ },
+  // #1137: a group's override of who pays for one bot
+  // (server/routes/group-bot-payer.ts): the bot's owner or an admin.
+  { methods: ["PUT"], path: /^\/api\/groups\/[\w-]+\/bot-payer$/ },
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/tool-grants$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/tool-grants\/tg_[\w-]+\/revoke$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+$/ }, // display fields only, or the owner's own bot: see clientBotPatchViolation

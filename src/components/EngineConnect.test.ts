@@ -91,7 +91,7 @@ describe("EngineConnect", () => {
     expect(html).toContain('data-pays-with="key"');
     expect(html).toContain("Pays with: your key in Perspicax");
     expect(html).toContain("data-engine-keys-link");
-    expect(html).toContain(`${issuer}/console/pulsabot/keys`);
+    expect(html).toContain(`${issuer}/console/credentials?kind=model`);
     expect(html).toContain("Manage my keys in Perspicax");
     expect(html).not.toContain("<button");
     // A provider with a subscription still offers Connect beside the key.

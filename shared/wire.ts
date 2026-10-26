@@ -463,6 +463,13 @@ export interface WireBot {
   /** Automatic recovery for this bot: on, and its backup model (its
    * `fallback` chain wins when it has one). Absent: the server default. */
   automaticRecovery?: { enabled: boolean; backup?: ModelSelection };
+  /** #1137, organization server: who pays for this bot's replies to the
+   * people it is shared with (shared/turn-payer.ts). Absent: the default. */
+  turnPayer?: "owner" | "speaker";
+  /** #1137: the default the server computes for this bot (the owner's local
+   * model or own subscription: the owner; otherwise each person). Sent on
+   * an organization server only, never stored. */
+  turnPayerDefault?: "owner" | "speaker";
   /** Whether this bot gets the app's built-in browser. */
   browser?: boolean;
   /** Memory upkeep: the harness captures facts from finished chats into
@@ -561,9 +568,22 @@ export interface WireAccessCard {
    * who spoke, or the bot's owner for its routines), and why none served. */
   payer?: "speaker" | "owner";
   payerPrincipalId?: string;
-  cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed";
+  /** `owner_model_offline` (#1137): the owner pays and the bot runs on the
+   * local model of the owner's computer, which is not connected now. */
+  cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline";
   /** The bot's routine: it runs on its owner's credentials only. */
   routine?: true;
+  /** #1137: the bot's name, when the card was written. */
+  botName?: string;
+  /** #1137: the owner pays for this bot's replies (shared/turn-payer.ts); the
+   * card is then also for the person who wrote (`speakerPrincipalId`). */
+  ownerPays?: true;
+  speakerPrincipalId?: string;
+  /** #1137: the owner's display name, on an `owner_model_offline` card. */
+  ownerName?: string;
+  /** #1137: replies are paid by the person who writes, and the bot is not
+   * theirs: the card offers to choose a model they can pay for. */
+  speakerPays?: true;
   /** The engine takes a personal subscription sign-in (Claude, Codex):
    * the card offers Settings > Organization > My engines. */
   subscriptionSignIn?: true;
@@ -1231,6 +1251,10 @@ export interface WireGroup {
   mentionAll?: boolean;
   /** The group's shared memory (server/group-memory.ts); absent = on. */
   memoryEnabled?: boolean;
+  /** #1137, organization server: per bot of this group, who pays for its
+   * replies here, overriding the bot's own choice (shared/turn-payer.ts).
+   * Each bot's owner sets it for their bot. */
+  botPayers?: Record<string, "owner" | "speaker">;
   /** transient: the member currently running a turn. */
   busyBotId?: string | null;
   /** transient: when the busy member's turn started, for the elapsed

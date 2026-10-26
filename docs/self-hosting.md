@@ -952,7 +952,7 @@ id).
   The owner and admins only). Cards stored before this are filtered when
   read, from `payerPrincipalId`, else the bot's owner.
 - **Keys live in Perspicax.** A person saves their Anthropic or OpenAI key
-  in the Perspicax console (`/console/pulsabot/keys`); Pulsa Bot reads it
+  in the Perspicax console (`/console/credentials?kind=model`); Pulsa Bot reads it
   through the link for each turn, keeps it in memory 60 s at most and never
   writes it to disk.
 - **Personal subscriptions**: in Settings > Organization, **My engines**,

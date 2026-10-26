@@ -153,6 +153,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Approval level (ask, edits, auto = Approve for me, full) | Bot editor > Permissions > Approval level | `sagax_settings` get, set `bot.approvalMode` | élargit les droits |
 | Primary Bot | Bot editor > Permissions > Primary Bot | `sagax_settings` get, set `bot.primary` | simple |
 | Parallel work and recovery ({maxConcurrentThreads, maxParallelPerPerson, busySend, automaticRecovery}) | Bot editor > Behaviour > Parallel tasks | `sagax_settings` get, set `bot.runtime` | simple |
+| Who pays for replies (owner, speaker = each person, default) | Bot editor > Model > Who pays for replies | `sagax_settings` get, set `bot.turnPayer` | simple |
 | Memory text | Bot editor > Memory | `sagax_settings` get, set `bot.memory` | simple |
 | Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple (élargit les droits pour le bot qui parle lui-même) |
 | A skill on or off ({name, enabled}) | Bot editor > Skills | `sagax_settings` get, set `bot.skill` | simple |
@@ -213,6 +214,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Default responder | Group panel | `sagax_settings` get, set `group.defaultResponder` | simple |
 | @all reaches every bot | Group panel | `sagax_settings` get, set `group.mentionAll` | simple |
 | Working folder | Group panel > Folder | `sagax_settings` get, set `group.cwd` | simple |
+| Who pays for a bot's replies here ({botId, turnPayer: owner, speaker or null}) | Group panel > Details > Who pays for replies | `sagax_settings` get, set `group.botPayer` | simple |
 | Group memory ({text?, enabled?}) | Group panel > Memory | `sagax_settings` get, set `group.memory` | simple |
 | New group ({memberIds, name, section}) | Sidebar > New group | `sagax_settings` set `group.create` | simple |
 | Delete the group (true) | Group panel > Delete | `sagax_settings` set `group.delete` | suppression |

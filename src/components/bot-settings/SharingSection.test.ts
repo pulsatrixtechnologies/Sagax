@@ -96,7 +96,7 @@ describe("SharingSection", () => {
 
 describe("the access card", () => {
   const card = { reason: "no_access" as const, engine: "Claude", botId: "bot-1", ownerPrincipalId: OWNER };
-  const KEYS = "https://px.example.test/console/pulsabot/keys";
+  const KEYS = "https://px.example.test/console/credentials?kind=model";
   it("2026-10-16: an engine the organization has not given: own ways to fix it, the console hint for an admin", () => {
     const bobs = { ...card, payer: "speaker" as const, payerPrincipalId: BOB, cause: "server_engine_not_allowed" as const, keysUrl: KEYS, subscriptionSignIn: true as const };
     expect(accessCardLines(bobs, { principalId: BOB, admin: false })).toEqual({
@@ -284,7 +284,7 @@ describe("slice 4: levels, teams and the section menu", () => {
     expect(myTurnsText({ installed: true, myTurns: "org-key" })).toBe("Your turns use the organization's key");
     expect(myTurnsText({ installed: true, myTurns: "none" })).toBe("Can't answer you yet: sign in or add your key");
     expect(myTurnsText({ installed: false, myTurns: "subscription" })).toBe("Not installed on this server");
-    expect(perspicaxKeysUrl("https://px.example.test/")).toBe("https://px.example.test/console/pulsabot/keys");
+    expect(perspicaxKeysUrl("https://px.example.test/")).toBe("https://px.example.test/console/credentials?kind=model");
   });
 
   it("names what a turn ran with, for the viewer, without a secret", () => {

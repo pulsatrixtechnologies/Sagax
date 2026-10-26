@@ -355,7 +355,7 @@ start Pulsa Bot as in slice 3 with `SAGAX_PORT=19082`,
 and `ghost` (`/nonexistent/claude`). Accounts: alice (admin), bob, carol
 (member of team T), dave (team U), mia (manager of T), erin. Then walk
 S4-1 to S4-15 of the slice 4 plan: the teams claim, alice's key saved in
-`/console/pulsabot/keys` and read through the link (the dump shows it for
+`/console/credentials?kind=model` and read through the link (the dump shows it for
 bob's turn), scenario B and C with a team, levels, the manager, the admin,
 engine resolution (key deleted, org key on, alice's own turn, erin's key,
 `ghost`), erin's Codex subscription, sections as channels in headless
