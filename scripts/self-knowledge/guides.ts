@@ -26,7 +26,6 @@ export const SETTING_NOTES: Record<string, { text?: string; access?: string }> =
   computer: { text: "Where bots work: this computer, Local VM, cloud computers, self-hosted VPS, isolation, safety and storage.", access: "solo: the person; organization: admins, and each member for their own server environment" },
   organization: { text: "Join a Perspicax server, connect to or start an organization; on an organization server the admin's policies: Allow full access, member auto-approval, new threads confidential by default, memory." },
   usage: { text: "Tokens and cost this month and over 30 days, by bot and by model.", access: "everyone; it shows the person's own usage only" },
-  pages: { text: "Pages a bot proposed and the person published: open, copy the link, change who sees it, revoke, expiry." },
 };
 
 export const GUIDES: Guide[] = [
@@ -193,10 +192,10 @@ export const GUIDES: Guide[] = [
   {
     id: "pages",
     title: "Publish a web page to share",
-    where: "bot tool propose_page; manage in Settings > Published pages (Pages publiées)",
+    where: "bot tool propose_page; manage in Connect apps > Manage > Published pages (Pages publiées)",
     keywords: "page web publier publish partager share lien link site html canevas canvas",
-    text: "The bot proposes it with propose_page; the person reviews it on the card and decides whether to publish and who sees it (only them, the organization, or anyone with the link). Not available in rooms. Published pages are managed, shared or revoked in Settings > Published pages.",
-    refs: ["tool:propose_page", "setting:pages"],
+    text: "The bot proposes it with propose_page; the person reviews it on the card and decides whether to publish and who sees it (only them, the organization, or anyone with the link). Not available in rooms. Published pages are managed, shared or revoked in Connect apps > Manage > Published pages.",
+    refs: ["tool:propose_page"],
   },
   {
     id: "mobile",
