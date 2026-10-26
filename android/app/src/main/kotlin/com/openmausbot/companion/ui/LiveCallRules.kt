@@ -174,7 +174,7 @@ object LiveCallRules {
         "expired" -> EndNotice("Call ended: it reached OpenAI's time limit.", dropped = false)
         "content" -> EndNotice("OpenAI ended the call under its content rules.", dropped = false)
         "deleted" -> EndNotice("Call ended: the chat was deleted.", dropped = false)
-        "shutdown" -> EndNotice("Call ended: OpenMausBot restarted.", dropped = false)
+        "shutdown" -> EndNotice("Call ended: Sagax restarted.", dropped = false)
         "signed-out" -> EndNotice(SIGNED_OUT_MESSAGE, dropped = false)
         "remote-hangup", "remote_hangup", "connection-lost", "connection_lost", "sideband-lost", "error" ->
             EndNotice(CALL_DROPPED, dropped = true)

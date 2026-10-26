@@ -40,7 +40,7 @@ function runBridge(bin: string, input: string) {
 
 describe.skipIf(process.platform === "win32")("VPS Cua MCP bridge", () => {
   it("uses the same managed SSH connection settings as preview and startup", async () => {
-    const bin = await mkdtemp(join(tmpdir(), "openmausbot-vps-mcp-"));
+    const bin = await mkdtemp(join(tmpdir(), "sagax-vps-mcp-"));
     temporary.push(bin);
     await writeFile(join(bin, "docker"), '#!/bin/sh\nssh "$@"\n', { mode: 0o700 });
     await writeFile(join(bin, "ssh"), '#!/bin/sh\nprintf "SSH:%s\\n" "$*" >&2\ncat\n', { mode: 0o700 });
@@ -52,7 +52,7 @@ describe.skipIf(process.platform === "win32")("VPS Cua MCP bridge", () => {
   });
 
   it("passes MCP bytes unchanged to docker exec over the validated SSH target", async () => {
-    const bin = await mkdtemp(join(tmpdir(), "openmausbot-vps-mcp-"));
+    const bin = await mkdtemp(join(tmpdir(), "sagax-vps-mcp-"));
     temporary.push(bin);
     const fakeDocker = join(bin, "docker");
     await writeFile(fakeDocker, "#!/bin/sh\nprintf 'ARGS:%s\\n' \"$*\" >&2\ncat\n", { mode: 0o700 });
@@ -71,7 +71,7 @@ describe.skipIf(process.platform === "win32")("VPS Cua MCP bridge", () => {
   });
 
   it("survives docker closing stdin before consuming the request", async () => {
-    const bin = await mkdtemp(join(tmpdir(), "openmausbot-vps-mcp-"));
+    const bin = await mkdtemp(join(tmpdir(), "sagax-vps-mcp-"));
     temporary.push(bin);
     const fakeDocker = join(bin, "docker");
     await writeFile(fakeDocker, "#!/bin/sh\nexit 0\n", { mode: 0o700 });

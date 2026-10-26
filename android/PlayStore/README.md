@@ -27,10 +27,11 @@ The bundle output, relative to the repository root, is
 
 Gradle reads signing material from the environment or the gitignored
 `android/keystore.properties`; environment values take precedence. The required
-settings are `OPENMAUSBOT_KEYSTORE_FILE`, `OPENMAUSBOT_KEYSTORE_PASSWORD`, and
-`OPENMAUSBOT_KEY_ALIAS`. `OPENMAUSBOT_KEY_PASSWORD` is optional and defaults to
+settings are `SAGAX_KEYSTORE_FILE`, `SAGAX_KEYSTORE_PASSWORD`, and
+`SAGAX_KEY_ALIAS`. `SAGAX_KEY_PASSWORD` is optional and defaults to
 the store password. File equivalents are `storeFile`, `storePassword`,
-`keyAlias`, and `keyPassword`.
+`keyAlias`, and `keyPassword`. The older `OPENMAUSBOT_*` names are still read
+for two releases when the `SAGAX_*` one is unset.
 
 Keep keys and passwords outside version control and command history. Without
 signing material the release is unsigned; partial configuration fails the build.

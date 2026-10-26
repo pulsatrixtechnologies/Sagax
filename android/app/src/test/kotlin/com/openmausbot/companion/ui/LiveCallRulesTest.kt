@@ -87,7 +87,7 @@ class LiveCallRulesTest {
             "expired" to LiveCallRules.EndNotice("Call ended: it reached OpenAI's time limit.", dropped = false),
             "content" to LiveCallRules.EndNotice("OpenAI ended the call under its content rules.", dropped = false),
             "deleted" to LiveCallRules.EndNotice("Call ended: the chat was deleted.", dropped = false),
-            "shutdown" to LiveCallRules.EndNotice("Call ended: OpenMausBot restarted.", dropped = false),
+            "shutdown" to LiveCallRules.EndNotice("Call ended: Sagax restarted.", dropped = false),
             "signed-out" to LiveCallRules.EndNotice("Call ended: you were signed out.", dropped = false),
             "remote-hangup" to LiveCallRules.EndNotice("Call dropped.", dropped = true),
             "connection-lost" to LiveCallRules.EndNotice("Call dropped.", dropped = true),

@@ -581,7 +581,7 @@ class PairingFailureDispositionTest {
  *    screen before confirming a scan *and* before typing six digits.
  *  - the scanned branch reads: "Confirm this computer to establish an
  *    authenticated companion connection. Use a trusted Wi-Fi network or a
- *    tailnet; OpenMausBot does not encrypt local Wi-Fi traffic." Authenticated
+ *    tailnet; Sagax does not encrypt local Wi-Fi traffic." Authenticated
  *    and encrypted are different claims, and only one of them is true of the
  *    local network.
  */

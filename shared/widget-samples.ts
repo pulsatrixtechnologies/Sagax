@@ -180,7 +180,7 @@ export const WIDGET_SAMPLES: Record<string, unknown> = {
     children: [
       { type: "ListViewItem", onClickAction: { type: "open_url", payload: { url: "https://developers.openai.com/api/docs/guides/chatkit-widgets" } }, children: [{ type: "Icon", name: "globe" }, { type: "Col", flex: 1, children: [{ type: "Text", value: "ChatKit widgets guide", weight: "medium" }, { type: "Caption", value: "developers.openai.com" }] }, { type: "Icon", name: "external-link", color: "tertiary" }] },
       { type: "ListViewItem", onClickAction: { type: "open_url", payload: { url: "https://widgets.chatkit.studio/gallery" } }, children: [{ type: "Icon", name: "globe" }, { type: "Col", flex: 1, children: [{ type: "Text", value: "Widget Builder gallery", weight: "medium" }, { type: "Caption", value: "widgets.chatkit.studio" }] }, { type: "Icon", name: "external-link", color: "tertiary" }] },
-      { type: "ListViewItem", children: [{ type: "Icon", name: "document" }, { type: "Col", flex: 1, children: [{ type: "Text", value: "shared/wire.ts", weight: "medium" }, { type: "Caption", value: "OpenMausBot · this computer" }] }] },
+      { type: "ListViewItem", children: [{ type: "Icon", name: "document" }, { type: "Col", flex: 1, children: [{ type: "Text", value: "shared/wire.ts", weight: "medium" }, { type: "Caption", value: "Sagax · this computer" }] }] },
     ],
   },
 

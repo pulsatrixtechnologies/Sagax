@@ -31,7 +31,7 @@ GitHub CLI can create the correct local branch:
 
 ```sh
 git clone https://github.com/pulsatrixtechnologies/sagax
-cd pulsa-bot
+cd sagax
 gh pr checkout 161        # omit after the PR is merged
 ```
 

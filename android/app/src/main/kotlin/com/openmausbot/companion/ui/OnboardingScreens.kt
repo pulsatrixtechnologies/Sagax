@@ -62,9 +62,9 @@ object OnboardingCopy {
 
     const val UNPAIRED_HOME_TITLE = "Connect when you're ready"
     const val UNPAIRED_HOME_BODY =
-        "Pair this phone with OpenMausBot to see your chats and respond to your bots."
+        "Pair this phone with Sagax to see your chats and respond to your bots."
     const val UNPAIRED_HOME_HINT =
-        "On your computer, open OpenMausBot → Settings → Phone."
+        "On your computer, open Sagax → Settings → Phone."
     const val UNPAIRED_HOME_CONNECT = "Connect computer"
 
     const val NOTIFICATIONS_TITLE = "Stay in the loop"
