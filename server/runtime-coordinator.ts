@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import type { Coordinator, CoordinatorHost, CoordinatorOptions, HandoffView, LiveHandoffEdge, RoomAddress } from "./coordinator.ts";
 import type { WorkOrigin } from "./peer-provenance.ts";
-import { composeEnvelope, composeReport, composeResume, envelopeNote } from "./runtime/envelope.ts";
+import { composeEnvelope, composeQuestion, composeReport, composeResume, envelopeNote } from "./runtime/envelope.ts";
 import { Runtime } from "./runtime/runtime.ts";
 import { importLegacyHandoffs } from "./runtime/import-legacy.ts";
 import { openRuntimeStore, type RuntimeStore } from "./runtime/store.ts";
@@ -436,12 +436,15 @@ export class RuntimeCoordinator implements Coordinator {
     // those open with the envelope again (and the restart note first).
     const resumed = input.turn === "resume";
     const settled = input.settled ?? [];
+    const asked = input.asked ?? [];
     // The requester only passed the request on (coordinate_bots relay): the
     // reply goes to the person as it is, without a model turn that would
     // only say it again (perf parity round 5). Anything else to weigh (a
     // failure, a withheld result, a teammate still at work, a room) runs
     // the resume as usual.
-    if (resumed && settled.length && this.host.relay && a.assignee.destination.groupId === undefined &&
+    // A question resume, or a resume that carries the person's answer, is
+    // never a relay: there is something for the requester itself to read.
+    if (resumed && settled.length && !asked.length && a.answer === undefined && this.host.relay && a.assignee.destination.groupId === undefined &&
       settled.every(child => child.relay && child.status === "completed" && this.readable(child, a, node) === child) &&
       !this.host.validate(node, parent && this.project(parent)) &&
       this.store.children(a.id).every(child => child.reply === "none" || isTerminal(child))) {
@@ -450,13 +453,15 @@ export class RuntimeCoordinator implements Coordinator {
     }
     const body = resumed
       ? composeResume(a, this.host.names(node, parent && this.project(parent)),
-        settled.map(child => composeReport(this.readable(child, a, node), this.host.names(view(child, a), node))))
+        settled.map(child => composeReport(this.readable(child, a, node), this.host.names(view(child, a), node))),
+        asked.map(child => composeQuestion(this.readable(child, a, node), this.host.names(view(child, a), node))))
       : input.envelope;
     // A room whose transcript already carries the brief gets the note alone;
     // a resume carries its reports either way.
     const note = resumed ? body : envelopeNote(body);
     const result = await this.host.run(node, resumed, signal,
-      { text: `${input.restartNote}${body}`, note: `${input.restartNote}${note}`, restartNote: input.restartNote });
+      { text: `${input.restartNote}${body}`, note: `${input.restartNote}${note}`, restartNote: input.restartNote,
+        ...(asked.length ? { asked: asked.map(child => child.assignee.botId) } : {}) });
     if (signal.aborted) return { kind: "failed", outcome: "stopped", text: result.text };
     if (!result.ok) return { kind: "failed", outcome: "provider_error", text: result.text };
     const question = needsInputQuestion(result.text);
@@ -485,8 +490,8 @@ export class RuntimeCoordinator implements Coordinator {
   private readable(child: Assignment, parent: Assignment, parentView: HandoffView): Assignment {
     const problem = this.host.validate(view(child, parent), parentView);
     if (!problem) return child;
-    const { evidence: _evidence, ...rest } = child;
-    return { ...rest, result: `Result withheld: ${problem}` };
+    const { evidence: _evidence, question: _question, ...rest } = child;
+    return { ...rest, result: `${child.question === undefined ? "Result" : "Question"} withheld: ${problem}` };
   }
 
   private project(a: Assignment): HandoffView {

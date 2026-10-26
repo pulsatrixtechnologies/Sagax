@@ -19,6 +19,9 @@ export const isTerminal = (a: Assignment): boolean => terminal(a.status);
 
 /** The children a parent waits on: one-way notices come back with nothing,
  * so they neither hold the parent nor appear in its resume. */
+/** Parked on a question the person answers in words. */
+export const asking = (a: Assignment): boolean => a.status === "needs_input";
+
 export const awaited = (children: readonly Assignment[]): Assignment[] => children.filter(c => c.reply !== "none");
 
 /** Root first, the node last. Throws on a cycle: the store never writes one,

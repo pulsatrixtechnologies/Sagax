@@ -65,7 +65,7 @@ export type Status =
   | "running"         // a turn of the assignee is executing it
   | "needs_input"     // parked on the person (a card or a NEEDS INPUT line)
   | "waiting"         // its turn ended after handing out work; waits on children
-  | "resume"          // every child settled; owes its own follow-up turn
+  | "resume"          // every child settled, or one it waits on parked a new question; owes its own follow-up turn
   | "completed"
   | "failed"
   | "cancelled";
@@ -144,6 +144,10 @@ export interface Assignment {
   question?: string;
   /** The person's answer, harness-quoted, carried into the next turn. */
   answer?: string;
+  /** While a turn runs: the awaited children whose open questions its input
+   * carries. A restart that cuts that turn reruns it with them once more; no
+   * other turn carries them again. */
+  carrying?: string[];
   /** On a root only: the budget window since its last durable progress. */
   budgets?: { since: number; requests: number; executions: number; wakes: number };
   /** A peer-review card allowed this before it was sent. */
@@ -230,7 +234,8 @@ export type EnqueueResult =
 
 export interface RunInput {
   /** Which turn of the node this is: its first; a resume that returns its
-   * settled children's results; its own turn run again after a restart cut
+   * settled children's results (and the open questions of children it still
+   * waits on); its own turn run again after a restart cut
    * it; or the turn after the person answered its question. */
   turn: "first" | "resume" | "rerun" | "answered";
   /** Not the node's first turn (any `turn` but "first"). */
@@ -243,6 +248,10 @@ export interface RunInput {
   answer?: string;
   /** The settled children whose results this (resume) turn returns. */
   settled?: Assignment[];
+  /** The awaited children parked on a question this (resume) turn passes on:
+   * a question not delivered yet, or, in the rerun of a turn a restart cut,
+   * the questions that turn carried. */
+  asked?: Assignment[];
   level: Level;
   mode: Mode;
 }
