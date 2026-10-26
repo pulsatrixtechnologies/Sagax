@@ -41,8 +41,11 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
     await page.route("**/api/**", (route: any) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(((p: string) => (p === "/api/bots" ? { bots: [] } : p.includes("routines") ? { routines: [], runs: [] } : {}))(new URL(route.request().url()).pathname)) }));
     await page.goto(`${base}?view=foot&lang=${lang}&apps=3&name=Jean%20Exemplar&update=${update}`, { waitUntil: "load" });
     await page.waitForSelector("[data-connected-apps-stack]", { timeout: 45_000 });
+    const avatarSize = () => page.evaluate(() => { const r = document.querySelector("[data-sidebar-account-pill] > span:first-child")!.getBoundingClientRect(); return [r.width, r.height]; });
+    const rest = await avatarSize();
     await page.locator("[data-sidebar-connect-apps]").hover();
     await page.waitForTimeout(600);
+    const hovered = await avatarSize();
     const m = await page.evaluate(() => {
       const box = (q: string) => document.querySelector(q)?.getBoundingClientRect();
       const label = document.querySelector<HTMLElement>("[data-connect-apps-label]");
@@ -56,6 +59,9 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
         clipped: label ? label.scrollWidth - label.clientWidth : -1,
         labelRight: label?.getBoundingClientRect().right ?? 0,
         stackLeft: stack.left,
+        groupLeft: label?.getBoundingClientRect().left ?? 0,
+        groupRight: stack.right,
+        pillLeft: pill.left,
         pillRight: pill.right,
         rowRight: row.right,
         updRight: upd?.right ?? 0,
@@ -64,10 +70,15 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
     });
     await page.close();
     expect(m.hot).toBe("apps");
+    // the avatar keeps its resting size while the profile folds to it
+    expect(Math.abs(hovered[0] - rest[0])).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(hovered[1] - rest[1])).toBeLessThanOrEqual(0.5);
     expect(m.text.length).toBeGreaterThan(5);
     expect(m.clipped).toBeLessThanOrEqual(0);
     expect(m.labelRight).toBeLessThanOrEqual(m.stackLeft + 1);
     expect(m.pillRight).toBeLessThanOrEqual(m.rowRight + 1);
+    // the label and the logos, together, sit in the middle of the pill
+    expect(Math.abs((m.groupLeft + m.groupRight) / 2 - (m.pillLeft + m.pillRight) / 2)).toBeLessThanOrEqual(2);
     expect(m.updRight).toBeLessThanOrEqual(m.rowRight + 1);
   }, 120_000);
 });

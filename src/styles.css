@@ -3284,21 +3284,21 @@ button:disabled.bg-danger {
   flex-grow: 1;
 }
 /* the label is never cut (#1105): the pill takes the whole row (the avatar
-   alone at the left, the label, the logos at the right); the room comes from
+   alone at the left, the label then the logos, centered together in the pill); the room comes from
    the pill's padding and gaps, the logos overlapping more and, while an update
    waits, its circle stepping aside for the length of the hover */
 [data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps] {
   flex-shrink: 1;
   min-width: max-content;
   gap: 0.25rem;
-  padding-inline: 0.625rem 0.5rem;
+  justify-content: center;
+  padding-inline: 0.5rem;
 }
 [data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps] [data-connect-apps-label] {
   flex-shrink: 0;
   overflow: visible;
 }
 [data-sidebar-account-row][data-foot-hot="apps"] [data-connected-app]:not(:last-child) { margin-inline-end: -4px; }
-[data-sidebar-account-row][data-foot-hot="apps"] [data-connected-apps-stack] { margin-inline-start: auto; }
 [data-sidebar-account-row][data-foot-hot="apps"] .sidebar-update-pill {
   width: 0;
   min-width: 0;
@@ -3309,16 +3309,12 @@ button:disabled.bg-danger {
 /* the update button hovered takes the row (its right edge stays under the
    pointer, so the hover holds while the profile folds) */
 [data-sidebar-account-row][data-foot-hot="update"] .sidebar-update-pill { flex-grow: 1; }
-/* the pill, folded: no border, no card, the avatar at the tile's 40px */
+/* the pill, folded: no border, no card, the avatar at the size it has at rest */
 [data-sidebar-account-row][data-foot-hot] [data-sidebar-account-pill] {
   gap: 0;
   padding: 0;
   border-width: 0;
   background-color: transparent;
-}
-[data-sidebar-account-row][data-foot-hot] [data-sidebar-account-pill] > span:first-child {
-  transform: scale(1.25);
-  transform-origin: left center;
 }
 [data-sidebar-account-row][data-foot-hot] [data-account-pill-name],
 [data-sidebar-account-row][data-foot-hot] [data-account-pill-line] {

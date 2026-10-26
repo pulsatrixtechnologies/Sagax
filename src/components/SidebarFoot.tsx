@@ -192,7 +192,7 @@ export function FootConnectApps({ apps, mode, expanded = false, onOpen, onHot }:
       title={label}
       className={cn(
         "flex h-[var(--foot-tile-h,2.25rem)] items-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card text-sidebar-ink-secondary transition-colors hover:bg-sidebar-elevated-hover hover:text-sidebar-ink",
-        stacked ? "min-w-max flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1",
+        stacked ? "min-w-max flex-1 justify-center gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1",
       )}
     >
       {apps.length === 0 && <Puzzle size={16} aria-hidden="true" className="shrink-0" />}
