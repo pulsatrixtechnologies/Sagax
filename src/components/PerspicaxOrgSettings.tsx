@@ -31,6 +31,8 @@ import { OrgVaultExportPolicy } from "./settings/OrgVaultExportPolicy";
 import { OrgConfidentialThreadsDefault } from "./settings/OrgConfidentialThreadsDefault";
 import { OrgTeamSecrets } from "./settings/OrgTeamSecrets";
 import { OrgPhoneCalls } from "./settings/OrgPhoneCalls";
+import { OrgSourcesAccess } from "./plugins/OrgSourcesAccess";
+import { OrganizationPages } from "./PublishedPages";
 
 interface PendingAdminApproval {
   botId: string;
@@ -183,6 +185,17 @@ export function PerspicaxOrgSettings({ org, onChanged, botRows = null, after = n
         {admin && <OrgPhoneCalls />}
         {botRows}
       </SettingsGroup>
+      {/* 2026-10-26: what Connect apps > Manage used to show an admin (where
+          plugins come from, the organization's GitHub tokens and OAuth App,
+          every published page) is organization-wide, so it lives here. */}
+      {admin && (
+        <SettingsGroup title={t("connectApps.orgAccess.title")} groupId="organizationPlugins">
+          <div data-settings-card="organization.plugins" className="px-3.5 py-3">
+            <OrgSourcesAccess initial={org.settings} flat />
+          </div>
+        </SettingsGroup>
+      )}
+      {admin && <OrganizationPages />}
       {after}
     </>
   );

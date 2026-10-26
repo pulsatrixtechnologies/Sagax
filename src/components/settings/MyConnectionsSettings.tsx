@@ -128,7 +128,6 @@ function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () =>
               )}
               <button type="button" className="ui-button" disabled={busy} onClick={() => setTokenOpen((open) => !open)}>{t("myConnections.github.useToken")}</button>
             </div>
-            {!github.deviceFlow && <p className="text-[12px] leading-relaxed text-ink-secondary">{t("myConnections.github.noDeviceFlow")}</p>}
           </>
         )}
         {!locked && tokenOpen && github.state !== "connected" && (

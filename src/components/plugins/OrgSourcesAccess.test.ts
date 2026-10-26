@@ -1,6 +1,6 @@
-// Connect apps > Manage > Organization sources and access (2026-10-15; the
-// "Plugins and GitHub" card of Settings > Organization moved here). An
-// organization admin only. A saved token is a label and a hint; the secret
+// Settings > Organization > Organization sources and access (back from
+// Connect apps > Manage on 2026-10-26: organization-wide, so not on the
+// person's own page). An organization admin only. A saved token is a label and a hint; the secret
 // field is empty until the person types one.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,11 +8,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
 import type { PerspicaxOrg } from "@/lib/perspicax-org";
-import { reducer, initialState } from "@/state/store";
 import { openSettings } from "@/lib/settings-link";
 import { MAX_ORG_GITHUB_TOKENS, type OrgGithubTokenPublic } from "../../../shared/org-github-tokens";
 import { PerspicaxOrgSettings } from "../PerspicaxOrgSettings";
-import { marketplacePolicyBody, OrgSourcesAccess, showOrgSourcesAccess } from "./OrgSourcesAccess";
+import { marketplacePolicyBody, OrgSourcesAccess } from "./OrgSourcesAccess";
 
 // an admin sees OrgTeamSecrets (#932), which reads the bots from the store
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -41,22 +40,14 @@ const org = (viewerRole: "admin" | "member"): PerspicaxOrg => ({
 });
 
 describe("Organization sources and access", () => {
-  it("is no longer a card of Settings > Organization, for an admin or a member", () => {
-    for (const role of ["admin", "member"] as const) {
-      const html = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org(role), onChanged: () => {} }));
-      expect(html).not.toContain("Plugins and GitHub");
-      expect(html).not.toContain("Allowed marketplaces");
-      expect(html).not.toContain("GitHub access tokens");
-      expect(html).not.toContain("data-org-plugin-policy");
-      expect(html).not.toContain('data-settings-card="organization.plugins"');
-    }
-  });
-
-  it("shows in Connect apps to an organization admin in the Everyone scope only", () => {
-    expect(showOrgSourcesAccess(org("admin"), "workspace")).toBe(true);
-    expect(showOrgSourcesAccess(org("admin"), "bot")).toBe(false);
-    expect(showOrgSourcesAccess(org("member"), "workspace")).toBe(false);
-    expect(showOrgSourcesAccess(null, "workspace")).toBe(false);
+  it("is a card of Settings > Organization for an admin, never for a member", () => {
+    const admin = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("admin"), onChanged: () => {} }));
+    expect(admin).toContain('data-settings-card="organization.plugins"');
+    expect(admin).toContain("Allowed marketplaces");
+    expect(admin).toContain("data-org-plugin-policy");
+    const member = renderToStaticMarkup(createElement(PerspicaxOrgSettings, { org: org("member"), onChanged: () => {} }));
+    expect(member).not.toContain("Allowed marketplaces");
+    expect(member).not.toContain('data-settings-card="organization.plugins"');
   });
 
   it("keeps the three settings and offers an add form when nothing is saved", () => {
@@ -112,13 +103,9 @@ describe("Organization sources and access", () => {
     });
   });
 
-  it("opens Connect apps at the section from an old link to the Settings card", () => {
-    const actions: unknown[] = [];
+  it("an old link to the card opens Settings > Organization", () => {
+    const actions: Array<{ type: string; section?: string }> = [];
     openSettings((action) => actions.push(action), "organization", "organization.plugins");
-    expect(actions).toEqual([{ type: "togglePlugins", open: true, page: "orgAccess" }]);
-    const opened = reducer({ ...initialState, pluginsBotId: "maya", pluginsOpen: true }, { type: "togglePlugins", open: true, page: "orgAccess" });
-    expect(opened).toMatchObject({ pluginsOpen: true, pluginsPage: "orgAccess", pluginsBotId: null, appSettingsOpen: false });
-    expect(reducer(opened, { type: "togglePlugins", open: false }).pluginsPage).toBeNull();
-    expect(reducer(initialState, { type: "togglePlugins", open: true }).pluginsPage).toBeNull();
+    expect(actions).toEqual([{ type: "toggleAppSettings", open: true, section: "organization" }]);
   });
 });

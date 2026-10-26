@@ -1,6 +1,6 @@
-// Connect apps > Manage > Advanced > Organization sources and access (an
-// organization admin only, 2026-10-15; it was the "Plugins and GitHub" card
-// of Settings > Organization): "Allowed marketplaces", the organization's
+// Settings > Organization > Organization sources and access (an organization
+// admin only; back in Settings since 2026-10-26, after a stay in Connect apps
+// > Manage > Advanced from 2026-10-15): "Allowed marketplaces", the organization's
 // labeled GitHub access tokens (server/org-github-tokens.ts) and the GitHub
 // OAuth App, whose device flow lets each person "Connect GitHub"
 // (server/github-connect.ts). The client id stays a public app setting. The
@@ -33,12 +33,6 @@ function policyList(policy: Policy): string {
   return policy.mode === "list" ? policy.allow.join("\n") : "";
 }
 
-/** Connect apps > Manage shows the section to an organization admin, in the
- * "Everyone" scope; a member never sees it (the server refuses them too). */
-export function showOrgSourcesAccess(org: Pick<PerspicaxOrg, "viewerRole"> | null, scope: "workspace" | "bot"): boolean {
-  return org?.viewerRole === "admin" && scope === "workspace";
-}
-
 /** The marketplace list an admin typed: one per line or comma separated. */
 export function marketplacePolicyBody(mode: Policy["mode"], list: string): Policy {
   return mode === "any" ? { mode: "any" } : { mode: "list", allow: list.split(/[\n,]+/).map((entry) => entry.trim()).filter(Boolean) };
@@ -51,7 +45,7 @@ function StatusLine({ status, block }: { status: Status; block: Block }) {
     : <p role="alert" data-org-access-error={block} className="text-[12px] text-danger">{status.text}</p>;
 }
 
-export function OrgSourcesAccess({ initial }: { initial: Settings }) {
+export function OrgSourcesAccess({ initial, flat = false }: { initial: Settings; /** inside a Settings group that carries the title */ flat?: boolean }) {
   const [settings, setSettings] = useState<Settings>(initial);
   const marketplaces: Policy = settings.pluginMarketplaces ?? { mode: "any" };
   const github = settings.github ?? { clientId: null, fromEnvironment: false };
@@ -95,8 +89,8 @@ export function OrgSourcesAccess({ initial }: { initial: Settings }) {
   };
 
   return (
-    <section className="mt-6" data-plugins-org-access data-org-plugin-policy={mode}>
-      <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.orgAccess.title")}</h3>
+    <section className={flat ? undefined : "mt-6"} data-plugins-org-access data-org-plugin-policy={mode}>
+      {!flat && <h3 className="mb-1 text-[13px] font-semibold text-ink">{t("connectApps.orgAccess.title")}</h3>}
       <p className="mb-3 text-[12px] leading-relaxed text-ink-secondary">{t("connectApps.orgAccess.intro")}</p>
       <div className="flex flex-col gap-5 text-[13px]">
         <div className="flex flex-col gap-1.5" data-org-access="marketplaces">

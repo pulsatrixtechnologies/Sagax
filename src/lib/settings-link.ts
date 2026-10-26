@@ -51,19 +51,11 @@ export function settingsSectionLabel(section: AppSettingsSection): string {
 
 type SettingsDispatch = (action:
   | { type: "toggleAppSettings"; open: true; section: AppSettingsSection }
-  | { type: "togglePlugins"; open: true; page: "orgAccess" | "pages" }) => void;
-
-/** Cards that moved out of Settings: Plugins and GitHub is Connect apps >
- * Manage > Organization sources and access (2026-10-15). */
-const MOVED_TO_CONNECT_APPS = new Set(["organization.plugins"]);
+  | { type: "togglePlugins"; open: true; page: "pages" }) => void;
 
 /** Opens Settings on a section, and a card when the sentence points at one.
  * A section that became a card of another page opens that card. */
 export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSection, cardId?: string): void {
-  if (cardId && MOVED_TO_CONNECT_APPS.has(cardId)) {
-    dispatch({ type: "togglePlugins", open: true, page: "orgAccess" });
-    return;
-  }
   // Published pages moved to Connect apps > Manage (2026-10-26).
   if (section === "pages") {
     dispatch({ type: "togglePlugins", open: true, page: "pages" });
