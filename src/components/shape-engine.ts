@@ -401,6 +401,14 @@ export interface ShapeFrame {
   color: string;
   /** How far the body is from its resting outline (0..1): a skin's edge and aura step aside while it moves. */
   morphed: number;
+  /**
+   * The body's thickness, as a share of its resting one (0..1): its thinnest
+   * half-width now over the resting shape's. A move that shrinks the body to a
+   * dot, a bar or a speck thins its depth with it (shape-volume.ts
+   * poseMatrices), so the slices never smear a dot into a pill beside its own
+   * thought dots.
+   */
+  depth: number;
   /** The light's place for the clay gradient (box units, before the transform). */
   light: { x: number; y: number; r: number };
   dots: { x: number; y: number; r: number; opacity: number }[];
@@ -466,6 +474,13 @@ interface FrameInputs {
   t: number;
 }
 
+/** The body's thickness now as a share of its resting one (ShapeFrame.depth). */
+export function bodyDepth(radii: Radii, rest: Radii): number {
+  const thinnest = (r: Radii) => r.reduce((least, v) => Math.min(least, v), Infinity);
+  const base = thinnest(rest);
+  return base > 0 ? clamp01(thinnest(radii) / base) : 1;
+}
+
 function composeFrame(input: FrameInputs): ShapeFrame {
   const placed = input.eyes > 0.02 ? solveEyes(input.radii, input.face, input.gaze, input.open) : [];
   const shown = placed.map((e) => {
@@ -477,6 +492,7 @@ function composeFrame(input: FrameInputs): ShapeFrame {
   const { x, y, rot, sx, sy } = input.body;
   const transform = `translate(${fmt(x * BODY.unit)} ${fmt(y * BODY.unit)}) rotate(${fmt(rot)} ${cx} ${cy}) translate(${cx} ${cy}) scale(${fmt(sx)} ${fmt(sy)}) translate(${-cx} ${-cy})`;
   const morphed = clamp01(input.radii.reduce((most, r, i) => Math.max(most, Math.abs(r - input.rest[i])), 0) / 0.08);
+  const depth = bodyDepth(input.radii, input.rest);
   const pose = input.pose;
   const w = pose?.weight ?? 0;
   const dots = (pose?.pose.dots ?? []).map((dot) => {
@@ -503,6 +519,7 @@ function composeFrame(input: FrameInputs): ShapeFrame {
     transform,
     color: input.color,
     morphed,
+    depth,
     light: { x: cx + CLAY_LIGHT.x * BODY.unit, y: cy + CLAY_LIGHT.y * BODY.unit, r: CLAY_LIGHT.r * BODY.unit },
     dots,
     specks,
