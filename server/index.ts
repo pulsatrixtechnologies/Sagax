@@ -4487,7 +4487,11 @@ function parksBehindCoordination(botId: string, threadId: string): boolean {
   return (store.projectBotForTask(botId, threadId) ?? store.bot(botId))?.parkDirectMessages === true;
 }
 
-function botAtThreadCapacity(botId: string): boolean {
+/** `personThreadId`: the thread a person's own message lands on. The bot's
+ * main chat is never at capacity for it: the person always gets
+ * an answer there, however many task threads and routines hold the slots. */
+function botAtThreadCapacity(botId: string, personThreadId?: string): boolean {
+  if (personThreadId && personThreadId === botMainThread(botId)) return false;
   // Setup/dispatch reservations still occupy a slot even if an early
   // completion event has already cleared the stored busy flag.
   return store.tasks(botId).filter((task) => threadBusy(botId, task.threadId)).length >= botMaxConcurrentThreads(store.bot(botId), cfg);
@@ -17354,7 +17358,9 @@ function drainQueuedSends() {
     // intact until that exact handshake releases its runtime-only claim.
     // Team incidents reports never park behind handed-on work (admission's
     // "incident" surface says why).
-    (botId, threadId, head) => threadBusy(botId, threadId) || botAtThreadCapacity(botId) || Boolean(activeGroupTurnForBot(botId))
+    // A person's queued words in the main chat never wait for a slot.
+    (botId, threadId, head) => threadBusy(botId, threadId) || botAtThreadCapacity(botId, head.peerAsk ? undefined : threadId)
+      || Boolean(activeGroupTurnForBot(botId))
       || (!head.peerAsk?.incident && parksBehindCoordination(botId, threadId)) || parallelTaskBlocked(botId, threadId),
   );
   // Asides always drain after person follow-ups (see drainAsideLane): the
@@ -17572,8 +17578,9 @@ async function startOrQueueDirectMessageNow(botId: string, threadId: string, tex
   const decision = admit("direct", {}, {
     // A room turn holds the bot exactly like the sibling opened-thread queue
     // below: the drain's own block check waits it out, so the words queue
-    // here rather than bounce off startTurn's 409.
-    atCapacity: botAtThreadCapacity(botId),
+    // here rather than bounce off startTurn's 409. The main chat never
+    // queues for capacity.
+    atCapacity: botAtThreadCapacity(botId, threadId),
     threadBusy: threadBusy(botId, threadId),
     groupTurn: Boolean(activeGroupTurnForBot(botId)),
     parksBehindCoordination: parksBehindCoordination(botId, threadId),
@@ -18950,7 +18957,7 @@ async function startTurn(
   if (activeGroupTurnForBot(botId)) {
     throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
   }
-  if (botAtThreadCapacity(botId)) {
+  if (botAtThreadCapacity(botId, threadId)) {
     throw Object.assign(new Error(`this bot has reached its limit of ${botMaxConcurrentThreads(store.bot(botId), cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
   }
   // Steering is never a cancel. A message sent while teammates are working
