@@ -34,11 +34,8 @@ describe("motion tokens", () => {
   it("the app's own curves are tokens, not ad hoc cubic-beziers", () => {
     const start = css.indexOf("@theme static {");
     const rest = css.slice(0, start) + css.slice(css.indexOf("}", start));
-    // only the Connect apps pill's overshoot keeps a curve of its own, shared
-    // by the update pill beside it in the sidebar footer (its nudge, #759)
+    // The update pill's nudge is the one curve that stays outside the tokens.
     expect(rest.match(/cubic-bezier\([^)]*\)/g) ?? []).toEqual([
-      "cubic-bezier(0.34, 1.4, 0.64, 1)",
-      "cubic-bezier(0.34, 1.4, 0.64, 1)",
       "cubic-bezier(0.34, 1.4, 0.64, 1)",
     ]);
   });

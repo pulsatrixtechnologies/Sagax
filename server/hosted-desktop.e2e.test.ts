@@ -4,9 +4,8 @@
 // runner has no AI sign-in, so every turn failed with a bare
 // provider_not_configured and the bot looked broken until it was recreated.
 // Now the bot keeps its own engine and model, and the cloud computer arrives
-// as one more stdio computer server the harness serves. Real server, fake
+// as one more HTTP computer server the harness serves. Real server, fake
 // Claude CLI, and a loopback Boat that fails the test on any /prompt call.
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:http";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,37 +19,33 @@ process.env.SAGAX_TEST_FIXED_WORKSPACE = "1";
 const BOAT_TOKEN = "box_verification_fixture";
 const JPEG = Buffer.from("/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD8qqKKKAP/2Q==", "base64");
 
-/** The spawned computer server, driven over stdio the way an engine drives it. */
-function mcpClient(server: { command: string; args: string[]; env: Record<string, string> }) {
-  const child: ChildProcessWithoutNullStreams = spawn(server.command, server.args, {
-    env: { ...server.env, PATH: process.env.PATH ?? "" }, stdio: ["pipe", "pipe", "pipe"],
-  });
-  let buffer = "";
+/** The harness computer server, driven over streamable HTTP the way an engine drives it.
+ * tools/call answers as an event stream; every other method answers JSON. */
+function mcpClient(server: { url: string; headers: { Authorization: string } }) {
   let nextId = 1;
-  const waiting = new Map<number, (message: any) => void>();
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    buffer += chunk;
-    let newline: number;
-    while ((newline = buffer.indexOf("\n")) !== -1) {
-      const message = JSON.parse(buffer.slice(0, newline));
-      buffer = buffer.slice(newline + 1);
-      waiting.get(message.id)?.(message);
-      waiting.delete(message.id);
-    }
-  });
-  const request = (method: string, params: unknown = {}) => new Promise<any>((resolve, reject) => {
+  const request = async (method: string, params: unknown = {}) => {
     const id = nextId++;
-    const timer = setTimeout(() => reject(new Error(`no answer to ${method}`)), 15_000);
-    waiting.set(id, message => { clearTimeout(timer); resolve(message); });
-    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
-  });
-  const close = async () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    child.kill();
-    await new Promise<void>(resolve => child.once("close", () => resolve()));
+    const response = await fetch(server.url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        authorization: server.headers.Authorization,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`${method} ${response.status}: ${text.slice(0, 200)}`);
+    const type = response.headers.get("content-type") ?? "";
+    if (type.includes("text/event-stream")) {
+      const last = text.split("\n").filter((line) => line.startsWith("data: ")).at(-1);
+      if (!last) throw new Error(`no SSE data for ${method}: ${text.slice(0, 200)}`);
+      return JSON.parse(last.slice("data: ".length));
+    }
+    return JSON.parse(text);
   };
-  return { request, close };
+  return { request, close: async () => {} };
 }
 
 it("keeps the bot's own engine on the cloud computer, and a failed place never breaks the bot", async () => {
@@ -137,8 +132,8 @@ it("keeps the bot's own engine on the cloud computer, and a failed place never b
     expect((await control(["wait", "--bot", botId, "--task", threadId, "--timeout", "30"])).status).toBe("settled");
     rmSync(gate, { force: true });
   };
-  /** One Hosted desktop turn: the bot's own engine, the cloud computer as a
-   * stdio server, its tools reaching the Boat, refused once the turn ends. */
+  /** One Hosted desktop turn: the bot's own engine, the cloud computer as an
+   * HTTP server, its tools reaching the Boat, refused once the turn ends. */
   const hostedTurn = async (botId: string, threadId: string, model: string) => {
     rmSync(fixture.fixtureDumpPath, { force: true });
     const before = commands.length;
@@ -150,12 +145,14 @@ it("keeps the bot's own engine on the cloud computer, and a failed place never b
     const sent = await dump();
     expect(sent.argv[sent.argv.indexOf("--model") + 1]).toBe(model);
     expect(sent.systemPrompt).toContain("You control the assigned cloud computer");
-    // 2. The cloud computer is one more stdio computer server, and the agent
+    // 2. The cloud computer is one more HTTP computer server, and the agent
     // process holds only a turn-scoped capability, never a Boat credential.
     const computer = sent.mcpConfig.mcpServers.computer;
-    expect(computer.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
-    expect(computer.env.SAGAX_MCP_TOKEN).toEqual(expect.any(String));
-    expect(computer.env.SAGAX_HARNESS_URL).toBe(fixture.info.url);
+    expect(computer).toMatchObject({
+      type: "http",
+      url: `${fixture.info.url}/api/internal/computer/mcp-http`,
+      headers: { Authorization: expect.stringMatching(/^Bearer \S+$/) },
+    });
     expect(JSON.stringify(sent)).not.toContain(BOAT_TOKEN);
     expect(Object.keys(sent.env).filter(key => /BOAT|BOX_TOKEN|SAGAX_CLOUD/.test(key))).toEqual([]);
     // Pre-allowed like any isolated computer: no new approval prompts.
@@ -211,7 +208,7 @@ it("keeps the bot's own engine on the cloud computer, and a failed place never b
     const callsBeforeAuto = boatCalls;
     rmSync(fixture.fixtureDumpPath, { force: true });
     await control(["send", "--bot", bot.id, "--task", autoThread, "--text", "what is 2+2?"]);
-    expect((await dump()).mcpConfig?.mcpServers?.computer?.args?.[1]).not.toBe("computer");
+    expect((await dump()).mcpConfig?.mcpServers?.computer).toBeUndefined();
     await finish(bot.id, autoThread);
     expect(boatCalls - callsBeforeAuto, "an Auto turn read the Boat account").toBe(0);
     expect((await task(bot.id, autoThread)).surface).toBeUndefined();

@@ -118,6 +118,8 @@ function schedulePhrase(schedule: OverviewFacts["routines"][number]["schedule"],
     if (minutes % 60 === 0) return `Every ${minutes / 60} hours`;
     return `Every ${Math.floor(minutes / 60)} hour${Math.floor(minutes / 60) === 1 ? "" : "s"} ${minutes % 60} minutes`;
   }
+  if (schedule.type === "webhook") return "When a webhook delivery arrives";
+  if (schedule.type === "event") return "When email arrives";
   const days = schedule.weekdays;
   const at = ` at ${clockTime(schedule.time)}`;
   if (days.length === 7) return `Every day${at}`;

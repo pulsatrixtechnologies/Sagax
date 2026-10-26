@@ -1,16 +1,18 @@
 #!/usr/bin/env node
-// Merge the public ignore file with a private list (repository secret).
-// Private exceptions are reviewed periodically. The two CI gates (image
-// smoke and publish) must read the same combined file. Fail closed when
-// the private list is missing, empty, or unusable. Never print it.
+// Turn the private exception list (repository secret) into the file the
+// image scan reads. An optional public file is still accepted and merged
+// in front; this repository does not keep one. Smoke, publish, and the
+// signing proof must read the same combined file. Fail closed when the
+// private list is missing, blank, or unusable. A comments-only private
+// list is valid and ignores nothing. Never print an identifier.
 //
-//   node scripts/combine-trivyignore.mjs --public .trivyignore \
+//   node scripts/combine-trivyignore.mjs \
 //     --private-env TRIVYIGNORE_PRIVATE --out /tmp/trivyignore.ci
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { parseTrivyignore } from "./trivy-ignore-guard.mjs";
+import { EMPTY_LIST, parseTrivyignore, redactVulnerabilityIds } from "./trivy-ignore-guard.mjs";
 
 export function parseArgs(argv) {
   const out = { public: "", privateEnv: "", privateFile: "", out: "" };
@@ -39,13 +41,14 @@ function readPrivate({ privateEnv, privateFile }) {
   return "";
 }
 
-/** Public text first; private ids already listed publicly are dropped. */
+/** Public text first, when any; private ids already listed publicly are dropped. */
 export function combineTrivyignore({ publicText, privateText } = {}) {
   const privateRaw = String(privateText ?? "");
   if (!privateRaw.trim()) {
     return { ok: false, errors: ["private exception list is missing"], text: "", publicCount: 0, privateCount: 0, combinedCount: 0 };
   }
-  const pub = parseTrivyignore(publicText);
+  const publicRaw = String(publicText ?? "");
+  const pub = publicRaw.trim() ? parseTrivyignore(publicRaw) : { entries: [], errors: [] };
   const priv = parseTrivyignore(privateRaw);
   if (pub.errors.length) {
     return {
@@ -59,7 +62,7 @@ export function combineTrivyignore({ publicText, privateText } = {}) {
   }
   // A configured list may hold zero entries (comments only) when the image
   // needs no private exception: the secret is still required, nothing is masked.
-  const privateEmpty = priv.entries.length === 0 && priv.errors.every((e) => e === "ignore file lists no CVE");
+  const privateEmpty = priv.entries.length === 0 && priv.errors.every((e) => e === EMPTY_LIST);
   if (priv.errors.length && !privateEmpty) {
     return {
       ok: false,
@@ -72,7 +75,9 @@ export function combineTrivyignore({ publicText, privateText } = {}) {
   }
   const publicIds = new Set(pub.entries.map((row) => row.id));
   const extra = priv.entries.filter((row) => !publicIds.has(row.id));
-  const chunks = [String(publicText ?? "").trimEnd()];
+  const chunks = [];
+  const publicBlock = publicRaw.trimEnd();
+  if (publicBlock.trim()) chunks.push(publicBlock);
   if (extra.length) {
     const seen = new Set();
     const lines = [];
@@ -90,7 +95,7 @@ export function combineTrivyignore({ publicText, privateText } = {}) {
     const block = lines.join("\n").trim();
     if (block) chunks.push(block);
   }
-  const text = `${chunks.join("\n\n")}\n`;
+  const text = chunks.length ? `${chunks.join("\n\n")}\n` : "\n";
   return {
     ok: true,
     errors: [],
@@ -103,14 +108,14 @@ export function combineTrivyignore({ publicText, privateText } = {}) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (!args.public || !args.out || (!args.privateEnv && !args.privateFile)) {
-    throw new Error("usage: node scripts/combine-trivyignore.mjs --public <file> --private-env <NAME>|--private-file <file> --out <file>");
+  if (!args.out || (!args.privateEnv && !args.privateFile)) {
+    throw new Error("usage: node scripts/combine-trivyignore.mjs [--public <file>] --private-env <NAME>|--private-file <file> --out <file>");
   }
-  const publicText = readFileSync(args.public, "utf8");
+  const publicText = args.public ? readFileSync(args.public, "utf8") : "";
   const privateText = readPrivate(args);
   const result = combineTrivyignore({ publicText, privateText });
   if (!result.ok) {
-    for (const error of result.errors) console.error(`[trivy-ignore] ${error}`);
+    for (const error of result.errors) console.error(`[trivy-ignore] ${redactVulnerabilityIds(error)}`);
     process.exit(1);
   }
   mkdirSync(dirname(args.out), { recursive: true });
@@ -125,7 +130,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     main();
   } catch (error) {
-    console.error(`[trivy-ignore] ${error instanceof Error ? error.message : String(error)}`);
+    console.error(`[trivy-ignore] ${redactVulnerabilityIds(error instanceof Error ? error.message : String(error))}`);
     process.exit(1);
   }
 }

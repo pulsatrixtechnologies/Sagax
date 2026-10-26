@@ -137,11 +137,6 @@ describe("iOS parity routes on a personal server", () => {
     await api("POST", `/api/bots/${bot.id}/command-allowlist`, { command: "ls" }, 403, chatOnly.token);
     expect(await api("GET", `/api/bots/${bot.id}/command-allowlist`, undefined, 200, admin.token)).toMatchObject({ rules: expect.any(Array) });
 
-    const card = await api("POST", `/api/bots/${bot.id}/connector-cards/msg-1/authorize`, { threadId: bot.threadId }, 403, chatOnly.token);
-    expect(card.code).toBe("not_bot_owner");
-    // the owner reaches the card itself (here: there is none)
-    await api("POST", `/api/bots/${bot.id}/connector-cards/msg-1/authorize`, { threadId: bot.threadId }, 404, admin.token);
-
     expect((await api("POST", "/api/plugins/install", { id: "notion" }, 403, chatOnly.token)).error).toMatch(/owner/);
     // the voice engine stays an admin-scope write for a session
     await api("PUT", "/api/tts/provider", { provider: "fish" }, 403, chatOnly.token);

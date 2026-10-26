@@ -2049,7 +2049,7 @@
     },
     {
       "name": "propose_routine",
-      "description": "Prepare a new routine after the user explicitly asks to schedule recurring or future work. A new routine is created paused unless enabled is true. Call list_routines first for relative dates or times so you use its authoritative current time and timezone. Convert calendar requests (monthly dates, last days, nth weekdays) into a validated five-field cron schedule with an explicit IANA timeZone; keep elapsed every-N-minutes work as interval. Never approximate unsupported requests with a different weekly schedule or an AI date-check routine; explain the limitation instead. Resolve ambiguous dates, times, timezone, destination, or instructions with the user first, and always give one-time schedules an explicit RFC3339 offset. If the user asks for the routine to run as ANOTHER bot in your section, call list_bots and pass that bot's id as for_bot_id; each run retains that bot's own permissions. Read the result: a change to your own routines, skills, profile or model applies immediately, and the person sees it with an Undo; a change for another bot may wait for the person's confirmation. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success without an applied result; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
+      "description": "Prepare a new routine after the user explicitly asks to schedule recurring or future work. A new routine is created paused unless enabled is true. Give exactly one of schedule or trigger. Call list_routines first for relative dates or times so you use its authoritative current time and timezone. Convert calendar requests (monthly dates, last days, nth weekdays) into a validated five-field cron schedule with an explicit IANA timeZone; keep elapsed every-N-minutes work as interval. Never approximate unsupported requests with a different weekly schedule or an AI date-check routine; explain the limitation instead. Resolve ambiguous dates, times, timezone, destination, or instructions with the user first, and always give one-time schedules an explicit RFC3339 offset. If the user asks for the routine to run as ANOTHER bot in your section, call list_bots and pass that bot's id as for_bot_id; each run retains that bot's own permissions. Read the result: a change to your own routines, skills, profile or model applies immediately, and the person sees it with an Undo; a change for another bot may wait for the person's confirmation. If applied, continue the requested work without another confirmation. Only a pending result requires ending the turn and waiting for the in-app decision. Never claim success without an applied result; report failed or cancelled results honestly. This does not elevate another bot's execution permissions.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -2203,6 +2203,23 @@
             ],
             "description": "While this routine is still working, skip scheduled occurrences (default) or queue at most one run. Queue skips further occurrences until the pending run starts; it never builds an unlimited backlog. Manual and webhook requests are separate."
           },
+          "trigger": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Instead of schedule. type is webhook or email. The routine is created paused, and the owner copies its key in the app.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "webhook",
+                  "email"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
           "enabled": {
             "type": "boolean",
             "description": "true starts it on its schedule. false creates it paused. Omit for the server default, which creates it paused until it is resumed. Pause and resume of an existing routine are propose_routine_action."
@@ -2219,8 +2236,7 @@
         },
         "required": [
           "name",
-          "instructions",
-          "schedule"
+          "instructions"
         ]
       }
     },
@@ -2247,9 +2263,10 @@
               "pause",
               "resume",
               "run_now",
-              "delete"
+              "delete",
+              "rotate_webhook_key"
             ],
-            "description": "The requested action. Supply changes only for update."
+            "description": "The requested action. Supply changes only for update. rotate_webhook_key replaces the key of a webhook or email trigger."
           },
           "changes": {
             "type": "object",

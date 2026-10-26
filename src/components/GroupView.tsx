@@ -1520,7 +1520,9 @@ export function GroupView({ group: stored }: { group: Group }) {
       >
         <div
           ref={transcriptRef}
-          className="flex w-full flex-col gap-3"
+          // Same 960px column as a bot chat and the composer, so the
+          // thread lines up with the field.
+          className="mx-auto flex w-full max-w-[960px] flex-col gap-3"
           style={{ paddingBottom: composerDock.pad }}
           role="log"
           // off, as in ChatView: TranscriptAnnouncer speaks once per reply
@@ -1592,6 +1594,7 @@ export function GroupView({ group: stored }: { group: Group }) {
               phrases={activity.phrases}
               phase={activity.phase}
               seed={`${group.id}:${group.turnStartedAt ?? ""}:${speaker?.id ?? ""}`}
+              since={speaker ? group.turnStartedAt ?? null : null}
               answering={popping !== null}
             />
           )}

@@ -121,6 +121,8 @@ export interface WebhookManagerOptions {
     runOn: RoutineRunOn;
     deliveryId: string;
     receivedAt: number;
+    /** Set when this webhook belongs to a routine: the run is that routine's. */
+    routineId?: string;
   }) => { id: string };
   cancelQueued?: (webhookId: string, message: string) => void;
   pendingRuns?: (webhookId: string) => number;
@@ -155,6 +157,19 @@ export interface WebhookManagerOptions {
   onChanged?: (webhookId: string) => void;
   /** The execution store commits this identity together with the queued run. */
   findRun?: (webhookId: string, deliveryId: string) => { id: string } | null;
+  /** The routine this webhook belongs to, when `routineId` is set. Missing
+   * or paused means the delivery does not run. */
+  ownedRoutine?: (routineId: string) => {
+    id: string;
+    name: string;
+    prompt: string;
+    botId: string;
+    runOn: RoutineRunOn;
+    enabled: boolean;
+  } | null;
+  /** The webhook was deleted and it belonged to a routine: delete that
+   * routine too. Not called when the routine's own removal deleted the webhook. */
+  onOwnedRoutineRemoved?: (routineId: string) => void;
 }
 
 /** Server-internal view of a typed trigger for the Graph subscription
@@ -329,6 +344,8 @@ const storedWebhookSchema = z.object({
   automation: automationStatusSchema.optional().catch(undefined),
   /** Poller position (IMAP UID), no credential. */
   pollerCursor: pollerCursorSchema.optional().catch(undefined),
+  /** Set when a routine owns this trigger. Absent on a webhook created on its own. */
+  routineId: z.string().min(1).optional(),
 });
 const deliveryReceiptSchema = z.object({
   key: z.string().min(1),
@@ -1202,14 +1219,14 @@ function attemptPreview(payload: JsonValue, normalized?: NormalizedTriggerEvent)
   return previewPayload(payload);
 }
 
-function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receivedAt: number, deliveryId: string): string {
+function sourcePrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receivedAt: number, deliveryId: string, ownerInstructions?: string): string {
   const normalized = event.normalized!;
   const definition = TRIGGER_SOURCES[normalized.source];
   const label = definition.label;
   const fence = (definition.fence ?? label).toUpperCase();
   const relayed = isRelaySource(normalized.source);
   const boundary = randomBytes(16).toString("hex");
-  const configured = trigger.prompt.trim();
+  const configured = (ownerInstructions ?? trigger.prompt).trim();
   const instructions = configured
     || "Review the event, summarize what happened and suggest the next step. Do not take external actions unless the event clearly requires them and existing permissions allow them.";
   const conditions = (event.deferred ?? []).map(({ key, values }) => `- ${key}: ${values.join(", ")}`);
@@ -1296,8 +1313,8 @@ function taskFromPayload(payload: JsonValue): string {
 export const DEFAULT_WEBHOOK_INSTRUCTIONS =
   "Review the event data below and act according to your standing instructions. Do not take external actions unless the event clearly requires them and existing permissions allow them.";
 
-function eventPrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receivedAt: number, deliveryId: string): string {
-  if (event.normalized) return sourcePrompt(trigger, event, receivedAt, deliveryId);
+function eventPrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receivedAt: number, deliveryId: string, ownerInstructions?: string): string {
+  if (event.normalized) return sourcePrompt(trigger, event, receivedAt, deliveryId, ownerInstructions);
   const boundary = randomBytes(16).toString("hex");
   const metadata = [
     `Received: ${new Date(receivedAt).toISOString()}`,
@@ -1306,8 +1323,9 @@ function eventPrompt(trigger: StoredWebhookTrigger, event: WebhookEvent, receive
     event.contentType && `Content-Type: ${metadataValue(event.contentType, 200)}`,
     event.userAgent && `Sender: ${metadataValue(event.userAgent, 300)}`,
   ].filter(Boolean);
-  const configured = trigger.prompt.trim();
-  const requestedTask = configured ? "" : taskFromPayload(event.payload);
+  const owned = ownerInstructions !== undefined;
+  const configured = (ownerInstructions ?? trigger.prompt).trim();
+  const requestedTask = owned || configured ? "" : taskFromPayload(event.payload);
   const instructionBlock = configured
     ? ["[USER-CONFIGURED WEBHOOK INSTRUCTIONS]", configured, "[/USER-CONFIGURED WEBHOOK INSTRUCTIONS]"]
     : requestedTask
@@ -1337,6 +1355,9 @@ export class WebhookManager {
   private rate = new Map<string, number[]>();
   /** Bad-secret requests folded into each webhook's rolling record. */
   private unauthorized = new Map<string, number>();
+  /** Set while a routine's removal deletes its webhook, so that delete does
+   * not delete the routine again. */
+  private quietRemoval = false;
   /** The file existed but could not be read (corrupt JSON or a row that
    * fails validation). Saves are refused while set so a fresh empty state
    * can never overwrite whatever is on disk. Missing means a first run. */
@@ -1544,6 +1565,10 @@ export class WebhookManager {
     this.options.cancelQueued?.(trigger.id, "The webhook was deleted before this delivery started");
     this.save();
     this.options.emit?.({ kind: "webhook.deleted", webhookId: id });
+    if (trigger.routineId && !this.quietRemoval) {
+      try { this.options.onOwnedRoutineRemoved?.(trigger.routineId); }
+      catch { /* the webhook is already gone */ }
+    }
     if (trigger.source) {
       try { this.options.onRemoved?.(this.automationTarget(trigger)); } catch { /* cleanup is best effort */ }
     }
@@ -1590,6 +1615,127 @@ export class WebhookManager {
     this.save();
     this.emit(trigger);
     return { webhook: this.toPublic(trigger), secret };
+  }
+
+  /** A routine's own trigger. The key is stored for the owner to copy once
+   * and is not returned here. Idempotent for a routine that already has one. */
+  createOwned(input: {
+    routineId: string;
+    name: string;
+    prompt: string;
+    botId: string;
+    runOn: RoutineRunOn;
+    kind: "webhook" | "email";
+  }): { id: string } {
+    this.assertWritable();
+    const routineId = input.routineId.trim();
+    if (!routineId) fail(400, "Choose a routine");
+    const existing = this.webhooks.find((candidate) => candidate.routineId === routineId);
+    if (existing) return { id: existing.id };
+    const source = input.kind === "email"
+      ? cleanSource({ type: "email", events: ["email.received"], filters: {} })
+      : undefined;
+    const clean = cleanInput({
+      name: input.name,
+      prompt: input.prompt,
+      botId: input.botId,
+      runOn: input.runOn,
+      enabled: false,
+      verificationPending: true,
+      ...(source ? { source } : {}),
+    });
+    if (this.options.botState(clean.botId) === "missing") fail(400, "That MAUS no longer exists");
+    const now = this.now();
+    const bearer = newSecret();
+    const trigger: StoredWebhookTrigger = {
+      id: randomUUID(),
+      endpointId: newEndpointId(),
+      ...clean,
+      routineId,
+      secretHash: hashSecret(bearer),
+      tokenLast4: bearer.slice(-4),
+      createdAt: now,
+      updatedAt: now,
+      deliveryCount: 0,
+    };
+    if (input.kind === "email") {
+      const signing = newSecret();
+      trigger.signingSecret = signing;
+      trigger.pendingToken = signing;
+    } else {
+      trigger.pendingToken = bearer;
+    }
+    this.webhooks.unshift(trigger);
+    this.save();
+    this.emit(trigger);
+    if (trigger.source) this.changed(trigger.id);
+    return { id: trigger.id };
+  }
+
+  /** Replace the key of the trigger a routine owns. The old key stops at
+   * once. The new key waits for the owner; it is not returned here. */
+  rotateOwned(routineId: string): { id: string } | null {
+    const trigger = this.webhooks.find((candidate) => candidate.routineId === routineId);
+    if (!trigger) return null;
+    const rotated = this.rotateSecret(trigger.id);
+    if (!rotated) return null;
+    const current = this.webhooks.find((candidate) => candidate.id === trigger.id);
+    if (!current) return null;
+    current.pendingToken = rotated.secret;
+    this.save();
+    this.emit(current);
+    return { id: current.id };
+  }
+
+  /** The key waiting for the owner of this routine's trigger, once. */
+  revealForRoutine(routineId: string): { id: string; secret: string } | null {
+    const trigger = this.webhooks.find((candidate) => candidate.routineId === routineId);
+    if (!trigger) return null;
+    const revealed = this.revealPendingToken(trigger.id);
+    return revealed ? { id: trigger.id, secret: revealed.secret } : null;
+  }
+
+  /** The trigger follows its routine: name, instructions, bot, where it
+   * runs, and whether it is on. Turning it on leaves capture mode. */
+  syncOwned(routine: {
+    id: string;
+    name: string;
+    prompt: string;
+    botId: string;
+    runOn: RoutineRunOn;
+    enabled: boolean;
+  }): void {
+    const trigger = this.webhooks.find((candidate) => candidate.routineId === routine.id);
+    if (!trigger) return;
+    const clean = cleanInput({
+      name: routine.name,
+      prompt: routine.prompt,
+      botId: routine.botId,
+      runOn: routine.runOn,
+      enabled: routine.enabled,
+      verificationPending: routine.enabled ? false : trigger.verificationPending === true,
+      ...(trigger.source ? { source: trigger.source } : {}),
+      ...(trigger.delivery ? { delivery: trigger.delivery } : {}),
+      ...(trigger.eventTypes ? { eventTypes: trigger.eventTypes } : {}),
+      ...(trigger.maxPendingRuns === undefined ? {} : { maxPendingRuns: trigger.maxPendingRuns }),
+    });
+    Object.assign(trigger, clean, { updatedAt: this.now() });
+    if (!clean.eventTypes?.length) delete trigger.eventTypes;
+    if (routine.enabled === false) {
+      this.options.cancelQueued?.(trigger.id, "The routine was paused before this delivery started");
+    }
+    this.save();
+    this.emit(trigger);
+    if (trigger.source) this.changed(trigger.id);
+  }
+
+  /** Delete the trigger a routine owns, without deleting the routine again. */
+  removeOwnedRoutine(routineId: string): void {
+    const trigger = this.webhooks.find((candidate) => candidate.routineId === routineId);
+    if (!trigger) return;
+    this.quietRemoval = true;
+    try { this.remove(trigger.id); }
+    finally { this.quietRemoval = false; }
   }
 
   disableForBot(botId: string): void {
@@ -1784,7 +1930,12 @@ export class WebhookManager {
 
   private dispatch(trigger: StoredWebhookTrigger, event: WebhookEvent): WebhookReceiveResult {
     if (!trigger.enabled) fail(409, "This webhook is paused");
-    if (this.options.botState(trigger.botId) === "missing") fail(410, "The assigned MAUS no longer exists");
+    const owned = trigger.routineId ? this.options.ownedRoutine?.(trigger.routineId) ?? null : null;
+    if (trigger.routineId && (!owned || !owned.enabled)) fail(409, "This webhook is paused");
+    const botId = owned?.botId ?? trigger.botId;
+    const runOn = owned?.runOn ?? trigger.runOn;
+    const webhookName = owned?.name ?? trigger.name;
+    if (this.options.botState(botId) === "missing") fail(410, "The assigned MAUS no longer exists");
 
     const allowed = trigger.eventTypes ?? [];
     if (allowed.length > 0 && (!event.eventName || !allowed.includes(event.eventName))) {
@@ -1837,6 +1988,9 @@ export class WebhookManager {
     this.rate.set(trigger.endpointId, recent);
 
     const deliveryId = requestedDeliveryId || randomUUID();
+    if (trigger.routineId && trigger.delivery === "post") {
+      fail(400, "A routine trigger starts a task; it cannot post to chat");
+    }
     // delivery:"post": the payload text becomes the bot's own chat message — no task,
     // no model turn. For notification-style webhooks (a scheduled brief, an alert)
     // that should read like the bot said it. Dedup/rate/attempt bookkeeping is shared.
@@ -1859,7 +2013,7 @@ export class WebhookManager {
       const raw = event.payload as { text?: unknown } | null;
       const text =
         raw && typeof raw === "object" && typeof raw.text === "string" && raw.text.trim() ? raw.text : serializePayload(event.payload);
-      this.options.post(trigger.botId, threadId, cutAt(text, 20000));
+      this.options.post(botId, threadId, cutAt(text, 20000));
       this.deliveries.push({ key: `${trigger.endpointId}:${deliveryId}`, runId: "post", at: now });
       if (this.deliveries.length > MAX_DELIVERIES) this.deliveries.splice(0, this.deliveries.length - MAX_DELIVERIES);
       trigger.lastReceivedAt = now;
@@ -1872,12 +2026,13 @@ export class WebhookManager {
     }
     const run = this.options.enqueue({
       webhookId: trigger.id,
-      webhookName: trigger.name,
-      prompt: eventPrompt(trigger, event, now, deliveryId),
-      botId: trigger.botId,
-      runOn: trigger.runOn,
+      webhookName,
+      prompt: eventPrompt(trigger, event, now, deliveryId, owned ? owned.prompt : undefined),
+      botId,
+      runOn,
       deliveryId,
       receivedAt: now,
+      ...(owned ? { routineId: owned.id } : {}),
     });
     this.deliveries.push({ key: `${trigger.endpointId}:${deliveryId}`, runId: run.id, at: now });
     if (this.deliveries.length > MAX_DELIVERIES) {

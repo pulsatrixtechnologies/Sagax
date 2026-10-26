@@ -455,7 +455,11 @@ describe("RoutineRequestService", () => {
                 }
               : routine.schedule.type === "cron"
                 ? { ...routine.schedule }
-                : { weekdays: [...routine.schedule.weekdays], time: routine.schedule.time, type: "daily" },
+                : routine.schedule.type === "webhook"
+                  ? { type: "webhook" as const }
+                  : routine.schedule.type === "event"
+                    ? { type: "event" as const, source: "email" as const }
+                    : { weekdays: [...routine.schedule.weekdays], time: routine.schedule.time, type: "daily" },
           instructions: routine.instructions,
           runOn: routine.runOn,
           name: routine.name,

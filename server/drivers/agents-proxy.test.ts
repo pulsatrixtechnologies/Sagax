@@ -885,7 +885,11 @@ describe("agents-proxy MCP surface", () => {
   it("publishes a flat routine schedule schema that survives provider conversion", async () => {
     const list = await rpc("tools/list");
     const create = list.result.tools.find((t: { name: string }) => t.name === "propose_routine");
-    expect(create.inputSchema.required).toEqual(["name", "instructions", "schedule"]);
+    expect(create.inputSchema.required).toEqual(["name", "instructions"]);
+    const trigger = create.inputSchema.properties.trigger;
+    expect(trigger.additionalProperties).toBe(false);
+    expect(trigger.required).toEqual(["type"]);
+    expect(trigger.properties.type.enum).toEqual(["webhook", "email"]);
     const schedule = create.inputSchema.properties.schedule;
     // No composition keywords anywhere in the tool surface: several agent
     // CLIs flatten or drop oneOf/anyOf/const when converting MCP tools for
@@ -911,7 +915,9 @@ describe("agents-proxy MCP surface", () => {
     expect(create.inputSchema.properties.enabled).toMatchObject({ type: "boolean" });
     expect(create.description).toContain("created paused unless enabled is true");
     const action = list.result.tools.find((t: { name: string }) => t.name === "propose_routine_action");
+    expect(action.inputSchema.properties.action.enum).toContain("rotate_webhook_key");
     expect(action.inputSchema.properties.changes.properties).not.toHaveProperty("enabled");
+    expect(action.inputSchema.properties.changes.properties).not.toHaveProperty("trigger");
     expect(create.inputSchema.properties).not.toHaveProperty("duration_minutes");
     expect(create.inputSchema.properties.timeout_minutes).toMatchObject({ minimum: 5, maximum: 240 });
     expect(create.inputSchema.properties.continuity).toMatchObject({ type: "boolean" });

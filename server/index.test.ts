@@ -30,7 +30,7 @@ import { freePortBlock } from "./testing/ports.ts";
 import { openSse } from "./testing/sse.ts";
 import { FILE_MAX_BYTES, IMAGE_MAX_BYTES } from "./attachments.ts";
 import { MISUSE_POLICY_PROMPT } from "../shared/misuse-guardrails.ts";
-import { computerPrompt, SIGN_IN_PROMPT } from "./system-prompt.ts";
+import { computerPrompt, RUN_YOURSELF_PROMPT, SIGN_IN_PROMPT, VERIFY_FIRST_PROMPT } from "./system-prompt.ts";
 import {
   PHONE_SECRET_INFO,
   phoneSecretAAD,
@@ -3127,27 +3127,6 @@ describe("harness HTTP API", () => {
     expect((await api("PATCH", `/api/bots/${bot.id}`, { description: "D".repeat(4001) })).status).toBe(400);
     expect((await api("PATCH", `/api/bots/${bot.id}`, { description: 7 })).status).toBe(400);
 
-    // the per-bot composio gate is a boolean, and it round-trips
-    expect((await api("PATCH", `/api/bots/${bot.id}`, { composio: "yes" })).status).toBe(400);
-    const gated = await api("PATCH", `/api/bots/${bot.id}`, { composio: false });
-    expect(gated.status).toBe(200);
-
-    // connector tool grants: valid shapes canonicalize and round-trip,
-    // malformed slugs/tools and extra grant fields are refused, and null
-    // returns the bot to boolean-only legacy behavior
-    const granted = await api("PATCH", `/api/bots/${bot.id}`, {
-      connectorTools: { gmail: { tools: ["GMAIL_SEND_EMAIL", "GMAIL_SEND_EMAIL"] }, github: { tools: "*" } },
-    });
-    expect(granted.status).toBe(200);
-    expect(granted.body.bot.connectorTools).toEqual({ gmail: { tools: ["GMAIL_SEND_EMAIL"] }, github: { tools: "*" } });
-    expect((await api("PATCH", `/api/bots/${bot.id}`, { connectorTools: { gmail: { tools: [] } } })).status).toBe(400);
-    expect((await api("PATCH", `/api/bots/${bot.id}`, { connectorTools: { Gmail: { tools: "*" } } })).status).toBe(400);
-    expect((await api("PATCH", `/api/bots/${bot.id}`, { connectorTools: { gmail: { tools: "*", accountId: "x" } } })).status).toBe(400);
-    expect((await api("PATCH", `/api/bots/${bot.id}`, { connectorTools: "gmail" })).status).toBe(400);
-    const grantsCleared = await api("PATCH", `/api/bots/${bot.id}`, { connectorTools: null });
-    expect(grantsCleared.status).toBe(200);
-    expect(grantsCleared.body.bot.connectorTools).toBeUndefined();
-
     // sidebar sections: assign, round-trip, trim, clear — and the field
     // drops off the record entirely once cleared rather than lingering
     // as an empty string through exports and wire frames
@@ -3189,9 +3168,6 @@ describe("harness HTTP API", () => {
     expect(roomSectionEmpty.status).toBe(200);
     expect(roomSectionEmpty.body.group).not.toHaveProperty("section");
     expect((await api("DELETE", `/api/groups/${sectionRoom.id}`)).status).toBe(200);
-    expect(gated.body.bot.composio).toBe(false);
-    expect((await api("PATCH", `/api/bots/${bot.id}`, { composio: true })).body.bot.composio).toBe(true);
-
     const deleted = await api("DELETE", `/api/bots/${bot.id}`);
     expect(deleted.status).toBe(200);
     const after = await api("GET", "/api/bots");
@@ -3484,7 +3460,7 @@ describe("harness HTTP API", () => {
         throw new Error(`${(error as Error).message}\nbox calls: ${JSON.stringify(boatRouteCalls.slice(-6))}\nthread: ${JSON.stringify(bot?.messages ?? null).slice(0, 1500)}`);
       }
     };
-    type ComputerDump = { mcpConfig: { mcpServers: { computer?: { args?: string[] } } } };
+    type ComputerDump = { mcpConfig: { mcpServers: { computer?: { type?: string; url?: string; headers?: { Authorization?: string } } } } };
     // A turn on the team computer keeps the bot's own engine; the team's Boat
     // is its computer tools. Boat's own runner is never asked to run it.
     const promptsOnBoat = () => boatRouteCalls.filter(call => call.method === "POST" && call.path === `/boxes/${managedBoatCreateId}/prompt`).length;
@@ -3537,8 +3513,11 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${botIds[0]}/messages`, { text: "hold the shared desktop" })).status).toBe(202);
       await promptedOnTeamComputer(1, botIds[0]);
-      expect((await readJsonFileWhenReady<ComputerDump>(fakeClaudeDump)).mcpConfig.mcpServers.computer?.args)
-        .toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
+      expect((await readJsonFileWhenReady<ComputerDump>(fakeClaudeDump)).mcpConfig.mcpServers.computer).toMatchObject({
+        type: "http",
+        url: `${BASE}/api/internal/computer/mcp-http`,
+        headers: { Authorization: expect.stringMatching(/^Bearer \S+$/) },
+      });
       // A sibling thread can wait, and Stop must cancel that pending claim
       // without interrupting the thread which already owns the desktop.
       const firstThread = (await api("GET", "/api/bots?messages=0")).body.bots.find((b: { id: string }) => b.id === botIds[0]).threadId;
@@ -5698,10 +5677,12 @@ describe("harness HTTP API", () => {
     expect((await api("POST", "/api/teams/export", {})).body.team.name).toBe("My Sagax Team");
 
     const stream = await openSse(`${BASE}/api/events`);
+    const importedBots: Array<{ id: string }> = [];
     try {
       await stream.until((frame) => frame.kind === "hello");
       const imported = await api("POST", "/api/teams/import", exported.body);
       expect(imported.status).toBe(201);
+      importedBots.push(...imported.body.bots);
       // the originals still exist, so every member arrives visibly numbered
       // rather than wearing a name that already resolves to another bot. The
       // starter name is intentionally random, so it can duplicate a member
@@ -5718,11 +5699,8 @@ describe("harness HTTP API", () => {
       }
       expect(imported.body.bots.every((bot: { id: string }) => ![first.id, second.id].includes(bot.id))).toBe(true);
       expect(imported.body.bots[0]).not.toHaveProperty("alwaysAllow");
-      // imported bots arrive quiet and without reach: no seeded greeting
-      // in their name, and no access to the workspace's connected apps
-      // until the user grants it per bot
+      // imported bots arrive quiet: no seeded greeting in their name
       expect(imported.body.bots.every((bot: { messages: unknown[] }) => bot.messages.length === 0)).toBe(true);
-      expect(imported.body.bots.every((bot: { composio?: boolean }) => bot.composio === false)).toBe(true);
       expect(imported.body).not.toHaveProperty("group");
 
       const lastImported = imported.body.bots.at(-1)!;
@@ -5749,10 +5727,10 @@ describe("harness HTTP API", () => {
       expect((await api("GET", "/api/bots")).body).toEqual(beforeReplace);
       expect((await api("GET", "/api/bots")).body.groups).toHaveLength(roomsBefore);
 
-      for (const bot of [first, second, hidden, ...imported.body.bots]) {
-        expect((await api("DELETE", `/api/bots/${bot.id}`)).status).toBe(200);
-      }
     } finally {
+      for (const bot of [first, second, hidden, ...importedBots]) {
+        await api("DELETE", `/api/bots/${bot.id}`).catch(() => undefined);
+      }
       stream.close();
     }
   });
@@ -5926,8 +5904,6 @@ describe("harness HTTP API", () => {
     const editor = installed.body.bots.find((bot: { name: string }) => bot.name.startsWith("Package Editor"));
     expect(scout).toMatchObject({
       chiefOfStaff: true,
-      composio: false,
-      connectorTools: {},
       playbooks: [{ key: "signal-check", instructions: "Keep the source URL and confidence." }],
       installedPackage: {
         id: "signal-desk",
@@ -6031,7 +6007,6 @@ describe("harness HTTP API", () => {
       alwaysAllow: ["Bash:git"],
       approvePeerComms: true,
       chiefOfStaff: true,
-      composio: true,
       computer: "off",
     });
     const beforeImport = (await api("GET", "/api/bots")).body;
@@ -6060,7 +6035,6 @@ describe("harness HTTP API", () => {
                   alwaysAllow: ["Bash"],
             chiefOfStaff: true,
             approvePeerComms: false,
-            composio: true,
             computer: "local",
             cloudBackend: "vps",
             cwd: "/",
@@ -6084,7 +6058,7 @@ describe("harness HTTP API", () => {
     expect(impostor.alwaysAllow).toBeUndefined();
     expect(impostor.chiefOfStaff).toBeUndefined();
     expect(impostor.approvePeerComms).toBeUndefined();
-    expect(impostor.composio).toBe(false);
+    expect(impostor).not.toHaveProperty("composio");
     expect(impostor.computer).toBeUndefined();
     expect(impostor.cloudBackend).toBeUndefined();
     expect(impostor.cwd).toBeUndefined();
@@ -6101,7 +6075,6 @@ describe("harness HTTP API", () => {
       alwaysAllow: ["Bash:git"],
       approvePeerComms: true,
       chiefOfStaff: true,
-      composio: true,
       computer: "off",
     });
     // Import must not create or replace any Chief, including Chiefs of other teams.
@@ -6131,17 +6104,16 @@ describe("harness HTTP API", () => {
 
     // re-import after the user edited their copy: the edit survives, the
     // second import creates another fresh record and never reaches back
-    await api("PATCH", `/api/bots/${impostor.id}`, { description: "edited after import", composio: true });
+    await api("PATCH", `/api/bots/${impostor.id}`, { description: "edited after import" });
     const second = await api("POST", "/api/teams/import", smuggled);
     expect(second.status).toBe(201);
     const secondBot = second.body.bots[0];
     expect(secondBot.id).not.toBe(impostor.id);
     expect(secondBot.name).toBe("Mira 4");
-    expect(secondBot.composio).toBe(false);
+    expect(secondBot).not.toHaveProperty("composio");
     expect((await api("GET", "/api/bots")).body.bots.find((bot: { id: string }) => bot.id === impostor.id)).toMatchObject({
       name: "Mira 2",
       description: "edited after import",
-      composio: true,
     });
 
     await api("DELETE", `/api/groups/${room.id}`);
@@ -6820,7 +6792,10 @@ describe("harness HTTP API", () => {
     } finally {
       writeFileSync(releaseFile, "release");
       await Promise.allSettled(provideRequests);
-      await waitForExit(isolatedChild, { signal: "SIGTERM" });
+      // Hang mode keeps the resumed turn busy. Shutdown spends the drain
+      // (5s, bounded at 6s) and the cleanup race (6s) before exit 0. The
+      // default 5s grace sends SIGKILL during that drain.
+      await waitForExit(isolatedChild, { signal: "SIGTERM", graceMs: 15_000 });
       await removeTempDir(isolatedHome);
     }
     expectStoppedTestServerCleanly(isolatedChild, isolatedStderr);
@@ -7876,7 +7851,7 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Describe your available computer tools" })).status).toBe(202);
       // Auto never reaches the Boat for an engine that uses it as a computer,
       // even one that is already running: not read, not mounted, not created.
-      type Dump = { argv: string[]; mcpConfig: { mcpServers: Record<string, { args?: string[] }> }; systemPrompt: string };
+      type Dump = { argv: string[]; mcpConfig: { mcpServers: Record<string, { type?: string; url?: string; headers?: { Authorization?: string } }> }; systemPrompt: string };
       const local = await readJsonFileWhenReady<Dump>(fakeClaudeDump);
       expect(local.mcpConfig.mcpServers.computer).toBeUndefined();
       expect(boatPromptBodies).toHaveLength(0);
@@ -7906,7 +7881,11 @@ describe("harness HTTP API", () => {
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Open Chrome on the cloud VM" })).status).toBe(202);
       const pinnedCloud = await readJsonFileWhenReady<Dump>(fakeClaudeDump, 10_000);
       expect(pinnedCloud.argv[pinnedCloud.argv.indexOf("--model") + 1]).toBe("claude-sonnet-5");
-      expect(pinnedCloud.mcpConfig.mcpServers.computer?.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js)$/), "computer"]);
+      expect(pinnedCloud.mcpConfig.mcpServers.computer).toMatchObject({
+        type: "http",
+        url: `${BASE}/api/internal/computer/mcp-http`,
+        headers: { Authorization: expect.stringMatching(/^Bearer \S+$/) },
+      });
       expect(pinnedCloud.systemPrompt).toContain("assigned cloud computer");
       expect(boatPromptBodies).toHaveLength(0);
       expect((await api("GET", `/api/bots/${bot.id}/computer?threadId=${bot.threadId}`)).body.surface).toBe("cloud");
@@ -8291,10 +8270,12 @@ describe("harness HTTP API", () => {
     await api("PUT", "/api/config", { rooms: { turnTimeoutMinutes: 5 } });
   });
 
-  it("cards every ask when Claude's reviewer never started, says so once, and can hand the allow to Claude for the session", async () => {
-    // A bot on Approve for me with Haiku 4.5: the CLI takes `auto`, runs
-    // Manual, and asks about everything. Sagax passes that through —
-    // no rule of its own answers — and says why, once.
+  it("cards every ask when Claude's reviewer never started, and can hand the allow to Claude for the session", async () => {
+    // Approve for me no longer launches the CLI reviewer (`--permission-mode
+    // auto`). It is acceptEdits plus a fixed allowlist, and the driver does
+    // not report nativeReview, so the old "automatic reviewer is not
+    // available" notice is not posted. The ask is still a card, and the
+    // session allow still reaches Claude.
     const bot = (await api("POST", "/api/bots", { name: "Quill" })).body.bot;
     const conns: Socket[] = [];
     try {
@@ -8343,12 +8324,7 @@ describe("harness HTTP API", () => {
       expect(card.allowKey).toBeUndefined();
       expect(card.allowSession).toBe(true);
       expect((await messages()).some((m) => m.tool?.name.startsWith("auto-approved"))).toBe(false);
-      // the person is told once who is asking and why, naming the model
-      await expect.poll(async () => (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available")).length, windowsPoll).toBe(1);
-      const notices = (await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer is not available"));
-      expect(notices).toHaveLength(1);
-      expect(notices[0].tool!.name).toContain("claude-haiku-4-5");
-      expect(notices[0].tool!.name).toContain("asks before each action");
+      expect((await messages()).some((m) => m.tool?.name.startsWith("Approve for me:"))).toBe(false);
 
       // "Always allow this session" rides to Claude as `always`
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: card.requestId, behavior: "allow", always: true })).status).toBe(200);
@@ -8356,7 +8332,7 @@ describe("harness HTTP API", () => {
 
       const second = raise("ask-ls", "ls memory");
       await expect.poll(async () => (await messages()).find((m) => m.card?.subtitle === "ls memory")?.card?.title, windowsPoll).toBe("Approval needed");
-      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me: Claude's automatic reviewer"))).toHaveLength(1);
+      expect((await messages()).filter((m) => m.tool?.name.startsWith("Approve for me:"))).toHaveLength(0);
       const secondCard = (await messages()).find((m) => m.card?.subtitle === "ls memory")!.card!;
       expect((await api("POST", `/api/bots/${bot.id}/respond`, { requestId: secondCard.requestId, behavior: "allow" })).status).toBe(200);
       const plain = await second;
@@ -8415,9 +8391,10 @@ describe("harness HTTP API", () => {
       const system: string = seen.systemPrompt ?? "";
       expect(system.startsWith(MISUSE_POLICY_PROMPT)).toBe(true);
       const persona = "You are Kiwi, a personal bot in Sagax. Role: Tracker.";
+      const guardrails = RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT;
       const afterPolicy = system.slice(MISUSE_POLICY_PROMPT.length);
-      expect(afterPolicy.startsWith(persona)).toBe(true);
-      const afterPersona = afterPolicy.slice(persona.length);
+      expect(afterPolicy.startsWith(guardrails + persona)).toBe(true);
+      const afterPersona = afterPolicy.slice((guardrails + persona).length);
       expect(afterPersona.startsWith("\n\nYour standing instructions follow.")).toBe(true);
       expect(system).toContain("--- BEGIN STANDING INSTRUCTIONS (SOUL.md, 28 bytes) ---\nFile bugs. Never file noise.\n--- END STANDING INSTRUCTIONS ---");
     } finally {
@@ -8436,17 +8413,34 @@ describe("harness HTTP API", () => {
         chiefOfStaff: true,
         modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
       })).status).toBe(200);
-      const roster = "Current Roster end section team:\n- No other visible bots are available yet.";
+      const header = "Current Roster end section team:\n";
+      // A solo server leaves the Primary Bot's cover unset, so the roster is
+      // every other bot, not the empty-section line. The section still ends
+      // on those roster lines, and the old VM status block stays gone.
+      const rosterLines = (text: string): string[] => {
+        const at = text.indexOf(header);
+        expect(at).toBeGreaterThanOrEqual(0);
+        const lines: string[] = [];
+        for (const line of text.slice(at + header.length).split("\n")) {
+          if (line.startsWith("- ")) lines.push(line);
+          else if (line === "" && lines.length === 0) continue;
+          else break;
+        }
+        return lines;
+      };
 
       const sections = (await api("GET", `/api/bots/${bot.id}/system-prompt`)).body.sections as Array<{ id: string; text: string }>;
       const team = sections.find((section) => section.id === "coordination")?.text ?? "";
-      expect(team).toContain("Your home team is the Roster end section.");
-      expect(team.endsWith(roster)).toBe(true);
+      expect(team).toContain("Your home team is the Roster end section;");
+      const previewRoster = rosterLines(team);
+      expect(previewRoster.length).toBeGreaterThan(0);
+      expect(team.trimEnd().endsWith(previewRoster[previewRoster.length - 1]!)).toBe(true);
+      expect(team).not.toContain("SAGAX STATUS");
 
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       const system = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(system).toContain(roster);
+      expect(rosterLines(system).length).toBeGreaterThan(0);
       expect(system).not.toContain("SAGAX STATUS");
     } finally {
       await api("POST", `/api/bots/${bot.id}/interrupt`);
@@ -8506,7 +8500,7 @@ describe("harness HTTP API", () => {
       rmSync(fakeClaudeDump, { force: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "hello" })).status).toBe(202);
       let system = (await readJsonFileWhenReady<{ systemPrompt: string }>(fakeClaudeDump, 15_000)).systemPrompt;
-      expect(system.startsWith(MISUSE_POLICY_PROMPT + "You are Blank, a personal bot in Sagax.")).toBe(true);
+      expect(system.startsWith(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Blank, a personal bot in Sagax.")).toBe(true);
       expect(system).not.toContain("at most four questions");
       expect(system).toContain("propose_profile");
 
@@ -8647,7 +8641,7 @@ describe("harness HTTP API", () => {
   it("keeps skill authoring on by default and persists an explicit opt-out", async () => {
     const before = await api("GET", "/api/config");
     expect(before.status).toBe(200);
-    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
+    expect(before.body.features).toEqual({ browser: false, skillAuthoring: true, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
     // the default is the absence of the key: nothing is written until the toggle is used
     const untouched = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     expect(untouched.features?.skillAuthoring).toBeUndefined();
@@ -8659,7 +8653,7 @@ describe("harness HTTP API", () => {
       features: { skillAuthoring: false },
     });
     expect(saved.status).toBe(200);
-    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
+    expect(saved.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: false, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
 
     const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
     // Earlier browser coverage may have persisted its own toggle. Opting out
@@ -8669,7 +8663,7 @@ describe("harness HTTP API", () => {
     // the opt-out survives patches to sibling flags
     const tools = await api("PATCH", "/api/config", { features: { showToolCalls: true } });
     expect(tools.status).toBe(200);
-    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: true, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, connectedApps: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
+    expect(tools.body.features).toEqual({ browser: false, skillAuthoring: false, skillsLibrary: false, showToolCalls: true, routinesInConversation: false, templates: false, vpsComputer: false, boatComputer: false, decisionModel: false, dataWindow: false, routineGroupSettings: false, sharedComputers: false, claudeUserMcp: false, autoRecall: true, llmThreadTitles: true, meetingNotetaker: false });
 
     // Templates is an experimental opt-in, persisted like its siblings
     const templates = await api("PATCH", "/api/config", { features: { templates: true } });
@@ -8677,12 +8671,6 @@ describe("harness HTTP API", () => {
     expect(templates.body.features.templates).toBe(true);
     expect(templates.body.features.showToolCalls).toBe(true);
     expect((await api("PATCH", "/api/config", { features: { templates: false } })).body.features.templates).toBe(false);
-
-    // Connected apps is an experimental opt-in too (off by default)
-    const apps = await api("PATCH", "/api/config", { features: { connectedApps: true } });
-    expect(apps.status).toBe(200);
-    expect(apps.body.features.connectedApps).toBe(true);
-    expect((await api("PATCH", "/api/config", { features: { connectedApps: false } })).body.features.connectedApps).toBe(false);
 
     // an opted-out workspace refuses the skill routes a turn would otherwise reach
     const bot = (await api("POST", "/api/bots", {})).body.bot;
@@ -9045,22 +9033,17 @@ describe("harness HTTP API", () => {
         mcpConfig: z.object({
           mcpServers: z.object({
             browser: z.object({
-              command: z.string(),
-              args: z.array(z.string()),
-              env: z.record(z.string(), z.string()),
+              type: z.literal("http"),
+              url: z.string(),
+              headers: z.object({ Authorization: z.string() }),
             }),
           }),
         }),
       }).parse(await readJsonFileWhenReady(fakeClaudeDump));
       const browser = dump.mcpConfig.mcpServers.browser;
-      expect(browser.command).toBe(process.execPath);
-      expect(browser.args).toEqual([expect.stringMatching(/harness-mcp-proxy\.(?:ts|js|mjs)$/), "browser"]);
-      expect(browser.env.SAGAX_MCP_TOKEN).toEqual(expect.any(String));
-      expect(browser.env.SAGAX_HARNESS_URL).toBe(BASE);
-      // Only the server-owned proxy knows native sessions and saved-login keys.
-      expect(browser.env.AGENT_BROWSER_SESSION).toBeUndefined();
-      expect(browser.env.AGENT_BROWSER_RESTORE).toBeUndefined();
-      expect(browser.env.AGENT_BROWSER_ENCRYPTION_KEY).toBeUndefined();
+      expect(browser.url).toMatch(/\/api\/internal\/browser\/mcp-http$/);
+      expect(browser.headers.Authorization).toMatch(/^Bearer \S+$/);
+      expect(JSON.stringify(browser)).not.toMatch(/AGENT_BROWSER_/);
       expect(dump.env.AGENT_BROWSER_ENCRYPTION_KEY).toBeUndefined();
 
       const system = dump.systemPrompt;
@@ -10551,11 +10534,17 @@ describe("harness HTTP API", () => {
         body: JSON.stringify({ fromBotId: bot.id, fromThreadId: bot.threadId, ...body }),
       });
       const routine = (name: string) => ({ name, instructions: `Run ${name}.`, schedule: { type: "weekly", time: "09:00", weekdays: ["monday"] }, runOn: "maus" });
-      for (let index = 0; index < 8; index += 1) {
+      const first = await post({ action: "create", forBotId: teammate.id, routine: routine("Teammate 0") });
+      expect(first.status).toBe(201);
+      for (let index = 1; index < 8; index += 1) {
         expect((await post({ action: "create", forBotId: teammate.id, routine: routine(`Teammate ${index}`) })).status).toBe(201);
       }
-      // A ninth card is over the budget...
-      expect((await post({ action: "create", forBotId: teammate.id, routine: routine("Teammate 8") })).status).toBe(429);
+      // Past eight open cards the oldest is replaced. Nothing on it was applied.
+      const ninth = await post({ action: "create", forBotId: teammate.id, routine: routine("Teammate 8") });
+      expect(ninth.status).toBe(201);
+      const messages = (await api("GET", `/api/threads/${bot.threadId}/messages`)).body.messages as Array<{ card?: { title?: string; answered?: string; expired?: boolean; held?: string } }>;
+      const replaced = messages.find((message) => message.card?.title?.includes("Teammate 0"));
+      expect(replaced?.card).toMatchObject({ answered: "deny", expired: true, held: "Replaced by a newer proposal. Nothing was applied." });
       // ...but the bot's own change opens no card, so the budget does not hold it back.
       const own = await post({ action: "create", routine: routine("Own brief") });
       expect(own.status).toBe(201);
@@ -10930,513 +10919,11 @@ describe("harness HTTP API", () => {
     expect((await api("PATCH", "/api/config", { vps: { sshAlias: "" } })).status).toBe(200);
   });
 
-  it("validates a Composio project key, creates a Session, and keeps externally stored secrets off disk", async () => {
-    const oldKey = await api("PUT", "/api/config", { composio: { apiKey: "old_key" } });
-    expect(oldKey.status).toBe(400);
-    expect(oldKey.body.error).toMatch(/start with ak_/i);
-
-    const rejected = await api("PUT", "/api/config", { composio: { apiKey: "ak_wrong" } });
-    expect(rejected.status).toBe(400);
-    expect(rejected.body.error).toMatch(/invalid project key/i);
-
-    const saved = await api("PUT", "/api/config?secretStorage=external", {
-      composio: { apiKey: "ak_good" },
-      opencodeGo: { apiKey: "opencode-external" },
-      profile: { name: "External Store" },
-    });
-    expect(saved.status).toBe(200);
-    expect(saved.body.composio).toEqual({ configured: true, mode: "self-hosted" });
-    expect(saved.body.opencodeGo).toEqual({ configured: true, providerKeys: [] });
-    expect(saved.body.profile).toEqual({ name: "External Store", email: "", aboutMe: "", avatarUrl: "" });
-    expect(JSON.stringify(saved.body)).not.toContain("ak_good");
-
-    const disk = JSON.parse(readFileSync(join(home, ".sagax", "config.json"), "utf8"));
-    expect(disk.composio).toMatchObject({ apiKey: "", sessionId: "trs_config_test" });
-    expect(disk.opencodeGo).toEqual({ apiKey: "" });
-    expect(disk.profile).toEqual({ name: "External Store" });
-    expect(JSON.stringify(disk)).not.toContain("ak_good");
-    expect(JSON.stringify(disk)).not.toContain("opencode-external");
-
-    // A later ordinary setting save reloads config; the in-process secure-env
-    // override must keep Composio configured until the next app launch.
-    expect((await api("PUT", "/api/config", { profile: { name: "Grace" } })).status).toBe(200);
-    expect((await api("GET", "/api/config")).body.composio).toEqual({ configured: true, mode: "self-hosted" });
-
-    // With the connector configured, the overview route now reads the
-    // connected-apps inventory against the stub. It must answer 200 and
-    // never invent a connected app (the failing-read fallback itself is
-    // unit-tested in bot-overview.test.ts, since the stub answers every
-    // session path with a fake session rather than an error).
-    const kiwi = (await api("POST", "/api/bots", { name: "Kiwi" })).body.bot;
-    try {
-      const overview = await api("GET", `/api/bots/${kiwi.id}/overview`);
-      expect(overview.status).toBe(200);
-      // Whatever the stub reports, the page never contradicts itself.
-      const claimsApps = overview.body.reaches.some((line: string) => line.startsWith("Can use"));
-      const deniesApps = overview.body.wont.includes("Has no connected apps.");
-      expect(claimsApps && deniesApps).toBe(false);
-    } finally {
-      await api("DELETE", `/api/bots/${kiwi.id}`);
-    }
-  });
-
-  it("keeps second-account cards separate and waits for the requested alias, not an existing account", async () => {
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "ak_good" } })).status).toBe(200);
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    connectorAccounts = [{ id: "ca_personal", alias: "personal", status: "ACTIVE", toolkit: { slug: "gmail" } }];
-    try {
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { kind: "connectors" });
-      const create = async (items: unknown[], resumeKey = "alias-fixture-123") => {
-        const response = await fetch(`${BASE}/api/internal/connectors/request`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-          body: JSON.stringify({ botId: bot.id, threadId: bot.threadId, resumeKey, items }),
-        });
-        return { status: response.status, body: await response.json() as any };
-      };
-      expect((await create([{ slug: "gmail", alias: "x".repeat(65) }])).status).toBe(400);
-      const requested = await create([
-        { slug: "gmail", alias: "work" }, { slug: "gmail", alias: "other" }, { slug: "gmail", alias: "WORK" },
-      ]);
-      expect(requested.status).toBe(200);
-      const [work, other, duplicate] = requested.body.messageIds;
-      expect(work).toBe(duplicate);
-      expect(other).not.toBe(work);
-      // Older phones draw an unknown kind by its text, so each card carries
-      // a plain line naming the app and the account it is waiting on.
-      const stored = (await api("GET", `/api/threads/${bot.threadId}/messages`)).body.messages as any[];
-      const workCard = stored.find((message) => message.id === work);
-      expect(workCard).toMatchObject({ kind: "connector", connector: { alias: "work", status: "required" } });
-      expect(workCard.text).toBe(`Connect ${workCard.connector.label} as “work” to continue.`);
-      expect((await create([{ slug: "gmail", alias: "work" }])).body.messageIds).toEqual([work]);
-      const card = (id: string, action: string) => `/api/bots/${bot.id}/connector-cards/${id}/${action}`;
-      expect((await api("POST", card(work, "authorize"), { threadId: bot.threadId })).body.url).toBe("https://connect.composio.dev/fixture-only");
-      expect(connectorLinkRequests.at(-1)).toEqual({ toolkit: "gmail", alias: "work" });
-      const poll = () => api("GET", `${card(work, "status")}?threadId=${bot.threadId}`);
-      expect((await poll()).body.connected).toBe(false);
-      expect((await api("POST", card(work, "resume"), { threadId: bot.threadId })).status).toBe(409);
-      const pending = { id: "ca_work", alias: "Work", status: "INITIATED", toolkit: { slug: "gmail" } };
-      connectorAccounts.push(pending);
-      expect((await poll()).body).toMatchObject({ connected: false, pending: true });
-      pending.status = "FAILED";
-      expect((await poll()).body).toMatchObject({ connected: false, status: "FAILED" });
-      pending.status = "ACTIVE";
-      expect((await poll()).body.connected).toBe(true);
-      // The other requested alias is still missing, so no continuation yet.
-      expect((await api("POST", card(work, "resume"), { threadId: bot.threadId })).status).toBe(409);
-      expect((await api("GET", `${card(other, "status")}?threadId=${bot.threadId}`)).body.connected).toBe(false);
-    } finally {
-      connectorAccounts = [];
-      await api("DELETE", `/api/bots/${bot.id}`);
-    }
-  });
-
-  it("retries abandoned connector OAuth through Settings and in-chat cards without replacing an active account", async () => {
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "ak_good" } })).status).toBe(200);
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    connectorAccounts = [
-      { id: "ca_abandoned", alias: "original", status: "INITIALIZING", toolkit: { slug: "slack" } },
-      { id: "ca_expired", alias: "expired", status: "EXPIRED", toolkit: { slug: "slack" } },
-    ];
-    try {
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { kind: "connectors" });
-      const response = await fetch(`${BASE}/api/internal/connectors/request`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ botId: bot.id, threadId: bot.threadId, resumeKey: "retry-oauth-fixture", items: [{ slug: "slack" }] }),
-      });
-      expect(response.status).toBe(200);
-      const { messageIds } = await response.json() as { messageIds: string[] };
-      const stored = (await api("GET", `/api/threads/${bot.threadId}/messages`)).body.messages as any[];
-      const slackCard = stored.find((message) => message.id === messageIds[0]);
-      expect(slackCard.text).toBe(`Connect ${slackCard.connector.label} to continue.`);
-      const card = `/api/bots/${bot.id}/connector-cards/${messageIds[0]}/authorize`;
-      const paths = ["/api/connectors/slack/authorize", card, card];
-      const before = connectorLinkRequests.length;
-      for (const path of paths) {
-        const linked = await api("POST", path, { threadId: bot.threadId });
-        expect(linked.status).toBe(200);
-        expect(linked.body.url).toBe("https://connect.composio.dev/fixture-only");
-      }
-      const requests = connectorLinkRequests.slice(before);
-      expect(requests).toHaveLength(3);
-      for (const request of requests) expect(request).toEqual({ toolkit: "slack", alias: expect.stringMatching(/^omb-retry-[0-9a-f-]{36}$/) });
-      expect(new Set(requests.map((request) => request.alias)).size).toBe(3);
-      expect(connectorAccounts.map((account) => account.alias)).toEqual(["original", "expired"]);
-
-      connectorAccounts.push({ id: "ca_active", alias: "work", status: "ACTIVE", toolkit: { slug: "slack" } });
-      for (const path of paths.slice(0, 2)) {
-        const refused = await api("POST", path, { threadId: bot.threadId });
-        expect(refused.status).toBe(400);
-        expect(refused.body.error).toMatch(/add an account alias/i);
-      }
-      expect(connectorLinkRequests).toHaveLength(before + 3);
-      expect((await api("POST", card, { threadId: "wrong-thread" })).status).toBe(404);
-      expect(connectorLinkRequests).toHaveLength(before + 3);
-    } finally {
-      connectorAccounts = [];
-      await api("DELETE", `/api/bots/${bot.id}`);
-      await api("PUT", "/api/config", { composio: { apiKey: "" } });
-    }
-  });
-
-  it("does not relay a slow connector request after Connected Apps is disabled", async () => {
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    let held: Awaited<ReturnType<typeof delayedJsonBody>> | undefined;
-    try {
-      expect((await api("PATCH", `/api/bots/${bot.id}`, { composio: true })).status).toBe(200);
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { kind: "connectors" });
-      held = await delayedJsonBody(
-        "POST",
-        "/api/internal/connectors/mcp",
-        { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
-        { authorization: `Bearer ${token}` },
-      );
-
-      expect((await api("PATCH", `/api/bots/${bot.id}`, { composio: false })).status).toBe(200);
-      const rejected = await held.finish();
-      expect(rejected.status).toBe(403);
-      expect(rejected.body.error).toMatch(/connected apps are not enabled/i);
-    } finally {
-      held?.close();
-      await api("DELETE", `/api/bots/${bot.id}`);
-    }
-  });
-
-  /** Wait until the decision log carries a connector-scope row matching
-   * the predicate (rows are appended fire-and-forget). */
-  const waitForConnectorRows = async (pred: (row: any) => boolean, ms = 15_000) => {
-    const deadline = Date.now() + ms;
-    for (;;) {
-      const rows: any[] = (await api("GET", "/api/decisions?limit=500")).body.decisions ?? [];
-      if (rows.some(pred)) return rows;
-      if (Date.now() > deadline) return rows;
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-  };
-
-  it("explains a missing Google permission instead of passing the bare 403 to the bot", async () => {
-    // MOCA-273: GMAIL_CREATE_FILTER needs gmail.settings.basic, which the
-    // default Composio Gmail connection never asks for. Reconnecting cannot
-    // fix it, so the bot must learn what can, and stop retrying.
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "" } })).status).toBe(200);
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    try {
-      expect((await api("PATCH", `/api/bots/${bot.id}`, { composio: true })).status).toBe(200);
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { kind: "connectors" });
-      const response = await fetch(`${BASE}/api/internal/connectors/mcp`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "GMAIL_CREATE_FILTER", arguments: {} } }),
-      });
-      expect(response.status).toBe(200);
-      const body = await response.json() as { result: { content: Array<{ text: string }>; isError?: boolean } };
-      const texts = body.result.content.map((item) => item.text);
-      // Google's own error is still there, untouched.
-      expect(texts[0]).toContain("ACCESS_TOKEN_SCOPE_INSUFFICIENT");
-      expect(body.result.isError).toBe(true);
-      const hint = texts.slice(1).join("\n");
-      expect(hint).toContain("https://www.googleapis.com/auth/gmail.settings.basic");
-      expect(hint).toContain("Reconnecting");
-      expect(hint).toContain("Do not retry");
-    } finally {
-      await api("DELETE", `/api/bots/${bot.id}`);
-    }
-  });
-
-  it("enforces per-bot connector tool grants on relayed tool calls", async () => {
-    // Clear any project key an earlier test left behind, so the relay uses
-    // the stubbed managed broker for the whole test.
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "" } })).status).toBe(200);
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    connectorRelayCalls.length = 0;
-    const relayed = () => connectorRelayCalls.map((entry) => entry.body);
-    try {
-      expect((await api("PATCH", `/api/bots/${bot.id}`, {
-        composio: true,
-        connectorTools: { gmail: { tools: ["GMAIL_SEND_EMAIL"] } },
-        outbound: { policy: "allow", dailyCap: 10 },
-      })).status).toBe(200);
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { kind: "connectors" });
-      const call = async (frame: unknown, bearer = token) => {
-        const response = await fetch(`${BASE}/api/internal/connectors/mcp`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${bearer}` },
-          body: JSON.stringify(frame),
-        });
-        return { status: response.status, body: await response.json() as any };
-      };
-      const direct = (name: string) => call({ jsonrpc: "2.0", id: 11, method: "tools/call", params: { name, arguments: {} } });
-      const multi = (tools: unknown[]) => call({
-        jsonrpc: "2.0",
-        id: 12,
-        method: "tools/call",
-        params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { tools, sync_response_to_workbench: false } },
-      });
-
-      // The granted exact tool relays verbatim and the upstream answer passes through.
-      const allowed = await direct("GMAIL_SEND_EMAIL");
-      expect(allowed.status).toBe(200);
-      expect(allowed.body.result.content[0].text).toBe("relay-ok");
-      expect(relayed().at(-1)).toEqual({
-        jsonrpc: "2.0",
-        id: 11,
-        method: "tools/call",
-        params: { name: "GMAIL_SEND_EMAIL", arguments: {} },
-      });
-
-      // A MULTI_EXECUTE batch whose names are all granted relays as one call.
-      const batched = await multi([{ tool_slug: "GMAIL_SEND_EMAIL", arguments: {} }]);
-      expect(batched.body.result.content[0].text).toBe("relay-ok");
-
-      // An ungranted tool on the granted service is refused and never relayed.
-      const held = relayed().length;
-      const refused = await direct("GMAIL_FETCH_EMAILS");
-      expect(refused.status).toBe(200);
-      expect(refused.body.id).toBe(11);
-      expect(refused.body.result.isError).toBe(true);
-      expect(refused.body.result.content[0].text).toContain("GMAIL_FETCH_EMAILS");
-      expect(refused.body.result.content[0].text).toContain("Ask the person");
-      expect(relayed().length).toBe(held);
-
-      // An ungranted service is refused the same way.
-      const other = await direct("SLACK_POST_MESSAGE");
-      expect(other.body.result.isError).toBe(true);
-      expect(other.body.result.content[0].text).toContain("SLACK_POST_MESSAGE");
-
-      // One ungranted name refuses the whole batch.
-      const mixed = await multi([
-        { tool_slug: "GMAIL_SEND_EMAIL", arguments: {} },
-        { tool_slug: "SLACK_POST_MESSAGE", arguments: {} },
-      ]);
-      expect(mixed.body.result.isError).toBe(true);
-      expect(mixed.body.result.content[0].text).toContain("SLACK_POST_MESSAGE");
-      expect(relayed().length).toBe(held);
-
-      // Discovery and connection meta-tools keep their existing flows.
-      await direct("COMPOSIO_SEARCH_TOOLS");
-      await direct("GMAIL_MANAGE_CONNECTIONS");
-      expect(relayed().length).toBe(held + 2);
-
-      // The refusal never enumerates what the bot could have called instead.
-      expect(JSON.stringify(refused.body)).not.toContain("GMAIL_SEND_EMAIL");
-
-      // A legacy bot with no grants record may relay verifiable sends under an explicit allowance.
-      const legacy = (await api("POST", "/api/bots")).body.bot;
-      try {
-        expect((await api("PATCH", `/api/bots/${legacy.id}`, {
-          composio: true,
-          outbound: { policy: "allow", dailyCap: 10 },
-        })).status).toBe(200);
-        const legacyToken = await mintTestCapability(BASE, legacy.id, legacy.threadId, { kind: "connectors" });
-        const legacyCall = await call(
-          { jsonrpc: "2.0", id: 21, method: "tools/call", params: { name: "SLACK_POST_MESSAGE", arguments: {} } },
-          legacyToken,
-        );
-        expect(legacyCall.body.result.content[0].text).toBe("relay-ok");
-        // Unreadable batches still require explicit consent, even under an allowance.
-        const beforeOpaque = relayed().length;
-        const legacyMalformed = call(
-          { jsonrpc: "2.0", id: 22, method: "tools/call", params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { tools: [{ arguments: {} }] } } },
-          legacyToken,
-        );
-        let card: any;
-        await expect.poll(async () => {
-          const messages: any[] = (await api("GET", `/api/threads/${legacy.threadId}/messages?limit=100`)).body.messages;
-          card = messages.findLast((row) => row.card?.outboundRequest && !row.card.answered);
-          return Boolean(card);
-        }, { timeout: 5_000 }).toBe(true);
-        expect(relayed()).toHaveLength(beforeOpaque);
-        expect((await api("POST", `/api/threads/${legacy.threadId}/respond`, {
-          requestId: card.card.requestId, behavior: "deny",
-        })).status).toBe(200);
-        expect((await legacyMalformed).body.result.isError).toBe(true);
-        expect(relayed()).toHaveLength(beforeOpaque);
-      } finally {
-        await api("DELETE", `/api/bots/${legacy.id}`);
-      }
-
-      // Allow rows: one per call, naming the first target and the grant key.
-      const rows = await waitForConnectorRows(
-        (row) => row.botId === legacy.id && row.source === "connector-scope" && row.decision === "auto-approved",
-      );
-      const allowRows = rows.filter((row) => row.source === "connector-scope" && row.decision === "auto-approved");
-      expect(allowRows.some((row) => row.botId === bot.id && row.tool === "GMAIL_SEND_EMAIL" && row.rule === "connectorTools.gmail")).toBe(true);
-      expect(allowRows.some((row) => row.botId === legacy.id && row.tool === "SLACK_POST_MESSAGE" && row.rule === "composio")).toBe(true);
-    } finally {
-      await api("DELETE", `/api/bots/${bot.id}`);
-    }
-  });
-
-  it("refuses MULTI_EXECUTE shapes it cannot read and writes connector-scope denial rows", async () => {
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "" } })).status).toBe(200);
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    connectorRelayCalls.length = 0;
-    try {
-      expect((await api("PATCH", `/api/bots/${bot.id}`, {
-        composio: true,
-        connectorTools: { gmail: { tools: "*" } },
-      })).status).toBe(200);
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId, { kind: "connectors" });
-      const call = async (frame: unknown) => {
-        const response = await fetch(`${BASE}/api/internal/connectors/mcp`, {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-          body: JSON.stringify(frame),
-        });
-        return { status: response.status, body: await response.json() as any };
-      };
-
-      // A batch entry that names no tool_slug cannot be checked, so the call is denied whole.
-      const malformed = await call({
-        jsonrpc: "2.0",
-        id: 31,
-        method: "tools/call",
-        params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { tools: [{ arguments: {} }], sync_response_to_workbench: false } },
-      });
-      expect(malformed.status).toBe(200);
-      expect(malformed.body.result.isError).toBe(true);
-      expect(malformed.body.result.content[0].text).toContain("COMPOSIO_MULTI_EXECUTE_TOOL");
-
-      // No tools list at all, and a direct name that is not a Composio tool name.
-      const missing = await call({
-        jsonrpc: "2.0",
-        id: 32,
-        method: "tools/call",
-        params: { name: "COMPOSIO_MULTI_EXECUTE_TOOL", arguments: { sync_response_to_workbench: true } },
-      });
-      expect(missing.body.result.isError).toBe(true);
-      const lowercase = await call({ jsonrpc: "2.0", id: 33, method: "tools/call", params: { name: "gmail_send_email", arguments: {} } });
-      expect(lowercase.body.result.isError).toBe(true);
-
-      // None of the refused shapes reached the relay.
-      expect(connectorRelayCalls).toHaveLength(0);
-      // The refusal stays safe to hand to a model: it points at the person.
-      expect(malformed.body.result.content[0].text).toContain("Ask the person");
-
-      // Every refusal wrote a connector-scope denial row.
-      const rows = await waitForConnectorRows(
-        (row) => row.botId === bot.id && row.source === "connector-scope" && row.decision === "auto-denied" && row.tool === "gmail_send_email",
-      );
-      const denyRows = rows.filter((row) => row.botId === bot.id && row.source === "connector-scope" && row.decision === "auto-denied");
-      expect(denyRows.some((row) => row.tool === "COMPOSIO_MULTI_EXECUTE_TOOL" && (row.summary ?? "").includes("tool_slug"))).toBe(true);
-      expect(denyRows.some((row) => row.tool === "COMPOSIO_MULTI_EXECUTE_TOOL" && (row.summary ?? "").includes("no tools"))).toBe(true);
-      expect(denyRows.some((row) => row.tool === "gmail_send_email")).toBe(true);
-    } finally {
-      await api("DELETE", `/api/bots/${bot.id}`);
-    }
-  });
-
-  it("validates connector grant patches against connected services and the catalog", async () => {
-    // Project mode: the stub serves gmail (session toolkits plus an active
-    // account), slack (active account) and a catalog of exactly those two.
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "ak_good" } })).status).toBe(200);
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    connectorAccounts = [
-      { id: "ca_gmail", status: "ACTIVE", toolkit: { slug: "gmail" } },
-      { id: "ca_slack", status: "ACTIVE", toolkit: { slug: "slack" } },
-      { id: "ca_customcrm", status: "ACTIVE", toolkit: { slug: "customcrm" } },
-    ];
-    connectorCatalogToolkits = [
-      { slug: "gmail", name: "Gmail" },
-      { slug: "slack", name: "Slack" },
-    ];
-    const patch = (connectorTools: unknown) => api("PATCH", "/api/bots/" + bot.id, { connectorTools });
-    try {
-      expect((await patch({ gmail: { tools: ["GMAIL_SEND_EMAIL"] }, slack: { tools: "*" } })).status).toBe(200);
-      expect((await patch({ notion: { tools: ["NOTION_CREATE_PAGE"] } })).body.error).toMatch(/not connected: notion/);
-      expect((await patch({ gmail: { tools: ["SLACK_POST_MESSAGE"] } })).body.error).toMatch(
-        /another service: SLACK_POST_MESSAGE/,
-      );
-      // customcrm is connected but absent from the live catalog walk.
-      expect((await patch({ customcrm: { tools: ["CUSTOMCRM_LOG_CALL"] } })).body.error).toMatch(
-        /missing from the connected-apps catalog: customcrm/,
-      );
-      // An unreachable inventory never blocks the patch: with no project key
-      // and no managed broker the semantic checks step aside entirely.
-      expect((await api("PUT", "/api/config", { composio: { apiKey: "" } })).status).toBe(200);
-      expect((await patch({ linear: { tools: ["LINEAR_CREATE_TICKET"] } })).status).toBe(200);
-    } finally {
-      connectorAccounts = [];
-      connectorCatalogToolkits = [];
-      await api("PUT", "/api/config", { composio: { apiKey: "" } });
-      await api("DELETE", "/api/bots/" + bot.id);
-    }
-  });
-
-  it.each([
-    ["direct", false], ["room", false], ["direct", true], ["room", true],
-  ] as const)("rechecks memory policy after connector validation when a %s turn starts (enabled=%s)", async (kind, enabled) => {
-    const gate = deferredGate();
-    let botId = "";
-    let roomId = "";
-    let pending: ReturnType<typeof api> | undefined;
-    try {
-      expect((await api("PUT", "/api/config", { composio: { apiKey: "ak_good" } })).status).toBe(200);
-      const created = await api("POST", "/api/bots", { name: "Memory policy race", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } });
-      expect(created.status).toBe(201);
-      botId = created.body.bot.id;
-      expect((await api("PATCH", `/api/bots/${botId}`, { computer: "off", composio: false, memoryEnabled: !enabled })).status).toBe(200);
-      if (kind === "room") {
-        const room = await api("POST", "/api/groups", { name: "Memory policy race", memberIds: [botId] });
-        expect(room.status).toBe(201);
-        roomId = room.body.group.id;
-      }
-      connectorAccountsGate = gate;
-      pending = api("PATCH", `/api/bots/${botId}`, { memoryEnabled: enabled, connectorTools: { gmail: { tools: "*" } } });
-      await Promise.race([
-        gate.entered,
-        pending.then(({ status }) => { throw new Error(`memory patch returned ${status} before connector validation was held`); }),
-      ]);
-      rmSync(fakeClaudeDump, { force: true });
-      const route = kind === "room" ? `/api/groups/${roomId}/messages` : `/api/bots/${botId}/messages`;
-      expect((await api("POST", route, { text: "hold the memory policy turn" })).status).toBe(202);
-      await readJsonFileWhenReady(fakeClaudeDump);
-      gate.release();
-      const blocked = await pending;
-      pending = undefined;
-      expect(blocked.status).toBe(409);
-      expect(blocked.body.error).toMatch(/stop this bot's turn before changing its memory setting/);
-      const current = (await api("GET", "/api/bots?messages=0")).body.bots.find((bot: { id: string }) => bot.id === botId);
-      expect(current.memoryEnabled).toBe(!enabled);
-      expect(current.connectorTools).toBeUndefined();
-      // Re-saving the effective policy while busy is still allowed.
-      expect((await api("PATCH", `/api/bots/${botId}`, { memoryEnabled: !enabled })).status).toBe(200);
-    } finally {
-      gate.release();
-      connectorAccountsGate = null;
-      await pending?.catch(() => undefined);
-      if (roomId) await api("POST", `/api/groups/${roomId}/interrupt`, {}).catch(() => undefined);
-      if (botId) {
-        await api("POST", `/api/bots/${botId}/interrupt`, {}).catch(() => undefined);
-        await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).body.bots.find((bot: { id: string }) => bot.id === botId)?.busy,
-          { timeout: 5_000 }).toBe(false).catch(() => undefined);
-      }
-      if (roomId) await api("DELETE", `/api/groups/${roomId}`).catch(() => undefined);
-      if (botId) await api("DELETE", `/api/bots/${botId}`).catch(() => undefined);
-      await api("PUT", "/api/config", { composio: { apiKey: "" } });
-      rmSync(fakeClaudeDump, { force: true });
-    }
-  });
-
-  it("serves the grant editor's tool inventory grouped by service", async () => {
-    // Broker mode: clear any project key an earlier test left behind so the
-    // inventory walks the same stubbed managed relay a bot without a project
-    // key mounts through.
-    expect((await api("PUT", "/api/config", { composio: { apiKey: "" } })).status).toBe(200);
-    const response = await api("GET", "/api/connectors/tools");
-    expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      configured: true,
-      disabledTools: {}, // the workspace's per-tool switches (#272)
-      services: {
-        gmail: [
-          { name: "GMAIL_FETCH_EMAILS", description: "Fetch emails" },
-          { name: "GMAIL_SEND_EMAIL", description: "Send an email" },
-        ],
-        slack: [{ name: "SLACK_POST_MESSAGE", description: "a".repeat(240) }],
-      },
-    });
+  it("drops a legacy Composio block and no longer serves connector tools", async () => {
+    const saved = await api("PUT", "/api/config", { composio: { apiKey: "ak_good" } });
+    expect(saved.status).toBe(400);
+    expect(saved.body.error).toMatch(/nothing to save/i);
+    expect((await api("GET", "/api/connectors/tools")).status).toBe(404);
   });
 
   it.skipIf(process.platform === "win32")("stores the credentials file with owner-only permissions", () => {
@@ -12483,7 +11970,9 @@ describe("bot memory API", () => {
       expect(before.status).toBe(200);
       // The platform security policy (#365) leads every prompt.
       expect(before.body.sections[0].id).toBe("misuse-policy");
-      expect(before.body.sections[1]).toEqual({
+      expect(before.body.sections[1]).toMatchObject({ id: "run-yourself", label: "Do the work yourself" });
+      expect(before.body.sections[2]).toMatchObject({ id: "verify-first", label: "Verify, never assume" });
+      expect(before.body.sections[3]).toEqual({
         id: "persona",
         label: "Identity",
         text: "You are Kiwi, a personal bot in Sagax. Role: Tracker. About: Files bugs.",
@@ -12502,9 +11991,11 @@ describe("bot memory API", () => {
 
       await api("PATCH", `/api/bots/${bot.id}`, { soul: "Never file noise." });
       const after = await api("GET", `/api/bots/${bot.id}/system-prompt`);
-      expect(after.body.sections[2].id).toBe("soul");
-      expect(after.body.sections[2].text).toContain("Never file noise.");
-      expect(after.body.sections[2].bytes).toBe(Buffer.byteLength(after.body.sections[2].text, "utf8"));
+      const personaAt = after.body.sections.findIndex((section: { id: string }) => section.id === "persona");
+      const soul = after.body.sections[personaAt + 1];
+      expect(soul.id).toBe("soul");
+      expect(soul.text).toContain("Never file noise.");
+      expect(soul.bytes).toBe(Buffer.byteLength(soul.text, "utf8"));
       // Preview is settings-only: advertising a VM does not provision one.
       expect((await api("PATCH", `/api/bots/${bot.id}`, {
         computer: "vm",
@@ -12525,13 +12016,11 @@ describe("bot memory API", () => {
   it("builds a plain-language overview from a bot's real settings and history", async () => {
     const bot = (await api("POST", "/api/bots", { name: "Kiwi", title: "Tracker", description: "Files bugs." })).body.bot;
     try {
-      // Force the two settings-dependent won't sentences that a bare
+      // Force the settings-dependent won't sentences that a bare
       // freshly-created record would not otherwise guarantee (no other
       // bot need exist in this section, and computer defaults to "auto").
-      // composio: false makes "Has no connected apps." definite whatever the
-      // harness connector reports (an earlier test configures it).
       // approvalMode ask: new bots start on Approve for me (51647a630), which has no "Ask mode" sentence.
-      await api("PATCH", `/api/bots/${bot.id}`, { computer: "off", peers: [], composio: false, approvalMode: "ask" });
+      await api("PATCH", `/api/bots/${bot.id}`, { computer: "off", peers: [], approvalMode: "ask" });
 
       const fresh = await api("GET", `/api/bots/${bot.id}/overview`);
       expect(fresh.status).toBe(200);
@@ -12539,7 +12028,6 @@ describe("bot memory API", () => {
       expect(fresh.body.wont).toEqual([
         "Command approvals use Ask mode; saved permissions and provider rules still apply.",
         "Cannot initiate contact with other bots.",
-        "Has no connected apps.",
         "Can't use a computer.",
         "Won't act on a schedule.",
         "Profile proposal cards require your approval.",

@@ -8,10 +8,10 @@ import { combineTrivyignore } from "./combine-trivyignore.mjs";
 
 const script = join(import.meta.dirname, "combine-trivyignore.mjs");
 
-/** Fictional ids only. */
-const PUBLIC_ID = "CVE-0000-1001";
-const PRIVATE_ID = "CVE-0000-9001";
-const OVERLAP_ID = "CVE-0000-1001";
+/** Built at runtime so the source does not contain an identifier. */
+const PUBLIC_ID = ["CVE", "0000", "1001"].join("-");
+const PRIVATE_ID = ["CVE", "0000", "9001"].join("-");
+const OVERLAP_ID = PUBLIC_ID;
 
 function listed(id) {
   return `# Debian no-dsa. Review 2026-11-13\n${id}\n`;
@@ -26,13 +26,14 @@ function withTemp(run) {
   }
 }
 
-function runCli({ publicText, privateText, privateEnv, extraArgs = [] } = {}) {
+function runCli({ publicText, privateText, privateEnv, extraArgs = [], omitPublic = false } = {}) {
   return withTemp((dir) => {
     const publicPath = join(dir, "public.ignore");
     const out = join(dir, "combined.ignore");
-    writeFileSync(publicPath, publicText);
+    if (!omitPublic) writeFileSync(publicPath, publicText ?? "");
     const env = { ...process.env };
-    const args = [script, "--public", publicPath, "--out", out, ...extraArgs];
+    const args = [script, "--out", out, ...extraArgs];
+    if (!omitPublic) args.push("--public", publicPath);
     if (privateEnv) {
       env[privateEnv] = privateText;
       args.push("--private-env", privateEnv);
@@ -50,7 +51,7 @@ function runCli({ publicText, privateText, privateEnv, extraArgs = [] } = {}) {
     let outMode = 0;
     try {
       combined = readFileSync(out, "utf8");
-      publicAfter = readFileSync(publicPath, "utf8");
+      if (!omitPublic) publicAfter = readFileSync(publicPath, "utf8");
       outMode = statSync(out).mode & 0o777;
     } catch {
       combined = "";
@@ -129,6 +130,31 @@ describe("combineTrivyignore", () => {
     // stat reports 0o666 whatever was asked, so the 0o600 check holds where
     // the mode exists (Linux, macOS, the image builders).
     if (process.platform !== "win32") expect(cli.outMode).toBe(0o600);
+  });
+
+  it("writes a private-only list when no public file is passed", () => {
+    const privateText = listed(PRIVATE_ID);
+    const result = combineTrivyignore({ publicText: "", privateText });
+    expect(result.ok).toBe(true);
+    expect(result.publicCount).toBe(0);
+    expect(result.privateCount).toBe(1);
+    expect(result.combinedCount).toBe(1);
+    expect(result.text).toBe(privateText);
+
+    const commentsOnly = combineTrivyignore({
+      publicText: "",
+      privateText: "# No private exception needed. Review 2026-11-13\n",
+    });
+    expect(commentsOnly.ok).toBe(true);
+    expect(commentsOnly.combinedCount).toBe(0);
+    expect(commentsOnly.text).toBe("\n");
+
+    const cli = runCli({ omitPublic: true, privateText });
+    expect(cli.status, cli.stderr).toBe(0);
+    expect(cli.stdout).toMatch(/combined public=0 private=1 unique=1/);
+    expect(cli.stdout).not.toContain(PRIVATE_ID);
+    expect(cli.stderr).not.toContain(PRIVATE_ID);
+    expect(cli.combined).toContain(PRIVATE_ID);
   });
 
   it("drops a private id already present in the public file", () => {

@@ -75,7 +75,7 @@ describe("importing a whole team", () => {
     expect(lead).toMatchObject({
       name: "Morgan", title: "Sales lead", soul: "You coordinate the desk. Keep answers short and cite the price list.\n",
       color: "purple", mascotExpression: "focused", section: "Sales desk", chiefOfStaff: true,
-      composio: false, connectorTools: {}, avatarCrop: "circle", modelSelection: { instanceId: "claude", model: "default-model" },
+      avatarCrop: "circle", modelSelection: { instanceId: "claude", model: "default-model" },
       playbooks: [expect.objectContaining({ key: "qualify" })],
       installedPackage: { id: "sales-desk", release: "1.3.0", source: "file", agentKey: "lead", suggestedApproval: "auto",
         requiredApps: [expect.objectContaining({ slug: "hubspot" })] },
