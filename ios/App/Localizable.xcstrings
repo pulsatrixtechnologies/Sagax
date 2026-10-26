@@ -1,6 +1,72 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Mascots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascottes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotes"
+          }
+        }
+      }
+    },
+    "HD mascots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HD mascots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascottes HD"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotes HD"
+          }
+        }
+      }
+    },
+    "Detailed art for the characters that have it. Colors and skins apply to the classic look.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed art for the characters that have it. Colors and skins apply to the classic look."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Illustrations détaillées pour les personnages qui en ont. Les couleurs et les styles s'appliquent à l'apparence classique."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arte detalhada para os personagens que a têm. Cores e estilos valem para a aparência clássica."
+          }
+        }
+      }
+    },
     "Pairing code %@ %@: your computer's form shows the same when it is the one asking.": {
       "localizations": {
         "en": {
@@ -74596,6 +74662,192 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Let it work without being asked" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Pour qu'il travaille sans qu'on le lui demande" } }
+      }
+    },
+    "Base": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Base" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "De base" } }
+      }
+    },
+    "Red": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Red" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rouge" } }
+      }
+    },
+    "Pink": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pink" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rose" } }
+      }
+    },
+    "Green": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Green" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vert" } }
+      }
+    },
+    "Yellow": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Yellow" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jaune" } }
+      }
+    },
+    "Windows XP": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows XP" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows XP" } }
+      }
+    },
+    "Windows Vista": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows Vista" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows Vista" } }
+      }
+    },
+    "Windows 7": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 7" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 7" } }
+      }
+    },
+    "Windows 8": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 8" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 8" } }
+      }
+    },
+    "Windows 8.1": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 8.1" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 8.1" } }
+      }
+    },
+    "Windows 10": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 10" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 10" } }
+      }
+    },
+    "Windows 11": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 11" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 11" } }
+      }
+    },
+    "Colour": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Colour" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Couleur" } }
+      }
+    },
+    "Duo-tone": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Duo-tone" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Duo-ton" } }
+      }
+    },
+    "Mood": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mood" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ambiance" } }
+      }
+    },
+    "Edition": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Edition" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Édition" } }
+      }
+    },
+    "Intensity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Intensity" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Intensité" } }
+      }
+    },
+    "Accent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Accent" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Accent" } }
+      }
+    },
+    "Full (intensity)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Full" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pleine" } }
+      }
+    },
+    "Texture": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Texture" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Texture" } }
+      }
+    },
+    "Grain": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Grain" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Grain" } }
+      }
+    },
+    "Grid": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Grid" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Grille" } }
+      }
+    },
+    "Dots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Dots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Points" } }
+      }
+    },
+    "Aurora": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Aurora" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aurore" } }
+      }
+    },
+    "Ocean": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ocean" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Océan" } }
+      }
+    },
+    "Neon": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Neon" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Néon" } }
+      }
+    },
+    "Forest": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Forest" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Forêt" } }
+      }
+    },
+    "Cyberpunk": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cyberpunk" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cyberpunk" } }
+      }
+    },
+    "Sunset": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sunset" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Coucher de soleil" } }
+      }
+    },
+    "Nordic": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nordic" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nordique" } }
+      }
+    },
+    "Candy": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candy" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Bonbon" } }
       }
     }
   },

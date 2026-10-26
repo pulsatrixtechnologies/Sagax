@@ -322,7 +322,6 @@ final class SidebarPrefsModel: ObservableObject {
     /// and the theme's bot accent (ThemeStore reads `prefs` directly).
     private func applyPersonValues() {
         NotificationSounds.applyChoice(prefs.notificationSound)
-        HdMascotRuntime.enabled = prefs.hdMascots
         // the language follows the person only where the server keeps it
         guard synced else { return }
         if let code = prefs.languageCode,
@@ -338,7 +337,6 @@ final class SidebarPrefsModel: ObservableObject {
     var hdMascots: Bool { prefs.hdMascots }
     func setHdMascots(_ session: Session, _ on: Bool) {
         update(session) { $0.setHdMascots(on) }
-        HdMascotRuntime.enabled = on
     }
 
     var showSuggestions: Bool { prefs.showSuggestions }

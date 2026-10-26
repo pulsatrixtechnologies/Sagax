@@ -17,7 +17,8 @@ struct MascotCharacterView: View {
     var animated = false
     /// Wing moves and beats for the owl, the Shapes moves for a shape (profile preview).
     var owlHandle: OwlMascotHandle?
-    @Environment(\.hdMascotsEnabled) private var hdEnabled
+    /// Off keeps the vector look even for a character with HD art (the skin pickers, as on the desktop).
+    var hd = true
 
     var body: some View {
         character
@@ -36,9 +37,7 @@ struct MascotCharacterView: View {
         case .bunbu:
             BunbuMascotView(skin: look.bunbuSkin, color: color, size: size, mood: BunbuMood(state: state), animated: animated)
         case .shiba:
-            if let art = HdMascotRuntime.image(character: "shiba", state: state.rawValue, enabled: hdEnabled) {
-                HdMascotStill(image: art, size: size)
-            } else {
+            HdOrVector(character: .shiba, hd: hd, key: HdMascots.key(forState: state.rawValue), size: size, animated: animated) {
                 ShibaMascotView(skin: look.shibaSkin, color: color, size: size, expression: ShibaExpression.forState(state.rawValue), animated: animated)
             }
         case .grump:

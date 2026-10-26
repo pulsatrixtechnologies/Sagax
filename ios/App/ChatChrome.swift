@@ -178,7 +178,7 @@ struct ComposerVoiceSendButton: View {
             }
             .foregroundStyle(Theme.primaryInk)
             .frame(width: Theme.Chat.voiceCapsule.width, height: Theme.Chat.voiceCapsule.height)
-            .background(onCall && !canSend ? Color(red: 0.89, green: 0.27, blue: 0.27) : Theme.primaryFill, in: Capsule())
+            .background(onCall && !canSend ? AnyShapeStyle(Color(red: 0.89, green: 0.27, blue: 0.27)) : Theme.primaryFillStyle, in: Capsule())
             .opacity(busy ? 0.5 : 1)
             .contentShape(Capsule())
         }

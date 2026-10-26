@@ -18,7 +18,7 @@ final class ShapeEngineTests: XCTestCase {
         struct Ribbon: Decodable { let d: String; let hue, hueSpan, width, opacity, dash, offset, x1, x2: Double }
         struct Frame: Decodable {
             let body, eyes, transform, color: String
-            let morphed: Double
+            let morphed, depth: Double
             let dots, specks: [Dot]
             let badge: Badge?
             let rings: [Ring]
@@ -119,6 +119,7 @@ final class ShapeEngineTests: XCTestCase {
             assertPath(frame.transform, want.transform, tolerance: 0.003, "\(name) transform")
             XCTAssertEqual(frame.color, want.color, name)
             XCTAssertEqual(frame.morphed, want.morphed, accuracy: 1e-6, name)
+            XCTAssertEqual(frame.depth, want.depth, accuracy: 1e-6, "\(name) depth")
             XCTAssertEqual(frame.dots.count, want.dots.count, "\(name) dots")
             for (a, b) in zip(frame.dots + frame.specks, want.dots + want.specks) {
                 XCTAssertEqual(a.x, b.x, accuracy: 1e-6, name)

@@ -103,6 +103,13 @@ enum Theme {
     /// The filled call to action and the ink on it (white and black on Black).
     static var primaryFill: Color { palette.primaryFill.color }
     static var primaryInk: Color { palette.primaryInk.color }
+    /// The filled call to action as a fill: the accent's gradient on a
+    /// duo-tone or a mood (skin-duo.css paints `bg-accent` with it), else the flat colour.
+    static var primaryFillStyle: AnyShapeStyle {
+        let stops = palette.accentGradient
+        guard stops.count > 1, palette.primaryFill == palette.accent else { return AnyShapeStyle(primaryFill) }
+        return AnyShapeStyle(LinearGradient(colors: stops.map(\.color), startPoint: .topLeading, endPoint: .bottomTrailing))
+    }
 
     // MARK: Text
     static var textPrimary: Color { palette.textPrimary.color }
