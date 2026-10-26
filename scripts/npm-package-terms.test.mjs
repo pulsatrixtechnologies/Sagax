@@ -130,10 +130,17 @@ describe("npm package term scan", () => {
     expect(blocked("Kc as qt,PQ as r", "dist-server/index.js")).toEqual(["initials"]);
   });
 
+  it("allows a minified declaration and two names side by side (`:Sc(PQ)`), in the web bundle only", () => {
+    expect(blocked("var PQ=220;function Yc(e){}", "dist/assets/chunk-1.js")).toEqual([]);
+    expect(blocked("{bots:Yc(Sc,xc({owner:Zc.nullable(),grants:Sc(PQ).max(qC)}))}", "dist/assets/chunk-1.js")).toEqual([]);
+    expect(blocked("var PQ=220;", "dist-server/index.js")).toEqual(["initials"]);
+  });
+
   it("allows a bot-like given name only inside the new-bot dialog's list of given names", () => {
     expect(blocked('["Ann","Vexa","Bea"]', "dist/assets/NewBotDialog-abc.js")).toEqual([]);
     expect(blocked('["Ann","Vexa","Bea"]', "dist-server/index.js")).toEqual(["bot-name"]);
     expect(blocked("// Vexa said so", "dist/assets/NewBotDialog-abc.js")).toEqual(["bot-name"]);
+    expect(blocked('["Ann","Vexa","Bea"]', "dist/assets/IdentitySection-abc.js")).toEqual([]);
   });
 
   it("keeps the real tables covering each kind of word", () => {

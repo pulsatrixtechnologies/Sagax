@@ -33,7 +33,7 @@ export function applyHumanIds(input: { dm?: boolean; humanIds: string[] }): { ok
 
 /** A member who owns a room adds people the organization directory shows
  * them (`visible` answers for a principal id) and the organization's teams
- * (`team:<id>`, checked against the directory by the caller; 2026-10-26, JC:
+ * (`team:<id>`, checked against the directory by the caller; 2026-10-26:
  * a member fills their own group without an admin). Returns the first
  * refused entry, or null. Entries already in the room and the actor
  * themself pass. */

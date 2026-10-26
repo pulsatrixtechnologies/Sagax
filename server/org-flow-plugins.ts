@@ -1,4 +1,4 @@
-// Pulsatrix Flow for every member of the organization (decisions of JC,
+// Pulsatrix Flow for every member of the organization (decisions of
 // 2026-10-18 and 2026-10-19: « le plugin pulsatrix-flow est installé de base
 // dès que tu ajoutes un profil Perspicax, ou même dès que tu es dans
 // l'organisation » ; the marketplace is served by Perspicax, private and
@@ -11,7 +11,7 @@
 // their versions). The admin turns it off in Perspicax (`enabled` false, one
 // switch on its Flow page): the copy here is taken out.
 //
-// The Flow guard stays on (JC, 2026-10-26). The copy loaded here has no
+// The Flow guard stays on (2026-10-26). The copy loaded here has no
 // hooks (like every plugin "For this bot"), so the plugin's own PreToolUse
 // guard does not run in the engine. Perspicax runs that same hook on its side
 // for every call of a Flow-linked profile (its server guard, `enforce`), and

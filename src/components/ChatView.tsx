@@ -1091,7 +1091,7 @@ const MessagesList = memo(function MessagesList({
     // Nor does the "On your computer" line, so it never splits a bot exchange.
     // Threads off (the threads toggle): the single stream carries no thread
     // receipt, so a lone chip never renders and a run of them never folds
-    // into a "N conversations" group (JC 2026-10-22). ThreadChip also hides
+    // into a "N conversations" group (2026-10-22). ThreadChip also hides
     // each one; dropping them here keeps the go-to grouping clean.
     const shown = withoutDeadThreadChips(messages, owners).filter((message) =>
       !isTurnStoppedNotice(message) && !isHiddenStatusActivity(message)
@@ -1388,7 +1388,7 @@ const MessagesList = memo(function MessagesList({
               }
               // Tool calls (the details toggle) off: a plain step goes, and
               // so does a bot-to-bot comm chip — verbose detail, not the
-              // clean chat (JC 2026-10-22). A thread receipt (ThreadChip, on
+              // clean chat (2026-10-22). A thread receipt (ThreadChip, on
               // the threads toggle), a Data receipt and an input request stay.
               // A comm chip stays on Apple mobile web (the only trace there a
               // teammate was consulted) and whenever the send failed.
@@ -2272,7 +2272,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           the name chip; collapsed it keeps its own small row, expanded its
           card hangs over the thread */}
       <VoiceCallDock bot={bot} />
-      {/* Threads off = one unified conversation (JC 2026-10-22): no
+      {/* Threads off = one unified conversation (2026-10-22): no
           cross-thread chrome at the top. The "Other activity" dropdown, the
           "New activity on an earlier topic" pill and the "Back to
           conversation" links all belonged to the thread-off escape hatches;

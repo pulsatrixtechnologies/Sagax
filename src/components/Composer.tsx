@@ -217,14 +217,14 @@ export function Composer({
   const approvals = [...pendingApprovals(group ? group.messages : bot ? visibleMessages(bot) : []), ...parallelApprovals];
   const approval = approvals[0];
   // A bot's question waits in the chat; the composer stays free. Writing
-  // about something else leaves it open (JC: the bot never picks for the
+  // about something else leaves it open (the bot never picks for the
   // person, and there is no X on a waiting question, #885).
   const openQuestions = pendingQuestions(group ? group.messages : bot ? visibleMessages(bot) : []);
   const approvalBotFor = (pending: Pending) => group
     ? members?.find((member) => member.id === pending.message.from?.botId) ??
       members?.find((member) => member.id === groupBusyBotId)
     : bot;
-  // A send while this 1:1 conversation works is "auto" (JC 2026-10-18): the
+  // A send while this 1:1 conversation works is "auto" (2026-10-18): the
   // bot decides whether it joins the running work, runs as a parallel task
   // or waits for it (server/busy-routing.ts). Nobody is asked. On a voice
   // call the words join the running turn.
@@ -443,7 +443,7 @@ export function Composer({
         description: t("composer.command.goalDesc"),
         argumentHint: t("composer.command.goalHint"),
       });
-      // its subcommands, under the same Objective heading (JC, 2026-10-16)
+      // its subcommands, under the same Objective heading (2026-10-16)
       for (const sub of GOAL_SUBCOMMANDS) {
         const block = goalSubcommandBlock(sub, goalStatus);
         available.push({
@@ -1314,13 +1314,13 @@ export function Composer({
             <div className="composer-band flex flex-wrap items-center gap-2">
               {/* One + (Grok Bot's): attach and teach a task, the modes
                   (goal, setup), then this conversation's model and approval
-                  level as rows that open beside it (JC, 2026-10-15/16; the
+                  level as rows that open beside it (2026-10-15/16; the
                   model since 2026-10-18, no workspace row since #743). */}
               <ComposerPlusMenu items={plusItems} />
               {teachChooser && bot && <TeachChooserDialog botName={bot.name} onShow={showInBrowser} onDescribe={() => startDraftWith("/learn ")} onClose={() => setTeachChooser(false)} />}
               {/* /goal or the + menu's Goal mode starts it; the chip appears
-                  only while it is on, says so, and turns it off (JC,
-                  2026-10-14: the chip only when it shows the current goal). */}
+                  only while it is on, says so, and turns it off
+                  (2026-10-14: the chip only when it shows the current goal). */}
               {group && !group.dm && goalModeOn && (
                 <button
                   type="button"

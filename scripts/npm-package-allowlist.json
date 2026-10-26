@@ -27,8 +27,8 @@
   {
     "term": "initials",
     "files": "^dist/assets/[^/]+\\.js$",
-    "context": "(?:[\\w$]\\(|[-+*/%<>^~,!=;{}:?&|(]|return |function |break |continue |case |=>)[A-Za-z]{2}(?:[-+*/%<>^~(=;,)\\]}:]| as |\\.[A-Za-z$])",
-    "reason": "A two-letter variable or label name the minifier picked in the built web bundle (for example `function XY(e,t)`, `i-XY(e)`, `.some(XY)`, `XY:{...break XY}`, `(0,$.jsx)(XY,{` or `XY as r`), not prose: comments are stripped there. Matched in any case, with any operator around it."
+    "context": "(?<=[\\w$]\\(|[-+*/%<>^~,!=;{}:?&|(]|return |function |break |continue |case |=>|var |let |const )[A-Za-z]{2}(?=[-+*/%<>^~(=;,)\\]}:]| as |\\.[A-Za-z$])",
+    "reason": "A two-letter variable or label name the minifier picked in the built web bundle (for example `function XY(e,t)`, `i-XY(e)`, `.some(XY)`, `XY:{...break XY}`, `(0,$.jsx)(XY,{` or `XY as r`, or a declaration such as `var XY=220`), not prose: comments are stripped there. Matched in any case, with any operator around it. The prefix and suffix are lookarounds, so two neighbouring names (`Sc(XY)` after `:Sc(`) never hide each other."
   },
   {
     "term": "grok-bot",
@@ -56,9 +56,9 @@
   },
   {
     "term": "bot-name",
-    "files": "^dist/assets/NewBotDialog-[^/]+\\.js$",
+    "files": "^dist/assets/(?:NewBotDialog|IdentitySection)-[^/]+\\.js$",
     "context": "\\\"[A-Z][a-z]+\\\",\\\"[A-Z][a-z]+\\\",\\\"[A-Z][a-z]+\\\"",
-    "reason": "The public list of given names the new-bot dialog suggests from (src/data/given-names), which happens to contain common first names also used for bots: a quoted name between two other quoted names."
+    "reason": "The public list of given names the new-bot dialog and the identity section suggest from (src/data/given-names), which happens to contain common first names also used for bots: a quoted name between two other quoted names."
   },
   {
     "term": "company",

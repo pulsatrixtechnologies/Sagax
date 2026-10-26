@@ -1,6 +1,6 @@
 // "Scanner avec l'iPhone" (audit row 84): the New card form asks the
 // person's paired iPhone to read a card (server/routes/phone-tools.ts).
-// End to end (JC 2026-10-21): the form makes a one-time key, the phone
+// End to end (2026-10-21): the form makes a one-time key, the phone
 // seals the number, the expiry and the name for it, and only this form
 // opens the envelope (shared/phone-card-seal.ts). The server relays it and
 // never holds the number in clear. Never the security code.

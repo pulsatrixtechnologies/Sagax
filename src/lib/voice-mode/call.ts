@@ -280,11 +280,11 @@ export class VoiceCall {
    * read it stays, so a settings read that momentarily reports none (a default
    * fallback, the preference sync writing the server's value, a race) never
    * switches the voice mid-call. A deliberate change to another concrete
-   * voice still takes effect (JC 2026-10-22: voice switched at random). */
+   * voice still takes effect (2026-10-22: voice switched at random). */
   private sessionVoice = "";
   /** The full text of the answer replyDone last finished. A late streaming
    * update that redelivers that same text after it is done is never spoken a
-   * second time; cleared when a new turn starts (JC 2026-10-22: voice
+   * second time; cleared when a new turn starts (2026-10-22: voice
    * repeated the same answer twice). */
   private answered: string | null = null;
   /** the last utterance sent, and whether the bot has spoken since */

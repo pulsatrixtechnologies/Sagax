@@ -56,7 +56,7 @@ export function OrgPhoneCalls() {
     }
   };
 
-  // Rows of the Organization's bots card (2026-10-26, JC): the pilot and
+  // Rows of the Organization's bots card (2026-10-26): the pilot and
   // its switch, the callback number with a compact field, the do-not-call
   // list. A missing callback number is a warning line in its row.
   const field = cn(FIELD, "w-[170px] tabular-nums sm:w-[190px]");

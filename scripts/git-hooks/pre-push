@@ -15,7 +15,8 @@ if [ -n "$SAGAX_SKIP_HOOKS$OMB_SKIP_HOOKS" ]; then
   exit 0
 fi
 cd "$(git rev-parse --show-toplevel)"
-echo "pre-push: lint, typecheck, locale check (git push --no-verify to skip)"
+echo "pre-push: lint, typecheck, locale check, source term scan (git push --no-verify to skip)"
 pnpm lint
 pnpm typecheck
 pnpm i18n:check
+pnpm check:terms

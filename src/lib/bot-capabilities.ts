@@ -66,7 +66,7 @@ export function showBotRename(
   return canEditBotField(config, bot, "name");
 }
 
-/** Archive and restore write `hidden`. 2026-10-26 (JC): an organization
+/** Archive and restore write `hidden`. 2026-10-26: an organization
  * member archives and restores the bots they own (BOT_FIELD_PERMISSIONS),
  * never someone else's. */
 export function showBotArchive(
@@ -89,7 +89,7 @@ export function showBotDelete(
 }
 
 /** Moving a bot between server sections writes `section`. A personal
- * sidebar section is this person's preference and stays. 2026-10-26 (JC):
+ * sidebar section is this person's preference and stays. 2026-10-26:
  * a member moves the bots they own (every one of `bots`), never another
  * person's. */
 export function showServerSectionMove(

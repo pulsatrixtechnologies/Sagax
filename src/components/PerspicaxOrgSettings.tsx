@@ -7,7 +7,7 @@
 // Since 2026-10-01 a person's own engine sign-in (My engines) lives in
 // Settings > Model providers, and "Bring bots from a solo Sagax" is hidden
 // (the desktop's join flow still copies bots through POST /api/org/import).
-// 2026-10-26 (JC): no admin switch for Full access, Auto or the own
+// 2026-10-26: no admin switch for Full access, Auto or the own
 // environment of members' bots any more (server/org-full-access.ts).
 // People, teams and invitations live in Perspicax, never here.
 // 2026-10-15 : Sharing in the organization (every bot of the

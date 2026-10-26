@@ -25,6 +25,7 @@
     "clean": "node scripts/clean.mjs",
     "prepare": "node scripts/install-git-hooks.mjs",
     "lint": "oxlint --deny-warnings .",
+    "check:terms": "node scripts/check-source-terms.mjs",
     "check:contrast": "node scripts/check-skin-contrast.mjs",
     "i18n:check": "node scripts/generate-locale.mjs --check",
     "dev": "vite",

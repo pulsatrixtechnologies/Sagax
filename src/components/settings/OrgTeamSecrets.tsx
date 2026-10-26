@@ -83,7 +83,7 @@ export function OrgTeamSecrets() {
     setKind("secret");
   };
 
-  // One row of the Organization's bots card (2026-10-26, JC): the title and
+  // One row of the Organization's bots card (2026-10-26): the title and
   // what it is at the left, "Add a secret" at the right; the saved secrets
   // as lines under it, and the editor only once asked for.
   return (

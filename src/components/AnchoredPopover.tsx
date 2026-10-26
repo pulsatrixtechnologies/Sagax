@@ -1,7 +1,7 @@
 // The one place a dropdown, menu or popover that hangs off a trigger is drawn
 // when it must not be cut by a parent. An `absolute` menu inside a card, a
 // settings group or a scroll area is clipped by that ancestor's `overflow`
-// (JC 2026-10-22: the "Discuter" level menu was cut off inside its card).
+// (2026-10-22: the "Discuter" level menu was cut off inside its card).
 // This renders the menu through a portal into <body>, `position: fixed`
 // against the trigger, so no ancestor clips it; it flips above the trigger
 // when there is more room there, shifts to stay inside the window, and

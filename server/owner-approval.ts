@@ -528,7 +528,7 @@ export function ownerDecision(input: {
     return { kind: "card", reason: situation, ...(rule ? { rule } : {}) };
   }
   if (rule?.behavior === "allow") return { kind: "allow", source: "owner-rule", rule };
-  // 2026-10-26 (JC, one approval level): a rule decides whatever the level.
+  // 2026-10-26 (one approval level): a rule decides whatever the level.
   // An ask rule shows its card even in Full access (bypass), where it used
   // to be skipped; the level only decides what no rule covers.
   if (rule?.behavior === "ask") return { kind: "card", reason: "ask-rule", rule };
@@ -551,7 +551,7 @@ export function ownerVerdictOver<V extends { approve: string | null; source: str
   tool: string,
 ): V | { approve: string; source: Exclude<OwnerDecisionSource, "owner-rule-deny">; rule?: string } | { approve: null; source: "owner-rule-ask"; rule: string } | null {
   if (base?.source === "custom-rule-deny" || base?.source === "custom-rule-ask") return base;
-  // 2026-10-26 (JC, one approval level): the person's own ask rule keeps its
+  // 2026-10-26 (one approval level): the person's own ask rule keeps its
   // card even when the level (Full access, Approve for me) would have
   // answered it. The person's answer on a draft's own card stays an answer.
   if (owner?.kind === "card" && owner.reason === "ask-rule" && owner.rule && base?.source !== "email-draft-approval") {

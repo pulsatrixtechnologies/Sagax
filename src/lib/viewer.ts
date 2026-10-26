@@ -83,7 +83,7 @@ export function canViewUsage(config: ConfigStatus | null | undefined): boolean {
  * older server sends no permission list: it falls back to editConfig, the
  * screen those viewers had before the right existed. */
 export function canManageExperimental(config: ConfigStatus | null | undefined): boolean {
-  // 2026-10-22 (JC): a separate, explicit right. A member who only holds
+  // 2026-10-22: a separate, explicit right. A member who only holds
   // server.settings does NOT see the section; they need server.experimental
   // granted. When the server sends a permission list, that list is the word.
   // An older server sends none: fall back to editConfig, the screen those

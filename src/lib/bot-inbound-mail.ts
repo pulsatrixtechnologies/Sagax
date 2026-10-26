@@ -9,7 +9,7 @@ import { api } from "@/state/store";
 export interface BotInboundMail {
   available: boolean;
   address: string | null;
-  /** false: waiting for the administrator (off by default, JC decision 1). */
+  /** false: waiting for the administrator (off by default, decision 1). */
   enabled: boolean;
   /** The person viewing owns the bot and may change the address (v2). */
   canChange?: boolean;

@@ -169,7 +169,7 @@ export function ownEnvironmentAutonomy(input: {
 }
 
 /** The organization's policy: on unless an admin turned it off. */
-/** 2026-10-26 (JC): no organization switch any more; the person's own
+/** 2026-10-26: no organization switch any more; the person's own
  * environment is theirs. A saved `memberEnvironmentAutonomy: false` is
  * ignored. */
 export function memberEnvironmentAutonomyAllowed(_organization?: { memberEnvironmentAutonomy?: unknown }): boolean {

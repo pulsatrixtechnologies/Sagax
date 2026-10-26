@@ -420,7 +420,7 @@ export function DraftPage({ draft, defaultsMode, moreOpen, onToggleMore, onImpor
   const { state } = useStore();
   const derived = useBotSettingsDerived(bot);
   const [active, setActive] = useState<Section>("identity");
-  // 2026-10-26 (JC): a member sets up every section of their own new bot;
+  // 2026-10-26: a member sets up every section of their own new bot;
   // each control still follows its field (canEditBotField).
   const sections = SECTIONS;
   const choosesTeam = canEditBotField(state.config, {}, "section", { draft: true });

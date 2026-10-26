@@ -25,7 +25,7 @@ export function supportsApprovalMode(driverKind: string | undefined, mode: Appro
 }
 
 /** Whether switching engines must first drop this level to Ask. Every mode
- * stops at an engine that cannot run it. 2026-10-26 (JC): Full carries to
+ * stops at an engine that cannot run it. 2026-10-26: Full carries to
  * any engine that runs it, as upstream does since 295f947d: the owner chose
  * Full for their own bot, a model change is not a reason to take it back.
  * A Custom grant belongs to one provider's tool semantics and still never
@@ -85,7 +85,7 @@ export function isEmergencyApprovalDowngrade(
   return next === "ask" && (current === "full" || current === "custom");
 }
 
-/** 2026-10-26 (JC, one approval level): the level an engine runs natively
+/** 2026-10-26 (one approval level): the level an engine runs natively
  * for one turn. Full access with an Ask or Deny rule in force (the
  * person's own, the bot's or the organization's) runs the engine at Ask, so
  * every call it would have made unasked reaches Sagax: the rule decides

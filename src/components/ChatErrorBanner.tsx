@@ -4,7 +4,7 @@ import { useNetworkOnline } from "@/lib/drafts";
 import { plainErrorLine } from "@/lib/plain-error";
 import type { AppState } from "@/state/store";
 
-// 2026-10-22 (JC): no "Showing saved messages" banner over an archived
+// 2026-10-22: no "Showing saved messages" banner over an archived
 // conversation. The messages show as they are; being offline has its own
 // line (ChatStaleBanner).
 

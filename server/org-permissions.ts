@@ -10,7 +10,7 @@
 // - a list from Perspicax is taken as is, minus unknown and admin-only keys;
 // - no list (an older Perspicax, a person it does not list yet, before the
 //   first directory) means the member defaults, so nothing regresses;
-// - 2026-10-26 (JC): the keys about a person's own things (memberAlways:
+// - 2026-10-26: the keys about a person's own things (memberAlways:
 //   their bots, their routines, their own connections) are added to any
 //   list, so a member never waits on an admin for what is theirs;
 // - the person sheet still narrows on top, whatever the sets grant:

@@ -6549,7 +6549,7 @@ for (const pending of startupCatalogs) {
 }
 store.seedIfEmpty();
 hostedModels?.reconcile(store);
-// 2026-10-26 (JC, one approval level): the owner's permission mode was a
+// 2026-10-26 (one approval level): the owner's permission mode was a
 // second setting beside the approval level. A mode someone chose is carried
 // into the level once (approval-level-migration.ts), then dropped.
 try {
@@ -11229,7 +11229,7 @@ function adminApprovalCheck(auth: RequestAuth, threadId: string, requestId: stri
   // 2026-10-19: or a person an admin gave host.shell in Perspicax
   return adminApprovalDecision({ identity: IDENTITY.kind, card, callerIsOrgAdmin: orgAdminCaller(auth) || callerCan(auth, "host.shell") });
 }
-// 2026-10-26 (JC): not an admin's call. On an organization server the
+// 2026-10-26: not an admin's call. On an organization server the
 // owner turns Full on through its own confirmation (the approvalMode
 // "full" branch of PATCH /api/bots/:id, org-full-access.ts); this answers
 // the other doors (Custom, the desktop channel, a loopback task), which
@@ -15068,7 +15068,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // safety hold, a sandbox widening, a question, a guest's turn or a
       // teammate tool (peer review has its own card).
       const ownerTool = event.mcpTool ?? event.tool;
-      // 2026-10-26 (JC, one approval level): the owner's rules are read
+      // 2026-10-26 (one approval level): the owner's rules are read
       // even when the level already answered (Full access, Approve for me):
       // a deny rule refuses and an ask rule keeps the card whatever the
       // level. Only the person's own answer on a draft's or a widget's card
@@ -31778,7 +31778,7 @@ function auditApprovalModeChange(auth: RequestAuth | null, botId: string, before
   });
 }
 /** Audit: one turn ran with Full access. */
-/** 2026-10-26 (JC, one approval level): whether an Ask or Deny rule could
+/** 2026-10-26 (one approval level): whether an Ask or Deny rule could
  * decide a call of this bot's turn: the owner's (or the conversation's
  * person's) own rules for this bot, their rules in their own words, and the
  * organization's rules. */
@@ -32658,7 +32658,7 @@ function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: strin
  * skills and MCP servers (`sagax_integrations: off` in the directory,
  * Perspicax migration 0046; server/person-integrations.ts). Never an
  * organization admin, the operator, or anyone on a solo server. */
-// 2026-10-26 (JC): a person's own plugins, skills, MCP servers and GitHub
+// 2026-10-26: a person's own plugins, skills, MCP servers and GitHub
 // account work in their own environment, so the sheet's
 // `sagax_integrations: off` no longer takes them: nothing an admin switches
 // off here. Kept as a function for its callers.
@@ -43309,7 +43309,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const settings = template.profile;
       if (memberCreate) {
         // 2026-10-09: a field beyond MEMBER_BOT_FIELDS needs its permission
-        // (BOT_FIELD_PERMISSIONS). 2026-10-26 (JC): a preset the server
+        // (BOT_FIELD_PERMISSIONS). 2026-10-26: a preset the server
         // offers only fills the member's own new bot, so it is theirs to pick.
         const extra = ["visibility", "section", "cwd"].filter((key) => body[key] !== undefined);
         const refused = memberBotFieldRefusal(auth, { ...settings, ...Object.fromEntries(extra.map((key) => [key, body[key]])) });
@@ -44895,7 +44895,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       return json(res, 200, await botOverview(bot));
     }
 
-    // 2026-10-26 (JC): a member reads and undoes the history of their own
+    // 2026-10-26: a member reads and undoes the history of their own
     // bots (request-auth.ts lets a session through; the owner rule is here).
     m = path.match(/^\/api\/bots\/([\w-]+)\/history(?:\/rollback)?$/);
     if (m && (method === "GET" || method === "POST") && store.bot(m[1]) && !ownerOrAdminOf(auth, store.bot(m[1])!)) {

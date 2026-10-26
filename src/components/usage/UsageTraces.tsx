@@ -7,7 +7,7 @@
 //
 // Port of OpenMausBot #3316 rebuilt on OUR ledger: no Cloud, no credit, no
 // team plumbing. Human labels throughout; the bot and thread ids ride a Copy
-// button only, never shown as a UUID (JC's rule). Privacy: counters, time and
+// button only, never shown as a UUID. Privacy: counters, time and
 // cost only, never a prompt, a message or a secret.
 import { useEffect, useState } from "react";
 import { ChevronRight, Copy } from "lucide-react";

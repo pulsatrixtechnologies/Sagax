@@ -69,8 +69,8 @@ function OsChooser({ botId, view }: { botId: string; view: RemoteSessionView }) 
   );
 }
 
-// The machine's inventory stays folded under "Détails du poste" (JC
-// 2026-10-21): the card opens on who and where, not on a block of hardware.
+// The machine's inventory stays folded under "Détails du poste"
+// (2026-10-21): the card opens on who and where, not on a block of hardware.
 // The folded row still says the model and the memory, so the fold reads as a
 // summary rather than a mystery button.
 const DETAIL_FIELDS = new Set(["serial", "model", "cpu", "ram", "disk"]);
