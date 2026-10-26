@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Discover": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Discover" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Découvrir" } }
+      }
+    },
+    "My accounts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "My accounts" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mes comptes" } }
+      }
+    },
+    "Sources": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sources" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sources" } }
+      }
+    },
+    "Nothing installed yet. Find apps, plugins and skills in Discover.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing installed yet. Find apps, plugins and skills in Discover." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rien d'installé pour l'instant. Trouvez des apps, des plugins et des compétences dans Découvrir." } }
+      }
+    },
+    "More for %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "More for %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Plus pour %@" } }
+      }
+    },
+    "Remove %@? Its connectors and skills leave every bot.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Remove %@? Its connectors and skills leave every bot." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Retirer %@ ? Ses connecteurs et ses compétences quittent tous les bots." } }
+      }
+    },
+    "plugin (%@)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "plugin (%@)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "plugin (%@)" } }
+      }
+    },
+    "Everything in the catalog is already installed.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Everything in the catalog is already installed." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tout le catalogue est déjà installé." } }
+      }
+    },
     "Mascots": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Mascots" } },

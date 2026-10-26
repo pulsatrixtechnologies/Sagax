@@ -30,12 +30,15 @@ describe("Mes connexions", () => {
     expect(html).toContain("No MCP server of your own yet.");
   });
 
-  it("says why there is no Connect GitHub button, in French", () => {
+  // 2026-10-26: no OAuth App on the server simply means "Use a token", with
+  // no word about an administrator.
+  it("offers only Use a token when the server has no GitHub OAuth App, in French", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, github: { state: "none", deviceFlow: false } } }));
     expect(html).not.toContain("Connecter GitHub</button>");
     expect(html).toContain("Utiliser un jeton");
-    expect(html).toContain("application OAuth GitHub");
+    expect(html).not.toContain("application OAuth GitHub");
+    expect(html).not.toMatch(/administrat/i);
     expect(html).toContain("Ajouter un serveur MCP");
   });
 

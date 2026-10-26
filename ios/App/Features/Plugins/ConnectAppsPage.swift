@@ -7,8 +7,11 @@
 //   categories in its order and the type filter, a section per category
 //   with View all, one row per app with Add or Connect, and "N connected >"
 //   to Manage.
-// - Manage: Plugins and skills (Installed, Private skills, Your connections
-//   on an organization server, Advanced with the marketplaces) | Providers.
+// - Manage (2026-10-26, the desktop's four tabs): Installed (one line per
+//   thing, deduplicated, with a "..." menu; the private skills when there
+//   are some) | Discover (what can still be added) | My accounts (the
+//   engines' connectors, the person's own connections) | Sources (the
+//   marketplaces). Empty sections are hidden.
 // - A plugin's page: its accounts, its tools with a switch each (applied to
 //   every bot), its details, Uninstall; a private skill's page.
 //
@@ -46,6 +49,9 @@ final class ConnectAppsModel: ObservableObject {
     var summary: (count: Int, icons: [ConnectAppItem]) { ConnectApps.connected(items, extra: claudeConnectors) }
 
     func item(_ key: String) -> ConnectAppItem? { items.first { $0.key == key } }
+
+    /// Manage > Installed: one entry per thing (CompanionCore InstalledEntries).
+    var entries: [InstalledEntry] { ConnectApps.installedEntries(items, catalog: Set(featured.map(\.url))) }
 
     func load(_ session: Session) async {
         guard let client = session.settingsClient else { loading = false; return }
@@ -147,6 +153,22 @@ final class ConnectAppsModel: ObservableObject {
             await run(item.key, session) { try await $0.setMarketplacePlugin(marketplace: parts[1], plugin: parts[0], installed: false) }
         case .featured, .skill:
             break
+        }
+    }
+
+    /// Remove an installed entry: its plugin (which takes its servers and
+    /// skills) and every server of it added by hand or from the catalog.
+    func remove(_ entry: InstalledEntry, session: Session) async {
+        let plugins = entry.members.filter { $0.kind == .plugin }
+        let pluginKeys = Set(plugins.map(\.key))
+        await run(entry.key, session) { client in
+            for plugin in plugins {
+                let parts = plugin.id.split(separator: "@", maxSplits: 1).map(String.init)
+                if parts.count == 2 { try await client.setMarketplacePlugin(marketplace: parts[1], plugin: parts[0], installed: false) }
+            }
+            for server in entry.members where server.kind == .mcp && !(server.parent.map(pluginKeys.contains) ?? false) {
+                try await client.removeMCPServer(name: server.id)
+            }
         }
     }
 
@@ -524,43 +546,46 @@ struct ConnectAppsManage: View {
     @EnvironmentObject private var session: Session
     @ObservedObject var model: ConnectAppsModel
     let push: (ConnectAppsRoute) -> Void
-    @State private var tab = Tab.plugins
-    @State private var showAll = false
+    @State private var tab = Tab.installed
     @State private var marketSource = ""
     @State private var marketRef = ""
     @State private var removingMarket: String?
+    @State private var removing: InstalledEntry?
+    @State private var discoverQuery = ""
 
-    enum Tab: Hashable { case plugins, providers }
+    /// The desktop's four tabs (2026-10-26). Sources shows when the
+    /// marketplaces can be read or changed from this pairing.
+    enum Tab: Hashable { case installed, discover, accounts, sources }
 
-    private static let installedPreview = 8
+    private var shownTabs: [Tab] {
+        [.installed, .discover, .accounts] + (session.canAdminister || !model.marketplaces.isEmpty ? [.sources] : [])
+    }
+
+    private func title(_ tab: Tab) -> String {
+        switch tab {
+        case .installed: String(localized: "Installed")
+        case .discover: String(localized: "Discover")
+        case .accounts: String(localized: "My accounts")
+        case .sources: String(localized: "Sources")
+        }
+    }
 
     private var tabs: some View {
         Picker(String(localized: "Manage"), selection: $tab) {
-            Text(String(localized: "Plugins and skills")).tag(Tab.plugins)
-            Text(String(localized: "Providers")).tag(Tab.providers)
+            ForEach(shownTabs, id: \.self) { Text(verbatim: title($0)).tag($0) }
         }
         .pickerStyle(.segmented)
         .accessibilityIdentifier("connect-apps-manage-tabs")
     }
 
     var body: some View {
-        Group {
+        ThemedList {
+            Section { tabs }
             switch tab {
-            case .plugins:
-                ThemedList {
-                    Section { tabs }
-                    plugins
-                }
-            case .providers:
-                // the Claude connectors block draws its own rows and switch
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        tabs
-                        ConnectAppsProviders()
-                    }
-                    .padding(16)
-                }
-                .background(Theme.bg.ignoresSafeArea())
+            case .installed: installed
+            case .discover: discover
+            case .accounts: accounts
+            case .sources: sources
             }
         }
         .navigationTitle(String(localized: "Manage plugins and skills"))
@@ -574,88 +599,177 @@ struct ConnectAppsManage: View {
                 if let name = removingMarket { Task { await model.removeMarketplace(name, session: session) } }
             }
         }
+        .confirmationDialog(
+            String(localized: "Remove \(removing?.name ?? "")? Its connectors and skills leave every bot."),
+            isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Remove"), role: .destructive) {
+                if let entry = removing { Task { await model.remove(entry, session: session) } }
+            }
+        }
     }
 
+    // MARK: Installed: one line per thing, then the private skills
+
     @ViewBuilder
-    private var plugins: some View {
-        let installed = ConnectApps.installed(model.items)
-        Section {
-            if installed.isEmpty {
-                Text(String(localized: "Nothing is installed yet. Connect an app from Connect apps, or add an MCP server on your computer."))
+    private var installed: some View {
+        let entries = model.entries
+        let skills = ConnectApps.privateSkills(model.items)
+        if entries.isEmpty && skills.isEmpty && !model.loading {
+            Section {
+                Button(String(localized: "Nothing installed yet. Find apps, plugins and skills in Discover.")) { tab = .discover }
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
             }
-            ForEach(showAll ? installed : Array(installed.prefix(Self.installedPreview))) { item in
-                Button { push(.detail(item.key)) } label: {
+        }
+        if !entries.isEmpty {
+            Section {
+                ForEach(entries) { entry in
                     HStack(spacing: 12) {
-                        ConnectAppIcon(item: item)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: item.name).foregroundStyle(Theme.textPrimary).lineLimit(1)
-                            Text(verbatim: countLine(item)).font(.footnote).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                        Button { push(.detail(entry.primary.key)) } label: {
+                            HStack(spacing: 12) {
+                                ConnectAppIcon(item: icon(entry))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(verbatim: entry.name).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                                    Text(verbatim: brings(entry.brings)).font(.footnote).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                                }
+                                Spacer(minLength: 8)
+                                Text(verbatim: ConnectAppsWords.status(entry.status))
+                                    .font(.footnote)
+                                    .foregroundStyle(entry.status == .connected ? Theme.success : Theme.textSecondary)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        Spacer(minLength: 8)
-                        Text(verbatim: item.status == .connected ? String(localized: "Connected") : (item.status == .off ? String(localized: "Off") : String(localized: "Not connected")))
-                            .font(.footnote)
-                            .foregroundStyle(item.status == .connected ? Theme.success : Theme.textSecondary)
+                        .buttonStyle(.plain)
+                        Menu {
+                            if entry.members.contains(where: { $0.kind == .plugin || $0.kind == .mcp }) {
+                                Button(String(localized: "Remove"), role: .destructive) { removing = entry }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .frame(width: 28, height: 28)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        .accessibilityLabel(Text(String(localized: "More for \(entry.name)")))
+                        .accessibilityIdentifier("connect-apps-entry-menu.\(entry.key)")
+                    }
+                    .accessibilityIdentifier("connect-apps-installed.\(entry.key)")
+                }
+            } header: {
+                Text(String(localized: "Installed"))
+            }
+        }
+        if !skills.isEmpty {
+            Section {
+                ForEach(skills) { item in
+                    Button { push(.skill(item.id)) } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: item.name).foregroundStyle(Theme.textPrimary)
+                            Text(verbatim: [String(localized: "Created locally"), item.description].filter { !$0.isEmpty }.joined(separator: " · "))
+                                .font(.footnote)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(2)
+                        }
                     }
                 }
-                .accessibilityIdentifier("connect-apps-installed.\(item.key)")
+            } header: {
+                Text(String(localized: "Private skills"))
             }
-            if installed.count > Self.installedPreview {
-                Button(showAll ? String(localized: "Show fewer") : String(localized: "Show all \(installed.count) plugins")) { showAll.toggle() }
-                    .accessibilityIdentifier("connect-apps-show-all")
-            }
-        } header: {
-            Text(String(localized: "Installed"))
         }
+    }
+
+    /// The entry's mark: the plugin's puzzle tile unless a server lends a logo.
+    private func icon(_ entry: InstalledEntry) -> ConnectAppItem {
+        var item = entry.primary
+        item.name = entry.name
+        item.logo = entry.logo
+        item.domain = entry.domain
+        return item
+    }
+
+    /// "app + 2 connectors", "plugin (marketplace) · 3 skills".
+    private func brings(_ brings: InstalledBrings) -> String {
+        var counts: [String] = []
+        if brings.connectors > 0 { counts.append(brings.connectors == 1 ? String(localized: "1 connector") : String(localized: "\(brings.connectors) connectors")) }
+        if brings.skills > 0 { counts.append(brings.skills == 1 ? String(localized: "1 skill") : String(localized: "\(brings.skills) skills")) }
+        if let plugin = brings.plugin {
+            return ([String(localized: "plugin (\(plugin))")] + (brings.app ? ["app"] : []) + counts).joined(separator: " · ")
+        }
+        if brings.app { return (["app"] + counts).joined(separator: " + ") }
+        return counts.isEmpty ? String(localized: "1 connector") : counts.joined(separator: " · ")
+    }
+
+    // MARK: Discover: what can still be added
+
+    @ViewBuilder
+    private var discover: some View {
+        let available = ConnectApps.discover(model.items)
+        let sections = ConnectApps.sections(available, query: discoverQuery, extraSources: model.marketplaces.map(\.name))
         Section {
-            let skills = ConnectApps.privateSkills(model.items)
-            if skills.isEmpty {
-                Text(String(localized: "No private skills yet. Create one, or add a marketplace plugin that brings some."))
+            TextField(String(localized: "Search across apps and skills"), text: $discoverQuery)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("connect-apps-discover-search")
+        }
+        if sections.allSatisfy({ $0.items.isEmpty }) {
+            Section {
+                Text(discoverQuery.isEmpty ? String(localized: "Everything in the catalog is already installed.") : String(localized: "Nothing matches"))
                     .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
             }
-            ForEach(skills) { item in
-                Button { push(.skill(item.id)) } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: item.name).foregroundStyle(Theme.textPrimary)
-                        Text(verbatim: [String(localized: "Created locally"), item.description].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.footnote)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(2)
+        }
+        ForEach(sections.filter { !$0.items.isEmpty }) { section in
+            Section {
+                ForEach(section.items) { item in
+                    ConnectAppRow(item: item, busy: model.busy == item.key) {
+                        Task { await model.act(item, alias: nil, session: session) }
                     }
                 }
+            } header: {
+                Text(verbatim: ConnectAppsWords.section(section.id))
             }
-        } header: {
-            Text(String(localized: "Private skills"))
         }
+    }
+
+    // MARK: My accounts: the engines' connectors, then the person's own
+
+    @ViewBuilder
+    private var accounts: some View {
+        Section { ConnectAppsProviders() }
         // Your connections (#218): the person's own, on an organization server
         if session.surfaceGate.allows(.myConnections) {
             YourConnectionsSection()
         }
         SlackConnectionsSection()
-        if session.canAdminister {
-            // Add manually and Paste config need a keyboard and secrets: they
-            // stay on the computer; the marketplaces work from here.
-            Section {
-                ForEach(model.marketplaces) { market in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: market.name)
-                            Text(String(localized: "\(market.plugins.count) plugins, \(market.plugins.filter(\.installed).count) installed"))
-                                .font(.footnote)
-                                .foregroundStyle(Theme.textSecondary)
-                        }
-                        Spacer()
-                        if model.busy == "market:\(market.name)" { ProgressView().controlSize(.small) }
+    }
+
+    // MARK: Sources: the marketplaces
+
+    @ViewBuilder
+    private var sources: some View {
+        Section {
+            ForEach(model.marketplaces) { market in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: market.name)
+                        Text(String(localized: "\(market.plugins.count) plugins, \(market.plugins.filter(\.installed).count) installed"))
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
                     }
-                    .swipeActions {
+                    Spacer()
+                    if model.busy == "market:\(market.name)" { ProgressView().controlSize(.small) }
+                }
+                .swipeActions {
+                    if session.canAdminister {
                         if !market.plugins.contains(where: \.installed) {
                             Button(String(localized: "Remove"), role: .destructive) { removingMarket = market.name }
                         }
                         Button(String(localized: "Refresh")) { Task { await model.refreshMarketplace(market.name, session: session) } }
                     }
                 }
+            }
+            if session.canAdminister {
                 TextField(String(localized: "owner/repo or https://..."), text: $marketSource)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -671,20 +785,11 @@ struct ConnectAppsManage: View {
                     Task { await model.addMarketplace(source, ref: ref, session: session) }
                 }
                 .disabled(marketSource.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.busy == "market:new")
-            } header: {
-                Text(String(localized: "Advanced") + " · " + String(localized: "Marketplaces"))
-            } footer: {
-                Text(String(localized: "Add a Claude Code plugin marketplace: a GitHub repository (owner/repo, optionally a branch), an https git address, or the address of its marketplace.json."))
             }
-        }
-    }
-
-    private func countLine(_ item: ConnectAppItem) -> String {
-        switch item.kind {
-        case .plugin:
-            return ConnectAppsWords.includes(model.items.filter { $0.parent == item.key })
-        default:
-            return String(localized: "1 connector")
+        } header: {
+            Text(String(localized: "Marketplaces"))
+        } footer: {
+            Text(String(localized: "Add a Claude Code plugin marketplace: a GitHub repository (owner/repo, optionally a branch), an https git address, or the address of its marketplace.json."))
         }
     }
 }

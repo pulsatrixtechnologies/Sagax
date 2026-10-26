@@ -301,7 +301,9 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
 
 /** Organization admins: every page of the server, and Revoke (audited on
  * the server). No content, no publish, no access change from here. */
-function OrganizationPages() {
+/** Every published page of the organization and its sharing rules: an
+ * organization admin's, in Settings > Organization (2026-10-26). */
+export function OrganizationPages() {
   const [pages, setPages] = useState<Array<PublishedPageSummary & { ownerId: string | null }> | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -370,11 +372,16 @@ function OrganizationPages() {
 }
 
 /** Settings > Pages publiées. */
-export function PublishedPagesSettings() {
+export function PublishedPagesSettings({ personal = false }: {
+  /** Connect apps > Manage (2026-10-26): the person's own pages only, and
+   * nothing at all while they have none (the organization's pages are in
+   * Settings > Organization) */
+  personal?: boolean;
+} = {}) {
   const { state } = useStore();
   const policy = usePagesPolicy();
   const organization = usePerspicaxOrg() !== null;
-  const admin = organization && (state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner");
+  const admin = !personal && organization && (state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner");
   const [pages, setPages] = useState<PublishedPageSummary[] | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -382,6 +389,7 @@ export function PublishedPagesSettings() {
       .then((answer) => setPages(answer.pages))
       .catch((cause) => { setPages([]); setError(pageErrorText(cause)); });
   }, []);
+  if (personal && (pages === null || (pages.length === 0 && !error))) return null;
   return (
     <section data-settings-card="pages" className="flex min-w-0 flex-col gap-3">
       <SettingsIntro>{t("pages.settingsIntro")}</SettingsIntro>

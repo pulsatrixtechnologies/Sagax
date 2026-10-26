@@ -3888,9 +3888,9 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 - Organization access tokens (`server/org-github-tokens.ts`,
   `DATA_DIR/org-github-tokens.enc`, the mcp-oauth vault key, left out of
   workspace backups): an admin keeps up to 20 labeled GitHub access tokens
-  in Connect apps > Manage > Advanced > Organization sources and access
-  (OrgSourcesAccess, admins only; the Settings card is gone since
-  2026-10-15). They are access tokens,
+  in Settings > Organization > Organization sources and access
+  (OrgSourcesAccess, admins only; card `organization.plugins`, back in
+  Settings since 2026-10-26). They are access tokens,
   not extra OAuth App client ids. `PATCH /api/org/settings` applies one
   change (`add`, `remove`, `rename`, `replace`). A rename carries no secret
   and a replace is its own step. `GET /api/org` lists the label and a last-4
@@ -3992,6 +3992,35 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 A change under `server/` needs the server image redeployed (sandboxd is the
 same image); `deploy/sandbox/Dockerfile` (gh, node, npm) needs the sandbox
 image rebuilt.
+
+## Manage plugins and skills: four tabs (2026-10-26)
+
+JC's redesign of Connect apps > Manage (`src/components/plugins/ManageView.tsx`,
+wired in `PluginsPanel.tsx`). Tests: `src/lib/installed-model.test.ts`,
+`src/components/plugins/ManageView.test.ts`; captures:
+`scripts/capture-connect-apps-manage.mjs` (gallery `connect-apps.html?view=manage`).
+
+- Installed: one line per thing (`installedEntries`, `src/lib/installed-model.ts`):
+  rows with the same readable name (`readableName`: "github-github" is
+  "GitHub"), the same MCP address or a parent plugin fold into one entry
+  with its logo (`providerMark`), what it brings ("app + 2 connectors",
+  "plugin (marketplace) · 3 skills"), its state and a "..." menu: Update
+  (an update waits), For which bots (the entry's servers on each of the
+  person's bots, the same list as the bot's Access), Remove (the plugin and
+  every server of the entry, one confirmation). Private skills follow, only
+  when there are some.
+- Discover: the catalog and its search (`discoverItems`: not installed, no
+  engine connector).
+- My accounts: the connectors of the person's engine accounts grouped by
+  engine (Claude from `/api/me/harness-connectors`, Grok's cloud
+  connectors), one row each with its logo and state
+  (`HarnessConnectorGroups`), then Your connections (organization server),
+  then the person's published pages (only when there are some).
+- Sources: the marketplaces.
+- Every empty section is hidden. Nothing is for an admin only: the
+  organization's sources and access and every published page are in
+  Settings > Organization; no "Your administrator has not set up..." line
+  (without an OAuth App, GitHub simply offers Use a token).
 
 ## Reserved MCP server names (2026-10-17)
 

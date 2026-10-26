@@ -6,8 +6,6 @@ import { buildPluginItems } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS } from "../../shared/grok-cloud-connectors";
 import { grokConnectorDetail, grokRowAction, openGrokConnectors } from "./PluginsPanel";
 import { ConnectAppsView } from "./plugins/ConnectAppsView";
-import { ManageView } from "./plugins/ManageView";
-import { ProvidersSection } from "./plugins/ProvidersSection";
 import { PluginDetailView } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
 
@@ -82,44 +80,6 @@ describe("Plugins panel views", () => {
     expect(html).toContain("data-plugins-connected");
   });
 
-  it("manage page: back arrow, Add manually, installed cards with status, private skills", () => {
-    const html = renderToStaticMarkup(createElement(ManageView, {
-      items, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onOpenItem: noop,
-      onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop,
-    }));
-    expect(html).toContain("Manage plugins and skills");
-    // Grok's manage page: chevron and Connect Apps, then the title. No crumb for this page.
-    expect(html).toMatch(/data-plugins-back[\s\S]*?>[\s\S]*?Connect Apps</);
-    expect(html).not.toContain("data-breadcrumb");
-    expect(html).toMatch(/id="plugins-title"[^>]*>Manage plugins and skills</);
-    expect(html).toMatch(/data-plugin-card="mcp:glitcho"[\s\S]*?1 connector[\s\S]*?Connected/);
-    // Add manually, Paste config and the rest wait in a collapsed Advanced zone, after the skills
-    expect(html).toMatch(/data-plugins-skills[\s\S]*<details[^>]*data-plugins-advanced[^>]*>[\s\S]*Advanced[\s\S]*Add manually[\s\S]*Paste config/);
-    expect(html).not.toMatch(/<details[^>]*data-plugins-advanced[^>]*open/);
-    expect(html).not.toContain('data-plugin-card="skill:');
-    expect(html).toContain("Private skills");
-    expect(html).toContain("Created locally · Writes notes");
-  });
-
-  // 2026-10-26: Published pages moved here from Settings, under Connect apps.
-  it("manage page: Published pages sit after the skills, outside Advanced, and not on one bot's plugins", () => {
-    const base = { items, countLabel: () => "1 connector", sourceLabel: (source: string) => source, onBack: noop, onOpenItem: noop, onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop };
-    const html = renderToStaticMarkup(createElement(ManageView, { ...base, pages: createElement("div", { "data-pages-marker": "" }) }));
-    expect(html).toMatch(/data-plugins-skills[\s\S]*data-plugins-pages[\s\S]*Published pages[\s\S]*data-pages-marker[\s\S]*<details[^>]*data-plugins-advanced/);
-    const bot = renderToStaticMarkup(createElement(ManageView, { ...base, pluginsOnly: true, pages: createElement("div", { "data-pages-marker": "" }) }));
-    expect(bot).not.toContain("data-plugins-pages");
-  });
-
-  it("manage page: a card that is not connected says so, muted", () => {
-    const offline = buildPluginItems({ servers: [{ name: "vault", enabled: true, url: "https://vault.example.net/mcp", auth: "required" }] });
-    const html = renderToStaticMarkup(createElement(ManageView, {
-      items: offline, countLabel: () => "1 connector", sourceLabel: (source) => source, onBack: noop, onOpenItem: noop,
-      onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, onNewSkill: noop,
-    }));
-    expect(html).toMatch(/data-plugin-card="mcp:vault"[\s\S]*?data-plugin-status="needs_auth" class="[^"]*text-ink-secondary[^"]*">Not connected</);
-    expect(html).toContain("New skill");
-  });
-
   it("skill page: header, Delete Skill in red, the description, then Name, Description, Instructions and Save", () => {
     const skill = { name: "release-notes", description: "Writes notes", source: "local-import", enabled: true, tags: [], version: null, importedAt: "2026-10-08T00:00:00Z", warnings: [], assignedBots: [] };
     const html = renderToStaticMarkup(createElement(SkillPage, { skill, onBack: noop, onSaved: noop, onDeleted: noop }));
@@ -154,42 +114,6 @@ describe("Plugins panel views", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("Added manually");
     expect(html).toContain("HTTP");
-  });
-
-  it("manage page lists the providers under Advanced, with their honest line", () => {
-    const html = renderToStaticMarkup(createElement(ManageView, {
-      items, countLabel: () => "", sourceLabel: (source) => source, onBack: noop, onOpenItem: noop,
-      onAddManually: noop, onPasteConfig: noop, refreshing: false, onRefresh: noop, providers: createElement("div", null, "PROVIDERS"),
-    }));
-    expect(html).not.toContain('role="tab"');
-    expect(html).toMatch(/<details[^>]*data-plugins-advanced[^>]*>[\s\S]*data-plugins-manage="providers"[\s\S]*>Providers<[\s\S]*PROVIDERS/);
-    const instances = [
-      { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", snapshot: { state: "available", account: { email: "jc@example.com" } } },
-      { instanceId: "codex", driverKind: "codex", displayName: "Codex", snapshot: { state: "available" } },
-      { instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", snapshot: { state: "available", authenticated: false } },
-      { instanceId: "gemini", driverKind: "geminiAgent", displayName: "Gemini CLI", snapshot: { state: "available" } },
-    ];
-    const providers = renderToStaticMarkup(createElement(ProvidersSection, { instances: instances as never }));
-    for (const id of ["claude", "openai", "xai", "google"]) expect(providers).toContain(`data-provider="${id}"`);
-    expect(providers).toContain("jc@example.com");
-    expect(providers).toContain('data-harness-connectors="provider"');
-    expect(providers).toContain("Codex: ChatGPT connectors do not reach bots in Sagax.");
-    expect(providers).toContain("Grok bots on an organization server see the cloud connectors of this xAI account. A call still asks before it runs.");
-    expect(providers).toContain('data-grok-connector="outlook"');
-    expect(providers).toContain("Outlook (Exchange)");
-    expect(providers).toContain('data-grok-connector="x"');
-    expect(providers).toContain('data-grok-connector="microsoft-teams"');
-    expect(providers).toContain("Manage on Grok");
-    expect(providers).toContain("Gemini: Google&#x27;s extensions do not reach bots in Sagax.");
-    expect(providers).toContain("Manage on ChatGPT / Codex");
-    // parité R9 + R11: what the engines' connectors reach, read-only, and the card on every send
-    expect(providers).toContain("data-engine-capabilities");
-    expect(providers).toMatch(/data-capability="teams"[^]*?Grok · Microsoft Teams/);
-    expect(providers).toMatch(/data-capability="sharepoint"[^]*?Grok · SharePoint/);
-    expect(providers).toContain("Every email sent, Teams post, invitation and SharePoint write asks you first on its card, except in Full access.");
-    // a word the connector's name already says is not repeated
-    expect(providers).not.toMatch(/data-grok-connector="sharepoint"[^<]*<span[^>]*>SharePoint<\/span><span data-connector-capabilities/);
-    expect(providers).toMatch(/data-grok-connector="outlook"[^]*?Email · Calendar/);
   });
 
   it("xAI connectors are a catalog managed on Grok: no connect action or status, a Grok link, a separate row", () => {
@@ -237,12 +161,5 @@ describe("Plugins panel views", () => {
     vi.stubGlobal("window", { addEventListener: noop, removeEventListener: noop, open: vi.fn(() => { throw new Error("blocked"); }) });
     expect(await openGrokConnectors()).toBe("This link cannot be opened from here.");
     warn.mockRestore();
-  });
-
-  it("lists the xAI connector names only under a Grok engine that is set up", () => {
-    const providers = renderToStaticMarkup(createElement(ProvidersSection, { instances: [
-      { instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", snapshot: { state: "unavailable" } },
-    ] as never }));
-    expect(providers).not.toContain("data-grok-cloud-connectors");
   });
 });
