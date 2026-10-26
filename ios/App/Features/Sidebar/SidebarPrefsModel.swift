@@ -37,15 +37,19 @@ final class SidebarPrefsModel: ObservableObject {
 
     // MARK: Reads
 
-    /// The thread lists and controls (Settings > Appearance > Threads). The
-    /// desktop's default is off; a phone that never stored the switch keeps
-    /// showing them, as it always did.
+    /// The thread lists and controls (Settings > Appearance > Threads). Off
+    /// by default, as on the desktop (`SHOW_THREADS_DEFAULT`, "Single stream
+    /// is the default"): one conversation per bot until the person turns
+    /// threads on, on any of their devices (`omb-show-threads` is synced).
     var showThreads: Bool {
 #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
         // UI tests: the desktop's default (threads hidden) on a fixture
-        if ProcessInfo.processInfo.arguments.contains("-threads-hidden") { return false }
+        if arguments.contains("-threads-hidden") { return false }
+        // the offline preview fixtures were written with threads shown
+        if prefs.showThreads == nil, arguments.contains("-store-preview") { return true }
 #endif
-        return prefs.showThreads ?? true
+        return prefs.showThreads ?? SidebarPrefs.showThreadsDefault
     }
 
     /// Settings > Appearance > Threads location (#210): per device, never

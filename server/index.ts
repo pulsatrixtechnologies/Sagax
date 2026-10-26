@@ -15291,7 +15291,8 @@ bus.subscribe((event: RuntimeEvent) => {
       const questions = event.questions?.length ? event.questions : undefined;
       // One generator for the card and its push (shared/approval-describe.ts):
       // "Allow the bot to run a command?" and one plain line, never a raw id.
-      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(languageOfPerson(cardAnswerer))) : undefined;
+      const plainWords = permission ? serverApprovalWords(languageOfPerson(cardAnswerer)) : undefined;
+      const plain = plainWords ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, plainWords) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
       // answers in time instead of holding the turn forever.
@@ -15337,7 +15338,9 @@ bus.subscribe((event: RuntimeEvent) => {
           held: permission && event.engineConnector === true && !event.input ? HELD_NOTE["approval.held.connectorNoDetails"] : approvalHeldReason(heldContext),
           heldCode: permission && event.engineConnector === true && !event.input ? "approval.held.connectorNoDetails" : approvalHeldNote(heldContext),
           approvalScope: event.approvalScope,
-          ...(plain ? { plain: { title: plain.title, line: plain.line, ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
+          // action and locale: a phone words its own heading ("Nova wants
+          // to {action}") when the card is in its reader's language (#426)
+          ...(plain ? { plain: { title: plain.title, line: plain.line, action: plain.action, locale: plainWords?.locale ?? "en", ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(ownerRuleCandidate ? { ownerRule: ownerRuleCandidate } : {}),
           ...(ownerRuleFolderCandidate ? { ownerRuleFolder: ownerRuleFolderCandidate } : {}),

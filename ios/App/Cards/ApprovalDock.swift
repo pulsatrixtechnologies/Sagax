@@ -81,7 +81,23 @@ struct ApprovalDock: View {
                     }
                 }
 
-                if let detail = ApprovalHeading.detail(pending.card) {
+                if let ask = TeammateAsk.parse(pending.card) {
+                    // issue #426: who it writes to, by name and face, and
+                    // what it says; the arguments behind the full request
+                    let ink = ApprovalInk.of(nil, accent: Theme.readable(tint))
+                    if !ask.recipients.isEmpty { TeammateRecipientsView(ask: ask, ink: ink) }
+                    TeammateQuoteView(ask: ask, ink: ink)
+                    Button {
+                        Haptics.selection()
+                        detail = pending
+                    } label: {
+                        Text("See the full request")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Theme.readable(tint))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("approval-full-request")
+                } else if let detail = ApprovalHeading.detail(pending.card) {
                     ScrollView(.vertical) {
                         Text(detail)
                             .font(.system(size: 12, design: .monospaced))
@@ -97,14 +113,13 @@ struct ApprovalDock: View {
                     .background(Theme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
-                // 2026-10-20 (JC): no explanatory paragraph, only the
-                // person's own ask rule keeps its line
-                if pending.card.heldCode == "approval.held.customRule", let held = pending.card.held, !held.isEmpty {
-                    Label(held, systemImage: "exclamationmark.shield")
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(Theme.warning)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                // issue #426: the held note is one quiet line; the
+                // provider's own and the routine gate's are not shown
+                ApprovalHeldLine(card: pending.card, ink: ApprovalInk(
+                    ink: Theme.attentionText, secondary: Theme.attentionSecondary, tertiary: Theme.attentionSecondary,
+                    inset: Theme.inset, hairline: Theme.hairline, accent: Theme.readable(tint),
+                    success: Theme.success, danger: Theme.danger, font: { .system(size: $0, weight: $1) }
+                ))
 
                 actions(pending)
             }
@@ -177,13 +192,18 @@ struct ApprovalDock: View {
                         }
                     }) : nil
                 )
-                if let detail = Self.desktopDetail(card) {
+                if let ask = TeammateAsk.parse(card) {
+                    let ink = ApprovalInk.of(theme, accent: theme.accent)
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !ask.recipients.isEmpty { TeammateRecipientsView(ask: ask, ink: ink) }
+                        TeammateQuoteView(ask: ask, ink: ink)
+                    }
+                    .padding(.top, 8)
+                } else if let detail = Self.desktopDetail(card) {
                     DesktopApprovalBlock(text: detail, size: 12, theme: theme)
                 }
-                if card.heldCode == "approval.held.customRule", let held = card.held, !held.isEmpty {
-                    Text(verbatim: held)
-                        .font(theme.font(12))
-                        .foregroundStyle(theme.warning)
+                if ApprovalHeldNote.shows(card) {
+                    ApprovalHeldLine(card: card, ink: ApprovalInk.of(theme, accent: theme.accent))
                         .padding(.top, 8)
                 }
                 if !proposal, card.tool?.isEmpty == false {
@@ -312,10 +332,10 @@ struct ApprovalDock: View {
 
     private func heading(_ pending: PendingApproval) -> String {
         switch ApprovalHeading.of(pending.card) {
-        case let .wantsTo(action):
-            if let plain = ApprovalHeading.plainTitle(pending.card) { return plain }
-            let name = pending.message.from?.name ?? chat.name
-            return String(localized: "\(name) wants to \(Self.phrase(action))")
+        case .wantsTo:
+            // a teammate ask names who it writes to (#426); the server's
+            // phrase when it is in the reader's language (#1089)
+            return ApprovalWords.wantsTo(pending.card, name: pending.message.from?.name ?? chat.name, session: session)
         case .confirmRoutine: return String(localized: "Confirm this routine")
         case .confirmPausedRoutine: return String(localized: "This routine starts paused")
         case .confirmRoutineChange: return String(localized: "Confirm this routine change")

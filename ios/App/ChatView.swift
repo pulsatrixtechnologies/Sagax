@@ -216,7 +216,11 @@ struct ChatView: View {
     /// The transcript as the reader has asked to see it: every chip, folded
     /// runs, or none at all.
     var rows: [TranscriptRow] {
-        transcriptRows(messages, detail: ActivityDetail(rawValue: activityDetail) ?? .full)
+        // threads off: no "Open thread" receipt in the single stream (#1026)
+        transcriptRows(
+            chatMessages(messages, showThreads: sidebarPrefs.showThreads),
+            detail: ActivityDetail(rawValue: activityDetail) ?? .full
+        )
     }
 
     /// The composer's chip row, as edited in Settings.

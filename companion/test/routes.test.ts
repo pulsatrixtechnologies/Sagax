@@ -102,6 +102,8 @@ describe("what the app may do", () => {
     ["POST", "/api/threads/th_1/read"],
     ["GET", "/api/threads/th_1/export"],
     ["POST", "/api/threads/th_1/respond"],
+    ["POST", "/api/me/phone-calls/call_0123456789abcdef/answer"],
+    ["POST", "/api/me/credentials/purchases/pay_0123456789abcdef/answer"],
     ["GET", "/api/search"],
     ["POST", "/api/attachments"],
     ["GET", "/api/attachments/avatar-123.webp"],
