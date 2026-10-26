@@ -55,7 +55,6 @@ import {
   appendPastedText,
   handoffAttachmentImagePreview,
   clipboardHasImages,
-  clipboardImageFiles,
   clipboardOtherFiles,
   composeMessage,
   dataContextFor,
@@ -67,6 +66,7 @@ import {
   isLongPaste,
   optimisticImageAttachment,
   pasteAttachment,
+  snapshotClipboardImages,
   releaseAttachmentImagePreview,
   type Attachment,
   type PasteAttachment,
@@ -918,8 +918,7 @@ export function Composer({
     // an image from the clipboard becomes an uploaded attachment —
     // but only for engines that can open one; a grok bot politely
     // refuses instead of receiving a path it cannot read
-    const imageFiles = clipboardImageFiles(e.clipboardData);
-    if (imageFiles.length > 0 || clipboardHasImages(e.clipboardData)) {
+    if (clipboardHasImages(e.clipboardData)) {
       e.preventDefault();
       if (!engineSupportsImages) {
         dispatch({
@@ -928,29 +927,31 @@ export function Composer({
         });
         return;
       }
-      if (!imageFiles.length) {
-        dispatch({ type: "error", message: t("composer.error.clipboardImage") });
-        return;
-      }
-      if (imageFiles.length > 0) {
-        changeDraftAttachmentPending(draftId, true);
-        void (async () => {
-          try {
-            const results = await Promise.allSettled(imageFiles.map(uploadImage));
-            for (const result of results) {
-              if (result.status === "rejected") {
-                dispatch({
-                  type: "error",
-                  message: result.reason instanceof Error ? result.reason.message : "image upload failed",
-                });
-              }
-            }
-          } finally {
-            changeDraftAttachmentPending(draftId, false);
+      // Start the reads before this handler returns. A clipboard blob can
+      // be consumed once, and the next paste would otherwise see empty bytes.
+      const pendingImages = snapshotClipboardImages(e.clipboardData);
+      changeDraftAttachmentPending(draftId, true);
+      void (async () => {
+        try {
+          const imageFiles = await pendingImages;
+          if (imageFiles.length === 0) {
+            dispatch({ type: "error", message: t("composer.error.clipboardImage") });
+            return;
           }
-        })();
-        return;
-      }
+          const results = await Promise.allSettled(imageFiles.map(uploadImage));
+          for (const result of results) {
+            if (result.status === "rejected") {
+              dispatch({
+                type: "error",
+                message: result.reason instanceof Error ? result.reason.message : "image upload failed",
+              });
+            }
+          }
+        } finally {
+          changeDraftAttachmentPending(draftId, false);
+        }
+      })();
+      return;
     }
     // a zip or a document copied in the Finder or Explorer attaches like a
     // picked file (same intake, same limits and notices)
