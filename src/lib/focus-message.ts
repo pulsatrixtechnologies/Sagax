@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { api, openBot, useStore, type Action, type AppState } from "@/state/store";
 import { isEarlierSegment } from "@/lib/single-stream";
 import type { SearchHit } from "@/lib/search-hit";
+import { scrollMotion } from "@/lib/motion";
 
 const FLASH_CLASSES = ["ring-2", "ring-accent/70", "rounded-2xl", "transition-shadow"];
 
@@ -107,8 +108,7 @@ export function useFocusMessage(threadId: string, ready: boolean) {
         if (tries++ < 20) retryTimer = setTimeout(attempt, 100);
         return;
       }
-      const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-      target.scrollIntoView({ block: "center", behavior: reducedMotion ? "auto" : "smooth" });
+      target.scrollIntoView({ block: "center", behavior: scrollMotion() });
       target.classList.add(...FLASH_CLASSES);
       const textRoots = target.querySelectorAll<HTMLElement>(".chat-md, .chat-text");
       const textRoot = textRoots.item(textRoots.length - 1) ?? target;

@@ -16,6 +16,7 @@ import {
 } from "react";
 import { BOTTOM_FOLLOW_THRESHOLD, shouldResumeBottomFollow, useBottomFollowResize } from "@/lib/bottom-follow";
 import { useFocusMessage } from "@/lib/focus-message";
+import { scrollMotion } from "@/lib/motion";
 import {
   TRANSCRIPT_WINDOW_SIZE,
   expandWindowStart,
@@ -260,7 +261,7 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     setBottomFollow(true);
     setTranscriptWindow({ key: transcriptKey, start: tailStart, end: null });
     requestAnimationFrame(() => {
-      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: scrollMotion() });
     });
   };
 

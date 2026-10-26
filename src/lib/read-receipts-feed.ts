@@ -30,8 +30,26 @@ export function receiveThreadReadFrame(frame: { threadId?: unknown; participantI
 
 const EMPTY: { reads: ThreadReads; self: string | null } = { reads: {}, self: null };
 
+// The last positions seen per thread, so reopening a conversation draws its
+// "Seen by" rows on the first frame instead of adding them a fetch later
+// (each one a row that pushed the whole transcript up as the room opened).
+// The fetch still runs and replaces it. Bounded: the oldest thread goes.
+const LAST_KNOWN_LIMIT = 64;
+const lastKnown = new Map<string, { reads: ThreadReads; self: string | null }>();
+function remember(threadId: string, value: { reads: ThreadReads; self: string | null }): void {
+  lastKnown.delete(threadId);
+  lastKnown.set(threadId, value);
+  if (lastKnown.size > LAST_KNOWN_LIMIT) lastKnown.delete(lastKnown.keys().next().value!);
+}
+const known = (threadId: string | undefined) => (threadId ? lastKnown.get(threadId) : undefined) ?? EMPTY;
+
+/** Tests only: forget every thread's last positions. */
+export function resetThreadReadsCache(): void {
+  lastKnown.clear();
+}
+
 export function useThreadReads(threadId: string | undefined): { reads: ThreadReads; self: string | null } {
-  const [state, setState] = useState<{ threadId: string | undefined; reads: ThreadReads; self: string | null }>({ threadId, ...EMPTY });
+  const [state, setState] = useState<{ threadId: string | undefined; reads: ThreadReads; self: string | null }>(() => ({ threadId, ...known(threadId) }));
   useEffect(() => {
     if (!threadId || typeof fetch !== "function") return;
     let alive = true;
@@ -39,18 +57,24 @@ export function useThreadReads(threadId: string | undefined): { reads: ThreadRea
       fetch(`/api/threads/${encodeURIComponent(threadId)}/read`, { credentials: "same-origin" })
         .then((response) => (response.ok ? (response.json() as Promise<ThreadReadsResponse>) : null))
         .then((body) => {
-          if (alive && body && body.reads && typeof body.reads === "object") setState({ threadId, reads: body.reads, self: body.self ?? null });
+          if (!alive || !body || !body.reads || typeof body.reads !== "object") return;
+          const loaded = { reads: body.reads, self: body.self ?? null };
+          remember(threadId, loaded);
+          setState({ threadId, ...loaded });
         })
         .catch(() => { /* offline or refused: no receipts drawn */ });
     };
     const listener = (frame: ReadFrame) => {
       if (frame.threadId !== threadId) return;
       if (frame.reset) return load();
-      setState((current) => current.threadId === threadId
-        ? { ...current, reads: applyReadFrame(current.reads, frame.participantId!, frame.read!) }
-        : current);
+      setState((current) => {
+        if (current.threadId !== threadId) return current;
+        const next = { ...current, reads: applyReadFrame(current.reads, frame.participantId!, frame.read!) };
+        remember(threadId, { reads: next.reads, self: next.self });
+        return next;
+      });
     };
-    setState({ threadId, ...EMPTY });
+    setState((current) => (current.threadId === threadId ? current : { threadId, ...known(threadId) }));
     listeners.add(listener);
     load();
     return () => {
@@ -58,7 +82,7 @@ export function useThreadReads(threadId: string | undefined): { reads: ThreadRea
       listeners.delete(listener);
     };
   }, [threadId]);
-  return state.threadId === threadId ? { reads: state.reads, self: state.self } : EMPTY;
+  return state.threadId === threadId ? { reads: state.reads, self: state.self } : known(threadId);
 }
 
 const REPORT_DEBOUNCE_MS = 700;

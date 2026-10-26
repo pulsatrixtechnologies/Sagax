@@ -2917,6 +2917,20 @@ html[data-animations-paused] *::after {
     animation: reduced-loader-pulse 1.6s ease-in-out infinite !important;
   }
 }
+/* The in-app switch (Settings, accessibility: src/lib/accessibility-preferences.ts)
+   stands for the system setting everywhere, the chat included: no message
+   slide-in, no divider drop, no smooth scroll, no column morph. */
+:root[data-reduced-motion="true"] *,
+:root[data-reduced-motion="true"] *::before,
+:root[data-reduced-motion="true"] *::after {
+  animation: none !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+:root[data-reduced-motion="true"] .animate-spin {
+  animation: reduced-loader-pulse 1.6s ease-in-out infinite !important;
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
    Filled accent / danger / success surfaces

@@ -75,7 +75,11 @@ export function GroupPanel({
   advanced,
   canEdit,
   readOnlyNote = false,
+  arriving = true,
 }: {
+  /** False when the panel was already open as the room opened: it is part of
+   * the room's first frame, not a panel being opened, so it does not slide in. */
+  arriving?: boolean;
   group: Group;
   members: Bot[];
   /** People and bots, rendered by GroupView. */
@@ -135,7 +139,8 @@ export function GroupPanel({
       tabIndex={-1}
       data-testid="group-panel"
       style={{ width: dockedPanel.width }}
-      className="app-docked-panel animate-panel-in relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto"
+      data-arriving={arriving ? "" : undefined}
+      className={cn("app-docked-panel relative flex h-full min-w-0 shrink-0 flex-col border-l-[0.5px] border-hairline-weak bg-app outline-none max-lg:absolute max-lg:inset-0 max-lg:z-40 max-lg:w-auto", arriving && "animate-panel-in")}
     >
       <DockedPanelResizeHandle label={t("computer.resizeAria")} panel={dockedPanel} />
       {(macInset || browser) && <div className="content-topbar-strip" />}

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-dom", () => ({ flushSync: (run: () => void) => run() }));
 
-const { navigate } = await import("./view-transitions");
+const { navigate, swapStandsStill } = await import("./view-transitions");
 
 type Listener = () => void;
 function fakeTransition() {
@@ -87,6 +87,56 @@ describe("navigate", () => {
     navigate(third);
     expect(third).toHaveBeenCalledTimes(1);
     expect(started).toEqual([]);
+  });
+
+  it("opening or leaving a room never animates: the update runs, then the transition is skipped", async () => {
+    // the column on screen: a 1:1 (no room inside), 1000px wide
+    let frame = { width: 1000, height: 800, room: false };
+    const query = (selector: string) => selector === ".app-content-frame"
+      ? { getBoundingClientRect: () => ({ width: frame.width, height: frame.height }), querySelector: (inner: string) => (inner === "[data-room-view]" && frame.room ? {} : null) }
+      : null;
+    Object.assign(document as object, { querySelector: query });
+
+    // 1:1 to 1:1, same box: the cross-fade plays
+    navigate(() => {});
+    await Promise.resolve();
+    expect(transitions[0].skipTransition).not.toHaveBeenCalled();
+
+    // 1:1 to a room: no slide, no fade, no zoom
+    navigate(() => { frame = { ...frame, room: true }; });
+    await Promise.resolve();
+    expect(transitions[1].skipTransition).toHaveBeenCalled();
+
+    // a room back to a 1:1
+    navigate(() => { frame = { ...frame, room: false }; });
+    await Promise.resolve();
+    expect(transitions[2].skipTransition).toHaveBeenCalled();
+
+    // the column changes size (a panel docked beside it closes): the browser
+    // would stretch the old snapshot into the new box
+    navigate(() => { frame = { ...frame, width: 640 }; });
+    await Promise.resolve();
+    expect(transitions[3].skipTransition).toHaveBeenCalled();
+  });
+
+  it("swapStandsStill: a room on either side, or a resized column; a same-size 1:1 swap may animate", () => {
+    const chat = { width: 1000, height: 800, room: false };
+    expect(swapStandsStill(chat, chat)).toBe(false);
+    expect(swapStandsStill(chat, { ...chat, room: true })).toBe(true);
+    expect(swapStandsStill({ ...chat, room: true }, chat)).toBe(true);
+    expect(swapStandsStill({ ...chat, width: 640 }, chat)).toBe(true);
+    expect(swapStandsStill(chat, { ...chat, height: 700 })).toBe(true);
+    expect(swapStandsStill(null, chat)).toBe(false);
+  });
+
+  it("a room's column carries the marker the rule reads", () => {
+    const group = readFileSync(new URL("../components/GroupView.tsx", import.meta.url), "utf8");
+    expect(group).toMatch(/<main data-room-view="" className="app-glow relative flex h-full/);
+  });
+
+  it("the in-app reduced-motion switch stops every animation and smooth scroll, as the system setting does", () => {
+    const css = readFileSync(new URL("../styles.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+    expect(css).toMatch(/:root\[data-reduced-motion="true"\] \*,\n:root\[data-reduced-motion="true"\] \*::before,\n:root\[data-reduced-motion="true"\] \*::after \{\n  animation: none !important;\n  transition-duration: 0\.01ms !important;\n  transition-delay: 0ms !important;\n  scroll-behavior: auto !important;/);
   });
 
   it("the CSS names only the main column, takes no pointer events and stands still under reduced motion", () => {

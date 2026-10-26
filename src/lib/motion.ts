@@ -32,6 +32,13 @@ export const EASE = {
 
 /** The reduced-motion rule: the system setting, or the in-app switch on the
  * root (`data-reduced-motion="true"`, which the preview pages also flip). */
+/** How a scroll the app makes itself travels: smooth, or a jump under
+ * reduced motion (a JS `behavior: "smooth"` ignores the CSS
+ * `scroll-behavior: auto` the reduced-motion rules set). */
+export function scrollMotion(): ScrollBehavior {
+  return prefersReducedMotion() ? "auto" : "smooth";
+}
+
 export function prefersReducedMotion(): boolean {
   if (typeof document !== "undefined" && document.documentElement?.dataset?.reducedMotion === "true") return true;
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;

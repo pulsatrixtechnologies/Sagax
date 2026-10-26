@@ -192,6 +192,31 @@ const press = (key: string, target: unknown = {}) => {
 };
 
 describe("transcript viewport", () => {
+  it("opening a room lands on its last message at once: no smooth scroll, no glide", () => {
+    const view = mount({ ownerId: "room-a", threadId: "room-a-main", messages: rows(30) });
+    expect(scroller.scrollTop).toBe(scroller.bottom);
+    expect(scroller.calls.length).toBeGreaterThan(0);
+    expect(scroller.calls.every((call) => call.behavior === undefined || call.behavior === "auto" || call.behavior === "instant")).toBe(true);
+
+    // another room: the same direct landing
+    scroller.calls = [];
+    view.rerender({ ownerId: "room-b", threadId: "room-b-main", messages: rows(24) });
+    expect(scroller.scrollTop).toBe(scroller.bottom);
+    expect(scroller.calls.some((call) => call.behavior === "smooth")).toBe(false);
+  });
+
+  it("Jump to latest jumps instead of gliding under reduced motion", () => {
+    vi.stubGlobal("window", {
+      addEventListener: (_: string, listener: (event: Partial<KeyboardEvent>) => void) => keyListeners.add(listener),
+      removeEventListener: (_: string, listener: (event: Partial<KeyboardEvent>) => void) => keyListeners.delete(listener),
+      matchMedia: (query: string) => ({ matches: query === "(prefers-reduced-motion: reduce)" }),
+    });
+    const view = mount({ messages: rows(30) });
+    scroller.calls = [];
+    view.act(() => view.current.jumpToLatest());
+    expect(scroller.calls.at(-1)?.behavior).toBe("auto");
+  });
+
   it("follows new rows to the bottom until the reader scrolls up", () => {
     const view = mount({ messages: rows(10) });
     expect(view.current.following).toBe(true);
