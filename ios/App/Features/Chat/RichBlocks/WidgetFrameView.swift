@@ -93,7 +93,7 @@ struct WidgetFrameView: View {
 
 /// The web view: our page holds the sandboxed iframe and forwards only the
 /// widget's height to the app.
-private struct SandboxedWidget: UIViewRepresentable {
+struct SandboxedWidget: UIViewRepresentable {
     let source: String
     let dark: Bool
     @Binding var height: CGFloat

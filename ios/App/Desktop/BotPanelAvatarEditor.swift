@@ -391,7 +391,7 @@ struct BotAvatarEditor: View {
     private func cell(look: CompleteMascotLook, skin: MascotSkin, name: String, selected: Bool, height: CGFloat, locked: Bool, hint: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
-                MascotCharacterView(look: look, color: draft.color, skin: skin, size: height - 28)
+                MascotCharacterView(look: look, color: draft.color, skin: skin, size: height - 28, hd: false)
                     .frame(width: height - 28, height: height - 28)
                     .grayscale(locked ? 1 : 0)
                 Text(verbatim: name)

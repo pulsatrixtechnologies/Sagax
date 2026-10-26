@@ -151,7 +151,6 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Always allowed tools | Bot editor > Access > Always allowed | `sagax_settings` get, set `bot.alwaysAllow` | élargit les droits |
 | Allowed recipients (no card: bot:<id>, email:<address>, phone:+<digits>) | Bot editor > Permissions > Allowed recipients | `sagax_settings` get, set `bot.allowedRecipients` | élargit les droits |
 | Approval level (ask, edits, auto = Approve for me, full) | Bot editor > Permissions > Approval level | `sagax_settings` get, set `bot.approvalMode` | élargit les droits |
-| Owner permission mode | Bot editor > Permissions > Owner permissions | `sagax_settings` get, set `bot.permissionMode` | élargit les droits |
 | Primary Bot | Bot editor > Permissions > Primary Bot | `sagax_settings` get, set `bot.primary` | simple |
 | Parallel work and recovery ({maxConcurrentThreads, maxParallelPerPerson, busySend, automaticRecovery}) | Bot editor > Behaviour > Parallel tasks | `sagax_settings` get, set `bot.runtime` | simple |
 | Memory text | Bot editor > Memory | `sagax_settings` get, set `bot.memory` | simple |

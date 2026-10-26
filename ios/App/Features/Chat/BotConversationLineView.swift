@@ -115,3 +115,51 @@ extension ChatView {
         }
     }
 }
+
+/// The bot-to-bot conversations older than the topic's first line: one quiet
+/// "Earlier topics" line, and, once opened, a compact left-aligned list with
+/// each bot once (the most recent conversation).
+struct EarlierConversationsFold: View {
+    let rows: [BotConversation]
+    @Binding var open: Bool
+    let other: (String) -> Bot?
+    let select: (BotConversation) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                open.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: open ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(open ? "Hide earlier topics" : "Earlier topics")
+                        .font(.footnote)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier("chat.earlierConversations")
+            if open {
+                ForEach(rows) { row in
+                    Button { select(row) } label: {
+                        HStack(spacing: 6) {
+                            Text("Go to conversation")
+                            BotConversationAvatar(bot: other(row.otherBotId), name: row.otherName, size: 16)
+                            Text(row.otherName).fontWeight(.medium)
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}

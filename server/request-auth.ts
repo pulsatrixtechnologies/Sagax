@@ -499,6 +499,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // a conversation's files (the bot panel's Files tab): the list and one file by id
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
+  // pin or unpin a file of the conversation (the Library tab); kept on the server
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}\/pin$/ },
   // what a bot is doing (the bot panel's Coding list): narrowed to the
   // viewer's own threads and the routines they may see (routes/bot-activity.ts)
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },
@@ -632,11 +634,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // (clientSessionIsComputerOwner), never on an organization server.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/authorize$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/always-allow$/ }, // must match a pending card
-  // 2026-10-14: a person's own approval rules and their bots' permission
-  // modes; the handlers keep both to the person (and the bot's owner).
+  // 2026-10-14: a person's own approval rules; the handlers keep them to
+  // the person (and the bot's owner).
   { methods: ["GET"], path: /^\/api\/approval-rules$/ },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/approval-rules\/[\w-]+$/ },
-  { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/permission-mode$/ },
   // 2026-10-16: a person's own custom auto-review rules; the handler keeps
   // them to the person and never to a bot's act copy of a session.
   { methods: ["GET", "POST"], path: /^\/api\/custom-rules$/ },

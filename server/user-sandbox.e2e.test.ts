@@ -565,27 +565,9 @@ posixOnly("organization server environments (user-sandbox)", () => {
       expect((await api("POST", `/api/threads/${threadId}/respond`, bob, { requestId: exfil.id, behavior: "deny" })).status).toBe(200);
       await waitFor(async () => exfil.answer()?.behavior === "deny");
 
-      // re-review 2026-10-17: Bob's own permission mode (Automatic) answers
-      // neither a keyed class nor, from a hand-off, a non-read or a read of
-      // a credential path; a plain read still runs
-      const auto = await api("PUT", `/api/bots/${dagny.id}/permission-mode`, bob, { mode: "auto" });
-      expect(auto.status, auto.text).toBe(200);
-      const keyed = await ask("mcp__sagax-environment__run_command", { command: "rm -rf /home/sagax/project" });
-      expect((await cardOf(keyed.id)).card.adminApproval).not.toBe(true);
-      expect(keyed.answer()).toBeUndefined();
-      const secret = await ask("mcp__sagax-environment__read_file", { path: "/workspace/.git-credentials" });
-      await cardOf(secret.id);
-      expect(secret.answer()).toBeUndefined();
-      const ghLogin = await ask("mcp__sagax-environment__read_file", { path: "/home/sagax/.config/gh/hosts.yml" });
-      await cardOf(ghLogin.id);
-      expect(ghLogin.answer()).toBeUndefined();
-      const vmRun = await ask("mcp__sagax-desktop__local_vm", { action: "run", command: "ls" });
-      // the Local VM may not be mounted for this turn: whatever answers, it never runs unasked
-      await sleep(1_500);
-      expect(vmRun.answer()?.behavior).not.toBe("allow");
-      const plain = await ask("mcp__sagax-environment__read_file", { path: "/home/sagax/notes.txt" });
-      await waitFor(async () => plain.answer()?.behavior === "allow");
-      expect((await api("PUT", `/api/bots/${dagny.id}/permission-mode`, bob, { mode: "approval" })).status).toBe(200);
+      // 2026-10-26 (one approval level): Bob's own permission mode is gone;
+      // what an automatic level never answers (a keyed class, a hand-off's
+      // non-read or credential read) is covered by owner-autonomy.test.ts.
 
       // entering Full needs the key once any class is protected: Alice (an
       // admin, who may choose levels) protects only "destructive"

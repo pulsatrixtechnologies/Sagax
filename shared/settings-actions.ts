@@ -183,14 +183,6 @@ add({
   approvalTo: (v) => String(v),
 });
 add({
-  key: "bot.permissionMode", family: "bot", target: "bot", value: "enum:approval|auto|bypass",
-  label: "Owner permission mode", where: "Bot editor > Permissions > Owner permissions",
-  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/permission-mode`, field: "mode" }),
-  write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/permission-mode`, body: v === "bypass" ? { mode: v, confirmBypass: true } : { mode: v } }),
-  classes: always("rule-change"),
-  approvalTo: (v) => (v === "approval" ? "ask" : v === "bypass" ? "full" : String(v)),
-});
-add({
   key: "bot.primary", family: "bot", target: "bot", value: "boolean", label: "Primary Bot", where: "Bot editor > Permissions > Primary Bot",
   read: botRead("chiefOfStaff"),
   write: (ids, v) => ({ method: v === true ? "POST" : "DELETE", path: `/api/bots/${enc(ids.target!)}/primary` }),

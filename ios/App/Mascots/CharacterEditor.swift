@@ -292,7 +292,7 @@ struct CharacterEditor: View {
             previewSkin = nil
         } label: {
             HStack(spacing: 12) {
-                MascotCharacterView(look: look, color: draft.color, skin: owlSkin, size: 48)
+                MascotCharacterView(look: look, color: draft.color, skin: owlSkin, size: 48, hd: false)
                     .frame(width: 48, height: 48)
                     .grayscale(greyed ? 1 : 0)
                     .opacity(greyed ? 0.6 : 1)
@@ -471,7 +471,7 @@ struct CharacterEditor: View {
             Haptics.selection()
             action()
         } label: {
-            MascotCharacterView(look: look, color: draft.color, skin: skin, size: size)
+            MascotCharacterView(look: look, color: draft.color, skin: skin, size: size, hd: false)
                 .frame(width: size, height: size)
                 .grayscale(locked ? 1 : 0)
                 .opacity(locked ? 0.55 : 1)

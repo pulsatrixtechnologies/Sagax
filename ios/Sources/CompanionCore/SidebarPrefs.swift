@@ -519,11 +519,11 @@ public enum SidebarSectionID {
 /// The five sidebar values as the desktop stores them (absent: the
 /// module's default), with typed reads and edits.
 public struct SidebarPrefs: Hashable, Sendable {
-    /// Raw values by `SidebarPrefKey`; only those keys.
+    /// Raw values by `SidebarPrefKey` and `PersonPrefKey`; only those keys.
     public var values: [String: String]
 
     public init(values: [String: String] = [:]) {
-        self.values = values.filter { SidebarPrefKey.all.contains($0.key) }
+        self.values = values.filter { SidebarPrefKey.synced.contains($0.key) }
     }
 
     public var personalSections: PersonalSections? { PersonalSections.parse(values[SidebarPrefKey.personalSections]) }
@@ -532,6 +532,10 @@ public struct SidebarPrefs: Hashable, Sendable {
     public var sectionOrder: [String] { SidebarSectionID.parseList(values[SidebarPrefKey.sectionOrder]) }
     /// The stored switch, or nil when never set on any device.
     public var showThreads: Bool? { values[SidebarPrefKey.showThreads].map { $0 == "1" } }
+
+    /// Threads are off until the person turns them on, as on the desktop
+    /// (src/lib/thread-preferences.ts `SHOW_THREADS_DEFAULT`).
+    public static let showThreadsDefault = false
 
     public mutating func setPersonalSections(_ value: PersonalSections) {
         values[SidebarPrefKey.personalSections] = value.serialized(over: values[SidebarPrefKey.personalSections])
@@ -568,7 +572,7 @@ public struct SidebarPrefs: Hashable, Sendable {
     /// desktop leaves the phone, and one deleted here is not brought back.
     public func receiving(_ remote: [String: String], pending: Set<String>) -> SidebarPrefs {
         var next = SidebarPrefs(values: remote)
-        for key in pending where SidebarPrefKey.all.contains(key) { next.values[key] = values[key] }
+        for key in pending where SidebarPrefKey.synced.contains(key) { next.values[key] = values[key] }
         return next
     }
 
@@ -584,7 +588,7 @@ public struct SidebarPrefs: Hashable, Sendable {
 
     /// The keys whose values differ from `other`.
     public func changedKeys(from other: SidebarPrefs) -> Set<String> {
-        Set(SidebarPrefKey.all.filter { values[$0] != other.values[$0] })
+        Set(SidebarPrefKey.synced.filter { values[$0] != other.values[$0] })
     }
 }
 

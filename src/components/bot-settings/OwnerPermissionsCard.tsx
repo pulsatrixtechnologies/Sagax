@@ -1,22 +1,25 @@
-// The owner's own permissions for a bot (2026-10-14): the bot's
-// permission mode (Approval, Automatic approval, Bypass) and the owner's
-// rules, a two-column Action / Behavior table like the reference design's, each row a
-// plain-language rule with edit and delete. Spec:
+// The owner's own rules for a bot (2026-10-14): a two-column Action /
+// Behavior table like the reference design's, each row a plain-language
+// rule with edit and delete. Spec:
 // docs/superpowers/specs/2026-10-14-bot-owner-permissions.md.
 //
-// Only the bot's owner sees it: the server keeps both to them
-// (GET/PUT /api/bots/:id/permission-mode, /api/approval-rules).
+// 2026-10-26 (JC, one approval level): the bot's separate permission mode
+// (Approval, Automatic approval, Bypass) is gone. The approval level, drawn
+// first in the same Approvals group (`leading`), is the only setting; these
+// rules apply first, whatever the level.
+//
+// Only the bot's owner sees it: the server keeps the rules to them
+// (/api/approval-rules).
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Pencil, ShieldAlert, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, type Bot } from "@/state/store";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { DescribedRow, FoldRow, HelpTip, PILL, PillSelect, PRIMARY_PILL, SettingsGroup } from "../SettingsPrimitives";
+import { FoldRow, HelpTip, PILL, PillSelect, PRIMARY_PILL, SettingsGroup } from "../SettingsPrimitives";
 
-export type BotPermissionMode = "approval" | "auto" | "bypass";
 export type RuleBehavior = "allow" | "ask" | "deny";
 
 export interface OwnerRuleRow {
@@ -39,12 +42,6 @@ export interface OwnerRuleRow {
   /** That person's name, never an id. */
   savedBy?: string;
 }
-
-const MODES: ReadonlyArray<{ id: BotPermissionMode; label: LocaleKey; help: LocaleKey }> = [
-  { id: "approval", label: "botPanel.permissionMode.approval", help: "botPanel.permissionMode.approvalHelp" },
-  { id: "auto", label: "botPanel.permissionMode.auto", help: "botPanel.permissionMode.autoHelp" },
-  { id: "bypass", label: "botPanel.permissionMode.bypass", help: "botPanel.permissionMode.bypassHelp" },
-];
 
 export const BEHAVIOR_LABEL: Record<RuleBehavior, LocaleKey> = {
   allow: "botPanel.rules.allow",
@@ -158,16 +155,12 @@ function RuleEditor({ rule, botId, onCancel, onSave }: {
   );
 }
 
-/** `leading`: the Permissions page's other approval rows (the approval
- * level, contacting other bots), drawn first in the same Approvals group;
- * they show while the owner's mode loads or when it cannot be read. */
+/** `leading`: the Permissions page's approval rows (the approval level,
+ * contacting other bots), drawn in the Approvals group above the rules. */
 export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "name">; leading?: ReactNode }) {
-  const [mode, setMode] = useState<BotPermissionMode | null>(null);
-  const [canBypass, setCanBypass] = useState(false);
   const [rules, setRules] = useState<OwnerRuleRow[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<OwnerRuleRow | null>(null);
-  const [confirmBypass, setConfirmBypass] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadRules = useCallback(() => api<{ rules: OwnerRuleRow[] }>(`/api/approval-rules?botId=${encodeURIComponent(bot.id)}`)
@@ -175,43 +168,9 @@ export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "
     .catch(() => setRules([])), [bot.id]);
 
   useEffect(() => {
-    let alive = true;
-    setMode(null);
     setEditing(null);
-    void api<{ mode: BotPermissionMode; canBypass: boolean }>(`/api/bots/${bot.id}/permission-mode`)
-      .then((body) => {
-        if (!alive) return;
-        setMode(body.mode);
-        setCanBypass(body.canBypass === true);
-      })
-      .catch(() => {});
     void loadRules();
-    return () => {
-      alive = false;
-    };
   }, [bot.id, loadRules]);
-
-  const saveMode = (next: BotPermissionMode, confirmed = false) => {
-    setError(null);
-    void api<{ mode: BotPermissionMode; canBypass: boolean }>(`/api/bots/${bot.id}/permission-mode`, {
-      method: "PUT",
-      body: JSON.stringify({ mode: next, ...(confirmed ? { confirmBypass: true } : {}) }),
-    })
-      .then((body) => {
-        setMode(body.mode);
-        setCanBypass(body.canBypass === true);
-      })
-      .catch((failure: unknown) => setError(t("botPanel.permissionMode.error", { error: failure instanceof Error ? failure.message : String(failure) })));
-  };
-
-  const choose = (next: BotPermissionMode) => {
-    if (next === mode) return;
-    if (next === "bypass") {
-      setConfirmBypass(true);
-      return;
-    }
-    saveMode(next);
-  };
 
   const saveRule = (rule: OwnerRuleRow, patch: { behavior: RuleBehavior; description: string; botId: string | null; anyTarget: boolean }) => {
     setError(null);
@@ -234,41 +193,10 @@ export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "
   };
 
   const groupTitle = t("botPanel.permissions.approvals");
-  // 2026-10-21: an admin on a member's bot has no mode to choose (only the
-  // owner does) but sees the rules kept on its admin's cards, to remove
-  if (mode === null && rules.length === 0) return leading ? <SettingsGroup title={groupTitle} groupId="approvals">{leading}</SettingsGroup> : null;
 
   return (
     <>
-      {/* 2026-10-16: drawn like Settings: the mode in a pill menu
-          with its one grey line, the rules as rows folded under their
-          count once the list is long. */}
-      {(leading || mode !== null) && <SettingsGroup title={groupTitle} groupId="approvals">
-        {leading}
-        {mode !== null && <div data-permission-mode={mode}>
-          <DescribedRow
-            label={t("botPanel.permissionMode.title")}
-            help={t("botPanel.permissionMode.help")}
-            description={
-              <span className={cn("flex items-start gap-1.5", mode === "bypass" && "text-warning")}>
-                {mode === "bypass" && <ShieldAlert size={13} aria-hidden="true" className="mt-px shrink-0" />}
-                {t(MODES.find((option) => option.id === mode)!.help)}
-              </span>
-            }
-          >
-            <PillSelect<BotPermissionMode>
-              value={mode}
-              ariaLabel={t("botPanel.permissionMode.title")}
-              onChange={choose}
-              options={MODES.map((option) => ({
-                value: option.id,
-                label: option.id === "bypass" && !canBypass && mode !== "bypass" ? `${t(option.label)} · ${t("botPanel.permissionMode.bypassUnavailable")}` : t(option.label),
-                disabled: option.id === "bypass" && !canBypass && mode !== "bypass",
-              }))}
-            />
-          </DescribedRow>
-        </div>}
-      </SettingsGroup>}
+      {leading && <SettingsGroup title={groupTitle} groupId="approvals">{leading}</SettingsGroup>}
 
       <SettingsGroup title={t("botPanel.rules.title")} groupId="ownerRules"
         accessory={<HelpTip label={t("settings.moreAbout", { title: t("botPanel.rules.title") })}>{t("botPanel.rules.help")}</HelpTip>}>
@@ -347,19 +275,6 @@ export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "
         }}
       />
 
-      <ConfirmDialog
-        open={confirmBypass}
-        title={t("botPanel.permissionMode.bypassWarnTitle", { name: bot.name })}
-        body={t("botPanel.permissionMode.bypassWarnBody", { name: bot.name })}
-        confirmLabel={t("botPanel.permissionMode.bypassConfirm")}
-        tone="danger"
-        icon={<ShieldAlert size={18} />}
-        onCancel={() => setConfirmBypass(false)}
-        onConfirm={() => {
-          setConfirmBypass(false);
-          saveMode("bypass", true);
-        }}
-      />
     </>
   );
 }

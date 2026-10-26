@@ -166,7 +166,9 @@ extension ChatView {
         // re-renders the composer, never the transcript.
         ObservingView(model: draftModel) {
             Group {
-                if desktopChat != nil {
+                if session.account?.canWrite(in: threadId) == false {
+                    AnyView(ReadOnlyConversationNote(chat: current) { selectedThreadId = $0 })
+                } else if desktopChat != nil {
                     AnyView(desktopComposer)
                 } else {
                     AnyView(composer)
@@ -181,7 +183,7 @@ extension ChatView {
             if desktopChat != nil {
                 AnyView(DesktopAppGlow())
             } else {
-                AnyView(Theme.bg.ignoresSafeArea())
+                AnyView(Theme.bg.skinTexture(Theme.palette.texture, ink: Theme.palette.textPrimary.uiColor).ignoresSafeArea())
             }
         }
     }
@@ -495,5 +497,56 @@ final class DesktopModelCatalog {
         let loaded = (try? await client.instances()) ?? []
         cached = (connection, loaded)
         return loaded
+    }
+}
+
+/// A conversation this device may read but not write in (a guest on a
+/// Cloud home, in a conversation it did not start; cloud-guest.ts): the
+/// "Read-only" pill and "New conversation" in place of the composer, as the
+/// desktop's NewConversationInstead, instead of a send that fails.
+struct ReadOnlyConversationNote: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    let chat: Chat
+    let opened: (String) -> Void
+    @State private var starting = false
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Label("Read-only", systemImage: "lock.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, 12).padding(.vertical, 5)
+                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                .accessibilityIdentifier("chat-read-only")
+            Text("You can only write in conversations you started on this Cloud.")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+            if case let .bot(bot) = chat {
+                Button {
+                    starting = true
+                    Task {
+                        if let created = await session.createTask(for: bot, title: nil, confidential: false) {
+                            await session.loadAccount()
+                            opened(created.threadId)
+                        }
+                        starting = false
+                    }
+                } label: {
+                    Text("New conversation")
+                }
+                .buttonStyle(.bordered).buttonBorderShape(.capsule)
+                .disabled(starting)
+                .accessibilityIdentifier("chat-read-only-new")
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 24)
+        .padding(.top, 8)
+        .padding(.bottom, 30)
+        // a conversation this device just opened is not in the answer it
+        // had: ask again once before saying no (useCanWriteIn)
+        .task(id: chat.threadId) { await session.loadAccount() }
     }
 }

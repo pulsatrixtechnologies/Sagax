@@ -17,8 +17,8 @@
 // owner-approval.ts, index.ts request.opened).
 //
 // 1. Approve for me means approve for me. At Approve for me (or Full
-//    access), the owner's mode "approval" reads as "auto" for the owner's
-//    own work: what no rule covers runs, except a destructive call (a
+//    access), the owner route reads as "auto" ("bypass" at Full) for the
+//    owner's own work (2026-10-26: the level is the only setting): what no rule covers runs, except a destructive call (a
 //    delete, a bulk change, an external email or SMS), which keeps its card
 //    (ownerDecision). An organization that turned automatic levels off for
 //    members' bots keeps them off (the caller checks it).
@@ -82,20 +82,32 @@ export function ownerLineageOrigin(input: {
   return "other";
 }
 
+/** 2026-10-26 (JC, one approval level): the owner route's mode is read
+ * from the bot's one approval level; there is no second setting. Ask for
+ * approval, Auto-accept edits and Custom: rules, then a card. Approve for
+ * me: rules, then what no rule covers runs unless it is destructive. Full
+ * access: the same, plus the owner's own computer from their own turn
+ * (#1065). Rules (deny, ask, allow) come first at every level. */
+export function ownerModeForLevel(level: ApprovalMode): BotPermissionMode {
+  return level === "full" ? "bypass" : level === "auto" ? "auto" : "approval";
+}
+
 /** The owner mode Sagax applies to one card of the owner route (rule 1). */
 export function ownerModeForTurn(input: {
-  /** The owner's own mode for this bot (owner-approval.ts). */
-  ownerMode: BotPermissionMode;
   /** The bot's approval level for this turn. */
   approvalMode: ApprovalMode;
   lineage: "owner" | "other";
   /** False when an admin turned automatic levels off for members' bots and
    * this bot is a member's. */
   autoAllowed: boolean;
+  /** False when the organization's Full access policy (or the owner's
+   * profile) does not let this owner run Full: Full then reads as Approve
+   * for me. */
+  bypassAllowed: boolean;
 }): BotPermissionMode {
-  if (input.ownerMode !== "approval") return input.ownerMode;
-  if (!input.autoAllowed || input.lineage !== "owner") return input.ownerMode;
-  return input.approvalMode === "auto" || input.approvalMode === "full" ? "auto" : input.ownerMode;
+  if (!input.autoAllowed || input.lineage !== "owner") return "approval";
+  const mode = ownerModeForLevel(input.approvalMode);
+  return mode === "bypass" && !input.bypassAllowed ? "auto" : mode;
 }
 
 /** Reads of the Perspicax surface beyond the reviewed Grok list: the

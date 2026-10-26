@@ -56,8 +56,26 @@ final class ClientAppearanceTests: XCTestCase {
         AppearanceStub.routes["GET /api/me/preferences"] = (200, #"{"stored":true,"preferences":{"omb-skin":"dusk","omb-font":"serif","omb-language":"fr"},"updatedAt":1}"#)
         let record = try await client.computerAppearance()
         XCTAssertEqual(record?.source, .organization)
-        XCTAssertEqual(record?.appearance.skin, .dusk)
+        // Dusk is a legacy skin now: worn as Midnight in Pink, as the desktop wears it
+        XCTAssertEqual(record?.appearance.skin, .midnight)
+        XCTAssertEqual(record?.appearance.tint, .pink)
         XCTAssertEqual(record?.appearance.font, .serif)
+    }
+
+    func testTheComputersVariantIsReadAndWrittenBack() async throws {
+        AppearanceStub.routes["GET /api/me/appearance"] = (200, #"{"stored":true,"preferences":{"omb-skin":"foundry","omb-skin-tint":"red","omb-skin-depth":"full","omb-skin-texture":"grid"},"updatedAt":1}"#)
+        let read = try await client.computerAppearance()
+        let record = try XCTUnwrap(read)
+        XCTAssertEqual(record.appearance.skin, .foundry)
+        XCTAssertEqual(record.appearance.tint, .red)
+        XCTAssertEqual(record.appearance.depth, .full)
+        XCTAssertEqual(record.appearance.texture, .grid)
+        AppearanceStub.routes["PUT /api/me/appearance"] = (200, #"{"stored":true,"preferences":{},"updatedAt":2}"#)
+        let values = ComputerAppearance.preferences(skin: .midnight, font: .skin, retroUnlocked: false, tint: .aurore, depth: .accent, texture: .dots)
+        try await client.saveComputerAppearance(values, to: .personal)
+        let put = try XCTUnwrap(AppearanceStub.requests.last)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: put.body ?? Data()) as? [String: [String: String]])
+        XCTAssertEqual(json["preferences"], ["omb-skin": "midnight", "omb-skin-tint": "aurore", "omb-skin-texture": "dots", "omb-font": "skin"])
     }
 
     func testPersonalComputerFallsBackToTheDesktopAppearance() async throws {

@@ -120,7 +120,7 @@ final class SettingsAppearanceUITests: XCTestCase {
     }
 
     @MainActor
-    func testAboutShowsTheVersionAndTheComputer() {
+    func testAboutShowsTheVersionAndTheDesktopsLinks() {
         // About is in the account menu; in Settings, the search finds it
         let app = launch()
         _ = search("About", app)
@@ -128,7 +128,8 @@ final class SettingsAppearanceUITests: XCTestCase {
         let version = app.element("about-version")
         XCTAssertTrue(version.waitForExistence(timeout: 5))
         XCTAssertTrue(version.label.hasPrefix("Version "))
-        XCTAssertTrue(app.element("about-computer").exists)
+        XCTAssertTrue(app.element("about-release-notes").exists)
+        XCTAssertFalse(app.element("about-computer").exists, "the desktop shows no computer")
         XCTAssertTrue(app.element("about-license").exists)
     }
 

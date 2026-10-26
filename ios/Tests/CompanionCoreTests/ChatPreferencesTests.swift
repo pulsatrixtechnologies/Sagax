@@ -239,7 +239,9 @@ final class ChatPreferencesTests: XCTestCase {
         XCTAssertFalse(isToolActivityRow(comm) || isToolActivityRow(thread))
         for detail in ActivityDetail.allCases {
             let ids = transcriptRows(messages, detail: detail).map(\.id)
-            XCTAssertFalse(ids.contains("run") || ids.contains("ok") || ids.contains("bad") || ids.contains("done"), "\(detail)")
+            XCTAssertFalse(ids.contains("run") || ids.contains("ok") || ids.contains("bad"), "\(detail)")
+            // issue #426: an answered ask stays as its one-line receipt
+            XCTAssertTrue(ids.contains("done"), "\(detail)")
             XCTAssertEqual(ids.contains("run.run"), detail != .hidden, "the steps are one line, gone when Hidden")
             XCTAssertTrue(ids.contains("user") && ids.contains("n") && ids.contains("err") && ids.contains("par") && ids.contains("ask") && ids.contains("txt"), "\(detail)")
             XCTAssertTrue(ids.contains("comm") || ids.contains("run.comm"), "\(detail)")
@@ -375,7 +377,9 @@ final class ChatPreferencesTests: XCTestCase {
         XCTAssertEqual(transcriptRows([text("a"), quiet], detail: .full).map(\.id), ["a"])
     }
 
-    func testASettledPermissionLeavesTheTranscriptAndAnOpenOneStays() throws {
+    /// Issue #426: an answered or expired ask stays as its one-line receipt;
+    /// one the engine closed on its own ("unavailable") or put away leaves.
+    func testAnAnsweredPermissionStaysAsItsReceiptAndAClosedOneLeaves() throws {
         func permission(_ id: String, extra: String = "") throws -> Message {
             let json = """
             {"id":"\(id)","role":"bot","kind":"options","at":2,"card":{"title":"Approval needed","subtitle":"ls","options":["Allow","Deny"],"requestId":"r-\(id)","tool":"Bash"\(extra)}}
@@ -389,15 +393,20 @@ final class ChatPreferencesTests: XCTestCase {
         let question = try JSONDecoder().decode(Message.self, from: Data("""
         {"id":"question","role":"bot","kind":"options","at":3,"card":{"title":"Which one?","subtitle":"Pick","options":["A"],"requestId":"q"}}
         """.utf8))
+        let unavailable = try permission("gone", extra: ",\"answered\":\"unavailable\"")
+        let dismissed = try permission("away", extra: ",\"dismissed\":true")
         XCTAssertFalse(settledPermissionLeavesChat(open))
-        XCTAssertTrue(settledPermissionLeavesChat(allowed))
+        XCTAssertFalse(settledPermissionLeavesChat(allowed))
+        XCTAssertFalse(settledPermissionLeavesChat(expired))
+        XCTAssertTrue(settledPermissionLeavesChat(unavailable))
+        XCTAssertTrue(settledPermissionLeavesChat(dismissed))
         XCTAssertFalse(settledPermissionLeavesChat(question))
         var saved = allowed
         saved.card?.alwaysAllowed = "mcp:sagax-environment__run_command"
         XCTAssertFalse(settledPermissionLeavesChat(saved), "an Always-allowed card stays to show its rule")
         XCTAssertEqual(
-            transcriptRows([text("hi"), open, allowed, denied, expired, question], detail: .full).map(\.id),
-            ["hi", "open", "question"]
+            transcriptRows([text("hi"), open, allowed, denied, expired, unavailable, dismissed, question], detail: .full).map(\.id),
+            ["hi", "open", "allowed", "denied", "expired", "question"]
         )
     }
 }

@@ -2,9 +2,9 @@
 import SwiftUI
 import CompanionCore
 
-/// The reply as it is being typed, styled to match the settled bubble it is
-/// about to become — the handover should be invisible, and any difference in
-/// padding or corner radius reads as the message jumping on arrival.
+/// The reply as it is being typed, styled to match the settled reply it is
+/// about to become (flat since #1024): the handover should be invisible, and
+/// any difference in padding reads as the message jumping on arrival.
 ///
 /// A caret rather than a spinner: a spinner says "something is happening
 /// somewhere", which the reader already knows. A caret at the end of real
@@ -21,6 +21,8 @@ struct StreamingBubble: View {
     let text: String?
     let reasoning: String?
     var color: String = "blue"
+    /// iPad desktop shell: the desktop's ink.
+    @Environment(\.desktopChatText) private var desktop
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -42,16 +44,12 @@ struct StreamingBubble: View {
                     // unclosed fence renders as code, an unclosed link as the
                     // characters typed so far.
                     MarkdownText(source: text, caret: true)
-                        .foregroundStyle(BubbleColor.theirsText)
+                        .foregroundStyle(desktop?.ink ?? Theme.textPrimary)
                 }
             }
-            .padding(.horizontal, Theme.Chat.bubblePaddingH)
-            .padding(.vertical, Theme.Chat.bubblePaddingV)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Metric.bubbleRadius, style: .continuous)
-                    .fill(BubbleColor.theirs)
-            )
-            Spacer(minLength: Theme.Chat.bubbleTrailingGap)
+            // #1024: flat, as the settled reply it becomes (TextBubble)
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         // No `.textSelection` on purpose: selecting text that is still growing
         // fights the reader, and the settled bubble a frame later is

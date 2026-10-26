@@ -49,12 +49,13 @@ enum BunbuMood: Sendable {
             self = .speaking
             return
         }
-        switch state.shapeMood {
+        switch state.shapeMood.folded {
         case .thinking: self = .thinking
         case .working: self = .working
         case .happy: self = .happy
         case .sleeping: self = .sleeping
         case .idle: self = .idle
+        case .streaming, .blocked: self = .idle
         }
     }
 }

@@ -81,6 +81,7 @@ import { phonePairingLink } from "../shared/pairing-link.ts";
 import { canWorkOnCloud, type CloudEngine } from "../shared/cloud-computer.ts";
 import {
   approvalModeFor,
+  engineApprovalMode,
   approvalModeWidens,
   hasNativeAutoReview,
   modelSwitchNeedsAsk,
@@ -166,6 +167,7 @@ import {
   openMessageFolderEntry,
   referencedFileName,
 } from "./message-file.ts";
+import { createThreadFilePins } from "./thread-file-pins.ts";
 import { activePath, listThreadFiles, threadFileRefs, writtenFilesForMessage, type ThreadFileRef } from "./thread-files.ts";
 import {
   avatarGenerationRequestSchema,
@@ -345,7 +347,7 @@ import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
 import { proposalReplacements } from "./proposal-budget.ts";
 import { memberTeamSetupRefusal, TEAM_SETUP_DESKTOP_MESSAGE, TEAM_SETUP_DESKTOP_ONLY } from "./team-setup-review.ts";
-import { cardRuleCandidate, folderRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
+import { cardRuleCandidate, folderRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
 import { customRuleCandidate, customRuleNotice, reviewCustomRules, ruleCoversCard, serverHome, type CustomRuleCall } from "./custom-rules-review.ts";
@@ -1170,6 +1172,7 @@ import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type P
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
+import { planPermissionModeMigration } from "./approval-level-migration.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant } from "./org-full-access.ts";
 import { createInterimAttachRoutes, INTERIM_WINDOW_DAYS, interimWindowUntil, windowWithDays } from "./interim-attach-routes.ts";
@@ -1394,6 +1397,15 @@ const pushHub = new PushHub({
       return userPreferenceStore.get(person).preferences["omb-notification-sounds"] !== "0";
     } catch {
       return true;
+    }
+  },
+  // Settings > Notifications > Notification sound, the person's tone on the phone too
+  personSoundChoice: (person) => {
+    if (IDENTITY.kind !== "perspicax") return undefined;
+    try {
+      return userPreferenceStore.get(person).preferences["sagax.notificationSound.v1"];
+    } catch {
+      return undefined;
     }
   },
 });
@@ -1703,7 +1715,7 @@ holdIncludedServices(process.env);
 // Who each thread is for, when a signed-in person can be named (server-private).
 const threadStarters = new ThreadStarters(join(DATA_DIR, "thread-starters.json"));
 const commandAllowlist = new CommandAllowlistStore(join(DATA_DIR, "command-allowlist.json"));
-// 2026-10-14: owners' approval rules and their bots' permission modes
+// 2026-10-14: owners' approval rules
 // (docs/superpowers/specs/2026-10-14-bot-owner-permissions.md).
 const ownerApprovals = new OwnerApprovalStore(join(DATA_DIR, "owner-approvals.json"));
 // Security keys for sensitive approvals (server/security-keys.ts).
@@ -1728,6 +1740,8 @@ const securityKeyCeremonies = securityKeyCeremonyRoutes({ keys: securityKeys });
 // Artifacts: the widgets bots saved (server/artifacts.ts). Clients get ids
 // only and fetch the change with their own rights.
 const artifactStore = createArtifactStore({ file: join(DATA_DIR, "artifacts.json"), onChange: (frame) => broadcast({ ...frame }) });
+// The files pinned in a conversation's Library tab (server/thread-file-pins.ts).
+const threadFilePins = createThreadFilePins({ file: join(DATA_DIR, "thread-file-pins.json") });
 // 2026-10-16: people's custom auto-review rules, in their own words
 // (shared/custom-rules.ts, server/custom-rules-review.ts).
 const customRules = new CustomRuleStore(join(DATA_DIR, "custom-approval-rules.json"));
@@ -6531,6 +6545,33 @@ for (const pending of startupCatalogs) {
 }
 store.seedIfEmpty();
 hostedModels?.reconcile(store);
+// 2026-10-26 (JC, one approval level): the owner's permission mode was a
+// second setting beside the approval level. A mode someone chose is carried
+// into the level once (approval-level-migration.ts), then dropped.
+try {
+  const legacyModes = ownerApprovals.legacyModes();
+  if (Object.keys(legacyModes).length) {
+    const patches = planPermissionModeMigration(legacyModes, store.bots.map((bot) => ({
+      id: bot.id,
+      ownerId: effectiveBotOwner(bot),
+      level: approvalModeFor(bot),
+      fullSupported: supportsApprovalMode(bot.modelSelection, "full"),
+      tasks: store.tasks(bot.id).map((task) => ({
+        threadId: task.threadId,
+        level: isApprovalMode(task.approvalMode) ? task.approvalMode : undefined,
+        fullSupported: supportsApprovalMode(task.modelSelection ?? bot.modelSelection, "full"),
+      })),
+    })));
+    for (const patch of patches) {
+      if (patch.level) store.patchBot(patch.botId, { approvalMode: patch.level, autoApprove: false });
+      for (const task of patch.tasks) store.patchTask(patch.botId, task.threadId, { approvalMode: task.level, autoApprove: false });
+      console.info(`[approval] permission mode carried into the approval level of one bot (${patch.level ?? "conversations only"})`);
+    }
+    ownerApprovals.dropLegacyModes();
+  }
+} catch (error) {
+  console.warn(`[approval] carrying permission modes into approval levels failed: ${error instanceof Error ? error.message : String(error)}`);
+}
 // 2026-10-11, once per data directory: Full access on an organization
 // server is off until an admin turns it on. An organization that never saved
 // the setting and already runs bots on Full keeps it, as an explicit true.
@@ -15002,7 +15043,13 @@ bus.subscribe((event: RuntimeEvent) => {
       // safety hold, a sandbox widening, a question, a guest's turn or a
       // teammate tool (peer review has its own card).
       const ownerTool = event.mcpTool ?? event.tool;
-      const ownerLayer = Boolean(permission && asker && event.requestId && !baseVerdict?.approve && !strictCard && !guestDriven
+      // 2026-10-26 (JC, one approval level): the owner's rules are read
+      // even when the level already answered (Full access, Approve for me):
+      // a deny rule refuses and an ask rule keeps the card whatever the
+      // level. Only the person's own answer on a draft's or a widget's card
+      // is never asked again.
+      const personAnswered = baseVerdict?.source === "email-draft-approval" || baseVerdict?.source === "widget-approval";
+      const ownerLayer = Boolean(permission && asker && event.requestId && !personAnswered && !strictCard && !guestDriven
         && !/^(?:mcp__[^_]+__)?(?:askuserquestion|ask_user)$/i.test(ownerTool) && memberOwnScopeTool(ownerTool) !== "conversation");
       // 2026-10-21 (review of #938): what a rule reads of this call, the
       // engine's shell line included when it reports one beside no input
@@ -15062,10 +15109,10 @@ bus.subscribe((event: RuntimeEvent) => {
           // owner's own work reads as the owner mode "auto" (destructive
           // calls, ask rules, holds and security keys keep their card).
           mode: destinationAnswerer ? "approval" : ownerModeForTurn({
-            ownerMode: effectivePermissionMode(asker, ownerCall.ownerId),
             approvalMode: effectiveApprovalMode,
             lineage: ownerCall.ownerId.trim().toLowerCase() === effectiveBotOwner(asker).trim().toLowerCase() ? ownerLineageFor(asker, event.threadId) : "other",
             autoAllowed: !(memberOwnedInOrg(asker) && !memberAutoApprovalAllowed(cfg.organization)),
+            bypassAllowed: ownerBypassAllowed(asker, ownerCall.ownerId),
           }),
           rules: ownerApprovals.rulesOf(ownerCall.ownerId, asker.id),
           call: ownerCall,
@@ -15256,7 +15303,8 @@ bus.subscribe((event: RuntimeEvent) => {
       const questions = event.questions?.length ? event.questions : undefined;
       // One generator for the card and its push (shared/approval-describe.ts):
       // "Allow the bot to run a command?" and one plain line, never a raw id.
-      const plain = permission ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, serverApprovalWords(languageOfPerson(cardAnswerer))) : undefined;
+      const plainWords = permission ? serverApprovalWords(languageOfPerson(cardAnswerer)) : undefined;
+      const plain = plainWords ? approvalPlain({ botName: asker?.name, tool: event.mcpTool ?? event.tool, toolInput: event.input, detail: event.summary }, plainWords) : undefined;
       // An AI client's hidden conversation (#291) is not in anyone's sidebar:
       // its approval still reaches the person, and is declined when nobody
       // answers in time instead of holding the turn forever.
@@ -15302,7 +15350,9 @@ bus.subscribe((event: RuntimeEvent) => {
           held: permission && event.engineConnector === true && !event.input ? HELD_NOTE["approval.held.connectorNoDetails"] : approvalHeldReason(heldContext),
           heldCode: permission && event.engineConnector === true && !event.input ? "approval.held.connectorNoDetails" : approvalHeldNote(heldContext),
           approvalScope: event.approvalScope,
-          ...(plain ? { plain: { title: plain.title, line: plain.line, ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
+          // action and locale: a phone words its own heading ("Nova wants
+          // to {action}") when the card is in its reader's language (#426)
+          ...(plain ? { plain: { title: plain.title, line: plain.line, action: plain.action, locale: plainWords?.locale ?? "en", ...(plain.risk ? { risk: plain.risk } : {}) } } : {}),
           ...(permission && event.mcpTool ? { mcpTool: event.mcpTool } : {}),
           ...(ownerRuleCandidate ? { ownerRule: ownerRuleCandidate } : {}),
           ...(ownerRuleFolderCandidate ? { ownerRuleFolder: ownerRuleFolderCandidate } : {}),
@@ -20662,7 +20712,7 @@ async function startTurn(
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         ...(recalled && !warmOnly && !engineCommand ? { recalled } : {}),
         images: modelImages,
-        approvalMode: auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId)),
+        approvalMode: engineTurnLevel(bot, threadId, auditFullAccessTurn(bot, threadId, approvalModeForTurn(bot, commsDepth > 0, threadId))),
         toolScope,
         ...(guestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         model,
@@ -23949,7 +23999,7 @@ async function runGroupMemberTurn(
         ...(roomRecalled && !engineCommand ? { recalled: roomRecalled } : {}),
         ...(engineCommand ? { harnessCommand: { name: engineCommand.command.name, args: engineCommand.args, ...(engineCommand.command.path ? { path: engineCommand.command.path } : {}) } } : {}),
         images: await fitTurnImagesForModel(turnImages, { language: languageOfPerson(roomSpeakerId) }),
-        approvalMode: auditFullAccessTurn(readyBot, threadId, turnApprovalMode),
+        approvalMode: engineTurnLevel(readyBot, threadId, auditFullAccessTurn(readyBot, threadId, turnApprovalMode)),
         toolScope: toolScopeForTurn(readyBot.id),
         ...(roomGuestConfined ? { guestConfined: true, confinedWhy: confinedWhy(threadId) } : {}),
         system: roomSystem.text,
@@ -28351,8 +28401,7 @@ ROUTES.push(createBotSettingsRoutes({
   },
 }));
 // Settings > Bot > Auto-review Rules (server/routes/auto-review-rules.ts).
-// 2026-10-14: a person's own approval rules and their bots' permission
-// modes (server/routes/owner-approvals.ts).
+// 2026-10-14: a person's own approval rules (server/routes/owner-approvals.ts).
 ROUTES.push(createOwnerApprovalRoutes({
   store: ownerApprovals,
   manager: ruleManager,
@@ -28387,13 +28436,6 @@ ROUTES.push(createOwnerApprovalRoutes({
     const bot = store.bot(botId);
     if (bot) revokeLegacyKey(bot, key);
   },
-  bypassRefusal,
-  // a member's bot may not choose Automatic or Bypass while an admin turned
-  // automatic levels off for members' bots (member-auto-approval.ts)
-  modeRefusal: (botId, mode) => {
-    const bot = store.bot(botId);
-    return bot && mode !== "approval" && memberOwnedInOrg(bot) && !memberAutoApprovalAllowed(cfg.organization) ? { ...MEMBER_AUTO_NOT_ALLOWED } : null;
-  },
   audit: (row, auth) => orgAudit({
     category: "approval", action: row.action,
     target: row.botId ? auditBotTarget(row.botId) : { kind: "person", id: row.personId },
@@ -28402,10 +28444,6 @@ ROUTES.push(createOwnerApprovalRoutes({
     actor: orgAuditActor(auth),
   }),
   stepUp: (_auth, personId, action, detail, stepUp) => settingsStepUpGate(personId, action, detail, stepUp),
-  journalMode: (bot, before, after) => appendDecision(DATA_DIR, {
-    threadId: bot.threadId, botId: bot.id, botName: bot.name, tool: "permission-mode",
-    summary: `Permission mode: ${before} to ${after}`, decision: "user-approved", source: "user",
-  }),
 }));
 // 2026-10-16 (wave 2, package E): security keys and passkeys for sensitive
 // approvals (server/security-keys.ts, server/routes/security-keys.ts,
@@ -31292,19 +31330,14 @@ function ownerScopedMcpServerFor(bot: BotRecord, threadId: string): (server: str
   };
 }
 
-/** The bot's permission mode as it may run now: Bypass falls back to
- * Approval once its owner may no longer turn it on (the organization's
- * Full access policy went off, or their profile lost bots.fullAccess). */
-function effectivePermissionMode(bot: BotRecord, ownerId: string): BotPermissionMode {
-  const mode = ownerApprovals.modeOf(bot.id, ownerId);
-  // 2026-10-17 (re-review of #688): a member's bot answers nothing by
-  // itself while an admin turned automatic levels off for members' bots
-  // (member-auto-approval.ts): Automatic and Bypass run as Approval.
-  if (mode !== "approval" && memberOwnedInOrg(bot) && !memberAutoApprovalAllowed(cfg.organization)) return "approval";
-  if (mode !== "bypass" || IDENTITY.kind !== "perspicax") return mode;
-  if (!orgFullAccessPolicy()) return "approval";
-  if (botOwnerOrgRole(bot) === "admin") return mode;
-  return isPrincipalId(ownerId) && can(principalPermissions(ownerId, { sessionAdmin: false }), "bots.fullAccess") ? mode : "approval";
+/** Whether the owner route may run as "bypass" at Full access: not once
+ * the organization's Full access policy went off, or the owner's profile
+ * lost bots.fullAccess (Full then reads as Approve for me). */
+function ownerBypassAllowed(bot: BotRecord, ownerId: string): boolean {
+  if (IDENTITY.kind !== "perspicax") return true;
+  if (!orgFullAccessPolicy()) return false;
+  if (botOwnerOrgRole(bot) === "admin") return true;
+  return isPrincipalId(ownerId) && can(principalPermissions(ownerId, { sessionAdmin: false }), "bots.fullAccess");
 }
 
 /** The person who may manage approval rules and modes on this request:
@@ -31661,16 +31694,6 @@ function revokeLegacyKey(bot: BotRecord, key: string): void {
   if (live) broadcast({ kind: "bot", bot: wireBot(live) });
 }
 
-/** Whether this person may turn Bypass on for this bot: the owner, with
- * bots.fullAccess (an admin holds it) and, on an organization server, the
- * organization's Full access policy on. */
-function bypassRefusal(auth: RequestAuth): string | null {
-  if (IDENTITY.kind !== "perspicax") return null;
-  if (!orgFullAccessPolicy()) return "The organization does not allow Full access, so Bypass is off.";
-  if (auth.kind === "session" && !orgAdminCaller(auth) && !callerCan(auth, "bots.fullAccess")) return permissionRefusal("bots.fullAccess").message;
-  return null;
-}
-
 /** 2026-10-11: the level a new bot starts on. A solo server keeps Approve
  * for me; an organization server follows its policy (`defaults.approvalMode`)
  * and starts on Ask when it names none. */
@@ -31730,6 +31753,27 @@ function auditApprovalModeChange(auth: RequestAuth | null, botId: string, before
   });
 }
 /** Audit: one turn ran with Full access. */
+/** 2026-10-26 (JC, one approval level): whether an Ask or Deny rule could
+ * decide a call of this bot's turn: the owner's (or the conversation's
+ * person's) own rules for this bot, their rules in their own words, and the
+ * organization's rules. */
+function rulesHoldTurn(bot: BotRecord, threadId: string): boolean {
+  const people = new Set<string>([approvalOwnerId(bot, threadId)]);
+  const speaker = turnSpeakerPrincipals.get(threadId);
+  if (speaker && isPrincipalId(speaker)) people.add(speaker);
+  for (const person of people) {
+    if (!person) continue;
+    if (ownerApprovals.rulesOf(person, bot.id).some((rule) => rule.behavior !== "allow")) return true;
+    if (customRules.rulesOf(person, bot.id).some((rule) => rule.enabled && rule.behavior !== "allow")) return true;
+  }
+  return false;
+}
+/** The level the engine runs natively (shared/approval-mode.ts
+ * engineApprovalMode): Full with a rule in force runs it at Ask so the rule
+ * sees every call; Sagax answers the rest as Full. */
+function engineTurnLevel(bot: BotRecord, threadId: string, level: ApprovalMode): ApprovalMode {
+  return engineApprovalMode(level, level === "full" && rulesHoldTurn(bot, threadId));
+}
 function auditFullAccessTurn(bot: BotRecord, threadId: string, mode: ApprovalMode): ApprovalMode {
   if (mode === "full") {
     appendAdminAction(DATA_DIR, {
@@ -41705,7 +41749,25 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         threadFileRefsFor(threadId),
         (ref) => statMessageFile(ref.path, threadFileRoots(threadId, ref)),
       );
-      return json(res, 200, { files });
+      const pinned = threadFilePins.ids(threadId);
+      return json(res, 200, { files: files.map((file) => pinned.has(file.id) ? { ...file, pinned: true } : file) });
+    }
+
+    // Pin or unpin one of those files: `{ "pinned": true | false }`. The pin
+    // is kept on the server so it follows the person to their other devices.
+    m = path.match(/^\/api\/threads\/([\w-]+)\/files\/([a-f0-9]{24})\/pin$/);
+    if (m && method === "POST") {
+      const threadId = m[1]!;
+      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
+        return json(res, 404, { error: "no such conversation" });
+      }
+      const body = await readBody(req, 1024);
+      if (typeof body?.pinned !== "boolean") return json(res, 400, { error: "pinned must be true or false" });
+      if (!threadFileRefsFor(threadId).some((candidate) => candidate.id === m![2])) {
+        return json(res, 404, { error: "no such file in this conversation" });
+      }
+      if (!threadFilePins.set(threadId, m[2]!, body.pinned)) return json(res, 409, { error: "too many pinned files in this conversation" });
+      return json(res, 200, { ok: true, pinned: body.pinned });
     }
 
     // One of those files by its opaque id: `preview=1` streams an image

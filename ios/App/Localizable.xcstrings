@@ -1,6 +1,72 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Mascots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascottes"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotes"
+          }
+        }
+      }
+    },
+    "HD mascots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HD mascots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascottes HD"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mascotes HD"
+          }
+        }
+      }
+    },
+    "Detailed art for the characters that have it. Colors and skins apply to the classic look.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed art for the characters that have it. Colors and skins apply to the classic look."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Illustrations détaillées pour les personnages qui en ont. Les couleurs et les styles s'appliquent à l'apparence classique."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arte detalhada para os personagens que a têm. Cores e estilos valem para a aparência clássica."
+          }
+        }
+      }
+    },
     "Pairing code %@ %@: your computer's form shows the same when it is the one asking.": {
       "localizations": {
         "en": {
@@ -14105,6 +14171,94 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mídia"
+          }
+        }
+      }
+    },
+    "Couldn't open this artifact.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open this artifact."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir cet artefact."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir este artefato."
+          }
+        }
+      }
+    },
+    "This week": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This week"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette semaine"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta semana"
+          }
+        }
+      }
+    },
+    "Older": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Older"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus ancien"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mais antigo"
+          }
+        }
+      }
+    },
+    "Files and artifacts from this chat show up here.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files and artifacts from this chat show up here."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les fichiers et artefacts de cette discussion apparaissent ici."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Os arquivos e artefatos desta conversa aparecem aqui."
           }
         }
       }
@@ -44821,24 +44975,18 @@
         }
       }
     },
-    "Approves file edits automatically; other actions can still require approval": {
+    "File edits go without asking; other actions ask you. Your rules come first: \"Ask every time\" shows a card, \"Deny\" refuses.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Approves file edits automatically; other actions can still require approval"
+            "value": "File edits go without asking; other actions ask you. Your rules come first: \"Ask every time\" shows a card, \"Deny\" refuses."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Approuve automatiquement les modifications de fichiers ; d'autres actions peuvent encore demander une approbation"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aprova edições de arquivos automaticamente; outras ações ainda podem exigir aprovação"
+            "value": "Les modifications de fichiers passent sans demander; les autres actions vous sont demandées. Vos règles passent d'abord : « Demander chaque fois » montre une carte, « Refuser » refuse."
           }
         }
       }
@@ -45481,24 +45629,18 @@
         }
       }
     },
-    "Requests approval for commands and file changes": {
+    "Asks you before each command, file change or tool call. Your rules come first: \"Allow automatically\" goes without a card, \"Deny\" refuses.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Requests approval for commands and file changes"
+            "value": "Asks you before each command, file change or tool call. Your rules come first: \"Allow automatically\" goes without a card, \"Deny\" refuses."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Demande l'approbation pour les commandes et les modifications de fichiers"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pede aprovação para comandos e alterações de arquivos"
+            "value": "Vous demande avant chaque commande, modification de fichier ou outil. Vos règles passent d'abord : « Autoriser automatiquement » passe sans carte, « Refuser » refuse."
           }
         }
       }
@@ -45547,24 +45689,18 @@
         }
       }
     },
-    "Runs commands and edits files without asking. Use only with bots you trust.": {
+    "Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Runs commands and edits files without asking. Use only with bots you trust."
+            "value": "Runs commands and edits files without asking. Your rules still apply: \"Ask every time\" shows a card and \"Deny\" refuses, even here. Use only with bots you trust."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Exécute des commandes et modifie des fichiers sans demander. À utiliser seulement avec des bots de confiance."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Executa comandos e edita arquivos sem perguntar. Use só com bots de confiança."
+            "value": "Exécute des commandes et modifie des fichiers sans demander. Vos règles s'appliquent quand même : « Demander chaque fois » montre une carte et « Refuser » refuse, même ici. À utiliser seulement avec des bots de confiance."
           }
         }
       }
@@ -45701,24 +45837,18 @@
         }
       }
     },
-    "Uses the provider's automatic review to approve routine actions and ask about others": {
+    "Uses the engine's automatic review to approve routine actions, and asks about deletions, bulk changes and messages sent on your behalf. Your rules come first: \"Ask every time\" always shows a card, \"Deny\" always refuses.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Uses the provider's automatic review to approve routine actions and ask about others"
+            "value": "Uses the engine's automatic review to approve routine actions, and asks about deletions, bulk changes and messages sent on your behalf. Your rules come first: \"Ask every time\" always shows a card, \"Deny\" always refuses."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Utilise la révision automatique du fournisseur pour approuver les actions courantes et demander pour les autres"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Usa a revisão automática do provedor para aprovar ações rotineiras e perguntar sobre as outras"
+            "value": "Utilise la révision automatique du moteur pour approuver les actions courantes, et vous demande pour les suppressions, les changements en lot et les messages envoyés en votre nom. Vos règles passent d'abord : « Demander chaque fois » montre toujours une carte, « Refuser » refuse toujours."
           }
         }
       }
@@ -60669,6 +60799,454 @@
         }
       }
     },
+    "Browse Bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse Bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourir les bots"
+          }
+        }
+      }
+    },
+    "An agent is working. Update will be available when every agent is done. Your files and logins stay, installed apps and packages are removed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An agent is working. Update will be available when every agent is done. Your files and logins stay, installed apps and packages are removed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un agent travaille. La mise à jour sera possible quand chaque agent aura fini. Vos fichiers et vos connexions restent, les apps et paquets installés sont retirés."
+          }
+        }
+      }
+    },
+    "Stopping %@…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping %@…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêt de %@…"
+          }
+        }
+      }
+    },
+    "%@ could not be stopped. Try again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ could not be stopped. Try again."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ n'a pas pu être arrêté. Réessayez."
+          }
+        }
+      }
+    },
+    "A bot is working on this computer. Reset anyway? Its current task is cut short and the computer is rebuilt from the last snapshot. This cannot be undone.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A bot is working on this computer. Reset anyway? Its current task is cut short and the computer is rebuilt from the last snapshot. This cannot be undone."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un bot travaille sur cet ordinateur. Réinitialiser quand même ? Sa tâche en cours est coupée et l'ordinateur est reconstruit à partir du dernier instantané. C'est irréversible."
+          }
+        }
+      }
+    },
+    "New conversation": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New conversation"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle conversation"
+          }
+        }
+      }
+    },
+    "You can only write in conversations you started on this Cloud.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can only write in conversations you started on this Cloud."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous ne pouvez écrire que dans les conversations que vous avez commencées sur ce Cloud."
+          }
+        }
+      }
+    },
+    "Share the link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share the link"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager le lien"
+          }
+        }
+      }
+    },
+    "Create a public link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Create a public link"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer un lien public"
+          }
+        }
+      }
+    },
+    "View the shared copy": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View the shared copy"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir la copie partagée"
+          }
+        }
+      }
+    },
+    "Update the template": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the template"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre à jour le modèle"
+          }
+        }
+      }
+    },
+    "Turn off the public link": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn off the public link"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactiver le lien public"
+          }
+        }
+      }
+    },
+    "updated": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "updated"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mis à jour"
+          }
+        }
+      }
+    },
+    "Template updated. The link now opens this version.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Template updated. The link now opens this version."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modèle mis à jour. Le lien ouvre maintenant cette version."
+          }
+        }
+      }
+    },
+    "This address works on this computer only. Share the link from your organization server, or set a public address, for others to open it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This address works on this computer only. Share the link from your organization server, or set a public address, for others to open it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette adresse fonctionne sur cet ordinateur seulement. Partagez le lien depuis le serveur de votre organisation, ou configurez une adresse publique, pour que d'autres puissent l'ouvrir."
+          }
+        }
+      }
+    },
+    "Anyone with the link sees a read-only card of this template and can import it into Sagax. Starter notes never go into a link.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anyone with the link sees a read-only card of this template and can import it into Sagax. Starter notes never go into a link."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toute personne qui a le lien voit une fiche en lecture seule de ce modèle et peut l'importer dans Sagax. Les notes de départ ne vont jamais dans un lien."
+          }
+        }
+      }
+    },
+    "Never in a link: starter notes, connected apps, keys and model choices. Turning a link off is immediate.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Never in a link: starter notes, connected apps, keys and model choices. Turning a link off is immediate."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jamais dans un lien : les notes de départ, les apps connectées, les clés et les choix de modèle. La désactivation d'un lien est immédiate."
+          }
+        }
+      }
+    },
+    "Timing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timing"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horaire"
+          }
+        }
+      }
+    },
+    "Exact": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact"
+          }
+        }
+      }
+    },
+    "Flexible": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flexible"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Flexible"
+          }
+        }
+      }
+    },
+    "Early": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Early"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avant"
+          }
+        }
+      }
+    },
+    "Late": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Late"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après"
+          }
+        }
+      }
+    },
+    "min": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "min"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "min"
+          }
+        }
+      }
+    },
+    "Early window minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Early window minutes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutes de la fenêtre avant"
+          }
+        }
+      }
+    },
+    "Late window minutes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Late window minutes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Minutes de la fenêtre après"
+          }
+        }
+      }
+    },
+    "0 late means ready by the scheduled time.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 late means ready by the scheduled time."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0 après veut dire prêt à l'heure prévue."
+          }
+        }
+      }
+    },
+    "Shared by %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared by %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partagé par %@"
+          }
+        }
+      }
+    },
+    "© 2026 Pulsatrix Technologies inc. Free for noncommercial use (PolyForm Noncommercial 1.0.0).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies inc. Free for noncommercial use (PolyForm Noncommercial 1.0.0)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "© 2026 Pulsatrix Technologies inc. Gratuit pour un usage non commercial (PolyForm Noncommercial 1.0.0)."
+          }
+        }
+      }
+    },
     "Classic": {
       "localizations": {
         "en": {
@@ -70334,6 +70912,22 @@
         }
       }
     },
+    "Hide earlier topics": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer les sujets précédents"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar tópicos anteriores"
+          }
+        }
+      }
+    },
     "Earlier topics": {
       "localizations": {
         "fr": {
@@ -74306,6 +74900,1298 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Waiting for the administrator to turn it on" } },
         "fr": { "stringUnit": { "state": "translated", "value": "En attente d'activation par l'administrateur" } }
+      }
+    },
+    "Tool calls": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tool calls" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Appels d'outils" } }
+      }
+    },
+    "Show tool calls in chat. Off: the chat shows the messages, a turn's steps fold away. The same switch as on your computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show tool calls in chat. Off: the chat shows the messages, a turn's steps fold away. The same switch as on your computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les appels d'outils dans la conversation. Désactivé : la conversation montre les messages, les étapes d'un tour se replient. Le même interrupteur que sur votre ordinateur." } }
+      }
+    },
+    "Show tool calls in chat": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show tool calls in chat" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les appels d'outils dans la conversation" } }
+      }
+    },
+    "Could not save the tool calls setting.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not save the tool calls setting." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible d'enregistrer le réglage des appels d'outils." } }
+      }
+    },
+    "Use bot color as accent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Use bot color as accent" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Couleur du bot comme accent" } }
+      }
+    },
+    "The accent follows the open bot's color.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The accent follows the open bot's color." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'accent prend la couleur du bot ouvert." } }
+      }
+    },
+    "Show suggestions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show suggestions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les suggestions" } }
+      }
+    },
+    "Show the Suggestions card in the bot panel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show the Suggestions card in the bot panel" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher la carte Suggestions dans le panneau du bot" } }
+      }
+    },
+    "Mascots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mascots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mascottes" } }
+      }
+    },
+    "HD mascots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "HD mascots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mascottes HD" } }
+      }
+    },
+    "Detailed art for the characters that have it. Colors and skins apply to the classic look.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Detailed art for the characters that have it. Colors and skins apply to the classic look." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Illustrations détaillées pour les personnages qui en ont. Les couleurs et les styles s'appliquent à l'apparence classique." } }
+      }
+    },
+    "Notification sound": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Notification sound" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Son de notification" } }
+      }
+    },
+    "Tick": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Tick" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tic" } }
+      }
+    },
+    "Double tick": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Double tick" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Double tic" } }
+      }
+    },
+    "Chime A": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Chime A" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Carillon A" } }
+      }
+    },
+    "Chime B": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Chime B" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Carillon B" } }
+      }
+    },
+    "Blip": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Blip" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Blip" } }
+      }
+    },
+    "Send read receipts": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Send read receipts" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Envoyer les accusés de lecture" } }
+      }
+    },
+    "Off: you do not see other people's either.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Off: you do not see other people's either." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactivé : vous ne voyez pas non plus ceux des autres." } }
+      }
+    },
+    "Thread lists, their controls and thread receipts in the chat. Off: one conversation per bot, as on your computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Thread lists, their controls and thread receipts in the chat. Off: one conversation per bot, as on your computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les listes de fils, leurs commandes et les reçus de fil dans la conversation. Désactivé : une seule conversation par bot, comme sur votre ordinateur." } }
+      }
+    },
+    "Suggestions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Suggestions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Suggestions" } }
+      }
+    },
+    "Answer a waiting request": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Answer a waiting request" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Répondre à une demande en attente" } }
+      }
+    },
+    "A conversation is waiting for your answer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A conversation is waiting for your answer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une conversation attend votre réponse" } }
+      }
+    },
+    "Waiting in %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Waiting in %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En attente dans %@" } }
+      }
+    },
+    "%@ is waiting for your answer": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ is waiting for your answer" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ attend votre réponse" } }
+      }
+    },
+    "Give it a name and a role": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Give it a name and a role" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lui donner un nom et un rôle" } }
+      }
+    },
+    "So people know what to ask it": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "So people know what to ask it" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pour qu'on sache quoi lui demander" } }
+      }
+    },
+    "Write its standing instructions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Write its standing instructions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Écrire ses consignes permanentes" } }
+      }
+    },
+    "How it works, every conversation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "How it works, every conversation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sa façon de travailler, à chaque conversation" } }
+      }
+    },
+    "Choose a working folder": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a working folder" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisir un dossier de travail" } }
+      }
+    },
+    "Where its files live": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Where its files live" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Où ses fichiers sont rangés" } }
+      }
+    },
+    "Connect the apps it needs": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect the apps it needs" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connecter les applications dont il a besoin" } }
+      }
+    },
+    "Some of its tools still need a sign-in": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Some of its tools still need a sign-in" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Certains de ses outils attendent encore une connexion" } }
+      }
+    },
+    "Add a schedule or a trigger": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add a schedule or a trigger" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter un horaire ou un déclencheur" } }
+      }
+    },
+    "Let it work without being asked": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Let it work without being asked" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pour qu'il travaille sans qu'on le lui demande" } }
+      }
+    },
+    "Base": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Base" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "De base" } }
+      }
+    },
+    "Red": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Red" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rouge" } }
+      }
+    },
+    "Pink": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Pink" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rose" } }
+      }
+    },
+    "Green": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Green" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vert" } }
+      }
+    },
+    "Yellow": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Yellow" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Jaune" } }
+      }
+    },
+    "Windows XP": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows XP" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows XP" } }
+      }
+    },
+    "Windows Vista": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows Vista" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows Vista" } }
+      }
+    },
+    "Windows 7": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 7" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 7" } }
+      }
+    },
+    "Windows 8": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 8" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 8" } }
+      }
+    },
+    "Windows 8.1": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 8.1" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 8.1" } }
+      }
+    },
+    "Windows 10": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 10" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 10" } }
+      }
+    },
+    "Windows 11": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Windows 11" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Windows 11" } }
+      }
+    },
+    "Colour": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Colour" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Couleur" } }
+      }
+    },
+    "Duo-tone": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Duo-tone" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Duo-ton" } }
+      }
+    },
+    "Mood": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mood" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ambiance" } }
+      }
+    },
+    "Edition": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Edition" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Édition" } }
+      }
+    },
+    "Intensity": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Intensity" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Intensité" } }
+      }
+    },
+    "Accent": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Accent" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Accent" } }
+      }
+    },
+    "Full (intensity)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Full" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pleine" } }
+      }
+    },
+    "Texture": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Texture" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Texture" } }
+      }
+    },
+    "Grain": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Grain" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Grain" } }
+      }
+    },
+    "Grid": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Grid" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Grille" } }
+      }
+    },
+    "Dots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Dots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Points" } }
+      }
+    },
+    "Aurora": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Aurora" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aurore" } }
+      }
+    },
+    "Ocean": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ocean" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Océan" } }
+      }
+    },
+    "Neon": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Neon" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Néon" } }
+      }
+    },
+    "Forest": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Forest" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Forêt" } }
+      }
+    },
+    "Cyberpunk": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Cyberpunk" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cyberpunk" } }
+      }
+    },
+    "Sunset": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sunset" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Coucher de soleil" } }
+      }
+    },
+    "Nordic": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nordic" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nordique" } }
+      }
+    },
+    "Candy": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Candy" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Bonbon" } }
+      }
+    },
+    "%@ wants to write to %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wants to write to %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ veut écrire à %@"
+          }
+        }
+      }
+    },
+    "%@ wants to write to %lld bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ wants to write to %lld bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ veut écrire à %lld bots"
+          }
+        }
+      }
+    },
+    "Write to %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write to %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrire à %@"
+          }
+        }
+      }
+    },
+    "Write to %lld bots": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Write to %lld bots"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrire à %lld bots"
+          }
+        }
+      }
+    },
+    "Unknown bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot inconnu"
+          }
+        }
+      }
+    },
+    "Undone": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undone"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annulé"
+          }
+        }
+      }
+    },
+    "Always denied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always denied"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours refusé"
+          }
+        }
+      }
+    },
+    "Declined": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Declined"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refusé"
+          }
+        }
+      }
+    },
+    "by voice": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "by voice"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "à la voix"
+          }
+        }
+      }
+    },
+    "from an AI client": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "from an AI client"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "depuis un client IA"
+          }
+        }
+      }
+    },
+    "by automatic review": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "by automatic review"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "par l'examen automatique"
+          }
+        }
+      }
+    },
+    "via %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "via %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "via %@"
+          }
+        }
+      }
+    },
+    "your Primary Bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "your Primary Bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "votre bot principal"
+          }
+        }
+      }
+    },
+    "This sends something on your behalf, so it always asks first.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This sends something on your behalf, so it always asks first."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ceci envoie quelque chose en votre nom, alors le bot demande toujours d'abord."
+          }
+        }
+      }
+    },
+    "This changes the provider sandbox, so only Full access can approve it automatically.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This changes the provider sandbox, so only Full access can approve it automatically."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cela modifie le bac à sable du fournisseur : seul Accès complet peut l'autoriser automatiquement."
+          }
+        }
+      }
+    },
+    "Approve for me couldn't answer this one.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve for me couldn't answer this one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approuver à ma place n'a pas pu répondre à celle-ci."
+          }
+        }
+      }
+    },
+    "Full access couldn't deliver this approval.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full access couldn't deliver this approval."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accès complet n'a pas pu transmettre cette autorisation."
+          }
+        }
+      }
+    },
+    "Your rule asks you first for this.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your rule asks you first for this."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre règle demande votre accord d'abord pour ceci."
+          }
+        }
+      }
+    },
+    "Grok did not share this call's details. Allow it only if you asked for it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok did not share this call's details. Allow it only if you asked for it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok n'a pas transmis le détail de cet appel. Ne l'autorisez que si vous l'avez demandé."
+          }
+        }
+      }
+    },
+    "Added to your rules: denied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added to your rules: denied"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouté à vos règles : refusé"
+          }
+        }
+      }
+    },
+    "Added to your rules: allowed automatically": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added to your rules: allowed automatically"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouté à vos règles : autorisé automatiquement"
+          }
+        }
+      }
+    },
+    "See all": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See all"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir tout"
+          }
+        }
+      }
+    },
+    "Hides the request": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hides the request"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masque la demande"
+          }
+        }
+      }
+    },
+    "Shows the request": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shows the request"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche la demande"
+          }
+        }
+      }
+    },
+    "See the full request": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "See the full request"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir la demande complète"
+          }
+        }
+      }
+    },
+    "Full request": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full request"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande complète"
+          }
+        }
+      }
+    },
+    "Answered by %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Answered by %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répondu par %@"
+          }
+        }
+      }
+    },
+    "Phone call": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phone call"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appel téléphonique"
+          }
+        }
+      }
+    },
+    "Purchase": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Purchase"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Achat"
+          }
+        }
+      }
+    },
+    "Call to %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Call to %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appel vers %@"
+          }
+        }
+      }
+    },
+    "1 flight purchased · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 flight purchased · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 vol acheté · %@"
+          }
+        }
+      }
+    },
+    "%lld flights purchased · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld flights purchased · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld vols achetés · %@"
+          }
+        }
+      }
+    },
+    "1 item purchased · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 item purchased · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 article acheté · %@"
+          }
+        }
+      }
+    },
+    "%lld items purchased · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld items purchased · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld articles achetés · %@"
+          }
+        }
+      }
+    },
+    "Purchased · %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Purchased · %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acheté · %@"
+          }
+        }
+      }
+    },
+    "Pay %@ at %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pay %@ at %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Payer %@ chez %@"
+          }
+        }
+      }
+    },
+    "Allowed. %@ is placing the call.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed. %@ is placing the call."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permis. %@ passe l'appel."
+          }
+        }
+      }
+    },
+    "Call placed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Call placed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appel passé."
+          }
+        }
+      }
+    },
+    "Not called.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not called."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas d'appel."
+          }
+        }
+      }
+    },
+    "The call failed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The call failed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'appel a échoué."
+          }
+        }
+      }
+    },
+    "Allowed. %@ can pay.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed. %@ can pay."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permis. %@ peut payer."
+          }
+        }
+      }
+    },
+    "Declined.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Declined."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refusé."
+          }
+        }
+      }
+    },
+    "Purpose:": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Purpose:"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objectif :"
+          }
+        }
+      }
+    },
+    "What %@ will say": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What %@ will say"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce que %@ dira"
+          }
+        }
+      }
+    },
+    "Callback number said on the call: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Callback number said on the call: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numéro de rappel annoncé dans l'appel : %@"
+          }
+        }
+      }
+    },
+    "The call first says it is an AI assistant calling on your behalf, gives the callback number and how to stop the calls, says the message twice, then hangs up. Nothing is placed until you confirm the number and choose Call.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The call first says it is an AI assistant calling on your behalf, gives the callback number and how to stop the calls, says the message twice, then hangs up. Nothing is placed until you confirm the number and choose Call."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'appel dit d'abord que c'est un assistant IA qui appelle en votre nom, donne le numéro de rappel et comment ne plus recevoir d'appels, dit le message deux fois, puis raccroche. Rien n'est composé avant que vous confirmiez le numéro et choisissiez Appeler."
+          }
+        }
+      }
+    },
+    "I confirm the number %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I confirm the number %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je confirme le numéro %@"
+          }
+        }
+      }
+    },
+    "Order %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Order %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commande %@"
+          }
+        }
+      }
+    },
+    "%@ to %@, %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ to %@, %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ vers %@, %@"
+          }
+        }
+      }
+    },
+    "Receipt declared by the bot, not read by Sagax from the shop's page.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receipt declared by the bot, not read by Sagax from the shop's page."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçu déclaré par le bot, pas lu par Sagax sur la page de la boutique."
+          }
+        }
+      }
+    },
+    "The shop confirmed %@, not the %@ you allowed. Check the order.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The shop confirmed %@, not the %@ you allowed. Check the order."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La boutique a confirmé %@, et non les %@ que vous avez permis. Vérifiez la commande."
+          }
+        }
+      }
+    },
+    "Pay with %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pay with %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Payer avec %@"
+          }
+        }
+      }
+    },
+    "The bot never sees the card number or the security code. Nothing is charged until you allow it.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The bot never sees the card number or the security code. Nothing is charged until you allow it."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le bot ne voit jamais le numéro ni le code de sécurité de la carte. Rien n'est débité avant que vous le permettiez."
+          }
+        }
+      }
+    },
+    "Call": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Call"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appeler"
+          }
+        }
+      }
+    },
+    "Don't call": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't call"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ne pas appeler"
+          }
+        }
+      }
+    },
+    "Decline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Decline"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refuser"
+          }
+        }
       }
     }
   },

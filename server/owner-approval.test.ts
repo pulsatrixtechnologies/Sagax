@@ -237,9 +237,9 @@ describe("modes", () => {
     expect(ownerDecision({ mode: "auto", rules: [], call: call(ticketUpdate) })).toEqual({ kind: "allow", source: "owner-auto" });
     expect(ownerDecision({ mode: "auto", rules: [], call: call(smsSend, { tool: "mcp__perspicax_quasar__twilio_api__write" }) })).toMatchObject({ kind: "card", reason: "destructive" });
   });
-  it("bypass asks nothing on the owner route, even over an ask rule, and is journaled as bypass", () => {
+  it("bypass asks nothing a rule does not cover, is journaled as bypass, and an ask rule still shows its card (2026-10-26)", () => {
     expect(ownerDecision({ mode: "bypass", rules: [], call: call(ticketUpdate) })).toEqual({ kind: "allow", source: "owner-bypass" });
-    expect(ownerDecision({ mode: "bypass", rules: [rule({ behavior: "ask" })], call: call(ticketUpdate) })).toMatchObject({ kind: "allow", source: "owner-bypass" });
+    expect(ownerDecision({ mode: "bypass", rules: [rule({ behavior: "ask" })], call: call(ticketUpdate) })).toMatchObject({ kind: "card", reason: "ask-rule" });
   });
   it("no mode or rule answers an admin card or a hold", () => {
     for (const mode of ["approval", "auto", "bypass"] as const) {
@@ -387,19 +387,19 @@ describe("the store", () => {
     expect(store.rulesOf(ALICE, "bot-a").map((row) => row.description).sort()).toEqual(["a", "all"]);
   });
 
-  it("a mode falls back to approval when the bot's owner changed, and persists 0600", () => {
-    const store = open();
-    expect(store.modeOf("bot-a", ALICE)).toBe("approval");
-    store.setMode("bot-a", ALICE, "bypass");
-    expect(store.modeOf("bot-a", ALICE)).toBe("bypass");
-    expect(store.modeOf("bot-a", BOB)).toBe("approval");
+  it("reads the legacy modes once, then drops them (2026-10-26, one approval level), and persists 0600", () => {
+    dir = mkdtempSync(join(tmpdir(), "owner-approvals-"));
     const file = join(dir, "owner-approvals.json");
+    writeFileSync(file, JSON.stringify({ version: 1, rules: [], modes: { "bot-a": { mode: "bypass", ownerId: ALICE, at: 1 } } }));
+    const store = new OwnerApprovalStore(file);
+    expect(store.legacyModes()).toEqual({ "bot-a": { mode: "bypass", ownerId: ALICE } });
+    store.dropLegacyModes();
     // Windows has no POSIX file modes: statSync reports 0o666 whatever chmod asked.
     if (process.platform !== "win32") expect(statSync(file).mode & 0o777).toBe(0o600);
-    const reopened = new OwnerApprovalStore(file);
-    expect(reopened.modeOf("bot-a", ALICE)).toBe("bypass");
-    reopened.forgetBot("bot-a");
-    expect(new OwnerApprovalStore(file).modeOf("bot-a", ALICE)).toBe("approval");
+    expect(new OwnerApprovalStore(file).legacyModes()).toEqual({});
+    // a file written without modes still opens
+    writeFileSync(file, JSON.stringify({ version: 1, rules: [] }));
+    expect(new OwnerApprovalStore(file).legacyModes()).toEqual({});
   });
 
   it("never overwrites a file it could not read", () => {

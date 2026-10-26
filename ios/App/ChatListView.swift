@@ -13,7 +13,8 @@ struct ChatListView: View {
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @State private var query = ""
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    /// Settings > Appearance > Tool calls, the desktop's switch.
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
     @AppStorage(PrefKey.rosterDensity) private var rosterDensity = RosterDensity.default.rawValue
     @AppStorage(PrefKey.updatesButton) var showUpdatesButton = false
     @AppStorage(PrefKey.rosterChromeAtTop) private var storedChromeAtTop = false
@@ -167,20 +168,12 @@ struct ChatListView: View {
                 DesktopTemplatesSheet { showingTemplates = false }
                     .environmentObject(session)
             }
-            // Connect apps' "Bot templates": Connect apps (and Settings around
-            // it) closes, then Templates or the new bot sheet opens
-            .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { note in
-                let destination = (note.object as? String).flatMap(BotTemplatesDestination.init(rawValue:)) ?? .newBot
+            // Connect apps' "Browse Bots": Connect apps (and Settings around
+            // it) closes, then Browse Bots opens
+            .onReceive(NotificationCenter.default.publisher(for: .sagaxOpenBotTemplates)) { _ in
                 showingConnectedApps = false
                 showingSettings = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    switch destination {
-                    case .templates: showingTemplates = true
-                    case .newBot:
-                        createBotSection = nil
-                        showingCreateBot = true
-                    }
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showingTemplates = true }
             }
             .sheet(item: $accountSheet) { sheet in
                 HomeAccountSheetView(sheet: sheet)
@@ -318,8 +311,10 @@ struct ChatListView: View {
                         updatesButton
                             .padding(.horizontal, 16)
                             .padding(.bottom, 8)
+                            .bottomBarScrim()
                     } else {
                         bottomBar(includesUpdates: true)
+                            .bottomBarScrim()
                     }
                 }
             }
@@ -813,10 +808,7 @@ struct ChatListView: View {
 
     /// Changes when a message or an unread mark arrives, or the roster's
     /// membership changes.
-    private var rosterSignature: [String] {
-        session.state.bots.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0):\($0.tasks?.compactMap(\.updatedAt).max() ?? 0)" }
-            + session.state.rooms.map { "\($0.id):\($0.unread):\(session.state.messages[$0.threadId]?.last?.at ?? 0)" }
-    }
+    private var rosterSignature: [String] { session.rosterSignature }
 
     /// The account menu's entries.
     private func selectAccount(_ item: AccountMenuItem) {
@@ -854,7 +846,7 @@ struct ChatListView: View {
     // MARK: - Data
 
     /// The reader's activity level, which the roster preview folds by.
-    private var activity: ActivityDetail { ActivityDetail(rawValue: activityDetail) ?? .full }
+    private var activity: ActivityDetail { toolCalls.detail }
 
     /// How much each row says, from Settings.
     private var density: RosterDensity { RosterDensity.shown(stored: rosterDensity) }
@@ -1035,6 +1027,8 @@ struct AttentionRow: View {
 
 struct ChatRow: View {
     @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    @ObservedObject private var people = PeopleDirectory.shared
     let chat: Chat
     let preview: String
     let at: Double
@@ -1057,6 +1051,10 @@ struct ChatRow: View {
 
             HStack(alignment: .top, spacing: 14) {
                 ChatAvatarView(chat: chat, size: 52, state: state, animated: state.showsActivity)
+                    // #985: a bot shared with the viewer wears its sharer's face
+                    .overlay(alignment: .bottomTrailing) {
+                        if let sharer { SharerBadge(sharer: sharer, avatarSize: 52) }
+                    }
                     .padding(.top, 12)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -1123,6 +1121,11 @@ struct ChatRow: View {
         }
         .padding(.leading, 6)
         .contentShape(Rectangle())
+    }
+
+    private var sharer: BotSharer? {
+        guard case let .bot(bot) = chat else { return nil }
+        return people.sharer(of: bot, session: session)
     }
 }
 
@@ -1316,6 +1319,7 @@ extension ChatListView {
         .task(id: session.connection?.id) {
             await session.loadAccount()
             await sidebarPrefs.load(session)
+            await ToolCallsSetting.shared.load(session)
             await people.load(session)
             await AccountRowModel.shared.refresh(session)
             await flags.reload(session)
@@ -1407,7 +1411,7 @@ extension ChatListView {
 
     private func standardHomeScroll(headerClearance: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            Theme.bg.ignoresSafeArea()
+            Theme.bg.skinTexture(Theme.palette.texture, ink: Theme.palette.textPrimary.uiColor).ignoresSafeArea()
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -1536,6 +1540,7 @@ extension ChatListView {
             }
             .padding(.horizontal, Theme.Metric.screenEdge)
             .padding(.bottom, 8)
+            .bottomBarScrim()
         }
     }
 
@@ -1805,15 +1810,14 @@ extension ChatListView {
     private var homeOverlays: some View {
         ZStack {
             if showingSettings {
-                CardSheetContainer(onDismiss: {
+                // Full screen on iPhone and iPad (JC, 2026-10-26): the whole
+                // surface, with the X of SettingsView to close.
+                SettingsView(close: {
                     showingSettings = false
                     Task { await flags.reload(session) }
-                }) {
-                    SettingsView(close: {
-                        showingSettings = false
-                        Task { await flags.reload(session) }
-                    })
-                }
+                })
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(Theme.bg.ignoresSafeArea())
                 .transition(.move(edge: .bottom))
                 .zIndex(1)
             }

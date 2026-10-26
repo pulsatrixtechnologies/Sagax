@@ -58,7 +58,7 @@ export type SettingsActionInput = {
 /** What a Primary Bot may change at once on the person's words (security
  * review 2026-10-20): turning cards off or back on, nothing else. */
 const PERSON_ASKED_KEYS: ReadonlySet<string> = new Set([
-  "bot.approvalMode", "thread.approvalMode", "bot.permissionMode",
+  "bot.approvalMode", "thread.approvalMode",
   "rules.custom", "rules.customUpdate", "rules.customDelete", "rules.owner", "rules.ownerDelete", "rules.commandAllow",
 ]);
 /** The words that name a level, so a quote says which one. */
@@ -122,7 +122,7 @@ export function askedChange(message: string, key: string, value: unknown, botNam
   if ((key === "rules.customUpdate" || key === "rules.customDelete" || key === "rules.owner" || key === "rules.ownerDelete") && !(ruleText && namesRule(message, ruleText))) {
     return "the person's message does not name that rule";
   }
-  if ((key.endsWith("approvalMode") || key === "bot.permissionMode") && typeof value === "string") {
+  if (key.endsWith("approvalMode") && typeof value === "string") {
     // security review 2026-10-20: the level and its bot are in the quote
     // itself ("ne mets pas Maya en Full, mets Zed en Full" sets Zed only)
     const said = normalizeWords(quote);
