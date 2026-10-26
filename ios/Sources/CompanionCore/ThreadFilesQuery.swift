@@ -41,28 +41,7 @@ public struct ThreadFileQuery: Hashable, Sendable {
     }
 }
 
-/// The Library tab's list: what the person pinned, then the rest by how
-/// recent it is (`library-items.ts`). Each part is newest first.
-public struct ThreadFileLibraryGroups: Equatable, Sendable {
-    public var pinned: [ThreadFile]
-    public var thisWeek: [ThreadFile]
-    public var older: [ThreadFile]
-}
-
 public enum ThreadFileRules {
-    /// Pinned files on top whatever their age; the rest in the last seven
-    /// days, or older. `now` and `ThreadFile.at` are milliseconds.
-    public static func libraryGroups(_ files: [ThreadFile], now: Double) -> ThreadFileLibraryGroups {
-        let week = 7.0 * 24 * 3_600_000
-        let sorted = files.sorted { $0.at != $1.at ? $0.at > $1.at : $0.id < $1.id }
-        let rest = sorted.filter { !$0.pinned }
-        return ThreadFileLibraryGroups(
-            pinned: sorted.filter(\.pinned),
-            thisWeek: rest.filter { now - $0.at < week },
-            older: rest.filter { now - $0.at >= week }
-        )
-    }
-
     private static let documentMimes: Set<String> = [
         "application/pdf", "application/rtf", "application/msword", "application/vnd.ms-excel",
         "application/vnd.ms-powerpoint", "application/epub+zip", "text/plain", "text/markdown", "text/csv",

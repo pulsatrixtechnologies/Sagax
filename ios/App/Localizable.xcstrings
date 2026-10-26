@@ -14109,6 +14109,28 @@
         }
       }
     },
+    "Couldn't open this artifact.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't open this artifact."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'ouvrir cet artefact."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Não foi possível abrir este artefato."
+          }
+        }
+      }
+    },
     "This week": {
       "localizations": {
         "en": {
@@ -14153,24 +14175,24 @@
         }
       }
     },
-    "Files from this chat show up here.": {
+    "Files and artifacts from this chat show up here.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Files from this chat show up here."
+            "value": "Files and artifacts from this chat show up here."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les fichiers de cette discussion apparaissent ici."
+            "value": "Les fichiers et artefacts de cette discussion apparaissent ici."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Os arquivos desta conversa aparecem aqui."
+            "value": "Os arquivos e artefatos desta conversa aparecem aqui."
           }
         }
       }

@@ -3,10 +3,11 @@
 // no filter, no grid. What the person pinned sits on top under "Pinned"; the
 // rest is grouped "This week" and "Older", each group in a rounded card, one
 // line per file: the kind's icon and the name, with the pin and the actions
-// (show in chat, download, copy path). The grouping is `ThreadFileRules`
-// (CompanionCore); a pin is kept on the server (`setThreadFilePin`) so it is
-// the same on the desktop. The bot's links stay one more chip, Links
-// (JC 2026-10-18); the app has no artifacts yet.
+// (show in chat, download, copy path). The bot's artifacts are in the same
+// list and open in the widget sandbox. The grouping is `LibraryRules`
+// (CompanionCore); a pin is kept on the server (`setThreadFilePin`, the
+// artifact's favorite flag) so it is the same on the desktop. The bot's links
+// stay one more chip, Links (JC 2026-10-18).
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -20,8 +21,8 @@ struct BotPanelFiles: View {
     /// (`max-width: 1023px` in FilesSection.tsx).
     let docked: Bool
 
-    @State private var files: [ThreadFile]?
-    @State private var failed = false
+    @StateObject private var library = BotLibraryModel()
+    @State private var opened: BotArtifact?
     @State private var previewing: IdentifiedURL?
     @State private var sharing: IdentifiedURL?
     @State private var working: String?
@@ -31,7 +32,7 @@ struct BotPanelFiles: View {
     @StateObject private var links = LibraryLoader<BotLink>()
 
     private var threadId: String { bot.threadId }
-    private var all: [ThreadFile] { files ?? [] }
+    private var all: [ThreadFile] { library.files ?? [] }
     private var linkCount: Int { links.page?.total ?? links.page?.items.count ?? 0 }
     /// Files and Links, only when the bot has links to switch to.
     private var allChips: [BotLibraryChip] { linkCount > 0 ? [.files(.all), .links] : [] }
@@ -63,6 +64,7 @@ struct BotPanelFiles: View {
         }
         .sheet(item: $previewing) { item in ProfileQuickLook(url: item.url).ignoresSafeArea() }
         .sheet(item: $sharing) { item in ProfileShareSheet(items: [item.url]) }
+        .sheet(item: $opened) { artifact in BotArtifactSheet(artifact: artifact) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("desktop-panel-files")
     }
@@ -113,7 +115,7 @@ struct BotPanelFiles: View {
 
     private func chipCount(_ chip: BotLibraryChip) -> Int {
         switch chip {
-        case .files: all.count
+        case .files: all.count + library.artifacts.count
         case .links: linkCount
         }
     }
@@ -129,25 +131,25 @@ struct BotPanelFiles: View {
 
     @ViewBuilder
     private var content: some View {
-        if files == nil && !failed {
+        if library.files == nil && !library.failed {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Loading files…").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
-        } else if files == nil {
+        } else if library.files == nil {
             VStack(spacing: 8) {
                 Text("Couldn't load this chat's files.").font(theme.font(13)).foregroundStyle(theme.inkSecondary)
                 PanelButton(title: "Retry", systemImage: "arrow.counterclockwise") { Task { await load() } }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
-        } else if all.isEmpty {
+        } else if library.groups().isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "folder")
                     .font(.system(size: 18))
-                Text("Files from this chat show up here.")
+                Text("Files and artifacts from this chat show up here.")
                     .font(theme.font(13))
                     .multilineTextAlignment(.center)
             }
@@ -156,28 +158,28 @@ struct BotPanelFiles: View {
             .padding(.vertical, 48)
             .padding(.horizontal, 24)
         } else {
-            let groups = ThreadFileRules.libraryGroups(all, now: Date().timeIntervalSince1970 * 1000)
+            let groups = library.groups()
             VStack(alignment: .leading, spacing: 16) {
-                group("pinned", title: "Pinned", files: groups.pinned)
-                group("this-week", title: "This week", files: groups.thisWeek)
-                group("older", title: "Older", files: groups.older)
+                group("pinned", title: "Pinned", entries: groups.pinned)
+                group("this-week", title: "This week", entries: groups.thisWeek)
+                group("older", title: "Older", entries: groups.older)
             }
         }
     }
 
     /// One titled card; nothing when the group is empty.
     @ViewBuilder
-    private func group(_ id: String, title: LocalizedStringKey, files: [ThreadFile]) -> some View {
-        if !files.isEmpty {
+    private func group(_ id: String, title: LocalizedStringKey, entries: [LibraryEntry]) -> some View {
+        if !entries.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Text(title)
                     .font(theme.font(12, .medium))
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.horizontal, 2)
                 VStack(spacing: 0) {
-                    ForEach(Array(files.enumerated()), id: \.element.id) { index, file in
-                        row(file)
-                        if index < files.count - 1 {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        row(entry)
+                        if index < entries.count - 1 {
                             Rectangle().fill(theme.hairlineWeak).frame(height: 1)
                         }
                     }
@@ -191,47 +193,54 @@ struct BotPanelFiles: View {
         }
     }
 
-    private func row(_ file: ThreadFile) -> some View {
-        HStack(spacing: 6) {
-            Button { open(file) } label: {
+    private func row(_ entry: LibraryEntry) -> some View {
+        let name = ThreadFilesView.name(entry)
+        let available = ThreadFilesView.available(entry)
+        return HStack(spacing: 6) {
+            Button { open(entry) } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: PanelFileThumbnail.symbol(ThreadFileRules.kind(of: file)))
+                    Image(systemName: ThreadFilesView.symbol(entry))
                         .font(.system(size: 14))
                         .foregroundStyle(theme.inkSecondary)
                         .frame(width: 24, height: 24)
-                    Text(verbatim: file.name)
+                    Text(verbatim: name)
                         .font(theme.font(13))
                         .foregroundStyle(theme.ink)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if case let .artifact(artifact) = entry, artifact.needsAttention {
+                        Circle().fill(Theme.warning).frame(width: 6, height: 6).accessibilityHidden(true)
+                    }
                 }
                 .contentShape(Rectangle())
-                .opacity(file.available ? 1 : 0.6)
+                .opacity(available ? 1 : 0.6)
             }
             .buttonStyle(.plain)
-            .disabled(!file.available)
-            .accessibilityLabel(Text("Open \(file.name)"))
-            .accessibilityIdentifier("desktop-file.\(file.name)")
-            actions(file)
+            .disabled(!available)
+            .accessibilityLabel(Text("Open \(name)"))
+            .accessibilityIdentifier("desktop-file.\(name)")
+            actions(entry)
         }
         .frame(minHeight: 40)
     }
 
-    private func actions(_ file: ThreadFile) -> some View {
+    private func actions(_ entry: LibraryEntry) -> some View {
         HStack(spacing: 2) {
-            actionButton(file.pinned ? "pin.fill" : "pin", label: file.pinned ? "Unpin" : "Pin", tint: file.pinned ? theme.accent : nil) {
-                Task { await setPinned(file, !file.pinned) }
+            actionButton(entry.pinned ? "pin.fill" : "pin", label: entry.pinned ? "Unpin" : "Pin", tint: entry.pinned ? theme.accent : nil) {
+                Task { await setPinned(entry, !entry.pinned) }
             }
-            actionButton("bubble.left", label: "Show in chat") { jump(file) }
-            if working == file.id {
-                ProgressView().controlSize(.mini).frame(width: 28, height: 28)
-            } else {
-                actionButton("arrow.down.to.line", label: "Download", disabled: !file.available) {
-                    Task { await fetch(file, share: true) }
+            if case let .file(file) = entry {
+                actionButton("bubble.left", label: "Show in chat") { jump(file) }
+                if working == file.id {
+                    ProgressView().controlSize(.mini).frame(width: 28, height: 28)
+                } else {
+                    actionButton("arrow.down.to.line", label: "Download", disabled: !file.available) {
+                        Task { await fetch(file, share: true) }
+                    }
                 }
-            }
-            if file.available, let path = ThreadFileRules.copyablePath(of: file) {
-                actionButton("square.on.square", label: "Copy path") { copy(path) }
+                if file.available, let path = ThreadFileRules.copyablePath(of: file) {
+                    actionButton("square.on.square", label: "Copy path") { copy(path) }
+                }
             }
         }
     }
@@ -254,23 +263,16 @@ struct BotPanelFiles: View {
     // MARK: Actions
 
     private func load() async {
-        guard let client = session.profileClient else { failed = true; return }
-        do {
-            files = try await client.threadFiles(threadId: threadId)
-            failed = false
-        } catch {
-            failed = true
-        }
+        guard let client = session.profileClient else { library.failed = true; return }
+        await library.load(client: client, threadId: threadId, botId: bot.id, withArtifacts: session.surfaceGate.allows(.botArtifacts))
     }
 
     /// The pin shows at once and the server keeps it; a refusal puts it back.
-    private func setPinned(_ file: ThreadFile, _ pinned: Bool) async {
-        guard let client = session.profileClient, let index = files?.firstIndex(where: { $0.id == file.id }) else { return }
-        files?[index].pinned = pinned
+    private func setPinned(_ entry: LibraryEntry, _ pinned: Bool) async {
+        guard let client = session.profileClient else { return }
         do {
-            try await client.setThreadFilePin(threadId: threadId, fileId: file.id, pinned: pinned)
+            try await library.setPinned(entry, pinned, client: client, threadId: threadId)
         } catch {
-            if let back = files?.firstIndex(where: { $0.id == file.id }) { files?[back].pinned = !pinned }
             session.actionError = error.localizedDescription
         }
     }
@@ -290,9 +292,14 @@ struct BotPanelFiles: View {
         Task { await session.showLinkMessage(messageId, botId: botId, threadId: target) }
     }
 
-    private func open(_ file: ThreadFile) {
-        guard file.available else { return }
-        Task { await fetch(file, share: false) }
+    private func open(_ entry: LibraryEntry) {
+        switch entry {
+        case let .file(file):
+            guard file.available else { return }
+            Task { await fetch(file, share: false) }
+        case let .artifact(artifact):
+            opened = artifact
+        }
     }
 
     /// The file's bytes into a private temporary folder, then Quick Look

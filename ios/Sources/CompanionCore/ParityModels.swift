@@ -173,6 +173,10 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
     }
 }
 
+struct ArtifactFavoriteBody: Encodable {
+    let favorite: Bool
+}
+
 struct ThreadFilePinBody: Encodable {
     let pinned: Bool
 }

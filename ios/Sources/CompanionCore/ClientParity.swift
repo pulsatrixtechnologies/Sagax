@@ -51,6 +51,29 @@ public extension CompanionClient {
         try await send(makeRequest("POST", "/api/threads/\(threadId)/files/\(fileId)/pin", encodedBody: ThreadFilePinBody(pinned: pinned)))
     }
 
+    // MARK: Artifacts
+
+    /// `GET /api/bots/:id/artifacts`: the bot's artifacts the viewer may see.
+    func botArtifacts(botId: String) async throws -> [BotArtifact] {
+        guard Self.validRouteID(botId) else { throw APIError.badURL }
+        return try await send(makeRequest("GET", "/api/bots/\(botId)/artifacts"), as: BotArtifactsResponse.self).artifacts
+    }
+
+    /// `GET /api/bots/:id/artifacts/:id`: the document and its last data.
+    func botArtifactDocument(botId: String, artifactId: String) async throws -> BotArtifactDocument {
+        guard Self.validRouteID(botId), Self.validRouteID(artifactId) else { throw APIError.badURL }
+        let (data, response) = try await perform(makeRequest("GET", "/api/bots/\(botId)/artifacts/\(artifactId)"))
+        try Self.check(response, data)
+        guard let document = BotArtifactDocument.parse(data) else { throw APIError.transport("The artifact could not be read.") }
+        return document
+    }
+
+    /// `PATCH /api/bots/:id/artifacts/:id` with `{ favorite }`: the Library's pin.
+    func setBotArtifactPin(botId: String, artifactId: String, pinned: Bool) async throws {
+        guard Self.validRouteID(botId), Self.validRouteID(artifactId) else { throw APIError.badURL }
+        try await send(makeRequest("PATCH", "/api/bots/\(botId)/artifacts/\(artifactId)", encodedBody: ArtifactFavoriteBody(favorite: pinned)))
+    }
+
     /// The authenticated request for one file's bytes. `preview` asks for an
     /// inline image (the server refuses it for anything else).
     func threadFileRequest(threadId: String, fileId: String, preview: Bool) throws -> URLRequest {
