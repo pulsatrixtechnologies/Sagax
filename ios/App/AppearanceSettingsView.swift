@@ -68,7 +68,11 @@ struct AppearanceSettingsView: View {
                     SettingsRow(
                         title: "HD mascots",
                         subtitle: "Detailed art for the characters that have it. Colors and skins apply to the classic look.",
-                        accessory: .toggle(Binding(get: { HdMascots.enabled(hdMascots) }, set: { hdMascots = $0 ? "on" : "off" })),
+                        accessory: .toggle(Binding(get: { HdMascots.enabled(hdMascots) }, set: { on in
+                            hdMascots = on ? "on" : "off"
+                            // the same choice on the person's other devices (an organization keeps it)
+                            if let client { Task { await client.saveHdMascotsPreference(on) } }
+                        })),
                         identifier: "settings.hdMascots"
                     )
                 }
@@ -84,6 +88,10 @@ struct AppearanceSettingsView: View {
                     identifier: "settings.runCard"
                 )
             }
+        }
+        .task {
+            // the switch as set on the person's other devices
+            if let client, let value = await client.hdMascotsPreference() { hdMascots = HdMascots.enabled(value) ? "on" : "off" }
         }
         .task(id: selection.mode) {
             if selection.mode == .computer { await themes.refreshFromComputer(client: client) }

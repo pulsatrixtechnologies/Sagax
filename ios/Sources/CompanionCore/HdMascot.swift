@@ -68,3 +68,23 @@ public enum HdMascots {
         }
     }
 }
+
+// MARK: - Synced with the person's other devices
+
+extension CompanionClient {
+    /// The switch as the person's organization keeps it (`/api/me/preferences`),
+    /// or nil when the server keeps none (a personal computer, or never set).
+    public func hdMascotsPreference() async -> String? {
+        guard let record = try? await preferences() else { return nil }
+        return record.preferences[HdMascots.preferenceKey]
+    }
+
+    /// Writes the switch beside the person's other preferences (the record is
+    /// replaced whole, so it is read first). A personal computer has no such
+    /// record: the choice stays on this phone.
+    public func saveHdMascotsPreference(_ on: Bool) async {
+        guard var record = try? await preferences().preferences else { return }
+        record[HdMascots.preferenceKey] = on ? "on" : "off"
+        _ = try? await putPreferences(record)
+    }
+}
