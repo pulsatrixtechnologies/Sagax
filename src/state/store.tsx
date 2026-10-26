@@ -83,6 +83,7 @@ import { forgetStepUp, recentStepUp, stepUp, stepUpApprovals } from "@/lib/step-
 import type { StepUpTarget } from "../../shared/step-up";
 import { permissionMissingMessage } from "@/lib/permissions";
 import { engineErrorMessage } from "@/lib/engine-error-text";
+import { serverErrorMessage } from "@/lib/server-error-text";
 import { createBotPatchQueue, type BotUpdatePatch } from "./bot-patch-queue";
 import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
@@ -3676,6 +3677,7 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
     const error = body?.error;
     const message = permissionMissingMessage(body)
       ?? engineErrorMessage(body)
+      ?? serverErrorMessage(body)
       ?? (typeof error === "string" ? error : typeof error?.message === "string" ? error.message : `${res.status} ${res.statusText}`);
     throw new ApiError(message, res.status, body);
   }

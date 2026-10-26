@@ -41863,7 +41863,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (placed) return json(res, 403, { error: placed });
       }
       const humans = refuseHumanEdit(auth, body);
-      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, { error: humans });
+      if (humans) return json(res, humans.startsWith("unknown team") ? 400 : 403, humans.startsWith("unknown team") ? { error: humans } : { error: humans, code: "not_channel_editor" });
       // A member may only put bots they can see in a room: the room would
       // otherwise show them a restricted bot (bot-visibility.ts).
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
@@ -43052,7 +43052,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (Object.hasOwn(settings, "computer")) settings.computer = requestedWorksOn(settings.computer) ?? undefined;
       body = { ...body, ...settings, name: settings.name };
       if (settings.approvalMode === "full" || settings.approvalMode === "custom") {
-        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation." });
+        return json(res, 403, { error: "This approval level requires the desktop permission flow. Use the bot creation dialog or explicitly choose Ask/Auto for API creation.", code: "approval_desktop_required" });
       }
       if (namedThisComputer && settings.approvalMode === "auto" && body.acknowledgeLocalAuto !== true) {
         return json(res, 400, { error: "Auto mode on this computer requires confirming the warning first (acknowledgeLocalAuto)" });

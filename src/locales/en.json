@@ -10229,5 +10229,14 @@
   "botPanel.email.error.unavailable": "The address couldn't be changed right now. Try again later.",
   "botPanel.email.error.rate_limited": "Too many address changes. Wait a minute, then try again.",
   "triggers.botmail.fullTools": "Give these runs the bot's usual tools",
-  "triggers.botmail.fullToolsHelp": "Off: a run woken by an email has no shell, and every change or send asks you first, whatever the bot's level. Turn on only if you trust everyone who can write to this address."
+  "triggers.botmail.fullToolsHelp": "Off: a run woken by an email has no shell, and every change or send asks you first, whatever the bot's level. Turn on only if you trust everyone who can write to this address.",
+  "serverError.notGroupOwner": "Only the group's owner can do this.",
+  "serverError.notChannelEditor": "Only an owner or an admin can change who is in a channel.",
+  "serverError.threadBusy": "The bot is already working here. Interrupt it, or wait for it to finish.",
+  "serverError.threadLimit": "This bot has reached its limit of parallel threads. Wait for one to finish.",
+  "serverError.approvalDesktopRequired": "This approval level needs the desktop app's permission flow. Use the bot creation dialog, or choose Ask or Auto.",
+  "serverError.misuseBlocked": "This request is refused by the security policy. It matches a forbidden action: privilege escalation, escaping the isolated environment, bypassing protections, attacking a third party, malware, access to the platform's internal files, a destructive action or resource abuse.",
+  "serverError.misuseApprovalRequired": "This request needs a security authorization. An admin can grant it in Perspicax with the role meant for defensive work.",
+  "serverError.misuseLocked": "Too many requests were refused in a short time. Wait before trying again.",
+  "serverError.safetyBlocked": "This request is refused by the safety review."
 }
