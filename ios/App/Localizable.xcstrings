@@ -65,6 +65,27 @@
         }
       }
     },
+    "Privacy and security": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Privacy and security" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Confidentialité et sécurité" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Privacidade e segurança" } }
+      }
+    },
+    "Apps and connections": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Apps and connections" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Apps et connexions" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Apps e conexões" } }
+      }
+    },
+    "Security keys confirm what matters. The vault keeps cards and passwords your bots may use.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Security keys confirm what matters. The vault keeps cards and passwords your bots may use." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les clés de sécurité confirment ce qui compte. Le coffre garde les cartes et mots de passe que vos bots peuvent utiliser." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "As chaves de segurança confirmam o que importa. O cofre guarda os cartões e senhas que seus bots podem usar." } }
+      }
+    },
     "Discover": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Discover" } },

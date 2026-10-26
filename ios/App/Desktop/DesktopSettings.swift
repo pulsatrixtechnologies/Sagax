@@ -208,11 +208,24 @@ extension DesktopSettingsSection {
     }
 }
 
+extension DesktopSettingsNavGroup {
+    var label: LocalizedStringKey {
+        switch self {
+        case .account: "Account"
+        case .bots: "Bots"
+        case .apps: "Apps and connections"
+        case .appearance: "Appearance"
+        case .privacySecurity: "Privacy and security"
+        }
+    }
+}
+
 // MARK: - Nav
 
 /// The 198 pt nav (`bg-panel px-3 py-4`, a hairline at its right).
 struct DesktopSettingsNav: View {
     @Environment(\.desktopTheme) private var theme
+    @EnvironmentObject private var session: Session
     let sections: [DesktopSettingsSection]
     let current: DesktopSettingsSection
     @Binding var query: String
@@ -226,31 +239,29 @@ struct DesktopSettingsNav: View {
             search
                 .padding(.top, -6)
                 .padding(.bottom, 4)
-            DesktopText("Settings", weight: .semibold, line: 19.5)
-                .padding(8)
+            // The Grok Bot layout (2026-10-26): who is signed in at the top,
+            // then the sections under the phone's group labels.
+            profileHeader
+                .padding(.bottom, 6)
             if sections.isEmpty {
                 DesktopText(Text("No settings match “\(query.trimmingCharacters(in: .whitespaces))”."),
                             size: 12.5, line: 20.3, color: \.inkSecondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 16)
             }
-            ForEach(sections, id: \.self) { section in
-                Button { choose(section) } label: {
-                    HStack(spacing: 9) {
-                        DesktopSettingsIconView(icon: section.icon, size: 15)
-                        DesktopText(Text(section.label))
-                        Spacer(minLength: 0)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(DesktopSettingsNavGroup.grouped(sections), id: \.group) { entry in
+                        DesktopText(Text(entry.group.label), size: 11.5, weight: .medium, line: 16, color: \.inkSecondary)
+                            .padding(.horizontal, 9)
+                            .padding(.top, 12)
+                            .padding(.bottom, 4)
+                            .accessibilityAddTraits(.isHeader)
+                        ForEach(entry.sections, id: \.self) { section in
+                            navRow(section)
+                        }
                     }
-                    .foregroundStyle(theme.ink)
-                    .padding(.horizontal, 9)
-                    .frame(height: 32)
-                    .background(section == current ? theme.selected : .clear,
-                                in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(DesktopHoverFill(radius: 8))
-                .accessibilityAddTraits(section == current ? .isSelected : [])
-                .accessibilityIdentifier("desktop-settings.nav.\(section.rawValue)")
             }
             Spacer(minLength: 0)
         }
@@ -261,6 +272,75 @@ struct DesktopSettingsNav: View {
         .overlay(alignment: .trailing) {
             Rectangle().fill(theme.hairlineWeak).frame(width: 1)
         }
+    }
+
+    private func navRow(_ section: DesktopSettingsSection) -> some View {
+        Button { choose(section) } label: {
+            HStack(spacing: 9) {
+                DesktopSettingsIconView(icon: section.icon, size: 15)
+                DesktopText(Text(section.label))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(theme.ink)
+            .padding(.horizontal, 9)
+            .frame(height: 32)
+            .background(section == current ? theme.selected : .clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DesktopHoverFill(radius: 8))
+        .accessibilityAddTraits(section == current ? .isSelected : [])
+        .accessibilityIdentifier("desktop-settings.nav.\(section.rawValue)")
+    }
+
+    /// Photo, name and email; opens the section that holds the profile.
+    private var profileHeader: some View {
+        let target = sections.first { DesktopSettingsNavGroup.of($0) == .account }
+        return Button { if let target { choose(target) } } label: {
+            HStack(spacing: 10) {
+                Group {
+                    if let photo = session.accountPhoto {
+                        Image(uiImage: photo).resizable().scaledToFill()
+                    } else {
+                        DesktopText(Text(verbatim: initials), size: 13, weight: .medium, line: 18, color: \.inkSecondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(theme.raised)
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    DesktopText(Text(verbatim: displayName), size: 13.5, weight: .semibold, line: 18)
+                        .lineLimit(1)
+                    if let detail {
+                        DesktopText(Text(verbatim: detail), size: 11.5, line: 15, color: \.inkSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(theme.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DesktopHoverFill(radius: 12))
+        .accessibilityIdentifier("desktop-settings.profile")
+    }
+
+    private var displayName: String {
+        session.account?.name ?? session.account?.email ?? session.connection?.name ?? String(localized: "You")
+    }
+
+    private var detail: String? {
+        guard let email = session.account?.email, email != displayName else { return session.connection?.name }
+        return email
+    }
+
+    private var initials: String {
+        let words = displayName.split(whereSeparator: { $0 == " " || $0 == "@" || $0 == "." }).prefix(2)
+        let letters = words.compactMap(\.first).map { String($0).uppercased() }.joined()
+        return letters.isEmpty ? "?" : letters
     }
 
     private var search: some View {

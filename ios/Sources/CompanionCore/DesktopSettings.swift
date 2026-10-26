@@ -99,6 +99,36 @@ public enum DesktopSettingsSection: String, CaseIterable, Hashable, Sendable {
     }
 }
 
+/// The iPad Settings nav's groups (2026-10-26, the Grok Bot layout): the
+/// same order as the phone's tree (SettingsTree), under short labels.
+public enum DesktopSettingsNavGroup: String, CaseIterable, Hashable, Sendable {
+    case account, bots, apps, appearance, privacySecurity
+
+    /// The group a section sits in.
+    public static func of(_ section: DesktopSettingsSection) -> DesktopSettingsNavGroup {
+        switch section {
+        case .general, .organization, .usage, .companion, .people, .mail, .activity: .account
+        case .engines, .connections, .decisionModel, .computer, .experimental: .bots
+        case .myConnections: .apps
+        case .appearance: .appearance
+        case .backups: .privacySecurity
+        }
+    }
+
+    /// `sections` in group order, each group in the nav's own order; empty
+    /// groups are left out.
+    public static func grouped(_ sections: [DesktopSettingsSection]) -> [(group: DesktopSettingsNavGroup, sections: [DesktopSettingsSection])] {
+        let order: [DesktopSettingsSection] = [
+            .general, .organization, .usage, .engines, .computer, .experimental, .myConnections, .appearance, .backups,
+        ]
+        let ranked = sections.sorted { (order.firstIndex(of: $0) ?? 99) < (order.firstIndex(of: $1) ?? 99) }
+        return allCases.compactMap { group in
+            let members = ranked.filter { of($0) == group }
+            return members.isEmpty ? nil : (group, members)
+        }
+    }
+}
+
 /// The Plugins modal's tabs (`PluginsPanel.tsx`).
 public enum DesktopPluginsTab: String, CaseIterable, Hashable, Sendable {
     case mcp

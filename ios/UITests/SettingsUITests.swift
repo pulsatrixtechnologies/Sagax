@@ -42,11 +42,13 @@ final class SettingsUITests: XCTestCase {
         return app
     }
 
-    /// The root's Bot card (auto-review, time zone), as the reference design iOS 1.14
-    /// groups it.
+    /// Settings > Bots (auto-review, time zone): one level in since the
+    /// Grok Bot layout (2026-10-26).
     @MainActor
     private func launchBotCard() -> XCUIApplication {
         let app = launch()
+        XCTAssertTrue(app.element("settings-bots").waitForExistence(timeout: 20))
+        app.element("settings-bots").tap()
         XCTAssertTrue(app.element("settings-auto-review.toggle").waitForExistence(timeout: 20))
         return app
     }
@@ -146,7 +148,7 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         delete.tap()
         XCTAssertTrue(eventually { (self.api("GET", "/api/auto-review/rules").1["total"] as? Int) == before - 1 })
-        // Back on the root, the count follows.
+        // Back on Bots, the count follows.
         app.element("settings-back").firstMatch.tap()
         XCTAssertTrue(app.element("settings-rules").waitForExistence(timeout: 5))
         XCTAssertTrue(app.element("settings-rules").label.contains("\(before - 1)"))
@@ -154,7 +156,7 @@ final class SettingsUITests: XCTestCase {
 
     @MainActor
     func testBotComputerShowsStatusAndUpdateAndResetReachTheServer() {
-        let app = launch()
+        let app = launchBotCard()
         app.element("settings-bot-computer").tap()
         let disk = app.otherElements["computer-disk"].exists ? app.otherElements["computer-disk"] : app.staticTexts["Disk space"]
         XCTAssertTrue(disk.waitForExistence(timeout: 10))

@@ -216,12 +216,7 @@ struct NotificationsSettingsView: View {
                 )
             }
             .task { await NotificationSounds.pull(session) }
-            // Privacy (#518): a card of this page on an organization server
-            if NavigationMenus.showsPrivacy(gate: session.surfaceGate, connected: session.connection != nil) {
-                SettingsSectionLabel(text: "Privacy")
-                PrivacyPresenceCard()
-                ReadReceiptsCard()
-            }
+            // Presence and read receipts moved to Privacy and security (2026-10-26).
         }
     }
 }

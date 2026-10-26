@@ -11,6 +11,8 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
     // then the pages one level in.
     case general, organization, appearance, notifications, privacy, achievements, experimental, plugins, account, botComputer, pages, usage
     case rules, approvalGrants, timeZone, language, haptics, quickReplies, walkieVoice, about, credentials, securityKeys
+    // The Grok Bot layout's own pages (SettingsTree)
+    case bots, privacySecurity
 
     /// The desktop's section keywords for the same page (SettingsModal.tsx
     /// `SECTIONS`), and words for the phone's own pages.
@@ -38,11 +40,13 @@ public enum SettingsDestination: String, CaseIterable, Hashable, Sendable {
         case .walkieVoice: return ["walkie", "voice", "speech"]
         case .achievements: return ["achievements", "trophies", "trophy", "points", "gamerscore", "level", "unlock", "succès", "trophées"]
         case .organization: return ["company", "organization", "organisation", "perspicax", "sharing", "full access", "approvals", "routines in my name", "delegation"]
-        case .about: return ["about", "version", "build", "license", "à propos"]
+        case .about: return ["about", "version", "build", "license", "à propos", "privacy policy", "terms", "conditions", "legal"]
         case .credentials: return ["vault", "credentials", "coffre", "card", "carte", "password", "mot de passe", "address", "adresse"]
         case .securityKeys: return ["security", "sécurité", "passkey", "face id", "security key", "clé"]
         case .notifications: return ["notifications", "notification", "sound", "sounds", "mute", "silent", "chime", "alert", "banner", "badge", "unread", "nudge", "wizz", "buzz", "persistent"]
-        case .privacy: return ["privacy", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "confidentialité"]
+        case .privacy: return ["privacy", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "confidentialité", "read receipts", "accusés de lecture"]
+        case .bots: return ["bots", "bot", "auto-review", "approvals", "approbation", "time zone", "fuseau", "computer", "ordinateur", "quick replies", "call voice", "experimental"]
+        case .privacySecurity: return ["privacy", "security", "confidentialité", "sécurité", "security keys", "passkey", "vault", "coffre", "presence", "read receipts"]
         }
     }
 
