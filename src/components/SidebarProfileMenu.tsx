@@ -700,7 +700,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   // sibling laid over the account button (never nested in it), so a click
   // never opens the account menu. Placed from the avatar's box in each
   // variant: its left edge, its size, centred vertically in the trigger.
-  const dotAt = avatarOnly && withName ? { left: 5, size: 28 } : avatarOnly ? { left: 0, size: 36 } : { left: 0, size: 40 };
+  const dotAt = avatarOnly && withName ? { left: 5, size: 32 } : avatarOnly ? { left: 0, size: 36 } : { left: 0, size: 40 };
   const openApprovals = () => dispatch({ type: "showApprovals" });
   const approvalsDotLabel = t("sidebar.profile.openApprovals", { count: approvalsWaiting });
   const approvalsDot = approvalsWaiting > 0 ? (
@@ -741,7 +741,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
           )}
         >
           <span className="relative flex shrink-0">
-            {avatar(28)}
+            {avatar(32)}
             {noteworthy && (
               <span
                 title={noteworthy.label}
@@ -759,7 +759,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
             // as the account row); the row's custom property grows both foot
             // tiles to fit it (styles.css, --foot-tile-h)
             <span data-account-pill-line="" className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
-              <span data-account-pill-name="" className="min-w-0 truncate text-[14px] font-medium leading-[18px] text-sidebar-ink">{name}</span>
+              <span data-account-pill-name="" className="min-w-0 truncate text-[14.5px] font-medium leading-[18px] text-sidebar-ink">{name}</span>
               <span data-member-line="" className="flex min-w-0 items-center gap-1.5 text-[12px] leading-[16px] text-sidebar-ink-secondary">
                 {titleName && <span data-member-title="" className="min-w-0 truncate">{titleName}</span>}
                 {pointsText && (
@@ -771,7 +771,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
               </span>
             </span>
           ) : (
-            <span data-account-pill-name="" className="min-w-0 flex-1 truncate text-[14px] font-medium leading-5 text-sidebar-ink">{name}</span>
+            <span data-account-pill-name="" className="min-w-0 flex-1 truncate text-[14.5px] font-medium leading-5 text-sidebar-ink">{name}</span>
           )}
           {placeAttention && !open && (
             <span data-testid="footer-attention" aria-hidden="true" className="size-2 shrink-0 rounded-full bg-danger" />

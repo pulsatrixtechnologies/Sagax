@@ -71,3 +71,41 @@ describe.each(["fr", "en"])("hovered foot (%s)", (lang) => {
     expect(m.updRight).toBeLessThanOrEqual(m.rowRight + 1);
   }, 120_000);
 });
+
+// At rest, at the default 280px sidebar, with the data an organization server
+// really answers (?view=foot&data=real): a long name (as wide as the longest
+// one measured in use, ~162px) stays whole beside the logos pill, the avatar
+// and the name keep their reference size, and the logos are the apps' own
+// marks, never the MCP hosts' generic globe.
+describe("foot at rest, real data shape", () => {
+  it("keeps the long name whole with the real logos", async () => {
+    if (!browser) return;
+    const page = await browser.newPage({ viewport: { width: 420, height: 260 } });
+    await page.route("**/api/**", (route: any) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(((p: string) => (p === "/api/bots" ? { bots: [] } : p.includes("routines") ? { routines: [], runs: [] } : {}))(new URL(route.request().url()).pathname)) }));
+    await page.goto(`${base}?view=foot&data=real&lang=fr&name=${encodeURIComponent("Jean-Philippe Exemplar")}`, { waitUntil: "load" });
+    await page.waitForSelector("[data-connected-app]", { timeout: 45_000 });
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => {
+      const name = document.querySelector<HTMLElement>("[data-account-pill-name]");
+      const avatar = document.querySelector("[data-sidebar-account-pill] > span:first-child")?.getBoundingClientRect();
+      return {
+        mode: document.querySelector("[data-sidebar-account-row]")?.getAttribute("data-foot-mode"),
+        cut: name ? name.scrollWidth - name.clientWidth : -1,
+        nameWidth: name?.getBoundingClientRect().width ?? 0,
+        font: name ? parseFloat(getComputedStyle(name).fontSize) : 0,
+        avatar: avatar?.width ?? 0,
+        logos: [...document.querySelectorAll("[data-connected-app] img")].map((img) => img.getAttribute("src") ?? ""),
+      };
+    });
+    await page.close();
+    expect(m.mode).toBe("inline");
+    expect(m.cut).toBeLessThanOrEqual(0);
+    expect(m.nameWidth).toBeGreaterThanOrEqual(161);
+    expect(m.font).toBeGreaterThanOrEqual(14.5);
+    expect(m.avatar).toBeGreaterThanOrEqual(32);
+    expect(m.logos).toHaveLength(3);
+    for (const src of m.logos as string[]) expect(src).not.toMatch(/googleapis|githubcopilot|mcp\.twilio/);
+    expect((m.logos as string[]).some((src) => /gmail_/.test(src))).toBe(true);
+  }, 120_000);
+});
