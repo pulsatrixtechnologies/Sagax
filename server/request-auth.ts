@@ -705,6 +705,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
   // reading the conversation and changing the new bot are checked there
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/team-bot-(?:draft|carry)$/ },
+  // The bot creation wizard's draft (routes/bot-wizard.ts): the bot's
+  // owner's, checked there; a member runs it alone (2026-10-26)
+  { methods: ["GET"], path: /^\/api\/bot-wizard(?:\/kits)?$/ },
+  { methods: ["GET", "PUT", "PATCH", "DELETE"], path: /^\/api\/bot-wizard\/[\w-]+$/ },
+  { methods: ["POST"], path: /^\/api\/bot-wizard\/[\w-]+\/(?:soul|finish)$/ },
   { methods: ["POST"], path: /^\/api\/routines\/away\/beat$/ },
   { methods: ["GET"], path: /^\/api\/routines\/away$/ },
   { methods: ["POST"], path: /^\/api\/routines\/[\w-]+\/away-seen$/ },

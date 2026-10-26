@@ -234,6 +234,15 @@ add({
   write: (ids, v) => v === true ? { method: "DELETE", path: `/api/bots/${enc(ids.target!)}` } : "value is true.",
   classes: always("delete"),
 });
+add({
+  key: "bot.wizard", family: "bot", target: "bot", value: "object",
+  label: "Bot creation wizard draft ({step?, skip?, roleId?, answers?: {tone, language, does, never, speech}, rules?: {suggestionId: \"pending\" to apply | null}, routines?: [suggestionId]}); get also lists the suggestions",
+  where: "Bot creation wizard (guided or manual)",
+  read: (ids) => ({ path: `/api/bot-wizard/${enc(ids.target!)}` }),
+  write: (ids, v) => v && typeof v === "object" && !Array.isArray(v)
+    ? { method: "PATCH", path: `/api/bot-wizard/${enc(ids.target!)}`, body: v }
+    : "value is an object (step, answers, rules, routines).",
+});
 
 // ── bot templates behind a public link (routes/template-links.ts) ──────
 // "Make a public template of yourself": the bot first sets the New bot

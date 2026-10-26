@@ -1,0 +1,629 @@
+// The wizard's steps on iOS, over the real bot (desktop WizardSteps.tsx):
+// identity and look, the soul and its answers, the one approval level and
+// the suggested rules, only the tools of the role, the suggested routines,
+// and the recap with Try it. Each field saves through the bot's own route.
+import SwiftUI
+import CompanionCore
+
+struct WizardStepBody: View {
+    let step: WizardStep
+    let bot: Bot
+    let draft: WizardDraft
+    let suggestions: WizardSuggestions
+    let language: String
+    let patch: (WizardPatch) async -> Void
+    let goTo: (WizardStep) -> Void
+
+    var body: some View {
+        switch step {
+        case .identity: WizardIdentityStep(bot: bot, draft: draft, patch: patch)
+        case .soul: WizardSoulStep(bot: bot, draft: draft, suggestions: suggestions, language: language, patch: patch)
+        case .rules: WizardRulesStep(bot: bot, draft: draft, suggestions: suggestions, patch: patch)
+        case .tools: WizardToolsStep(bot: bot, suggestions: suggestions)
+        case .routines: WizardRoutinesStep(draft: draft, suggestions: suggestions, patch: patch)
+        case .recap: WizardRecapStep(bot: bot, draft: draft, suggestions: suggestions, language: language, patch: patch, goTo: goTo)
+        }
+    }
+}
+
+private struct WizardCard<Content: View>: View {
+    let title: String?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let title { Text(title).font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary) }
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private func roleTitle(_ role: WizardRole?) -> String {
+    switch role {
+    case .assistant?: String(localized: "General assistant")
+    case .inbox?: String(localized: "Email triage")
+    case .research?: String(localized: "Researcher")
+    case .coder?: String(localized: "Coding partner")
+    case .community?: String(localized: "Community monitor")
+    case .ops?: String(localized: "Operations")
+    case nil: String(localized: "Custom")
+    }
+}
+
+// MARK: 1 Identity
+
+struct WizardIdentityStep: View {
+    let bot: Bot
+    let draft: WizardDraft
+    let patch: (WizardPatch) async -> Void
+    @EnvironmentObject private var session: Session
+    @State private var name = ""
+    @State private var description = ""
+    @State private var look = CharacterDraft()
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            WizardCard(title: String(localized: "Role")) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(WizardRole.allCases, id: \.self) { role in chip(role) }
+                        chip(nil)
+                    }
+                }
+            }
+            HStack {
+                Spacer()
+                MascotCharacterView(look: look.complete, color: look.color, skin: look.skin, size: 110, animated: true)
+                    .frame(width: 110, height: 110)
+                    .accessibilityHidden(true)
+                Spacer()
+            }
+            WizardCard(title: String(localized: "Name")) {
+                TextField("Name your Bot", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { saveText() }
+                    .accessibilityIdentifier("wizard-name")
+            }
+            WizardCard(title: String(localized: "Its role in one sentence")) {
+                TextField("What it does for you", text: $description, axis: .vertical)
+                    .lineLimit(2...4)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit { saveText() }
+                    .accessibilityIdentifier("wizard-description")
+            }
+            WizardCard(title: String(localized: "Mascot and skin")) {
+                CharacterEditor(draft: Binding(get: { look }, set: { saveLook($0) }), metrics: .profileCard, unlocks: session.isDemo ? .demo : .nothingLocked)
+            }
+            WizardCard(title: nil) {
+                Toggle(isOn: Binding(get: { bot.chiefOfStaff == true }, set: { on in Task { await setPrimary(on) } })) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Primary Bot").font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+                        Text(bot.chiefOfStaff == true ? "This is your Primary Bot: it can act on your other bots for you." : "Make it your Primary Bot, the one that acts on your other bots for you.")
+                            .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .accessibilityIdentifier("wizard-primary")
+            }
+        }
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            name = bot.name
+            description = bot.description
+            look = CharacterDraft(bot: bot)
+        }
+        .onDisappear { saveText() }
+    }
+
+    private func chip(_ role: WizardRole?) -> some View {
+        let selected = draft.roleId == (role?.rawValue ?? "")
+        return Button {
+            Task {
+                await patch(WizardPatch(roleId: role?.rawValue ?? ""))
+                guard let role else { return }
+                // the role fills what is still empty; the person's words stay
+                var change = BotProfilePatch()
+                if bot.title.isEmpty { change.title = role.defaults.title }
+                if description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    description = role.defaults.description
+                    change.description = role.defaults.description
+                }
+                if change.title != nil || change.description != nil { _ = await session.updateProfile(change, for: bot) }
+            }
+        } label: {
+            Text(roleTitle(role))
+                .font(Theme.Font.preview)
+                .foregroundStyle(selected ? Theme.primaryInk : Theme.textPrimary)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .background(selected ? Theme.primaryFill : Theme.cardRaised, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("wizard-role-\(role?.rawValue ?? "custom")")
+    }
+
+    private func saveText() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var change = BotProfilePatch()
+        if !trimmed.isEmpty, trimmed != bot.name { change.name = trimmed }
+        if description != bot.description { change.description = description }
+        guard change.name != nil || change.description != nil else { return }
+        Task { _ = await session.updateProfile(change, for: bot) }
+    }
+
+    private func saveLook(_ next: CharacterDraft) {
+        let previous = look
+        guard next != previous else { return }
+        look = next
+        var change = BotProfileEdit()
+        if next.color != previous.color { change.color = next.color }
+        if next.look != previous.look { change.mascotLook = next.look }
+        if next.skin != previous.skin { change.mascotSkin = next.skin }
+        guard !change.isEmpty, let client = session.profileClient else { return }
+        Task {
+            do { session.applyProfileBot(try await client.editBot(botId: bot.id, edit: change)) }
+            catch { look = previous; session.actionError = error.localizedDescription }
+        }
+    }
+
+    private func setPrimary(_ on: Bool) async {
+        guard let client = session.profileClient else { return }
+        do { session.applyProfileBot(try await client.setWizardPrimary(botId: bot.id, on: on)) }
+        catch { session.actionError = error.localizedDescription }
+    }
+}
+
+// MARK: 2 Soul
+
+struct WizardSoulStep: View {
+    let bot: Bot
+    let draft: WizardDraft
+    let suggestions: WizardSuggestions
+    let language: String
+    let patch: (WizardPatch) async -> Void
+    @EnvironmentObject private var session: Session
+    @State private var answers = WizardAnswers()
+    @State private var soul = ""
+    @State private var writing = false
+    @State private var loaded = false
+    /// The soul as the server keeps it (`GET /api/bots/:id/soul`).
+    @State private var saved = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(WizardAnswers.Key.allCases, id: \.self) { key in
+                WizardCard(title: label(key)) {
+                    TextField(placeholder(key), text: Binding(get: { answers[key] }, set: { answers[key] = $0 }), axis: .vertical)
+                        .lineLimit(1...4)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { save(key) }
+                        .accessibilityIdentifier("wizard-answer-\(key.rawValue)")
+                    if let suggestion = suggestions.answers?[key], !suggestion.isEmpty, suggestion != answers[key] {
+                        Button { answers[key] = suggestion; save(key) } label: {
+                            Text("Suggestion: \(suggestion)").font(Theme.Font.preview).foregroundStyle(Theme.accent).multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Button { Task { await writeForMe() } } label: {
+                HStack(spacing: 6) {
+                    if writing { ProgressView() } else { Image(systemName: "wand.and.stars") }
+                    Text(writing ? "Writing…" : "Write it for me")
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Theme.primaryInk)
+                .padding(.horizontal, 16).frame(height: 38)
+                .background(Theme.primaryFill, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(writing)
+            .accessibilityIdentifier("wizard-write-soul")
+            WizardCard(title: String(localized: "Soul")) {
+                TextEditor(text: $soul)
+                    .frame(minHeight: 180)
+                    .font(.system(size: 14))
+                    .scrollContentBackground(.hidden)
+                    .accessibilityIdentifier("wizard-soul")
+                Button("Save the soul") { Task { await saveSoul() } }
+                    .disabled(soul == saved)
+            }
+        }
+        .onAppear {
+            guard !loaded else { return }
+            loaded = true
+            answers = draft.answers
+            Task {
+                if let read = try? await session.profileClient?.soul(botId: bot.id) {
+                    saved = read.soul
+                    if soul.isEmpty { soul = read.soul }
+                }
+            }
+        }
+        .onChange(of: draft.answers) { answers = $0 }
+        .onDisappear { Task { await saveSoul() } }
+    }
+
+    private func label(_ key: WizardAnswers.Key) -> String {
+        switch key {
+        case .tone: String(localized: "Tone")
+        case .language: String(localized: "Language")
+        case .does: String(localized: "What it does")
+        case .never: String(localized: "What it never does")
+        case .speech: String(localized: "How it talks")
+        }
+    }
+
+    private func placeholder(_ key: WizardAnswers.Key) -> String {
+        switch key {
+        case .tone: String(localized: "Friendly, direct, formal…")
+        case .language: String(localized: "Quebec French, English, the language of each message…")
+        case .does: String(localized: "Its job, in your words")
+        case .never: String(localized: "The lines it never crosses")
+        case .speech: String(localized: "Short replies, lists, one question at a time…")
+        }
+    }
+
+    private func save(_ key: WizardAnswers.Key) {
+        let value = answers[key]
+        Task { await patch(WizardPatch(answers: [key.rawValue: value])) }
+    }
+
+    private func writeForMe() async {
+        guard let client = session.profileClient else { return }
+        writing = true
+        defer { writing = false }
+        await patch(WizardPatch(answers: Dictionary(uniqueKeysWithValues: WizardAnswers.Key.allCases.map { ($0.rawValue, answers[$0]) })))
+        do {
+            let written = try await client.writeWizardSoul(botId: bot.id, language: language)
+            soul = written.soul
+            await saveSoul()
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+
+    private func saveSoul() async {
+        guard soul != saved, let client = session.profileClient else { return }
+        do {
+            session.applyProfileBot(try await client.saveSoul(botId: bot.id, soul: soul))
+            saved = soul
+        }
+        catch { session.actionError = error.localizedDescription }
+    }
+}
+
+// MARK: 3 Rules
+
+struct WizardRulesStep: View {
+    let bot: Bot
+    let draft: WizardDraft
+    let suggestions: WizardSuggestions
+    let patch: (WizardPatch) async -> Void
+    @EnvironmentObject private var session: Session
+    @State private var confirmingFull = false
+    @State private var working: String?
+
+    private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalMode, autoApprove: nil) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            WizardCard(title: String(localized: "Approval level")) {
+                Picker("Approval level", selection: Binding(get: { level }, set: { choose($0) })) {
+                    ForEach([ApprovalLevel.ask, .edits, .auto, .full], id: \.self) { item in
+                        Text(levelTitle(item)).tag(item)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("wizard-approval")
+                Text(LocalizedStringKey(level.detail)).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+            }
+            WizardCard(title: String(localized: "Suggested rules")) {
+                Text("Rules apply before the approval level, whatever the level. Each one ticked is saved at once for this bot; untick it to remove it.")
+                    .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                ForEach(suggestions.rules) { rule in
+                    Toggle(isOn: Binding(get: { draft.rules[rule.id] != nil }, set: { on in Task { await toggle(rule, on: on) } })) {
+                        HStack {
+                            Text(rule.when).font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+                            Spacer(minLength: 6)
+                            Text(behaviorTitle(rule.behavior)).font(Theme.Font.preview)
+                                .foregroundStyle(rule.behavior == "deny" ? Theme.danger : rule.behavior == "ask" ? Color.orange : Color.green)
+                        }
+                    }
+                    .disabled(working == rule.id)
+                    .accessibilityIdentifier("wizard-rule-\(rule.id)")
+                }
+            }
+        }
+        .alert("Full access", isPresented: $confirmingFull) {
+            Button("Cancel", role: .cancel) {}
+            Button("Turn on Full access", role: .destructive) { Task { _ = await sendPanelPatch(.approval(.full), bot: bot, session: session) } }
+        } message: {
+            Text(LocalizedStringKey(ApprovalLevel.full.detail))
+        }
+    }
+
+    private func levelTitle(_ level: ApprovalLevel) -> String {
+        switch level {
+        case .ask: String(localized: "Ask for approval")
+        case .edits: String(localized: "Auto-accept edits")
+        case .auto: String(localized: "Approve for me")
+        case .full: String(localized: "Full access")
+        case .custom: String(localized: "Custom")
+        }
+    }
+
+    private func behaviorTitle(_ behavior: String) -> String {
+        switch behavior {
+        case "allow": String(localized: "Allow automatically")
+        case "deny": String(localized: "Deny")
+        default: String(localized: "Ask every time")
+        }
+    }
+
+    private func choose(_ next: ApprovalLevel) {
+        guard next != level else { return }
+        if next == .full { confirmingFull = true; return }
+        Task { _ = await sendPanelPatch(.approval(next), bot: bot, session: session) }
+    }
+
+    private func toggle(_ rule: WizardRuleSuggestion, on: Bool) async {
+        guard let client = session.profileClient else { return }
+        working = rule.id
+        defer { working = nil }
+        do {
+            if on {
+                if let id = try await client.addWizardRule(botId: bot.id, suggestion: rule) { await patch(WizardPatch(rules: [rule.id: id])) }
+            } else {
+                if let existing = draft.rules[rule.id], existing != "pending" { try? await client.removeWizardRule(ruleId: existing) }
+                await patch(WizardPatch(rules: [rule.id: nil]))
+            }
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: 4 Tools and apps
+
+struct WizardToolsStep: View {
+    let bot: Bot
+    let suggestions: WizardSuggestions
+    @EnvironmentObject private var session: Session
+    @State private var all = false
+
+    private var tools: [String] { all ? ["apps", "mcp", "computer", "browser"] : suggestions.tools }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if tools.contains("apps") {
+                WizardCard(title: String(localized: "Apps")) {
+                    Text(suggestions.apps.isEmpty ? String(localized: "Connect the apps this bot will work with.") : String(localized: "This role usually uses: \(suggestions.apps.joined(separator: ", ")).")
+                    ).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    Text("Connect them from Connect apps, on this device or on your computer.").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                }
+                .accessibilityIdentifier("wizard-tool-apps")
+            }
+            if tools.contains("mcp") {
+                WizardCard(title: String(localized: "MCP servers")) {
+                    Text("This bot uses every MCP server that is turned on. Pick them one by one in its Access settings.")
+                        .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                }
+                .accessibilityIdentifier("wizard-tool-mcp")
+            }
+            if tools.contains("computer") {
+                WizardCard(title: String(localized: "Works on")) {
+                    Picker("Works on", selection: Binding(get: { bot.computer == "off" ? "off" : "auto" }, set: { value in
+                        Task { _ = await sendPanelPatch(BotPanelPatch(computer: value), bot: bot, session: session) }
+                    })) {
+                        Text("Auto").tag("auto")
+                        Text("Off").tag("off")
+                    }
+                    .pickerStyle(.segmented)
+                }
+                .accessibilityIdentifier("wizard-tool-computer")
+            }
+            if tools.contains("browser") {
+                WizardCard(title: nil) {
+                    Toggle("Browser", isOn: Binding(get: { bot.browser != false }, set: { on in
+                        Task { _ = await sendPanelPatch(BotPanelPatch(browser: on), bot: bot, session: session) }
+                    }))
+                }
+                .accessibilityIdentifier("wizard-tool-browser")
+            }
+            if !all && suggestions.tools.count < 4 {
+                Button("Show every tool") { all = true }.font(Theme.Font.preview)
+            }
+        }
+    }
+}
+
+// MARK: 5 Routines
+
+struct WizardRoutinesStep: View {
+    let draft: WizardDraft
+    let suggestions: WizardSuggestions
+    let patch: (WizardPatch) async -> Void
+
+    private var days: [String] {
+        [String(localized: "Sun"), String(localized: "Mon"), String(localized: "Tue"), String(localized: "Wed"), String(localized: "Thu"), String(localized: "Fri"), String(localized: "Sat")]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ForEach(suggestions.routines) { routine in
+                WizardCard(title: nil) {
+                    Toggle(isOn: Binding(get: { draft.routines.contains(routine.id) }, set: { on in
+                        let next = on ? draft.routines + [routine.id] : draft.routines.filter { $0 != routine.id }
+                        Task { await patch(WizardPatch(routines: next)) }
+                    })) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(routine.name).font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+                            Text(BotWizardRules.scheduleLabel(time: routine.time, weekdays: routine.weekdays, dayNames: days,
+                                                              weekdaysLabel: String(localized: "weekdays"), everyDay: String(localized: "every day")))
+                                .font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                            Text(routine.prompt).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    .accessibilityIdentifier("wizard-routine-\(routine.id)")
+                }
+            }
+            Text("The routines you tick are created when you finish.").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+        }
+    }
+}
+
+// MARK: 6 Recap and try
+
+struct WizardRecapStep: View {
+    let bot: Bot
+    let draft: WizardDraft
+    let suggestions: WizardSuggestions
+    let language: String
+    let patch: (WizardPatch) async -> Void
+    let goTo: (WizardStep) -> Void
+    @EnvironmentObject private var session: Session
+    @State private var sending = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 12) {
+                BotMascotView(bot: bot, size: 48, state: .idle, animated: false)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(bot.name).font(Theme.Font.bodyMedium).foregroundStyle(Theme.textPrimary)
+                    Text(bot.description.isEmpty ? bot.title : bot.description).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary).lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Button { Task { await tryIt() } } label: {
+                    HStack(spacing: 6) {
+                        if sending { ProgressView() } else { Image(systemName: "paperplane") }
+                        Text("Try it")
+                    }
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.primaryInk)
+                    .padding(.horizontal, 14).frame(height: 36)
+                    .background(Theme.primaryFill, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(sending)
+                .accessibilityIdentifier("wizard-try")
+            }
+            .padding(14)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            if let threadId = draft.testThreadId {
+                WizardChatView(botId: bot.id, threadId: threadId)
+                    .frame(height: 320)
+                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            ForEach(WizardStep.allCases.filter { $0 != .recap }, id: \.self) { step in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(stepTitle(step)).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.textPrimary)
+                        if draft.skipped.contains(step) { Text("skipped").font(Theme.Font.preview).foregroundStyle(Theme.textTertiary) }
+                        Spacer()
+                        Button("Open the step") { goTo(step) }.font(Theme.Font.preview)
+                    }
+                    WizardStepBody(step: step, bot: bot, draft: draft, suggestions: suggestions, language: language, patch: patch, goTo: goTo)
+                }
+            }
+        }
+    }
+
+    private func tryIt() async {
+        guard let client = session.profileClient else { return }
+        sending = true
+        defer { sending = false }
+        do {
+            var threadId = draft.testThreadId
+            if threadId == nil {
+                let opened = try await client.openWizardThread(botId: bot.id, title: String(localized: "First try"))
+                await patch(WizardPatch(testThreadId: opened))
+                threadId = opened
+            }
+            if let threadId {
+                _ = try await client.send(text: BotWizardRules.tryIt(french: language == "fr"), toBot: bot.id, threadId: threadId)
+            }
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+}
+
+// MARK: The conversation
+
+/// A conversation inside the wizard: its messages read back every two
+/// seconds while it is open, and a field to answer. The guided one with
+/// the Primary Bot, and Try it with the new bot.
+struct WizardChatView: View {
+    let botId: String
+    let threadId: String
+    @EnvironmentObject private var session: Session
+    @State private var messages: [Message] = []
+    @State private var text = ""
+    @State private var sending = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(messages.filter { $0.kind == .text && !($0.text ?? "").isEmpty }) { message in
+                            HStack {
+                                if message.role == .user { Spacer(minLength: 40) }
+                                Text(message.text ?? "")
+                                    .font(Theme.Font.body)
+                                    .foregroundStyle(message.role == .user ? Theme.primaryInk : Theme.textPrimary)
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .background(message.role == .user ? Theme.primaryFill : Theme.cardRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                    .textSelection(.enabled)
+                                if message.role != .user { Spacer(minLength: 40) }
+                            }
+                            .id(message.id)
+                        }
+                    }
+                    .padding(14)
+                }
+                .onChange(of: messages.count) { _ in
+                    if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                }
+            }
+            HStack(spacing: 8) {
+                TextField("Answer…", text: $text, axis: .vertical)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("wizard-chat-field")
+                Button { Task { await send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.system(size: 28)) }
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
+                    .accessibilityLabel(Text("Send"))
+            }
+            .padding(10)
+        }
+        .task(id: threadId) {
+            while !Task.isCancelled {
+                if let client = session.profileClient, let page = try? await client.messages(threadId: threadId, limit: 60) {
+                    messages = page.messages
+                }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+        .accessibilityIdentifier("wizard-chat")
+    }
+
+    private func send() async {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, let client = session.profileClient else { return }
+        sending = true
+        defer { sending = false }
+        do {
+            _ = try await client.send(text: value, toBot: botId, threadId: threadId)
+            text = ""
+            if let page = try? await client.messages(threadId: threadId, limit: 60) { messages = page.messages }
+        } catch {
+            session.actionError = error.localizedDescription
+        }
+    }
+}

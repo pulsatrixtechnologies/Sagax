@@ -1336,6 +1336,10 @@ export interface AppState {
   triggersOpen: boolean;
   /** The "New bot" role picker. */
   newBotOpen: boolean;
+  /** The bot creation wizard (src/components/bot-wizard/BotWizard.tsx):
+   * `botId` null opens on the mode choice of a new bot; a bot's id resumes
+   * its draft or redoes the wizard on it. */
+  botWizard: { botId: string | null; redo?: boolean } | null;
   /** Creation continues even when the role picker is dismissed. */
   botCreationPending: boolean;
   computerOpen: boolean;
@@ -1757,6 +1761,8 @@ export type Action =
   | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "orgAccess" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
+  | { type: "openBotWizard"; botId?: string | null; redo?: boolean }
+  | { type: "closeBotWizard" }
   | { type: "toggleComputer"; open?: boolean }
   | { type: "toggleInspector"; open?: boolean }
   | { type: "toggleActivity"; open?: boolean }
@@ -2947,6 +2953,15 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "botCreationPending":
       return { ...state, botCreationPending: action.on };
+    case "openBotWizard":
+      // Its own screen over the app: what was open closes, as New bot does.
+      return {
+        ...state,
+        botWizard: { botId: action.botId ?? null, ...(action.redo ? { redo: true } : {}) },
+        newBotOpen: false, settingsOpen: false, appSettingsOpen: false, achievementsOpen: false, pluginsOpen: false, shortcutsOpen: false, triggersOpen: false,
+      };
+    case "closeBotWizard":
+      return { ...state, botWizard: null };
     case "toggleNewBot": {
       const open = (action.open ?? !state.newBotOpen) && state.config?.viewer?.canCreateBots !== false;
       return {
@@ -3541,6 +3556,7 @@ export const initialState: AppState = {
   pluginsPage: null,
   triggersOpen: false,
   newBotOpen: false,
+  botWizard: null,
   botCreationPending: false,
   computerOpen: false,
   inspectorOpen: false,

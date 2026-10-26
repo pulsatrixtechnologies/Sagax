@@ -21,12 +21,16 @@ struct HomeRoot: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        if UIDevice.current.userInterfaceIdiom != .pad {
-            // the iPhone: exactly the phone home, no measuring around it
-            AnyView(ChatListView().parityLauncher())
-        } else {
-            AnyView(padHome)
+        // the bot creation wizard over either home (2026-10-26)
+        Group {
+            if UIDevice.current.userInterfaceIdiom != .pad {
+                // the iPhone: exactly the phone home, no measuring around it
+                AnyView(ChatListView().parityLauncher())
+            } else {
+                AnyView(padHome)
+            }
         }
+        .botWizardHost()
     }
 
     private var padHome: some View {
@@ -324,6 +328,12 @@ struct DesktopShell: View {
         .modifier(DesktopShellRouting(model: model))
         .onReceive(NotificationCenter.default.publisher(for: .approvalEditRule)) { _ in
             model.showPersona(.access)
+        }
+        // a finished bot creation wizard opens the bot it made
+        .onReceive(BotWizardPresenter.shared.$finishedBotId) { id in
+            guard let id, let bot = session.state.bot(id) else { return }
+            BotWizardPresenter.shared.finishedBotId = nil
+            model.open(.bot(bot))
         }
         .onReceive(NotificationCenter.default.publisher(for: .desktopOpenSettings)) { _ in
             model.menu = nil
