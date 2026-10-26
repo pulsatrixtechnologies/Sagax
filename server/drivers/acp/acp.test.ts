@@ -2048,7 +2048,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(await recorder.until((e) => e.type === "turn.completed")).toMatchObject({ ok: true });
       expect(promptCount(appendFile)).toBe(2);
       const notices = recorder.events.filter((e) => e.type === "runtime.notice") as Array<{ message: string }>;
-      expect(notices.some((n) => /so Sagax asked again/.test(n.message))).toBe(true);
+      // an internal retry goes to the logs, never into the chat
+      expect(notices.some((n) => /asked again/.test(n.message))).toBe(false);
       expect(recorder.events.some((e) => e.type === "content.delta")).toBe(true);
     });
 
@@ -2278,8 +2279,8 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(recorder.events.some((e) => e.type === "item.completed" && (e as any).itemType === "assistant_text")).toBe(true);
     // the reasoning still streamed to the UI
     expect(recorder.events.some((e) => e.type === "content.delta" && (e as any).streamKind === "reasoning_text")).toBe(true);
-    // the person was told Sagax asked it to finish, and no hard error surfaced
-    expect(recorder.events.some((e) => e.type === "runtime.notice" && /reasoning/i.test((e as any).message))).toBe(true);
+    // the retry is internal: no notice in the chat, and no hard error surfaced
+    expect(recorder.events.some((e) => e.type === "runtime.notice" && /reasoning/i.test((e as any).message))).toBe(false);
     expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
   });
 
