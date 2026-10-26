@@ -16,7 +16,8 @@ describe("approval modes", () => {
     for (const driver of ["codex", "claudeAgent", "grokAgent", "antigravityAgent", "piAgent", "customAcp"]) {
       expect(modelSwitchNeedsAsk("ask", "codex", driver)).toBe(false);
       expect(modelSwitchNeedsAsk("auto", "codex", driver)).toBe(false);
-      expect(modelSwitchNeedsAsk("full", "codex", driver)).toBe(driver !== "codex");
+      // 2026-10-26: Full carries to every engine that runs it
+      expect(modelSwitchNeedsAsk("full", "codex", driver)).toBe(!supportsApprovalMode(driver, "full"));
       expect(modelSwitchNeedsAsk("custom", "codex", driver)).toBe(driver !== "codex");
     }
     expect(modelSwitchNeedsAsk("edits", "claudeAgent", "codex")).toBe(true);

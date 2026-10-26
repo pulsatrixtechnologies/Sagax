@@ -14,12 +14,10 @@ import {
 const consent = { principalId: "alice", at: 1 };
 
 describe("organization Full access policy", () => {
-  it("is off until an admin turns it on (2026-10-11)", () => {
-    expect(orgFullAccessAllowed(undefined)).toBe(false);
-    expect(orgFullAccessAllowed({})).toBe(false);
-    expect(orgFullAccessAllowed({ allowFullAccess: true })).toBe(true);
-    expect(orgFullAccessAllowed({ allowFullAccess: false })).toBe(false);
-    expect(orgFullAccessAllowed({ allowFullAccess: "true" })).toBe(false);
+  it("has no admin switch: the owner's own confirmation is the gate (2026-10-26)", () => {
+    expect(orgFullAccessAllowed(undefined)).toBe(true);
+    expect(orgFullAccessAllowed({})).toBe(true);
+    expect(orgFullAccessAllowed({ allowFullAccess: false })).toBe(true);
   });
 
   it("keeps Full allowed for an organization that never saved it and already runs a consented Full bot or thread", () => {

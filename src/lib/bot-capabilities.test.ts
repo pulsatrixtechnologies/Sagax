@@ -15,10 +15,10 @@ describe("canEditBotField", () => {
     const granted = { viewer: { ...member.viewer!, permissions: ["bots.create", "bots.approvalLevel", "folders.botWorkingFolder"] } } as ConfigStatus;
     expect(canEditBotField(granted, own, "approvalMode")).toBe(true);
     expect(canEditBotField(granted, own, "cwd")).toBe(true);
-    expect(canEditBotField(granted, own, "computer")).toBe(false);
+    expect(canEditBotField(granted, own, "cloudBackend")).toBe(false);
     // never on someone else's bot, and never a field no permission opens
     expect(canEditBotField(granted, other, "approvalMode")).toBe(false);
-    expect(canEditBotField(granted, own, "chiefOfStaff")).toBe(false);
+    expect(canEditBotField(granted, own, "voice")).toBe(false);
   });
 
   it("opens a bot's parallel conversations, recovery and tool access to its owner with the permission (2026-10-15)", () => {
@@ -27,7 +27,8 @@ describe("canEditBotField", () => {
     for (const field of ["maxConcurrentThreads", "maxParallelPerPerson", "busySend", "automaticRecovery"]) {
       expect(canEditBotField(behaviour, own, field), field).toBe(true);
       expect(canEditBotField(behaviour, other, field), field).toBe(false);
-      expect(canEditBotField(member, own, field), field).toBe(false);
+      // 2026-10-26: every member holds bots.behaviour on their own bots
+      expect(canEditBotField(member, own, field), field).toBe(true);
     }
     // the bot editor's Tool access follows the tools permission
     expect(canEditBotField(tools, own, "toolScope")).toBe(true);
@@ -46,7 +47,14 @@ describe("canEditBotField", () => {
     for (const field of ["name", "soul", "notifications", "modelSelection", "avatarUrl", "color"]) {
       expect(canEditBotField(member, own, field), field).toBe(true);
     }
-    for (const field of ["cwd", "computer", "approvalMode", "mcpServers", "fallback", "voice", "speakReplies", "memoryEnabled", "chiefOfStaff", "outbound", "approvePeerComms"]) {
+    // 2026-10-26 (JC): every setting of their own bot, without an admin
+    for (const field of ["computer", "browser", "approvalMode", "proactiveMode", "mcpServers", "toolScope", "fallback", "memoryEnabled", "chiefOfStaff", "hidden", "section", "visibility", "outbound", "approvePeerComms"]) {
+      expect(canEditBotField(member, own, field), field).toBe(true);
+      expect(canEditBotField(member, other, field), field).toBe(false);
+    }
+    // what reaches past their own environment keeps its permission: a folder on
+    // the server's disk, the server's cloud computer and shared browser profiles
+    for (const field of ["cwd", "cloudBackend", "autoStartVps", "browserProfile", "voice", "speakReplies"]) {
       expect(canEditBotField(member, own, field), field).toBe(false);
     }
   });
@@ -60,7 +68,8 @@ describe("canEditBotField", () => {
 
   it("treats a draft as the member's own bot, and a read-only person as unable to edit", () => {
     expect(canEditBotField(member, { ownerUserId: undefined }, "name", { draft: true })).toBe(true);
-    expect(canEditBotField(member, { ownerUserId: undefined }, "computer", { draft: true })).toBe(false);
+    expect(canEditBotField(member, { ownerUserId: undefined }, "approvalMode", { draft: true })).toBe(true);
+    expect(canEditBotField(member, { ownerUserId: undefined }, "cwd", { draft: true })).toBe(false);
     const readOnly = { viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus;
     expect(canEditBotField(readOnly, own, "name")).toBe(false);
     expect(canEditBotField(readOnly, own, "color")).toBe(false);
@@ -78,10 +87,12 @@ describe("sidebar actions a member may not see", () => {
     expect(showBotRename(readOnly, own)).toBe(false);
   });
 
-  it("hides archive for every organization member, including the owner", () => {
-    expect(showBotArchive(member)).toBe(false);
-    expect(showBotArchive(admin)).toBe(true);
-    expect(showBotArchive(null)).toBe(true);
+  it("lets a member archive their own bot, never someone else's (2026-10-26)", () => {
+    expect(showBotArchive(member, own)).toBe(true);
+    expect(showBotArchive(member, other)).toBe(false);
+    expect(showBotArchive(readOnly, own)).toBe(false);
+    expect(showBotArchive(admin, other)).toBe(true);
+    expect(showBotArchive(null, other)).toBe(true);
   });
 
   it("hides delete unless the member owns the bot, and always for a read-only person", () => {
@@ -91,19 +102,21 @@ describe("sidebar actions a member may not see", () => {
     expect(showBotDelete(admin, other)).toBe(true);
   });
 
-  it("keeps a personal section move and hides a server section move for a member", () => {
+  it("lets a member move their own bots between server sections, never someone else's (2026-10-26)", () => {
     expect(showServerSectionMove(member, true)).toBe(true);
+    expect(showServerSectionMove(member, false, [own])).toBe(true);
+    expect(showServerSectionMove(member, false, [own, other])).toBe(false);
     expect(showServerSectionMove(member, false)).toBe(false);
     expect(showServerSectionMove(admin, false)).toBe(true);
   });
 });
 
 describe("canStepPrimary", () => {
-  it("keeps the switch for the owner and for a solo server, and hides it while a member is drafting", () => {
+  it("keeps the switch for the owner, on a member's own draft too, never on someone else's bot", () => {
     expect(canStepPrimary(null, other)).toBe(true);
     expect(canStepPrimary(member, own)).toBe(true);
     expect(canStepPrimary(member, other)).toBe(false);
-    expect(canStepPrimary(member, own, { draft: true })).toBe(false);
+    expect(canStepPrimary(member, own, { draft: true })).toBe(true);
     expect(canStepPrimary({ viewer: { ...member.viewer!, botsReadOnly: true } } as ConfigStatus, own)).toBe(false);
   });
 });

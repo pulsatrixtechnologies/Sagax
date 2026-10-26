@@ -50,8 +50,6 @@ import { openModelKeysSettings } from "@/lib/settings-link";
 // after the bot exists.
 const SECTIONS = ["identity", "soul", "skills", "memory", "routines", "access", "model", "permissions", "voice"] as const;
 type Section = typeof SECTIONS[number];
-/** Sections an organization member does not set on a new bot. */
-const ADMIN_SECTIONS: ReadonlySet<Section> = new Set(["memory", "access", "permissions"]);
 const sectionLabel = (id: Section) => t(`newBot.section.${id}` as LocaleKey);
 
 /** Companion pairing permits creation, but not reading host defaults or
@@ -200,7 +198,8 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
   const [audience, setAudience] = useState<VisibilityMode>("everyone");
   const [people, setPeople] = useState("");
   const ownerOrAdmin = useOwnerOrAdmin();
-  const choosesVisibility = !defaultsMode && typeof window !== "undefined" && servedPage() && ownerOrAdmin === true;
+  const choosesVisibility = !defaultsMode && typeof window !== "undefined" && servedPage() &&
+    (ownerOrAdmin === true || (viewerIsOrgMember(parent.state.config) && canEditBotField(parent.state.config, {}, "visibility", { draft: true })));
   const dialog = useRef<HTMLDivElement>(null);
   const [startKind, setStartKind] = useState<StartingModel["kind"] | null>(null);
   const configuredModel = useRef<ModelSelection | null>(null);
@@ -413,8 +412,10 @@ export function DraftPage({ draft, defaultsMode, moreOpen, onToggleMore, onImpor
   const { state } = useStore();
   const derived = useBotSettingsDerived(bot);
   const [active, setActive] = useState<Section>("identity");
-  const member = viewerIsOrgMember(state.config);
-  const sections = SECTIONS.filter(id => !member || !ADMIN_SECTIONS.has(id));
+  // 2026-10-26 (JC): a member sets up every section of their own new bot;
+  // each control still follows its field (canEditBotField).
+  const sections = SECTIONS;
+  const choosesTeam = canEditBotField(state.config, {}, "section", { draft: true });
   const teams = [...new Set([...(state.sections ?? []), ...state.bots.map(existing => existing.section ?? ""), bot.section ?? ""])].filter(Boolean);
   // Start from and Team are one card of compact rows, as Settings draws
   // them; the avatar, name and description follow; More options is the
@@ -422,7 +423,7 @@ export function DraftPage({ draft, defaultsMode, moreOpen, onToggleMore, onImpor
   return <div className="flex flex-col gap-5">
     <div className={GROUP_CARD}>
       <StartingRole draft={draft} defaultsMode={defaultsMode} onImported={onImported} />
-      {!member && teams.length > 0 && <div data-new-bot-team>
+      {choosesTeam && teams.length > 0 && <div data-new-bot-team>
         <CompactRow label={t("newBot.team")}>
           <PillSelect
             value={bot.section ?? ""}

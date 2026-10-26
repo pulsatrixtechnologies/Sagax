@@ -244,9 +244,11 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // (none), the plugin marketplace policy (any, the default) and the
     // labeled access tokens (none).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
-      orgKeyConfigured: true, allowFullAccess: false, allowVaultExport: true, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, memberAutoApproval: true, interimAttach: { until: null, people: 0 },
+      orgKeyConfigured: true, allowFullAccess: true, allowVaultExport: true, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, memberAutoApproval: true, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
       githubTokens: [],
+      // Pulsatrix Flow for members (#1091)
+      flowPlugins: expect.anything(),
     });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
@@ -591,8 +593,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const unconfirmed = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" });
     expect(unconfirmed.status, unconfirmed.text).toBe(409);
     expect(unconfirmed.body.code).toBe("full_access_confirm_required");
-    // any other approval level stays outside a member's fields
-    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(403);
+    // 2026-10-26 (JC): Ask or Auto on their own bot is the owner's own setting
+    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(200);
     // an admin is not the owner: never Full on someone else's bot
     const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full", confirmFullAccess: true });
     expect(full.status, full.text).toBe(403);
@@ -830,13 +832,9 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
       const unconfirmed = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass" });
       expect(unconfirmed.status).toBe(400);
       expect(unconfirmed.body.code).toBe("bypass_confirmation_required");
-      // and the organization's Full access policy: off, Bypass stays off
+      // 2026-10-26 (JC): no organization switch takes Bypass from the owner
       expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: false })).status).toBe(200);
-      const policyOff = await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true });
-      expect(policyOff.status).toBe(403);
-      expect(policyOff.body.code).toBe("bypass_not_allowed");
-      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.canBypass).toBe(false);
-      expect((await api("PATCH", "/api/org/settings", alice, { allowFullAccess: true })).status).toBe(200);
+      expect((await api("GET", `/api/bots/${cora.id}/permission-mode`, erin)).body.canBypass).toBe(true);
       expect((await api("PUT", `/api/bots/${cora.id}/permission-mode`, erin, { mode: "bypass", confirmBypass: true })).status).toBe(200);
       const project = await ask(CW, { resource: "project/projects", operation: "update", body: {} });
       expect(project.card).toBeNull();

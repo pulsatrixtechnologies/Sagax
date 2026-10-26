@@ -138,7 +138,6 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "general.aboutMe": ["about me"],
   "general.threadCleanup": ["cleanup", "retention", "event log", "event-log", "log size"],
   "organization.mcpCalls": ["mcp", "timeout", "tool call"],
-  "organization.fullAccess": ["full access", "accès complet"],
   "connections.integrations": ["box", "vps"],
   "connections.image": ["image", "avatar", "gpt image"],
   "engines.moreProviders": ["openrouter", "mistral", "opencode", "base url", "compatible", "cursor", "cloud agent", "elevenlabs", "fish audio", "image key"],

@@ -8,11 +8,11 @@ import { botAvatarUrlFromStoredPath } from "../../shared/bot-avatar";
 import { isMemberBotField } from "../../shared/viewer-capabilities";
 
 /** Fields an organization member may send: the member set, and a field
- * their profile's permissions open (`mayWrite`, BOT_FIELD_PERMISSIONS; the
- * server's memberBotFieldRefusal accepts the same). Anything else (where
- * the bot runs, approval without the permission, a team, a preset) is
- * refused on create and on the follow-up patch, which would roll the new
- * bot back. */
+ * their permissions open (`mayWrite`, BOT_FIELD_PERMISSIONS; the server's
+ * memberBotFieldRefusal accepts the same). 2026-10-26 (JC): every member
+ * holds the keys about their own bots, so only what reaches past their own
+ * environment (a folder on the server's disk, the server's cloud computer
+ * or shared browser profiles) is left out without its permission. */
 function memberWritableProfile<T extends object>(profile: T, mayWrite?: (field: string) => boolean): Partial<T> {
   const next: Partial<T> = {};
   for (const key of Object.keys(profile) as Array<keyof T>) {
@@ -57,9 +57,15 @@ export async function createConfiguredBot(
   // organization's preset) and starter notes; for the same skill name or
   // note file, the preset's wins over the draft's.
   const preset = draft.preset;
+  const mayWrite = (field: string) => options?.memberMayWrite?.(field) === true;
   const response = await request<{ bot: Bot }>("/api/bots", {
     method: "POST", body: JSON.stringify(memberFieldsOnly
-      ? { name: profile.name, title: profile.title, description: profile.description, modelSelection: profile.modelSelection, requireAvailableModel: true, useDefaults: false }
+      ? { name: profile.name, title: profile.title, description: profile.description, modelSelection: profile.modelSelection, requireAvailableModel: true, useDefaults: false,
+        // 2026-10-26: the team, who sees it, its tools and a preset are the member's own choice
+        ...(profile.section !== undefined && mayWrite("section") ? { section: profile.section } : {}),
+        ...(visibility !== undefined && mayWrite("visibility") ? { visibility } : {}),
+        ...(Object.hasOwn(template.profile, "toolScope") && mayWrite("toolScope") ? { settings: { toolScope } } : {}),
+        ...(preset ? { preset: preset.id } : {}) }
       : { name: profile.name, title: profile.title,
         description: profile.description, modelSelection: profile.modelSelection, section: profile.section,
         requireAvailableModel: true, useDefaults: false, ...(visibility !== undefined ? { visibility } : {}),
@@ -91,7 +97,7 @@ export async function createConfiguredBot(
         throw new Error("The initial thread's requested approval level was not granted");
       }
     }
-    if (!memberFieldsOnly) for (const [path, text] of Object.entries(template.memory)) {
+    for (const [path, text] of Object.entries(template.memory)) {
       if (preset?.notes.includes(path)) continue;
       await request(`/api/bots/${bot.id}/memory/file`, {
         method: "PUT", body: JSON.stringify({ path, text }),
@@ -121,10 +127,12 @@ export async function createConfiguredBot(
   // Creation is complete. Activation failures leave a visible, configured
   // bot with paused routines; never delete a bot whose routine may have run,
   // undo a Chief handover, or invite a duplicate creation retry.
-  if (chiefOfStaff && !memberFieldsOnly) {
+  if (chiefOfStaff && (!memberFieldsOnly || mayWrite("chiefOfStaff"))) {
     try {
       const result = await request<{ bot: Bot }>(`/api/bots/${bot.id}`, {
-        method: "PATCH", body: JSON.stringify({ chiefOfStaff, managedSections, acknowledgePeerScope: true }),
+        method: "PATCH", body: JSON.stringify(memberFieldsOnly && !mayWrite("acknowledgePeerScope")
+          ? { chiefOfStaff, managedSections }
+          : { chiefOfStaff, managedSections, acknowledgePeerScope: true }),
       });
       bot = { ...bot, ...result.bot };
     } catch (error) {

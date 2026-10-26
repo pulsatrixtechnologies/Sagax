@@ -24,7 +24,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { MEMBER_DEFAULT_PERMISSIONS } from "../shared/permissions.ts";
+import { MEMBER_ALWAYS_PERMISSIONS, MEMBER_DEFAULT_PERMISSIONS } from "../shared/permissions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -85,7 +85,8 @@ async function bobWith(permissions: string[] | undefined): Promise<Auth> {
     ...idp.personOf(user),
     ...(user === BOB && permissions ? { permissions } : {}),
   }));
-  const expected = (permissions ?? MEMBER_DEFAULT_PERMISSIONS).filter((key) => !["server.link", "nope.key"].includes(key));
+  // 2026-10-26: the keys about Bob's own things are always added
+  const expected = [...new Set([...(permissions ?? MEMBER_DEFAULT_PERMISSIONS), ...MEMBER_ALWAYS_PERMISSIONS])].filter((key) => !["server.link", "nope.key"].includes(key));
   return waitFor(async () => {
     const auth = await signIn(BOB);
     const viewer = (await api("GET", "/api/config", auth)).body.viewer;
@@ -180,9 +181,16 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     const created = await api("POST", "/api/bots", bob, { name: "Sprout" });
     expect(created.status, created.text).toBe(201);
     const id = created.body.bot.id as string;
-    const refused = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
-    expect(refused.status, refused.text).toBe(403);
-    expect(refused.body).toMatchObject({ error: "forbidden", permission: "bots.approvalLevel", field: "approvalMode" });
+    // 2026-10-26 (JC): every setting of their own bot, without a permission list
+    const auto = await api("PATCH", `/api/bots/${id}`, bob, { approvalMode: "auto" });
+    expect(auto.status, auto.text).toBe(200);
+    for (const body of [{ chiefOfStaff: true }, { proactiveMode: "propose" }, { memoryEnabled: false }, { section: "Ops" }, { chiefOfStaff: false }, { hidden: true }]) {
+      const own = await api("PATCH", `/api/bots/${id}`, bob, body);
+      expect(own.status, `${JSON.stringify(body)} ${own.text}`).toBe(200);
+    }
+    expect((await api("PATCH", `/api/bots/${id}`, bob, { hidden: false })).status).toBe(200);
+    // the server's managed cloud computer still needs its permission
+    expect((await api("PATCH", `/api/bots/${id}`, bob, { cloudBackend: "vps" })).body).toMatchObject({ permission: "bots.computer" });
     const folder = join(home, "work");
     mkdirSync(folder, { recursive: true });
     expect((await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder })).body).toMatchObject({ permission: "folders.botWorkingFolder" });
@@ -195,7 +203,7 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     const moved = await api("PATCH", `/api/bots/${id}`, bob, { cwd: folder });
     expect(moved.status, moved.text).toBe(200);
     // still never the fields no permission opens
-    expect((await api("PATCH", `/api/bots/${id}`, bob, { chiefOfStaff: true })).status).toBe(403);
+    expect((await api("PATCH", `/api/bots/${id}`, bob, { alwaysAllow: [] })).status).toBe(403);
     // an admin passes without any permission list (an admin opens no one
     // else's bot without a grant, so on their own)
     const elm = await api("POST", "/api/bots", alice, { name: "Elm" });
@@ -204,25 +212,27 @@ posixOnly("Perspicax organization: the permission matrix", () => {
     expect(adminPatch.status, adminPatch.text).toBe(200);
   }, 60_000);
 
-  it("PM-4: a profile without bots.create or sharing.grants", async () => {
+  it("PM-4: a profile without bots.create or sharing.grants still creates and shares their own bots (2026-10-26)", async () => {
     const people = (await api("GET", "/api/org/directory", alice)).body.people as Array<{ principalId: string; login: string }>;
     const aliceId = people.find((person) => person.login === "alice")!.principalId;
-    let bob = await bobWith([...MEMBER_DEFAULT_PERMISSIONS, "bots.approvalLevel"].filter((key) => key !== "sharing.grants"));
+    const bob = await bobWith(MEMBER_DEFAULT_PERMISSIONS.filter((key) => key !== "sharing.grants" && key !== "bots.create"));
     const own = await api("POST", "/api/bots", bob, { name: "Leaf" });
     expect(own.status, own.text).toBe(201);
     const share = await api("PUT", `/api/bots/${own.body.bot.id}/grants`, bob, { target: `user:${aliceId}`, level: "use" });
-    expect(share.status, share.text).toBe(403);
-    expect(share.body).toMatchObject({ error: "forbidden", permission: "sharing.grants" });
-    expect((await api("GET", `/api/bots/${own.body.bot.id}/grants`, bob)).body.administer).toBeNull();
-    bob = await bobWith(MEMBER_DEFAULT_PERMISSIONS.filter((key) => key !== "bots.create"));
-    const viewer = (await api("GET", "/api/config", bob)).body.viewer;
-    expect(viewer).toMatchObject({ botsReadOnly: true, botsReadOnlyReason: "permission", canCreateBots: false });
-    const refused = await api("POST", "/api/bots", bob, { name: "Moss" });
-    expect(refused.status, refused.text).toBe(403);
-    expect(refused.body).toMatchObject({ error: "forbidden", permission: "bots.create" });
-    // the admin still creates and shares
-    const admins = await api("POST", "/api/bots", alice, { name: "Oak" });
-    expect(admins.status, admins.text).toBe(201);
+    expect(share.status, share.text).toBe(200);
+    // never someone else's bot
+    const oak = await api("POST", "/api/bots", alice, { name: "Oak" });
+    expect(oak.status, oak.text).toBe(201);
+    expect((await api("PATCH", `/api/bots/${oak.body.bot.id}`, bob, { approvalMode: "auto" })).status).not.toBe(200);
+    expect((await api("DELETE", `/api/bots/${oak.body.bot.id}`, bob)).status).not.toBe(200);
+    // the memory and change history of their own bot, never of someone else's
+    const leaf = own.body.bot.id as string;
+    expect((await api("GET", `/api/bots/${leaf}/history`, bob)).status).toBe(200);
+    expect((await api("PUT", `/api/bots/${leaf}/memory/file`, bob, { path: "MEMORY.md", text: "Bob's notes" })).status).toBe(200);
+    expect((await api("GET", `/api/bots/${leaf}/memory/file`, bob)).body.text).toBe("Bob's notes");
+    expect([403, 404]).toContain((await api("GET", `/api/bots/${oak.body.bot.id}/history`, bob)).status);
+    expect([403, 404]).toContain((await api("GET", `/api/bots/${oak.body.bot.id}/memory/file`, bob)).status);
+    expect([403, 404]).toContain((await api("PUT", `/api/bots/${oak.body.bot.id}/memory/file`, bob, { text: "x" })).status);
   }, 60_000);
 
   it("PM-5: engines.manage opens the engines, never an engine's program; stray keys are ignored", async () => {

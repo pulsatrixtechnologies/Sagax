@@ -1623,7 +1623,6 @@
   "persona.files.truncated": "Esta pasta é grande; só os primeiros arquivos aparecem.",
   "persona.files.upload": "Enviar markdown",
   "persona.files.uploadOnlyMarkdown": "Só arquivos markdown (.md) podem ser enviados para docs/.",
-  "persona.locked.history": "O histórico de alterações de um bot é para administradores. Peça a um administrador para vê-lo.",
   "persona.locked.owner": "Somente o dono deste bot ou um administrador pode alterar isto.",
   "persona.lockedBadge": "Somente leitura",
   "persona.menu.open": "Menu do bot",

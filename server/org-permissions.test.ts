@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MEMBER_DEFAULT_PERMISSIONS, PERMISSION_KEYS } from "../shared/permissions.ts";
+import { MEMBER_ALWAYS_PERMISSIONS, MEMBER_DEFAULT_PERMISSIONS, PERMISSION_KEYS } from "../shared/permissions.ts";
 import { effectivePermissions, permissionList } from "./org-permissions.ts";
 
 describe("effectivePermissions", () => {
@@ -17,11 +17,19 @@ describe("effectivePermissions", () => {
     expect(permissionList(member)).toEqual([...MEMBER_DEFAULT_PERMISSIONS]);
   });
 
-  it("a list from Perspicax is taken as is, even empty", () => {
-    expect(permissionList(effectivePermissions({ admin: false, fromDirectory: ["usage.view"] }))).toEqual(["usage.view"]);
+  it("a list from Perspicax is taken as is, plus the keys about the person's own things (2026-10-26)", () => {
+    expect(permissionList(effectivePermissions({ admin: false, fromDirectory: ["usage.view"] }))).toEqual(PERMISSION_KEYS.filter((key) => key === "usage.view" || MEMBER_ALWAYS_PERMISSIONS.includes(key)));
     const none = effectivePermissions({ admin: false, fromDirectory: [] });
     expect(none.source).toBe("perspicax");
-    expect(permissionList(none)).toEqual([]);
+    expect(permissionList(none)).toEqual([...MEMBER_ALWAYS_PERMISSIONS]);
+    // what reaches past the person's own environment still comes from the list
+    for (const key of ["bots.computer", "folders.botWorkingFolder", "host.commands", "server.settings", "people.manage"] as const) {
+      expect(none.permissions.has(key), key).toBe(false);
+    }
+  });
+
+  it("a local service holds exactly its list, never a person's own keys", () => {
+    expect(permissionList(effectivePermissions({ admin: false, fromDirectory: [], service: true }))).toEqual([]);
   });
 
   it("the person sheet narrows on top of the profiles", () => {
@@ -31,7 +39,8 @@ describe("effectivePermissions", () => {
       botsUseOnly: true,
       integrationsOff: true,
     });
-    expect(permissionList(sheet)).toEqual(["usage.view"]);
+    // the clients.* keys about their own conversations and routines stay
+    expect(permissionList(sheet)).toEqual(["usage.view", "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate"]);
     expect(sheet.narrowedBy).toEqual(["sagax_bots", "sagax_integrations"]);
   });
 });

@@ -15,7 +15,6 @@ const context = (over: Partial<MemberSetupContext> = {}): MemberSetupContext => 
   sectionOf: (id) => bots[id]?.section,
   mayCreateBots: true,
   can: () => false,
-  newBotAutoRefused: false,
   ...over,
 });
 const request = (operations: TeamSetupOperation[], over: Partial<TeamSetupRequest> = {}): TeamSetupRequest => ({
@@ -31,12 +30,17 @@ describe("a member applies team setup on their own bots (#1058)", () => {
     expect(memberTeamSetupRefusal(request([{ action: "update", botId: "mine", fields: { title: "Writer", modelSelection: selection, section: "Ops" } }]), context())).toBeNull();
   });
 
-  it("keeps someone else's bot, a new team, a deletion and the Primary Bot role an admin's", () => {
+  it("lets the owner create a team, change the Primary Bot role among their bots and delete their own bot (2026-10-26)", () => {
+    expect(memberTeamSetupRefusal(request([create("Ana", { section: "Lab" })], { newTeams: ["Lab"] }), context({ can: (key) => key === "sharing.visibility" }))).toBeNull();
+    expect(memberTeamSetupRefusal(request([{ action: "update", botId: "mine", fields: { chiefOfStaff: true } }, { action: "update", botId: "chief", fields: { chiefOfStaff: false } }]), context())).toBeNull();
+    expect(memberTeamSetupRefusal(request([], { deletion: { botId: "mine", name: "mine", expectedRevision: "y" } }), context())).toBeNull();
+  });
+
+  it("still keeps someone else's bot out of a member's setup", () => {
     const refused = { code: TEAM_SETUP_ADMIN_REQUIRED };
     expect(memberTeamSetupRefusal(request([{ action: "update", botId: "theirs", fields: { title: "x" } }]), context())).toMatchObject(refused);
-    expect(memberTeamSetupRefusal(request([create("Ana", { section: "Lab" })], { newTeams: ["Lab"] }), context())).toMatchObject(refused);
-    expect(memberTeamSetupRefusal(request([], { deletion: { botId: "mine", name: "mine", expectedRevision: "y" } }), context())).toMatchObject(refused);
-    expect(memberTeamSetupRefusal(request([{ action: "update", botId: "mine", fields: { chiefOfStaff: true } }]), context())).toMatchObject(refused);
+    expect(memberTeamSetupRefusal(request([{ action: "update", botId: "theirs", fields: { chiefOfStaff: true } }]), context())).toMatchObject(refused);
+    expect(memberTeamSetupRefusal(request([], { deletion: { botId: "theirs", name: "theirs", expectedRevision: "y" } }), context())).toMatchObject(refused);
     // a Primary Bot someone else owns
     expect(memberTeamSetupRefusal(request([create("Ana")]), context({ callerId: "pr_leo" }))).toMatchObject(refused);
   });
@@ -47,7 +51,5 @@ describe("a member applies team setup on their own bots (#1058)", () => {
     expect(memberTeamSetupRefusal(request([{ action: "update", botId: "mine", fields: { section: "Sales" } }]), context({ can: (key) => key === "sharing.visibility" }))).toBeNull();
     expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "/srv/work" })]), context())).toMatchObject({ permission: "folders.botWorkingFolder" });
     expect(memberTeamSetupRefusal(request([create("Ana", { cwd: "" })]), context())).toBeNull();
-    // a new bot starts on Auto: never when the organization refuses it for members' bots
-    expect(memberTeamSetupRefusal(request([create("Ana")]), context({ newBotAutoRefused: true }))).toMatchObject({ code: TEAM_SETUP_ADMIN_REQUIRED });
   });
 });

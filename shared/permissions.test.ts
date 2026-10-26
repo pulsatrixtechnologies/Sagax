@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MEMBER_ALWAYS_PERMISSIONS,
   ADMIN_ONLY_PERMISSIONS,
   BOT_FIELD_PERMISSIONS,
   can,
@@ -43,8 +44,11 @@ describe("the permission catalogue", () => {
     }
   });
 
-  it("member defaults are what a plain member could do before the matrix, plus reading and messaging their bots from an AI client", () => {
-    expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual(["apps.ownIntegrations", "bots.create", "bots.fullAccess", "clients.botsMessage", "clients.botsRead", "sharing.grants"]);
+  it("member defaults open everything about a member's own bots, routines and connections (2026-10-26)", () => {
+    const own = ["apps.ownIntegrations", "bots.approvalLevel", "bots.behaviour", "bots.create", "bots.fullAccess", "bots.tools",
+      "clients.agentsCreate", "clients.botsMessage", "clients.botsRead", "clients.routinesRead", "clients.routinesRun", "sharing.grants", "sharing.visibility"];
+    expect([...MEMBER_DEFAULT_PERMISSIONS].sort()).toEqual(own);
+    expect([...MEMBER_ALWAYS_PERMISSIONS].sort()).toEqual(own);
   });
 
   it("maps every bot field a permission opens, and none a member already sets", () => {

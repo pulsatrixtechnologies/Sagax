@@ -10,7 +10,7 @@ import type { BotOverview } from "@/lib/bot-overview-types";
 import type { LocaleKey } from "@/locales";
 import { t } from "@/lib/i18n";
 import { canEditBotField, canStepPrimary } from "@/lib/bot-capabilities";
-import { viewerBotsReadOnly, viewerIsOrgMember } from "@/lib/viewer";
+import { viewerBotsReadOnly } from "@/lib/viewer";
 import { servedPage } from "@/lib/desktop";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -74,12 +74,13 @@ export function botSectionLock(
           // admin; 2026-10-09, members manage their own bots)
           : id === "rules" || id === "files" ? !canEditBotField(config, bot, "soul")
           : id === "soul" ? !canEditBotField(config, bot, "soul")
-            : id === "history" ? viewerIsOrgMember(config)
+            // 2026-10-26 (JC): the owner reads their own bot's history
+            : id === "history" ? !canEditBotField(config, bot, "soul")
               : id === "permissions" ? !canStepPrimary(config, bot) && !canEditBotField(config, bot, "approvalMode")
                 : false;
   if (!locked) return null;
   if (viewerBotsReadOnly(config)) return "bots.readOnly.notice";
-  return id === "history" ? "persona.locked.history" : "persona.locked.owner";
+  return "persona.locked.owner";
 }
 
 export function useBotSectionContent(bot: Bot, {
@@ -208,7 +209,7 @@ export function useBotSectionContent(bot: Bot, {
       });
   }, [bot.id, flushBotPatches]);
 
-  const historyAllowed = !viewerIsOrgMember(state.config);
+  const historyAllowed = canEditBotField(state.config, bot, "soul");
   useEffect(() => {
     if (!historyAllowed || section !== "history") return;
     void loadHistory();

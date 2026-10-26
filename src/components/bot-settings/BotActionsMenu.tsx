@@ -76,7 +76,7 @@ export function BotActionsMenu({ bot, anchor, onAnchor, onRename, data }: {
   const canRename = showBotRename(state.config, bot);
   const primary = primaryBotOffer(state.config, bot);
   const owns = viewerOwnsBot(bot, viewerId);
-  const archiveAllowed = showBotArchive(state.config);
+  const archiveAllowed = showBotArchive(state.config, bot);
   const archiveBlocked = archiveBlockReason(state.bots, bot);
   const zipAllowed = showBotZipExport(state.config, bot);
   const messages = visibleMessages(bot);
