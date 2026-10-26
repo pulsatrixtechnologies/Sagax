@@ -238,7 +238,7 @@ export function createRemoteSessionService(deps: {
   });
   // The tunnel of a row: its Flow folder, or the support folder of its code
   // when that folder names the row's person and bot as the opener.
-  const tunnelOf = (row: Pick<StoredSession, "id" | "code" | "principalId" | "botId">) => readTunnel(home(), row, supportDir?.());
+  const tunnelOf = (row: Pick<StoredSession, "id" | "code" | "principalId" | "botId">) => readTunnel(home(), row, supportDir?.(), now());
   /** Sagax opened it (its support folder names this row's owner). */
   const sagaxOpened = (row: StoredSession) => {
     const dir = supportDir?.();

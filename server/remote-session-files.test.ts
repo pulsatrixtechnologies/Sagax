@@ -172,8 +172,8 @@ function fakeStore(messages: Message[]): Store {
 
 async function connected(run: RunCommand, os: "windows" | "linux" = "windows") {
   const dir = temp("sagax-support-");
-  writeFileSync(path.join(dir, "technician.private.json"), "{}\n", { mode: 0o600 });
   await rememberSession(dir, CODE, ID, { rights: "standard", end_at: END, principalId: A, botId: BOT });
+  writeFileSync(path.join(dir, "sessions", CODE, "technician.private.json"), "{}\n", { mode: 0o600 });
   writeFileSync(path.join(dir, "sessions", CODE, "address"), `${ADDRESS}\n`, { mode: 0o600 });
   const svc = createRemoteSessionService({
     dataDir: temp("sagax-data-"),

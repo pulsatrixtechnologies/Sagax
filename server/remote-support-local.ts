@@ -1,29 +1,42 @@
 // Technician side of a Tailcat remote support session, on the computer this
-// Sagax runs on (the desktop PC, or the bot's cloud computer). The private
-// key is created once in this directory and never leaves it. Perspicax
-// receives the public nodekey only. The model is not asked for either.
+// Sagax runs on (the desktop PC, or the bot's cloud computer). Every open
+// creates its own tailcat client key, kept in that session's folder only and
+// deleted when the session is closed or past its end. There is no shared
+// technician key. Perspicax receives the public nodekey only and binds it into
+// the short session grant it signs for the helper. The model is not asked for
+// either.
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isTailcatAddress, TAILCAT_ADDRESS_MAX } from "../shared/remote-session.ts";
-import { normPrincipal, supportFolderOwner } from "./remote-session-probe.ts";
+import {
+  liveSupportKey,
+  normPrincipal,
+  SUPPORT_KEY_FILE,
+  SUPPORT_PENDING,
+  SUPPORT_PUB_FILE,
+  supportFolderOwner,
+  sweepSupportKeys,
+} from "./remote-session-probe.ts";
 import { resolveTailcatBinary } from "./tailcat-bin.ts";
 
 /** Frozen template Perspicax renders (gateway remote_support::template). */
 export const REMOTE_SUPPORT_TEMPLATE = "tailcat-0.7.0/2";
 export const TECHNICIAN_MAX = 80;
+export const CALL_REF_MAX = 80;
+export const REMOTE_SUPPORT_SCOPES = ["full-control", "view-only", "shell-only"] as const;
+export type RemoteSupportScope = typeof REMOTE_SUPPORT_SCOPES[number];
 const NODEKEY = /^nodekey:[0-9a-f]{64}$/;
 const SESSION = /^[0-9a-f]{12}$/;
 const CODE = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 const DEFAULT_MS = 2 * 60 * 60 * 1000;
 const MAX_MS = 24 * 60 * 60 * 1000;
-const KEY_FILE = "technician.private.json";
-const PUB_FILE = "technician.nodekey";
-const MISSING = "tailcat is not installed with this Sagax, so the technician key cannot be created. The private key was not sent. Do not download tailcat and do not copy it into a system directory.";
-const CREATE_FAILED = "The technician key could not be created on this computer. The private key was not sent.";
+const MISSING = "tailcat is not installed with this Sagax, so the session key cannot be created. The private key was not sent. Do not download tailcat and do not copy it into a system directory.";
+const CREATE_FAILED = "The session key could not be created on this computer. The private key was not sent.";
+const KEEP_FAILED = "Perspicax opened the session, but this computer could not keep its session key. Close it (cancelled) with remote_support_close and open a new one.";
 
 export interface TailcatRunResult {
   code: number | null;
@@ -102,8 +115,6 @@ export function spawnTailcat(bin?: string): TailcatRun {
   });
 }
 
-const creating = new Map<string, Promise<{ ok: true; nodekey: string; keyPath: string } | { ok: false; error: string }>>();
-
 function nodekeyFrom(text: string): string | null {
   const match = /nodekey:[0-9a-f]{64}/.exec(text);
   return match && NODEKEY.test(match[0]) ? match[0] : null;
@@ -118,57 +129,72 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-async function readPublic(path: string): Promise<string | null> {
+async function privateDir(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: 0o700 });
+  await chmod(path, 0o700);
+}
+
+/** A key made for one open, still waiting for Perspicax's code. */
+export interface PendingKey {
+  nodekey: string;
+  folder: string;
+}
+
+/** Create a new client key for this open only, in `<dir>/pending/<session>/`.
+ * Never returns the private half. On any failure the pending folder is gone. */
+export async function createSessionKey(dir: string, sessionId: string, run: TailcatRun): Promise<({ ok: true } & PendingKey) | { ok: false; error: string }> {
+  if (!SESSION.test(sessionId)) return { ok: false, error: "The session id could not be created." };
+  const folder = join(dir, SUPPORT_PENDING, sessionId);
   try {
-    return nodekeyFrom(await readFile(path, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
-/** Load the key created earlier, or create it once. Never returns the private half. */
-export function ensureTechnicianNodekey(dir: string, run: TailcatRun) {
-  const current = creating.get(dir);
-  if (current) return current;
-  const job = createOrLoad(dir, run).finally(() => { creating.delete(dir); });
-  creating.set(dir, job);
-  return job;
-}
-
-async function createOrLoad(dir: string, run: TailcatRun): Promise<{ ok: true; nodekey: string; keyPath: string } | { ok: false; error: string }> {
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  await chmod(dir, 0o700);
-  const keyPath = join(dir, KEY_FILE);
-  const pubPath = join(dir, PUB_FILE);
-  const saved = await readPublic(pubPath);
-  if (saved && await exists(keyPath)) return { ok: true, nodekey: saved, keyPath };
-  if (await exists(keyPath)) {
-    const printed = await run(["--key", keyPath, "printpub"], { timeoutMs: 15_000 });
-    if (printed.error === "missing") return { ok: false, error: MISSING };
-    const nodekey = nodekeyFrom(printed.stdout);
-    if (!nodekey) return { ok: false, error: CREATE_FAILED };
+    await privateDir(dir);
+    await privateDir(join(dir, SUPPORT_PENDING));
+    await rm(folder, { recursive: true, force: true });
+    await privateDir(folder);
+    const keyPath = join(folder, SUPPORT_KEY_FILE);
+    const created = await run(["genkey", "--client", "--key", keyPath], { timeoutMs: 15_000 });
+    if (created.error === "missing") {
+      await rm(folder, { recursive: true, force: true });
+      return { ok: false, error: MISSING };
+    }
+    const nodekey = nodekeyFrom(created.stdout);
+    if (!nodekey || !await exists(keyPath)) {
+      await rm(folder, { recursive: true, force: true });
+      return { ok: false, error: CREATE_FAILED };
+    }
+    await chmod(keyPath, 0o600);
+    const pubPath = join(folder, SUPPORT_PUB_FILE);
     await writeFile(pubPath, `${nodekey}\n`, { mode: 0o600 });
     await chmod(pubPath, 0o600);
-    await chmod(keyPath, 0o600);
-    return { ok: true, nodekey, keyPath };
+    return { ok: true, nodekey, folder };
+  } catch {
+    await rm(folder, { recursive: true, force: true }).catch(() => {});
+    return { ok: false, error: CREATE_FAILED };
   }
-  const created = await run(["genkey", "--client", "--key", keyPath], { timeoutMs: 15_000 });
-  if (created.error === "missing") return { ok: false, error: MISSING };
-  if (!await exists(keyPath)) return { ok: false, error: CREATE_FAILED };
-  await chmod(keyPath, 0o600);
-  const nodekey = nodekeyFrom(created.stdout);
-  if (!nodekey) return { ok: false, error: CREATE_FAILED };
-  await writeFile(pubPath, `${nodekey}\n`, { mode: 0o600 });
-  await chmod(pubPath, 0o600);
-  return { ok: true, nodekey, keyPath };
 }
 
-/** The public key already on disk, without creating one (a new key would not match a session already opened). */
-export async function loadTechnicianKey(dir: string): Promise<{ nodekey: string; keyPath: string } | null> {
-  const keyPath = join(dir, KEY_FILE);
-  const nodekey = await readPublic(join(dir, PUB_FILE));
-  if (!nodekey || !await exists(keyPath)) return null;
-  return { nodekey, keyPath };
+/** Move a pending key into the session folder of the code Perspicax answered. */
+async function adoptSessionKey(dir: string, pending: PendingKey, code: string): Promise<boolean> {
+  const compact = compactCode(code);
+  if (!compact) return false;
+  const folder = join(dir, "sessions", compact);
+  try {
+    await privateDir(folder);
+    for (const name of [SUPPORT_KEY_FILE, SUPPORT_PUB_FILE]) {
+      const target = join(folder, name);
+      await rename(join(pending.folder, name), target);
+      await chmod(target, 0o600);
+    }
+    return true;
+  } catch {
+    await rm(join(folder, SUPPORT_KEY_FILE), { force: true }).catch(() => {});
+    await rm(join(folder, SUPPORT_PUB_FILE), { force: true }).catch(() => {});
+    return false;
+  }
+}
+
+/** The key of the session behind `code`, or null when it is gone, closed or past its end. */
+export function sessionKeyPath(dir: string, code: string, now?: Date): string | null {
+  return liveSupportKey(dir, code, (now ?? new Date()).getTime());
 }
 
 function endAt(raw: unknown, now: Date): { ok: true; value: string } | { ok: false; error: string } {
@@ -212,6 +238,12 @@ export function prepareOpen(input: {
   const requested = typeof input.args.technician === "string" ? input.args.technician.trim() : "";
   const technician = (requested || technicianLabel(input.person, input.org)).slice(0, TECHNICIAN_MAX);
   if (!technician) return { ok: false, error: "The technician name is missing. Sagax fills it from the person's name and the organization when the turn knows them." };
+  const scope = input.args.scope;
+  if (scope !== undefined && scope !== null && scope !== "" && !REMOTE_SUPPORT_SCOPES.includes(scope as RemoteSupportScope)) {
+    return { ok: false, error: "scope must be full-control, view-only or shell-only, or omitted for full-control." };
+  }
+  const ref = callRef(input.args.call_ref);
+  if (!ref.ok) return ref;
   const args: Record<string, unknown> = {
     template: REMOTE_SUPPORT_TEMPLATE,
     nodekey: input.nodekey,
@@ -222,7 +254,21 @@ export function prepareOpen(input: {
   };
   if (os === "windows" || os === "macos" || os === "linux") args.os = os;
   if (start !== undefined) args.start_minutes = start;
+  if (typeof scope === "string" && scope) args.scope = scope;
+  if (ref.value) args.call_ref = ref.value;
   return { ok: true, args, session: input.sessionId };
+}
+
+/** The optional call or ticket reference: one line, no control characters,
+ * at most 80 characters once trimmed. Empty means none. */
+function callRef(raw: unknown): { ok: true; value: string } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, value: "" };
+  if (typeof raw !== "string") return { ok: false, error: "call_ref must be text: the reference of the phone call or ticket." };
+  const value = raw.trim();
+  // oxlint-disable-next-line no-control-regex -- the reference is one plain line
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(value)) return { ok: false, error: "call_ref must be a single line without control characters." };
+  if (value.length > CALL_REF_MAX) return { ok: false, error: `call_ref must be at most ${CALL_REF_MAX} characters.` };
+  return { ok: true, value };
 }
 
 function asObject(raw: unknown): Record<string, unknown> | null {
@@ -281,6 +327,8 @@ export interface RememberedOpen {
   rights?: "standard" | "elevated";
   end_at?: string;
   os?: "windows" | "macos" | "linux";
+  /** What the session grant allows; absent means full-control. */
+  scope?: RemoteSupportScope;
   /** The person whose Perspicax credentials opened it, and the bot. */
   principalId?: string;
   botId?: string;
@@ -319,6 +367,7 @@ export async function rememberSession(dir: string, code: string, session: string
     ...(open.rights === "elevated" ? { rights: "elevated" } : { rights: "standard" }),
     ...(typeof open.end_at === "string" ? { end_at: open.end_at } : {}),
     ...(open.os ? { os: open.os } : {}),
+    ...(open.scope && REMOTE_SUPPORT_SCOPES.includes(open.scope) ? { scope: open.scope } : {}),
     ...(open.principalId?.trim() ? { principalId: normPrincipal(open.principalId) } : {}),
     ...(open.botId?.trim() ? { botId: open.botId.trim() } : {}),
   };
@@ -326,7 +375,7 @@ export async function rememberSession(dir: string, code: string, session: string
 }
 
 /** The session id, rights, end and OS kept for a code by rememberSession, or null. */
-export function recallSupportSession(dir: string, code: string): { id: string; code: string; elevated: boolean; endAt: string; os?: "windows" | "macos" | "linux"; principalId?: string; botId?: string } | null {
+export function recallSupportSession(dir: string, code: string): { id: string; code: string; elevated: boolean; endAt: string; os?: "windows" | "macos" | "linux"; scope?: RemoteSupportScope; principalId?: string; botId?: string } | null {
   const compact = compactCode(code);
   if (!compact) return null;
   const folder = join(dir, "sessions", compact);
@@ -347,6 +396,7 @@ export function recallSupportSession(dir: string, code: string): { id: string; c
   const end = typeof meta.end_at === "string" ? Date.parse(meta.end_at) : Number.NaN;
   if (!Number.isFinite(end)) return null;
   const os = meta.os === "windows" || meta.os === "macos" || meta.os === "linux" ? meta.os : undefined;
+  const scope = typeof meta.scope === "string" && REMOTE_SUPPORT_SCOPES.includes(meta.scope) ? meta.scope : undefined;
   const principalId = typeof meta.principalId === "string" && meta.principalId.trim() ? normPrincipal(meta.principalId) : undefined;
   const botId = typeof meta.botId === "string" && meta.botId.trim() ? meta.botId.trim() : undefined;
   return {
@@ -355,6 +405,7 @@ export function recallSupportSession(dir: string, code: string): { id: string; c
     elevated: meta.rights === "elevated",
     endAt: new Date(end).toISOString(),
     ...(os ? { os } : {}),
+    ...(scope ? { scope } : {}),
     ...(principalId ? { principalId } : {}),
     ...(botId ? { botId } : {}),
   };
@@ -382,7 +433,8 @@ export async function forgetAddress(dir: string, code: string): Promise<void> {
 }
 
 /** Mark a code's session folder closed so its address stays gone: a later
- * status for the same code will not re-create it (storeAddress refuses). */
+ * status for the same code will not re-create it (storeAddress refuses). The
+ * session's key is deleted with it. */
 export async function markSessionClosed(dir: string, code: string): Promise<void> {
   const compact = compactCode(code);
   if (!compact) return;
@@ -392,6 +444,8 @@ export async function markSessionClosed(dir: string, code: string): Promise<void
     await writeFile(join(folder, "closed"), `${new Date().toISOString()}\n`, { mode: 0o600 });
     await rm(join(folder, "address"), { force: true });
   } catch { /* best effort: the card is already closed */ }
+  await rm(join(folder, SUPPORT_KEY_FILE), { force: true }).catch(() => {});
+  await rm(join(folder, SUPPORT_PUB_FILE), { force: true }).catch(() => {});
 }
 
 /** Drop the address from what the model reads. Ping with the local key when it is safe to connect. */
@@ -456,30 +510,41 @@ async function openCall(input: {
   local: RemoteSupportContext;
   post: (tool: string, args: Record<string, unknown>) => Promise<{ status: number; body: Record<string, unknown> }>;
 }, run: TailcatRun): Promise<ToolAnswer> {
-  const key = await ensureTechnicianNodekey(input.local.dir, run);
+  const dir = input.local.dir;
+  const now = input.local.now?.() ?? new Date();
+  try { sweepSupportKeys(dir, now.getTime()); } catch { /* best effort */ }
+  const sessionId = input.local.sessionId?.() ?? newSessionId();
+  const key = await createSessionKey(dir, sessionId, run);
   if (!key.ok) return { text: key.error, isError: true };
-  const prepared = prepareOpen({
-    args: input.args,
-    nodekey: key.nodekey,
-    person: input.local.technicianName,
-    org: input.local.orgName,
-    now: input.local.now?.() ?? new Date(),
-    sessionId: input.local.sessionId?.() ?? newSessionId(),
-  });
-  if (!prepared.ok) return { text: prepared.error, isError: true };
-  const posted = await input.post("remote_support_open", prepared.args);
-  const error = refused(posted.status, posted.body);
-  if (error) return { text: error, isError: true };
-  const shown = presentOpen(posted.body.text);
-  if (!shown.ok) return { text: shown.error, isError: true };
-  const owner = ownerOf(posted.body);
-  await rememberSession(input.local.dir, shown.code, prepared.session, {
-    ...owner,
-    rights: prepared.args.rights === "elevated" ? "elevated" : "standard",
-    end_at: String(prepared.args.end_at),
-    ...(prepared.args.os === "windows" || prepared.args.os === "macos" || prepared.args.os === "linux" ? { os: prepared.args.os } : {}),
-  });
-  return { text: shown.text };
+  try {
+    const prepared = prepareOpen({
+      args: input.args,
+      nodekey: key.nodekey,
+      person: input.local.technicianName,
+      org: input.local.orgName,
+      now,
+      sessionId,
+    });
+    if (!prepared.ok) return { text: prepared.error, isError: true };
+    const posted = await input.post("remote_support_open", prepared.args);
+    const error = refused(posted.status, posted.body);
+    if (error) return { text: error, isError: true };
+    const shown = presentOpen(posted.body.text);
+    if (!shown.ok) return { text: shown.error, isError: true };
+    const owner = ownerOf(posted.body);
+    const scope = REMOTE_SUPPORT_SCOPES.find((value) => value === prepared.args.scope);
+    await rememberSession(dir, shown.code, prepared.session, {
+      ...owner,
+      rights: prepared.args.rights === "elevated" ? "elevated" : "standard",
+      end_at: String(prepared.args.end_at),
+      ...(prepared.args.os === "windows" || prepared.args.os === "macos" || prepared.args.os === "linux" ? { os: prepared.args.os } : {}),
+      ...(scope ? { scope } : {}),
+    });
+    if (!await adoptSessionKey(dir, key, shown.code)) return { text: KEEP_FAILED, isError: true };
+    return { text: shown.text };
+  } finally {
+    await rm(key.folder, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function statusCall(input: {
@@ -495,12 +560,12 @@ async function statusCall(input: {
   const error = refused(posted.status, posted.body);
   if (error) return { text: error, isError: true };
   if (!folderAllows(input.local.dir, code, ownerOf(posted.body))) return { text: NOT_YOURS, isError: true };
-  const key = await loadTechnicianKey(input.local.dir);
-  const absorbed = await absorbStatus({ dir: input.local.dir, raw: posted.body.text, code, run, keyPath: key?.keyPath ?? null });
+  const keyPath = sessionKeyPath(input.local.dir, code, input.local.now?.());
+  const absorbed = await absorbStatus({ dir: input.local.dir, raw: posted.body.text, code, run, keyPath });
   if (!absorbed.markConnected || input.args.mark_connected === true) return { text: withConnectedNote(absorbed.text) };
   const again = await input.post("remote_support_status", { code, mark_connected: true });
   if (refused(again.status, again.body)) return { text: absorbed.text };
-  const marked = await absorbStatus({ dir: input.local.dir, raw: again.body.text, code, run, keyPath: key?.keyPath ?? null });
+  const marked = await absorbStatus({ dir: input.local.dir, raw: again.body.text, code, run, keyPath });
   return { text: withConnectedNote(marked.text) };
 }
 

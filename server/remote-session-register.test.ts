@@ -1,6 +1,6 @@
 // A session the bot opened with remote_support_open becomes a Sagax session:
 // a row in the bot panel (list) and message.remoteSession in the chat.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -171,6 +171,8 @@ describe("a session the bot opened through the sagax tool path", () => {
       owner: () => PERSON,
       run,
       home: () => flowHome,
+      // the session's key lives until its end_at, read on this clock
+      now: () => NOW.getTime(),
     });
     const registrar = createRemoteSessionRegistrar({
       publish: async ({ principalId, botId, threadId, open }) => { await service.publish({ ...open, botId, threadId, principalId }); },
@@ -210,7 +212,8 @@ describe("a session the bot opened through the sagax tool path", () => {
     expect(messages[0]?.remoteSession).toMatchObject({ id: ID, code: CODE, hostname: "POSTE-01", state: "connected" });
     // the tunnel came from the support folder, never from an API field
     const row = { id: ID, code: CODE, principalId: PERSON, botId: BOT };
-    expect(readTunnel(flowHome, row, supportDir)).toEqual({ keyPath: path.join(supportDir, "technician.private.json"), address: ADDRESS });
+    expect(readTunnel(flowHome, row, supportDir, NOW.getTime())).toEqual({ keyPath: path.join(supportDir, "sessions", CODE, "technician.private.json"), address: ADDRESS });
+    expect(existsSync(path.join(supportDir, "technician.private.json"))).toBe(false);
     expect(readTunnel(flowHome, row)).toBeNull();
     expect(readSupportTunnel(supportDir, { ...row, id: "ffffffffffff" })).toBeNull();
     expect(ssh[0]).toBe("uname -s");
