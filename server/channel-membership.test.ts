@@ -50,8 +50,11 @@ describe("firstUnseenPerson (#1061)", () => {
     expect(firstUnseenPerson({ actorId: "usr_ann", before: ["usr_ann"], after: ["usr_ann", "usr_bob"], visible })).toBeNull();
     expect(firstUnseenPerson({ actorId: "usr_ann", before: ["usr_zed"], after: ["usr_zed"], visible })).toBeNull();
   });
-  it("refuses a person outside the directory and any team entry", () => {
+  it("lets a member add a team of the organization to their own group (2026-10-26)", () => {
+    expect(firstUnseenPerson({ actorId: "usr_ann", before: [], after: ["team:ops", "usr_bob"], visible })).toBeNull();
+  });
+  it("still refuses a person outside the directory", () => {
     expect(firstUnseenPerson({ actorId: "usr_ann", before: [], after: ["usr_eve"], visible })).toBe("usr_eve");
-    expect(firstUnseenPerson({ actorId: "usr_ann", before: [], after: ["team:ops"], visible: () => true })).toBe("team:ops");
+    expect(firstUnseenPerson({ actorId: "usr_ann", before: [], after: ["team:ops", "usr_eve"], visible })).toBe("usr_eve");
   });
 });

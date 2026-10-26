@@ -10,12 +10,16 @@
 // - a list from Perspicax is taken as is, minus unknown and admin-only keys;
 // - no list (an older Perspicax, a person it does not list yet, before the
 //   first directory) means the member defaults, so nothing regresses;
+// - 2026-10-26 (JC): the keys about a person's own things (memberAlways:
+//   their bots, their routines, their own connections) are added to any
+//   list, so a member never waits on an admin for what is theirs;
 // - the person sheet still narrows on top, whatever the sets grant:
 //   `sagax_bots: use` takes every key about owning bots, `sagax_integrations:
 //   off` takes apps.ownIntegrations.
 //
 // Pure: index.ts gathers the facts and asks here.
 import {
+  MEMBER_ALWAYS_PERMISSIONS,
   MEMBER_DEFAULT_PERMISSIONS,
   PERMISSION_KEYS,
   type PermissionKey,
@@ -47,9 +51,12 @@ export function effectivePermissions(input: {
   botsUseOnly?: boolean;
   /** The person sheet says `sagax_integrations: off`. */
   integrationsOff?: boolean;
+  /** A local service (a bot's shell), not a person: it holds exactly the
+   * list, never the keys about a person's own things. */
+  service?: boolean;
 }): EffectivePermissions {
   if (input.admin) return { admin: true, permissions: new Set(PERMISSION_KEYS), source: "admin", narrowedBy: [] };
-  const held = new Set<PermissionKey>(input.fromDirectory ?? MEMBER_DEFAULT_PERMISSIONS);
+  const held = new Set<PermissionKey>([...(input.fromDirectory ?? MEMBER_DEFAULT_PERMISSIONS), ...(input.service ? [] : MEMBER_ALWAYS_PERMISSIONS)]);
   // 2026-10-22 server.experimental is a separate, explicit right. It is
   // NOT implied by server.settings: a settings delegate who should also manage
   // the experiments is given both keys in Perspicax. (The config write accepts

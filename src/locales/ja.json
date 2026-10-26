@@ -3837,7 +3837,6 @@
   "place.action.usePlace": "{place} を使う",
   "place.action.changeRoutine": "実行場所を変更",
   "place.action.openComputerPanel": "コンピューターパネルを開く",
-  "place.askAdmin": "Admin に変更を依頼してください。",
   "place.backOnAuto": "この会話の作業場所を自動に戻しました。",
   "access.worksOn": "{name} の作業場所: {short}",
   "place.view.ccOn.line": "{bot} のクラウドコンピューターは稼働中です。",

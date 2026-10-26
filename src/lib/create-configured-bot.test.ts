@@ -58,7 +58,17 @@ describe("configured bot creation", () => {
     expect(f.bodies[1]).not.toHaveProperty("cwd");
     expect(f.bodies[1]).not.toHaveProperty("approvalMode");
     expect(f.bodies[1]).toMatchObject({ soul: "Be brief.", notifications: false });
-    expect(f.events.some((event) => event.includes("/memory/"))).toBe(false);
+  });
+
+  it("writes the member's starter memory and makes their new bot their Primary Bot (2026-10-26)", async () => {
+    const f = fixture("auto");
+    f.draft.patch({ chiefOfStaff: true });
+    f.draft.setMemory("MEMORY.md", "notes");
+    await createConfiguredBot(f.draft, f.request, persistBotUpdate, f.approvals, undefined, {
+      memberFieldsOnly: true, memberMayWrite: (field) => field !== "cwd",
+    });
+    expect(f.events.some((event) => event.includes("/memory/file"))).toBe(true);
+    expect(f.bodies.some((body) => (body as { chiefOfStaff?: boolean }).chiefOfStaff === true)).toBe(true);
   });
 
   it("keeps the permission settings a member's profile opens (#1076)", async () => {

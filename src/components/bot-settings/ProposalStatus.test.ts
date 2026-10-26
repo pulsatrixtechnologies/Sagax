@@ -198,7 +198,7 @@ describe("Edit Profile boundary markers in sections", () => {
     expect(markup).not.toContain(OWNER_COPY);
   });
 
-  it("keeps Primary Bot for the owner and hides the fields the server refuses", () => {
+  it("a member manages their own bot's fields, the level without a lock (#1107, one approval level)", () => {
     const principal = "pr_00000000-0000-4000-8000-000000000002";
     fixture.config = { viewer: { operator: false, principalId: principal, email: "zara@example.test", name: "zara", role: "member", canCreateBots: true } } as import("@/state/store").ConfigStatus;
     fixture.bots = [makeBot({ ownerUserId: principal, chiefOfStaff: true })];
@@ -206,9 +206,11 @@ describe("Edit Profile boundary markers in sections", () => {
       createElement(StoreProvider, null, createElement(PermissionsSection, { bot: makeBot({ ownerUserId: principal, chiefOfStaff: true }), derived: makeDerived() })),
     );
     expect(own).toContain("Primary Bot");
-    expect(own).not.toContain("Approval level");
-    expect(own).not.toContain("Ask me before contacting other bots");
-    expect(own).not.toContain("Additional teams");
+    // #1107 and the one approval level (2026-10-26): a member sets their own
+    // bot's level, without a lock
+    expect(own).toContain("Approval level");
+    expect(own).not.toContain("data-level-org-lock");
+    expect(own).toContain("Ask me before contacting other bots");
     const other = renderToStaticMarkup(
       createElement(StoreProvider, null, createElement(PermissionsSection, { bot: makeBot({ ownerUserId: "pr_other" }), derived: makeDerived() })),
     );

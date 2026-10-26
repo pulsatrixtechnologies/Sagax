@@ -31,10 +31,12 @@ export function applyHumanIds(input: { dm?: boolean; humanIds: string[] }): { ok
   return { ok: true, humanIds: input.humanIds };
 }
 
-/** A member who owns a room adds only people the organization directory shows
- * them (`visible` answers for a principal id), never a team entry: those stay
- * with admins. Returns the first refused entry, or null. Entries already in
- * the room and the actor themself pass. */
+/** A member who owns a room adds people the organization directory shows
+ * them (`visible` answers for a principal id) and the organization's teams
+ * (`team:<id>`, checked against the directory by the caller; 2026-10-26, JC:
+ * a member fills their own group without an admin). Returns the first
+ * refused entry, or null. Entries already in the room and the actor
+ * themself pass. */
 export function firstUnseenPerson(input: {
   actorId: string;
   before: readonly string[];
@@ -46,7 +48,8 @@ export function firstUnseenPerson(input: {
   for (const entry of input.after) {
     const id = typeof entry === "string" ? entry.trim().toLowerCase() : "";
     if (!id || id === actor || already.has(id)) continue;
-    if (id.startsWith("team:") || !input.visible(id)) return id || String(entry);
+    if (id.startsWith("team:")) continue;
+    if (!input.visible(id)) return id || String(entry);
   }
   return null;
 }

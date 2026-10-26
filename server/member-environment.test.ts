@@ -48,11 +48,11 @@ describe("the owner's own environment (2026-10-16)", () => {
     }
   });
 
-  it("is on unless an admin turned it off", () => {
+  it("has no admin switch: a saved false is ignored (2026-10-26)", () => {
     expect(memberEnvironmentAutonomyAllowed(undefined)).toBe(true);
     expect(memberEnvironmentAutonomyAllowed({})).toBe(true);
     expect(memberEnvironmentAutonomyAllowed({ memberEnvironmentAutonomy: true })).toBe(true);
-    expect(memberEnvironmentAutonomyAllowed({ memberEnvironmentAutonomy: false })).toBe(false);
+    expect(memberEnvironmentAutonomyAllowed({ memberEnvironmentAutonomy: false })).toBe(true);
   });
 
   it("holds only in the owner's own environment, on an organization server, while allowed", () => {

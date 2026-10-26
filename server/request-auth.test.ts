@@ -171,7 +171,7 @@ describe("scopes", () => {
       ["GET", "/api/computers/boxes"], ["POST", "/api/computers/boxes/bx_23456789/delete"],
       ["POST", "/api/bots/x/skills"], ["PATCH", "/api/bots/x/skills/s"],
       ["PATCH", "/api/bots/x/model"], ["POST", "/api/teams/import"], ["GET", "/api/teams/scout"],
-      ["GET", "/api/bots/x/memory"], ["PUT", "/api/bots/x/memory"], ["PUT", "/api/section-context"], ["GET", "/api/threads/t/events"],
+      ["PUT", "/api/section-context"], ["GET", "/api/threads/t/events"],
       // shared team memory: direct reads and writes stay admin; a member only
       // answers the team-memory card of their own team (the respond routes)
       ["GET", "/api/team-memory"], ["POST", "/api/team-memory"],
@@ -201,6 +201,12 @@ describe("scopes", () => {
       ["GET", "/api/bots/x/workspace"], ["GET", "/api/bots/x/workspace/download"],
       ["GET", "/api/bots/x/workspace/file"], ["PUT", "/api/bots/x/workspace/file"], ["DELETE", "/api/bots/x/workspace/file"],
       ["POST", "/api/bots/x/workspace/docs/rename"],
+      // 2026-10-26 (JC): the bot's memory and change history, owner checked in the handlers
+      ["GET", "/api/bots/x/memory"], ["PUT", "/api/bots/x/memory"],
+      ["GET", "/api/bots/x/memory/file"], ["PUT", "/api/bots/x/memory/file"], ["DELETE", "/api/bots/x/memory/file"],
+      ["GET", "/api/bots/x/memory/journal"], ["POST", "/api/bots/x/memory/journal/e1/revert"],
+      ["GET", "/api/bots/x/memory/upkeep"], ["POST", "/api/bots/x/memory/tidy"],
+      ["GET", "/api/bots/x/history"], ["POST", "/api/bots/x/history/rollback"], ["POST", "/api/bots/x/history/restore"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
     for (const [method, path] of [
       ["POST", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist"],
@@ -208,11 +214,11 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/connector-cards/m/authorize/extra"], ["GET", "/api/plugins/install"],
       ["POST", "/api/plugins/uninstall"], ["POST", "/api/bots/x/overview"],
       // the voice engine and the advanced panel stay admin for a session (the sidecar is the owner)
-      ["PUT", "/api/tts/provider"], ["GET", "/api/bots/x/system-prompt"], ["GET", "/api/bots/x/history"],
-      ["POST", "/api/bots/x/history/rollback"], ["GET", "/api/bots/x/skills"], ["GET", "/api/bots/x/memory/file"],
-      ["GET", "/api/bot-presets"], ["GET", "/api/bots/x/computer"],
-      // memory stays admin; the workspace routes take only these shapes
-      ["PUT", "/api/bots/x/memory/file"], ["POST", "/api/bots/x/workspace"], ["PUT", "/api/bots/x/workspace/download"],
+      ["PUT", "/api/tts/provider"], ["GET", "/api/bots/x/system-prompt"],
+      ["GET", "/api/bots/x/skills"], ["GET", "/api/bot-presets"], ["GET", "/api/bots/x/computer"],
+      ["DELETE", "/api/bots/x/history"], ["POST", "/api/bots/x/memory/open"],
+      // the workspace routes take only these shapes
+      ["POST", "/api/bots/x/workspace"], ["PUT", "/api/bots/x/workspace/download"],
       ["GET", "/api/bots/x/workspace/docs/rename"], ["POST", "/api/bots/x/workspace/file"], ["GET", "/api/bots/x/workspace/other"],
     ] as const) expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
   });

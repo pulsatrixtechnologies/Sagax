@@ -199,7 +199,7 @@ describe("the bot-memory module through the route table", () => {
     expect(await response.json()).toMatchObject({ botId: "bot-123", narrowed: true });
   });
 
-  it("is admin-scoped by path in request-auth.ts, every arm of it", () => {
+  it("lets a signed-in session reach the bot's own memory arms, the handler checks the owner (2026-10-26)", () => {
     for (const [method, path] of [
       ["GET", "/api/bots/b1/memory"],
       ["PUT", "/api/bots/b1/memory"],
@@ -210,12 +210,26 @@ describe("the bot-memory module through the route table", () => {
       ["POST", "/api/bots/b1/memory/journal/e1/revert"],
       ["GET", "/api/bots/b1/memory/upkeep"],
       ["POST", "/api/bots/b1/memory/tidy"],
+    ] as const) {
+      expect(requiredScope(method, path), `${method} ${path}`).toBe("client");
+    }
+    // the person's About me facts and opening the folder on this machine stay admin
+    for (const [method, path] of [
       ["GET", "/api/profile/learned"],
       ["POST", "/api/profile/learned/e1/remove"],
       ["POST", "/api/bots/b1/memory/open"],
     ] as const) {
       expect(requiredScope(method, path), `${method} ${path}`).toBe("admin");
     }
+  });
+
+  it("the owner reads and writes their bot's memory; someone else is refused (mayEdit)", async () => {
+    const owner = await serve({ mayEdit: () => true });
+    expect((await fetch(`${owner}/api/bots/bot-123/memory/file`)).status).toBe(200);
+    const stranger = await serve({ mayEdit: () => false });
+    expect((await fetch(`${stranger}/api/bots/bot-123/memory/file`)).status).toBe(403);
+    expect((await fetch(`${stranger}/api/bots/bot-123/memory/file`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "x" }) })).status).toBe(403);
+    expect((await fetch(`${stranger}/api/bots/bot-123/memory/journal`)).status).toBe(403);
   });
 });
 
@@ -261,7 +275,7 @@ describe("the bot-memory family behind the gate on a real server", () => {
     }
   });
 
-  it("refuses every arm for a chat-only paired session: admin scope, keyed by path", async () => {
+  it("never serves a chat-only paired session a bot that is not theirs: admin scope or the owner check", async () => {
     // A pairing opened without scopes grants both, so ask for chat only.
     const opened = await fetch(`${fixture.info.url}/api/auth/pairing`, { method: "POST", headers: { "content-type": "application/json", origin: fixture.info.url }, body: JSON.stringify({ scopes: ["client"] }) });
     expect(opened.status).toBe(200);
@@ -275,7 +289,8 @@ describe("the bot-memory family behind the gate on a real server", () => {
     const token = ((await paired.json()) as { token: string }).token;
     for (const [method, path, body] of arms) {
       const status = await call(method, path, body, { authorization: `Bearer ${token}`, origin: fixture.info.url });
-      expect(status, `${method} ${path}`).toBe(403);
+      // a bot's own memory arm reaches the handler (no such bot here); the rest is admin
+      expect(path.startsWith("/api/bots/b1/memory") && !path.endsWith("/open") ? [403, 404] : [403], `${method} ${path}`).toContain(status);
     }
   });
 });

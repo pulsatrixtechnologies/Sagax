@@ -41,9 +41,13 @@ describe("Settings > Organization (Perspicax)", () => {
     expect(html).toContain("Acme Corp");
     expect(html).toContain("Linked to Pulsatrix · Admin");
     expect(html).toContain("Manage in Perspicax");
-    // rows, not cards: Full access, commands waiting, routines, group turns, MCP calls
-    for (const id of ["organization.fullAccess", "organization.adminApprovals", "organization.routinesInConversation", "organization.roomTurns", "organization.mcpCalls"]) {
+    // rows, not cards: commands waiting, routines, group turns, MCP calls
+    // (2026-10-26: no admin switch for members' Full access, Auto or own environment)
+    for (const id of ["organization.adminApprovals", "organization.routinesInConversation", "organization.roomTurns", "organization.mcpCalls"]) {
       expect(html, id).toContain(`data-settings-card="${id}"`);
+    }
+    for (const id of ["organization.fullAccess", "organization.memberEnvironment", "organization.memberAutoApproval"]) {
+      expect(html, id).not.toContain(`data-settings-card="${id}"`);
     }
     expect(html).toContain("Nothing is waiting.");
     expect(html).toMatch(/id="room-turn-timeout"[^>]*value="7"/);
@@ -69,7 +73,6 @@ describe("Settings > Organization (Perspicax)", () => {
     expect(html).toContain("Bots de l&#x27;organisation");
     expect(html).toContain("Lié à Pulsatrix · Admin");
     expect(html).toContain("Gérer dans Perspicax");
-    expect(html).toContain("Autoriser l&#x27;accès complet");
   });
 });
 
@@ -98,7 +101,8 @@ describe("Settings search", () => {
     for (const query of ["accès complet", "full access", "approbations", "invitation", "cet ordinateur"]) expect(sectionMatches(section("organization"), query), query).toBe(true);
     for (const query of ["sauvegarde", "restaurer", "mot de passe"]) expect(sectionMatches(section("backups"), query), query).toBe(true);
     for (const query of ["nettoyage", "journaux", "diagnostic"]) expect(sectionMatches(section("general"), query), query).toBe(true);
-    expect(cardsMatching("accès complet")).toContain("organization.fullAccess");
+    // 2026-10-26: no Full access card any more
+    expect(cardsMatching("accès complet")).not.toContain("organization.fullAccess");
     expect(cardsMatching("restaurer")).toContain("backups.import");
   });
 });

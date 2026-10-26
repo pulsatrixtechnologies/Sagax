@@ -244,9 +244,11 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     // (none), the plugin marketplace policy (any, the default) and the
     // labeled access tokens (none).
     expect((await api("GET", "/api/org", alice)).body.settings).toEqual({
-      orgKeyConfigured: true, allowFullAccess: false, allowVaultExport: true, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, memberAutoApproval: true, interimAttach: { until: null, people: 0 },
+      orgKeyConfigured: true, allowFullAccess: true, allowVaultExport: true, memberEnvironmentAutonomy: true, confidentialThreadsByDefault: false, memberAutoApproval: true, interimAttach: { until: null, people: 0 },
       github: { clientId: null, fromEnvironment: false }, pluginMarketplaces: { mode: "any" },
       githubTokens: [],
+      // Pulsatrix Flow for members (#1091)
+      flowPlugins: expect.anything(),
     });
     shared = await createBot(alice, "Xavier", "claude");
     const refusals = [
@@ -591,8 +593,8 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const unconfirmed = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full" });
     expect(unconfirmed.status, unconfirmed.text).toBe(409);
     expect(unconfirmed.body.code).toBe("full_access_confirm_required");
-    // any other approval level stays outside a member's fields
-    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(403);
+    // 2026-10-26 (JC): Ask or Auto on their own bot is the owner's own setting
+    expect((await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "auto" })).status).toBe(200);
     // an admin is not the owner: never Full on someone else's bot
     const full = await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "full", confirmFullAccess: true });
     expect(full.status, full.text).toBe(403);

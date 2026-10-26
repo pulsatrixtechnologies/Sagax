@@ -561,10 +561,23 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // download, RULES.md and docs/<name>.md read, save, delete and rename.
   // Same gate as the Soul edit, checked in the handler: owner (or edit
   // grant) or admin; a person who may only use shared bots is refused.
-  // MEMORY.md and memory/ stay on the admin memory routes.
+  // MEMORY.md and memory/ are the memory routes below.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/workspace(?:\/download)?$/ },
   { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/workspace\/file$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/workspace\/docs\/rename$/ },
+  // 2026-10-26 (JC): the bot's memory (server/routes/bot-memory.ts):
+  // MEMORY.md, memory/ topics, the journal and its revert, upkeep and tidy.
+  // Same gate as the Soul edit, checked in the handler: a member keeps the
+  // memory of their own bots without an admin.
+  { methods: ["GET", "PUT"], path: /^\/api\/bots\/[\w-]+\/memory$/ },
+  { methods: ["GET", "PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/memory\/file$/ },
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/memory\/(?:journal|upkeep)$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/memory\/(?:journal\/[\w-]+\/revert|tidy)$/ },
+  // 2026-10-26 (JC): the bot's change history, its SOUL.md undo and a
+  // version restore: the owner (or an edit grant) or an admin, checked in
+  // the handlers.
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/history$/ },
+  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/history\/(?:rollback|restore)$/ },
   // The rule sets (server/routes/bot-rules.ts): list, add, rename, switch,
   // reorder, save a set's text, delete. Same gate as the Soul edit, checked
   // in the handler.

@@ -1,5 +1,4 @@
-// The Full access confirmation: localized, with an organization variant,
-// and the admin policy's save (Settings > Organization).
+// The Full access confirmation: localized, with an organization variant.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +8,6 @@ vi.mock("@/state/store", () => ({ api }));
 
 import { setLocale } from "@/lib/i18n";
 import { FullAccessWarning } from "./FullAccessWarning";
-import { OrgFullAccessPolicy, saveOrgFullAccess } from "./settings/OrgFullAccessPolicy";
 
 const render = (scope: "bot" | "thread" | "organization") =>
   renderToStaticMarkup(createElement(FullAccessWarning, { open: true, scope, onCancel: vi.fn(), onConfirm: vi.fn() }));
@@ -35,20 +33,5 @@ describe("Full access confirmation", () => {
 
   it("keeps the thread wording in the composer of a solo desktop", () => {
     expect(render("thread")).toContain("Enable Full access for this thread only");
-  });
-});
-
-describe("Allow full access (organization admin)", () => {
-  it("saves the policy alone through the organization settings", async () => {
-    api.mockResolvedValue({ settings: { allowFullAccess: false } });
-    await saveOrgFullAccess(false);
-    expect(api).toHaveBeenCalledExactlyOnceWith("/api/org/settings", { method: "PATCH", body: JSON.stringify({ allowFullAccess: false }) });
-  });
-
-  it("shows the switch on by default with what it does", () => {
-    const html = renderToStaticMarkup(createElement(OrgFullAccessPolicy, { initial: true }));
-    expect(html).toContain("Allow full access");
-    expect(html).toContain('data-org-full-access="on"');
-    expect(html).toContain('aria-checked="true"');
   });
 });

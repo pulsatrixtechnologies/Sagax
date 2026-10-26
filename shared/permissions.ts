@@ -45,6 +45,10 @@ export interface PermissionDefinition<K extends string = string> {
   memberDefault: boolean;
   /** Only an organization admin, whatever a profile grants. */
   adminOnly: boolean;
+  /** 2026-10-26 (JC): about the person's own things (their bots, their
+   * routines, their own connections). Every member holds it, whatever
+   * Perspicax sends: a member manages what is theirs without an admin. */
+  memberAlways?: boolean;
   /** Why it stays with admins (adminOnly keys only). */
   adminOnlyReason?: LocalizedText;
 }
@@ -68,7 +72,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
 
 const definitions = [
   {
-    key: "bots.create", group: "bots", memberDefault: true, adminOnly: false,
+    key: "bots.create", group: "bots", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Create and own bots", fr: "Créer et posséder des bots" },
     description: {
       en: "Create bots, bring them from a solo Sagax, and rename, instruct, change the model of or delete the bots they own.",
@@ -76,7 +80,7 @@ const definitions = [
     },
   },
   {
-    key: "bots.approvalLevel", group: "bots", memberDefault: false, adminOnly: false,
+    key: "bots.approvalLevel", group: "bots", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Choose Ask or Auto on their bots", fr: "Choisir Demander ou Auto sur leurs bots" },
     description: {
       en: "Set the approval level of a bot they own to Ask or Auto. Full access has its own permission.",
@@ -84,7 +88,7 @@ const definitions = [
     },
   },
   {
-    key: "bots.fullAccess", group: "bots", memberDefault: true, adminOnly: false,
+    key: "bots.fullAccess", group: "bots", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Turn on Full access on their bots", fr: "Activer l'accès complet sur leurs bots" },
     description: {
       en: "Turn on Full access for a bot they own, while the organization allows Full access.",
@@ -92,7 +96,7 @@ const definitions = [
     },
   },
   {
-    key: "bots.behaviour", group: "bots", memberDefault: false, adminOnly: false,
+    key: "bots.behaviour", group: "bots", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Change memory, voice notes and fallback of their bots", fr: "Changer la mémoire, les notes vocales et le repli de leurs bots" },
     description: {
       en: "Turn memory and its upkeep, voice notes, the fallback model and parked direct messages on or off for a bot they own.",
@@ -101,14 +105,14 @@ const definitions = [
   },
   {
     key: "bots.computer", group: "bots", memberDefault: false, adminOnly: false,
-    label: { en: "Choose where their bots work", fr: "Choisir où travaillent leurs bots" },
+    label: { en: "Use the server's cloud computer and browser profiles", fr: "Utiliser l'ordinateur infonuagique et les profils de navigateur du serveur" },
     description: {
-      en: "Choose the computer, the cloud computer, the built-in browser and the browser profile of a bot they own.",
-      fr: "Choisir l'ordinateur, l'ordinateur infonuagique, le navigateur intégré et le profil de navigateur d'un bot qu'ils possèdent.",
+      en: "Put a bot they own on the server's managed cloud computer (and let Auto start it) or on one of the server's shared browser profiles. Turning a bot's computer or built-in browser on or off needs nothing more.",
+      fr: "Mettre un bot qu'ils possèdent sur l'ordinateur infonuagique géré du serveur (et laisser Auto le démarrer) ou sur un des profils de navigateur partagés du serveur. Activer ou désactiver l'ordinateur ou le navigateur intégré d'un bot ne demande rien de plus.",
     },
   },
   {
-    key: "bots.tools", group: "bots", memberDefault: false, adminOnly: false,
+    key: "bots.tools", group: "bots", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Choose the tools of their bots", fr: "Choisir les outils de leurs bots" },
     description: {
       en: "Change the tool selection, MCP servers, connected apps, outbound rules and peers of a bot they own.",
@@ -124,7 +128,7 @@ const definitions = [
     },
   },
   {
-    key: "sharing.grants", group: "sharing", memberDefault: true, adminOnly: false,
+    key: "sharing.grants", group: "sharing", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Share their bots", fr: "Partager leurs bots" },
     description: {
       en: "Give people and teams access to a bot they own, and take it back.",
@@ -132,7 +136,7 @@ const definitions = [
     },
   },
   {
-    key: "sharing.visibility", group: "sharing", memberDefault: false, adminOnly: false,
+    key: "sharing.visibility", group: "sharing", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Choose who sees their bots", fr: "Choisir qui voit leurs bots" },
     description: {
       en: "Set the visibility and the sidebar section of a bot they own, at creation and afterwards.",
@@ -148,7 +152,7 @@ const definitions = [
     },
   },
   {
-    key: "apps.ownIntegrations", group: "apps", memberDefault: true, adminOnly: false,
+    key: "apps.ownIntegrations", group: "apps", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Manage their own plugins, skills and MCP servers", fr: "Gérer leurs propres plugiciels, compétences et serveurs MCP" },
     description: {
       en: "Add and change their own MCP servers and GitHub account, and the plugins and skills of the bots they own or manage.",
@@ -342,7 +346,7 @@ const definitions = [
   // Cursor), through the member API (server/org-member-routes.ts). Each key
   // is checked on top of the rule the same action meets in Sagax.
   {
-    key: "clients.botsRead", group: "clients", memberDefault: true, adminOnly: false,
+    key: "clients.botsRead", group: "clients", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "See their bots and conversations from an AI client", fr: "Voir leurs bots et leurs conversations depuis un client IA" },
     description: {
       en: "List the bots they can use, read their own conversations with them, and read the rules, documents, memory and connector names of bots they own, from Claude Code, claude.ai or another client attached to Perspicax.",
@@ -350,7 +354,7 @@ const definitions = [
     },
   },
   {
-    key: "clients.botsMessage", group: "clients", memberDefault: true, adminOnly: false,
+    key: "clients.botsMessage", group: "clients", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Message their bots from an AI client", fr: "Écrire à leurs bots depuis un client IA" },
     description: {
       en: "Send a message to a bot they can use from a client attached to Perspicax, under their own name, and wait for its answer.",
@@ -358,7 +362,7 @@ const definitions = [
     },
   },
   {
-    key: "clients.routinesRun", group: "clients", memberDefault: false, adminOnly: false,
+    key: "clients.routinesRun", group: "clients", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Run routines from an AI client", fr: "Lancer des routines depuis un client IA" },
     description: {
       en: "Run a routine now and follow its run from a client attached to Perspicax. The routine's own Run now rule still applies.",
@@ -366,7 +370,7 @@ const definitions = [
     },
   },
   {
-    key: "clients.routinesRead", group: "clients", memberDefault: false, adminOnly: false,
+    key: "clients.routinesRead", group: "clients", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Read their routines from an AI client", fr: "Lire leurs routines depuis un client IA" },
     description: {
       en: "List their own routines and read one routine's full instructions from a client attached to Perspicax. Another person's routine is hidden.",
@@ -390,9 +394,9 @@ const definitions = [
     },
   },
   // 2026-10-11: create_agent of the agent-to-agent API (server/agent-api.ts).
-  // Off by default: a new bot is lasting, and only the owner deletes it.
+  // 2026-10-26 (JC): every member holds it, the new bot is their own.
   {
-    key: "clients.agentsCreate", group: "clients", memberDefault: false, adminOnly: false,
+    key: "clients.agentsCreate", group: "clients", memberDefault: true, adminOnly: false, memberAlways: true,
     label: { en: "Create bots from an AI client", fr: "Créer des bots depuis un client IA" },
     description: {
       en: "Create a new bot of their own from a client attached to Perspicax (create_agent), one per call, only when they ask. Only they can delete it, in Sagax.",
@@ -430,6 +434,12 @@ export function isPermissionKey(value: unknown): value is PermissionKey {
 /** What a plain member holds when Perspicax sends no list. */
 export const MEMBER_DEFAULT_PERMISSIONS: readonly PermissionKey[] = PERMISSIONS
   .filter((entry) => entry.memberDefault && !entry.adminOnly)
+  .map((entry) => entry.key);
+
+/** 2026-10-26: the keys every member holds on their own things, whatever
+ * Perspicax sends (server/org-permissions.ts adds them to the list). */
+export const MEMBER_ALWAYS_PERMISSIONS: readonly PermissionKey[] = PERMISSIONS
+  .filter((entry) => (entry as PermissionDefinition).memberAlways === true && !entry.adminOnly)
   .map((entry) => entry.key);
 
 /** The keys no profile grants. */
@@ -502,10 +512,14 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   maxParallelPerPerson: "bots.behaviour",
   busySend: "bots.behaviour",
   automaticRecovery: "bots.behaviour",
-  computer: "bots.computer",
+  // 2026-10-26 (JC): where the bot works in the person's own environment
+  // is theirs. The server's managed cloud computer (its cost, its machine)
+  // and the server's shared browser profiles (signed-in sessions of other
+  // people) reach past that environment and keep bots.computer.
+  computer: "bots.create",
+  browser: "bots.create",
   cloudBackend: "bots.computer",
   autoStartVps: "bots.computer",
-  browser: "bots.computer",
   browserProfile: "bots.computer",
   toolScope: "bots.tools",
   mcpServers: "bots.tools",
@@ -515,6 +529,13 @@ export const BOT_FIELD_PERMISSIONS: Readonly<Record<string, PermissionKey>> = {
   approvePeerComms: "bots.tools",
   allowedRecipients: "bots.tools",
   acknowledgePeerScope: "bots.tools",
+  // 2026-10-26 (JC): archiving their own bot, its Primary Bot role and the
+  // teams their Primary Bot coordinates are the owner's.
+  hidden: "bots.create",
+  // the conversation a model change is for (it goes with modelSelection)
+  threadId: "bots.create",
+  chiefOfStaff: "bots.create",
+  managedSections: "bots.create",
   visibility: "sharing.visibility",
   section: "sharing.visibility",
   cwd: "folders.botWorkingFolder",

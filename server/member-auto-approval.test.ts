@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 import { memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoResetBot } from "./member-auto-approval.ts";
 
 describe("memberAutoApprovalAllowed", () => {
-  it("is on unless an admin saved false", () => {
+  it("has no admin switch: a member's bot keeps Auto, a saved false is ignored (2026-10-26)", () => {
     expect(memberAutoApprovalAllowed(undefined)).toBe(true);
     expect(memberAutoApprovalAllowed({})).toBe(true);
     expect(memberAutoApprovalAllowed({ memberAutoApproval: true })).toBe(true);
-    expect(memberAutoApprovalAllowed({ memberAutoApproval: false })).toBe(false);
+    expect(memberAutoApprovalAllowed({ memberAutoApproval: false })).toBe(true);
   });
 });
 
@@ -131,8 +131,8 @@ describe("memberAutoResetPending", () => {
     expect(memberAutoResetPending("perspicax", { memberAutoApproval: true })).toBe(false);
   });
 
-  it("runs once an admin turned it off, on an organization server only", () => {
-    expect(memberAutoResetPending("perspicax", { memberAutoApproval: false })).toBe(true);
+  it("never runs: the switch is gone (2026-10-26)", () => {
+    expect(memberAutoResetPending("perspicax", { memberAutoApproval: false })).toBe(false);
     expect(memberAutoResetPending("perspicax", { memberAutoApproval: false, memberAutoResetAt: 1 })).toBe(false);
     expect(memberAutoResetPending("solo", { memberAutoApproval: false })).toBe(false);
   });
@@ -150,15 +150,8 @@ describe("memberAutoSettle (a demoted admin's bots, every start; 2026-10-17, fol
   const members = new Set(["dana-bot", "dana-legacy"]);
   const memberOwned = (bot: MemberAutoResetBot) => members.has(bot.id);
 
-  it("sets a member's stored Auto and Auto-accept edits back, never an admin's", () => {
-    expect(memberAutoSettle({ identity: "perspicax", organization: { memberAutoApproval: false }, bots, memberOwned })).toEqual({
-      bots: ["dana-bot", "dana-legacy"],
-      threads: [{ botId: "dana-bot", threadId: "d1" }],
-    });
-  });
-
-  it("runs again with no marker (a level stored after the one-time pass)", () => {
-    expect(memberAutoSettle({ identity: "perspicax", organization: { memberAutoApproval: false, memberAutoResetAt: 1 } as { memberAutoApproval: boolean }, bots, memberOwned }).bots).toEqual(["dana-bot", "dana-legacy"]);
+  it("never sets a member's stored Auto back, even with a saved false (2026-10-26)", () => {
+    expect(memberAutoSettle({ identity: "perspicax", organization: { memberAutoApproval: false }, bots, memberOwned })).toEqual({ bots: [], threads: [] });
   });
 
   it("does nothing while the organization allows them, by default, or on a solo server", () => {

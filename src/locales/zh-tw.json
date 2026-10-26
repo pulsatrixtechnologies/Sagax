@@ -3536,7 +3536,6 @@
   "place.action.usePlace": "使用 {place}",
   "place.action.changeRoutine": "變更執行位置",
   "place.action.openComputerPanel": "開啟「電腦」面板",
-  "place.askAdmin": "請管理員變更。",
   "place.backOnAuto": "此對話已恢復為「自動」。",
   "access.worksOn": "{name} 的執行位置：{short}",
   "place.view.ccOn.line": "{bot} 的雲端電腦已啟用。",

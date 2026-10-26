@@ -7,8 +7,9 @@
 // and refuses a save whose expectedHash no longer matches the file;
 // server/memory-journal.ts records every change made here so it can be
 // read back and reverted. Reads never create the workspace — a bot that
-// has not run yet simply has nothing to show. Admin scope by default
-// (request-auth.ts), like the bot profile routes.
+// has not run yet simply has nothing to show. 2026-10-26 (JC): a signed-in
+// session reaches them (request-auth.ts) and `mayEdit` keeps them to the
+// Soul edit's gate: the bot's owner (or an edit grant) or an admin.
 import { z } from "zod";
 import type { ServerResponse } from "node:http";
 
@@ -57,6 +58,9 @@ export interface BotMemoryRouteDeps {
   /** Wraps a write this panel makes, so a Cloud home can tell the owner's
    * own edits from changes made elsewhere. Absent: the write just runs. */
   ownersWrite?: <T>(auth: RequestAuth, botId: string, write: () => T) => T;
+  /** Who may read and change this bot's memory; absent: anyone the auth
+   * gate let through. */
+  mayEdit?(auth: RequestAuth, botId: string): boolean;
 }
 
 export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
@@ -85,6 +89,10 @@ export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
     /** scratch for route matches, shared by every `path.match` below */
     let m: RegExpMatchArray | null = null;
     const write = <T>(botId: string, change: () => T): T => deps.ownersWrite ? deps.ownersWrite(auth, botId, change) : change();
+    const gate = path.match(/^\/api\/bots\/([\w-]+)\/memory(?:\/|$)/);
+    if (gate && deps.mayEdit && deps.bot(gate[1]) && !deps.mayEdit(auth, gate[1])) {
+      return json(res, 403, { error: "forbidden: only this bot's owner or an admin can read or change its memory" });
+    }
     m = path.match(/^\/api\/bots\/([\w-]+)\/memory$/);
     if (m && method === "GET") {
       if (!deps.bot(m[1])) return json(res, 404, { error: "no such bot" });

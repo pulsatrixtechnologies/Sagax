@@ -316,7 +316,8 @@ describe("persona editor for an organization member", () => {
 
     const history = render("history", state);
     expect(history).not.toContain('data-section-body="history"');
-    expect(history).toContain("A bot&#x27;s change history is for admins.");
+    // 2026-10-26: someone else's bot; their own bot's history is open to them
+    expect(history).toContain("Only this bot&#x27;s owner or an admin can change this.");
 
     const overview = render("overview", state);
     expect(overview).not.toContain("data-persona-action");

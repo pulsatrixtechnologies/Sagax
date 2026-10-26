@@ -169,8 +169,11 @@ export function ownEnvironmentAutonomy(input: {
 }
 
 /** The organization's policy: on unless an admin turned it off. */
-export function memberEnvironmentAutonomyAllowed(organization: { memberEnvironmentAutonomy?: unknown } | undefined): boolean {
-  return organization?.memberEnvironmentAutonomy !== false;
+/** 2026-10-26 (JC): no organization switch any more; the person's own
+ * environment is theirs. A saved `memberEnvironmentAutonomy: false` is
+ * ignored. */
+export function memberEnvironmentAutonomyAllowed(_organization?: { memberEnvironmentAutonomy?: unknown }): boolean {
+  return true;
 }
 
 /** Whether one permission request runs unasked in the owner's own

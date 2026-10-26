@@ -397,21 +397,10 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const listed = ((await admin("GET", "bots", ALICE)).body.bots as Array<{ id: string; approvalMode: string }>).find((bot) => bot.id === bots.atlas!.id);
     expect(listed?.approvalMode).toBe("auto");
     expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "ask" })).body.results).toEqual([{ id: bots.atlas!.id, ok: true }]);
-    // 2026-10-17 (re-review of #688): while automatic levels are off for
-    // members' bots, the console never saves Auto on a member's bot; an
-    // admin's own bot still moves
+    // 2026-10-26 (JC): no organization switch takes Auto from members' bots;
+    // a saved false is ignored
     expect((await admin("POST", "settings", ALICE, { memberAutoApproval: false })).status).toBe(200);
-    try {
-      const refused = await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.beacon!.id, bots.atlas!.id], mode: "auto", threads: true });
-      expect(refused.body.results, refused.text).toEqual([
-        { id: bots.beacon!.id, ok: false, code: "member_auto_not_allowed", message: expect.any(String) },
-        { id: bots.atlas!.id, ok: true },
-      ]);
-      expect((await admin("GET", `bots/${bots.beacon!.id}`, ALICE)).body.bot.permissions.approvalMode).not.toMatch(/^(auto|edits)$/);
-      expect((await admin("POST", "bots/bulk", ALICE, { action: "approvalMode", ids: [bots.atlas!.id], mode: "ask" })).body.results).toEqual([{ id: bots.atlas!.id, ok: true }]);
-    } finally {
-      expect((await admin("POST", "settings", ALICE, { memberAutoApproval: true })).status).toBe(200);
-    }
+    expect((await admin("GET", "settings", ALICE)).body.org).toMatchObject({ memberAutoApproval: true });
 
     // package and import
     const pkg = await fetch(`${BASE}/api/org/admin/bots/${bots.atlas!.id}/package`, { headers: { authorization: `Bearer ${console$(ALICE).bearer}` } });
@@ -534,14 +523,15 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const settings = await admin("GET", "settings", ALICE);
     expect(settings.status, settings.text).toBe(200);
     expect(settings.body).toMatchObject({
-      org: { allowFullAccess: false, orgKeyConfigured: true },
+      // 2026-10-26: no organization switch for Full access, a saved value is ignored
+      org: { allowFullAccess: true, orgKeyConfigured: true },
       policies: { allowedMarketplaces: null, allowedEngines: null },
       backup: { enabled: true, schedule: "daily 03:00 UTC", ok: true },
     });
     const saved = await admin("POST", "settings", ALICE, { allowFullAccess: false, allowedEngines: ["claude", "hold"], pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, defaults: { approvalMode: "ask" } });
     expect(saved.status, saved.text).toBe(200);
     expect(saved.body.settings).toMatchObject({
-      org: { allowFullAccess: false },
+      org: { allowFullAccess: true },
       policies: { allowedEngines: ["claude", "hold"], allowedMarketplaces: ["acme/plugins"], defaults: { approvalMode: "ask" } },
     });
     // 2026-10-09: the list reaches the app's config, a bot on an engine left
