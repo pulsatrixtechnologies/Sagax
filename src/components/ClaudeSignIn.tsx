@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Loader2, LogIn } from "lucide-react";
 import { api } from "@/state/store";
 import { useStore } from "@/state/store";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { deviceFlowUnavailable, type DeviceSignInStatus } from "./DeviceSignIn";
 
 const SIGN_IN_HOSTS = ["claude.com", "claude.ai", "console.anthropic.com", "platform.claude.com"];
@@ -173,7 +173,7 @@ export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn }: {
               {busy === "finish" ? t("engineSetup.claude.finishing") : t("engineSetup.claude.finish")}
             </button>
             {auth.expiresAt && Number.isFinite(Date.parse(auth.expiresAt)) ? (
-              <p className="text-[11px] text-ink-secondary">{t("engineSetup.device.expires", { time: new Date(auth.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) })}</p>
+              <p className="text-[11px] text-ink-secondary">{t("engineSetup.device.expires", { time: new Date(auth.expiresAt).toLocaleTimeString(activeLocale(), { hour: "2-digit", minute: "2-digit" }) })}</p>
             ) : null}
             <p className="text-[11px] leading-relaxed text-ink-secondary">{t("engineSetup.claude.security")}</p>
             <button type="button" disabled={busy !== null} onClick={() => void cancel()} className="w-full rounded-lg bg-control px-3 py-2 text-[12px] font-medium text-ink disabled:opacity-50">

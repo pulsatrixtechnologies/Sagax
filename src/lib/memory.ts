@@ -220,7 +220,7 @@ export function relativeTime(at: number, now = Date.now()): string {
   try {
     return new Date(at).toLocaleDateString(activeLocale(), { month: "short", day: "numeric" });
   } catch {
-    return new Date(at).toLocaleDateString([], { month: "short", day: "numeric" });
+    return new Date(at).toLocaleDateString(activeLocale(), { month: "short", day: "numeric" });
   }
 }
 

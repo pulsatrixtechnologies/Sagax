@@ -224,6 +224,11 @@ public struct ApprovalDockActions: Hashable, Sendable {
     public var alwaysAllowTool = false
     /// Keep the card's owner rule (`OptionCard.ownerRule`).
     public var alwaysAllowRule = false
+    /// 2026-10-26 (#1065): also keep the whole folder (`ownerRuleFolder`);
+    /// the Always allow of the exact file then reads "this file".
+    public var alwaysAllowFolder = false
+    /// The folder rule covers changing files, not only reading: the labels say so.
+    public var alwaysAllowFolderWrites = false
     /// The provider keeps the allow for its session.
     public var alwaysAllowSession = false
     /// Remember the exact command ("Always allow this command").
@@ -249,6 +254,8 @@ public struct ApprovalDecision: Hashable, Sendable {
     public var stepUp: String?
     /// "Always allow" on a card with an owner rule: keep that rule ("allow").
     public var rule: String? = nil
+    /// "folder" with `rule`: keep the card's folder rule, not the exact path.
+    public var ruleScope: String? = nil
 
     public init(
         requestId: String, behavior: String, message: String? = nil, reviewedSha256: String? = nil,
@@ -327,6 +334,8 @@ public enum ApprovalDockRules {
         // 2026-10-20 (JC): one "Always allow", one click; the card's owner
         // rule first (every card since #855), then the older grants
         actions.alwaysAllowRule = card.ownerRule != nil
+        actions.alwaysAllowFolder = card.ownerRule != nil && card.ownerRuleFolder != nil && !durable
+        actions.alwaysAllowFolderWrites = actions.alwaysAllowFolder && card.ownerRuleFolder?.writes == true
         actions.alwaysAllowTool = !actions.alwaysAllowRule && !durable && hasBot && card.allowKey != nil
         actions.alwaysAllowSession = !actions.alwaysAllowRule && !durable && card.allowKey == nil && !canRememberCommand && card.allowSession == true
         actions.alwaysAllowCommand = !actions.alwaysAllowRule && canRememberCommand
@@ -341,7 +350,7 @@ public enum ApprovalDockRules {
         return actions
     }
 
-    public enum Choice: Sendable { case allowOnce, deny, alwaysAllowTool, alwaysAllowSession, alwaysAllowCommand, alwaysAllowRule }
+    public enum Choice: Sendable { case allowOnce, deny, alwaysAllowTool, alwaysAllowSession, alwaysAllowCommand, alwaysAllowRule, alwaysAllowFolder }
 
     /// The respond body for one dock button (`decideRequest` in the store).
     public static func decision(_ choice: Choice, for pending: PendingApproval) -> ApprovalDecision {
@@ -357,6 +366,10 @@ public enum ApprovalDockRules {
             alwaysAllowKey: choice == .alwaysAllowTool ? card.allowKey : nil
         )
         if choice == .alwaysAllowRule, card.ownerRule != nil { decision.rule = "allow" }
+        if choice == .alwaysAllowFolder, card.ownerRule != nil, card.ownerRuleFolder != nil {
+            decision.rule = "allow"
+            decision.ruleScope = "folder"
+        }
         return decision
     }
 

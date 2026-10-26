@@ -47,7 +47,7 @@ export interface OwnerApprovalRouteDeps {
   /** The name of the person who saved a rule, never an id. */
   personName?: (personId: string) => string | undefined;
   /** An earlier per-bot Allow key in plain words. */
-  describeLegacy: (key: string) => string;
+  describeLegacy: (key: string, personId?: string) => string;
   /** Remove an earlier Allow key from a bot and its conversations. */
   revokeLegacy: (botId: string, key: string) => void;
   audit: (row: { action: string; botId?: string; personId: string; before?: Record<string, unknown>; after?: Record<string, unknown> }, auth: RequestAuth) => void;
@@ -81,7 +81,7 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
       tool: key.startsWith("mcp:") ? key.slice(4) : key,
       scope: {},
       behavior: "allow" as const,
-      description: deps.describeLegacy(key),
+      description: deps.describeLegacy(key, personId),
       createdAt: 0,
       updatedAt: 0,
     })));
@@ -150,7 +150,7 @@ export function createOwnerApprovalRoutes(deps: OwnerApprovalRouteDeps): RouteHa
             tool: legacy.key.slice(4).toLowerCase(),
             scope: {},
             behavior: isRuleBehavior(body.behavior) ? body.behavior : "allow",
-            description: typeof body.description === "string" && body.description.trim() ? body.description.trim() : deps.describeLegacy(legacy.key),
+            description: typeof body.description === "string" && body.description.trim() ? body.description.trim() : deps.describeLegacy(legacy.key, me),
           });
         }
         deps.revokeLegacy(bot.id, legacy.key);

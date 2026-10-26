@@ -4,7 +4,7 @@ import { Monitor, FileText, X, ShieldOff, RefreshCw } from "lucide-react";
 import { formatEndLabel, type RemoteSessionView } from "../../../shared/remote-session";
 import type { AdminRowFilters, RemoteSessionAdminRow, RemoteSessionLogEntry } from "../../../shared/remote-session-admin";
 import { cn } from "@/lib/cn";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { remoteControllable, RemoteTakeover } from "./RemoteScreenCard";
 import {
   endRemoteSessionAdmin,
@@ -37,7 +37,7 @@ function statusLabel(status: RemoteSessionAdminRow["status"]): string {
 function startedLabel(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("fr-CA", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hourCycle: "h23" }).format(date);
+  return new Intl.DateTimeFormat(activeLocale(), { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hourCycle: "h23" }).format(date);
 }
 
 /** The audited actions, redacted, as a plain list. Reused by the gallery. */

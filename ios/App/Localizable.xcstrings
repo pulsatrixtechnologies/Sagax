@@ -19139,6 +19139,70 @@
         }
       }
     },
+    "Always allow changes to this file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow changes to this file"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre les modifications de ce fichier"
+          }
+        }
+      }
+    },
+    "Always allow changes in the whole folder, deletions included": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow changes in the whole folder, deletions included"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre les modifications dans tout le dossier, suppressions comprises"
+          }
+        }
+      }
+    },
+    "Always allow this file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow this file"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre ce fichier"
+          }
+        }
+      }
+    },
+    "Always allow the whole folder": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Always allow the whole folder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toujours permettre tout le dossier"
+          }
+        }
+      }
+    },
     "Always allow": {
       "localizations": {
         "en": {

@@ -11,7 +11,7 @@ import { Check, Copy, ExternalLink, Link2, Link2Off, Loader2, RefreshCw } from "
 
 import { openExternalLink } from "@/lib/app-links";
 import { copyText } from "@/lib/copy-text";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { api } from "@/state/store";
 
 export interface TemplateLink {
@@ -132,7 +132,7 @@ export function TemplateLinkSection({ name, description, picture, request = api 
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span className="min-w-0 flex-1 truncate text-ink-tertiary">
-                  {link.name} · {new Date(link.updatedAt ?? link.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}
+                  {link.name} · {new Date(link.updatedAt ?? link.createdAt).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" })}
                   {link.updatedAt ? ` · ${t("templateLink.updatedLabel")}` : ""}
                 </span>
                 <button type="button" data-template-link-update disabled={busy} onClick={() => void update(link.id)} title={t("templateLink.updateHint")}

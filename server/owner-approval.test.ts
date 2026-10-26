@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   cardRuleCandidate,
   destructiveKindOf,
+  FOLDER_KEY,
+  folderRuleCandidate,
+  pathInFolder,
   matchOwnerRule,
   normalizeRuleTool,
   ownerDecision,
@@ -634,5 +637,185 @@ describe("Bypass on the owner's own computer, and what always wins over it (#106
     // with no rule in the way, the owner's Bypass answers
     expect(ownerVerdictOver(autoVerdict("full", DESKTOP_READ, { sagaxGate: true }), allowed, DESKTOP_READ))
       .toMatchObject({ approve: `approved ${DESKTOP_READ} (bypass)`, source: "owner-bypass" });
+  });
+});
+
+describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
+  const DESKTOP_READ = "mcp__sagax-desktop__read_file";
+  const DESKTOP_LIST = "mcp__sagax-desktop__list_files";
+  const DESKTOP_WRITE = "mcp__sagax-desktop__write_file";
+  const read = (path: string) => JSON.stringify({ path });
+  const desktop = (tool: string, input: string): RuleCall => ({ ownerId: ALICE, botId: "bot-a", tool, input });
+  const folderRule = (path: string, tool = DESKTOP_READ, over: Partial<OwnerRule> = {}): OwnerRule => {
+    const candidate = folderRuleCandidate({ tool, input: read(path) }, {})!;
+    return { id: "f1", ownerId: ALICE, botId: "bot-a", tool: candidate.tool, scope: candidate.scope, behavior: "allow", description: candidate.description, createdAt: 1, updatedAt: 1, ...over };
+  };
+
+  it("keeps the exact path as before and offers the folder beside it", () => {
+    const input = read("/repo/docs/TODO.md");
+    expect(cardRuleCandidate({ tool: DESKTOP_READ, input }, {})?.scope).toEqual({ path: "/repo/docs/TODO.md" });
+    const folder = folderRuleCandidate({ tool: DESKTOP_READ, input }, {});
+    expect(folder?.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
+    expect(folder?.description).toContain("/repo/docs");
+    expect(folder?.tool).toBe("sagax-desktop__read_file");
+  });
+
+  it("a listing or a search names its own folder", () => {
+    expect(folderRuleCandidate({ tool: DESKTOP_LIST, input: read("C:\\Repo\\Docs") }, {})?.scope).toEqual({ [FOLDER_KEY]: "c:/repo/docs" });
+    const search = JSON.stringify({ path: "/repo/docs", pattern: "TODO", glob: "*.md" });
+    expect(folderRuleCandidate({ tool: "mcp__sagax-desktop__search_files", input: search }, {})?.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
+  });
+
+  it("covers the folder, its subfolders and the same tool only", () => {
+    const rule = folderRule("/repo/docs/TODO.md");
+    for (const path of ["/repo/docs/TODO.md", "/repo/docs/other.md", "/repo/docs/deep/er/x.md", "/repo/docs"]) {
+      expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read(path))), path).toBeDefined();
+    }
+    for (const path of ["/repo/README.md", "/repo/docs-old/x.md", "/repo/docsx", "/other/docs/x.md"]) {
+      expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read(path))), path).toBeUndefined();
+    }
+    expect(matchOwnerRule([rule], desktop(DESKTOP_WRITE, read("/repo/docs/x.md")))).toBeUndefined();
+    expect(matchOwnerRule([rule], { ...desktop(DESKTOP_READ, read("/repo/docs/x.md")), botId: "bot-b" })).toBeUndefined();
+    expect(pathInFolder("/repo/docs/../secret", "/repo/docs")).toBe(false);
+  });
+
+  it("never follows a .. out of the folder", () => {
+    const rule = folderRule("/repo/docs/TODO.md");
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/repo/docs/../.ssh/id_rsa")))).toBeUndefined();
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/repo/docs/../README.md")))).toBeUndefined();
+  });
+
+  it("a command or any other exact argument is never covered by a folder rule", () => {
+    const rule = folderRule("/repo/docs/TODO.md");
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, JSON.stringify({ path: "/repo/docs/a.md", command: "cat x" })))).toBeUndefined();
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, JSON.stringify({ path: "/repo/docs/a.md", file_path: "/repo/src/b.md" })))).toBeUndefined();
+  });
+
+  it("never covers a sensitive path (dotfile, credential, /proc), even inside the folder", () => {
+    const rule = folderRule("/repo/docs/TODO.md");
+    for (const path of ["/repo/docs/.env", "/repo/docs/.git/config", "/repo/docs/id_ed25519", "/repo/docs/server.pem", "/repo/docs/.ssh/config", "/repo/docs/a%2e%2e/x"]) {
+      expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read(path))), path).toBeUndefined();
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_READ, read(path)) }), path).toMatchObject({ kind: "card", reason: "no-rule" });
+    }
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/repo/docs/ok.md")))).toBeDefined();
+  });
+
+  it("is not offered for a sensitive file or folder, the root, a drive or the home folder", () => {
+    for (const path of ["/repo/.ssh/config", "/repo/.github/workflows/ci.yml", "/repo/.env", "/home/jc/.aws/credentials", "/README.md", "README.md", "C:\\README.md", "~/notes.md", "/proc/self/environ", "/repo/../etc/passwd"]) {
+      expect(folderRuleCandidate({ tool: DESKTOP_READ, input: read(path) }, {}), path).toBeUndefined();
+    }
+    expect(folderRuleCandidate({ tool: DESKTOP_LIST, input: read("/") }, {})).toBeUndefined();
+    expect(folderRuleCandidate({ tool: DESKTOP_LIST, input: read(".github") }, {})).toBeUndefined();
+  });
+
+  it("is not offered for a command, an outward message, a held card or another situation", () => {
+    expect(folderRuleCandidate({ tool: "Bash", input: JSON.stringify({ command: "ls /repo/docs" }), command: "ls /repo/docs" }, {})).toBeUndefined();
+    expect(folderRuleCandidate({ tool: "mcp__mail__send_email", input: JSON.stringify({ to: ["a@b.ca"], body: "x" }) }, {})).toBeUndefined();
+    const input = read("/repo/docs/TODO.md");
+    expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { held: true })).toBeUndefined();
+    for (const from of ["admin", "hold", "origin"] as const) expect(folderRuleCandidate({ tool: DESKTOP_READ, input }, { from })).toBeUndefined();
+  });
+
+  const write = (path: string) => JSON.stringify({ path, content: "x" });
+
+  it("covers file writes in the folder and its subfolders, flagged as writes on the card", () => {
+    const candidate = folderRuleCandidate({ tool: DESKTOP_WRITE, input: write("/repo/docs/new.md") }, {})!;
+    expect(candidate.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
+    expect(candidate.writes).toBe(true);
+    expect(folderRuleCandidate({ tool: DESKTOP_READ, input: read("/repo/docs/a.md") }, {})?.writes).toBeUndefined();
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    for (const path of ["/repo/docs/new.md", "/repo/docs/a/b/c.md"]) {
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_WRITE, write(path)) }), path).toMatchObject({ kind: "allow", source: "owner-rule" });
+    }
+    for (const path of ["/repo/src/x.ts", "/repo/docs-old/x.md", "/repo/docs/../src/x.ts"]) {
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_WRITE, write(path)) }), path).toMatchObject({ kind: "card" });
+    }
+    // a write rule never answers a read, and a read rule never a write
+    expect(matchOwnerRule([rule], desktop(DESKTOP_READ, read("/repo/docs/a.md")))).toBeUndefined();
+    expect(matchOwnerRule([folderRule("/repo/docs/a.md")], desktop(DESKTOP_WRITE, write("/repo/docs/a.md")))).toBeUndefined();
+  });
+
+  it("a write to a sensitive path inside the folder keeps its card", () => {
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    for (const path of ["/repo/docs/.env", "/repo/docs/.git/hooks/pre-commit", "/repo/docs/id_rsa", "/repo/docs/server.key", "/repo/docs/.ssh/authorized_keys"]) {
+      expect(matchOwnerRule([rule], desktop(DESKTOP_WRITE, write(path))), path).toBeUndefined();
+      expect(ownerDecision({ mode: "approval", rules: [rule], call: desktop(DESKTOP_WRITE, write(path)) }), path).toMatchObject({ kind: "card", reason: "no-rule" });
+    }
+    expect(folderRuleCandidate({ tool: DESKTOP_WRITE, input: write("/repo/.ssh/config") }, {})).toBeUndefined();
+  });
+
+  const MOVE = "mcp__sagax-desktop__move_file";
+  const DELETE = "mcp__sagax-desktop__delete_file";
+  const DELETE_MANY = "mcp__sagax-desktop__delete_files";
+  const decide = (rules: OwnerRule[], tool: string, input: string) => ownerDecision({ mode: "approval", rules, call: desktop(tool, input) });
+
+  it("a rename or a move is covered when both paths are in the folder, never when one leaves it", () => {
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    expect(decide([rule], MOVE, JSON.stringify({ from: "/repo/docs/a.md", to: "/repo/docs/sub/b.md" }))).toMatchObject({ kind: "allow" });
+    expect(decide([rule], MOVE, JSON.stringify({ source: "/repo/docs/a.md", destination: "/repo/docs/b.md" }))).toMatchObject({ kind: "allow" });
+    expect(decide([rule], MOVE, JSON.stringify({ from: "/repo/docs/a.md", to: "/repo/src/b.md" }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], MOVE, JSON.stringify({ from: "/repo/src/a.md", to: "/repo/docs/b.md" }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], MOVE, JSON.stringify({ from: "/repo/docs/a.md", to: "/repo/docs/../src/b.md" }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], MOVE, JSON.stringify({ from: "/repo/docs/a.md", to: "/repo/docs/.env" }))).toMatchObject({ kind: "card" });
+    const candidate = folderRuleCandidate({ tool: MOVE, input: JSON.stringify({ from: "/repo/docs/a/x.md", to: "/repo/docs/b/y.md" }) }, {})!;
+    expect(candidate.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
+    expect(candidate.writes).toBe(true);
+  });
+
+  it("a write rule of the folder also covers deletes in it, recursive or in a batch, with no delete card", () => {
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    expect(decide([rule], DELETE, JSON.stringify({ path: "/repo/docs/old.md" }))).toMatchObject({ kind: "allow", source: "owner-rule" });
+    expect(decide([rule], DELETE, JSON.stringify({ path: "/repo/docs/old", recursive: true }))).toMatchObject({ kind: "allow" });
+    expect(decide([rule], DELETE_MANY, JSON.stringify({ paths: ["/repo/docs/a.md", "/repo/docs/b/c.md"] }))).toMatchObject({ kind: "allow" });
+    // outside, sensitive or escaping: the card stays
+    expect(decide([rule], DELETE, JSON.stringify({ path: "/repo/src/old.md", recursive: true }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], DELETE_MANY, JSON.stringify({ paths: ["/repo/docs/a.md", "/repo/src/b.md"] }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], DELETE_MANY, JSON.stringify({ paths: ["/repo/docs/a.md", "/repo/docs/.env"] }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], DELETE, JSON.stringify({ path: "/repo/docs/.git", recursive: true }))).toMatchObject({ kind: "card" });
+    expect(decide([rule], DELETE, JSON.stringify({ path: "/repo/docs/../src" }))).toMatchObject({ kind: "card" });
+    // another server's tool, and a read rule, never answer a delete
+    expect(decide([rule], "mcp__other__delete_file", JSON.stringify({ path: "/repo/docs/x" }))).toMatchObject({ kind: "card" });
+    expect(decide([folderRule("/repo/docs/a.md")], DELETE, JSON.stringify({ path: "/repo/docs/x.md" }))).toMatchObject({ kind: "card" });
+  });
+
+  it("a delete card offers the folder rule too, and a deny rule, a key and a hold still come first", () => {
+    const candidate = folderRuleCandidate({ tool: DELETE, input: JSON.stringify({ path: "/repo/docs/old", recursive: true }) }, {})!;
+    expect(candidate.scope).toEqual({ [FOLDER_KEY]: "/repo/docs" });
+    expect(candidate.writes).toBe(true);
+    expect(candidate.destructive).toBeUndefined();
+    const rule = folderRule("/repo/docs/new.md", DESKTOP_WRITE);
+    const call = desktop(DELETE, JSON.stringify({ path: "/repo/docs/old.md" }));
+    const deny: OwnerRule = { ...rule, id: "d2", behavior: "deny", scope: { [FOLDER_KEY]: "/repo/docs/old.md" } };
+    expect(ownerDecision({ mode: "approval", rules: [rule, deny], call })).toMatchObject({ kind: "deny" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, personMustAnswer: true })).toMatchObject({ kind: "card", reason: "hold" });
+  });
+
+  it("an owner Refuser or Demander d'abord rule wins over the folder allow", () => {
+    const allow = folderRule("/repo/docs/TODO.md");
+    const call = desktop(DESKTOP_READ, read("/repo/docs/TODO.md"));
+    const deny: OwnerRule = { ...allow, id: "d1", behavior: "deny", scope: { path: "/repo/docs/TODO.md" } };
+    const ask: OwnerRule = { ...allow, id: "k1", behavior: "ask", scope: { [FOLDER_KEY]: "/repo" } };
+    expect(ownerDecision({ mode: "bypass", rules: [allow, deny], call })).toMatchObject({ kind: "deny" });
+    expect(ownerDecision({ mode: "auto", rules: [allow, ask], call })).toMatchObject({ kind: "card", reason: "ask-rule" });
+    expect(ownerDecision({ mode: "approval", rules: [allow], call })).toMatchObject({ kind: "allow", source: "owner-rule" });
+  });
+
+  it("an organization Refuser or Demander d'abord rule wins over the folder allow", () => {
+    const allow = ownerDecision({ mode: "approval", rules: [folderRule("/repo/docs/TODO.md")], call: desktop(DESKTOP_READ, read("/repo/docs/x.md")) });
+    expect(allow.kind).toBe("allow");
+    const orgAsk = autoVerdict("auto", DESKTOP_READ, { sagaxGate: true, customRule: { behavior: "ask", id: "orule_ask" } });
+    expect(ownerVerdictOver(orgAsk, allow, DESKTOP_READ)).toMatchObject({ approve: null, source: "custom-rule-ask" });
+    const orgDeny = autoVerdict("auto", DESKTOP_READ, { sagaxGate: true, customRule: { behavior: "deny", id: "orule_deny" } });
+    expect(ownerVerdictOver(orgDeny, allow, DESKTOP_READ)).toMatchObject({ approve: null, source: "custom-rule-deny" });
+  });
+
+  it("a security key, a hold and a turn that is not the person's own still keep the card", () => {
+    const rule = folderRule("/repo/docs/TODO.md");
+    const call = desktop(DESKTOP_READ, read("/repo/docs/x.md"));
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, stepUpRequired: true })).toMatchObject({ kind: "card", reason: "step-up" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, personMustAnswer: true })).toMatchObject({ kind: "card", reason: "hold" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, autonomyRefused: true })).toMatchObject({ kind: "card", reason: "origin" });
+    expect(ownerDecision({ mode: "approval", rules: [rule], call, crossPerson: true })).toMatchObject({ kind: "card", reason: "cross-person" });
   });
 });

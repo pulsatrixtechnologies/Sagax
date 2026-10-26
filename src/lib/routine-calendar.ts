@@ -1,6 +1,7 @@
 import type { Routine, RoutineRun, RoutineSchedule } from "./routines";
 import { nextCronRuns } from "../../shared/routine-schedule";
 
+import { activeLocale } from "@/lib/i18n";
 export const CALENDAR_SLOT_MINUTES = 5;
 const ROUTINE_MARKER_MINUTES = 30;
 const MAX_RECEIPTS_PER_ROUTINE_PER_RANGE = 12;
@@ -350,10 +351,10 @@ export function calendarRangeLabel(from: number, days: number): string {
   const start = new Date(from);
   const end = new Date(to);
   if (days === 1) {
-    return start.toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" });
+    return start.toLocaleDateString(activeLocale(), { month: "long", day: "numeric", year: "numeric" });
   }
   if (start.getMonth() === end.getMonth()) {
-    return `${start.toLocaleDateString([], { month: "long" })} ${start.getDate()} - ${end.getDate()}, ${end.getFullYear()}`;
+    return `${start.toLocaleDateString(activeLocale(), { month: "long" })} ${start.getDate()} - ${end.getDate()}, ${end.getFullYear()}`;
   }
-  return `${start.toLocaleDateString([], { month: "short", day: "numeric" })} - ${end.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}`;
+  return `${start.toLocaleDateString(activeLocale(), { month: "short", day: "numeric" })} - ${end.toLocaleDateString(activeLocale(), { month: "short", day: "numeric", year: "numeric" })}`;
 }

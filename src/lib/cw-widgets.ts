@@ -4,6 +4,7 @@
 import type { CwAction } from "../../shared/cw-widgets/actions.ts";
 import type { CwWidget } from "../../shared/cw-widgets/types.ts";
 
+import { activeLocale } from "@/lib/i18n";
 export type CwPoster = (path: string, body: unknown) => Promise<unknown>;
 
 /** POST /api/threads/:id/cw-actions. `poster` is the app's `api` in the
@@ -51,7 +52,7 @@ export function formatCwWhen(iso: string | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("fr-CA", {
+  return new Intl.DateTimeFormat(activeLocale(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -64,7 +65,7 @@ export function formatCwDay(iso: string | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return new Intl.DateTimeFormat("fr-CA", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(date);
+  return new Intl.DateTimeFormat(activeLocale(), { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(date);
 }
 
 export function cwFamilyLabelKey(family: CwWidget["family"]): "cw.tickets" | "cw.time" | "cw.schedule" | "cw.agreements" | "cw.companies" {

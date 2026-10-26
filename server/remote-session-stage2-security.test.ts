@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { remoteSupportDenyRules } from "./drivers/claude.ts";
+import { remoteSupportDir } from "./engine-protected-paths.ts";
 import { bindFlowOwner, flowOwner, pruneSupportSessions, readTunnel, supportOwnersOfId } from "./remote-session-probe.ts";
 import { absorbStatus, forgetAddress, markSessionClosed, ownerOf, rememberSession } from "./remote-support-local.ts";
 
@@ -55,11 +56,12 @@ describe("Flow folder binding (finding c)", () => {
 describe("closed sentinel (finding e)", () => {
   it("a late status cannot write the address back after close", async () => {
     const dir = temp("sagax-support-");
-    writeFileSync(path.join(dir, "technician.private.json"), "{}\n", { mode: 0o600 });
     await rememberSession(dir, "BQDHS7", ID, { principalId: "person-a", botId: "bot-1" });
+    writeFileSync(path.join(dir, "sessions", "BQDHS7", "technician.private.json"), "{}\n", { mode: 0o600 });
     writeFileSync(path.join(dir, "sessions", "BQDHS7", "address"), `${ADDRESS}\n`);
     await markSessionClosed(dir, "BQDHS7");
     expect(existsSync(path.join(dir, "sessions", "BQDHS7", "address"))).toBe(false);
+    expect(existsSync(path.join(dir, "sessions", "BQDHS7", "technician.private.json"))).toBe(false);
     // a late connected status tries to store the address again
     const run = async () => ({ code: 0, stdout: "", stderr: "", error: undefined }) as never;
     const absorbed = await absorbStatus({ dir, code: "BQDHS7", raw: { state: "connected", address: ADDRESS }, run, keyPath: null });
@@ -114,5 +116,19 @@ describe("engine read deny (finding a)", () => {
     expect(rules.some((r) => r.startsWith("Read(") && r.includes("remote-support"))).toBe(true);
     expect(rules.some((r) => r.startsWith("Glob("))).toBe(true);
     expect(rules.some((r) => r.startsWith("Grep("))).toBe(true);
+  });
+
+  it("names each session's key, the pending keys and the old shared key", () => {
+    const rules = remoteSupportDenyRules();
+    const dir = remoteSupportDir();
+    for (const file of [
+      path.join(dir, "sessions", "*", "technician.private.json"),
+      path.join(dir, "pending", "**"),
+      path.join(dir, "technician.private.json"),
+    ]) {
+      for (const tool of ["Read", "Glob", "Grep"]) expect(rules).toContain(`${tool}(/${file})`);
+    }
+    // the whole folder stays denied as well
+    expect(rules).toContain(`Read(/${dir}/**)`);
   });
 });

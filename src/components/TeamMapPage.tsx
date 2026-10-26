@@ -20,7 +20,7 @@ import { TeamCanvas } from "./TeamCanvas";
 import { TeamDialog } from "./TeamDialog";
 import { TeamMemoryDialog } from "./TeamMemoryDialog";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { CanvasComputers } from "./CanvasComputers";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import type { TeamComputer } from "../../shared/team-computer";
@@ -233,7 +233,7 @@ export function SectionContextDialog({ section, label, onClose }: { section: str
                 footer={
                   <span>
                     Keep durable team facts here. Private notes stay in each bot's own Memory.
-                    {updatedAt ? ` Last saved ${new Date(updatedAt).toLocaleString()}.` : ""}{" "}
+                    {updatedAt ? ` Last saved ${new Date(updatedAt).toLocaleString(activeLocale())}.` : ""}{" "}
                     <span className={cn("tabular-nums", bytes > maxBytes && "text-danger")}>
                       {bytes.toLocaleString()} / {maxBytes.toLocaleString()} bytes
                     </span>

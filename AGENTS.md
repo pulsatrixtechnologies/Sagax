@@ -1371,6 +1371,25 @@ repositories, the whole lifecycle, auto included), `src/lib/org-memory.test.ts`,
 `server/perspicax-memory-sync-token.test.ts`. Not done yet: a file watcher
 (the sync runs on its timer).
 
+## Perspicax GO requests as approval cards (2026-10-26)
+
+A Perspicax server guard (the Flow guard: dry run, GO, read back) asks the
+person for a GO during a `tools/call` with MCP elicitation
+(`elicitation/create` on the call's SSE stream). The harness relay
+(`server/perspicax-mcp.ts`) declares the `elicitation` capability on every
+Perspicax session (`withElicitation`), reads the call's stream as it comes
+(`readBounded` with `onRequest`) and shows the GO as an approval card on the
+turn's thread (`askGo`, `confirmHeldCard` in `server/index.ts`: Full access and
+Approve for me never answer it). Keep these rules, covered by
+`server/perspicax-mcp.test.ts` ("the Flow guard's GO"):
+
+- Only the person's Allow is a GO (`accept` with `decision: allow`); Deny is
+  `decline`, no answer in time is `cancel`. The model never answers it.
+- Only the approval form (`decision` allow or deny, `isGoForm`) opens a card;
+  any other form is declined unasked, any other server request but `ping`
+  gets -32601.
+- The answer goes on the same session with the speaker's own token.
+
 ## Pulsatrix Flow compute (sagax-flow, 2026-10-14)
 
 `flow` and `flow_action` are Perspicax's tools, relayed through the
@@ -1392,6 +1411,27 @@ deterministic arithmetic of the marketplace plugin `pulsatrix-flow`
 - Every tool is read only: Claude pre-allows `mcp__sagax-flow`, Grok's rules
   and gate accept it only for the harness's own proxy path
   (`isFlowToolsServer`), Codex mounts it as a workplace proxy.
+
+## Pulsatrix Flow for every member (2026-10-26)
+
+On a server linked to Perspicax, `server/org-flow-plugins.ts` installs the
+Flow plugins Perspicax declares in the directory (`flow_plugins`) from its
+private marketplace, with a member's short marketplace token, and loads the
+sanitized copy (no hooks) on the Claude turns of active members' bots
+(`pluginDirsFor`). Keep these rules, covered by
+`server/org-flow-plugins.test.ts`:
+
+- The Flow guard is Perspicax's: install and load only while the declaration
+  says `enabled` and `guard: "enforce"` (`guarded`); anything else takes the
+  copy out and loads nothing. Never re-add hooks to the copy to make up for
+  it, and never install from another source.
+- The token lives only in the environment of the one `claude plugin`
+  command (`TOKEN_ENV`, read by `headers-helper.cjs`); never on disk, never
+  in a status or a log line. The commands get `ENV_KEEP` plus the `env`
+  option, nothing else of the server's environment.
+- The marketplace must be served from the issuer's origin and the token
+  audience must be `<issuer>/flow/marketplace` (`refusal`).
+- Docs: `docs/self-hosting.md`, "Pulsatrix Flow for every member".
 
 ## Organization memory signals (2026-10-11)
 

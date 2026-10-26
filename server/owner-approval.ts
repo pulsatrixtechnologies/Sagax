@@ -34,6 +34,7 @@ import { readShell } from "../shared/custom-rules.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
 import { screenAppTarget, type ScreenAppIdentity } from "../shared/computer-app.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
+import { sensitiveReadPath } from "./sensitive-path.ts";
 
 export const BOT_PERMISSION_MODES = ["approval", "auto", "bypass"] as const;
 export type BotPermissionMode = (typeof BOT_PERMISSION_MODES)[number];
@@ -196,6 +197,110 @@ const EXACT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEYS, "cwd"]);
  * call that has them. A rule on `npm test` never covers it in another
  * folder, a rule for one recipient never covers a message with a Bcc. */
 const STRICT_KEY_SET: ReadonlySet<string> = new Set([...EXACT_KEY_SET, "to", "cc", "bcc"]);
+/** 2026-10-26 (#1065, "Toujours permettre" : ce fichier ou tout le dossier):
+ * the argument keys that name one file or folder, and the scope key of a
+ * rule kept for a whole folder tree. `path_in` holds the folder, lexically
+ * normalized (normalizeFolderPath); it covers a call whose every path (a
+ * file, both ends of a rename or a move, each file of a batch) is inside
+ * that folder or its subfolders, never a path with `..`, never a sensitive
+ * one (a dotfile, a credential, /proc: server/sensitive-path.ts), and never
+ * a call that carries any other exact argument (a command, a folder it runs
+ * in). A folder rule made on a card that changes files (write, create,
+ * rename, move, delete, recursive or in a batch) covers every such file
+ * tool of the same server in that folder; one made on a read covers that
+ * tool. */
+export const PATH_KEYS = ["path", "file_path", "filePath", "notebook_path"] as const;
+/** Both ends of a rename or a move, as engines and MCP servers name them. */
+const MOVE_KEYS = ["from", "to", "source", "destination", "src", "dest", "old_path", "new_path", "oldPath", "newPath", "from_path", "to_path", "source_path", "destination_path"] as const;
+/** Lists of files (a batch delete or move). */
+const PATH_LIST_KEYS = ["paths", "files", "file_paths", "filePaths"] as const;
+export const FOLDER_KEY = "path_in";
+
+/** The paths a file call names, or undefined when it names none or one that
+ * cannot be read as text (fail closed). */
+export function callFilePaths(input: string | undefined): string[] | undefined {
+  const args = parseArgs(input);
+  if (!args) return undefined;
+  const found: string[] = [];
+  for (const key of [...PATH_KEYS, ...MOVE_KEYS]) {
+    const value = args[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== "string" || !value.trim()) return undefined;
+    found.push(value);
+  }
+  for (const key of PATH_LIST_KEYS) {
+    const value = args[key];
+    if (value === undefined || value === null) continue;
+    if (!Array.isArray(value) || !value.length || !value.every((entry) => typeof entry === "string" && entry.trim())) return undefined;
+    found.push(...(value as string[]));
+  }
+  return found.length ? found : undefined;
+}
+
+const FILE_KEYS: ReadonlySet<string> = new Set([...PATH_KEYS, ...MOVE_KEYS, ...PATH_LIST_KEYS]);
+const CHANGE_WORDS: ReadonlySet<string> = new Set(["write", "edit", "multiedit", "notebookedit", "create", "rename", "move", "mv", "delete", "remove", "rm", "mkdir", "copy", "cp", "append", "patch", "touch", "save", "replace", "truncate", "rmdir"]);
+const FILE_WORDS: ReadonlySet<string> = new Set(["file", "files", "dir", "dirs", "directory", "folder", "folders", "path", "paths", "notebook"]);
+
+/** Whether a tool name changes files: write_file, edit, delete_files,
+ * move_path, create_directory... (a verb and a file word, or a bare
+ * Write, Edit, MultiEdit, NotebookEdit). */
+export function fileChangeTool(tool: string): boolean {
+  const name = parseToolId(tool).name.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  const words = name.split(/[^a-z]+/).filter(Boolean);
+  if (words.length === 1) return ["write", "edit", "multiedit", "notebookedit"].includes(words[0]!);
+  return words.some((word) => CHANGE_WORDS.has(word)) && words.some((word) => FILE_WORDS.has(word) || word === "multiedit" || word === "notebookedit");
+}
+
+/** Whether a folder rule saved for `ruleTool` also answers `callTool`: the
+ * same tool, or two file-changing tools of the same server. */
+function folderToolCovers(ruleTool: string, callTool: string): boolean {
+  if (normalizeRuleTool(ruleTool) === normalizeRuleTool(callTool)) return true;
+  if (!fileChangeTool(ruleTool) || !fileChangeTool(callTool)) return false;
+  const a = parseToolId(normalizeRuleTool(ruleTool)).server ?? "";
+  const b = parseToolId(normalizeRuleTool(callTool)).server ?? "";
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+/** A path as text that can be compared by prefix: slashes, no `.` part, no
+ * trailing slash; a path on a drive letter compares without case.
+ * Undefined when it holds a `..` part (never resolved here). */
+export function normalizeFolderPath(path: string): string | undefined {
+  const flat = path.trim().replace(/\\/g, "/").replace(/\/{2,}/g, "/");
+  if (!flat) return undefined;
+  const parts = flat.split("/");
+  if (parts.some((part) => part === "..")) return undefined;
+  const kept = parts.filter((part) => part !== ".");
+  const text = kept.join("/").replace(/(.)\/+$/, "$1");
+  return /^[a-z]:(\/|$)/i.test(text) ? text.toLowerCase() : text;
+}
+
+/** Tools whose path argument is itself a folder (a listing, a search). */
+const FOLDER_TARGET_TOOL = /(^|[_.:-])(list|search|find|glob|grep|tree|dir|ls)([_.:-]|$)/i;
+
+/** The folder a folder rule would cover for a call of `tool` on `path`: the
+ * folder itself for a listing or a search, the file's parent otherwise;
+ * never the root, a drive, the home folder itself or a sensitive name. */
+export function folderOfPath(path: string, tool = ""): string | undefined {
+  const normal = normalizeFolderPath(path);
+  if (!normal) return undefined;
+  let folder = normal;
+  if (fileChangeTool(tool) || !FOLDER_TARGET_TOOL.test(parseToolId(tool).name)) {
+    const cut = normal.lastIndexOf("/");
+    if (cut <= 0) return undefined;
+    folder = normal.slice(0, cut);
+  }
+  if (!folder || folder === "~" || /^[a-z]:\/?$/i.test(folder) || /^\/+$/.test(folder) || folder.length > MAX_EXACT_VALUE) return undefined;
+  if (sensitiveReadPath(folder)) return undefined;
+  return folder;
+}
+
+/** Whether `path` is the folder or lies under it. */
+export function pathInFolder(path: string, folder: string): boolean {
+  const normal = normalizeFolderPath(path);
+  if (!normal || !folder) return false;
+  return normal === folder || normal.startsWith(`${folder}/`);
+}
+
 /** The scope key that binds a rule to the whole call (every argument), for
  * the cards that never had a rule before (an admin's card, a held card, a
  * turn that is not the person's own): only that very request passes again. */
@@ -312,13 +417,23 @@ export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScop
   if (rule.tool === APP_RULE_TOOL) {
     // an app rule: a screen action whose app the server read, that same app
     if (!APP_KEYS.every((key) => key in rule.scope) || !call.app || !screenAppTarget(call.tool, call.input)) return false;
-  } else if (normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
+  } else if (rule.scope[FOLDER_KEY] !== undefined ? !folderToolCovers(rule.tool, call.tool) : normalizeRuleTool(rule.tool) !== normalizeRuleTool(call.tool)) return false;
+  const folder = rule.scope[FOLDER_KEY];
+  if (folder !== undefined) {
+    // a folder rule: every path of the call is inside it, never a
+    // sensitive one (an allow only: a deny or ask rule still reads it)
+    const paths = callFilePaths(call.input);
+    if (!paths || !paths.every((path) => pathInFolder(path, folder))) return false;
+    if (rule.behavior === "allow" && paths.some((path) => sensitiveReadPath(path))) return false;
+  }
   if (rule.behavior === "allow" && Object.keys(rule.scope).length) {
     for (const key of Object.keys(callScope)) {
+      if (folder !== undefined && FILE_KEYS.has(key)) continue;
       if (STRICT_KEY_SET.has(key) && !(key in rule.scope) && !(PROGRAM_KEY in rule.scope && (key === "command" || key === "cmd"))) return false;
     }
   }
   for (const [key, value] of Object.entries(rule.scope)) {
+    if (key === FOLDER_KEY) continue;
     if (key === WHOLE_CALL_KEY) {
       if (wholeCallDigest(call.input) !== value) return false;
       continue;
@@ -329,7 +444,11 @@ export function ruleMatches(rule: OwnerRule, call: RuleCall, callScope: RuleScop
   }
   // A deny or ask rule covers any kind; an allow covers a destructive call
   // only when it was made for that same kind.
-  if (rule.behavior === "allow" && destructive && rule.destructive !== destructive) return false;
+  // A folder rule covers the deletes (one, recursive or in a batch) of its
+  // folder: the person chose the whole folder, changes included. Never an
+  // outward message.
+  const inFolder = folder !== undefined && (destructive === "delete" || destructive === "bulk") && fileChangeTool(call.tool);
+  if (rule.behavior === "allow" && destructive && rule.destructive !== destructive && !inFolder) return false;
   return true;
 }
 
@@ -588,6 +707,67 @@ export function cardRuleCandidate(
   });
   if (!scopeKeepable(candidate.scope) || !scopeRemembers(candidate.scope)) return undefined;
   return { ...candidate, ...(situation.from ? { from: situation.from } : {}) };
+}
+
+/** The deepest folder that holds every path (lexical), or undefined. */
+function commonFolder(paths: string[], tool: string): string | undefined {
+  const folders = paths.map((path) => folderOfPath(path, tool));
+  if (folders.some((folder) => folder === undefined)) return undefined;
+  let common = folders[0]!;
+  for (const folder of folders.slice(1)) {
+    while (common && !pathInFolder(folder!, common)) {
+      const cut = common.lastIndexOf("/");
+      common = cut > 0 ? common.slice(0, cut) : "";
+    }
+    if (!common) return undefined;
+  }
+  return folderOfPath(`${common}/x`, "");
+}
+
+/** 2026-10-26 (#1065): the second choice of "Toujours permettre", every
+ * file of the folder of the one this card reads or changes (and its
+ * subfolders), or undefined when it is not offered: only an ordinary card
+ * (no `from`, not held) of a call that reads files or changes them (write,
+ * create, rename, move, delete, recursive or in a batch), whose paths all
+ * have a common folder that is not the root, a drive or the home folder and
+ * hold no sensitive name. Never a command or an outward send. A rule made on
+ * a change covers every file-changing tool of that server in the folder;
+ * `writes` says so on the card. */
+export function folderRuleCandidate(
+  call: { tool: string; input?: string; command?: string; cwd?: string; app?: ScreenAppIdentity },
+  situation: { from?: RuleSituation; held?: boolean },
+  words: ApprovalWords = ENGLISH_WORDS,
+): (RuleCandidate & { writes?: true }) | undefined {
+  if (situation.held === true || situation.from !== undefined || call.app) return undefined;
+  if (call.command?.trim()) return undefined;
+  const input = ruleInputFor(call.input, call.command);
+  if (!input) return undefined;
+  const destructive = destructiveKindOf({ tool: call.tool, input });
+  if (destructive === "external-message") return undefined;
+  const changes = fileChangeTool(call.tool);
+  const risk = describeApproval(call.tool, input).risk;
+  if (destructive ? !changes : risk !== "read" && !(risk === "write" && changes)) return undefined;
+  const paths = callFilePaths(input);
+  if (!paths) return undefined;
+  // any other exact argument (a command, a folder it runs in, a recipient
+  // list) is outside what a folder covers
+  const scope = callScopeFor({ input });
+  if (Object.keys(scope).some((key) => !FILE_KEYS.has(key))) return undefined;
+  if (paths.some((path) => sensitiveReadPath(path))) return undefined;
+  const folder = commonFolder(paths, call.tool);
+  if (!folder || sensitiveReadPath(folder)) return undefined;
+  const key = changes ? "approval.rule.folderChanges" : "approval.rule.folder";
+  const action = capitalize(approvalAction(call.tool, input, undefined, words));
+  const worded = words.t(key, { action, folder });
+  const fallback = changes
+    ? `Create, change, rename, move and delete files in ${folder} and its subfolders`
+    : `${action} in ${folder} and its subfolders`;
+  return {
+    tool: normalizeRuleTool(call.tool),
+    scope: { [FOLDER_KEY]: folder },
+    ...(changes ? { writes: true as const } : {}),
+    description: (worded === key ? fallback : worded).slice(0, 500),
+  };
 }
 
 /** The rule "Toujours permettre" keeps for one app of this computer. */

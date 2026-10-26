@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { CirclePause, Play } from "lucide-react";
 
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import type { Routine } from "@/lib/routines";
 import { api, type Action } from "@/state/store";
 
@@ -46,7 +46,7 @@ export function RoutineAwayBanner({ routines, dispatch, request = api }: {
       setBusy(null);
     }
   };
-  const when = (at: number) => new Date(at).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+  const when = (at: number) => new Date(at).toLocaleString(activeLocale(), { dateStyle: "short", timeStyle: "short" });
   return (
     <section data-routines-away aria-labelledby="routines-away-title" className="mx-4 mt-3 rounded-xl border border-hairline/50 bg-panel px-4 py-3">
       <div className="flex items-start gap-3">

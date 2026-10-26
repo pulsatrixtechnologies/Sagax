@@ -144,22 +144,29 @@ export interface PoseMatrices {
   eyesClip: string;
 }
 
-export function poseMatrices(detail: VolumeDetail, pose: Pose = REST_POSE): PoseMatrices {
+/**
+ * `depth` is the body's thickness now as a share of its resting one
+ * (ShapeFrame.depth): a body shrunk to a dot or a bar by a move is that much
+ * thinner, so its slices stay inside its own outline instead of smearing it
+ * along the turn (a thought dot drawn as a pill).
+ */
+export function poseMatrices(detail: VolumeDetail, pose: Pose = REST_POSE, depth = 1): PoseMatrices {
   const R = poseRotation(pose);
   const n = BODY_3D.slices[detail];
+  const k = Math.min(1, Math.max(0, Number.isFinite(depth) ? depth : 1));
   const slices = Array.from({ length: n - 1 }, (_, i) => {
     const z = -BODY_3D.depth + ((FRONT + BODY_3D.depth) * i) / (n - 1);
-    return sliceMatrix(z, sliceScale(z), pose, R);
+    return sliceMatrix(z * k, sliceScale(z), pose, R);
   });
   // the eyes and the face share their linear part and differ by a shift along the
   // depth's direction; seen from the eyes' space the face's outline is that shift undone
-  const dz = FRONT * (1 - EYE_DOME);
+  const dz = FRONT * k * (1 - EYE_DOME);
   const lx = (dz * Math.sin(pose.yaw * RAD)) / (sliceScale(FRONT) * (1 - TURN_SQUASH * (1 - Math.cos(pose.yaw * RAD))));
   const ly = (-dz * Math.sin(pose.pitch * RAD)) / (sliceScale(FRONT) * (1 - TURN_SQUASH * (1 - Math.cos(pose.pitch * RAD))));
   return {
     slices,
-    face: sliceMatrix(FRONT, sliceScale(FRONT), pose, R),
-    eyes: sliceMatrix(FRONT * EYE_DOME, sliceScale(FRONT), pose, R),
+    face: sliceMatrix(FRONT * k, sliceScale(FRONT), pose, R),
+    eyes: sliceMatrix(FRONT * EYE_DOME * k, sliceScale(FRONT), pose, R),
     eyesClip: `translate(${round4(lx)} ${round4(ly)})`,
   };
 }
@@ -283,7 +290,7 @@ export function styledEyes(eyes: string, style: EyeStyle): string {
 const written = new WeakMap<object, { key: string; body: string; eyesKey: string; eyes: string }>();
 
 /** Write a pose onto a drawing of ShapeFrameSvg: the turned outline, the eyes, and the slices, the face and the eyes' matrices. */
-export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: { body: string; eyes: string }, style: EyeStyle = "capsule", bend = true): void {
+export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: VolumeDetail, pose: Pose, frame?: { body: string; eyes: string; depth?: number }, style: EyeStyle = "capsule", bend = true): void {
   if (frame) {
     // at rest the turn holds still: the bent outline is kept and only rewritten when it changes
     const memo = written.get(svg) ?? { key: "", body: "", eyesKey: "", eyes: "" };
@@ -301,7 +308,7 @@ export function writePose(svg: Pick<SVGSVGElement, "querySelectorAll">, detail: 
     }
     written.set(svg, memo);
   }
-  const m = poseMatrices(detail, pose);
+  const m = poseMatrices(detail, pose, frame?.depth ?? 1);
   svg.querySelectorAll("[data-pose-slice]").forEach((node) => {
     const i = Number(node.getAttribute("data-pose-slice"));
     const t = i < 0 ? m.face : m.slices[i];

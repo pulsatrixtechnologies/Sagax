@@ -68,7 +68,7 @@ import {
 import { LEGACY_OWL_SKINS, MASCOT_SKIN_IDS, botMascotSkin } from "../../shared/mascot-skins";
 import { MASCOT_COLOR_GROUPS, MASCOT_COLOR_HEX, MASCOT_COLOR_PALETTES } from "../../shared/mascot-colors";
 import { expressionForMood, type ShapeMood } from "./ShapeMascot";
-import { BLINK, blinkSchedule, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, EYE_FADE, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression } from "./shape-engine";
+import { BLINK, blinkSchedule, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, EYE_FADE, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
 import { MOVE_TIMING, ORBIT_RINGS, SHAPE_MOVES, SWIRL_RINGS, type RingSpec } from "./shape-moves";
 import { BODY, MOVE_RADII, RADII_COUNT, SHAPE_RADII } from "./shape-art";
 import { legOps, SHIBA_ART, SHIBA_BUST, SHIBA_BUST_MAX, SHIBA_EXPRESSIONS, SHIBA_HIPS, SHIBA_LEGS, SHIBA_PIVOTS, SHIBA_ROLES, shibaOutline, shibaParts, STANCE_HEAD, MOUTHS, mouthOps, type ShibaOp, type ShibaStance } from "./shiba-art";
@@ -504,6 +504,9 @@ function shapeEngineSwift(): string {
 }
 
 /** Frames the desktop's engine draws, for ShapeEngineTests: still faces, every move at a few moments, the idle loop, a morph. */
+/** A frame as the phone reads it: the phone draws the body flat, without the desktop's slices, so it has no depth. */
+const phoneFrame = ({ depth: _depth, ...frame }: ShapeFrame) => frame;
+
 function shapeFrames() {
   const shapes = Object.keys(SHAPE_RADII) as (keyof typeof SHAPE_RADII)[];
   const still = SHAPE_EXPRESSIONS.flatMap((expression, i) => {
@@ -512,19 +515,19 @@ function shapeFrames() {
   });
   const seed = 7.25;
   const live: unknown[] = [];
-  for (const now of [0, 1.45, 1.5, 3.3, 7.9, 12.6]) live.push({ name: `idle ${now}`, shape: "squircle", expression: "neutral", color: "#e8483f", seed, now, frame: new ShapeEngine({ shape: "squircle", expression: "neutral", color: "#e8483f" }, 0, seed).frame(now) });
+  for (const now of [0, 1.45, 1.5, 3.3, 7.9, 12.6]) live.push({ name: `idle ${now}`, shape: "squircle", expression: "neutral", color: "#e8483f", seed, now, frame: phoneFrame(new ShapeEngine({ shape: "squircle", expression: "neutral", color: "#e8483f" }, 0, seed).frame(now)) });
   SHAPE_MOVES.forEach((move, i) => {
     const shape = shapes[i % shapes.length];
     const { duration, morph } = MOVE_TIMING[move];
     for (const u of [0.15, duration * 0.5, duration + morph * 0.5]) {
       const engine = new ShapeEngine({ shape, expression: "neutral", color: "#3ecf8e" }, 0, seed);
       engine.play(move, 1);
-      live.push({ name: `${move} ${Math.round(u * 1000) / 1000}`, shape, expression: "neutral", color: "#3ecf8e", seed, move, moveAt: 1, now: 1 + u, frame: engine.frame(1 + u) });
+      live.push({ name: `${move} ${Math.round(u * 1000) / 1000}`, shape, expression: "neutral", color: "#3ecf8e", seed, move, moveAt: 1, now: 1 + u, frame: phoneFrame(engine.frame(1 + u)) });
     }
   });
   const morph = new ShapeEngine({ shape: "circle", expression: "neutral", color: "#3b93f0" }, 0, seed);
   morph.set({ shape: "cloud", expression: "happy", color: "#f0b429" }, 2);
-  live.push({ name: "morph", shape: "circle", expression: "neutral", color: "#3b93f0", seed, now: 2.2, set: { at: 2, shape: "cloud", expression: "happy", color: "#f0b429" }, frame: morph.frame(2.2) });
+  live.push({ name: "morph", shape: "circle", expression: "neutral", color: "#3b93f0", seed, now: 2.2, set: { at: 2, shape: "cloud", expression: "happy", color: "#f0b429" }, frame: phoneFrame(morph.frame(2.2)) });
   const blinks = { seed, until: 30, times: blinkSchedule(seed, 30) };
   return { still: still.map((e) => ({ shape: e.shape, expression: e.expression, body: e.frame.body, eyes: e.frame.eyes })), live, blinks };
 }

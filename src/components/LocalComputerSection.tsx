@@ -1,6 +1,6 @@
 // One-place setup for the isolated Local VM image and its shared/per-bot policy.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { t } from "@/lib/i18n";
+import { t, activeLocale } from "@/lib/i18n";
 import { waitForLocalVmReady } from "@/lib/local-vm-readiness";
 import type { LocaleKey } from "@/locales";
 import {
@@ -1016,7 +1016,7 @@ export function localVmAutoLabel(auto: LocalVmAutoState): string | null {
       return t(auto.step ? AUTO_STEP_KEYS[auto.step] : "vm.auto.starting.container");
     case "waiting":
       return t("vm.auto.waiting", {
-        time: new Date(auto.nextRetryAt ?? Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        time: new Date(auto.nextRetryAt ?? Date.now()).toLocaleTimeString(activeLocale(), { hour: "2-digit", minute: "2-digit" }),
       });
     case "problem":
       return t(auto.problem ? AUTO_PROBLEM_KEYS[auto.problem] : "vm.auto.problem.start_failed");
