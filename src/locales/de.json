@@ -220,6 +220,7 @@
   "sidebar.nav.connectedApps": "Verbundene Apps",
   "sidebar.appSettings": "App-Einstellungen",
   "sidebar.tools": "Werkzeuge",
+  "sidebar.account.tools": "Werkzeuge",
   "sidebar.section.expand": "{name} ausklappen",
   "sidebar.section.collapse": "{name} einklappen",
   "sidebar.section.expandReorder": "{name} ausklappen. Alt+Auf/Ab ordnet um.",
