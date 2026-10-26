@@ -18,7 +18,7 @@ import { Puzzle } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { api, useStore } from "@/state/store";
-import { connectedAppItems, FOOT_APP_LOGOS } from "@/lib/connected-apps";
+import { connectedAppItems, FOOT_APP_LOGOS, type AccountConnector } from "@/lib/connected-apps";
 import type { PluginItem } from "@/lib/plugins-model";
 import { PluginIcon } from "./plugins/PluginParts";
 import { SidebarProfileMenu, SidebarRoutinesBadge } from "./SidebarProfileMenu";
@@ -26,8 +26,11 @@ import type { SidebarMenuItem } from "./SidebarPopoverMenu";
 import { SidebarUpdatePill, updatePillView } from "./SidebarUpdatePill";
 import { useUpdaterState } from "@/lib/updater";
 
-/** The connected apps, read from the same routes as the Connect apps panel;
- * read again each time that panel closes (what was just connected shows). */
+/** The connected apps, read from the same routes as the Connect apps panel
+ * (its MCP servers, its catalog, and the Providers list's connectors of the
+ * person's own Claude account); read again each time that panel closes
+ * (what was just connected shows). The account's connectors can take a while
+ * (the engine is asked): the servers show first, the connectors join them. */
 export function useConnectedApps(): PluginItem[] {
   const { state } = useStore();
   const [apps, setApps] = useState<PluginItem[]>([]);
@@ -35,25 +38,42 @@ export function useConnectedApps(): PluginItem[] {
   useEffect(() => {
     if (panelOpen) return;
     let cancelled = false;
+    let servers: { servers?: unknown; featured?: unknown } = {};
+    let account: AccountConnector[] = [];
+    const publish = () => {
+      if (cancelled) return;
+      setApps(connectedAppItems({
+        servers: (servers.servers as Parameters<typeof connectedAppItems>[0]["servers"]) ?? [],
+        featured: (servers.featured as Parameters<typeof connectedAppItems>[0]["featured"]) ?? [],
+        account,
+      }));
+    };
     void Promise.all([
       api("/api/mcp/servers").catch(() => null),
       api("/api/plugins/search").catch(() => null),
-    ]).then(([servers, search]) => {
-      if (cancelled) return;
-      setApps(connectedAppItems({ servers: servers?.servers ?? [], featured: search?.featured ?? [] }));
+    ]).then(([mcp, search]) => {
+      servers = { servers: mcp?.servers ?? [], featured: search?.featured ?? [] };
+      publish();
     });
+    void api(HARNESS_CONNECTORS_ROUTE, { timeoutMs: 90_000 }).then((answer) => {
+      account = answer?.claude?.available && Array.isArray(answer.claude.connectors) ? answer.claude.connectors : [];
+      publish();
+    }).catch(() => undefined);
     return () => { cancelled = true; };
   }, [panelOpen]);
   return apps;
 }
 
+/** The connectors of the person's own Claude account (server/harness-connectors.ts). */
+const HARNESS_CONNECTORS_ROUTE = "/api/me/harness-connectors";
+
 /** The logos, overlapping. Brand marks sit on white whatever the theme. */
 export function ConnectedAppsStack({ apps }: { apps: readonly PluginItem[] }) {
   return (
-    <span data-connected-apps-stack="" className="flex shrink-0 items-center -space-x-[9px]" aria-hidden="true">
+    <span data-connected-apps-stack="" className="flex shrink-0 items-center -space-x-[8px]" aria-hidden="true">
       {apps.slice(0, FOOT_APP_LOGOS).map((app) => (
-        <span key={app.key} data-connected-app={app.key} className="flex size-[15px] items-center justify-center overflow-hidden rounded-full bg-white ring-[1.5px] ring-sidebar-card">
-          <PluginIcon item={app} className="size-[11px] rounded-full" />
+        <span key={app.key} data-connected-app={app.key} className="flex size-[16px] items-center justify-center overflow-hidden rounded-full bg-white ring-[1.5px] ring-sidebar-card">
+          <PluginIcon item={app} className="size-[12px] rounded-full" />
         </span>
       ))}
     </span>
@@ -172,7 +192,7 @@ export function FootConnectApps({ apps, mode, expanded = false, onOpen, onHot }:
       title={label}
       className={cn(
         "flex h-[var(--foot-tile-h,2.25rem)] items-center rounded-full border border-sidebar-hairline-weak bg-sidebar-card text-sidebar-ink-secondary transition-colors hover:bg-sidebar-elevated-hover hover:text-sidebar-ink",
-        stacked ? "min-w-max flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1.5",
+        stacked ? "min-w-max flex-1 gap-2 px-3 text-[13px] font-medium" : "shrink-0 px-1",
       )}
     >
       {apps.length === 0 && <Puzzle size={16} aria-hidden="true" className="shrink-0" />}
@@ -201,7 +221,7 @@ export function SidebarFoot({ places, onOpenApps, defaultHot = null }: { places?
     <div
       ref={rowRef}
       data-sidebar-account-row
-      className={cn("flex items-center gap-1.5 [container-type:inline-size]", stacked && "flex-wrap")}
+      className={cn("-mx-1.5 flex items-center gap-1.5 [container-type:inline-size]", stacked && "flex-wrap")}
       data-foot-mode={mode}
       data-foot-hot={expanded ? hot : undefined}
     >

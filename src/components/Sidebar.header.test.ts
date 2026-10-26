@@ -211,6 +211,6 @@ describe("sidebar header", () => {
     expect(css).not.toContain("connect-apps-pill");
     expect(css).not.toContain("connect-apps-tile-in");
     // the equal-height foot tiles (#980) stay
-    expect(css).toContain("--foot-tile-h: 2.25rem");
+    expect(css).toContain("--foot-tile-h: 2.5rem");
   });
 });

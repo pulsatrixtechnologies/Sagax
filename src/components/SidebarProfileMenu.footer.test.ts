@@ -229,7 +229,7 @@ describe("the wide foot's account pill (reference design)", () => {
     expect(pill).toContain("[button:focus-visible:not([data-pointer-focus])&gt;&amp;]:ring-2");
     expect(html).toContain('aria-haspopup="menu"');
     expect(html).toMatch(/data-account-pill-name=""[^>]*>[^<]+<\/span>/);
-    expect(html).toContain("width:28px");
+    expect(html).toContain("width:32px");
     // no title or points line in the pill, and not the wide row's layout
     expect(html).not.toContain("data-member-line");
     expect(html).not.toContain("data-sidebar-account-row");
@@ -358,8 +358,8 @@ describe("sidebar foot account pill: title and points line", () => {
     expect(pill()).toContain(tile);
     const connect = readFileSync(new URL("./Sidebar.tsx", import.meta.url), "utf8");
     expect(connect).toContain(tile);
-    expect(css).toMatch(/\[data-sidebar-account-row\]\s*\{[^}]*--foot-tile-h:\s*2\.25rem/);
-    expect(css).toMatch(/\[data-sidebar-account-row\]:has\(\[data-account-pill-line\]\)\s*\{[^}]*--foot-tile-h:\s*2\.75rem/);
+    expect(css).toMatch(/\[data-sidebar-account-row\]\s*\{[^}]*--foot-tile-h:\s*2\.5rem/);
+    expect(css).toMatch(/\[data-sidebar-account-row\]:has\(\[data-account-pill-line\]\)\s*\{[^}]*--foot-tile-h:\s*2\.875rem/);
   });
 });
 

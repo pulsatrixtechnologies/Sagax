@@ -3242,13 +3242,13 @@ button:disabled.bg-danger {
 }
 
 /* The foot's two tiles (the account pill and the Connect apps button) share one height:
-   36px, or 44px while the account pill carries a second line (the title and
+   40px, or 46px while the account pill carries a second line (the title and
    points under the name). One property on the row, so they cannot differ. */
 [data-sidebar-account-row] {
-  --foot-tile-h: 2.25rem;
+  --foot-tile-h: 2.5rem;
 }
 [data-sidebar-account-row]:has([data-account-pill-line]) {
-  --foot-tile-h: 2.75rem;
+  --foot-tile-h: 2.875rem;
 }
 /* The foot's hover expand (SidebarFoot): the pointer or the keyboard on the
    apps pill folds the profile to the avatar alone (the same look as the
@@ -3277,7 +3277,7 @@ button:disabled.bg-danger {
 [data-sidebar-account-row] [data-account-pill-line] { transition-property: opacity, flex-grow; }
 [data-sidebar-account-row][data-foot-hot] [data-foot-profile] {
   flex-grow: 0;
-  min-width: 2.25rem;
+  min-width: 2.5rem;
 }
 [data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps],
 [data-sidebar-account-row][data-foot-hot="apps"] [data-sidebar-connect-apps][data-expanded] {
@@ -3297,7 +3297,7 @@ button:disabled.bg-danger {
   flex-shrink: 0;
   overflow: visible;
 }
-[data-sidebar-account-row][data-foot-hot="apps"] [data-connected-app]:not(:last-child) { margin-inline-end: -10px; }
+[data-sidebar-account-row][data-foot-hot="apps"] [data-connected-app]:not(:last-child) { margin-inline-end: -4px; }
 [data-sidebar-account-row][data-foot-hot="apps"] [data-connected-apps-stack] { margin-inline-start: auto; }
 [data-sidebar-account-row][data-foot-hot="apps"] .sidebar-update-pill {
   width: 0;
@@ -3309,7 +3309,7 @@ button:disabled.bg-danger {
 /* the update button hovered takes the row (its right edge stays under the
    pointer, so the hover holds while the profile folds) */
 [data-sidebar-account-row][data-foot-hot="update"] .sidebar-update-pill { flex-grow: 1; }
-/* the pill, folded: no border, no card, the avatar at its 36px size */
+/* the pill, folded: no border, no card, the avatar at the tile's 40px */
 [data-sidebar-account-row][data-foot-hot] [data-sidebar-account-pill] {
   gap: 0;
   padding: 0;
@@ -3317,7 +3317,7 @@ button:disabled.bg-danger {
   background-color: transparent;
 }
 [data-sidebar-account-row][data-foot-hot] [data-sidebar-account-pill] > span:first-child {
-  transform: scale(1.285714);
+  transform: scale(1.25);
   transform-origin: left center;
 }
 [data-sidebar-account-row][data-foot-hot] [data-account-pill-name],

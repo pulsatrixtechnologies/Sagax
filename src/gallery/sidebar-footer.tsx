@@ -73,6 +73,31 @@ if (params.get("view") === "foot") {
     const path = new URL(url, location.href).pathname;
     const apps = [["Gmail", "mail.google.com"], ["Notion", "notion.so"], ["Google Drive", "drive.google.com"]].slice(0, Math.min(3, Math.max(0, Number(params.get("apps") ?? 3))));
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    // &data=real: the shape an organization server really answers
+    // (2026-10-26): its own servers on MCP hosts (headers, no sign-in state;
+    // one of them twice, once from a marketplace plugin), and the person's
+    // apps as connectors of their Claude account, a name and a status only
+    if (params.get("data") === "real") {
+      if (path === "/api/mcp/servers") {
+        return json({ servers: [
+          { name: "twilio-docs", type: "http", url: "https://mcp.twilio.com/docs", enabled: true, source: "twilio" },
+          { name: "github", type: "http", url: "https://api.githubcopilot.com/mcp/", enabled: true },
+          { name: "github-github", type: "http", url: "https://api.githubcopilot.com/mcp/", enabled: true, source: "claude-plugins-official" },
+        ] });
+      }
+      if (path === "/api/plugins/search") return json({ featured: [], results: [], nextCursor: null, registryAvailable: true });
+      if (path === "/api/me/harness-connectors") {
+        return json({ claude: { available: true, connectors: [
+          { name: "Docs", status: "connected" },
+          { name: "Google Drive", status: "connected" },
+          { name: "Gmail", status: "connected" },
+          { name: "Google Calendar", status: "connected" },
+          { name: "Canva", status: "needs_auth" },
+          { name: "Microsoft 365", status: "connected" },
+        ] } });
+      }
+    }
+    if (path === "/api/me/harness-connectors") return json({ claude: { available: false, connectors: [] } });
     if (path === "/api/mcp/servers") return json({ servers: apps.map(([name, host]) => ({ name, enabled: true, type: "http", url: `https://${host}/mcp`, auth: "connected" })) });
     // the catalog's marks (inline stand-ins), lent to the connected servers
     const mark = (letter: string, fill: string) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${fill}"/><text x="32" y="44" font-size="36" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="white">${letter}</text></svg>`)}`;

@@ -152,6 +152,58 @@ function hostOf(url: string | undefined): string | null {
   }
 }
 
+/** Apps known by name (appKey) whose MCP address says nothing of the
+ * provider: the site that carries their logo. A claude.ai connector has no
+ * address at all, only this name. Google's own apps all share the "G"
+ * favicon of their subdomains, so they name their product mark too. */
+const GOOGLE_MARK = (product: string) => `https://ssl.gstatic.com/images/branding/product/2x/${product}_2020q4_48dp.png`;
+const KNOWN_APPS: ReadonlyArray<[RegExp, string, string?]> = [
+  [/^gmail$/, "mail.google.com", GOOGLE_MARK("gmail")],
+  [/^(google)?drive$/, "drive.google.com", GOOGLE_MARK("drive")],
+  [/^(google)?calendar$|^gcal$/, "calendar.google.com", GOOGLE_MARK("calendar")],
+  [/^googledocs$/, "docs.google.com", GOOGLE_MARK("docs")],
+  [/^googlesheets$/, "sheets.google.com", GOOGLE_MARK("sheets")],
+  [/^microsoft365$|^office365$|^m365$/, "microsoft365.com"],
+  [/^outlook(exchange)?$/, "outlook.com"],
+  [/^(microsoft)?teams$/, "teams.microsoft.com"],
+  [/^sharepoint$/, "sharepoint.com"],
+  [/^onedrive$/, "onedrive.live.com"],
+  [/^github(github)?$/, "github.com"],
+  [/^notion$/, "notion.so"],
+  [/^slack$/, "slack.com"],
+  [/^twilio(docs)?$/, "twilio.com"],
+  [/^canva$/, "canva.com"],
+  [/^stripe$/, "stripe.com"],
+  [/^context7$/, "context7.com"],
+];
+
+/** MCP hosts that are not the provider's site (their favicon is a generic
+ * globe), mapped to the site that has the logo. */
+const KNOWN_MCP_HOSTS: Readonly<Record<string, string>> = {
+  "api.githubcopilot.com": "github.com",
+  "gmailmcp.googleapis.com": "mail.google.com",
+  "drivemcp.googleapis.com": "drive.google.com",
+  "calendarmcp.googleapis.com": "calendar.google.com",
+};
+
+/** The mark of an app known by its name, its MCP address, or both: the
+ * site whose icon is its logo, and the logo itself when that icon is not
+ * (Google's apps). A known MCP host first, then a known app name, then the
+ * host without its "mcp." part (mcp.twilio.com is twilio.com, whose favicon
+ * is the logo), then the host itself; no site without either. */
+export function providerMark(name: string, url?: string | null): { site: string | null; logo: string | null } {
+  const host = hostOf(url ?? undefined);
+  const key = appKey(name);
+  const byHost = host ? KNOWN_MCP_HOSTS[host] : undefined;
+  const known = KNOWN_APPS.find(([pattern, site]) => (byHost ? site === byHost : key !== "" && pattern.test(key)));
+  if (known) return { site: known[1], logo: known[2] ?? null };
+  if (byHost) return { site: byHost, logo: null };
+  if (!host) return { site: null, logo: null };
+  const labels = host.split(".");
+  const at = labels.lastIndexOf("mcp");
+  return { site: at >= 0 && labels.length - at - 1 >= 2 ? labels.slice(at + 1).join(".") : host, logo: null };
+}
+
 /** Every row, deduplicated: a featured plugin already added shows once, as
  * the MCP server it became. */
 export function buildPluginItems(sources: PluginSources): PluginItem[] {
@@ -205,7 +257,9 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
   const serverUrls = new Set<string>();
   for (const server of sources.servers ?? []) {
     if (server.url) serverUrls.add(server.url);
-    const domain = hostOf(server.url);
+    // the provider's site (its favicon is the logo), not the MCP host
+    const mark = server.url ? providerMark(server.name, server.url) : null;
+    const domain = mark?.site ?? null;
     const needsAuth = server.auth === "required" || server.auth === "expired" || server.auth === "error";
     items.push({
       key: `mcp:${server.name}`,
@@ -214,6 +268,7 @@ export function buildPluginItems(sources: PluginSources): PluginItem[] {
       name: server.name,
       description: server.url ?? server.command ?? "",
       domain,
+      ...(mark?.logo ? { logo: mark.logo } : {}),
       category: "other",
       installed: true,
       status: !server.enabled || server.managedBy ? "off" : needsAuth ? "needs_auth" : "connected",
@@ -296,7 +351,9 @@ export function mergeSameApps(items: readonly PluginItem[]): PluginItem[] {
   }
   const replaced = new Map<string, PluginItem | null>();
   for (const group of groups.values()) {
-    const logo = group.find((item) => item.logo)?.logo ?? null;
+    // a listing's own logo before the mark a server row got from its name
+    const listedLogo = group.find((item) => item.kind !== "mcp" && item.logo)?.logo ?? null;
+    const logo = listedLogo ?? group.find((item) => item.logo)?.logo ?? null;
     const domain = group.find((item) => item.kind !== "mcp" && item.domain)?.domain ?? group.find((item) => item.domain)?.domain ?? null;
     const category = group.find((item) => item.category !== "other")?.category ?? "other";
     const recommended = group.some((item) => item.recommended);
@@ -311,7 +368,7 @@ export function mergeSameApps(items: readonly PluginItem[]): PluginItem[] {
       const merged = group.filter((other) => other !== item).map((other) => other.key);
       replaced.set(item.key, {
         ...item,
-        logo: item.logo ?? logo,
+        logo: listedLogo ?? item.logo ?? logo,
         domain: domain ?? item.domain,
         category: item.category !== "other" ? item.category : category,
         ...(recommended ? { recommended: true } : {}),

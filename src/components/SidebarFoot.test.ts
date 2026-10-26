@@ -80,12 +80,15 @@ describe("foot mode", () => {
   });
 
   it("the compact foot is sized so the default 280px sidebar keeps 'Jean-Christophe Proulx' whole", () => {
-    // measured in a real browser (gallery ?view=foot&name=Jean-Christophe Proulx&apps=3,
-    // 248px row): name pill ~195px, logos pill ~44px, one 6px gap
+    // measured in a real browser (gallery ?view=foot&data=real, 280px
+    // sidebar, the row 6px wider than its gutter: 258px): name pill ~210px
+    // (32px avatar, 14.5px name), logos pill ~42px, one 6px gap; the real
+    // check is SidebarFoot.hover-label.test.ts ("at rest")
     const source = readFileSync(new URL("./SidebarFoot.tsx", import.meta.url), "utf8");
     expect(source).toContain("shrink-0 px-1");
-    expect(source).toContain("-space-x-[9px]");
-    expect(source).toContain("size-[15px]");
+    expect(source).toContain("-mx-1.5 flex items-center gap-1.5");
+    expect(source).toContain("-space-x-[8px]");
+    expect(source).toContain("size-[16px]");
     // stacked, the label is never cut: it does not shrink and the pill never
     // gets narrower than its content (a really narrow row wraps instead)
     expect(source).toContain("min-w-max flex-1");
