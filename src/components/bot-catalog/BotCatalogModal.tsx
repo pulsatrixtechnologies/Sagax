@@ -557,6 +557,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
           creatorAvatar={creatorAvatar(selected)}
           actions={renderDetailActions(selected)}
           preview={templatePreview(selected)}
+          trail={trail}
           below={
             <>
               {publishing && selected.kind === "bot" && (
@@ -586,6 +587,7 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
         </div>
       ) : (
         <BotCatalogView
+          trail={trail}
           organization={organization}
           categories={categories}
           category={category}

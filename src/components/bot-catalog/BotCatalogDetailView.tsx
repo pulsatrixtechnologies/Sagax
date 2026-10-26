@@ -13,6 +13,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { itemCreator, itemDescription, itemName, type BotCatalogDetail, type CatalogItem } from "@/lib/bot-catalog";
 import { ChatMarkdown } from "../ChatMarkdown";
+import { Breadcrumb, type Crumb } from "../Breadcrumb";
 import { CatalogMascot, itemLook, nameColor } from "./BotCatalogView";
 
 export type CatalogTab = "soul" | "memories" | "skills" | "routines" | "integrations";
@@ -113,6 +114,9 @@ export interface BotCatalogDetailViewProps {
   below?: ReactNode;
   /** In place of the tabs: a team template's import preview. */
   preview?: ReactNode;
+  /** Inside another window (Connect apps): the pages above Browse Bots, for
+   * the breadcrumb. Absent: its own window, the plain back button. */
+  trail?: readonly Crumb[];
 }
 
 /** The apps a template uses, as chips. */
@@ -127,15 +131,24 @@ export function TemplateAppChips({ apps }: { apps: readonly string[] }) {
   );
 }
 
-export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below, preview }: BotCatalogDetailViewProps) {
+export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBack, creatorAvatar, actions, below, preview, trail }: BotCatalogDetailViewProps) {
   const name = itemName(item);
   const template = item.kind === "template" ? item.template : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-bot-catalog-detail={item.key}>
       <div className="shrink-0 px-6 pr-14 pt-5 sm:px-8" data-catalog-header="">
-        <button type="button" onClick={onBack} className="-ml-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-ink-secondary hover:bg-hover hover:text-ink" data-catalog-back="">
-          <ChevronLeft size={14} aria-hidden="true" />{t("botCatalog.back")}
-        </button>
+        {trail && trail.length > 0 ? (
+          <Breadcrumb
+            trail={[...trail, { label: t("botCatalog.title"), onSelect: onBack }]}
+            current={name}
+            onBack={onBack}
+            backData={{ "data-catalog-back": "" }}
+          />
+        ) : (
+          <button type="button" onClick={onBack} className="-ml-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12.5px] text-ink-secondary hover:bg-hover hover:text-ink" data-catalog-back="">
+            <ChevronLeft size={14} aria-hidden="true" />{t("botCatalog.back")}
+          </button>
+        )}
         <div className="mt-4 flex flex-col items-center text-center">
           <CatalogMascot item={item} size={96} creatorAvatar={creatorAvatar} />
           <h2 id="bot-catalog-title" className="mt-3 text-[22px] font-semibold leading-7 tracking-[-0.01em]" style={{ color: nameColor(itemLook(item)) }}>{name}</h2>
