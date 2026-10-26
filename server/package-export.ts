@@ -3,6 +3,7 @@ import type { DefaultsPreset, PublishedLibrary } from "./presets.ts";
 import type { PublishedTeam } from "./published-teams.ts";
 import { nextPatchRelease } from "./published-teams.ts";
 import type { Routine } from "./routines.ts";
+import { isTriggerSchedule } from "../shared/routines.ts";
 import type { BotRecord, GroupRecord, InstalledPlaybook } from "./store.ts";
 import {
   AGENT_MAX_SKILLS,
@@ -138,6 +139,9 @@ function requiredApps(bots: readonly BotRecord[]) {
 }
 
 function portableSchedule(schedule: Routine["schedule"]): PackageRoutineSchedule {
+  if (schedule.type === "webhook" || schedule.type === "event") {
+    throw new Error("A trigger routine is not part of a package");
+  }
   if (schedule.type === "once") return { type: "once", at: schedule.at };
   if (schedule.type === "cron") return { ...schedule };
   if (schedule.type === "interval") {
@@ -199,7 +203,7 @@ export function createBotPackageExport(input: {
     // Package v1 only has a single-agent routine shape. Silently exporting a
     // room goal as a bot task would change what it does after import, so keep
     // it out until the portable format can name a package-local room.
-    if (routine.target === "room-goal") return [];
+    if (routine.target === "room-goal" || isTriggerSchedule(routine.schedule)) return [];
     const agent = idToKey.get(routine.botId);
     if (!agent) return [];
     return [{
@@ -284,7 +288,8 @@ export type TeamExportSkipReason =
   | "bot_skill_limit"
   | "team_skill_limit"
   | "preset_empty"
-  | "preset_skill_conflict";
+  | "preset_skill_conflict"
+  | "trigger_not_portable";
 
 export interface TeamExportSkip { part: string; reason: TeamExportSkipReason }
 
@@ -704,6 +709,10 @@ export function createTeamPackageExport(input: TeamExportInput): TeamExportResul
     const goal = routine.target === "room-goal";
     if (goal && !roomMembers.get(routine.groupId!)!.has(agent)) {
       skipped.push({ part: `routines[${key}]`, reason: "lead_not_in_group_chat" });
+      return [];
+    }
+    if (isTriggerSchedule(routine.schedule)) {
+      skipped.push({ part: `routines[${key}]`, reason: "trigger_not_portable" });
       return [];
     }
     if (routine.attachments?.length) skipped.push({ part: `routines[${key}].attachments`, reason: "files_not_shared" });

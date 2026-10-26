@@ -12,8 +12,11 @@ import { ConfidentialBadge } from "./ConfidentialBanner";
 import { ThreadMenu, nextSixPm, tomorrowNineAm } from "./ThreadMenu";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
 import { threadLinkLabel } from "../../shared/thread-link";
+import { isSnoozed, orderedThreadList } from "../../shared/wire";
 import { wantsSideThread } from "@/lib/side-thread";
 import type { ThreadPrefetchIntent } from "@/state/thread-prefetch";
+
+export { isSnoozed, orderedThreadList };
 
 type ThreadRowTask = Pick<Task, "threadId" | "title" | "projectId" | "busy" | "activity" | "unread" | "openedBy" | "closedBy" | "archivedAt" | "snoozedUntil" | "waitingForTeammates" | "link" | "confidential"> & {
   queued?: boolean;
@@ -70,22 +73,6 @@ export function threadRecency(task: { updatedAt?: number; createdAt?: number }):
   return 0;
 }
 
-/** Pin, then newest update. Equal stamps keep the caller's order. Attention
- * state does not move a row — the bell and the activity hatch still use
- * orderedSidebarThreads for that. */
-export function orderedThreadList<T extends { pinned?: boolean; updatedAt?: number; createdAt?: number }>(tasks: T[]): T[] {
-  return tasks
-    .map((task, index) => ({ task, index }))
-    .sort((a, b) => {
-      const pin = Number(b.task.pinned === true) - Number(a.task.pinned === true);
-      if (pin) return pin;
-      const recency = threadRecency(b.task) - threadRecency(a.task);
-      if (recency) return recency;
-      return a.index - b.index;
-    })
-    .map((entry) => entry.task);
-}
-
 /** "opened by Scout" for a thread a bot started, null for the person's own.
  * Shared by the sidebar row and the All-threads picker so both say it the
  * same quiet way. */
@@ -109,13 +96,6 @@ export function threadByline(task: Pick<Task, "openedBy" | "closedBy" | "archive
 /** Archived means the field is present, not truthy: the task API accepts any
  * epoch number, so a thread persisted with archivedAt: 0 is archived. */
 export const isArchived = (task: Pick<Task, "archivedAt">): boolean => task.archivedAt !== undefined;
-
-/** Snoozed means asleep right now: 0 is the "until new activity" sentinel
- * and sleeps until woken, while a timestamp sleeps only until it passes.
- * The server drops expired snoozes from snapshots, but a live event stream
- * never refreshes one, so the client checks the clock too. */
-export const isSnoozed = (task: Pick<Task, "snoozedUntil">, now = Date.now()): boolean =>
-  task.snoozedUntil !== undefined && (task.snoozedUntil === 0 || task.snoozedUntil > now);
 
 // Snooze presets live with the one thread menu; re-exported for callers.
 export { nextSixPm, tomorrowNineAm };

@@ -315,6 +315,26 @@ describe("whole-team export (package v2)", () => {
     expect(result.filename).toBe("sales-desk-1.0.0.openmaus.json");
   });
 
+  it("leaves a webhook or email trigger out of a shared package", () => {
+    const input = fixture();
+    input.routines.push(
+      routine("hook", "On delivery", "scout", { schedule: { type: "webhook" }, nextRunAt: null }),
+      routine("mail", "On mail", "lead", { schedule: { type: "event", source: "email" }, nextRunAt: null }),
+    );
+    const result = createTeamPackageExport(input);
+    expect(result.document.package.routines?.map((item) => item.name)).not.toEqual(
+      expect.arrayContaining(["On delivery", "On mail"]),
+    );
+    expect(result.skipped.filter((skip) => skip.reason === "trigger_not_portable")).toHaveLength(2);
+    expect(JSON.stringify(result.document)).not.toContain("whsec_");
+    const oneBot = createBotPackageExport({
+      name: "One bot", authorName: "Tester", groups: [],
+      bots: [{ id: "b1", threadId: "t1", name: "Lead", color: "green", createdAt: 1 } as BotRecord],
+      routines: [routine("hook", "On delivery", "b1", { schedule: { type: "webhook" }, nextRunAt: null })],
+    });
+    expect(oneBot.package.routines ?? []).toEqual([]);
+  });
+
   it("adds starter notes only when asked, within the caps", () => {
     expect(createTeamPackageExport(fixture()).document.package.agents.some((agent) => agent.seed)).toBe(false);
     const withNotes = createTeamPackageExport({ ...fixture(), memoryByBot: new Map([["lead", [

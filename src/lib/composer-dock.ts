@@ -32,3 +32,26 @@ export function useComposerDockPad(ref: RefObject<HTMLElement | null>) {
   const measured = height > 0 ? height : FALLBACK_COMPOSER_PX;
   return { pad: transcriptEndPad(measured), height: measured };
 }
+
+/** Pixel height of an optional overlay. Zero while `active` is false, so a
+ * card that is not part of the composer dock can still clear other overlays
+ * without changing the transcript pad. */
+export function useMeasuredHeight(ref: RefObject<HTMLElement | null>, active: boolean): number {
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = active ? ref.current : null;
+    if (!el) {
+      setHeight((current) => (current === 0 ? current : 0));
+      return;
+    }
+    const apply = () => {
+      const next = Math.ceil(el.getBoundingClientRect().height);
+      setHeight((current) => (current === next ? current : next));
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref, active]);
+  return height;
+}

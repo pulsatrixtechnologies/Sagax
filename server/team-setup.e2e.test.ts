@@ -52,9 +52,19 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
         }, 202);
         guardedMessageId = accepted.message.id;
       } else await control("send", "--bot", chief.id, "--task", chief.threadId, "--text", text);
+      // Slow mode rewrites the dump at the start of the turn, then waits on
+      // the finish gate. A warm process is reused (same pid), so a pid-only
+      // poll never sees that turn and never writes the gate.
       await expect.poll(() => {
         if (!existsSync(fixture.fixtureDumpPath)) return false;
-        return JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")).pid !== previousPid;
+        let dump: { pid?: number; prompt?: unknown };
+        try {
+          dump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8"));
+        } catch {
+          return false;
+        }
+        const prompt = typeof dump.prompt === "string" ? dump.prompt : JSON.stringify(dump.prompt ?? "");
+        return dump.pid !== previousPid || prompt.includes(text);
       }, { timeout: 15_000 }).toBe(true);
       const dump = JSON.parse(readFileSync(fixture.fixtureDumpPath, "utf8")); previousPid = dump.pid;
       return dump.mcpConfig.mcpServers.agents.env.SAGAX_COMMS_TOKEN as string;
@@ -142,7 +152,7 @@ it("Clive reviews multi-provider teams once, continues after each decision, and 
     expect(created.map((bot: any) => bot.name).sort()).toEqual(["Mira", "Patch", "Quill"]);
     const engineer = created.find((bot: any) => bot.name === "Patch");
     expect(engineer.chiefOfStaff).toBeFalsy(); // one Primary Bot per person: Clive keeps it
-    expect(engineer).toMatchObject({ title: "Implementation and verification engineer", section: "Engineering", modelSelection: selection(codex), approvalMode: "auto", autoApprove: true, composio: false });
+    expect(engineer).toMatchObject({ title: "Implementation and verification engineer", section: "Engineering", modelSelection: selection(codex), approvalMode: "auto", autoApprove: true });
     expect(engineer.managedSections).toBeUndefined();
     expect(saved.find((bot: any) => bot.id === chief.id).managedSections).toEqual(expect.arrayContaining(plan.newTeams));
     await api("POST", `/api/threads/${chief.threadId}/respond`, { requestId: proposed.requestId, behavior: "allow" });

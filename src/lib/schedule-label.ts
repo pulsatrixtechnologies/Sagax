@@ -83,6 +83,8 @@ export function scheduleLabel(schedule: RoutineSchedule | { type: "once"; at: nu
     const label = [intervalLabel(schedule.everyMinutes), ...intervalRestrictions(schedule)].join(" · ");
     return note ? `${label} · around the time ${note}` : label;
   }
+  if (schedule.type === "webhook") return "Incoming webhook";
+  if (schedule.type === "event") return "Incoming email";
   const days = schedule.weekdays;
   const label = days.length === 7
     ? "Every day"
@@ -118,6 +120,8 @@ export function scheduleSentence(schedule: RoutineSchedule): string {
   if (schedule.type === "once") {
     return `once on ${niceDate(schedule.at)}, ${niceTime(schedule.at)}`;
   }
+  if (schedule.type === "webhook") return "when a webhook delivery arrives";
+  if (schedule.type === "event") return "when email arrives";
   // type === "daily"
   const days = schedule.weekdays;
   const timeStr = niceTime(atLocalTime(Date.now(), schedule.time));

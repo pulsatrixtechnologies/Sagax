@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { isTechnicalError, plainErrorLine } from "./plain-error";
+import { setLocale } from "./i18n";
+import { requestTooLargeMessage } from "../../shared/request-too-large";
 import { botsSaveFailure } from "../../shared/bots-save-failure";
 
 describe("plainErrorLine", () => {
@@ -47,5 +49,17 @@ describe("plainErrorLine", () => {
   ])("keeps a sentence a person can read: %j", (raw) => {
     expect(isTechnicalError(raw)).toBe(false);
     expect(plainErrorLine(raw)).toBeUndefined();
+  });
+});
+
+describe("a provider refusing a message as too large", () => {
+  afterEach(() => setLocale("en"));
+
+  it("is said in the reader's language with the model's name", () => {
+    const cause = requestTooLargeMessage("GLM 5.3 Flash");
+    expect(plainErrorLine(cause)).toBe(cause);
+    setLocale("fr");
+    expect(plainErrorLine(`  ${requestTooLargeMessage("vendor/model-1.5")}\n`)).toBe("Ce message est trop volumineux pour vendor/model-1.5. Commencez une nouvelle conversation ou choisissez un modèle qui en accepte davantage.");
+    expect(plainErrorLine("This message is too large for the box.")).toBeUndefined();
   });
 });

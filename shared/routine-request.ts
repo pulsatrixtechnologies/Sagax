@@ -32,7 +32,9 @@ export type RoutineRequestSchedule =
     window?: RoutineRequestIntervalWindow;
     /** Inclusive epoch-millisecond cutoff. Missing means never. */
     endsAt?: number;
-  } & RoutineWindowTiming);
+  } & RoutineWindowTiming)
+  | { type: "webhook" }
+  | { type: "event"; source: "email" };
 
 export type RoutineRequestScheduleChanges =
   | Exclude<RoutineRequestSchedule, { type: "interval" }>
@@ -89,7 +91,9 @@ export type RoutineRequestOperation =
   | { action: "pause"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot }
   | { action: "resume"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot }
   | { action: "run_now"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot }
-  | { action: "delete"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot };
+  | { action: "delete"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot }
+  /** Mint a new key for the webhook or email trigger this routine owns. */
+  | { action: "rotate_webhook_key"; routineId: string; expectedUpdatedAt: number; forBot?: RoutineRequestTargetBot };
 
 /** A routine as it stood before a change applied without a person, so Undo
  * can put it back. Room goals keep their room; attachments are not kept, so

@@ -34,7 +34,7 @@ describe("resize handles", () => {
     expect(rule(".app-resize-handle:focus-visible")).toContain("outline: none");
   });
 
-  it.each(["Sidebar.tsx", "GroupPanel.tsx", "DockedPanelResize.tsx", "ComputerPanel.tsx"])(
+  it.each(["Sidebar.tsx", "DockedPanelResize.tsx", "ComputerPanel.tsx"])(
     "%s uses the shared handle, not a bright bar of its own",
     (file) => {
       const source = readFileSync(join(here, file), "utf8");
@@ -48,7 +48,7 @@ describe("resize handles", () => {
     },
   );
 
-  describe("docked right panel (bot settings and person)", () => {
+  describe("docked right panel (bot settings, person and group)", () => {
     const read = (file: string) => readFileSync(join(here, file), "utf8");
     const shared = read("DockedPanelResize.tsx");
 
@@ -60,7 +60,7 @@ describe("resize handles", () => {
       expect(shared).toContain("hidden lg:block");
     });
 
-    it.each(["BotSettingsDialog.tsx", "PersonPanel.tsx"])("%s uses the shared hook and handle, with no copy of its own", (file) => {
+    it.each(["BotSettingsDialog.tsx", "PersonPanel.tsx", "GroupPanel.tsx"])("%s uses the shared hook and handle, with no copy of its own", (file) => {
       const source = read(file);
       expect(source).toContain("useDockedPanelWidth()");
       expect(source).toContain("<DockedPanelResizeHandle");

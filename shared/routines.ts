@@ -25,10 +25,26 @@ export type RoutineSchedule =
     window?: RoutineIntervalWindow;
     /** Inclusive epoch-millisecond cutoff. Missing means never. */
     endsAt?: number;
-  } & RoutineWindowTiming);
+  } & RoutineWindowTiming)
+  | { type: "webhook" }
+  | { type: "event"; source: "email" };
+
+/** A routine that starts from a delivery, never from the clock. */
+export type RoutineTriggerSchedule = Extract<RoutineSchedule, { type: "webhook" | "event" }>;
+
+/** True for a webhook or email trigger. Both shapes have no time, so every
+ * clock path (the tick, a resume, a label) must handle them before it reads
+ * `.time`. */
+export function isTriggerSchedule(
+  schedule: { type: string; source?: unknown } | null | undefined,
+): schedule is RoutineTriggerSchedule {
+  if (!schedule) return false;
+  if (schedule.type === "webhook") return true;
+  return schedule.type === "event" && schedule.source === "email";
+}
 
 export type RoutineScheduleInput =
-  | Extract<RoutineSchedule, { type: "once" | "daily" | "cron" }>
+  | Extract<RoutineSchedule, { type: "once" | "daily" | "cron" | "webhook" | "event" }>
   | ({
     type: "interval";
     everyMinutes: number;

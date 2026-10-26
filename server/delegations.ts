@@ -392,6 +392,7 @@ export function queueDelegation(
   item: DelegationItem,
   maxDepth: number,
   sourceThreadId = from.threadId,
+  options?: { front?: boolean },
 ): QueuedDelegation {
   if (item.toBotId === from.id) return { result: "self" };
   if (!item.oneWay && item.depth >= maxDepth) return { result: "too_deep" };
@@ -415,7 +416,9 @@ export function queueDelegation(
       ? originatingGroup.id
       : undefined;
   const id = newId();
-  list.push({ ...item, id, sourceBotId: from.id, queuedAt: Date.now(), ...(groupId ? { originatingGroupId: groupId } : {}) });
+  const stored = { ...item, id, sourceBotId: from.id, queuedAt: Date.now(), ...(groupId ? { originatingGroupId: groupId } : {}) };
+  if (options?.front) list.unshift(stored);
+  else list.push(stored);
   pendingDelegations.set(sourceThreadId, list);
   savePending();
   const sourceGroup = sourceThreadId ? bus.store.groupByThread(sourceThreadId) : undefined;

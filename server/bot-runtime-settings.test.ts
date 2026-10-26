@@ -79,8 +79,8 @@ describe("per-bot runtime settings: the runtime reads the bot", () => {
 
 describe("per-bot runtime settings: validation", () => {
   it("accepts bounded values and refuses the rest", () => {
-    expect(botRuntimeSettingsPatchSchema.safeParse({ maxConcurrentThreads: 10, maxParallelPerPerson: 1, busySend: "after" }).success).toBe(true);
-    expect(botRuntimeSettingsPatchSchema.safeParse({ maxConcurrentThreads: 11 }).success).toBe(false);
+    expect(botRuntimeSettingsPatchSchema.safeParse({ maxConcurrentThreads: 16, maxParallelPerPerson: 1, busySend: "after" }).success).toBe(true);
+    expect(botRuntimeSettingsPatchSchema.safeParse({ maxConcurrentThreads: 17 }).success).toBe(false);
     expect(botRuntimeSettingsPatchSchema.safeParse({ maxParallelPerPerson: 0 }).success).toBe(false);
     expect(botRuntimeSettingsPatchSchema.safeParse({ busySend: "later" }).success).toBe(false);
     expect(botRuntimeSettingsPatchSchema.safeParse({ automaticRecovery: { enabled: true } }).success).toBe(false);

@@ -4,9 +4,14 @@
 // The provider CLI mounts this instead of the bot's real MCP server. Every
 // JSON-RPC frame is relayed in both directions. With a tool selection, discovery
 // is filtered and excluded calls are rejected before upstream execution.
-// An oversized `tools/call` result is cut to a budget (mcp-trim.ts), the
-// untrimmed text is written to a file, and the model is told in the result
-// where that file is so it can read or grep the rest with its ordinary tools.
+// An oversized `tools/call` result is cut to a budget (mcp-trim.ts) and the
+// untrimmed text is written to a file. A JSON result is shaped instead of cut
+// blind: the gate holds the whole payload in this process, shows the model its
+// shape and first records, and lists one read-only tool of its own,
+// `query_result` (mcp-shape.ts), that runs a JMESPath query over a held result.
+// That tool never reaches the upstream server, reads no file and opens no
+// connection: it only sees what this gate process holds, which is what this
+// server returned on this one MCP connection.
 //
 // Why here and not in the driver: on every vendor-CLI engine the tool call and
 // its result never pass through the harness at all. The CLI runs the server
@@ -25,7 +30,8 @@ import { allowsTool, parseToolScope, type ToolScope } from "../shared/tool-scope
 
 import { resolveCliSpawn } from "./env-path.ts";
 import { directoryCallTarget, isDirectoryTool } from "./mcp-directory.ts";
-import { DEFAULT_RESULT_BUDGET, trimResultText, trimStructured } from "./mcp-trim.ts";
+import { QUERY_TOOL, QUERY_TOOL_NAME, ResultStore, answerQuery, describeShape, exampleQuery } from "./mcp-shape.ts";
+import { DEFAULT_RESULT_BUDGET, type HeldResult, trimResultText, trimStructured } from "./mcp-trim.ts";
 import { ToolNameAliases } from "./mcp-tool-names.ts";
 import { killCliTree } from "./procs.ts";
 import { misuseGateBlockText } from "../shared/misuse-guardrails.ts";
@@ -218,6 +224,21 @@ function sweepSpill(dir: string): void {
 }
 
 let spilled = 0;
+/** Whole results the model can query instead of re-reading: one gate, one MCP connection, one session. */
+const heldResults = new ResultStore();
+
+/** Keep the parsed payload for query_result; only a JSON object or array can be queried, text is cut as before. */
+function hold(tool: string, text: string): HeldResult | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (value === null || typeof value !== "object") return undefined;
+  const handle = heldResults.put(tool, value, text.length);
+  return { handle, shape: describeShape(value), example: exampleQuery(value) };
+}
 
 /** Save the untrimmed text and return its path, or undefined when there is
  * nowhere to put it — the trim still happens, the model is just told the rest
@@ -278,13 +299,14 @@ function trimCallResult(result: Json, tool: string): boolean {
 
   const share = Math.floor(BUDGET / textBlocks.length);
   const path = spill(tool, textBlocks.map((block) => block.text).join("\n"));
+  const held = textBlocks.length === 1 ? hold(tool, textBlocks[0]!.text) : undefined;
   // The usual shape: one text block that is structuredContent serialized.
   const structuredIsText = textBlocks.length === 1 && Boolean(result.structuredContent) && typeof result.structuredContent === "object"
     && sameJson(textBlocks[0]!.text, result.structuredContent);
   let trimmed = false;
   let keptValue: unknown;
   for (const block of textBlocks) {
-    const outcome = trimResultText({ text: block.text, budget: share, spillPath: path, spillHint: SPILL_HINT, toolName: tool });
+    const outcome = trimResultText({ text: block.text, budget: share, spillPath: path, spillHint: SPILL_HINT, toolName: tool, held });
     if (!outcome.trimmed) continue;
     block.text = outcome.text;
     keptValue = outcome.value;
@@ -408,6 +430,13 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   }
   const id = requestKey(message?.id);
   const params = isRecord(message?.params) ? message.params : undefined;
+  // The gate's own read-only tool: it reads a result this process holds and
+  // never reaches upstream, so no selection, alias or approval applies.
+  if (BUDGET > 0 && message?.method === "tools/call" && params?.name === QUERY_TOOL_NAME) {
+    if (!id) return;
+    process.stdout.write(`${JSON.stringify({ jsonrpc: "2.0", id: message.id, result: answerQuery(heldResults, params.arguments, BUDGET) })}\n`);
+    return;
+  }
   // An alias resolves through the map, before any check sees the name.
   if (ALIASES && message?.method === "tools/call" && params && typeof params.name === "string") {
     const upstream = ALIASES.upstream(params.name);
@@ -475,7 +504,7 @@ function forward(line: string, message: Json | undefined, id: string | undefined
       const name = typeof params?.name === "string" ? params.name : "tool";
       const target = callTarget(name, params?.arguments);
       pending.set(id, { kind: "call", tool: target ?? name, trim: target !== undefined });
-    } else if (scope || (ALIASES && message.method === "tools/list")) {
+    } else if (scope || ((ALIASES || BUDGET > 0) && message.method === "tools/list")) {
       pending.set(id, { kind: message.method === "tools/list" ? "list" : "other" });
     }
   }
@@ -521,6 +550,10 @@ createInterface({ input: child.stdout }).on("line", (line) => {
     const outcome = ALIASES.catalog(tools);
     result.tools = outcome.tools;
     reportToolNames(tools.map((tool) => tool.name), outcome);
+  }
+  // query_result rides the last page of the catalog, in place of any upstream tool of that name.
+  if (BUDGET > 0 && request?.kind === "list" && message.error === undefined && isRecord(result) && Array.isArray(result.tools) && result.nextCursor === undefined) {
+    result.tools = [...result.tools.filter((tool: unknown) => !isRecord(tool) || tool.name !== QUERY_TOOL_NAME), QUERY_TOOL];
   }
   if (request?.kind === "call" && request.trim && isRecord(result)) {
     try {

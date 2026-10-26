@@ -31,6 +31,20 @@ if (typeof version !== "string" || !EXACT_VERSION.test(version)) {
   process.exit(1);
 }
 
+/** The packages the server requires at runtime and the bundle cannot hold
+ * (scripts/packaged-native-modules.test.mjs finds them in server/). */
+const NATIVE_DEPENDENCIES = ["@duckdb/node-api", "@resvg/resvg-js"];
+/** The app's own exact pin, so the package runs what the app was tested with. */
+function pinned(name) {
+  const range = app.dependencies?.[name];
+  if (typeof range !== "string" || !EXACT_VERSION.test(range.replace(/^v/, ""))) {
+    console.error(`package.json must pin ${name} to an exact version (got ${JSON.stringify(range)})`);
+    process.exit(1);
+  }
+  return range;
+}
+for (const name of NATIVE_DEPENDENCIES) pinned(name);
+
 for (const required of ["dist-server/index.js", "dist-server/openmausbot.js", "dist/index.html"]) {
   if (!existsSync(join(root, required))) {
     console.error(`missing ${required}: run \`pnpm build:server && pnpm exec vite build\` first`);
@@ -65,6 +79,11 @@ writeFileSync(
       license: "SEE LICENSE IN LICENSE",
       type: "module",
       bin: { [BIN]: "cli.js" },
+      // Never bundled, so npm installs them beside the server: DuckDB (the
+      // Data engine) and resvg (chart and image rendering) are native addons
+      // npm picks per platform from their optional packages. The server
+      // loads them through nativeRequire (server/data/engine.ts).
+      dependencies: Object.fromEntries(NATIVE_DEPENDENCIES.map((name) => [name, pinned(name)])),
       files: ["cli.js", "dist-server", "dist", "skills", "LICENSE", "LICENSE-POLYFORM-NC.md", "LICENSE-APACHE", "NOTICE", "README.md"],
       engines: { node: ">=24" },
       repository: { type: "git", url: `git+${REPOSITORY}.git` },

@@ -113,7 +113,7 @@ export const TriggersPanel = lazyScreen("TriggersPanel", async () => (await impo
 
 const SCREENS = [
   AchievementsModal, ActivityPanel, ApprovalsPage, BotCatalogModal, BotCatalogPane, BotSettingsDialog, CodePage, ComputerPanel, InspectorPanel, KeyboardShortcutsModal, LocalVmWorkspace, NewBotDialog,
-  PersonaEditorModal, RemoteAgentSettingsPanel, RemoteDesktopPanel, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
+  PersonaEditorModal, RemoteAgentSettingsPanel, RemoteDesktopPanel, RemoteSessionsAdminPage, RoutinesPage, SettingsModal, TeamMapPage, TriggersPanel,
 ];
 
 // A window opened onto Settings (?desktop-settings=…: the desktop app's
