@@ -72,7 +72,7 @@ import {
   type PasteAttachment,
 } from "@/lib/composer-attachments";
 import { normalizeState } from "@/lib/mascot";
-import { goalCoordinatorForComposer, groupComposerHint, jevRoomRoutingOn, openTaskWorking, roomRespondersForComposer } from "@/lib/group-routing";
+import { goalCoordinatorForComposer, groupComposerHint, jevRoomRoutingOn, openTaskWorking, roomRespondersForComposer, roomTakesImages } from "@/lib/group-routing";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { PendingApprovalBox, pendingApprovals, type Pending } from "./PendingApproval";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
@@ -374,7 +374,7 @@ export function Composer({
       return botSupportsImages(goalCoordinatorForComposer(message, members ?? [], group) ?? undefined);
     }
     const responders = roomRespondersForComposer(message, members ?? [], group);
-    return responders.length > 0 && responders.every(botSupportsImages);
+    return roomTakesImages(group, responders, botSupportsImages);
   };
   const typedGoalText = group && !group.dm ? goalTextFromComposer(text) : null;
   const effectiveText = typedGoalText ?? text;

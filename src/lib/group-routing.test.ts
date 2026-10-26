@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { setLocale } from "./i18n";
-import { goalCoordinatorForComposer, groupComposerHint, openTaskWorking, roomRespondersForComposer } from "./group-routing";
+import { goalCoordinatorForComposer, groupComposerHint, openTaskWorking, roomRespondersForComposer, roomTakesImages } from "./group-routing";
 import type { Group, GroupDefaultResponder } from "@/state/store";
 
 describe("openTaskWorking", () => {
@@ -126,5 +126,17 @@ describe("composer hint, in the reader's language", () => {
 
     setLocale("ja");
     expect(groupComposerHint(room({ kind: "everyone" }), members)).toBe("全員が応答します");
+  });
+});
+
+describe("roomTakesImages", () => {
+  const no = () => false;
+  it("lets a person-to-person chat carry images, since no bot answers there (#1067)", () => {
+    expect(roomTakesImages({ peopleDm: true }, [], no)).toBe(true);
+  });
+  it("still needs every answering bot to read images in a bot room", () => {
+    expect(roomTakesImages({}, [], no)).toBe(false);
+    expect(roomTakesImages({}, ["a", "b"], (id) => id === "a")).toBe(false);
+    expect(roomTakesImages({}, ["a"], (id) => id === "a")).toBe(true);
   });
 });
