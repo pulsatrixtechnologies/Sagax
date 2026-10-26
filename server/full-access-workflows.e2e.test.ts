@@ -161,9 +161,9 @@ it("applies requested Full Access workflows through MCP without duplicate approv
     const createdTheo = created.evidence.find((item: any) => item.step?.tool === "create_bot");
     expect(createdTheo.response.result.content[0].text).toMatch(/^Created @Theo in Operations/);
     expect((await bots()).find(bot => bot.name === "Theo")).toMatchObject({ section: "Operations", title: "Totals checker",
-      soul: "Check fixture totals before each report.", approvalMode: "auto", autoApprove: true, composio: false }); // Sagax: Approve for me by default
+      soul: "Check fixture totals before each report.", approvalMode: "auto", autoApprove: true }); // Sagax: Approve for me by default
     const mira = (await bots()).find(bot => bot.name === "Mira");
-    expect(mira).toMatchObject({ section: "Research", approvalMode: "auto", autoApprove: true, composio: false });
+    expect(mira).toMatchObject({ section: "Research", approvalMode: "auto", autoApprove: true });
     const routine = (await api("GET", "/api/routines")).routines.find((item: any) => item.name === "Monthly fixture report");
     // New routines start paused (routines.newPaused, on by default).
     expect(routine).toMatchObject({ botId: chief.id, enabled: false, nextRunAt: null, schedule });
@@ -183,8 +183,11 @@ it("applies requested Full Access workflows through MCP without duplicate approv
       step("list_routines", {}), step("propose_routine_action", { action: "pause", routine_id: routine.id }),
       step("propose_team_setup", { reason: "Requested Mira update", operations: [{ action: "update", botId: mira.id, fields: { title: "Verified research specialist" } }] }),
       step("propose_bot_deletion", { bot_id: mira.id, reason: "User explicitly requested removal after the fixture check" }),
-      step("propose_team_setup", { reason: "Out-of-scope fixture check", operations: [{ action: "update", botId: inverse.id, fields: { title: "Must not apply" } }] }, true),
+      // A Primary Bot covers every bot its person owns, so this update applies.
+      // The later Full task on that bot overwrites the title.
+      step("propose_team_setup", { reason: "Requested title on the other bot", operations: [{ action: "update", botId: inverse.id, fields: { title: "Must not apply" } }] }),
     ]);
+    expect((await bots()).find(bot => bot.id === inverse.id).title).toBe("Must not apply");
     expect((await bots()).some(bot => bot.id === mira.id)).toBe(false);
     expect((await api("GET", "/api/routines")).routines.find((item: any) => item.id === routine.id)).toMatchObject({ enabled: false, nextRunAt: null, schedule });
     expect((await api("GET", `/api/bots/${chief.id}/skills/monthly-fixture-review`)).text).toContain("verify totals");

@@ -57,7 +57,7 @@ describe("Settings > Import a Grok Bot", () => {
     expect(body.format).toBe("openmaus.package");
     expect(body.package.agents[0]).toMatchObject({ name: "Inbox Triage", soul: expect.stringContaining("Never send anything") });
     expect(body.package.routines).toEqual([expect.objectContaining({ name: "Morning triage", enabledAfterInstall: false, schedule: { type: "cron", expression: "30 8 * * 1-5", timeZone: "America/Toronto" } })]);
-    expect(body.package.requirements.apps.map((app: { slug: string }) => app.slug)).toEqual(["gmail", "googlecalendar"]);
+    expect(body.package.requirements.apps.map((app: { slug: string }) => app.slug)).toEqual(["gmail", "google-calendar"]);
     expect(body.package.author.url).toBe("https://x.ai/bot/d8OshqLZvtcKDcNluPuyo");
     expect(container.textContent).toContain("Inbox Triage was added.");
   });

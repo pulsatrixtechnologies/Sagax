@@ -615,11 +615,10 @@ export function BrowserPanel({ bot }: { bot: Bot }) {
     finally { setRequested(false); }
   };
   const caption = t("computer.browserOf", { name: bot.name });
-  if (admin === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">{t("browser.panel.adminOnly")}</p></BrowserNote>;
   if (bot.browser === false) return <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">{t("browser.panel.enable")}</p></BrowserNote>;
-  if (engine?.kind === "engine" && !installing && !engine.installError) return admin === null
-    ? <BrowserNote caption={caption}><p className="text-[13px] text-ink-secondary">{t("browser.panel.loading")}</p></BrowserNote>
-    : <BrowserComputerScreen key={bot.id} bot={bot} />;
+  // Watching and taking over a session the bot already opened is for anyone
+  // who can use the bot. Installing the engine on this computer stays admin.
+  if (engine?.kind === "engine" && !installing && !engine.installError) return <BrowserComputerScreen key={bot.id} bot={bot} />;
   return <BrowserNote caption={caption}>
     <div className="text-[15px] font-medium text-ink">{engine?.kind === "engine" ? t("browser.panel.incomplete") : t("browser.panel.notInstalled")}</div>
     <p className="text-[13px] leading-relaxed text-ink-secondary">{engine?.kind === "engine" ? t("browser.panel.incompleteHint") : <BrowserUnavailableNote config={state.config} />}</p>

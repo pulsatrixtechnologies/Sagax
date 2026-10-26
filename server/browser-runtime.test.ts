@@ -588,6 +588,28 @@ describe("server-owned browser MCP runtime", () => {
     expect(await idle()).toBe(true);
   });
 
+  it("closes an unused browser for memory at once, never one in use or the person's own Chrome", async () => {
+    const closeBrowser = vi.fn(async () => true);
+    const value = runtime({ closeBrowser });
+    await value.agentRpc("s", spec(), "tools/call", { name: "echo" });
+    const action = deferred();
+    const agent = value.withAgentAction("s", () => action.promise);
+    expect(await value.closeUnused("s")).toBe(false);
+    action.resolve();
+    await agent;
+    const unwatch = value.watch("s", spec());
+    expect(await value.closeUnused("s")).toBe(false);
+    unwatch();
+    // No idle window: a browser used a moment ago closes once nothing uses it.
+    expect(await value.closeUnused("s")).toBe(true);
+    const next = await value.agentRpc("s", spec(), "tools/call", { name: "echo" }) as { content: Array<{ text: string }> };
+    expect(next.content[0].text).toMatch(/closed to free memory/);
+    const attached = { ...spec(), env: { ...spec().env, AGENT_BROWSER_CDP: "9222" } };
+    await value.agentRpc("mine", attached, "tools/call", { name: "echo" });
+    expect(await value.closeUnused("mine")).toBe(false);
+    expect(closeBrowser).toHaveBeenCalledTimes(1);
+  });
+
   it("makes a call that arrives while its idle browser closes wait, then open it again", async () => {
     const closing = deferred<boolean>();
     const value = runtime({ closeBrowser: () => closing.promise });

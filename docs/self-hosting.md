@@ -1665,6 +1665,27 @@ owner's session or a per-turn capability.
 
 Verification: [external runtime fixture](verification/external-runtime.md).
 
+## A turn that goes silent
+
+The server stops a turn that has sent it nothing for 20 minutes
+(`SAGAX_TURN_STALL_MS`) and says why in the chat. Engines report a tool only
+when it starts and when it ends, so while one of the turn's tools is still
+running (a long build or test suite) the turn may stay silent for up to
+`SAGAX_TOOL_STALL_MS` (default 2 hours). That is a hard bound: a tool that truly
+hangs still ends the turn. Any event from the turn starts the silence over, and
+time spent waiting on a person or a computer never counts. Either way the turn
+stops with "no activity for N minutes".
+
+Both take whole milliseconds. `SAGAX_TURN_STALL_MS` is never below 60000 (one
+minute) and `SAGAX_TOOL_STALL_MS` never below `SAGAX_TURN_STALL_MS`. A value
+that is not a positive finite number (empty, `65m`, `0`, a negative number,
+`Infinity`, `1e309`) leaves the default. Set them in the server's environment
+and restart it; the restart stops every running turn.
+
+A turn in a room also has a work ceiling of its own, `rooms.turnTimeoutMinutes`
+in `config.json`. It stops a member's turn even while its tool runs, and these
+two settings do not change it.
+
 ## Updating
 
 For a service that runs a checkout, [check out and build the chosen

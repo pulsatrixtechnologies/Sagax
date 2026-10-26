@@ -141,6 +141,9 @@ export interface BridgeOptions {
   /** Enables the who-is-driving gate: the harness's loopback control
    * endpoint plus its per-boot token. Absent → fully transparent bridge. */
   gate?: { url: string; token: string };
+  /** A last look at each whole frame from the child before it reaches the
+   * agent (local-computer-guidance.ts). Absent: frames pass as they are. */
+  rewriteResponse?: (line: string) => string;
 }
 
 /** Collect a byte stream into complete newline-terminated lines. MCP's
@@ -299,7 +302,8 @@ export function runMcpBridge(options: BridgeOptions): void {
   // Injected responses and refusals must never land inside one of the
   // child's half-written frames, so the child's stdout is re-emitted at
   // line granularity as well.
-  const outbound = createLineSplitter((line) => process.stdout.write(toolLists.rewriteResponse(line) + "\n"));
+  const rewrite = options.rewriteResponse ?? ((line: string) => line);
+  const outbound = createLineSplitter((line) => process.stdout.write(rewrite(toolLists.rewriteResponse(line)) + "\n"));
   child.stdout.on("data", (chunk) => outbound.push(chunk));
   child.stdout.on("end", () => outbound.flush());
 

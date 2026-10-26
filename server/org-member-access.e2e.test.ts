@@ -385,7 +385,7 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     expect(made.status, JSON.stringify(made.body)).toBe(201);
     expect((await orgBots()).find((bot) => bot.name === "Uma Helper")?.ownerPrincipalId).toBe(ids.uma);
     const helper = ((await api("GET", "/api/bots", uma)).body.bots as Array<Record<string, any>>).find((bot) => bot.id === made.body.id)!;
-    expect(helper).toMatchObject({ composio: false, autoApprove: false, approvePeerComms: false });
+    expect(helper).toMatchObject({ autoApprove: false, approvePeerComms: false });
     expect(helper.approvalMode).not.toBe("full");
     expect(helper.chiefOfStaff ?? false).toBe(false);
     expect(helper).not.toHaveProperty("createdByBot");

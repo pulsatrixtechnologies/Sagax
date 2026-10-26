@@ -68,6 +68,19 @@ describe("TurnPresence", () => {
     expect(host.querySelector(".turn-presence")).toBeNull();
   });
 
+  it("counts elapsed time from the turn's start and keeps ticking", () => {
+    const since = Date.now() - 13_000;
+    render({ since });
+    expect(host.querySelector(".turn-presence .tabular-nums")?.textContent).toBe("13s");
+    act(() => void vi.advanceTimersByTime(2_000));
+    expect(host.querySelector(".turn-presence .tabular-nums")?.textContent).toBe("15s");
+  });
+
+  it("hides the elapsed readout once the reply is settling", () => {
+    render({ since: Date.now() - 13_000, answering: true });
+    expect(host.querySelector(".tabular-nums")).toBeNull();
+  });
+
   it("still takes a plain label, as the sidebar-era callers pass", () => {
     const markup = renderToStaticMarkup(createElement(TurnPresence, { bot, visible: true, label: "Running a command" }));
     expect(markup).toContain("Running a command");

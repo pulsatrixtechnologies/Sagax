@@ -6,6 +6,7 @@
 import { offersSignIn } from "@/components/EngineSetup";
 import { t } from "@/lib/i18n";
 import { limitFailoverLineText } from "@/lib/limit-failover";
+import { localizedEngineCause } from "@/lib/engine-error-text";
 import { plainErrorLine } from "@/lib/plain-error";
 import { stepLabel } from "@/lib/step-label";
 import type { Bot, InstanceInfo, Message } from "@/state/store";
@@ -62,5 +63,6 @@ export function activityPreview(tool: ActivityTool, engine: InstanceInfo | undef
   if (cause !== null && isClientCancellation(cause)) return t("chat.turnStopped");
   if (cause === null) return reactionPreview(tool) ?? tool.name;
   const signedOut = signedOutEngine(tool, engine);
-  return signedOut ? t("sidebar.preview.signedOut", { name: signedOut.displayName }) : plainErrorLine(cause) ?? cause;
+  const shown = localizedEngineCause(cause) ?? cause;
+  return signedOut ? t("sidebar.preview.signedOut", { name: signedOut.displayName }) : plainErrorLine(shown) ?? shown;
 }

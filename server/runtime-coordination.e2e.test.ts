@@ -16,6 +16,7 @@ import { launchVerificationServer, runControlOmb, verificationServerArgs, verifi
 import { ENVELOPE_MARK } from "./runtime/envelope.ts";
 import { waitForExit } from "./testing/cleanup.ts";
 import { hostTimeout } from "./testing/host-timeout.ts";
+import { splitLaunchNote } from "./testing/launch-note.ts";
 import { ownTurnText } from "./testing/room-handoff-agent.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -105,7 +106,10 @@ async function scenario(test: (f: any) => Promise<void>) {
     const own = (record: any): string => ownTurnText(record?.prompt);
     /** The same, after the harness's own time line that opens every turn:
      * what the coordinator composed, from its first line. */
-    const body = (record: any): string => own(record).replace(/^\s*Current time when this message was sent:[^\n]*\n+/, "");
+    const body = (record: any): string => {
+      const stripped = splitLaunchNote({ message: { content: own(record) } }).prompt.message.content as string;
+      return stripped.replace(/^\s*Current time when this message was sent:[^\n]*\n+/, "");
+    };
     /** Everything the turn's process could read: its instructions and its prompt. */
     const told = (record: any): string => `${record?.system ?? ""}\n${JSON.stringify(record?.prompt ?? "")}`;
     const messages = async (threadId: string): Promise<any[]> => (await api("GET", `/api/threads/${threadId}/messages?limit=300`)).body.messages ?? [];

@@ -61,9 +61,7 @@ export function MessageBar({
       <MessageHoverActions side={side} onReply={onReply} copy={copy} requestId={requestId} react={react} persistent={persistent} onOpenChange={setOpen} view={view}>
         {children}
       </MessageHoverActions>
-      <span data-message-time className="select-none px-1 text-[11px] tabular-nums leading-4 whitespace-nowrap text-ink-tertiary">
-        {time}
-      </span>
+      <span data-message-time data-time={time} className="select-none px-1 text-[11px] tabular-nums leading-4 whitespace-nowrap text-ink-tertiary" />
     </div>
   );
 }

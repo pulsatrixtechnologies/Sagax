@@ -17,6 +17,8 @@
  * ~4 chars per token, so ~2k tokens: enough for a page of results, far below
  * the 35k-token searches this exists to stop. */
 export const DEFAULT_RESULT_BUDGET = 8_000;
+/** The gate's own read-only query over a held result (mcp-shape.ts); named here so the banner and the tool never drift apart. */
+export const QUERY_TOOL_NAME = "query_result";
 
 /** Never cut below this, whatever the budget says: a result so short that it
  * cannot carry a single record is worse than no trimming at all. */
@@ -34,6 +36,17 @@ export interface TrimOutcome {
   value?: unknown;
 }
 
+/** The whole result is kept by the gate under `handle` for query_result (mcp-shape.ts). */
+export interface HeldResult {
+  handle: string;
+  /** describeShape() of the held value */
+  shape: string;
+  /** a query known to be valid against the held value */
+  example?: string;
+  /** the text being cut is itself a query_result answer */
+  queried?: boolean;
+}
+
 export interface TrimInput {
   text: string;
   budget?: number;
@@ -49,6 +62,7 @@ export interface TrimInput {
   spillHint?: boolean;
   /** for the marker's wording only */
   toolName?: string;
+  held?: HeldResult;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US");
@@ -113,8 +127,12 @@ export function truncationBanner(input: {
   structural: boolean;
   /** the short form, for a budget too small to carry the full one twice */
   short?: boolean;
+  held?: HeldResult;
+  /** the closing banner of a held result: a reminder, not the whole note again */
+  footer?: boolean;
 }): string {
   const size = `${fmt(input.keptChars)} of ${fmt(input.originalChars)} chars`;
+  if (input.held) return heldBanner(input, size);
   if (input.short) return `⚠️ TRUNCATED by Sagax: kept ${size}; the rest was NOT shown. Narrow the call or page.`;
   const counts = input.dropped
     .filter((d) => d.kept < d.total)
@@ -134,9 +152,31 @@ export function truncationBanner(input: {
   return `⚠️ TRUNCATED by Sagax: ${what} The rest was NOT shown. ${next}${where}`;
 }
 
-/** The trimmed body with the banner in front and behind it. */
-function wrap(body: string, banner: string): string {
-  return `${banner}\n\n${body}\n\n${banner}`;
+/** The result lives on; the model fetches the rest by query, so the note never suggests a file or a narrower call. */
+function heldBanner(
+  input: { originalChars: number; keptChars: number; dropped: Array<{ key: string; kept: number; total: number }>; held?: HeldResult; short?: boolean; footer?: boolean; structural: boolean },
+  size: string,
+): string {
+  const held = input.held!;
+  const counts = input.dropped
+    .filter((d) => d.kept < d.total)
+    .map((d) => `${d.key || "items"} ${fmt(d.kept)} of ${fmt(d.total)}`)
+    .join(", ");
+  const kept = input.structural && counts ? `kept ${counts} (${size})` : `kept ${size}`;
+  const call = `${QUERY_TOOL_NAME} {"result":"${held.handle}","query":"<JMESPath>"}`;
+  if (held.queried) {
+    if (input.footer) return `⚠️ TRUNCATED by Sagax: ${kept} of your query on "${held.handle}"; narrow it (see above).`;
+    return `⚠️ TRUNCATED by Sagax: your query on "${held.handle}" returned ${fmt(input.originalChars)} chars; ${kept}. The rest was NOT shown. Narrow the query: pick fewer fields with {a: a, b: b}, slice with [0:20], or filter with [?cond]. The result is ${held.shape}.`;
+  }
+  if (input.footer) return `⚠️ SHAPED by Sagax: ${kept}; the rest is held as "${held.handle}" for ${QUERY_TOOL_NAME} (see the note above).`;
+  if (input.short) return `⚠️ SHAPED by Sagax: ${kept}; the rest is held as "${held.handle}": call ${call} for exactly what you need.`;
+  const example = held.example ? ` e.g. ${held.example} or length(@).` : "";
+  return `⚠️ SHAPED by Sagax: result was ${fmt(input.originalChars)} chars; ${kept}. The whole result is held as "${held.handle}" (${held.shape}). For the rest call ${call} and select only the fields and rows you need,${example} Big answers are cut too; never ask for the whole thing.`;
+}
+
+/** The trimmed body with the banner in front and the footer (the banner, or a short reminder of a held result) behind it. */
+function wrap(body: string, banner: string, footer = banner): string {
+  return `${banner}\n\n${body}\n\n${footer}`;
 }
 
 /** The structural cut on its own, for a payload that is already parsed and
@@ -193,13 +233,20 @@ export function trimResultText(input: TrimInput): TrimOutcome {
   // (every count at its widest), so the whole result lands under the budget.
   // A small budget that the full banners would eat more than half of gets
   // the short form instead; either way the body has only what is left.
-  const widestOf = (short: boolean) => Math.max(
-    truncationBanner({ originalChars: text.length, keptChars: text.length, dropped: fields.map((f) => ({ key: f.key, kept: Math.max(0, f.items.length - 1), total: f.items.length })), spillPath: input.spillPath, spillHint: input.spillHint, structural: true, short }).length,
-    truncationBanner({ originalChars: text.length, keptChars: text.length, dropped: [], spillPath: input.spillPath, spillHint: input.spillHint, structural: false, short }).length,
-  );
-  const fullRoom = budget - 2 * (widestOf(false) + 2);
+  // A held result's closing banner is a shorter reminder: both are measured.
+  const held = input.held;
+  const banner = (opts: { dropped: Array<{ key: string; kept: number; total: number }>; structural: boolean; short: boolean; footer?: boolean; keptChars: number }) =>
+    truncationBanner({ originalChars: text.length, spillPath: input.spillPath, spillHint: input.spillHint, held, ...opts });
+  const widestOf = (short: boolean) => {
+    const variants = [
+      { dropped: fields.map((f) => ({ key: f.key, kept: Math.max(0, f.items.length - 1), total: f.items.length })), structural: true },
+      { dropped: [], structural: false },
+    ];
+    return Math.max(...variants.map((v) => banner({ ...v, short, keptChars: text.length }).length + banner({ ...v, short, keptChars: text.length, footer: Boolean(held) }).length));
+  };
+  const fullRoom = budget - (widestOf(false) + 4);
   const short = fullRoom < budget / 2;
-  const room = Math.max(0, short ? budget - 2 * (widestOf(true) + 2) : fullRoom);
+  const room = Math.max(0, short ? budget - (widestOf(true) + 4) : fullRoom);
   if (fields.length) {
     // What the payload costs with every bulk array emptied. Anything left is
     // shared out between those arrays, in order, equally.
@@ -228,7 +275,7 @@ export function trimResultText(input: TrimInput): TrimOutcome {
       // still overflows, the text cut below is the honest answer.
       if (json !== null && json.length <= room) {
         return {
-          text: wrap(json, truncationBanner({ originalChars: text.length, keptChars: json.length, dropped, spillPath: input.spillPath, spillHint: input.spillHint, structural: true, short })),
+          text: wrap(json, banner({ keptChars: json.length, dropped, structural: true, short }), banner({ keptChars: json.length, dropped, structural: true, short, footer: Boolean(held) })),
           trimmed: true,
           originalChars: text.length,
           value,
@@ -239,7 +286,7 @@ export function trimResultText(input: TrimInput): TrimOutcome {
 
   const cut = cutAt(text, room);
   return {
-    text: wrap(cut, truncationBanner({ originalChars: text.length, keptChars: cut.length, dropped: [], spillPath: input.spillPath, spillHint: input.spillHint, structural: false, short })),
+    text: wrap(cut, banner({ keptChars: cut.length, dropped: [], structural: false, short }), banner({ keptChars: cut.length, dropped: [], structural: false, short, footer: Boolean(held) })),
     trimmed: true,
     originalChars: text.length,
   };

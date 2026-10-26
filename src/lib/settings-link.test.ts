@@ -24,14 +24,13 @@ describe("settings links", () => {
   });
 
   // 2026-10-14: Integrations and Models and accounts are one page; an old
-  // link to Integrations opens it. Then (menu simplification, Settings lot)
-  // Connected apps, Decision model, Privacy, Memory and Email became cards:
-  // an old section id opens the page that holds the card, and the card.
+  // link to Integrations opens it. Decision model, Privacy and Memory became
+  // cards of that page. Connected apps stays its own section.
   it("redirects an old section link to the page and card that hold it now", () => {
     expect(currentSettingsSection("connections")).toBe("engines");
     expect(currentSettingsSection("connections", "connections.voice")).toBe("engines");
     expect(currentSettingsSection("connections", "connections.apps")).toBe("engines");
-    expect(currentSettingsSection("connectedApps")).toBe("engines");
+    expect(currentSettingsSection("connectedApps")).toBe("connectedApps");
     expect(currentSettingsSection("decisionModel")).toBe("engines");
     expect(currentSettingsSection("privacy")).toBe("notifications");
     expect(currentSettingsSection("memory")).toBe("organization");
@@ -41,7 +40,7 @@ describe("settings links", () => {
     expect(currentSettingsSection("companion")).toBe("general");
     expect(currentSettingsSection("activity")).toBe("general");
     expect(currentSettingsSection("usage")).toBe("usage");
-    expect(mergedSettingsCard("connectedApps")).toBe("connections.apps");
+    expect(mergedSettingsCard("connectedApps")).toBeUndefined();
     expect(mergedSettingsCard("decisionModel")).toBe("engines.decisionModel");
     expect(mergedSettingsCard("privacy")).toBe("notifications.privacy");
     expect(mergedSettingsCard("memory")).toBe("organization.memory");
