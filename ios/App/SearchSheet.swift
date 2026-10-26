@@ -105,6 +105,8 @@ struct SearchSheet: View {
 
     @EnvironmentObject private var session: Session
     @ObservedObject private var directory = PeopleDirectory.shared
+    /// Show threads off: no Threads scope and no thread result.
+    @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
     @State private var query = ""
     @State private var scopes: Set<SearchScope>?
     @State private var hits: [SearchHit] = []
@@ -124,8 +126,8 @@ struct SearchSheet: View {
     private static let radius: CGFloat = Theme.continuous(38)
 
     private var organization: Bool { session.surfaceGate.allows(.people) }
-    private var available: [SearchScope] { SearchCatalog.scopes(mode: mode, organization: organization) }
-    private var active: Set<SearchScope> { scopes ?? Set(available) }
+    private var available: [SearchScope] { SearchCatalog.scopes(mode: mode, organization: organization, showThreads: sidebarPrefs.threads.allows(.search)) }
+    private var active: Set<SearchScope> { (scopes ?? Set(available)).intersection(available) }
     private var trimmed: String { SearchCatalog.normalized(query) }
 
     var body: some View {

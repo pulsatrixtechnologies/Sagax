@@ -35,7 +35,7 @@ enum DesktopSidebarState {
         #if DEBUG
         if let preset = model.parityShowThreads { return preset }
         #endif
-        return prefs.threadsPlacement.inSidebar
+        return prefs.threads.allows(.sidebarTree)
     }
 
     /// Settings > Appearance > Show threads alone (the compose picker's New
@@ -44,7 +44,7 @@ enum DesktopSidebarState {
         #if DEBUG
         if let preset = model.parityShowThreads { return preset }
         #endif
-        return prefs.showThreads
+        return prefs.threads.allows(.newThread)
     }
 
     /// The chat header's thread picker: threads on, location "In the chat
@@ -53,7 +53,7 @@ enum DesktopSidebarState {
         #if DEBUG
         if let preset = model.parityShowThreads { return preset }
         #endif
-        return prefs.threadsPlacement.inHeader
+        return prefs.threads.allows(.headerPicker)
     }
 }
 

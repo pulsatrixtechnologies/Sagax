@@ -65,10 +65,13 @@ public enum SearchCatalog {
 
     /// The scopes the filter menu offers: members only on an organization
     /// server, and New chat keeps to who one can write to.
-    public static func scopes(mode: SearchSheetMode, organization: Bool) -> [SearchScope] {
+    /// `showThreads` false (Settings > Appearance > Show threads off): no
+    /// Threads scope, so no thread result either.
+    public static func scopes(mode: SearchSheetMode, organization: Bool, showThreads: Bool = true) -> [SearchScope] {
         switch mode {
-        case .search: organization ? SearchScope.allCases : SearchScope.allCases.filter { $0 != .people }
-        case .newChat: organization ? [.bots, .people] : [.bots]
+        case .search:
+            return SearchScope.allCases.filter { (organization || $0 != .people) && (showThreads || $0 != .threads) }
+        case .newChat: return organization ? [.bots, .people] : [.bots]
         }
     }
 

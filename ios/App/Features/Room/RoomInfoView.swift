@@ -56,6 +56,8 @@ struct RoomInfoView: View {
     var onDeleted: () -> Void = {}
     @EnvironmentObject private var session: Session
     @StateObject private var actions = RoomActions()
+    /// Show threads off: no Threads row.
+    @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
     @State private var jevOn = false
     @State private var directory: OrgDirectory?
     @State private var managingMembers = false
@@ -163,12 +165,14 @@ struct RoomInfoView: View {
             RoomBotsSection(room: room, access: access, manageMembers: { managingMembers = true })
             overview(room, access: access)
 
-            Section {
-                // the phone's way into the room's threads (the header's tap)
-                Button(action: openThreads) {
-                    row(String(localized: "Threads"), systemImage: "square.stack", value: "\(room.tasks?.count ?? 1)")
+            if sidebarPrefs.threads.allows(.roomThreads) {
+                Section {
+                    // the phone's way into the room's threads (the header's tap)
+                    Button(action: openThreads) {
+                        row(String(localized: "Threads"), systemImage: "square.stack", value: "\(room.tasks?.count ?? 1)")
+                    }
+                    .accessibilityIdentifier("room-threads")
                 }
-                .accessibilityIdentifier("room-threads")
             }
 
             if access.canLeave {

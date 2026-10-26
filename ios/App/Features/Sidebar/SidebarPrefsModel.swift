@@ -56,8 +56,14 @@ final class SidebarPrefsModel: ObservableObject {
     /// synced, the desktop's own key.
     @Published private(set) var threadsLocation = ThreadsLocation.parse(UserDefaults.standard.string(forKey: ThreadsLocation.storageKey))
 
+    /// Every thread element on iPhone and iPad, from the switch and the
+    /// location: the one place the views ask (`ThreadSurface`). Published
+    /// values only, so a change on this phone or a `preferences` frame from
+    /// the desktop redraws every view that reads it, without a relaunch.
+    var threads: ThreadSurfaces { ThreadSurfaces(showThreads: showThreads, location: threadsLocation) }
+
     /// Where a bot's threads show: under its row, or in the chat header.
-    var threadsPlacement: ThreadsPlacement { ThreadsPlacement(showThreads: showThreads, location: threadsLocation) }
+    var threadsPlacement: ThreadsPlacement { threads.placement }
 
     func setThreadsLocation(_ location: ThreadsLocation) {
         threadsLocation = location
