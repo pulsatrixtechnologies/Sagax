@@ -343,6 +343,7 @@ import { blockedTarget, buildSpendNotification, deliverableNotification, quietFo
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey } from "../shared/approval-describe.ts";
 import { ComputerAppReader } from "./computer-app.ts";
 import { appRuleOffered } from "../shared/computer-app.ts";
+import { proposalReplacements } from "./proposal-budget.ts";
 import { cardRuleCandidate, matchOwnerRule, ownerDecision, ownerVerdictOver, ruleCandidateFor, ruleCoversExactScope, ruleInputFor, scopeKeepable, scopeRemembers, type BotPermissionMode, type OwnerRule } from "./owner-approval.ts";
 import { OwnerApprovalStore } from "./owner-approval-store.ts";
 import { CustomRuleStore } from "./custom-rules-store.ts";
@@ -25109,13 +25110,15 @@ function proposalPersistence(botId: string, threadId: string, opensCard = true) 
       !message.card.answered &&
       !message.card.dismissed && !message.card.expired,
   );
-  // 2026-10-20 a waiting proposal never blocks a new one. Past the
-  // budget the oldest waiting cards are replaced: closed as expired, nothing
-  // applied, journaled. A card under a safety hold is never replaced.
-  const replaceable = openRequests.filter((message) => !(message.card?.requestId && safetyIsArmed(message.card.requestId)));
-  const surplus = Math.max(0, openRequests.length - 7);
-  if (replaceable.length < surplus) return { ok: false as const, status: 429, error: "confirm or cancel an existing proposal first" };
-  for (const message of replaceable.slice(0, surplus)) {
+  // server/proposal-budget.ts: past the budget the oldest waiting cards are
+  // replaced, never one under a safety hold nor a team setup card (#1059).
+  const plan = proposalReplacements(openRequests.map((message) => ({
+    message,
+    held: Boolean(message.card?.requestId && safetyIsArmed(message.card.requestId)),
+    teamSetup: Boolean(message.card?.teamSetupRequest),
+  })));
+  if (!plan.ok) return { ok: false as const, status: 429, error: plan.error };
+  for (const { message } of plan.replace) {
     store.patchMessage(threadId, message.id, { card: { ...message.card!, answered: "deny", expired: true, options: [], held: "Replaced by a newer proposal. Nothing was applied." } });
     appendDecision(DATA_DIR, { threadId, requestId: message.card!.requestId ?? message.id, botId, tool: "proposal", summary: message.card!.title ?? "proposal", decision: "auto-denied", source: "expired" });
   }

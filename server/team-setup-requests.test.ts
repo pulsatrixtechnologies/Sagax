@@ -95,6 +95,15 @@ describe("a specialist the Chief suggests", () => {
 });
 
 describe("reviewed Chief team setup", () => {
+  it("keeps two waiting setups side by side and applies each on its own card (#1059)", async () => {
+    const h = harness();
+    const first = h.propose([specialist("Mira", "Work"), specialist("Noor", "Work")]);
+    const second = h.propose([specialist("Otto", "Work")]);
+    expect(h.messages.filter((message) => message.card?.teamSetupRequest && !message.card.answered && !message.card.dismissed && !message.card.expired)).toHaveLength(2);
+    expect((await h.resolve(second.requestId))?.result.state).toBe("applied");
+    expect((await h.resolve(first.requestId))?.result.state).toBe("applied");
+    expect(h.store.bots.map((bot) => bot.name)).toEqual(expect.arrayContaining(["Mira", "Noor", "Otto"]));
+  });
   it("reviews promotion in an authorized team without changing anything on denial", async () => {
     const h = harness(); h.peer.section = "Engineering";
     const before = structuredClone(h.store.bots);
