@@ -295,7 +295,9 @@ export function readMemoryDoc(botId: string, path: string): MemoryDoc {
   try {
     const text = readFileSync(absolute, "utf8");
     return { path, text, hash: hashMemoryText(text), exists: true };
-  } catch {
+  } catch (error) {
+    // Only a missing file reads as empty; EACCES and the like must not look like "absent".
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     return { path, text: "", hash: hashMemoryText(""), exists: false };
   }
 }

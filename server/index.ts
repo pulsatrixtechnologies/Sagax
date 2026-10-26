@@ -22580,7 +22580,7 @@ const webhooks = new WebhookManager({
   // live selection the way POST /api/bots/:id/tasks does), reused forever
   // after via trigger.resultsThreadId.
   resolvePostThread: (trigger, forceNew) => {
-    if (!forceNew && trigger.resultsThreadId) return trigger.resultsThreadId;
+    if (!forceNew && trigger.resultsThreadId && store.taskByThread(trigger.botId, trigger.resultsThreadId)) return trigger.resultsThreadId;
     return store.createTask(trigger.botId, "Updates", false)?.threadId;
   },
 });
