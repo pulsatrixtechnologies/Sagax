@@ -1,13 +1,12 @@
-// iPad I4/I4b: the bot panel's Library tab (was Files; `bot-settings/FilesSection.tsx`):
-// the open conversation's files from GET /api/threads/:id/files, with the
-// search field and the grid / list switch (y 347), the kind chips with
-// their counts (12/16, radius full; the chosen one `bg-ink text-app`), who
-// sent it and the sort (two `select`s, 33 tall), then the list: a 40 pt
-// thumbnail, the name 13 and "Bot attached · 14 B · Sep 30, 2026, 11:33 AM"
-// 11, and three 28 pt actions (show in chat, download, copy path). The
-// filtering and counting are `ThreadFileRules` (CompanionCore), shared with
-// the phone's ThreadFilesView. The bot's links are one more chip, Links,
-// drawn by the phone's LinksTab (JC 2026-10-18).
+// iPad: the bot panel's Library tab (`bot-settings/LibraryTab.tsx`): the open
+// conversation's files from GET /api/threads/:id/files in one list, no search,
+// no filter, no grid. What the person pinned sits on top under "Pinned"; the
+// rest is grouped "This week" and "Older", each group in a rounded card, one
+// line per file: the kind's icon and the name, with the pin and the actions
+// (show in chat, download, copy path). The grouping is `ThreadFileRules`
+// (CompanionCore); a pin is kept on the server (`setThreadFilePin`) so it is
+// the same on the desktop. The bot's links stay one more chip, Links
+// (JC 2026-10-18); the app has no artifacts yet.
 import SwiftUI
 import UIKit
 import CompanionCore
@@ -23,8 +22,6 @@ struct BotPanelFiles: View {
 
     @State private var files: [ThreadFile]?
     @State private var failed = false
-    @State private var query = ThreadFileQuery()
-    @AppStorage("omb-files-view") private var pickedView = ""
     @State private var previewing: IdentifiedURL?
     @State private var sharing: IdentifiedURL?
     @State private var working: String?
@@ -35,29 +32,14 @@ struct BotPanelFiles: View {
 
     private var threadId: String { bot.threadId }
     private var all: [ThreadFile] { files ?? [] }
-    private var counts: [ThreadFileFilter: Int] { ThreadFileRules.counts(all, origin: query.origin, search: query.search) }
-    /// Only kinds that have files (or the chosen one), and only with two
-    /// kinds or more to choose between (`visibleFilters`, FilesSection.tsx).
-    private var chips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
     private var linkCount: Int { links.page?.total ?? links.page?.items.count ?? 0 }
-    private var selectedChip: BotLibraryChip { showingLinks ? .links : .files(query.filter) }
-    private var allChips: [BotLibraryChip] { BotLibraryChip.visible(counts: counts, selected: selectedChip, links: linkCount) }
-    private var shown: [ThreadFile] {
-        var effective = query
-        if chips.isEmpty { effective.filter = .all }
-        return ThreadFileRules.visible(all, query: effective)
-    }
-    private var grid: Bool {
-        if pickedView == "grid" { return true }
-        if pickedView == "list" { return false }
-        return query.filter == .image || query.filter == .video
-    }
+    /// Files and Links, only when the bot has links to switch to.
+    private var allChips: [BotLibraryChip] { linkCount > 0 ? [.files(.all), .links] : [] }
+    private var selectedChip: BotLibraryChip { showingLinks ? .links : .files(.all) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            AnyView(searchRow)
             if !allChips.isEmpty { AnyView(chipRow) }
-            if !showingLinks { AnyView(selects) }
             if let status {
                 Label(status, systemImage: "checkmark")
                     .font(theme.font(12))
@@ -87,56 +69,14 @@ struct BotPanelFiles: View {
 
     // MARK: Controls
 
-    private var searchRow: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13))
-                    .foregroundStyle(theme.inkSecondary)
-                TextField("", text: $query.search, prompt: Text("Search files").foregroundColor(theme.inkSecondary))
-                    .font(theme.font(13))
-                    .foregroundStyle(theme.ink)
-                    .tint(theme.focus)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 34)
-            .background(theme.elevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
-            HStack(spacing: 0) {
-                viewButton("square.grid.2x2", on: grid, label: "Grid view") { pickedView = "grid" }
-                viewButton("list.bullet", on: !grid, label: "List view") { pickedView = "list" }
-            }
-            .padding(2)
-            .frame(height: 34)
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
-        }
-    }
-
-    private func viewButton(_ symbol: String, on: Bool, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 12.5))
-                .foregroundStyle(on ? theme.ink : theme.inkSecondary)
-                .frame(width: 28, height: 28)
-                .background(on ? theme.elevatedHover : .clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
-        .accessibilityAddTraits(on ? .isSelected : [])
-    }
-
     private var chipRow: some View {
         PanelFlow(spacing: 6, lineSpacing: 6) {
             ForEach(allChips, id: \.self) { chip in
                 let selected = selectedChip == chip
                 Button {
                     switch chip {
-                    case let .files(filter):
+                    case .files:
                         showingLinks = false
-                        query.filter = filter
                     case .links:
                         showingLinks = true
                     }
@@ -161,69 +101,28 @@ struct BotPanelFiles: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Filter files by type"))
+        .accessibilityLabel(Text("Library views"))
     }
 
     private func chipName(_ chip: BotLibraryChip) -> String {
         switch chip {
-        case let .files(filter): ThreadFilesView.filterName(filter)
+        case .files: String(localized: "Files")
         case .links: String(localized: "Links")
         }
     }
 
     private func chipCount(_ chip: BotLibraryChip) -> Int {
         switch chip {
-        case let .files(filter): counts[filter] ?? 0
+        case .files: all.count
         case .links: linkCount
         }
     }
 
     private func chipId(_ chip: BotLibraryChip) -> String {
         switch chip {
-        case let .files(filter): filter.rawValue
+        case .files: "files"
         case .links: "links"
         }
-    }
-
-    private var selects: some View {
-        HStack(spacing: 8) {
-            Menu {
-                Picker(String(localized: "Show files from"), selection: $query.origin) {
-                    ForEach(ThreadFileOrigin.allCases, id: \.self) { Text(ThreadFilesView.originName($0)).tag($0) }
-                }
-            } label: {
-                selectLabel(ThreadFilesView.originName(query.origin))
-            }
-            .accessibilityLabel(Text("Show files from"))
-            Menu {
-                Picker(String(localized: "Sort files"), selection: $query.sort) {
-                    ForEach(ThreadFileSort.allCases, id: \.self) { Text(ThreadFilesView.sortName($0)).tag($0) }
-                }
-            } label: {
-                selectLabel(ThreadFilesView.sortName(query.sort))
-            }
-            .accessibilityLabel(Text("Sort files"))
-        }
-    }
-
-    private func selectLabel(_ text: String) -> some View {
-        HStack(spacing: 4) {
-            Text(verbatim: text)
-                .font(theme.font(12.5))
-                .foregroundStyle(theme.ink)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(theme.ink)
-        }
-        .padding(.leading, 13)
-        .padding(.trailing, 6)
-        .frame(maxWidth: .infinity)
-        .frame(height: 33)
-        .background(theme.elevated, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
-        .contentShape(Rectangle())
     }
 
     // MARK: Content
@@ -244,11 +143,11 @@ struct BotPanelFiles: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
-        } else if shown.isEmpty {
+        } else if all.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "folder")
                     .font(.system(size: 18))
-                Text(emptyText)
+                Text("Files from this chat show up here.")
                     .font(theme.font(13))
                     .multilineTextAlignment(.center)
             }
@@ -256,48 +155,55 @@ struct BotPanelFiles: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 48)
             .padding(.horizontal, 24)
-        } else if grid {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
-                ForEach(shown) { file in tile(file) }
-            }
         } else {
-            VStack(spacing: 0) {
-                ForEach(Array(shown.enumerated()), id: \.element.id) { index, file in
-                    row(file)
-                    if index < shown.count - 1 {
-                        Rectangle().fill(theme.hairlineWeak).frame(height: 1)
-                    }
-                }
+            let groups = ThreadFileRules.libraryGroups(all, now: Date().timeIntervalSince1970 * 1000)
+            VStack(alignment: .leading, spacing: 16) {
+                group("pinned", title: "Pinned", files: groups.pinned)
+                group("this-week", title: "This week", files: groups.thisWeek)
+                group("older", title: "Older", files: groups.older)
             }
         }
     }
 
-    private var emptyText: String {
-        let search = query.search.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !search.isEmpty { return String(localized: "Nothing matches “\(search)”") }
-        return String(localized: "No files in this chat yet.")
+    /// One titled card; nothing when the group is empty.
+    @ViewBuilder
+    private func group(_ id: String, title: LocalizedStringKey, files: [ThreadFile]) -> some View {
+        if !files.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(theme.font(12, .medium))
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.horizontal, 2)
+                VStack(spacing: 0) {
+                    ForEach(Array(files.enumerated()), id: \.element.id) { index, file in
+                        row(file)
+                        if index < files.count - 1 {
+                            Rectangle().fill(theme.hairlineWeak).frame(height: 1)
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .background(theme.elevated, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("desktop-library-group.\(id)")
+        }
     }
 
     private func row(_ file: ThreadFile) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
             Button { open(file) } label: {
-                HStack(spacing: 10) {
-                    PanelFileThumbnail(threadId: threadId, file: file, iconSize: 17)
-                        .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(verbatim: file.name)
-                            .font(theme.font(13))
-                            .foregroundStyle(theme.ink)
-                            .lineLimit(1)
-                            .frame(height: 19.5)
-                        Text(verbatim: meta(file))
-                            .font(theme.font(11))
-                            .foregroundStyle(theme.inkSecondary)
-                            .lineLimit(1)
-                            .frame(height: 16.5)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    Image(systemName: PanelFileThumbnail.symbol(ThreadFileRules.kind(of: file)))
+                        .font(.system(size: 14))
+                        .foregroundStyle(theme.inkSecondary)
+                        .frame(width: 24, height: 24)
+                    Text(verbatim: file.name)
+                        .font(theme.font(13))
+                        .foregroundStyle(theme.ink)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(Rectangle())
                 .opacity(file.available ? 1 : 0.6)
@@ -308,40 +214,14 @@ struct BotPanelFiles: View {
             .accessibilityIdentifier("desktop-file.\(file.name)")
             actions(file)
         }
-        .frame(height: 56)
-    }
-
-    private func tile(_ file: ThreadFile) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { open(file) } label: {
-                PanelFileThumbnail(threadId: threadId, file: file, iconSize: 24)
-                    .aspectRatio(1, contentMode: .fill)
-                    .clipped()
-            }
-            .buttonStyle(.plain)
-            .disabled(!file.available)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(verbatim: file.name).font(theme.font(12)).foregroundStyle(theme.ink).lineLimit(1)
-                Text(verbatim: file.available ? (file.size.map(DesktopFileSize.format) ?? ThreadFilesView.sourceName(file.source)) : String(localized: "Not on this computer"))
-                    .font(theme.font(10.5))
-                    .foregroundStyle(theme.inkSecondary)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-        }
-        .overlay(alignment: .topTrailing) {
-            actions(file)
-                .background(theme.panel.opacity(0.9), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(4)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.hairlineWeak, lineWidth: 1))
-        .opacity(file.available ? 1 : 0.6)
+        .frame(minHeight: 40)
     }
 
     private func actions(_ file: ThreadFile) -> some View {
         HStack(spacing: 2) {
+            actionButton(file.pinned ? "pin.fill" : "pin", label: file.pinned ? "Unpin" : "Pin", tint: file.pinned ? theme.accent : nil) {
+                Task { await setPinned(file, !file.pinned) }
+            }
             actionButton("bubble.left", label: "Show in chat") { jump(file) }
             if working == file.id {
                 ProgressView().controlSize(.mini).frame(width: 28, height: 28)
@@ -356,11 +236,11 @@ struct BotPanelFiles: View {
         }
     }
 
-    private func actionButton(_ symbol: String, label: LocalizedStringKey, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+    private func actionButton(_ symbol: String, label: LocalizedStringKey, disabled: Bool = false, tint: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 13))
-                .foregroundStyle(theme.inkSecondary)
+                .foregroundStyle(tint ?? theme.inkSecondary)
                 .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
@@ -380,6 +260,18 @@ struct BotPanelFiles: View {
             failed = false
         } catch {
             failed = true
+        }
+    }
+
+    /// The pin shows at once and the server keeps it; a refusal puts it back.
+    private func setPinned(_ file: ThreadFile, _ pinned: Bool) async {
+        guard let client = session.profileClient, let index = files?.firstIndex(where: { $0.id == file.id }) else { return }
+        files?[index].pinned = pinned
+        do {
+            try await client.setThreadFilePin(threadId: threadId, fileId: file.id, pinned: pinned)
+        } catch {
+            if let back = files?.firstIndex(where: { $0.id == file.id }) { files?[back].pinned = !pinned }
+            session.actionError = error.localizedDescription
         }
     }
 
@@ -429,14 +321,6 @@ struct BotPanelFiles: View {
             try? await Task.sleep(nanoseconds: 2_500_000_000)
             withAnimation { status = nil }
         }
-    }
-
-    private func meta(_ file: ThreadFile) -> String {
-        let when = Self.when(file.at)
-        guard file.available else { return "\(String(localized: "Not on this computer")) · \(when)" }
-        return [ThreadFilesView.sourceName(file.source), file.size.map(DesktopFileSize.format), when]
-            .compactMap { $0 }
-            .joined(separator: " · ")
     }
 
     /// `dateStyle: medium, timeStyle: short`, as Intl writes it

@@ -94,4 +94,26 @@ describe("conversation files through the harness", () => {
     expect((await fetch(`${session.info.url}/api/threads/${secondThread}/files/${report.id}`)).status).toBe(404);
     expect((await api("GET", "/api/threads/no-such-thread/files")).status).toBe(404);
   }, 40_000);
+
+  it("pins a file of the conversation on the server, and lists it as pinned", async () => {
+    const bot = (await api("POST", "/api/bots", {})).body.bot;
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } })).status).toBe(200);
+    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "Write the report" })).status).toBe(202);
+    let files: Array<Listed & { pinned?: boolean }> = [];
+    await expect.poll(async () => {
+      files = (await api("GET", `/api/threads/${bot.threadId}/files`)).body.files;
+      return files.length;
+    }, { timeout: 20_000 }).toBeGreaterThan(0);
+    const target = files[0]!;
+    const pin = (thread: string, id: string, body: unknown) => api("POST", `/api/threads/${thread}/files/${id}/pin`, body);
+    const listed = async () => ((await api("GET", `/api/threads/${bot.threadId}/files`)).body.files as Array<Listed & { pinned?: boolean }>).find((file) => file.id === target.id);
+
+    expect((await pin(bot.threadId, target.id, { pinned: "yes" })).status).toBe(400);
+    expect((await pin(bot.threadId, "0".repeat(24), { pinned: true })).status).toBe(404);
+    expect((await pin("no-such-thread", target.id, { pinned: true })).status).toBe(404);
+    expect((await pin(bot.threadId, target.id, { pinned: true })).status).toBe(200);
+    expect((await listed())?.pinned).toBe(true);
+    expect((await pin(bot.threadId, target.id, { pinned: false })).status).toBe(200);
+    expect((await listed())?.pinned).toBeUndefined();
+  }, 40_000);
 });

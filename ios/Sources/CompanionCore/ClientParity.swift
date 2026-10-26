@@ -44,6 +44,13 @@ public extension CompanionClient {
         return try await send(makeRequest("GET", "/api/threads/\(threadId)/files"), as: ThreadFilesResponse.self).files
     }
 
+    /// `POST /api/threads/:id/files/:fileId/pin`: pin or unpin a file in the
+    /// Library tab. The server keeps it per conversation.
+    func setThreadFilePin(threadId: String, fileId: String, pinned: Bool) async throws {
+        guard Self.validRouteID(threadId), Self.validThreadFileID(fileId) else { throw APIError.badURL }
+        try await send(makeRequest("POST", "/api/threads/\(threadId)/files/\(fileId)/pin", encodedBody: ThreadFilePinBody(pinned: pinned)))
+    }
+
     /// The authenticated request for one file's bytes. `preview` asks for an
     /// inline image (the server refuses it for anything else).
     func threadFileRequest(threadId: String, fileId: String, preview: Bool) throws -> URLRequest {

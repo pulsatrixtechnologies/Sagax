@@ -214,6 +214,28 @@ final class ParityClientTests: XCTestCase {
         XCTAssertTrue(files[2].isImage, "no mime: the extension decides")
     }
 
+    func testThreadFilePinIsDecodedAndSentToTheServer() async throws {
+        respond(#"""
+        {"files":[
+          {"id":"0123456789abcdef01234567","messageId":"m2","source":"written","path":"plan.md","name":"plan.md","at":20,"size":3,"available":true,"pinned":true},
+          {"id":"89abcdef0123456789abcdef","messageId":"m1","source":"written","path":"notes.md","name":"notes.md","at":10,"size":3,"available":true}
+        ]}
+        """#)
+        let files = try await client.threadFiles(threadId: "thread-1")
+        XCTAssertTrue(files[0].pinned)
+        XCTAssertFalse(files[1].pinned, "no pinned field: not pinned")
+
+        try await client.setThreadFilePin(threadId: "thread-1", fileId: "0123456789abcdef01234567", pinned: false)
+        XCTAssertEqual(captured.httpMethod, "POST")
+        XCTAssertEqual(captured.url?.path, "/api/threads/thread-1/files/0123456789abcdef01234567/pin")
+        let body = try XCTUnwrap(ParityRequestStub.capturedBody)
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: body) as? [String: Bool], ["pinned": false])
+        do {
+            try await client.setThreadFilePin(threadId: "thread-1", fileId: "../x", pinned: true)
+            XCTFail("a file id that is not an opaque id is refused")
+        } catch {}
+    }
+
     func testThreadFilePreviewRequest() throws {
         let request = try client.threadFileRequest(threadId: "thread-1", fileId: "0123456789abcdef01234567", preview: true)
         XCTAssertEqual(request.httpMethod, "GET")

@@ -18,6 +18,8 @@ export interface ThreadFile {
   available: boolean;
   /** Resolved absolute path on the server, while the file is available. */
   localPath?: string;
+  /** Pinned by the person in the Library tab (kept on the server). */
+  pinned?: boolean;
 }
 
 export type FileKind = "image" | "video" | "audio" | "document" | "code" | "archive" | "other";

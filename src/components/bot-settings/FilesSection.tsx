@@ -54,7 +54,7 @@ import { AttachmentPreviewDialog, canonicalDownloadFilename, type PreviewImage }
 import { HoverCard, type AnchorProps } from "../LinkHoverCard";
 import { AnchoredPopover } from "@/components/AnchoredPopover";
 
-const KIND_ICON: Record<FileKind, LucideIcon> = {
+export const KIND_ICON: Record<FileKind, LucideIcon> = {
   image: ImageIcon,
   video: Film,
   audio: Music,
@@ -76,7 +76,7 @@ function readView(): "grid" | "list" | null {
   }
 }
 
-function formatWhen(at: number): string {
+export function formatWhen(at: number): string {
   try {
     return new Intl.DateTimeFormat(activeLocale(), { dateStyle: "medium", timeStyle: "short" }).format(at);
   } catch {
@@ -86,14 +86,14 @@ function formatWhen(at: number): string {
 
 /** A readable local path the person can paste somewhere: an absolute POSIX
  * or Windows path, or a file:// URL. Relative spellings are not offered. */
-function copyablePath(path: string): string | null {
+export function copyablePath(path: string): string | null {
   if (/^file:\/\//i.test(path)) {
     try { return decodeURIComponent(new URL(path).pathname).replace(/^\/([a-z]:[\\/])/i, "$1"); } catch { return null; }
   }
   return path.startsWith("/") || /^[a-z]:[\\/]/i.test(path) || path.startsWith("\\\\") ? path : null;
 }
 
-async function downloadThreadFile(threadId: string, file: ThreadFile): Promise<void> {
+export async function downloadThreadFile(threadId: string, file: ThreadFile): Promise<void> {
   const response = await fetch(threadFileUrl(threadId, file.id));
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
@@ -121,7 +121,7 @@ async function downloadThreadFile(threadId: string, file: ThreadFile): Promise<v
 
 /** One video or audio file, fetched on open (the server bounds the size),
  * played from a blob URL, and gone when the dialog closes. */
-function MediaPreviewDialog({ threadId, file, kind, onClose }: { threadId: string; file: ThreadFile; kind: "video" | "audio"; onClose: () => void }) {
+export function MediaPreviewDialog({ threadId, file, kind, onClose }: { threadId: string; file: ThreadFile; kind: "video" | "audio"; onClose: () => void }) {
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -202,7 +202,7 @@ function MediaPreviewDialog({ threadId, file, kind, onClose }: { threadId: strin
   );
 }
 
-function Thumbnail({ threadId, file, kind, className, iconSize = 20 }: { threadId: string; file: ThreadFile; kind: FileKind; className?: string; iconSize?: number }) {
+export function Thumbnail({ threadId, file, kind, className, iconSize = 20 }: { threadId: string; file: ThreadFile; kind: FileKind; className?: string; iconSize?: number }) {
   const [failed, setFailed] = useState(false);
   const Icon = KIND_ICON[kind];
   return (
@@ -261,7 +261,7 @@ export function FilePreviewCard({ threadId, file }: { threadId: string; file: Th
 }
 
 /** A file's open button with its hover card. */
-function FileHover({ threadId, file, children }: { threadId: string; file: ThreadFile; children: (anchor: AnchorProps | null) => ReactNode }) {
+export function FileHover({ threadId, file, children }: { threadId: string; file: ThreadFile; children: (anchor: AnchorProps | null) => ReactNode }) {
   if (!file.available) return <>{children(null)}</>;
   return <HoverCard kind="file-preview" card={() => <FilePreviewCard threadId={threadId} file={file} />}>{(anchor) => children(anchor)}</HoverCard>;
 }
@@ -273,10 +273,17 @@ function meta(file: ThreadFile): string {
 }
 
 /** The open conversation's files: the fetch, the live refresh and the jump
- * back into the chat. FilesBrowser is everything the person sees. */
-export function FilesSection({ bot }: { bot: Bot }) {
+ * back into the chat. Shared by the Files section and the Library tab. */
+export function useThreadFiles(bot: Bot): {
+  threadId: string;
+  files: ThreadFile[] | null;
+  error: boolean;
+  reload: () => void;
+  jump: (file: ThreadFile) => void;
+  /** Apply a change the person just made before the next listing lands. */
+  patch: (id: string, change: Partial<ThreadFile>) => void;
+} {
   const { state, dispatch } = useStore();
-  const advanced = useAdvancedMode();
   const threadId = bot.threadId;
   const [files, setFiles] = useState<ThreadFile[] | null>(null);
   const [error, setError] = useState(false);
@@ -335,7 +342,18 @@ export function FilesSection({ bot }: { bot: Bot }) {
     }
   };
 
-  return <FilesBrowser key={threadId} threadId={threadId} files={files} error={error} onRetry={() => void load()} onJump={jump} advanced={advanced} />;
+  const patch = useCallback((id: string, change: Partial<ThreadFile>) => {
+    setFiles((current) => current && current.map((file) => file.id === id ? { ...file, ...change } : file));
+  }, []);
+
+  return { threadId, files, error, reload: () => void load(), jump, patch };
+}
+
+/** The open conversation's files, with filters, search and sort. */
+export function FilesSection({ bot }: { bot: Bot }) {
+  const advanced = useAdvancedMode();
+  const { threadId, files, error, reload, jump } = useThreadFiles(bot);
+  return <FilesBrowser key={threadId} threadId={threadId} files={files} error={error} onRetry={reload} onJump={jump} advanced={advanced} />;
 }
 
 /** Filters, search, sort, grid or list, and each file's actions. */
@@ -609,7 +627,7 @@ export function FilesBrowser({ threadId, files, error, onRetry, onJump, initialF
 
 /** A button that opens a small menu under it; a click outside or Escape
  * closes it. The menu's items get `close` to shut it after acting. */
-function PopoverMenu({ label, icon, buttonClass, menuLabel, children, className, defaultOpen = false, wide = false, ...data }: {
+export function PopoverMenu({ label, icon, buttonClass, menuLabel, children, className, defaultOpen = false, wide = false, ...data }: {
   label: string;
   icon: React.ReactNode;
   buttonClass: string;
@@ -655,7 +673,7 @@ function PopoverMenu({ label, icon, buttonClass, menuLabel, children, className,
   );
 }
 
-function MenuItem({ icon, label, ariaLabel, title, disabled, onClick }: { icon: React.ReactNode; label: string; ariaLabel?: string; title?: string; disabled?: boolean; onClick: () => void }) {
+export function MenuItem({ icon, label, ariaLabel, title, disabled, onClick }: { icon: React.ReactNode; label: string; ariaLabel?: string; title?: string; disabled?: boolean; onClick: () => void }) {
   return (
     <button type="button" role="menuitem" disabled={disabled} aria-label={ariaLabel} title={title} onClick={onClick} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40">
       <span className="shrink-0 text-ink-secondary">{icon}</span>
