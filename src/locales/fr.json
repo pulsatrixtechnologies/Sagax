@@ -9789,7 +9789,7 @@
   "remoteSessionsAdmin.unattended.revoke": "Révoquer",
   "remoteSessionsAdmin.unattended.notReady": "L'accès sans surveillance (un service hôte persistant) est conçu mais pas encore activé sur ce serveur.",
   "remoteSessionsAdmin.logs.title": "Journal de {host}",
-  "remoteSessionsAdmin.logs.retention": "Actions auditées, conservées 90 jours. Aucune frappe, aucun secret, aucune adresse de tunnel. Visible par un administrateur de l'espace ou le propriétaire de la session.",
+  "remoteSessionsAdmin.logs.retention": "Actions auditées, conservées 90 jours. Aucune frappe, aucun secret, aucune adresse de tunnel. Visible par un administrateur de l'organisation ou le propriétaire de la session.",
   "remoteSessionsAdmin.logs.loading": "Chargement...",
   "remoteSessionsAdmin.logs.empty": "Aucune action auditée pour cette session.",
   "remoteSessionsAdmin.log.start": "Contrôle démarré",
