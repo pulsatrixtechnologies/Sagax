@@ -123,7 +123,7 @@ export function createUsageRoutes(deps: UsageRouteDeps): RouteHandler {
       return json(res, 200, {
         from: range.from.toISOString(),
         to: range.to.toISOString(),
-        ...buildUsageTraces(usageRowsFor(readUsage(deps.dataDir, range), viewer), { ...(Number.isFinite(max) && max > 0 ? { max: Math.min(Math.trunc(max), USAGE_TRACE_MAX_JOBS) } : {}), ...(parseTracePaging(url.searchParams.get("limit"), url.searchParams.get("offset")) ?? {}) }),
+        ...buildUsageTraces(usageRowsFor(readUsage(deps.dataDir, range), viewer), { ...(Number.isFinite(max) && max > 0 ? { max: Math.min(Math.trunc(max), USAGE_TRACE_MAX_JOBS) } : {}), ...(parseTracePaging(url.searchParams.get("limit"), url.searchParams.get("offset")) ) }),
       });
     }
     // GET /api/usage/traces (2026-10-22, port of OpenMausBot #3316 rebuilt on
@@ -137,7 +137,7 @@ export function createUsageRoutes(deps: UsageRouteDeps): RouteHandler {
       return json(res, 200, {
         from: range.from.toISOString(),
         to: range.to.toISOString(),
-        ...buildUsageTraces(readUsage(deps.dataDir, range), { ...(Number.isFinite(max) && max > 0 ? { max: Math.min(Math.trunc(max), USAGE_TRACE_MAX_JOBS) } : {}), ...(parseTracePaging(url.searchParams.get("limit"), url.searchParams.get("offset")) ?? {}) }),
+        ...buildUsageTraces(readUsage(deps.dataDir, range), { ...(Number.isFinite(max) && max > 0 ? { max: Math.min(Math.trunc(max), USAGE_TRACE_MAX_JOBS) } : {}), ...(parseTracePaging(url.searchParams.get("limit"), url.searchParams.get("offset")) ) }),
       });
     }
     if (!(method === "GET" && (path === "/api/usage" || path === "/api/usage.csv"))) return PASS;
