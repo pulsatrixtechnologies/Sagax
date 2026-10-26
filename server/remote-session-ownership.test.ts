@@ -25,6 +25,8 @@ const BOT_B = "bot-2";
 const THREAD = "thread-1";
 const NOW = new Date("2026-10-21T15:00:00.000Z");
 const END = "2026-10-21T17:00:00.000Z";
+/** A support folder's own end: its key is deleted once that is past on the real clock. */
+const LIVE_END = new Date(Date.now() + 2 * 3_600_000).toISOString();
 
 const roots: string[] = [];
 afterEach(() => {
@@ -42,8 +44,8 @@ const text = (value: unknown) => ({ content: [{ type: "text", text: JSON.stringi
 /** A support folder as remote_support_open leaves it, owned by `owner`. */
 async function supportFolder(owner: { principalId?: string; botId?: string } = { principalId: A, botId: BOT }) {
   const dir = temp("sagax-support-");
-  writeFileSync(path.join(dir, "technician.private.json"), "{}\n", { mode: 0o600 });
-  await rememberSession(dir, CODE, ID, { rights: "standard", end_at: END, ...owner });
+  await rememberSession(dir, CODE, ID, { rights: "standard", end_at: LIVE_END, ...owner });
+  writeFileSync(path.join(dir, "sessions", CODE, "technician.private.json"), "{}\n", { mode: 0o600 });
   writeFileSync(path.join(dir, "sessions", CODE, "address"), `${ADDRESS}\n`, { mode: 0o600 });
   return dir;
 }
@@ -87,7 +89,7 @@ describe("support tunnel ownership (finding 1)", () => {
   it("resolves the tunnel through the row's code folder, for its owner and bot only", async () => {
     const dir = await supportFolder();
     const row = { id: ID, code: CODE, principalId: A, botId: BOT };
-    expect(readSupportTunnel(dir, row)).toEqual({ keyPath: path.join(dir, "technician.private.json"), address: ADDRESS });
+    expect(readSupportTunnel(dir, row)).toEqual({ keyPath: path.join(dir, "sessions", CODE, "technician.private.json"), address: ADDRESS });
     expect(readSupportTunnel(dir, { ...row, principalId: B })).toBeNull();
     expect(readSupportTunnel(dir, { ...row, botId: BOT_B })).toBeNull();
     expect(readSupportTunnel(dir, { ...row, code: "GVPZGU" })).toBeNull();

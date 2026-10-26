@@ -1,7 +1,7 @@
 // Fixed read-only probes for a Tailcat session. The command text is ours:
 // nothing the person or the model typed is interpolated into it.
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -109,10 +109,67 @@ export function normPrincipal(value: string): string {
   return value.trim().toLowerCase();
 }
 
+/** The tailcat client key of one session Sagax opened, and its public half.
+ * One key per session, in that session's folder: there is no shared key. */
+export const SUPPORT_KEY_FILE = "technician.private.json";
+export const SUPPORT_PUB_FILE = "technician.nodekey";
+/** A key being created for an open that Perspicax has not answered yet. */
+export const SUPPORT_PENDING = "pending";
+/** A pending folder older than this is left over from a crashed open. */
+export const SUPPORT_PENDING_MAX_MS = 60 * 60 * 1000;
+
+function dropSessionKey(folder: string): void {
+  for (const name of [SUPPORT_KEY_FILE, SUPPORT_PUB_FILE]) {
+    try { rmSync(path.join(folder, name), { force: true }); } catch { /* next sweep */ }
+  }
+}
+
+/** The key of the session behind `code`, or null. A session past its end_at
+ * (open.json), closed, or without a readable end has its key deleted here. */
+export function liveSupportKey(dir: string, code: string, now = Date.now()): string | null {
+  const compact = parseRemoteSessionCode(code);
+  if (!compact) return null;
+  const folder = path.join(path.resolve(dir), "sessions", compact);
+  const keyPath = path.join(folder, SUPPORT_KEY_FILE);
+  if (!existsSync(keyPath) && !existsSync(path.join(folder, SUPPORT_PUB_FILE))) return null;
+  let end = Number.NaN;
+  try {
+    const parsed = JSON.parse(readFileSync(path.join(folder, "open.json"), "utf8")) as { end_at?: unknown };
+    if (typeof parsed?.end_at === "string") end = Date.parse(parsed.end_at);
+  } catch { /* no end: the key goes */ }
+  if (!Number.isFinite(end) || end <= now || existsSync(path.join(folder, "closed"))) {
+    dropSessionKey(folder);
+    return null;
+  }
+  return existsSync(keyPath) ? keyPath : null;
+}
+
+/** Delete what must not stay: the old shared key (never read again), pending
+ * keys older than an hour, and the key of every session past its end. */
+export function sweepSupportKeys(dir: string, now = Date.now()): void {
+  const root = path.resolve(dir);
+  dropSessionKey(root);
+  const pending = path.join(root, SUPPORT_PENDING);
+  let names: string[] = [];
+  try { names = readdirSync(pending); } catch { names = []; }
+  for (const name of names) {
+    const folder = path.join(pending, name);
+    try {
+      if (statSync(folder).mtimeMs > now - SUPPORT_PENDING_MAX_MS) continue;
+      rmSync(folder, { recursive: true, force: true });
+    } catch { /* next sweep */ }
+  }
+  let codes: string[] = [];
+  try { codes = readdirSync(path.join(root, "sessions")); } catch { codes = []; }
+  for (const code of codes) liveSupportKey(root, code, now);
+}
+
 /** Remove session folders under `<dir>/sessions` not touched in `maxAgeMs`
  * (default 48 h). Best effort, synchronous, nothing thrown. Returns how many
- * folders were removed. */
+ * folders were removed. Expired keys, stale pending keys and the old shared
+ * key go first (sweepSupportKeys). */
 export function pruneSupportSessions(dir: string, now: number, maxAgeMs = 48 * 60 * 60 * 1000): number {
+  sweepSupportKeys(dir, now);
   const sessions = path.join(path.resolve(dir), "sessions");
   let codes: string[] = [];
   try {
@@ -134,24 +191,21 @@ export function pruneSupportSessions(dir: string, now: number, maxAgeMs = 48 * 6
   return removed;
 }
 
-/** A session Sagax opened itself (server/remote-support-local.ts): the
- * technician key is `<dir>/technician.private.json` and the address is in
- * `<dir>/sessions/<row.code>/address`. The folder must hold this very id and
- * name this row's person and bot as its opener: the id alone (it is on the
- * chat card) never resolves a tunnel, and a folder without an owner never does. */
-export function readSupportTunnel(dir: string, row: TunnelOwner): { keyPath: string; address: string } | null {
+/** A session Sagax opened itself (server/remote-support-local.ts): the key
+ * made for this session only and the address are both in
+ * `<dir>/sessions/<row.code>/`. The folder must hold this very id and name
+ * this row's person and bot as its opener: the id alone (it is on the chat
+ * card) never resolves a tunnel, and a folder without an owner never does. A
+ * session past its end has its key deleted and no longer resolves. */
+export function readSupportTunnel(dir: string, row: TunnelOwner, now = Date.now()): { keyPath: string; address: string } | null {
   if (!REMOTE_SESSION_ID.test(row.id) || !row.code || !row.principalId || !row.botId) return null;
   const root = path.resolve(dir);
-  const keyPath = path.join(root, "technician.private.json");
-  try {
-    readFileSync(keyPath);
-  } catch {
-    return null;
-  }
   const owner = supportFolderOwner(root, row.code);
   if (!owner || owner.id !== row.id) return null;
   if (!owner.principalId || owner.principalId !== normPrincipal(row.principalId)) return null;
   if (!owner.botId || owner.botId !== row.botId) return null;
+  const keyPath = liveSupportKey(root, row.code, now);
+  if (!keyPath) return null;
   let address = "";
   try {
     address = readFileSync(path.join(root, "sessions", parseRemoteSessionCode(row.code)!, "address"), "utf8").trim();
@@ -164,11 +218,11 @@ export function readSupportTunnel(dir: string, row: TunnelOwner): { keyPath: str
 /** The on-disk tunnel, or null when this host does not have it. The address
  * stays in the file; callers pass it only as an argv element and never log it.
  * The Flow session folder first, then the folder of a session Sagax opened. */
-export function readTunnel(home: string, row: TunnelOwner, supportDir?: string): { keyPath: string; address: string } | null {
+export function readTunnel(home: string, row: TunnelOwner, supportDir?: string, now = Date.now()): { keyPath: string; address: string } | null {
   if (!REMOTE_SESSION_ID.test(row.id)) return null;
   const flow = readFlowTunnel(home, row);
   if (flow) return flow;
-  return supportDir ? readSupportTunnel(supportDir, row) : null;
+  return supportDir ? readSupportTunnel(supportDir, row, now) : null;
 }
 
 /** A Flow session folder (`~/.pulsatrix-flow/tailcat/<id>`) carries no owner
