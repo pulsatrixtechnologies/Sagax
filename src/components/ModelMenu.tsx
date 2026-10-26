@@ -641,8 +641,9 @@ function ModelSearchRow({ row, id, domKey, active, style, disabled, nested = fal
         blocked && "opacity-50",
       )}
     >
+      <span className="flex min-w-0 flex-col">
       <span className="flex min-w-0 items-baseline gap-1.5">
-        <span className="truncate">{row.label}</span>
+        <span className={row.subtext ? "min-w-0 break-words" : "truncate"}>{row.label}</span>
         {row.detail && <span data-model-row-detail className={cn("min-w-0 shrink truncate", style.detail)}>{row.detail}</span>}
         {row.tags?.map((tag) => <span key={tag} data-model-row-tag className={cn("shrink-0 self-center rounded px-1.5 py-px text-[10.5px]", style.tag)}>{tag}</span>)}
         {row.warning && (
@@ -651,6 +652,8 @@ function ModelSearchRow({ row, id, domKey, active, style, disabled, nested = fal
             {row.warning}
           </span>
         )}
+      </span>
+      {row.subtext && <span data-model-row-sub className={cn("min-w-0 break-words text-[11.5px]", style.detail)}>{row.subtext}</span>}
       </span>
       <span className="flex shrink-0 items-center gap-1">
         {row.current && <Check size={14} aria-hidden="true" className={style.check} />}

@@ -228,7 +228,7 @@ struct ModelMenuSheet: View {
                 HStack(spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(verbatim: row.label).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                            Text(verbatim: row.label).foregroundStyle(Theme.textPrimary).fixedSize(horizontal: false, vertical: true)
                             ForEach(row.tags, id: \.self) { tag in
                                 Text(verbatim: tag)
                                     .font(.caption2)
@@ -239,7 +239,7 @@ struct ModelMenuSheet: View {
                             }
                         }
                         if let detail = row.detail {
-                            Text(verbatim: detail).font(.footnote).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                            Text(verbatim: detail).font(.footnote).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
                         }
                         if row.notResponding {
                             Label { Text("Not responding") } icon: { Image(systemName: "exclamationmark.triangle") }

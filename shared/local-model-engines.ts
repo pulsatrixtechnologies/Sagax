@@ -62,14 +62,16 @@ export interface LocalModelFacts {
   name?: string;
 }
 
-/** Picker labels for one local server's models: "DwarfStar: Qwen3.8 Flash
- * Next". Several ids under one name stay apart by what tells them apart,
- * not by the whole id (2026-10-13: three rows read "DwarfStar: Qwen3.8
- * Flash Next (qwen3.8-f..." once truncated). DwarfStar serves one model as
- * `qwen3.8-flash-next`, `-chat` and `-reasoner`: the shortest id keeps the
- * name, the others add their own end ("Chat", "Reasoner"). Ids that do not
- * share a stem keep the id in parentheses. */
-export function localModelLabels(server: string, rows: readonly LocalModelFacts[]): Map<string, string> {
+/** Picker names for one local server's models: "Qwen3.8 Flash Next", the
+ * model alone, never "Server: name" nor ":8000: name" (2026-10-26). Several
+ * ids under one name stay apart by what tells them apart, not by the whole
+ * id (2026-10-13: three rows read "DwarfStar: Qwen3.8 Flash Next (qwen3.8-f..."
+ * once truncated). DwarfStar serves one model as `qwen3.8-flash-next`,
+ * `-chat` and `-reasoner`: the shortest id keeps the name, the others add
+ * their own end ("Chat", "Reasoner"). Ids that do not share a stem keep the
+ * id in parentheses. The server is a separate hint, only when two servers of
+ * one computer expose the same name (`withServerHints`). */
+export function localModelLabels(rows: readonly LocalModelFacts[]): Map<string, string> {
   const groups = new Map<string, string[]>();
   for (const row of rows) {
     const name = row.name?.trim() || row.id;
@@ -79,10 +81,21 @@ export function localModelLabels(server: string, rows: readonly LocalModelFacts[
   for (const row of rows) {
     const name = row.name?.trim() || row.id;
     const ids = groups.get(name) ?? [row.id];
-    const shown = ids.length > 1 && name !== row.id ? `${name}${sharedNameSuffix(row.id, ids)}` : name;
-    out.set(row.id, server.trim() ? `${server.trim()}: ${shown}` : shown);
+    out.set(row.id, ids.length > 1 && name !== row.id ? `${name}${sharedNameSuffix(row.id, ids)}` : name);
   }
   return out;
+}
+
+/** Two servers of the same computer exposing the same model name: only then
+ * does a row carry its server (the label given in Local models, else the
+ * host) as a quiet sub-line. Rows whose name is unique carry none. */
+export function withServerHints<T extends { label: string }>(rows: readonly (T & { serverLabel: string })[]): T[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(row.label, (counts.get(row.label) ?? 0) + 1);
+  return rows.map(({ serverLabel, ...row }) => {
+    const hint = serverLabel.trim();
+    return ((counts.get(row.label) ?? 0) > 1 && hint ? { ...row, server: hint } : row) as unknown as T;
+  });
 }
 
 /** What follows a shared name for one id of its group: nothing for the stem

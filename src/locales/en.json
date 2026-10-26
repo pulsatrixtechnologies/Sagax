@@ -3808,6 +3808,7 @@
   "model.followsBot": "Uses {name}'s model",
   "model.loadedTag": "Loaded",
   "model.localGroup": "Local",
+  "model.sharedBy": "Shared by {name}",
   "model.localSoon": "Local models will appear as soon as the agent is installed.",
   "model.localUnavailable.anthropic": "This local server does not speak the Anthropic protocol.",
   "model.localUnavailable.engine": "{engine} cannot run a local model.",

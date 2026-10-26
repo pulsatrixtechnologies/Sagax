@@ -1478,6 +1478,22 @@ public struct ModelOption: Codable, Hashable, Identifiable, Sendable {
     public var effortLevels: [String]? = nil
     /// The level the engine runs it at when none is sent.
     public var defaultEffort: String? = nil
+    /// Only when two servers of one computer expose the same model name: the
+    /// server's label, a quiet sub-line. `label` is the model name alone,
+    /// never "host:port: name" (2026-10-26).
+    public var server: String? = nil
+    /// A model on another person's computer: that person's display name.
+    public var sharedBy: String? = nil
+
+    /// The quiet second line under the name: "Shared by <Name>" when another
+    /// person's computer serves it, then the server when a name is duplicated.
+    /// The name itself is never prefixed or cut.
+    public var subtext: String? {
+        let name = sharedBy?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let host = server?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let parts = [name.isEmpty ? "" : String(localized: "Shared by \(name)"), host].filter { !$0.isEmpty }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 }
 
 /// One reasoning variant of a model (`shared/runtime-events.ts`).

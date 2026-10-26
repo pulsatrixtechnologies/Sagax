@@ -626,6 +626,12 @@ export interface ModelCatalog {
     /** A desktop local row whose server answered /v1/messages on the desktop's
      * probe, so Claude Code can run it (shared/local-model-engines.ts). */
     anthropic?: boolean;
+    /** Only when two servers of one computer expose the same model name: the
+     * server's label (Local models), shown as a quiet sub-line. The row's
+     * `label` is the model name alone, never prefixed by host or port. */
+    server?: string;
+    /** A model from another person's computer: that person's display name. */
+    sharedBy?: string;
     /** upstream provider id (e.g. "zai", "nous") when the engine can report
      * it — the picker shows it as a muted badge so BYOK duplicates of the
      * same model id stay distinguishable. */

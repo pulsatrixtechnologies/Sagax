@@ -6,6 +6,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { ModelSearchList, type ModelMenuRow, type ModelMenuSection } from "../components/ModelMenu";
 import { setLocale, t } from "../lib/i18n";
+import { localModelSubtext } from "../lib/local-model-label";
 import { favoriteKey, toggleModelFavorite, useModelFavorites, writeModelFavorites } from "../lib/model-favorites";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
@@ -35,11 +36,18 @@ const sections: ModelMenuSection[] = [
     model("claude", "claude-sonnet-5", "Claude Sonnet 5", { detail: "Moyen", tags: [defaultTag] }),
     model("claude", "claude-haiku-5-5", "Claude Haiku 5.5"),
     model("claude", "claude-haiku-4-5", "Claude Haiku 4.5"),
-    model("claude", "dwarfstar::qwen3.8-flash-next", "DwarfStar: Qwen3.8 Flash Next", { detail: "Local" }),
   ] },
   { key: "grok", label: "Grok", rows: [model("grok", "grok-4.7", "Grok 4.7", { detail: "Élevé" }), model("grok", "grok-4.5", "Grok 4.5", { detail: "Élevé" })] },
   { key: "codex", label: "OpenAI", rows: [model("codex", "gpt-5.6", "GPT-5.6", { detail: "Moyen" }), model("codex", "gpt-5.6-mini", "GPT-5.6 mini")] },
-  { key: "dwarfstar", label: "DwarfStar (local)", rows: [model("dwarfstar", "qwen3.8-flash-next", "Qwen3.8 Flash Next"), model("dwarfstar", "gemma-4", "Gemma 4")] },
+  // The model name alone (2026-10-26); "(Shared by …)" for another person's
+  // computer; the server only when two servers share a name.
+  { key: "local:this-computer", label: t("model.localGroup"), rows: [
+    model("claude", "desk8000ab::Ornith-1.5-122B-oQ4e-mtp", "Ornith-1.5-122B-oQ4e-mtp"),
+    model("claude", "desk8000ab::Ornith-1.5-35B-A3B-oQ4e-mtp", "Ornith-1.5-35B-A3B-oQ4e-mtp"),
+    model("claude", "desk8000cd::Qwen3-Coder-Next", "Qwen3-Coder-Next", { subtext: localModelSubtext({ sharedBy: "Camille Tremblay-Lachance" }) }),
+    model("claude", "desk8000ab::Gemma-4", "Gemma-4", { subtext: "oMLX" }),
+    model("claude", "desk8002ab::Gemma-4", "Gemma-4", { subtext: ":8002" }),
+  ] },
 ];
 
 function Gallery() {

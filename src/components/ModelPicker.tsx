@@ -8,6 +8,7 @@
 // the person making it, so the chat header and the settings dialog render the
 // same row and write through the same action.
 import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { localModelSubtext } from "@/lib/local-model-label";
 import { createPortal } from "react-dom";
 import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, LogOut, Plus, RefreshCw, Sparkles, X } from "lucide-react";
 import { api, useStore, type Bot, type ConfigStatus, type InstanceInfo, type ModelSelection } from "@/state/store";
@@ -1128,6 +1129,7 @@ export function ModelPicker({
       modelId: runs.id,
       label: option.label,
       detail,
+      subtext: local ? localModelSubtext(option) : undefined,
       title: [option.label, detail, runs.id].filter(Boolean).join(" · "),
       tags: [
         option.id === instance.models.default ? t("model.defaultTag") : undefined,
@@ -1201,20 +1203,18 @@ export function ModelPicker({
   // Every engine offers the same local models (DwarfStar through Claude, Grok,
   // Codex, pi...): list each model once. Rows come in engine order with the
   // bot's own engine first, so the first one kept is the engine already in use.
-  // The provider prefix ("DwarfStar: ") moves to the detail and the "Local"
-  // tag goes: the section already says both (2026-10-14).
+  // The "Local" tag goes: the section already says it. The label is the model
+  // name alone (2026-10-26); a server shows only as a detail when two servers
+  // of one computer share a name (`option.server`).
   const uniqueLocalRows = (rows: readonly ModelMenuRow[]): ModelMenuRow[] => {
     const seen = new Map<string, ModelMenuRow>();
     for (const row of rows) {
       const id = row.modelId ?? row.key;
       const kept = seen.get(id);
       if (kept && !(row.current && !kept.current)) continue;
-      const split = /^([^:]{2,40}):\s+(.+)$/.exec(row.label);
       const localTag = t("model.localGroup");
       seen.set(id, {
         ...row,
-        label: split ? split[2] : row.label,
-        detail: split ? split[1] : row.detail,
         tags: row.tags?.filter((tag) => tag !== localTag && tag.toLowerCase() !== "local"),
       });
     }

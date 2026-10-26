@@ -10,8 +10,8 @@ final class ModelMenuTests: XCTestCase {
         local: "Local", defaultTag: "Default", loadedTag: "Loaded"
     )
 
-    private func instance(_ id: String, state: String = "available", authenticated: Bool? = true, models: [(String, String)], local: Bool = false) -> Instance {
-        let options = models.map { ModelOption(id: $0.0, label: $0.1, custom: local ? true : nil, local: local ? true : nil) }
+    private func instance(_ id: String, state: String = "available", authenticated: Bool? = true, models: [(String, String)], local: Bool = false, server: String? = nil, sharedBy: String? = nil) -> Instance {
+        let options = models.map { ModelOption(id: $0.0, label: $0.1, custom: local ? true : nil, local: local ? true : nil, server: server, sharedBy: sharedBy) }
         return Instance(
             instanceId: id, driverKind: id, displayName: id.capitalized,
             snapshot: ProviderSnapshot(state: state, authenticated: authenticated),
@@ -24,8 +24,8 @@ final class ModelMenuTests: XCTestCase {
             instance("claude", models: [("sonnet", "Sonnet"), ("opus", "Opus")]),
             instance("codex", authenticated: false, models: [("gpt", "GPT")]),
             instance("qwen", state: "missing", models: [("coder", "Coder")]),
-            instance("pi", models: [("ds::llama", "DwarfStar: Llama")], local: true),
-            instance("grok", models: [("ds::llama", "Grok: Llama")], local: true),
+            instance("pi", models: [("ds::llama", "Llama")], local: true, server: "DwarfStar"),
+            instance("grok", models: [("ds::llama", "Llama")], local: true),
         ]
     }
 
@@ -42,8 +42,17 @@ final class ModelMenuTests: XCTestCase {
         XCTAssertEqual(menu.map(\.key), ["top", "claude", ModelMenu.localSectionKey], "signed out and not installed providers go")
         XCTAssertEqual(menu[1].rows.map(\.modelId), ["sonnet", "opus"])
         XCTAssertEqual(menu[1].rows.first { $0.current }?.modelId, "opus")
-        XCTAssertEqual(menu[2].rows.map(\.label), ["Llama"], "a local model once, its provider in the detail")
+        XCTAssertEqual(menu[2].rows.map(\.label), ["Llama"], "a local model once, by its name alone")
         XCTAssertEqual(menu[2].rows.first?.detail, "DwarfStar")
+    }
+
+    func testASharedLocalModelNamesWhoSharesIt() {
+        let option = ModelOption(id: "d::ornith", label: "Ornith-1.5-122B-oQ4e-mtp", custom: true, local: true, sharedBy: "Camille Tremblay")
+        XCTAssertEqual(option.label, "Ornith-1.5-122B-oQ4e-mtp", "the name stays whole, no suffix")
+        XCTAssertTrue(option.subtext?.contains("Camille Tremblay") == true, option.subtext ?? "")
+        XCTAssertEqual(option.id, "d::ornith", "the technical id stays")
+        XCTAssertNil(ModelOption(id: "d::ornith", label: "Ornith-1.5-122B-oQ4e-mtp").subtext)
+        XCTAssertEqual(ModelOption(id: "d::g", label: "Gemma-4", server: "oMLX").subtext, "oMLX")
     }
 
     func testTheModelInUseStaysAndSaysItDoesNotRespond() {

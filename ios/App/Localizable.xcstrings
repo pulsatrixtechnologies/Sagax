@@ -35049,6 +35049,22 @@
         }
       }
     },
+    "Shared by %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shared by %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partagé par %@"
+          }
+        }
+      }
+    },
     "Skin unlocked: %@ (%@)": {
       "localizations": {
         "en": {

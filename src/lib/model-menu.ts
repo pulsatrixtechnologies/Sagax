@@ -15,6 +15,9 @@ export interface ModelMenuRow {
   label: string;
   /** Its effort, variant or origin, in secondary ink. */
   detail?: string;
+  /** A quiet second line under the name (who shares a local model, its server
+   * when two share a name). It wraps, never truncates. */
+  subtext?: string;
   /** Short markers after the detail (Default, Loaded, the bot's model). */
   tags?: string[];
   /** The choice in effect: checked. */
@@ -53,7 +56,7 @@ export function filterModelSections(sections: readonly ModelMenuSection[], query
   if (words.length === 0) return sections.filter((section) => section.rows.length > 0);
   return sections.flatMap((section) => {
     const rows = section.rows.filter((row) => {
-      const haystack = foldSearch([section.label, row.label, row.detail, ...(row.tags ?? []), row.keywords, row.modelId].filter(Boolean).join(" "));
+      const haystack = foldSearch([section.label, row.label, row.detail, row.subtext, ...(row.tags ?? []), row.keywords, row.modelId].filter(Boolean).join(" "));
       return words.every((word) => haystack.includes(word));
     });
     return rows.length > 0 ? [{ ...section, rows }] : [];
