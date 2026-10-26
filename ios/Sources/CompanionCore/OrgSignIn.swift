@@ -35,7 +35,7 @@ extension PulsatrixSignIn {
         if let invite = invite(from: callback, expectedOrigin: expectedOrigin) {
             return .invite(invite)
         }
-        guard let scheme = callback.scheme?.lowercased(), callbackSchemes.contains(scheme),
+        guard let scheme = callback.scheme?.lowercased(), scheme == callbackScheme,
               callback.host?.lowercased() == "pair",
               let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems,
               let code = items.first(where: { $0.name == "error" })?.value, !code.isEmpty
@@ -176,7 +176,7 @@ public struct OrgConnectFlow: Equatable, Sendable {
     /// failure so the button stays).
     public private(set) var offersSignIn = false
     /// The return scheme the sign-in asks for.
-    public private(set) var returnScheme = PulsatrixSignIn.legacyCallbackScheme
+    public private(set) var returnScheme = PulsatrixSignIn.callbackScheme
 
     public enum Event: Equatable, Sendable {
         case chose

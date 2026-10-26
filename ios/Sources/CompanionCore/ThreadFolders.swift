@@ -12,10 +12,10 @@ import Foundation
 // MARK: - Thread link (TH6)
 
 /// The desktop's thread link (`threadRefUrl` in src/lib/thread-refs.ts):
-/// `openmausbot://thread/<thread>?bot=<owner>`. Pasted into any chat, the
+/// `sagax://thread/<thread>?bot=<owner>`. Pasted into any chat, the
 /// desktop turns it into a thread chip; the owner is the bot or the room.
 public enum ThreadLink {
-    public static let prefix = "openmausbot://thread/"
+    public static let prefix = "sagax://thread/"
 
     public static func url(ownerId: String, threadId: String) -> String {
         prefix + encodeURIComponent(threadId) + "?bot=" + encodeURIComponent(ownerId)

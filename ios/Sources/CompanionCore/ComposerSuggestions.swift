@@ -178,7 +178,7 @@ public enum ThreadRefSuggestions {
 
 /// Thread references in a draft (src/lib/thread-refs.ts).
 public enum ThreadRefs {
-    static let urlPrefix = "openmausbot://thread/"
+    static let urlPrefix = "sagax://thread/"
 
     /// A "#" glued to one of these is not a word start.
     static func notWordStart(_ character: Character) -> Bool {

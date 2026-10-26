@@ -112,13 +112,10 @@ const PROTECT = [
   // file format ids, stored preference names and notification ids
   re(`${OLD_SHORT}\\.[a-z][A-Za-z0-9_.-]*`),
   // compatibility kept on purpose (AGENTS.md, "Legacy names kept for
-  // compatibility"): both schemes,
-  // the old protocol and links, the lease files old and new copies share,
-  // the runtime name that names the keychain secret, the health word
+  // compatibility"): both data folder names, the lease files old and new
+  // copies share, the runtime name that names the keychain secret, the
+  // health word. The URL scheme is not protected: it becomes sagax://.
   re(`sagax\\|${OLD}`),
-  re(`\\[sagax, ${OLD}\\]`),
-  re(`"${OLD}:"`),
-  re(`LEGACY_[A-Z_]+ = "${OLD}://[a-z]+"`),
   re(`${OLD}-server\\.lease`),
   re(`\\.${OLD}-server-child`),
   re(`"name": "${OLD}"`),

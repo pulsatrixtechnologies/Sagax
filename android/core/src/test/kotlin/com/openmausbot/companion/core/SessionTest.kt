@@ -996,7 +996,7 @@ class SessionTest {
             events = { _, _ -> emptyFlow() },
         )
         session.awaitRestored()
-        session.receivePairingURL("openmausbot://pair?address=10.0.0.1:8810&code=123456")
+        session.receivePairingURL("sagax://pair?address=10.0.0.1:8810&code=123456")
         assertNotNull(session.pairingInvite.value)
         assertTrue(session.pairingRequested.value)
     }
@@ -1101,7 +1101,7 @@ class SessionTest {
         )
         // Deep link arrives while restore is still suspended.
         session.receivePairingURL(
-            "openmausbot://pair?address=10.0.0.1:8810&token=omb_pair_" + "a".repeat(43),
+            "sagax://pair?address=10.0.0.1:8810&token=omb_pair_" + "a".repeat(43),
         )
         runCurrent()
         assertNull(session.pairingInvite.value)
@@ -1136,7 +1136,7 @@ class SessionTest {
             events = { _, _ -> emptyFlow() },
         )
         session.awaitRestored()
-        session.receivePairingURL("openmausbot://pair?address=192.168.1.2:8810&token=$qr&code=123456")
+        session.receivePairingURL("sagax://pair?address=192.168.1.2:8810&token=$qr&code=123456")
         assertEquals(qr, session.pairingInvite.value?.credential)
 
         assertFailsWith<PairingRouteError> {
@@ -1164,7 +1164,7 @@ class SessionTest {
             events = { _, _ -> emptyFlow() },
         )
         session.awaitRestored()
-        session.receivePairingURL("openmausbot://pair?address=192.168.1.2:8810&token=$qr")
+        session.receivePairingURL("sagax://pair?address=192.168.1.2:8810&token=$qr")
 
         assertFailsWith<APIError.Status> {
             session.pair(session.pairingInvite.value!!, "request-id-authoritative")
@@ -1177,7 +1177,7 @@ class SessionTest {
         }
         assertEquals(1, attempts)
 
-        session.receivePairingURL("openmausbot://pair?address=192.168.1.2:8810&token=$qr&code=123456")
+        session.receivePairingURL("sagax://pair?address=192.168.1.2:8810&token=$qr&code=123456")
         assertNull(session.pairingInvite.value)
         assertTrue(session.actionError!!.contains("already used") || session.actionError!!.contains("rescan"))
     }

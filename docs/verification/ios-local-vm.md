@@ -28,7 +28,7 @@ Use a disposable simulator:
 1. Build the `OpenMausCompanion` scheme with a team and local signing, as in
    the [iOS runbook](../../ios/TESTING.md), and install it on a fresh simulator.
 2. Pair by opening
-   `openmausbot://pair?address=127.0.0.1:PORT&code=CODE` in the simulator with
+   `sagax://pair?address=127.0.0.1:PORT&code=CODE` in the simulator with
    the printed address and code, then tap **Connect**.
 3. Open Vee, then its computer. With computer access off (the default), the view
    says to turn on **Allow computer view** in Settings → Remote access.

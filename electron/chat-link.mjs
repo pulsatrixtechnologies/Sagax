@@ -1,14 +1,14 @@
 // Chat links opened from outside the app (a browser, a dashboard, a script):
 //
-//   openmausbot://thread/<thread-id>?bot=<bot-id>  the exact chat a row's
-//                                                  Copy link makes
-//   openmausbot://bot/<bot-id>                     the bot's current
-//                                                  conversation
+//   sagax://thread/<thread-id>?bot=<bot-id>  the exact chat a row's
+//                                            Copy link makes
+//   sagax://bot/<bot-id>                     the bot's current
+//                                            conversation
 //
 // Main only recognizes them and hands them to the page, which checks them
 // strictly against the chats it has (src/lib/thread-refs.ts) and opens one or
 // says it cannot. Opening a link never sends, interrupts or creates anything.
-const CHAT_LINK_PREFIXES = ["openmausbot://thread/", "openmausbot://bot/"];
+const CHAT_LINK_PREFIXES = ["sagax://thread/", "sagax://bot/"];
 const MAX_LINK_LENGTH = 1024;
 
 export function chatLinkFrom(value) {

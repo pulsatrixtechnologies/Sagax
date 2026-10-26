@@ -298,7 +298,7 @@ fun PairingScreen(onCancel: () -> Unit) {
         if (selected != null) {
             // An organization server that signs people in with Pulsatrix: the
             // sign-in runs in a Custom Tab and comes back as the same invite a
-            // QR code carries, through the openmausbot://pair intent filter.
+            // QR code carries, through the sagax://pair intent filter.
             if (!selected.fromScan) {
                 PulsatrixSignInSection(
                     connection = selected.connection,
