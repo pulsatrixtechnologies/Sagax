@@ -32,6 +32,7 @@ import { LocalComputerAutoWarning } from "./LocalComputerAutoWarning";
 import { SharePresetDialog } from "./SharePresetDialog";
 import { servedPage } from "@/lib/desktop";
 import { viewerBotsReadOnly, viewerCanCreateBots, viewerIsOrgMember } from "@/lib/viewer";
+import { canEditBotField } from "@/lib/bot-capabilities";
 import { botsReadOnlyText } from "@/lib/permissions";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { showBotZipImport } from "@/lib/bot-zip";
@@ -271,7 +272,11 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
     try {
       if (defaultsMode) await api("/api/config", { method: "PATCH", body: JSON.stringify({ newBotDefaults: await preparedBotTemplate(draft) }) });
       else {
-        const { bot, warnings } = await createConfiguredBot(draft, undefined, undefined, undefined, visibility?.ok ? visibility.visibility : undefined, { memberFieldsOnly: viewerIsOrgMember(parent.state.config) });
+        const { bot, warnings } = await createConfiguredBot(draft, undefined, undefined, undefined, visibility?.ok ? visibility.visibility : undefined, {
+          memberFieldsOnly: viewerIsOrgMember(parent.state.config),
+          // the settings this member's permissions let them pick in the form (#1076)
+          memberMayWrite: field => canEditBotField(parent.state.config, {}, field, { draft: true }),
+        });
         parent.dispatch({ type: "botAdded", bot, preserveSelection });
         if (warnings.length) parent.dispatch({ type: "error", message: warnings.join("\n") });
         try { await onCreated?.(bot); }
