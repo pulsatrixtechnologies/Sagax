@@ -62,19 +62,35 @@ export interface UsageTraceList {
     output: number;
   };
   truncated: boolean;
+  /** Set by the server when a page was asked: the slice this list holds. */
+  page?: { offset: number; limit: number };
+}
+
+/** One page of traces: `limit` jobs starting at `offset`, newest first. */
+export interface TracePaging { limit: number; offset: number }
+
+export const TRACE_PAGE_SIZES = [10, 25, 50] as const;
+export const TRACE_DEFAULT_PAGE_SIZE = 10;
+
+const pagingQuery = (paging?: TracePaging): string =>
+  paging ? `&limit=${paging.limit}&offset=${paging.offset}` : "";
+
+/** "1-10" for the shown slice of `total` (0 when empty). */
+export function pageRange(offset: number, count: number): string {
+  return count <= 0 ? "0" : `${offset + 1}-${offset + count}`;
 }
 
 /** The whole-ledger traces: every job of the workspace (owner or usage.view).
  * The admin console reads this; the app's personal screen reads fetchMyTraces. */
-export function fetchTraces(range: { from: string; to: string }, get: <T>(path: string) => Promise<T> = api): Promise<UsageTraceList> {
-  return get<UsageTraceList>(`/api/usage/traces?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`);
+export function fetchTraces(range: { from: string; to: string }, paging?: TracePaging, get: <T>(path: string) => Promise<T> = api): Promise<UsageTraceList> {
+  return get<UsageTraceList>(`/api/usage/traces?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}${pagingQuery(paging)}`);
 }
 
 /** The signed-in person's OWN traces and nothing else (GET /api/me/usage/traces,
  * open to every member). Settings > Usage reads this so a person sees where
  * their own jobs spent time and money, never another person's. */
-export function fetchMyTraces(range: { from: string; to: string }, get: <T>(path: string) => Promise<T> = api): Promise<UsageTraceList> {
-  return get<UsageTraceList>(`/api/me/usage/traces?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}`);
+export function fetchMyTraces(range: { from: string; to: string }, paging?: TracePaging, get: <T>(path: string) => Promise<T> = api): Promise<UsageTraceList> {
+  return get<UsageTraceList>(`/api/me/usage/traces?from=${encodeURIComponent(range.from)}&to=${encodeURIComponent(range.to)}${pagingQuery(paging)}`);
 }
 
 /** "0 ms", "450 ms", "6.9 s", "51 s", "1 m 40 s", "2 h 5 m": units are

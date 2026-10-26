@@ -19,12 +19,16 @@ import { formatTokens } from "@/lib/usage";
 import {
   fetchTraces,
   formatDuration,
+  pageRange,
+  TRACE_DEFAULT_PAGE_SIZE,
+  TRACE_PAGE_SIZES,
+  type TracePaging,
   freshInput,
   triggerLabelOf,
   type UsageJobTrace,
   type UsageTraceList,
 } from "@/lib/usage-trace";
-import { SettingsGroup } from "../SettingsPrimitives";
+import { PillSelect, SettingsGroup } from "../SettingsPrimitives";
 
 function CopyId({ botId, threadId }: Pick<UsageJobTrace, "botId" | "threadId">) {
   const [done, setDone] = useState(false);
@@ -110,22 +114,83 @@ function JobRow({ job }: { job: UsageJobTrace }) {
   );
 }
 
-/** The per-job usage traces for the current month. In Settings > Usage the
- * caller passes fetchMyTraces, so a person sees their own jobs only. */
-export function UsageTraces({ load = fetchTraces }: { load?: (range: { from: string; to: string }) => Promise<UsageTraceList> }) {
+function PeriodTotal({ total }: { total: UsageTraceList["total"] }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-3 py-2 text-[12px] text-ink-secondary" data-testid="usage-trace-total">
+      <span>{t("usage.trace.periodTotal")}</span>
+      <span title={t("usage.trace.time")}>
+        <span className="tabular-nums text-ink">{total.turns > 0 && total.durationMs > 0 ? formatDuration(total.durationMs) : "—"}</span>
+      </span>
+      <span>
+        {total.costUsd === null ? (
+          <span>{t("usage.trace.unpriced", { count: String(total.unpriced) })}</span>
+        ) : (
+          <span className="tabular-nums text-ink">{formatCost(total.costUsd)}</span>
+        )}
+      </span>
+      <span className="tabular-nums">{t("usage.trace.jobs", { count: String(total.jobs) })}</span>
+    </div>
+  );
+}
+
+function Pager({ offset, count, total, pageSize, onPage, onPageSize }: {
+  offset: number; count: number; total: number; pageSize: number;
+  onPage: (offset: number) => void; onPageSize: (size: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-t-[0.5px] border-border px-3 py-2 text-[12px] text-ink-secondary">
+      <label className="flex items-center gap-1">
+        <span>{t("usage.trace.perPage")}</span>
+        <PillSelect<string>
+          value={String(pageSize)}
+          options={TRACE_PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+          onChange={(next) => onPageSize(Number(next))}
+          ariaLabel={t("usage.trace.perPage")}
+        />
+      </label>
+      <span className="tabular-nums" aria-live="polite">
+        {t("usage.trace.range", { range: pageRange(offset, count), total: String(total) })}
+      </span>
+      <span className="flex items-center gap-1">
+        <button type="button" className="ui-button min-h-[44px] disabled:opacity-50 md:min-h-0" disabled={offset <= 0} onClick={() => onPage(Math.max(0, offset - pageSize))}>
+          {t("usage.trace.prev")}
+        </button>
+        <button type="button" className="ui-button min-h-[44px] disabled:opacity-50 md:min-h-0" disabled={offset + count >= total} onClick={() => onPage(offset + pageSize)}>
+          {t("usage.trace.next")}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** The per-job usage traces for the current month, ten jobs a page (10, 25
+ * or 50), newest first, with the whole period's time and cost on top. The
+ * server pages the list (limit/offset), so the full ledger never loads. In
+ * Settings > Usage the caller passes fetchMyTraces, so a person sees their
+ * own jobs only. The page goes back to the first when the loader (the
+ * period or the scope) or the page size changes. */
+export function UsageTraces({ load = fetchTraces }: { load?: (range: { from: string; to: string }, paging?: TracePaging) => Promise<UsageTraceList> }) {
   const [list, setList] = useState<UsageTraceList | null>(null);
   const [failed, setFailed] = useState(false);
+  const [pageSize, setPageSize] = useState<number>(TRACE_DEFAULT_PAGE_SIZE);
+  const [offset, setOffset] = useState(0);
+  useEffect(() => { setOffset(0); }, [load, pageSize]);
   useEffect(() => {
     let alive = true;
     const range = personalUsagePeriods().month;
-    load(range).then(
-      (next) => { if (alive) setList(next); },
+    load(range, { limit: pageSize, offset }).then(
+      (next) => { if (alive) { setList(next); setFailed(false); } },
       () => { if (alive) setFailed(true); },
     );
     return () => { alive = false; };
-  }, [load]);
+  }, [load, pageSize, offset]);
 
-  const jobs = Array.isArray(list?.jobs) ? list.jobs : [];
+  const all = Array.isArray(list?.jobs) ? list.jobs : [];
+  // An older server answers everything at once: slice it here so the page
+  // still holds. A paging server already sent just this page.
+  const serverPaged = list?.page !== undefined;
+  const jobs = serverPaged ? all : all.slice(offset, offset + pageSize);
+  const totalJobs = list?.total?.jobs ?? all.length;
   return (
     <SettingsGroup title={t("usage.trace.title")} groupId="usage-traces" plain>
       <p className="px-1 text-[12px] leading-[17px] text-ink-secondary">{t("usage.trace.caption")}</p>
@@ -134,14 +199,18 @@ export function UsageTraces({ load = fetchTraces }: { load?: (range: { from: str
           <p className="px-3 py-3 text-[12px] text-ink-secondary">{t("usage.trace.failed")}</p>
         ) : !list ? (
           <p className="px-3 py-3 text-[12px] text-ink-secondary">{t("usage.trace.loading")}</p>
-        ) : jobs.length === 0 ? (
+        ) : totalJobs === 0 && all.length === 0 ? (
           <p className="px-3 py-3 text-[12px] text-ink-secondary">{t("usage.trace.empty")}</p>
         ) : (
           <>
-            {jobs.map((job) => <JobRow key={job.jobId} job={job} />)}
+            {list.total && <PeriodTotal total={list.total} />}
+            <div className="border-t-[0.5px] border-border">
+              {jobs.map((job) => <JobRow key={job.jobId} job={job} />)}
+            </div>
             {list.truncated && (
-              <p className="px-3 py-2 text-[11px] text-ink-secondary">{t("usage.trace.truncated", { count: String(jobs.length) })}</p>
+              <p className="px-3 py-2 text-[11px] text-ink-secondary">{t("usage.trace.truncated", { count: String(totalJobs) })}</p>
             )}
+            <Pager offset={offset} count={jobs.length} total={totalJobs} pageSize={pageSize} onPage={setOffset} onPageSize={setPageSize} />
           </>
         )}
       </div>

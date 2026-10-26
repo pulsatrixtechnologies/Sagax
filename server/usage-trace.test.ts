@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildUsageTraces } from "./usage-trace.ts";
+import { buildUsageTraces, parseTracePaging } from "./usage-trace.ts";
 import type { UsageRow } from "./usage-ledger.ts";
 
 function row(overrides: Partial<UsageRow> = {}): UsageRow {
@@ -111,6 +111,34 @@ describe("buildUsageTraces", () => {
     expect(jobs[0]!.lastAt > jobs[1]!.lastAt).toBe(true);
     expect(total.jobs).toBe(3);
     expect(total.turns).toBe(3);
+  });
+
+  it("pages the jobs newest first while the totals cover the whole period", () => {
+    const rows: UsageRow[] = [];
+    for (let i = 0; i < 7; i++) rows.push(row({ threadId: `t${i}`, at: `2026-10-22T12:0${i}:00.000Z` }));
+    const first = buildUsageTraces(rows, { limit: 3, offset: 0 });
+    const last = buildUsageTraces(rows, { limit: 3, offset: 6 });
+    expect(first.jobs.map((j) => j.threadId)).toEqual(["t6", "t5", "t4"]);
+    expect(first.page).toEqual({ offset: 0, limit: 3 });
+    expect(first.total.jobs).toBe(7);
+    expect(first.total.turns).toBe(7);
+    expect(last.jobs.map((j) => j.threadId)).toEqual(["t0"]);
+    expect(last.total.costUsd).toBeCloseTo(0.084);
+    expect(buildUsageTraces(rows, { limit: 3, offset: 99 }).jobs).toEqual([]);
+  });
+
+  it("answers everything, without a page marker, when no limit is asked (older clients)", () => {
+    const rows = [row({ threadId: "a" }), row({ threadId: "b" })];
+    const all = buildUsageTraces(rows);
+    expect(all.jobs).toHaveLength(2);
+    expect(all.page).toBeUndefined();
+  });
+
+  it("parses limit and offset, clamping the page size", () => {
+    expect(parseTracePaging(null, null)).toBeNull();
+    expect(parseTracePaging("abc", "0")).toBeNull();
+    expect(parseTracePaging("25", "50")).toEqual({ limit: 25, offset: 50 });
+    expect(parseTracePaging("9999", "-4")).toEqual({ limit: 100, offset: 0 });
   });
 
   it("carries no message content, only counters, time and cost", () => {
