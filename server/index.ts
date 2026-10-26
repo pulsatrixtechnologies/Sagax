@@ -34166,6 +34166,10 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     writeOnceScope: ({ threadId }) => activeRoutineRunForThread(threadId) || internalTurnThreads.has(threadId) ? "unattended" : null,
     // a live call keeps its Perspicax tools mounted from turn to turn
     keepWarm: (threadId) => Boolean(voiceCalls.active(threadId)),
+    // 2026-10-26: a Perspicax server guard's GO (Flow: dry run, GO, read
+    // back) is an approval card on the thread; Full access and Approve for
+    // me never answer it, only the person (confirmHeldCard).
+    askGo: ({ threadId, botId, message }) => confirmHeldCard({ threadId, botId, tool: "perspicax", summary: message }),
     // remote_support_open / status / close: the session shows in Sagax (server/remote-session-register.ts)
     onRemoteSupport: (call) => {
       const principalId = call.principalId || remoteSessionSpeaker(call.threadId);
