@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Archive, Bell, Check, Coins, Download, FileText, FlaskConical, Import, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, Bell, Check, Coins, Download, FileText, FlaskConical, Import, Monitor, Palette, Search, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection } from "@/state/store";
 import { decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -34,11 +34,11 @@ import { TimeZoneRows } from "./settings/TimeZoneSettings";
 import { AppearanceSettings } from "./settings/AppearanceSettings";
 import { ExperimentalSettings } from "./settings/ExperimentalSettings";
 import { currentSettingsSection, isMovedOrganizationCard } from "@/lib/settings-sections";
+import { openSettings } from "@/lib/settings-link";
 
 import { shortcutLabel } from "./ShortcutHint";
 import { UsageSection } from "./UsageSection";
 import { CredentialsSettings } from "./settings/CredentialsSettings";
-import { PublishedPagesSettings } from "./PublishedPages";
 import { LicenseExpiryBanner } from "./LicenseExpiryBanner";
 import { workspacesAvailable } from "./WorkspacesSection";
 import { AboutMeEditor, aboutMeFirstLine } from "./AboutMeSettings";
@@ -89,20 +89,21 @@ export const SECTIONS: Array<{
   group: SettingsNavGroup;
   icon: typeof User;
   keywords: string[];
+  /** Still a page that can open (a deep link to one of its cards), but no
+   * entry of the navigation: General is hidden since 2026-10-26. */
+  navHidden?: boolean;
 }> = [
   // 2026-10-16: in the order of their nav groups (NAV_GROUPS), as Cursor
   // Settings groups its rail: you, AI, the workspace, this app last.
   // 0.5.6: General is laid out as the reference design's (Account, Appearance,
   // System); Updates is a page of its own, as there.
-  { id: "general", group: "you", labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
+  // 2026-10-26: Account comes first. Security keys and the credential vault
+  // (they were pages of their own) sit under the account row.
+  { id: "account", group: "you", labelKey: "settings.section.account", icon: User, keywords: ["account", "compte", "profile", "profil", "name", "email", "copy email", "sign out", "label", "about me", "about", "security", "sécurité", "security key", "security keys", "clé de sécurité", "clés de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations", "always allow", "always deny", "credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage"] },
+  { id: "general", group: "you", navHidden: true, labelKey: "settings.section.general", icon: User, keywords: ["profile", "name", "email", "copy email", "account", "compte", "sign out", "label", "about me", "about", "suggestions", "suggested", "memory", "effort", "new bots", "reasoning", "threads", "parallel", "concurrency", "cleanup", "retention", "event log", "event-log", "log size", "automatic recovery", "backup model", "fallback", "advanced", "avancé", "tool access", "accès aux outils", "diagnostics", "diagnostic", "journaux", "logs", "download logs", "télécharger les journaux", "feedback", "send feedback", "commentaires", "envoyer des commentaires", "nettoyage", "grants", "autorisations", "language", "langue", "time zone", "timezone", "fuseau horaire", "fuseau", "microphone", "micro", "tour", "tours", "visite", "welcome", "bienvenue", "system", "système", "server", "serveur"] },
   { id: "appearance", group: "you", labelKey: "settings.section.appearance", icon: Palette, keywords: ["skin", "theme", "thème", "variant", "variante", "light", "clair", "dark", "sombre", "auto", "appearance", "advanced", "simple", "mode", "tools", "tool calls", "threads", "show threads", "hide threads", "sidebar", "hidden", "hide", "show", "density", "compact", "comfortable", "avatars", "display", "run", "this run", "run card", "commands", "mascot", "owl", "desktop", "fly", "floating", "app icon", "dock", "icon", "taskbar", "providers", "sign-in", "unconfigured", "fournisseurs", "connexion", "non configurés", "send", "enter", "return", "shift+enter", "ctrl+enter", "cmd+enter", "⌘+enter", "new line", "keyboard", "ime", "japanese", "font", "police", "accessibility", "accessibilité", "reduce motion", "motion", "animations", "contrast", "contraste", "text size", "taille du texte", "zoom", "hardware acceleration", "accélération matérielle", "gpu", "spell check", "spellcheck", "orthographe", "correcteur", "interface", "inspector", "inspecteur", "logo", "masqués", "mascottes", "icône", "barre latérale", "conversations", "desktop", "bureau"] },
   // 2026-10-14: Privacy is a card of this page on an organization server.
   { id: "notifications", group: "you", labelKey: "settings.section.notifications", icon: Bell, keywords: ["notifications", "notification", "sound", "sounds", "notification sound", "son de notification", "tick", "tic", "carillon", "chime a", "chime b", "blip", "mute", "silent", "chime", "alert", "alerts", "banner", "badge", "dock", "app icon", "icône", "unread", "nudge", "wizz", "shake", "secousse", "son", "persistent", "stay", "privacy", "read receipts", "seen", "vu", "confidentialité", "accusés de lecture", "presence", "online", "away", "offline", "last seen", "status", "en ligne", "absent", "hors ligne", "privacidade", "alertes", "on screen", "à l'écran"] },
-  // 2026-10-16: the credential vault (logins, API keys, notes; 1Password).
-  { id: "credentials", group: "you", labelKey: "settings.section.credentials", icon: KeyRound, keywords: ["credentials", "identifiants", "vault", "coffre", "password", "mot de passe", "login", "connexion", "totp", "2fa", "one-time code", "code à usage unique", "1password", "api key", "clé api", "autofill", "remplissage"] },
-  // 2026-10-16 (wave 2, package E): security keys and passkeys, and which
-  // approvals need one. Each person's own.
-  { id: "security", group: "you", labelKey: "settings.section.security", icon: ShieldCheck, keywords: ["security", "sécurité", "security key", "clé de sécurité", "passkey", "clé d'accès", "yubikey", "webauthn", "touch id", "face id", "step-up", "sensitive", "sensibles", "approvals", "approbations"] },
   // Models and voice (2026-10-14): Integrations and Models and accounts in
   // one page; Connected apps and Decision model are cards of it.
   { id: "engines", group: "ai", labelKey: "settings.section.modelsVoice", icon: Terminal, keywords: ["models", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "voice", "voix", "tts", "elevenlabs", "fish", "chatterbox", "live call", "image", "avatar", "box", "vps", "cursor", "cloud agents", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "voice engine", "moteur de voix", "fish audio", "live calls", "appels en direct", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents", "microphone", "micro", "audio", "input device", "entrée audio"] },
@@ -112,8 +113,6 @@ export const SECTIONS: Array<{
   { id: "usage", group: "workspace", labelKey: "settings.section.usage", icon: Coins, keywords: ["tokens", "cost", "billing", "plan", "forfait", "coût", "usage", "spend", "this month", "ce mois-ci", "last 30 days", "30 derniers jours", "by bot", "par bot", "by model", "par modèle", "renews", "renouvelle", "sagax business"] },
   // 2026-10-15: People and Installations are hidden in the app, like Email,
   // Activity and Pair devices (settings-sections.ts HIDDEN).
-  // 2026-10-16: pages a bot proposed and the person published (the reference design's canvases).
-  { id: "pages", group: "workspace", labelKey: "settings.section.pages", icon: FileText, keywords: ["pages", "published", "publiées", "canvas", "canevas", "share", "partager", "link", "lien", "revoke", "révoquer", "expiry", "expiration", "site", "html", "markdown"] },
   { id: "backups", group: "workspace", labelKey: "settings.section.backups", icon: Archive, keywords: ["export", "import", "restore", "full backup", "password", "recovery", "backup", "sauvegarde", "exporter", "restaurer", "replace", "remplacer", "mot de passe"] },
   // 2026-10-19: a shared Grok Bot comes in here (port of OpenMausBot #3073).
   { id: "import", group: "workspace", labelKey: "settings.section.import", icon: Import, keywords: ["import", "importer", "grok", "grok bot", "x.ai", "share link", "lien de partage", "template", "modèle"] },
@@ -196,6 +195,15 @@ export function orgMemoryAvailable(): boolean {
   return typeof window !== "undefined" && Boolean(window.ogb?.orgMemory);
 }
 
+/** Published pages left Settings for Connect apps > Manage (2026-10-26). A
+ * search still finds them, as one entry that opens them there. */
+export const PUBLISHED_PAGES_KEYWORDS = ["pages", "published", "publiées", "canvas", "canevas", "share", "partager", "link", "lien", "revoke", "révoquer", "expiry", "expiration", "site", "html", "markdown"];
+
+export function publishedPagesMatch(query: string): boolean {
+  if (!query.trim()) return false;
+  return [t("settings.section.pages"), ...PUBLISHED_PAGES_KEYWORDS].some((part) => settingsTextMatches(part, query));
+}
+
 export function sectionMatches(section: (typeof SECTIONS)[number], query: string, extra: string[] = []): boolean {
   if (!query.trim()) return true;
   return [t(section.labelKey), ...section.keywords, ...extra].some((part) => settingsTextMatches(part, query));
@@ -206,7 +214,7 @@ export function sectionMatches(section: (typeof SECTIONS)[number], query: string
 /** Sub-pages pushed inside a section (src/components/SettingsSubPage.tsx):
  * the section they belong to, their title and their page. */
 const SUB_PAGES: Record<string, { section: AppSettingsSection; titleKey: LocaleKey; render: () => React.ReactNode }> = {
-  "general.aboutMe": { section: "general", titleKey: "settings.profile.aboutMe", render: () => <AboutMeEditor /> },
+  "general.aboutMe": { section: "account", titleKey: "settings.profile.aboutMe", render: () => <AboutMeEditor /> },
   "general.advanced": { section: "general", titleKey: "settings.advancedPage.title", render: () => <GeneralAdvancedSettings /> },
 };
 
@@ -538,7 +546,8 @@ export function SettingsModal() {
   // A page this viewer cannot see (an old link to Email where People is not
   // shown, a hidden page) draws the first page they can, at once.
   const section: AppSettingsSection = availableSections.some((entry) => entry.id === requested) ? requested : availableSections[0]?.id ?? requested;
-  const visibleSections = availableSections.filter((entry) => sectionMatches(entry, q, soloDesktop && entry.id === "general" ? ORGANIZATION_ADVANCED_KEYWORDS : []));
+  const visibleSections = availableSections.filter((entry) => !entry.navHidden && sectionMatches(entry, q, soloDesktop && entry.id === "general" ? ORGANIZATION_ADVANCED_KEYWORDS : []));
+  const pagesHit = Boolean(q) && publishedPagesMatch(q);
   const sectionLabelKey = SECTIONS.find((entry) => entry.id === section)?.labelKey;
   const subPageId = state.appSettingsSubPage;
   const subPage = subPageId && SUB_PAGES[subPageId]?.section === section ? SUB_PAGES[subPageId] : null;
@@ -554,7 +563,9 @@ export function SettingsModal() {
       });
     }
   }, [dispatch, section, state.appSettingsSubPage]);
-  const nextVisibleSection = visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
+  // General is out of the navigation, but a deep link to one of its cards still opens it.
+  const hiddenPageOpen = !q && availableSections.some((entry) => entry.id === section && entry.navHidden);
+  const nextVisibleSection = hiddenPageOpen || visibleSections.some((entry) => entry.id === section) ? undefined : visibleSections[0]?.id;
 
   useEffect(() => {
     for (const id of cardsMatching(q)) requestSettingsCard(id);
@@ -683,7 +694,7 @@ export function SettingsModal() {
               className="w-full bg-transparent text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:outline-none"
             />
           </div>
-          {visibleSections.length === 0 && (
+          {visibleSections.length === 0 && !pagesHit && (
             <div className="px-2.5 py-4 text-[12.5px] leading-relaxed text-ink-secondary">
               {t("settings.noMatch", { query: query.trim() })}
             </div>
@@ -738,6 +749,17 @@ export function SettingsModal() {
               </div>
             );
           })}
+          {pagesHit && (
+            <button
+              type="button"
+              data-settings-pages-hit=""
+              onClick={() => openSettings(dispatch, "pages")}
+              className="mt-2 flex items-center gap-[9px] rounded-lg px-[9px] py-[7px] text-left text-[13px] leading-[18px] text-ink hover:bg-hover"
+            >
+              <FileText size={15} strokeWidth={1.5} className="shrink-0" />
+              <span className="min-w-0"><span className="block truncate">{t("settings.section.pages")}</span><span className="block truncate text-[12px] text-ink-secondary">{t("connectApps.title")}</span></span>
+            </button>
+          )}
         </nav>
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -760,7 +782,7 @@ export function SettingsModal() {
               className="w-full min-w-0 rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink focus:border-border-strong focus:outline-none sm:hidden"
             >
               {NAV_GROUPS.map((group) => {
-                const entries = availableSections.filter((entry) => entry.group === group.id);
+                const entries = availableSections.filter((entry) => entry.group === group.id && (!entry.navHidden || entry.id === section));
                 return entries.length === 0 ? null : (
                   <optgroup key={group.id} label={t(group.labelKey)}>
                     {entries.map(({ id, labelKey }) => (
@@ -801,11 +823,10 @@ export function SettingsModal() {
                   </SettingsGroup>
                 )
             )}
-            {section === "general" && (
+            {section === "account" && (
               <>
-                {/* 0.5.6: the reference design's General. Grey headings outside
-                    the cards, compact rows: label at the left, control at
-                    the right, no help text. */}
+                {/* The account first; Security keys and the credential vault
+                    (2026-10-26) sit under it, in this order. */}
                 <SettingsGroup title={t("settings.group.account")} groupId="account">
                   {/* 2026-10-15: one account row (who, label, Sign out) */}
                   <AccountCard lockedServer={lockedServer} />
@@ -820,6 +841,17 @@ export function SettingsModal() {
                     />
                   )}
                 </SettingsGroup>
+                <SecurityKeySettings />
+                {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
+                <MyApprovalRules />
+                <CredentialsSettings />
+              </>
+            )}
+            {section === "general" && (
+              <>
+                {/* 0.5.6: the reference design's General. Grey headings outside
+                    the cards, compact rows: label at the left, control at
+                    the right, no help text. */}
                 <SettingsGroup title={t("settings.group.appearance")} groupId="appearance">
                   {/* the skin, its variant and Light, Dark or Auto are chosen in
                       one place: Appearance > Skin (2026-10-19) */}
@@ -881,19 +913,9 @@ export function SettingsModal() {
             {section === "backups" && <WorkspaceBackupSettings />}
             {section === "import" && <ImportSettings />}
 
-            {section === "security" && (
-              <>
-                <SecurityKeySettings />
-                {/* every Always allow and Always deny the person saved, revocable (2026-10-19) */}
-                <MyApprovalRules />
-              </>
-            )}
-
             {section === "computer" && <LocalComputerSection />}
 
             {section === "usage" && <UsageSection />}
-            {section === "credentials" && <CredentialsSettings />}
-            {section === "pages" && <PublishedPagesSettings />}
             {/* Privacy (2026-10-14): a group of Notifications on an organization server. */}
             {section === "notifications" && <NotificationSettings privacy={allowed("privacy")} />}
             </div>

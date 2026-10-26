@@ -42,13 +42,13 @@ afterEach(() => {
 });
 
 describe("Settings > General, the reference design's layout", () => {
-  it("draws Account, Appearance and System as grey headings over their cards, in that order", () => {
+  it("draws Appearance and System as grey headings over their cards, in that order (Account moved to its own page)", () => {
     const html = render();
-    const order = ['data-settings-group="account"', 'data-settings-group="appearance"', 'data-settings-group="system"'];
+    const order = ['data-settings-group="appearance"', 'data-settings-group="system"'];
     const at = order.map((text) => html.indexOf(text));
     expect(at.every((value) => value >= 0)).toBe(true);
     expect([...at].sort((x, y) => x - y)).toEqual(at);
-    expect(html).toMatch(/<h3[^>]*text-ink-secondary[^>]*>Account<\/h3>/);
+    expect(html).not.toContain('data-settings-group="account"');
     expect(html).toMatch(/<h3[^>]*text-ink-secondary[^>]*>Appearance<\/h3>/);
     expect(html).toMatch(/<h3[^>]*text-ink-secondary[^>]*>System<\/h3>/);
   });
@@ -108,7 +108,6 @@ describe("Settings > General, the reference design's layout", () => {
     setLocale("fr");
     vi.stubGlobal("window", { ogb: { updater } });
     const html = render();
-    expect(html).toContain(">Compte</h3>");
     expect(html).toContain(">Apparence</h3>");
     expect(html).toContain(">Système</h3>");
     expect(html).not.toContain(">Thème</div>");

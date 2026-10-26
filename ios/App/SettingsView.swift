@@ -177,24 +177,27 @@ private struct SettingsRootPage: View {
     @ViewBuilder
     private var groupedRoot: some View {
         accountCard
-        if has(.plugins) {
+        // Published pages sit under Connect apps (2026-10-26, as on the desktop).
+        if has(.plugins) || session.connection != nil {
             SettingsSpacer(SettingsMetrics.cardGap)
             SettingsCard {
-                SettingsRow(
-                    title: "Connect apps", subtitle: "Tools and skills for Sagax",
-                    accessory: .chevron, identifier: "settings-plugins", textTop: 13.4
-                ) { navigator.push(.plugins) }
+                if has(.plugins) {
+                    SettingsRow(
+                        title: "Connect apps", subtitle: "Tools and skills for Sagax",
+                        accessory: .chevron, identifier: "settings-plugins", textTop: 13.4
+                    ) { navigator.push(.plugins) }
+                }
+                if session.connection != nil {
+                    if has(.plugins) { CardHairline(leadingInset: SettingsMetrics.rowInset) }
+                    SettingsRow(title: "Published pages", accessory: .chevron, height: 44, identifier: "settings-pages") {
+                        navigator.push(.pages)
+                    }
+                }
             }
         }
         if session.connection != nil {
             SettingsSectionLabel(text: "Bot")
             SettingsBotCard(showsComputer: has(.computer))
-            SettingsSpacer(SettingsMetrics.cardGap)
-            SettingsCard {
-                SettingsRow(title: "Published pages", accessory: .chevron, height: 44, identifier: "settings-pages") {
-                    navigator.push(.pages)
-                }
-            }
         }
         SettingsSpacer(SettingsMetrics.cardGap)
         SettingsCard {
@@ -207,14 +210,9 @@ private struct SettingsRootPage: View {
             SettingsRow(title: "Language", accessory: .valueChevron(AppLanguage.resolved(language).shortLabel), height: 43.33, identifier: "settings-language") { navigator.push(.language) }
             CardHairline(leadingInset: SettingsMetrics.rowInset)
             SettingsRow(title: "Haptics", accessory: .valueChevron(haptics ? String(localized: "On") : String(localized: "Off")), height: 43.67, identifier: "settings-haptics") { navigator.push(.haptics) }
-            if session.connection != nil {
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Vault", accessory: .chevron, height: 44, identifier: "settings-vault") { navigator.push(.vault) }
-                CardHairline(leadingInset: SettingsMetrics.rowInset)
-                SettingsRow(title: "Security keys", accessory: .chevron, height: 44, identifier: "settings-security-keys") { navigator.push(.securityKeys) }
-            }
         }
-        let more = sections.filter { [.general, .organization, .experimental].contains($0) }
+        // General is out of the list (2026-10-26, as on the desktop).
+        let more = sections.filter { [.organization, .experimental].contains($0) }
         if !more.isEmpty {
             SettingsSpacer(SettingsMetrics.cardGap)
             SettingsCard {
@@ -255,6 +253,13 @@ private struct SettingsRootPage: View {
     private var accountCard: some View {
         SettingsCard {
             AccountCardRow(name: model.displayName, detail: model.detail, photo: session.accountPhoto, chevron: true) { navigator.push(.account) }
+            // Vault and Security keys sit under the account (2026-10-26, as on the desktop).
+            if session.connection != nil {
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(title: "Security keys", accessory: .chevron, height: 44, identifier: "settings-security-keys") { navigator.push(.securityKeys) }
+                CardHairline(leadingInset: SettingsMetrics.rowInset)
+                SettingsRow(title: "Vault", accessory: .chevron, height: 44, identifier: "settings-vault") { navigator.push(.vault) }
+            }
             if has(.usage) {
                 CardHairline(leadingInset: SettingsMetrics.rowInset)
                 SettingsRow(title: "Usage", accessory: .chevron, height: 44.33, identifier: "settings-usage") { navigator.push(.usage) }

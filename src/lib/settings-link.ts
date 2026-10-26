@@ -10,6 +10,7 @@ import { currentSettingsCard, currentSettingsSection, mergedSettingsCard } from 
 export { currentSettingsSection, mergedSettingsCard };
 
 const SECTION_LABEL = {
+  account: "settings.section.account",
   general: "settings.section.general",
   organization: "settings.section.organization",
   appearance: "settings.section.appearance",
@@ -23,22 +24,23 @@ const SECTION_LABEL = {
   engines: "settings.section.modelsVoice",
   // Pair devices, Activity and Email are hidden (2026-10-14), People and
   // Installations too (2026-10-15): a pointer names the page an old link opens.
-  companion: "settings.section.general",
+  companion: "settings.section.account",
   computer: "settings.section.computer",
   usage: "settings.section.usage",
-  credentials: "settings.section.credentials",
-  people: "settings.section.general",
-  mail: "settings.section.general",
-  activity: "settings.section.general",
+  credentials: "settings.section.account",
+  people: "settings.section.account",
+  mail: "settings.section.account",
+  activity: "settings.section.account",
   backups: "settings.section.backups",
   import: "settings.section.import",
-  workspaces: "settings.section.general",
+  workspaces: "settings.section.account",
   privacy: "settings.section.notifications",
   notifications: "settings.section.notifications",
   memory: "settings.section.organization",
   updates: "settings.updates.title",
-  security: "settings.section.security",
-  pages: "settings.section.pages",
+  security: "settings.section.account",
+  // Published pages are a section of Connect apps > Manage (2026-10-26).
+  pages: "connectApps.title",
 } as const satisfies Record<AppSettingsSection, LocaleKey>;
 
 export type SettingsLinkTarget = { section: AppSettingsSection; cardId?: string };
@@ -49,7 +51,7 @@ export function settingsSectionLabel(section: AppSettingsSection): string {
 
 type SettingsDispatch = (action:
   | { type: "toggleAppSettings"; open: true; section: AppSettingsSection }
-  | { type: "togglePlugins"; open: true; page: "orgAccess" }) => void;
+  | { type: "togglePlugins"; open: true; page: "orgAccess" | "pages" }) => void;
 
 /** Cards that moved out of Settings: Plugins and GitHub is Connect apps >
  * Manage > Organization sources and access (2026-10-15). */
@@ -60,6 +62,11 @@ const MOVED_TO_CONNECT_APPS = new Set(["organization.plugins"]);
 export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSection, cardId?: string): void {
   if (cardId && MOVED_TO_CONNECT_APPS.has(cardId)) {
     dispatch({ type: "togglePlugins", open: true, page: "orgAccess" });
+    return;
+  }
+  // Published pages moved to Connect apps > Manage (2026-10-26).
+  if (section === "pages") {
+    dispatch({ type: "togglePlugins", open: true, page: "pages" });
     return;
   }
   dispatch({ type: "toggleAppSettings", open: true, section: currentSettingsSection(section, cardId) });

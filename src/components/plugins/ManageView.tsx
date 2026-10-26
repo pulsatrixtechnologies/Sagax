@@ -45,6 +45,8 @@ export interface ManageViewProps {
   providers?: ReactNode;
   /** the install scope (everyone, or one bot) above the installed cards */
   scope?: ReactNode;
+  /** the person's published pages (moved here from Settings, 2026-10-26) */
+  pages?: ReactNode;
   /** one bot's plugins: no private skills and no personal connections */
   pluginsOnly?: boolean;
 }
@@ -62,7 +64,7 @@ function CardStatus({ item }: { item: PluginItem }) {
 
 export function ManageView(props: ManageViewProps) {
   const { items, countLabel, sourceLabel, onBack, trail, onOpenItem, onAddManually, onPasteConfig, onNewSkill, addDisabled, addTitle, refreshing, onRefresh,
-    forms, children, personal, advancedOpen, providers, scope, pluginsOnly } = props;
+    forms, children, personal, pages, advancedOpen, providers, scope, pluginsOnly } = props;
   const [showAll, setShowAll] = useState(false);
   const installed = installedPlugins(items);
   const shown = showAll ? installed : installed.slice(0, INSTALLED_PREVIEW);
@@ -142,6 +144,13 @@ export function ManageView(props: ManageViewProps) {
         )}
 
         {!pluginsOnly && personal}
+
+        {!pluginsOnly && pages && (
+          <section className="mt-6" data-plugins-pages>
+            <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("settings.section.pages")}</h3>
+            {pages}
+          </section>
+        )}
 
         <details className="group mt-6 border-t border-hairline/60 pt-4" data-plugins-advanced open={advancedOpen || pluginsOnly || undefined}>
           <summary className="flex cursor-pointer list-none items-center justify-between text-[13px] font-semibold text-ink">
