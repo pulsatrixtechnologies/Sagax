@@ -7,7 +7,7 @@
  * the update button), with a stand-in updater bridge:
  * &update=none|ready|downloading (percent 40)|preparing; &pill=0 leaves the
  * update button out (the foot as it was before it); &width=<px> (280) and
- * &name=<text> (a long one by default); &points=0 / &title=0 switch "Show my
+ * &name=<text> (a long one by default); &apps=<0-3> connected apps; &points=0 / &title=0 switch "Show my
  * points" / "Show my title" off.
  * ?skin=<id>&lang=<code> */
 import { StrictMode } from "react";
@@ -74,7 +74,10 @@ if (params.get("view") === "foot") {
     const apps = [["Gmail", "mail.google.com"], ["Notion", "notion.so"], ["Google Drive", "drive.google.com"]].slice(0, Math.min(3, Math.max(0, Number(params.get("apps") ?? 3))));
     const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
     if (path === "/api/mcp/servers") return json({ servers: apps.map(([name, host]) => ({ name, enabled: true, type: "http", url: `https://${host}/mcp`, auth: "connected" })) });
-    if (path === "/api/plugins/search") return json({ featured: [] });
+    // the catalog's marks (inline stand-ins), lent to the connected servers
+    const mark = (letter: string, fill: string) => `data:image/svg+xml;utf8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${fill}"/><text x="32" y="44" font-size="36" font-family="sans-serif" font-weight="700" text-anchor="middle" fill="white">${letter}</text></svg>`)}`;
+    const marks: Record<string, string> = { Gmail: mark("M", "#d93025"), Notion: mark("N", "#111111"), "Google Drive": mark("D", "#1a73e8") };
+    if (path === "/api/plugins/search") return json({ featured: apps.map(([name, host]) => ({ id: name.toLowerCase(), name, description: "", url: `https://${host}/mcp`, domain: host, auth: "oauth", installed: true, iconUrl: marks[name] })) });
     return realFetch(input, init);
   }) as typeof window.fetch;
 }

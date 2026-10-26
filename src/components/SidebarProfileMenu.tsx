@@ -875,7 +875,7 @@ export function SidebarProfileMenu({ avatarOnly = false, withName = false, place
   ) : null;
 
   return (
-    <div className={cn("relative", avatarOnly && withName && "min-w-[3.5rem] flex-1")}>
+    <div className={cn("relative", avatarOnly && withName && "min-w-[3.5rem] flex-1")} data-foot-profile={avatarOnly && withName ? "" : undefined}>
       {avatarOnly && approvalsBadge}
       {avatarOnly ? <div className="relative">{accountRow}{approvalsDot}</div> : (
         <div className="flex items-center gap-2">

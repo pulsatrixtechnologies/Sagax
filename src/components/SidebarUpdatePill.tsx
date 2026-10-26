@@ -111,7 +111,7 @@ function ProgressRing({ percent }: { percent: number | null }) {
   );
 }
 
-export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpen = openUpdatePrompt }: {
+export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpen = openUpdatePrompt, onHot }: {
   view: UpdatePillView;
   /** the foot's two states: "compact" stays the circle beside the profile
    * (never widens, so it cannot cut the name), "wide" always shows its word
@@ -120,6 +120,8 @@ export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpe
   /** the announcement after an update lands */
   wide?: boolean;
   onOpen?: () => void;
+  /** pointer or keyboard on the button (the foot folds its profile then) */
+  onHot?: (hot: boolean) => void;
 }) {
   const ready = view.kind === "ready";
   return (
@@ -131,6 +133,10 @@ export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpe
       data-percent={view.kind === "progress" && view.percent !== null ? view.percent : undefined}
       aria-label={view.aria}
       title={view.aria}
+      onMouseEnter={onHot ? () => onHot(true) : undefined}
+      onMouseLeave={onHot ? () => onHot(false) : undefined}
+      onFocus={onHot ? (event) => { if (event.currentTarget.matches(":focus-visible")) onHot(true); } : undefined}
+      onBlur={onHot ? () => onHot(false) : undefined}
       aria-disabled={ready ? undefined : true}
       aria-busy={ready ? undefined : true}
       onClick={(event) => {
@@ -161,9 +167,9 @@ export function UpdatePillButton({ view, wide: forcedWide = false, layout, onOpe
 
 /** The foot's update button, live on the updater bridge; nothing in the
  * browser, in dev, or while there is nothing to say. */
-export function SidebarUpdatePill({ layout }: { layout?: "compact" | "wide" } = {}) {
+export function SidebarUpdatePill({ layout, onHot }: { layout?: "compact" | "wide"; onHot?: (hot: boolean) => void } = {}) {
   const view = updatePillView(useUpdaterState());
   const announcing = useAnnounce(view?.kind === "ready" ? view.version : undefined);
   if (!view) return null;
-  return <UpdatePillButton view={view} wide={announcing && layout !== "compact"} layout={layout} />;
+  return <UpdatePillButton view={view} wide={announcing && layout !== "compact"} layout={layout} onHot={onHot} />;
 }
