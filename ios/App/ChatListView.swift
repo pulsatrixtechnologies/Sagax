@@ -1409,7 +1409,7 @@ extension ChatListView {
 
     private func standardHomeScroll(headerClearance: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            Theme.bg.ignoresSafeArea()
+            Theme.bg.skinTexture(Theme.palette.texture, ink: Theme.palette.textPrimary.uiColor).ignoresSafeArea()
             ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {

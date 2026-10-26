@@ -1,8 +1,9 @@
 // Settings > Appearance: the skin families, with a small live preview like
 // the desktop's picker (name, tagline, a miniature drawn in the family's
-// current variant), the variant as swatches, Light, Dark or Auto (follows
+// current variant), the variants as swatches in the desktop's rows (Colour,
+// Duo-tone, Mood, Edition), Intensity, Texture, Light, Dark or Auto (follows
 // the phone), "Same as my computer", and the font
-// (CompanionCore/SkinFamilies.swift, 2026-10-19).
+// (CompanionCore/SkinFamilies.swift and SkinVariants.swift, 2026-10-19).
 import SwiftUI
 import CompanionCore
 
@@ -38,8 +39,23 @@ struct AppearanceSettingsView: View {
             SettingsSectionLabel(text: "Skin")
             familyGrid
             SettingsCard {
-                if current.place.family.variants(for: current.place.scheme, keeping: current.place.variant).count > 1 {
-                    variantRow
+                let offered = current.place.family.variants(for: current.place.scheme, keeping: current.place.variant)
+                if offered.count > 1 {
+                    // one row per group the family has, as the desktop's SkinPicker
+                    ForEach(SkinVariantGroup.allCases, id: \.self) { group in
+                        let variants = offered.filter { $0.group == group }
+                        if !variants.isEmpty {
+                            variantRow(group: group, variants: variants)
+                            CardHairline(leadingInset: SettingsMetrics.rowInset)
+                        }
+                    }
+                }
+                if current.place.variant.hasDepth {
+                    depthRow
+                    CardHairline(leadingInset: SettingsMetrics.rowInset)
+                }
+                if current.place.family.id != .retro98 {
+                    textureRow
                     CardHairline(leadingInset: SettingsMetrics.rowInset)
                 }
                 modeRow
@@ -113,7 +129,7 @@ struct AppearanceSettingsView: View {
     /// skin in computer mode, else from this phone's selection.
     private var current: (place: SkinPlace, mode: SkinModeChoice) {
         if selection.mode == .computer {
-            let place = SkinPlace.of(selection.computerSkin ?? .pulsatrix)
+            let place = SkinPlace.of(selection.computerSkin ?? .pulsatrix, tint: selection.computerTint)
             return (place, place.scheme == .light ? .light : .dark)
         }
         return selection.skinChoice(deviceDark: deviceDark)
@@ -135,7 +151,7 @@ struct AppearanceSettingsView: View {
     private func wear(_ variant: SkinVariant, mode: SkinModeChoice) {
         if selection.mode == .computer {
             let scheme: SkinScheme = mode == .light ? .light : .dark
-            themes.choose(variant.skin(scheme), client: client)
+            themes.choose(variant.skin(scheme), tint: variant.tint, client: client)
         } else {
             themes.update { $0 = $0.choosing(variant, mode: mode) }
         }
@@ -164,6 +180,7 @@ struct AppearanceSettingsView: View {
                             : (family.variants.first { $0.schemes.contains(state.place.scheme) } ?? family.variants[0])
                         SkinPreviewCard(
                             skin: selected ? state.place.variant.skin(state.place.scheme) : variant.skin(state.place.scheme),
+                            look: (selected ? state.place.variant : variant).look(state.place.scheme, depth: depth, texture: texture),
                             title: family.name,
                             tagline: family.tagline,
                             selected: selected,
@@ -180,36 +197,107 @@ struct AppearanceSettingsView: View {
         .padding(.horizontal, 23.17)
     }
 
-    /// The family's variants as swatches, as Background effects' Colour on the computer.
-    private var variantRow: some View {
+    /// The intensity and texture worn now: the computer's in computer mode, else this phone's.
+    private var depth: SkinDepth { selection.mode == .computer ? (selection.computerDepth ?? .accent) : selection.depth }
+    private var texture: SkinTexture { selection.mode == .computer ? (selection.computerTexture ?? .none) : selection.texture }
+
+    /// One group of the family's variants as swatches (the desktop's rows:
+    /// Colour, Duo-tone, Mood, Edition). The phone's own Black and Dim are
+    /// its Variant row.
+    private func variantRow(group: SkinVariantGroup, variants: [SkinVariant]) -> some View {
         let state = current
-        return HStack(spacing: 12) {
-            Text("Variant")
+        let title: LocalizedStringKey = state.place.family.id == .phone ? "Variant" : LocalizedStringKey(group.name)
+        return HStack(alignment: .center, spacing: 12) {
+            Text(title)
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textPrimary)
+                .fixedSize()
+            Spacer(minLength: 8)
+            SwatchFlow(spacing: 8) {
+                ForEach(variants) { variant in
+                    swatch(variant, state: state)
+                }
+            }
+        }
+        .padding(.horizontal, SettingsMetrics.rowInset)
+        .padding(.vertical, 10)
+        .frame(minHeight: 52)
+    }
+
+    private func swatch(_ variant: SkinVariant, state: (place: SkinPlace, mode: SkinModeChoice)) -> some View {
+        let selected = variant == state.place.variant
+        // the swatch shows the skin of the scheme worn now; only the worn variant can lack it
+        let scheme = variant.schemes.contains(state.place.scheme) ? state.place.scheme : (variant.schemes.first ?? .dark)
+        let look = variant.look(scheme)
+        let palette = look.palette
+        let gradient = palette.accentGradient
+        let flat = SkinVariants.swatch(skin: look.skin, tint: look.tint) ?? palette.accent
+        return Button {
+            Haptics.selection()
+            guard !selected else { return }
+            wear(variant, mode: ThemeSelection.carry(state.mode, to: variant, worn: state.place.scheme))
+        } label: {
+            ZStack {
+                Circle().fill(palette.bg.color)
+                Circle().trim(from: 0, to: 0.5)
+                    .fill(gradient.count > 1
+                          ? AnyShapeStyle(LinearGradient(colors: gradient.map(\.color), startPoint: .topLeading, endPoint: .bottomTrailing))
+                          : AnyShapeStyle(flat.color))
+                    .rotationEffect(.degrees(-45))
+            }
+            .frame(width: 26, height: 26)
+            .overlay(Circle().strokeBorder(selected ? Theme.accent : Theme.hairline, lineWidth: selected ? 2 : 1))
+            .padding(2)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(LocalizedStringKey(variant.name)))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("skin.variant.\(variant.id)")
+    }
+
+    /// Intensity: the colour on the accent only, or on every surface (Full).
+    private var depthRow: some View {
+        pickerRow(title: LocalizedStringKey(SkinDepth.label), value: depth, options: SkinDepth.allCases, name: \.titleKey, identifier: "theme.depth") {
+            themes.chooseDepth($0, client: client)
+        }
+    }
+
+    /// A light texture over the ground of the chat and the list.
+    private var textureRow: some View {
+        pickerRow(title: LocalizedStringKey(SkinTexture.label), value: texture, options: SkinTexture.allCases, name: \.name, identifier: "theme.texture") {
+            themes.chooseTexture($0, client: client)
+        }
+    }
+
+    private func pickerRow<Value: Hashable & RawRepresentable>(
+        title: LocalizedStringKey, value: Value, options: [Value], name: KeyPath<Value, String>, identifier: String,
+        choose: @escaping (Value) -> Void
+    ) -> some View where Value.RawValue == String {
+        HStack(spacing: 12) {
+            Text(title)
                 .font(Theme.Font.body)
                 .foregroundStyle(Theme.textPrimary)
             Spacer(minLength: 8)
-            ForEach(state.place.family.variants(for: state.place.scheme, keeping: state.place.variant)) { variant in
-                let selected = variant == state.place.variant
-                let palette = variant.skin(state.place.scheme).palette
-                Button {
-                    Haptics.selection()
-                    guard !selected else { return }
-                    wear(variant, mode: ThemeSelection.carry(state.mode, to: variant, worn: state.place.scheme))
-                } label: {
-                    ZStack {
-                        Circle().fill(palette.bg.color)
-                        Circle().trim(from: 0, to: 0.5).fill(palette.accent.color).rotationEffect(.degrees(-45))
+            Menu {
+                ForEach(options, id: \.self) { option in
+                    Button {
+                        Haptics.selection()
+                        choose(option)
+                    } label: {
+                        if option == value { Label(LocalizedStringKey(option[keyPath: name]), systemImage: "checkmark") } else { Text(LocalizedStringKey(option[keyPath: name])) }
                     }
-                    .frame(width: 26, height: 26)
-                    .overlay(Circle().strokeBorder(selected ? Theme.accent : Theme.hairline, lineWidth: selected ? 2 : 1))
-                    .padding(2)
-                    .contentShape(Circle())
+                    .accessibilityIdentifier("\(identifier).\(option.rawValue)")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(LocalizedStringKey(variant.name)))
-                .accessibilityAddTraits(selected ? .isSelected : [])
-                .accessibilityIdentifier("skin.variant.\(variant.id)")
+            } label: {
+                HStack(spacing: 4) {
+                    Text(LocalizedStringKey(value[keyPath: name]))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold))
+                }
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textSecondary)
             }
+            .accessibilityIdentifier(identifier)
         }
         .padding(.horizontal, SettingsMetrics.rowInset)
         .frame(minHeight: 52)
@@ -267,6 +355,8 @@ struct AppearanceSettingsView: View {
 struct SkinPreviewCard: View {
     @Environment(\.themePalette) var themePalette
     let skin: SkinID
+    /// The variant drawn (tint, intensity); nil: the skin's own look.
+    var look: SkinLook? = nil
     var title: String? = nil
     var tagline: String? = nil
     let selected: Bool
@@ -274,7 +364,7 @@ struct SkinPreviewCard: View {
     let action: () -> Void
 
     var body: some View {
-        let p = skin.palette
+        let p = look?.palette ?? skin.palette
         Button {
             Haptics.selection()
             action()
@@ -322,12 +412,17 @@ struct SkinPreviewCard: View {
     private func miniature(_ p: SkinPalette) -> some View {
         ZStack(alignment: .topLeading) {
             (p.bevelled ? p.desktop : p.bg).color
+                .skinTexture(p.texture, ink: p.textPrimary.uiColor)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 4) {
                     Circle().fill(p.glassFill.color).frame(width: 10, height: 10)
                     Capsule().fill(p.textSecondary.color.opacity(0.6)).frame(width: 30, height: 4)
                     Spacer()
-                    Circle().fill(p.accent.color).frame(width: 10, height: 10)
+                    Circle()
+                        .fill(p.accentGradient.count > 1
+                              ? AnyShapeStyle(LinearGradient(colors: p.accentGradient.map(\.color), startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : AnyShapeStyle(p.accent.color))
+                        .frame(width: 10, height: 10)
                 }
                 RoundedRectangle(cornerRadius: p.bevelled ? 0 : 6, style: .continuous)
                     .fill(p.bubbleAssistant.color)
@@ -348,4 +443,52 @@ struct SkinPreviewCard: View {
             .padding(8)
         }
     }
+}
+
+/// Swatches that wrap onto a second line when a row has more than fits
+/// (the Colour row has six), right-aligned like the desktop's flex-wrap.
+struct SwatchFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        let width = rows.map(\.width).max() ?? 0
+        let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(width: bounds.width, subviews: subviews) {
+            var x = bounds.maxX - row.width
+            for index in row.items {
+                let size = subviews[index].sizeThatFits(.unspecified)
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: .unspecified)
+                x += size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [(items: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(items: [Int], width: CGFloat, height: CGFloat)] = []
+        var current: (items: [Int], width: CGFloat, height: CGFloat) = ([], 0, 0)
+        for index in subviews.indices {
+            let size = subviews[index].sizeThatFits(.unspecified)
+            let next = current.items.isEmpty ? size.width : current.width + spacing + size.width
+            if next > width, !current.items.isEmpty {
+                rows.append(current)
+                current = ([index], size.width, size.height)
+            } else {
+                current = (current.items + [index], next, max(current.height, size.height))
+            }
+        }
+        if !current.items.isEmpty { rows.append(current) }
+        return rows
+    }
+}
+
+private extension SkinDepth {
+    /// "Full" is already a key with another sense; the intensity has its own ("Pleine").
+    var titleKey: String { self == .full ? "Full (intensity)" : name }
 }
