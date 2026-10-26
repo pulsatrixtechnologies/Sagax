@@ -186,7 +186,7 @@ public enum ModelMenu {
         if let follows {
             top.append(ModelMenuRow(
                 key: "follow", kind: .follow, label: labels.useBotModel(botName),
-                detail: botOption?.label ?? botModel.model, current: follows,
+                detail: botOption?.displayLabel ?? botModel.model, current: follows,
                 keywords: botName,
                 notResponding: botInstance.map { !modelUsable($0, modelId: botModel.model, organization: organization) } ?? false
             ))
@@ -219,7 +219,7 @@ public enum ModelMenu {
                 if option.loaded == true { tags.append(labels.loadedTag) }
                 rows.append(ModelMenuRow(
                     key: ModelFavorites.key(instanceId: instance.instanceId, modelId: option.id), kind: .model,
-                    instanceId: instance.instanceId, modelId: option.id, label: option.label, tags: tags,
+                    instanceId: instance.instanceId, modelId: option.id, label: option.displayLabel, detail: groups.local.contains(where: { $0.id == option.id }) ? option.server : nil, tags: tags,
                     current: isCurrent, keywords: [instance.displayName, option.id].compactMap { $0 }.joined(separator: " "),
                     notResponding: isCurrent && !usable
                 ))
@@ -234,20 +234,15 @@ public enum ModelMenu {
     }
 
     /// Every engine may offer the same local model: each once, the one in
-    /// use kept, the "Provider: " prefix moved to the detail.
+    /// use kept. The label is the model name alone; the server shows as the
+    /// detail only when two servers of one computer share a name.
     static func uniqueLocalRows(_ rows: [ModelMenuRow], localTag: String) -> [ModelMenuRow] {
         var order: [String] = []
         var kept: [String: ModelMenuRow] = [:]
-        let prefix = try! NSRegularExpression(pattern: #"^([^:]{2,40}):\s+(.+)$"#)
         for row in rows {
             let id = row.modelId ?? row.key
             if let existing = kept[id], !(row.current && !existing.current) { continue }
             var next = row
-            let ns = row.label as NSString
-            if let match = prefix.firstMatch(in: row.label, range: NSRange(location: 0, length: ns.length)) {
-                next.detail = ns.substring(with: match.range(at: 1))
-                next.label = ns.substring(with: match.range(at: 2))
-            }
             next.tags = row.tags.filter { $0 != localTag && $0.lowercased() != "local" }
             if kept[id] == nil { order.append(id) }
             kept[id] = next

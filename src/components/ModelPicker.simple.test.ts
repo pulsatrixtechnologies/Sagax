@@ -97,6 +97,23 @@ describe("model picker in Simple mode", () => {
     expect(markup).not.toContain("data-model-local-entry");
   });
 
+  it("shows a local model by its name alone, with the server only when a name is duplicated (2026-10-26)", () => {
+    const instance = claude(true);
+    instance.models.options.push(
+      { id: "desk8000abc::Ornith-1.5-122B-oQ4e-mtp", label: "Ornith-1.5-122B-oQ4e-mtp", custom: true, local: true },
+      { id: "desk8000abc::Twin-Model", label: "Twin-Model", server: "oMLX", custom: true, local: true },
+      { id: "desk8002abc::Twin-Model", label: "Twin-Model", server: ":8002", custom: true, local: true },
+    );
+    fixture.instances = [instance];
+    const markup = html();
+    expect(markup).toContain("Ornith-1.5-122B-oQ4e-mtp");
+    expect(markup).not.toContain(":8000:");
+    expect(markup).toContain("oMLX");
+    expect(markup).toContain(":8002");
+    // the full technical id stays in the tooltip
+    expect(markup).toContain("desk8000abc::Ornith-1.5-122B-oQ4e-mtp");
+  });
+
   it("keeps engine sign-in", () => {
     fixture.instances = [claude(false)];
     const markup = html();

@@ -2934,6 +2934,7 @@
   "model.followsBot": "Utilise le modèle de {name}",
   "model.loadedTag": "Chargé",
   "model.localGroup": "Local",
+  "model.sharedBy": "{model} (Partagé par {name})",
   "model.localSoon": "Les modèles locaux apparaîtront dès que l'agent sera installé.",
   "model.localUnavailable.anthropic": "Ce serveur local ne parle pas le protocole Anthropic.",
   "model.localUnavailable.engine": "{engine} ne peut pas exécuter un modèle local.",

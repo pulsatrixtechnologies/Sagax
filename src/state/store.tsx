@@ -2,6 +2,7 @@
 // it dispatches typed commands over HTTP and folds the one SSE event
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
+import { withLocalModelLabels } from "@/lib/local-model-label";
 import { devPodsTurnField } from "@/components/dev-pods/prefs";
 import { restoreComposerDraft } from "@/lib/drafts";
 import { beginLocalSend, claimInFlightSend, finishSend } from "@/lib/send-cancel";
@@ -1168,7 +1169,7 @@ export interface InstanceInfo {
       message: string;
     };
   };
-  models: { default: string; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; local?: boolean; anthropic?: boolean; provider?: string; contextWindow?: number; variants?: ModelVariantOption[];
+  models: { default: string; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; local?: boolean; anthropic?: boolean; server?: string; sharedBy?: string; provider?: string; contextWindow?: number; variants?: ModelVariantOption[];
     /** Per-model reasoning levels and default (shared/model-capabilities.ts). */
     effortLevels?: EffortLevel[]; defaultEffort?: EffortLevel }> };
   capabilities?: {
@@ -2491,7 +2492,7 @@ export function reducer(state: AppState, action: Action): AppState {
         : next;
     }
     case "instances":
-      return { ...state, instances: action.instances };
+      return { ...state, instances: withLocalModelLabels(action.instances) };
     case "configStatus":
       return { ...state, config: action.config };
     case "liveCall":

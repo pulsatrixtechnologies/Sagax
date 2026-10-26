@@ -74,7 +74,7 @@ struct BotPanelModel: View {
     private var instance: Instance? { instances.first { $0.instanceId == selection.instanceId } }
     private var label: String {
         let id = selection.model.isEmpty ? (instance?.models.default ?? "") : selection.model
-        return instance?.models.options.first { $0.id == id }?.label ?? id
+        return instance?.models.options.first { $0.id == id }?.displayLabel ?? id
     }
     private var levels: [String] {
         guard instance?.capabilities?.modelVariants != true else { return [] }

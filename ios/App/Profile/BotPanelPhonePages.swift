@@ -99,7 +99,7 @@ struct BotModelSection: View {
     }
     /// The menu row's value: the provider's model name, Auto when on.
     private var modelLabel: String {
-        let name = instance?.models.options.first { $0.id == modelID }?.label ?? (modelID.isEmpty ? String(localized: "Default") : modelID)
+        let name = instance?.models.options.first { $0.id == modelID }?.displayLabel ?? (modelID.isEmpty ? String(localized: "Default") : modelID)
         return auto ? String(localized: "Auto · \(name)") : name
     }
     private var usesVariants: Bool { instance?.capabilities?.modelVariants == true }

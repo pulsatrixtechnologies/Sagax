@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LOCAL_REFRESH_FRESH_MS, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, resetLocalRefreshCache, runsLoopbackModels } from "./local-models";
-import { localModelLabels, localModelUnavailable } from "../../shared/local-model-engines";
+import { localModelLabels, localModelUnavailable, withServerHints } from "../../shared/local-model-engines";
 
 const rows = [
   { id: "claude-opus-5-5", label: "Opus 5.5" },
@@ -59,42 +59,55 @@ describe("which engines run a local model", () => {
 });
 
 describe("local model labels", () => {
-  it("reads 'Server: Name' and keeps ids apart when several share a name", () => {
-    const labels = localModelLabels("DwarfStar", [
+  it("reads the model name alone, no server or port prefix, and keeps ids apart when several share a name", () => {
+    const labels = localModelLabels([
       { id: "qwen3.8-flash-next", name: "Qwen3.8 Flash Next" },
       { id: "qwen3.8-flash-next-chat", name: "Qwen3.8 Flash Next" },
       { id: "solo", name: "Solo Model" },
       { id: "bare" },
+      { id: "Ornith-1.5-122B-oQ4e-mtp" },
     ]);
     expect([...labels.values()]).toEqual([
-      "DwarfStar: Qwen3.8 Flash Next",
-      "DwarfStar: Qwen3.8 Flash Next Chat",
-      "DwarfStar: Solo Model",
-      "DwarfStar: bare",
+      "Qwen3.8 Flash Next",
+      "Qwen3.8 Flash Next Chat",
+      "Solo Model",
+      "bare",
+      "Ornith-1.5-122B-oQ4e-mtp",
     ]);
-    expect(localModelLabels("", [{ id: "x", name: "X" }]).get("x")).toBe("X");
+    expect([...labels.values()].some((label) => label.includes(":8000"))).toBe(false);
   });
 
   it("tells DwarfStar's three ids of one model apart by their ends, not by a truncated id (2026-10-13)", () => {
-    const labels = localModelLabels("DwarfStar", [
+    const labels = localModelLabels([
       { id: "qwen3.8-flash-next", name: "Qwen3.8 Flash Next" },
       { id: "qwen3.8-flash-next-chat", name: "Qwen3.8 Flash Next" },
       { id: "qwen3.8-flash-next-reasoner", name: "Qwen3.8 Flash Next" },
     ]);
-    expect([...labels.values()]).toEqual([
-      "DwarfStar: Qwen3.8 Flash Next",
-      "DwarfStar: Qwen3.8 Flash Next Chat",
-      "DwarfStar: Qwen3.8 Flash Next Reasoner",
-    ]);
+    expect([...labels.values()]).toEqual(["Qwen3.8 Flash Next", "Qwen3.8 Flash Next Chat", "Qwen3.8 Flash Next Reasoner"]);
     expect(new Set(labels.values()).size).toBe(3);
   });
 
   it("keeps the id when ids under one name share no stem", () => {
-    const labels = localModelLabels("Ollama", [
+    const labels = localModelLabels([
       { id: "qwen3:8b", name: "Qwen 3" },
       { id: "qwen3-coder", name: "Qwen 3" },
     ]);
-    expect([...labels.values()]).toEqual(["Ollama: Qwen 3 (qwen3:8b)", "Ollama: Qwen 3 (qwen3-coder)"]);
+    expect([...labels.values()]).toEqual(["Qwen 3 (qwen3:8b)", "Qwen 3 (qwen3-coder)"]);
+  });
+});
+
+describe("server hint on duplicate names", () => {
+  it("adds the server only when two servers of one computer expose the same name", () => {
+    const rows = withServerHints([
+      { id: "a", label: "Ornith-1.5-122B", serverLabel: "oMLX" },
+      { id: "b", label: "Ornith-1.5-122B", serverLabel: ":9000" },
+      { id: "c", label: "Solo", serverLabel: "oMLX" },
+    ]);
+    expect(rows).toEqual([
+      { id: "a", label: "Ornith-1.5-122B", server: "oMLX" },
+      { id: "b", label: "Ornith-1.5-122B", server: ":9000" },
+      { id: "c", label: "Solo" },
+    ]);
   });
 });
 

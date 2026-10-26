@@ -9,7 +9,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 
 import { isDesktopHostId, LOOPBACK_PROBE_STATUSES, normalizeLoopbackBase, SEED_ENDPOINTS, type LoopbackEndpoint, type LoopbackProbe, type LoopbackProbeStatus } from "../shared/desktop-local-models.ts";
-import { localModelLabels, localModelUnavailable } from "../shared/local-model-engines.ts";
+import { localModelLabels, localModelUnavailable, withServerHints } from "../shared/local-model-engines.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import { personForDesktopGrant } from "./desktop-model-grant.ts";
 import type { DesktopBridgeOperation } from "./desktop-bridge.ts";
@@ -66,7 +66,7 @@ export interface DesktopLocalModelView {
   connected: boolean;
 }
 
-type ModelOption = { id: string; label: string; custom?: boolean; local?: boolean; anthropic?: boolean; contextWindow?: number };
+type ModelOption = { id: string; label: string; custom?: boolean; local?: boolean; anthropic?: boolean; contextWindow?: number; server?: string; sharedBy?: string };
 
 /** Own bots may use this computer's models until the person turns that off.
  * Other people never do until the person turns sharing on. */
@@ -203,6 +203,7 @@ const textHeaders = { "content-type": "text/plain; charset=utf-8", "cache-contro
 export class DesktopLocalModels {
   private file: string;
   private bridges: BridgeClient;
+  private ownerName: (person: string) => string;
   private people = new Map<string, PersonSettings>();
   private published = new Map<string, { endpoints: PublishedEndpoint[] }>();
   // Per-endpoint probe outcomes for the Settings panel. In memory only, like
@@ -213,7 +214,8 @@ export class DesktopLocalModels {
   private port = 0;
   private loaded = false;
 
-  constructor(dataDir: string, bridges: BridgeClient) {
+  constructor(dataDir: string, bridges: BridgeClient, ownerName: (person: string) => string = () => "") {
+    this.ownerName = ownerName;
     this.file = join(dataDir, "desktop-local-models.json");
     this.bridges = bridges;
   }
@@ -365,20 +367,23 @@ export class DesktopLocalModels {
       if (who !== owner && !settings.share) continue;
       const pub = this.published.get(owner);
       if (!pub) continue;
+      // The model name alone (2026-10-26). Another person's shared model adds
+      // that person's display name; two servers of one computer exposing the
+      // same name add the server's label as a sub-line.
+      const sharedBy = who && who !== owner ? this.ownerName(owner).trim() || "" : "";
       const computer = this.bridges.current(owner)?.name?.trim() || "Computer";
+      const mine: Array<InjectedModel & { serverLabel: string }> = [];
       for (const endpoint of pub.endpoints) {
         if (!settings.endpoints.some((row) => row.id === endpoint.id)) continue;
         const hostId = injectHostId(owner, endpoint.id);
         if (!hostId || !this.hostMeta.has(hostId)) continue;
-        // Your own computer reads "DwarfStar: Qwen3.8 Flash Next"; someone
-        // else's shared one names that computer too.
-        const server = who === owner ? endpoint.label || computer : `${endpoint.label || "Local"} (${computer})`;
-        const labels = localModelLabels(server, endpoint.models.map((model) => ({ id: model, ...(endpoint.details?.[model]?.name ? { name: endpoint.details[model]!.name } : {}) })));
+        const labels = localModelLabels(endpoint.models.map((model) => ({ id: model, ...(endpoint.details?.[model]?.name ? { name: endpoint.details[model]!.name } : {}) })));
         for (const model of endpoint.models) {
           const contextWindow = endpoint.details?.[model]?.contextWindow;
-          out.push({ id: encodeInjectId(hostId, model), host: hostId, model, label: labels.get(model) ?? model, ...(endpoint.anthropic ? { anthropic: true } : {}), ...(contextWindow ? { contextWindow } : {}) });
+          mine.push({ id: encodeInjectId(hostId, model), host: hostId, model, label: labels.get(model) ?? model, serverLabel: endpoint.label || computer, ...(sharedBy ? { sharedBy } : {}), ...(endpoint.anthropic ? { anthropic: true } : {}), ...(contextWindow ? { contextWindow } : {}) });
         }
       }
+      out.push(...withServerHints(mine));
     }
     return out;
   }
@@ -441,7 +446,7 @@ export class DesktopLocalModels {
     const rows = this.modelsFor(person);
     return instances.map((instance) => {
       const options = instance.models.options.filter((option) => !isDesktopInjectModel(option.id));
-      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.anthropic ? { anthropic: true } : {}), ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}) });
+      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.anthropic ? { anthropic: true } : {}), ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}), ...(row.server ? { server: row.server } : {}), ...(row.sharedBy ? { sharedBy: row.sharedBy } : {}) });
       return { ...instance, models: { ...instance.models, options } };
     });
   }

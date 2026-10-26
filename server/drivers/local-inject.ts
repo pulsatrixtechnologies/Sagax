@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type { ModelCatalog } from "../contracts.ts";
 import { desktopModelApiKey } from "../desktop-model-grant.ts";
 import { isDesktopHostId } from "../../shared/desktop-local-models.ts";
-import { localModelLabels } from "../../shared/local-model-engines.ts";
+import { localModelLabels, withServerHints } from "../../shared/local-model-engines.ts";
 
 export interface LocalHost {
   id: string;
@@ -97,6 +97,11 @@ export interface InjectedModel {
   contextWindow?: number;
   /** Desktop rows: the desktop probed this server and /v1/messages answers. */
   anthropic?: boolean;
+  /** The server's label, only when two servers of this computer expose the
+   * same model name (a quiet sub-line, never a prefix). */
+  server?: string;
+  /** Desktop rows from another person's computer: that person's display name. */
+  sharedBy?: string;
 }
 
 /** Ollama's /api/ps lists running models with their context_length; a
@@ -395,7 +400,7 @@ export async function probeLocalInjects(
     seenHosts.add(key);
     return true;
   });
-  const found: InjectedModel[] = [];
+  const found: Array<InjectedModel & { serverLabel: string }> = [];
   const pages = await Promise.all(
     hosts.map(async (host) => {
       const catalogUrl = `${host.baseUrl.replace(/\/$/, "")}/models`;
@@ -414,20 +419,21 @@ export async function probeLocalInjects(
     }),
   );
   for (const { host, ids, loaded, windows, facts } of pages) {
-    const labels = localModelLabels(host.label, ids.map((id) => ({ id, ...(facts.get(id)?.name ? { name: facts.get(id)!.name } : {}) })));
+    const labels = localModelLabels(ids.map((id) => ({ id, ...(facts.get(id)?.name ? { name: facts.get(id)!.name } : {}) })));
     for (const model of ids) {
       const contextWindow = windows.get(model) ?? facts.get(model)?.contextWindow;
       found.push({
         id: encodeInjectId(host.id, model),
         host: host.id,
         model,
-        label: labels.get(model) ?? `${host.label}: ${model}`,
+        label: labels.get(model) ?? model,
+        serverLabel: host.label,
         loaded: loaded.has(model),
         ...(contextWindow ? { contextWindow } : {}),
       });
     }
   }
-  return found;
+  return withServerHints(found);
 }
 
 /** Append live local models as custom rows. Official rows stay first. */
@@ -466,6 +472,8 @@ export async function mergeLocalInject(
       ...(extra.anthropic ? { anthropic: true } : {}),
       ...(extra.loaded ? { loaded: true } : {}),
       ...(extra.contextWindow ? { contextWindow: extra.contextWindow } : {}),
+      ...(extra.server ? { server: extra.server } : {}),
+      ...(extra.sharedBy ? { sharedBy: extra.sharedBy } : {}),
     });
   }
   return { default: catalog.default, options };

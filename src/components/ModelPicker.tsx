@@ -1120,7 +1120,7 @@ export function ModelPicker({
     const effortLevel = instance.capabilities?.modelVariants ? undefined
       : effortForModel(sameEngine ? selection.effort : undefined, runs, levels) ?? modelDefaultEffort(runs, levels);
     const runsWith = [variant ?? (effortLevel ? effortLabel(effortLevel) : undefined), onTwin ? t("model.fastTag") : undefined].filter(Boolean).join(" ");
-    const detail = [option.provider, runsWith || undefined, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined;
+    const detail = [option.provider, option.server, runsWith || undefined, local && saysLocal ? t("model.localGroup") : undefined].filter(Boolean).join(" · ") || undefined;
     return {
       key: favoriteKey(instance.instanceId, option.id),
       kind: "model",
@@ -1201,20 +1201,18 @@ export function ModelPicker({
   // Every engine offers the same local models (DwarfStar through Claude, Grok,
   // Codex, pi...): list each model once. Rows come in engine order with the
   // bot's own engine first, so the first one kept is the engine already in use.
-  // The provider prefix ("DwarfStar: ") moves to the detail and the "Local"
-  // tag goes: the section already says both (2026-10-14).
+  // The "Local" tag goes: the section already says it. The label is the model
+  // name alone (2026-10-26); a server shows only as a detail when two servers
+  // of one computer share a name (`option.server`).
   const uniqueLocalRows = (rows: readonly ModelMenuRow[]): ModelMenuRow[] => {
     const seen = new Map<string, ModelMenuRow>();
     for (const row of rows) {
       const id = row.modelId ?? row.key;
       const kept = seen.get(id);
       if (kept && !(row.current && !kept.current)) continue;
-      const split = /^([^:]{2,40}):\s+(.+)$/.exec(row.label);
       const localTag = t("model.localGroup");
       seen.set(id, {
         ...row,
-        label: split ? split[2] : row.label,
-        detail: split ? split[1] : row.detail,
         tags: row.tags?.filter((tag) => tag !== localTag && tag.toLowerCase() !== "local"),
       });
     }

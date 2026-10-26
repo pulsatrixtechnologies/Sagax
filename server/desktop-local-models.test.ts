@@ -49,7 +49,7 @@ async function start() {
       return { localModel: { status: 200, contentType: "application/json", body: "{\"ok\":true}" } };
     },
   };
-  const service = new DesktopLocalModels(dir, bridge);
+  const service = new DesktopLocalModels(dir, bridge, (person) => ({ pr_owner: "Camille Tremblay" })[person] ?? "");
   services.push(service);
   await service.listen();
   return { service, bridge };
@@ -72,7 +72,7 @@ describe("desktop local models", () => {
     // Never toggled: the desktop's first publish is enough for the owner only.
     bridge.online.add("pr_owner");
     expect(service.publish("pr_owner", { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
-    expect(service.modelsFor("pr_owner").map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    expect(service.modelsFor("pr_owner").map((row) => row.label)).toEqual(["qwen3"]);
     expect(service.modelsFor("pr_other")).toEqual([]);
     expect(service.modelsFor(null)).toEqual([]);
     expect(view.endpoints.map((row) => row.id)).toEqual(expect.arrayContaining(["desk8002", "desk9337", "desk9338", "desk11434"]));
@@ -121,7 +121,8 @@ describe("desktop local models", () => {
     expect(bridge.calls[0]?.operation).toMatchObject({ action: "local_model", endpoint: "desk8002", http_method: "POST", http_path: "/chat/completions" });
     expect(bridge.calls[0]?.operation.url).toBeUndefined();
     expect(JSON.stringify(bridge.calls[0]?.operation)).not.toContain("8002/v1");
-    expect(service.modelsFor(other)[0]?.label).toBe("DwarfStar (Mac): qwen3");
+    expect(service.modelsFor(other)[0]).toMatchObject({ label: "qwen3", sharedBy: "Camille Tremblay" });
+    expect(service.modelsFor(owner)[0]?.sharedBy).toBeUndefined();
     expect(injectHostId(owner, "desk8002")).not.toBe(injectHostId(other, "desk8002"));
   });
 
@@ -281,10 +282,10 @@ describe("desktop local models", () => {
     expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models, details }] }).ok).toBe(true);
     const rows = service.modelsFor(owner);
     expect(rows.map((row) => row.label)).toEqual([
-      "DwarfStar: Qwen3.8 Flash Next",
-      "DwarfStar: Qwen3.8 Flash Next Chat",
-      "DwarfStar: Qwen3.8 Flash Next Reasoner",
-      "DwarfStar: Solo Model",
+      "Qwen3.8 Flash Next",
+      "Qwen3.8 Flash Next Chat",
+      "Qwen3.8 Flash Next Reasoner",
+      "Solo Model",
     ]);
     expect(rows[0]?.contextWindow).toBe(262144);
     expect(rows[3]?.contextWindow).toBeUndefined();
@@ -295,7 +296,56 @@ describe("desktop local models", () => {
     // An unknown detail field refuses the catalog; a plain id list (an older desktop) still works.
     expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models, details: [{ id: models[0], url: "http://127.0.0.1:8002/v1" }] }] }).ok).toBe(false);
     expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
-    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["qwen3"]);
+  });
+
+  it("shows the model name alone, with no host, port or server prefix (2026-10-26)", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    // A server the person never named reads ":8000" as its label.
+    service.publish(owner, { endpoints: [
+      { id: "desk8000", label: ":8000", models: ["Ornith-1.5-122B-oQ4e-mtp", "Ornith-1.5-35B-A3B-oQ4e-mtp"] },
+    ] });
+    const rows = service.modelsFor(owner);
+    expect(rows.map((row) => row.label)).toEqual(["Ornith-1.5-122B-oQ4e-mtp", "Ornith-1.5-35B-A3B-oQ4e-mtp"]);
+    expect(rows.every((row) => row.server === undefined && row.sharedBy === undefined)).toBe(true);
+    // The technical id stays the row's id.
+    expect(rows[0]!.id).toContain("::Ornith-1.5-122B-oQ4e-mtp");
+    const [instance] = service.overlay([{ models: { default: "cloud", options: [{ id: "cloud", label: "Cloud" }] as { id: string; label: string; local?: boolean; server?: string; sharedBy?: string }[] } }], owner);
+    expect(instance!.models.options.filter((option) => option.local).map((option) => option.label)).toEqual(["Ornith-1.5-122B-oQ4e-mtp", "Ornith-1.5-35B-A3B-oQ4e-mtp"]);
+  });
+
+  it("names who shares a model from another person's computer, never an email or an id", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    const other = "pr_other";
+    bridge.online.add(owner);
+    service.publish(owner, { endpoints: [{ id: "desk8000", label: "oMLX", models: ["Ornith-1.5-122B-oQ4e-mtp"] }] });
+    expect(service.update(owner, { share: true }).ok).toBe(true);
+    const [row] = service.modelsFor(other);
+    expect(row).toMatchObject({ label: "Ornith-1.5-122B-oQ4e-mtp", sharedBy: "Camille Tremblay" });
+    expect(JSON.stringify(row)).not.toContain("pr_owner@");
+    const [instance] = service.overlay([{ models: { default: "cloud", options: [{ id: "cloud", label: "Cloud" }] as { id: string; label: string; local?: boolean; sharedBy?: string }[] } }], other);
+    expect(instance!.models.options.find((option) => option.local)?.sharedBy).toBe("Camille Tremblay");
+  });
+
+  it("adds the server as a hint only when two servers of one computer expose the same name", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    service.publish(owner, { endpoints: [
+      { id: "desk8000", label: "oMLX", models: ["Ornith-1.5-122B-oQ4e-mtp", "Only-Here"] },
+      { id: "desk8002", label: ":8002", models: ["Ornith-1.5-122B-oQ4e-mtp"] },
+    ] });
+    const rows = service.modelsFor(owner);
+    expect(rows.map((row) => [row.label, row.server])).toEqual([
+      ["Ornith-1.5-122B-oQ4e-mtp", "oMLX"],
+      ["Only-Here", undefined],
+      ["Ornith-1.5-122B-oQ4e-mtp", ":8002"],
+    ]);
+    const [instance] = service.overlay([{ models: { default: "cloud", options: [] as { id: string; label: string; local?: boolean; server?: string }[] } }], owner);
+    expect(instance!.models.options.filter((option) => option.server).map((option) => option.server)).toEqual(["oMLX", ":8002"]);
   });
 
   it("refuses a desktop model on an engine that cannot reach it, before the turn starts", async () => {
@@ -337,14 +387,14 @@ describe("desktop local models", () => {
       { id: "desk9337", status: "offline" },
     ]);
     // Only the server that answered with models reaches the picker.
-    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["qwen3"]);
     // An unknown status, or an id for an endpoint the person removed, is refused or dropped.
     expect(service.publish(owner, { endpoints: [], probes: [{ id: "desk8002", status: "maybe" }] }).ok).toBe(false);
     expect(service.publish(owner, { endpoints: [], probes: [{ id: "deskgone", status: "offline" }] }).ok).toBe(true);
     expect(service.read(owner).probes).toEqual([]);
     // An older desktop that publishes no probes leaves the picker row standing.
     expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"] }] }).ok).toBe(true);
-    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["DwarfStar: qwen3"]);
+    expect(service.modelsFor(owner).map((row) => row.label)).toEqual(["qwen3"]);
     // Turning expose off clears the probes with the catalog.
     service.update(owner, { expose: false });
     expect(service.read(owner).probes).toEqual([]);

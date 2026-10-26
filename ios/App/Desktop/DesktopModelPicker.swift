@@ -375,7 +375,7 @@ struct DesktopModelPicker: View {
     private func modelRow(_ rail: Instance, _ option: ModelOption, current: String?) -> some View {
         Button { pick(rail, option) } label: {
             HStack(spacing: 8) {
-                Text(verbatim: option.label)
+                Text(verbatim: option.displayLabel)
                     .font(theme.font(13))
                     .foregroundStyle(theme.ink)
                     .lineLimit(1)

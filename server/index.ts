@@ -1359,7 +1359,7 @@ function liveSessionPerson(sessionId: string): string | null {
 // search, fetch, browser, computer use and Local VM there, and their network
 // traffic leaves through it (server/desktop-egress.ts).
 const desktopBridges = new DesktopBridges(liveSessionPerson, Date.now, join(DATA_DIR, "desktop-computer-names.json"));
-const desktopLocalModels = new DesktopLocalModels(DATA_DIR, desktopBridges);
+const desktopLocalModels = new DesktopLocalModels(DATA_DIR, desktopBridges, (person) => personDisplayName(principals.byId(person)) || "");
 setDesktopInjectModels(() => desktopLocalModels.modelsFor(null));
 const desktopTunnels = new DesktopTunnels(liveSessionPerson);
 const bridgeAudit = createBridgeAudit(join(DATA_DIR, "desktop-bridge-audit.jsonl"));
