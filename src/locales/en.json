@@ -6559,6 +6559,7 @@
   "teamShare.skip.skill_conflict": "two bots have different skills with this name",
   "teamShare.skip.stdio_server": "runs a command on this computer, so it is not shared",
   "teamShare.skip.team_skill_limit": "a team can share at most 60 skills",
+  "teamShare.skip.trigger_not_portable": "a webhook or email trigger is not included",
   "teamShare.skipped": "Left out:",
   "teamShare.summary": "Summary",
   "teamShare.tagline": "Tagline",

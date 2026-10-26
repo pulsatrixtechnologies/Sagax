@@ -27,6 +27,8 @@ function routineScheduleLabel(routine: Routine) {
       minute: "2-digit",
     });
   }
+  if (routine.schedule.type === "webhook") return "Incoming webhook";
+  if (routine.schedule.type === "event") return "Incoming email";
   if (routine.schedule.type === "interval") {
     const cadence = routine.schedule.everyMinutes % 60 === 0
       ? `Every ${routine.schedule.everyMinutes / 60} hr`

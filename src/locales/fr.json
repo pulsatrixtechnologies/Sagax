@@ -6800,6 +6800,7 @@
   "teamShare.skip.skill_conflict": "deux bots ont des compétences différentes du même nom",
   "teamShare.skip.stdio_server": "exécute une commande sur cet ordinateur, donc n'est pas partagé",
   "teamShare.skip.team_skill_limit": "une équipe peut partager au plus 60 compétences",
+  "teamShare.skip.trigger_not_portable": "un déclencheur par webhook ou par courriel n'est pas inclus",
   "teamShare.skipped": "Laissé de côté :",
   "teamShare.summary": "Résumé",
   "teamShare.tagline": "Slogan",

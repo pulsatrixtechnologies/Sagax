@@ -202,6 +202,7 @@ function endOfLocalDate(dateInput: string): number {
 }
 function recurrenceFor(schedule: RoutineSchedule | CalendarCall["schedule"], at: number): RecurrenceChoice {
   if (schedule.type === "once") return "none";
+  if (schedule.type === "webhook" || schedule.type === "event") return "none";
   if (schedule.type === "interval") return "interval";
   if (schedule.type === "cron") return cronChoiceFor(schedule);
   if (schedule.weekdays.length === 7) return "daily";
@@ -569,7 +570,10 @@ function EventEditor({
           endsAt: intervalEndsAt,
         });
         if (!built) throw new Error(cron?.error || "Choose a valid schedule.");
-        const nextSchedule = withRoutineTiming(built, recurrence !== "none", timingMode, earlyMinutes, lateMinutes);
+        const keptTrigger = existingRoutine && (existingRoutine.schedule.type === "webhook" || existingRoutine.schedule.type === "event")
+          ? existingRoutine.schedule
+          : null;
+        const nextSchedule = keptTrigger ?? withRoutineTiming(built, recurrence !== "none", timingMode, earlyMinutes, lateMinutes);
         // `runAs` (organization server): the person chosen in the modal.
         const input: RoutineInput & { runAs?: string } = {
           name,
@@ -1872,7 +1876,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       })
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
-  const openRoutine = (routine: Routine) => setSelected({ kind: "routine", id: routine.id, at: routine.nextRunAt ?? (routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "cron" ? nextHour() : atLocalTime(Date.now(), routine.schedule.time)), durationMinutes: routine.durationMinutes, routine, run: null });
+  const openRoutine = (routine: Routine) => setSelected({ kind: "routine", id: routine.id, at: routine.nextRunAt ?? (routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "webhook" || routine.schedule.type === "event" ? Date.now() : routine.schedule.type === "cron" ? nextHour() : atLocalTime(Date.now(), routine.schedule.time)), durationMinutes: routine.durationMinutes, routine, run: null });
   // An upcoming row: the calendar moves to its next run, and its details open.
   const showUpcoming = (routine: Routine) => {
     if (routine.nextRunAt != null) setAnchor(startOfDay(routine.nextRunAt));
@@ -2088,7 +2092,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       {quick && <><div className="fixed inset-0 z-40 bg-black/25" onMouseDown={() => setQuick(null)} /><QuickComposer seed={quick} bots={visibleBots} routinesOnly={routinesOnly} onClose={() => setQuick(null)} onMore={(seed) => { setQuick(null); setEditor(seed); }} onSavedRoutine={(routine) => dispatch({ type: "routinePatched", routine })} onSavedCall={upsertCall} /></>}
       {editor && <EventEditor seed={editor} bots={visibleBots} routinesOnly={routinesOnly} onClose={() => setEditor(null)} onSavedCall={upsertCall} />}
       {liveSelected && <EventDetails key={`${liveSelected.kind}:${liveSelected.id}`} item={liveSelected} bots={state.bots} onClose={() => setSelected(null)} onEdit={() => { const seed: EventSeed = liveSelected.kind === "call" ? { kind: "call", at: liveSelected.at, durationMinutes: liveSelected.call.durationMinutes, botIds: liveSelected.call.botIds, call: liveSelected.call } : { kind: "routine", at: liveSelected.at, durationMinutes: liveSelected.routine?.durationMinutes ?? liveSelected.run?.durationMinutes ?? 30, botIds: [liveSelected.routine?.botId ?? liveSelected.run?.botId ?? ""].filter(Boolean), routine: liveSelected.routine ?? undefined }; setSelected(null); setEditor(seed); }} onCallChanged={(id) => { if (id) setCalls((current) => current.filter((call) => call.id !== id)); else void loadCalls(); }} onOpenRoom={onOpenRoom} />}
-      {pausedOpen && <PausedList routines={paused} bots={state.bots} groups={state.groups} onClose={() => setPausedOpen(false)} onEdit={(routine) => { setPausedOpen(false); const at = routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "cron" ? routine.nextRunAt ?? nextHour() : atLocalTime(Date.now(), routine.schedule.time); setEditor({ kind: "routine", at, durationMinutes: routine.durationMinutes, botIds: [routine.botId], routine }); }} onOpenRoom={onOpenRoom} />}
+      {pausedOpen && <PausedList routines={paused} bots={state.bots} groups={state.groups} onClose={() => setPausedOpen(false)} onEdit={(routine) => { setPausedOpen(false); const at = routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "webhook" || routine.schedule.type === "event" ? Date.now() : routine.schedule.type === "cron" ? routine.nextRunAt ?? nextHour() : atLocalTime(Date.now(), routine.schedule.time); setEditor({ kind: "routine", at, durationMinutes: routine.durationMinutes, botIds: [routine.botId], routine }); }} onOpenRoom={onOpenRoom} />}
     </main>
   );
 }
