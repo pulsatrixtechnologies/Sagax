@@ -116,23 +116,12 @@ struct DesktopAppearanceSettings: View {
     var body: some View {
         DesktopSettingsCard(
             Text("Skin"),
-            summary: Text(verbatim: themePalette.id.name),
+            summary: Text(verbatim: SkinPlace.of(themePalette.id, tint: themePalette.tint).family.name),
             subtitle: Text("Applies instantly and is remembered on this machine."),
             identifier: "appearance.skin"
         ) {
-            DesktopSkinGrid(
-                skins: SkinID.visible(retroUnlocked: themes.retroUnlocked, active: themePalette.id).filter { !$0.phoneOnly },
-                selected: themePalette.id
-            ) { skin in
-                if themes.effective.mode == .computer {
-                    themes.choose(skin, client: session.settingsClient)
-                } else {
-                    themes.update {
-                        $0.mode = .fixed
-                        $0.fixedSkin = skin
-                    }
-                }
-            }
+            // the families and their variants, as the iPhone's picker (#1126) and the desktop's SkinPicker
+            DesktopSkinFamilies()
         }
         DesktopSettingsGroup {
             let font = themes.effective.mode == .computer ? (themes.effective.computerFont ?? .skin) : themes.effective.font
@@ -299,9 +288,22 @@ struct DesktopSkinCard: View {
     @Environment(\.desktopTheme) private var theme
     let skin: SkinID
     let selected: Bool
+    /// The variant's tokens the miniature is drawn in (a family card); nil: the skin's own.
+    var drawn: DesktopTheme? = nil
+    /// A family's name and tagline; nil: the skin's.
+    var name: String? = nil
+    var tagline: String? = nil
+
+    init(skin: SkinID, selected: Bool, theme drawn: DesktopTheme? = nil, name: String? = nil, tagline: String? = nil) {
+        self.skin = skin
+        self.selected = selected
+        self.drawn = drawn
+        self.name = name
+        self.tagline = tagline
+    }
 
     var body: some View {
-        let t = DesktopTheme.of(skin)
+        let t = drawn ?? DesktopTheme.of(skin)
         VStack(alignment: .leading, spacing: 10) {
             miniature(t)
                 .frame(height: 104)
@@ -309,14 +311,14 @@ struct DesktopSkinCard: View {
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(t.hairline, lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    DesktopText(verbatim: skin.name, weight: .medium, line: 19.5)
+                    DesktopText(verbatim: name ?? skin.name, weight: .medium, line: 19.5)
                     Spacer(minLength: 0)
                     if selected {
                         DesktopSettingsIconView(icon: .check, size: 14)
                             .foregroundStyle(theme.ink)
                     }
                 }
-                DesktopText(Text(LocalizedStringKey(skin.tagline)), size: 12, line: 16.5, color: \.inkSecondary)
+                DesktopText(Text(LocalizedStringKey(tagline ?? skin.tagline)), size: 12, line: 16.5, color: \.inkSecondary)
                     .padding(.trailing, selected ? 0 : 0)
             }
             .padding(.horizontal, 2)
