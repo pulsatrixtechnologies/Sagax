@@ -1149,6 +1149,7 @@
   "chat.editMessage": "Modifier le message",
   "chat.emptyPrompt": "Envoyez un message pour démarrer la conversation.",
   "chat.error.details": "Détails",
+  "chat.error.requestTooLarge": "Ce message est trop volumineux pour {model}. Commencez une nouvelle conversation ou choisissez un modèle qui en accepte davantage.",
   "chat.error.signedOut": "{name} n’est pas encore connecté. Connectez-vous ci-dessous, puis renvoyez votre message.",
   "chat.exchange.close": "Fermer la conversation",
   "chat.exchange.open": "Ouvrir {count} messages avec {name}",
