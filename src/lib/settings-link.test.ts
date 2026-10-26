@@ -9,12 +9,16 @@ describe("settings links", () => {
     // a former page names the page that holds its card now
     expect(settingsSectionLabel("connectedApps")).toBe("Models and voice");
     // Pair devices and Activity are hidden (2026-10-14), People, Installations
-    // and Email (a card of People) too (2026-10-15): their old links open General
-    expect(settingsSectionLabel("mail")).toBe("General");
-    expect(settingsSectionLabel("people")).toBe("General");
-    expect(settingsSectionLabel("workspaces")).toBe("General");
-    expect(settingsSectionLabel("companion")).toBe("General");
-    expect(settingsSectionLabel("activity")).toBe("General");
+    // and Email (a card of People) too (2026-10-15): their old links open Account (General is out of the navigation, 2026-10-26)
+    expect(settingsSectionLabel("mail")).toBe("Account");
+    expect(settingsSectionLabel("people")).toBe("Account");
+    expect(settingsSectionLabel("workspaces")).toBe("Account");
+    expect(settingsSectionLabel("companion")).toBe("Account");
+    expect(settingsSectionLabel("activity")).toBe("Account");
+    // Security keys and the vault are cards of Account; Published pages are in Connect apps
+    expect(settingsSectionLabel("security")).toBe("Account");
+    expect(settingsSectionLabel("credentials")).toBe("Account");
+    expect(settingsSectionLabel("pages")).toBe("Connect Apps");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
     setLocale("fr");
     expect(settingsSectionLabel("engines")).toBe("Modèles et voix");
@@ -34,11 +38,16 @@ describe("settings links", () => {
     expect(currentSettingsSection("decisionModel")).toBe("engines");
     expect(currentSettingsSection("privacy")).toBe("notifications");
     expect(currentSettingsSection("memory")).toBe("organization");
-    expect(currentSettingsSection("mail")).toBe("general");
-    expect(currentSettingsSection("people")).toBe("general");
-    expect(currentSettingsSection("workspaces")).toBe("general");
-    expect(currentSettingsSection("companion")).toBe("general");
-    expect(currentSettingsSection("activity")).toBe("general");
+    expect(currentSettingsSection("mail")).toBe("account");
+    expect(currentSettingsSection("people")).toBe("account");
+    expect(currentSettingsSection("workspaces")).toBe("account");
+    expect(currentSettingsSection("companion")).toBe("account");
+    expect(currentSettingsSection("activity")).toBe("account");
+    expect(currentSettingsSection("security")).toBe("account");
+    expect(currentSettingsSection("credentials")).toBe("account");
+    expect(currentSettingsSection("general")).toBe("account");
+    expect(mergedSettingsCard("security")).toBe("security");
+    expect(mergedSettingsCard("credentials")).toBe("credentials.items");
     expect(currentSettingsSection("usage")).toBe("usage");
     expect(mergedSettingsCard("connectedApps")).toBeUndefined();
     expect(mergedSettingsCard("decisionModel")).toBe("engines.decisionModel");
@@ -46,6 +55,16 @@ describe("settings links", () => {
     expect(mergedSettingsCard("memory")).toBe("organization.memory");
     expect(mergedSettingsCard("mail")).toBeUndefined();
     expect(mergedSettingsCard("general")).toBeUndefined();
+    // deep links to the moved pages: Account's cards, and Published pages in Connect apps
+    const moved: unknown[] = [];
+    openSettings((action) => moved.push(action), "security");
+    openSettings((action) => moved.push(action), "credentials");
+    openSettings((action) => moved.push(action), "pages");
+    expect(moved).toEqual([
+      { type: "toggleAppSettings", open: true, section: "account" },
+      { type: "toggleAppSettings", open: true, section: "account" },
+      { type: "togglePlugins", open: true, page: "pages" },
+    ]);
     const sent: unknown[] = [];
     openSettings((action) => sent.push(action), "connections", "connections.apps");
     openSettings((action) => sent.push(action), "decisionModel");

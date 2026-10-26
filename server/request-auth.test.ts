@@ -148,6 +148,7 @@ describe("scopes", () => {
       ["POST", "/api/workers/laptop/drop"],
       ["POST", "/api/workers/queue/m1/cancel"],
       ["GET", "/api/threads/t/files"], ["GET", `/api/threads/t/files/${"a1".repeat(12)}`],
+      ["POST", `/api/threads/t/files/${"a1".repeat(12)}/pin`],
       // 2026-10-22 (JC): a webhook runs on the bot's own computer, so its
       // owner creates and manages it without the server-settings right; the
       // handler (webhookDelegateRefusal, webhookExecTargetAdminOnly) keeps the

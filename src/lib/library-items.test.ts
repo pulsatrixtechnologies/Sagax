@@ -1,0 +1,49 @@
+import { describe, expect, it } from "vitest";
+
+import type { ThreadFile } from "./chat-files";
+import { groupLibraryItems, libraryItems } from "./library-items";
+import type { ArtifactSummary } from "../../shared/artifacts";
+
+const now = Date.parse("2026-10-26T12:00:00Z");
+const DAY = 24 * 3_600_000;
+const file = (id: string, name: string, daysAgo: number, pinned = false): ThreadFile => ({
+  id, messageId: "m", source: "written", path: name, name, at: now - daysAgo * DAY, size: 10, available: true, ...(pinned ? { pinned } : {}),
+});
+const artifact = (id: string, title: string, daysAgo: number, favorite = false): ArtifactSummary => ({
+  id, botId: "b", title, favorite, popped: false, createdAt: now - 30 * DAY, updatedAt: now - daysAgo * DAY, rev: 1, refresh: { state: "idle", failures: 0 },
+});
+
+describe("library grouping", () => {
+  it("mixes files and artifacts, splits this week from older, newest first", () => {
+    const items = libraryItems(
+      [file("a".repeat(24), "plan.md", 1), file("b".repeat(24), "export.zip", 3), file("c".repeat(24), "old.md", 12)],
+      [artifact("art_0000001", "Dispatch email preview", 20), artifact("art_0000002", "Queue", 0.5)],
+    );
+    const groups = groupLibraryItems(items, now);
+    expect(groups.pinned).toEqual([]);
+    expect(groups.periods.map((period) => period.id)).toEqual(["thisWeek", "older"]);
+    expect(groups.periods[0]!.items.map((item) => item.key)).toEqual(["artifact:art_0000002", `file:${"a".repeat(24)}`, `file:${"b".repeat(24)}`]);
+    expect(groups.periods[1]!.items.map((item) => item.key)).toEqual([`file:${"c".repeat(24)}`, "artifact:art_0000001"]);
+  });
+
+  it("puts pinned files and artifacts on top, whatever their age, and not again below", () => {
+    const items = libraryItems(
+      [file("a".repeat(24), "plan.md", 1), file("c".repeat(24), "old.md", 40, true)],
+      [artifact("art_0000001", "Preview", 30, true)],
+    );
+    const groups = groupLibraryItems(items, now);
+    expect(groups.pinned.map((item) => item.key)).toEqual(["artifact:art_0000001", `file:${"c".repeat(24)}`]);
+    expect(groups.periods).toHaveLength(1);
+    expect(groups.periods[0]!.items.map((item) => item.key)).toEqual([`file:${"a".repeat(24)}`]);
+  });
+
+  it("drops a period with nothing in it, and an empty library has no groups", () => {
+    expect(groupLibraryItems(libraryItems([file("a".repeat(24), "old.md", 9)], []), now).periods.map((period) => period.id)).toEqual(["older"]);
+    expect(groupLibraryItems(libraryItems(null, null), now)).toEqual({ pinned: [], periods: [] });
+  });
+
+  it("the seven day edge belongs to older", () => {
+    const groups = groupLibraryItems(libraryItems([file("a".repeat(24), "edge.md", 7), file("b".repeat(24), "inside.md", 6.99)], []), now);
+    expect(groups.periods.map((period) => [period.id, period.items.length])).toEqual([["thisWeek", 1], ["older", 1]]);
+  });
+});

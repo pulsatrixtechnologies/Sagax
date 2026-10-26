@@ -1,10 +1,12 @@
-// The bot panel's Library tab on the iPhone (matrix rows BF1, BF3, BF4),
-// as the desktop's panel draws it (`bot-settings/FilesSection.tsx`): every
-// file of the conversation from GET /api/threads/:id/files, newest first,
-// with the search, the kind chips and their counts, who sent it, the sort,
-// grid or list, and each file's actions: open, download, show in chat and
-// copy path. The bot's links (GET /api/bots/:id/links) are one more chip,
-// where the phone's profile had Links and Media tabs (`BotLibraryChip`).
+// The bot panel's Library tab on the iPhone, as the desktop draws it
+// (`bot-settings/LibraryTab.tsx`): the conversation's files
+// (GET /api/threads/:id/files) and the bot's artifacts
+// (GET /api/bots/:id/artifacts) in one list, no search, no filter. What the
+// person pinned sits on top under "Pinned"; the rest is grouped "This week"
+// and "Older", each group in a card, one line per item: the icon and the
+// name, with the pin and a menu. A file opens in Quick Look and an artifact
+// in the widget sandbox. A pin is kept on the server. The bot's links
+// (GET /api/bots/:id/links) stay one more chip, Links, when there are some.
 // It draws inside the panel's scroll view.
 import CompanionCore
 import SwiftUI
@@ -19,14 +21,12 @@ struct ThreadFilesView: View {
     var onShowLink: ((BotLink) -> Void)? = nil
 
     @EnvironmentObject private var session: Session
-    @State private var files: [ThreadFile]?
-    @State private var failed = false
-    @State private var query = ThreadFileQuery()
+    @StateObject private var library = BotLibraryModel()
     @State private var showingLinks = false
     @StateObject private var links = LibraryLoader<BotLink>()
-    @AppStorage("omb-files-view") private var pickedView = ""
     @State private var previewing: IdentifiedURL?
     @State private var sharing: IdentifiedURL?
+    @State private var opened: BotArtifact?
     @State private var working: String?
     @State private var status: String?
 
@@ -35,33 +35,14 @@ struct ThreadFilesView: View {
         self.onShowInChat = onShowInChat
         self.onShowLink = onShowLink
         _showingLinks = State(initialValue: start == .links)
-        _query = State(initialValue: ThreadFileQuery(filter: start.fileFilter ?? .all))
     }
 
     private var threadId: String { bot.threadId }
-    private var all: [ThreadFile] { files ?? [] }
-    private var counts: [ThreadFileFilter: Int] { ThreadFileRules.counts(all, origin: query.origin, search: query.search) }
-    private var selectedChip: BotLibraryChip { showingLinks ? .links : .files(query.filter) }
     private var linkCount: Int { links.page?.total ?? links.page?.items.count ?? 0 }
-    private var chips: [BotLibraryChip] { BotLibraryChip.visible(counts: counts, selected: selectedChip, links: linkCount) }
-    private var fileChips: [ThreadFileFilter] { ThreadFileRules.visibleFilters(counts: counts, selected: query.filter) }
-    /// With no kind chips on screen the list is never narrowed by a hidden filter.
-    private var shown: [ThreadFile] {
-        var effective = query
-        if fileChips.isEmpty { effective.filter = .all }
-        return ThreadFileRules.visible(all, query: effective)
-    }
-    /// Grid suits pictures; a chosen view sticks.
-    private var grid: Bool {
-        if pickedView == "grid" { return true }
-        if pickedView == "list" { return false }
-        return query.filter == .image || query.filter == .video
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            AnyView(searchRow)
-            AnyView(controls)
+            if linkCount > 0 { AnyView(chips) }
             if showingLinks {
                 AnyView(LinksTab(bot: bot, loader: links, onShowMessage: onShowLink))
             } else {
@@ -91,99 +72,27 @@ struct ThreadFilesView: View {
         }
         .sheet(item: $previewing) { item in ProfileQuickLook(url: item.url).ignoresSafeArea() }
         .sheet(item: $sharing) { item in ProfileShareSheet(items: [item.url]) }
+        .sheet(item: $opened) { artifact in BotArtifactSheet(artifact: artifact) }
     }
 
-    // MARK: Controls
+    // MARK: Chips
 
-    private var searchRow: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundStyle(Theme.textSecondary)
-                TextField(String(localized: "Search files"), text: $query.search)
-                    .font(Theme.Font.body)
-                    .foregroundStyle(Theme.textPrimary)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .accessibilityIdentifier("thread-files-search")
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 38)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            Button {
-                pickedView = grid ? "list" : "grid"
-            } label: {
-                Image(systemName: grid ? "list.bullet" : "square.grid.2x2")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.textPrimary)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(grid ? "List view" : "Grid view"))
-            .accessibilityIdentifier("thread-files-view")
+    /// Files and Links, only when the bot has links to switch to.
+    private var chips: some View {
+        HStack(spacing: 6) {
+            chip(String(localized: "Files"), count: (library.files?.count ?? 0) + library.artifacts.count, on: !showingLinks, id: "files") { showingLinks = false }
+            chip(String(localized: "Links"), count: linkCount, on: showingLinks, id: "links") { showingLinks = true }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, Theme.Profile.cardMargin)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Library views"))
     }
 
-    private var controls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !chips.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(chips, id: \.self) { chip in chipButton(chip) }
-                    }
-                    .padding(.horizontal, Theme.Profile.cardMargin)
-                }
-                .accessibilityLabel(Text("Filter files by type"))
-            }
-            if !showingLinks {
-                HStack(spacing: 8) {
-                    Menu {
-                        Picker(String(localized: "Show files from"), selection: $query.origin) {
-                            ForEach(ThreadFileOrigin.allCases, id: \.self) { Text(Self.originName($0)).tag($0) }
-                        }
-                    } label: {
-                        menuLabel(Self.originName(query.origin), systemImage: "person.2")
-                    }
-                    .accessibilityIdentifier("thread-files-origin")
-                    Menu {
-                        Picker(String(localized: "Sort files"), selection: $query.sort) {
-                            ForEach(ThreadFileSort.allCases, id: \.self) { Text(Self.sortName($0)).tag($0) }
-                        }
-                    } label: {
-                        menuLabel(Self.sortName(query.sort), systemImage: "arrow.up.arrow.down")
-                    }
-                    .accessibilityIdentifier("thread-files-sort")
-                }
-                .padding(.horizontal, Theme.Profile.cardMargin)
-            }
-        }
-    }
-
-    private func chipButton(_ chip: BotLibraryChip) -> some View {
-        let selected = chip == selectedChip
-        let title: String
-        let count: Int
-        let id: String
-        switch chip {
-        case let .files(filter):
-            title = Self.filterName(filter)
-            count = counts[filter] ?? 0
-            id = filter.rawValue
-        case .links:
-            title = String(localized: "Links")
-            count = linkCount
-            id = "links"
-        }
-        return Button {
+    private func chip(_ title: String, count: Int, on selected: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button {
             Haptics.selection()
-            switch chip {
-            case let .files(filter):
-                showingLinks = false
-                query.filter = filter
-            case .links:
-                showingLinks = true
-            }
+            action()
         } label: {
             HStack(spacing: 5) {
                 Text(verbatim: title)
@@ -203,24 +112,11 @@ struct ThreadFilesView: View {
         .accessibilityIdentifier("thread-files-chip.\(id)")
     }
 
-    private func menuLabel(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: systemImage).font(.system(size: 12))
-            Text(verbatim: title).lineLimit(1)
-            Spacer(minLength: 4)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 10))
-        }
-        .font(Theme.Profile.labelFont)
-        .foregroundStyle(Theme.textPrimary)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, minHeight: 34)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
     // MARK: List
 
     @ViewBuilder private var content: some View {
-        if files == nil, !failed {
+        let groups = library.groups()
+        if library.files == nil, !library.failed {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Loading files…")
@@ -229,7 +125,7 @@ struct ThreadFilesView: View {
             .foregroundStyle(Theme.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
-        } else if files == nil {
+        } else if library.files == nil {
             VStack(spacing: 10) {
                 Text("Couldn't load this chat's files.")
                 Button(String(localized: "Retry")) { Task { await load() } }
@@ -238,10 +134,10 @@ struct ThreadFilesView: View {
             .foregroundStyle(Theme.textSecondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 40)
-        } else if shown.isEmpty {
+        } else if groups.isEmpty {
             VStack(spacing: 8) {
                 Image(systemName: "folder")
-                Text(verbatim: emptyText).multilineTextAlignment(.center)
+                Text("Files and artifacts from this chat show up here.").multilineTextAlignment(.center)
             }
             .font(Theme.Font.body)
             .foregroundStyle(Theme.textSecondary)
@@ -249,70 +145,76 @@ struct ThreadFilesView: View {
             .padding(.horizontal, 30)
             .padding(.vertical, 40)
             .accessibilityIdentifier("thread-files-empty")
-        } else if grid {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
-                ForEach(shown) { file in
-                    Button { open(file) } label: { tile(file) }
-                        .buttonStyle(.plain)
-                        .disabled(!file.available)
-                        .contextMenu { actions(file) }
-                        .accessibilityIdentifier("thread-file.\(file.name)")
-                }
-            }
-            .padding(.horizontal, Theme.Profile.cardMargin)
         } else {
-            ProfileCard {
-                ForEach(Array(shown.enumerated()), id: \.element.id) { index, file in
-                    if index > 0 { ProfileDivider() }
-                    row(file)
-                }
+            VStack(alignment: .leading, spacing: 16) {
+                group("pinned", title: "Pinned", entries: groups.pinned)
+                group("this-week", title: "This week", entries: groups.thisWeek)
+                group("older", title: "Older", entries: groups.older)
             }
         }
     }
 
-    private var emptyText: String {
-        let search = query.search.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !search.isEmpty { return String(localized: "Nothing matches “\(search)”") }
-        switch fileChips.isEmpty ? .all : query.filter {
-        case .all: return String(localized: "Files you send and files this bot makes in this chat show up here.")
-        case .image: return String(localized: "No images in this chat yet.")
-        case .video: return String(localized: "No videos in this chat yet.")
-        case .audio: return String(localized: "No audio in this chat yet.")
-        case .document: return String(localized: "No documents in this chat yet.")
-        case .code: return String(localized: "No code files in this chat yet.")
-        case .other: return String(localized: "No other files in this chat yet.")
+    /// One titled card; nothing when the group is empty.
+    @ViewBuilder
+    private func group(_ id: String, title: LocalizedStringKey, entries: [LibraryEntry]) -> some View {
+        if !entries.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ProfileSectionLabel(text: title)
+                ProfileCard {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0 { ProfileDivider() }
+                        row(entry)
+                    }
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("library-group.\(id)")
         }
     }
 
-    /// The file (open) beside its actions menu, two separate buttons.
-    private func row(_ file: ThreadFile) -> some View {
-        HStack(spacing: 0) {
-            Button { open(file) } label: {
-                HStack(spacing: 0) {
-                    ThreadFileThumbnail(threadId: threadId, file: file, size: 34)
+    /// The item (open) beside its pin and its menu: three separate buttons.
+    private func row(_ entry: LibraryEntry) -> some View {
+        let name = Self.name(entry)
+        let available = Self.available(entry)
+        return HStack(spacing: 0) {
+            Button { open(entry) } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: Self.symbol(entry))
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.textSecondary)
                         .frame(width: Theme.Profile.iconColumn, alignment: .center)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: file.name)
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(1)
-                        Text(verbatim: meta(file))
-                            .font(Theme.Profile.labelFont)
-                            .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
+                    Text(verbatim: name)
+                        .font(Theme.Font.body)
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if case let .artifact(artifact) = entry, artifact.needsAttention {
+                        Circle().fill(Theme.warning).frame(width: 7, height: 7).accessibilityHidden(true)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(!file.available)
-            .contextMenu { actions(file) }
-            .accessibilityIdentifier("thread-file.\(file.name)")
-            if working == file.id {
-                ProgressView().controlSize(.small).padding(.trailing, Theme.Profile.textInset)
+            .disabled(!available)
+            .contextMenu { actions(entry) }
+            .accessibilityIdentifier(Self.identifier(entry))
+            Button {
+                Haptics.selection()
+                Task { await pin(entry, !entry.pinned) }
+            } label: {
+                Image(systemName: entry.pinned ? "pin.fill" : "pin")
+                    .font(.system(size: 14))
+                    .foregroundStyle(entry.pinned ? Theme.accent : Theme.textSecondary)
+                    .frame(width: 40, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(entry.pinned ? "Unpin" : "Pin"))
+            .accessibilityIdentifier("library-pin.\(name)")
+            if case let .file(file) = entry, working == file.id {
+                ProgressView().controlSize(.small).frame(width: 44, height: 44)
             } else {
-                Menu { actions(file) } label: {
+                Menu { actions(entry) } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
@@ -320,37 +222,58 @@ struct ThreadFilesView: View {
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel(Text("More"))
-                .accessibilityIdentifier("thread-file-actions.\(file.name)")
+                .accessibilityIdentifier("library-actions.\(name)")
             }
         }
         .frame(minHeight: Theme.Profile.fileRow)
-        .opacity(file.available ? 1 : 0.6)
+        .padding(.leading, 4)
+        .opacity(available ? 1 : 0.6)
         .contentShape(Rectangle())
     }
 
-    private func tile(_ file: ThreadFile) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ThreadFileThumbnail(threadId: threadId, file: file, size: nil)
-                .aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            Text(verbatim: file.name).font(Theme.Font.label).foregroundStyle(Theme.textPrimary).lineLimit(1)
-            Text(verbatim: file.available ? (file.size.map(Self.size) ?? Self.sourceName(file.source)) : String(localized: "Not on this computer"))
-                .font(Theme.Font.label)
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
+    @ViewBuilder
+    private func actions(_ entry: LibraryEntry) -> some View {
+        Button(entry.pinned ? String(localized: "Unpin") : String(localized: "Pin"), systemImage: entry.pinned ? "pin.slash" : "pin") {
+            Task { await pin(entry, !entry.pinned) }
         }
-        .opacity(file.available ? 1 : 0.6)
+        switch entry {
+        case let .file(file):
+            Button(String(localized: "Show in chat"), systemImage: "bubble.left") { onShowInChat(file) }
+                .accessibilityIdentifier("thread-file-show")
+            Button(String(localized: "Download"), systemImage: "arrow.down.circle") { Task { await fetch(file, share: true) } }
+                .disabled(!file.available)
+            if let path = ThreadFileRules.copyablePath(of: file) {
+                Button(String(localized: "Copy path"), systemImage: "doc.on.doc") { copy(path) }
+                    .accessibilityIdentifier("thread-file-copy-path")
+            }
+        case let .artifact(artifact):
+            Button(String(localized: "Open"), systemImage: "macwindow") { opened = artifact }
+        }
     }
 
-    @ViewBuilder
-    private func actions(_ file: ThreadFile) -> some View {
-        Button(String(localized: "Show in chat"), systemImage: "bubble.left") { onShowInChat(file) }
-            .accessibilityIdentifier("thread-file-show")
-        Button(String(localized: "Download"), systemImage: "arrow.down.circle") { Task { await fetch(file, share: true) } }
-            .disabled(!file.available)
-        if let path = ThreadFileRules.copyablePath(of: file) {
-            Button(String(localized: "Copy path"), systemImage: "doc.on.doc") { copy(path) }
-                .accessibilityIdentifier("thread-file-copy-path")
+    static func name(_ entry: LibraryEntry) -> String {
+        switch entry {
+        case let .file(file): file.name
+        case let .artifact(artifact): artifact.title
+        }
+    }
+
+    static func available(_ entry: LibraryEntry) -> Bool {
+        if case let .file(file) = entry { return file.available }
+        return true
+    }
+
+    static func symbol(_ entry: LibraryEntry) -> String {
+        switch entry {
+        case let .file(file): ThreadFileThumbnail.symbol(ThreadFileRules.kind(of: file))
+        case .artifact: "macwindow"
+        }
+    }
+
+    static func identifier(_ entry: LibraryEntry) -> String {
+        switch entry {
+        case let .file(file): "thread-file.\(file.name)"
+        case let .artifact(artifact): "library-artifact.\(artifact.id)"
         }
     }
 
@@ -358,17 +281,26 @@ struct ThreadFilesView: View {
 
     private func load() async {
         guard let client = session.profileClient else { return }
+        await library.load(client: client, threadId: threadId, botId: bot.id, withArtifacts: session.surfaceGate.allows(.botArtifacts))
+    }
+
+    private func pin(_ entry: LibraryEntry, _ pinned: Bool) async {
+        guard let client = session.profileClient else { return }
         do {
-            files = try await client.threadFiles(threadId: threadId)
-            failed = false
+            try await library.setPinned(entry, pinned, client: client, threadId: threadId)
         } catch {
-            failed = true
+            session.actionError = error.localizedDescription
         }
     }
 
-    private func open(_ file: ThreadFile) {
-        guard file.available else { return }
-        Task { await fetch(file, share: false) }
+    private func open(_ entry: LibraryEntry) {
+        switch entry {
+        case let .file(file):
+            guard file.available else { return }
+            Task { await fetch(file, share: false) }
+        case let .artifact(artifact):
+            opened = artifact
+        }
     }
 
     /// The file's bytes into a private temporary folder, then Quick Look
@@ -450,7 +382,7 @@ struct ThreadFilesView: View {
 }
 
 /// An image file's thumbnail (`preview=1`), or its kind's symbol.
-private struct ThreadFileThumbnail: View {
+struct ThreadFileThumbnail: View {
     @Environment(\.themePalette) var themePalette
     let threadId: String
     let file: ThreadFile

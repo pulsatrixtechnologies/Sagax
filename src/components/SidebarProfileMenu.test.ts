@@ -170,7 +170,7 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
   const noop = () => {};
   const handlers = {
     onAutomations: noop, onRemoteSessions: noop, onSettings: noop, onAchievements: noop, onShortcuts: noop, onReleaseNotes: noop, onAbout: noop,
-    onViewUsage: noop, onSwitch: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
+    onViewUsage: noop, onSwitch: noop, onRename: noop, onAddOrganization: noop, onSignOut: noop, onMobile: noop,
   };
   const items = (patch: Partial<Parameters<typeof profileMenuItems>[0]> = {}) => profileMenuItems({
     usagePercent: 42,
@@ -326,6 +326,25 @@ describe("profileMenuItems (the reference design's account menu, 2026-10-16)", (
     row.submenu![0]!.onSelect!();
     expect(switched).toBe("local");
     expect(row.submenu![1]!.onSelect).toBeUndefined();
+  });
+
+  it("offers Rename on a server row only, with its host as a quiet line", () => {
+    let renamed = "";
+    const menu = items({
+      accounts: [
+        { id: "local", name: "Personal", local: true, active: false, switchable: true, renamable: false },
+        { id: "north", name: "North office", local: false, active: true, switchable: true, renamable: true, host: "bot.example.com", defaultName: "bot.example.com" },
+      ],
+      signOut: true,
+      handlers: { ...handlers, onRename: (entry) => { renamed = `${entry.id}|${entry.name}|${entry.defaultName}`; } },
+    });
+    const rows = menu.find((entry) => entry.key === "switch-account")!.submenu!;
+    expect(rows[0]!.rename).toBeUndefined();
+    expect(rows[1]!.subtitle).toBe("bot.example.com");
+    expect(rows[1]!.title).toBe("bot.example.com");
+    expect(rows[1]!.rename!.label).toBe("Rename");
+    rows[1]!.rename!.onRename();
+    expect(renamed).toBe("north|North office|bot.example.com");
   });
 
   it("keeps the current account in the submenu when it is the only one, in French", () => {

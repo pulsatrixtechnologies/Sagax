@@ -57,10 +57,43 @@ public struct ApprovalPlainWords: Codable, Hashable, Sendable {
     public var title: String
     public var line: String
     public var risk: String? = nil
-    public init(title: String, line: String, risk: String? = nil) {
+    /// The verb phrase after "wants to" ("view the schedule in ConnectWise
+    /// PSA"), in `locale`. Nil on older servers.
+    public var action: String? = nil
+    /// The language the server worded these in (the person's own, #1089).
+    /// Nil on older servers, which word them in English.
+    public var locale: String? = nil
+    public init(title: String, line: String, risk: String? = nil, action: String? = nil, locale: String? = nil) {
         self.title = title
         self.line = line
         self.risk = risk
+        self.action = action
+        self.locale = locale
+    }
+}
+
+/// The rule an answer saved (`OptionCardData.ruleSaved`).
+public struct SavedOwnerRule: Codable, Hashable, Sendable {
+    public var id: String?
+    /// "allow", "ask" or "deny".
+    public var behavior: String
+    public var description: String
+    public init(id: String? = nil, behavior: String, description: String) {
+        self.id = id
+        self.behavior = behavior
+        self.description = description
+    }
+}
+
+/// Who answered a card when it was not a tap (`CardAnswerer`): `via` is
+/// "call", "ai-client", "primary-bot" or "auto-review"; `bot` names the
+/// Primary Bot that answered.
+public struct CardAnsweredBy: Codable, Hashable, Sendable {
+    public var via: String?
+    public var bot: String?
+    public init(via: String? = nil, bot: String? = nil) {
+        self.via = via
+        self.bot = bot
     }
 }
 
@@ -132,6 +165,16 @@ public struct OptionCard: Codable, Hashable, Sendable {
     /// Organization server: a server command of a member's bot that only an
     /// organization admin answers. Never remembered.
     public var adminApproval: Bool? = nil
+    /// 2026-10-14: the person's own rule saved with this answer (Always allow
+    /// on the card, `OptionCardData.ruleSaved`). Nil on older servers.
+    public var ruleSaved: SavedOwnerRule? = nil
+    /// A change the person took back (Undo).
+    public var undone: Bool? = nil
+    /// How the card was answered when not by a tap (`CardAnswerer.via`).
+    public var answeredBy: CardAnsweredBy? = nil
+    /// The engine's own `<server>__<tool>` when `tool` is only a kind (ACP
+    /// "other") or a bare name.
+    public var mcpTool: String? = nil
     /// Durable proposals. Only their presence matters to the phone: a
     /// proposal is confirmed or cancelled, never remembered or batched.
     public var routineRequest: ProposalRequestMarker? = nil
@@ -483,6 +526,9 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var access: AccessCard? = nil
     /// `kind == .goalRun`: the room goal's receipt.
     public var goalRun: GoalRunCard? = nil
+    /// A phone call or a purchase the bot asks for (`Message.outbound`,
+    /// shared/wire.ts `OutboundCard`): drawn as its own card.
+    public var outbound: OutboundCardData? = nil
     /// The request line, live card or result of a parallel task.
     public var parallelTask: ParallelTaskRef? = nil
     /// Flat reply reference for an inline quote; unrelated to `parentId`.
@@ -606,6 +652,30 @@ public struct BotProject: Codable, Hashable, Identifiable, Sendable {
     public var id: String
     public var name: String
     public var emoji: String?
+}
+
+/// One step of a bot's setup checklist (GET /api/bots/:id/overview `setup`).
+public struct BotSetupStep: Codable, Hashable, Sendable {
+    /// "identity", "soul", "folder", "apps" or "schedule".
+    public var id: String
+    public var done: Bool
+
+    public init(id: String, done: Bool) {
+        self.id = id
+        self.done = done
+    }
+}
+
+/// A bot-to-bot conversation waiting on the person (`WireWaitingApproval`).
+public struct BotWaitingApproval: Codable, Hashable, Sendable {
+    public var threadId: String
+    /// The bot that opened it.
+    public var openedByName: String?
+
+    public init(threadId: String, openedByName: String? = nil) {
+        self.threadId = threadId
+        self.openedByName = openedByName
+    }
 }
 
 public struct BotTask: Codable, Hashable, Sendable {
@@ -866,6 +936,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// older harness included) means the shipped `cursor` silhouette.
     public var mascotBody: String?
     public var tasks: [BotTask]?
+    /// Bot-to-bot conversations waiting on the person: never listed, their
+    /// cards join the open conversation (WireBot.waitingApprovals).
+    public var waitingApprovals: [BotWaitingApproval]? = nil
     public var projects: [BotProject]?
     public var messages: [Message]?
     public var activeLeafId: String?
@@ -1046,9 +1119,12 @@ public struct BotOverview: Codable, Hashable, Sendable {
     /// record. Older computers omit the key entirely (legacy all-tools
     /// behavior); an empty list is an explicit no-tools record.
     public var grants: [BotOverviewGrant]?
+    /// The setup checklist (`setup`, newer servers): what the bot panel's
+    /// Suggestions card offers to finish.
+    public var setup: [BotSetupStep]? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case who, does, reaches, wont, recent, grants
+        case who, does, reaches, wont, recent, grants, setup
     }
 
     public init(
@@ -1084,6 +1160,7 @@ public struct BotOverview: Codable, Hashable, Sendable {
         } else {
             grants = nil
         }
+        setup = (try? container.decodeIfPresent([Lossy<BotSetupStep>].self, forKey: .setup))?.compactMap(\.value)
     }
 }
 
@@ -1771,6 +1848,12 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     public var window: RoutineIntervalWindow? = nil
     /// `interval`: inclusive epoch-millisecond cutoff. Absent means never.
     public var endsAt: Int64? = nil
+    /// Repeating schedules (`shared/routine-timing.ts`): absent or "exact"
+    /// starts at the scheduled slot; "flexible" somewhere in
+    /// [slot - windowEarlyMinutes, slot + windowLateMinutes].
+    public var timing: String? = nil
+    public var windowEarlyMinutes: Int? = nil
+    public var windowLateMinutes: Int? = nil
 
     public init(
         type: Kind, at: Double? = nil, time: String? = nil, weekdays: [Int]? = nil,

@@ -499,6 +499,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // a conversation's files (the bot panel's Files tab): the list and one file by id
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files$/ },
   { methods: ["GET"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}$/ },
+  // pin or unpin a file of the conversation (the Library tab); kept on the server
+  { methods: ["POST"], path: /^\/api\/threads\/[\w-]+\/files\/[a-f0-9]{24}\/pin$/ },
   // what a bot is doing (the bot panel's Coding list): narrowed to the
   // viewer's own threads and the routines they may see (routes/bot-activity.ts)
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/activity(?:\/item)?$/ },

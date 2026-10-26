@@ -1,4 +1,5 @@
-// "Same as my computer" (Settings > Appearance): the computer's skin and font.
+// "Same as my computer" (Settings > Appearance): the computer's skin, its
+// variant (tint, intensity, texture) and font.
 //
 // An organization server keeps them in the person's preferences
 // (`GET/PUT /api/me/preferences`). A personal computer answers 404 there; its
@@ -44,7 +45,11 @@ extension CompanionClient {
     /// server the whole record is replaced, so it is read first and only
     /// the appearance keys change.
     public func saveComputerAppearance(_ values: [String: String], to source: ComputerAppearanceSource) async throws {
-        let keys = [DesktopAppearanceKeys.skin, DesktopAppearanceKeys.skinMode, DesktopAppearanceKeys.font, DesktopAppearanceKeys.retroOn, DesktopAppearanceKeys.retroUnlocked]
+        let keys = [
+            DesktopAppearanceKeys.skin, DesktopAppearanceKeys.skinMode, DesktopAppearanceKeys.skinTint,
+            DesktopAppearanceKeys.skinDepth, DesktopAppearanceKeys.skinTexture, DesktopAppearanceKeys.font,
+            DesktopAppearanceKeys.retroOn, DesktopAppearanceKeys.retroUnlocked,
+        ]
         switch source {
         case .organization:
             var record = try await preferences().preferences

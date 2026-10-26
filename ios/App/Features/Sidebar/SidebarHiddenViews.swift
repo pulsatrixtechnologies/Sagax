@@ -96,7 +96,7 @@ struct SidebarAppearanceSettings: View {
         SettingsCard {
             SettingsRow(
                 title: "Show threads",
-                subtitle: "Show thread lists and controls on this device.",
+                subtitle: "Thread lists, their controls and thread receipts in the chat. Off: one conversation per bot, as on your computer.",
                 accessory: .toggle(Binding(
                     get: { prefs.showThreads },
                     set: { prefs.setShowThreads(session, $0) }

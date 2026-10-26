@@ -30,7 +30,8 @@ struct MessageRow: View {
     /// Cite in the Select Text sheet (CO8); nil where nothing can be sent.
     @Environment(\.citeIntoComposer) private var citeIntoComposer
     @ObservedObject private var speaker = MessageSpeaker.shared
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
+    private var activityDetail: String { toolCalls.detail.rawValue }
     /// iPad desktop shell: the hover row beside the bubble (MessageActions.tsx).
     @Environment(\.desktopChatText) private var desktop
 
@@ -203,6 +204,9 @@ struct MessageRow: View {
         // (OwnerWait.tsx): who it waits on, or who settled it. No controls.
         if message.ownerWait != nil {
             OwnerWaitView(message: message)
+        } else if let outbound = message.outbound, outbound.isDrawable, message.role == .bot {
+            // a phone call or a purchase on its card (OutboundCard.tsx)
+            OutboundCardView(card: outbound, accent: Theme.readable(MausPalette.color(chat.color)))
         } else {
             kindContent
         }

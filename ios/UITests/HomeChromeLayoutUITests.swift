@@ -236,7 +236,7 @@ final class HomeChromeLayoutUITests: XCTestCase {
         let settings = app.buttons["account-menu.settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 5))
         settings.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["settings-general"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-appearance"].waitForExistence(timeout: 10))
         sleep(2)
         save("settings")
         assertPillUnmoved(app, from: reference, "settings")

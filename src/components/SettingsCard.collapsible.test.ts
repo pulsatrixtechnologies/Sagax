@@ -208,12 +208,12 @@ describe("skin picker", () => {
   });
 });
 
-describe("Settings → General, compact", () => {
+describe("Settings → Account and General, compact", () => {
   it("renders the advanced cards collapsed on General > Advanced and About me as a row to its own page", async () => {
     device();
     const { SettingsModal, GeneralAdvancedSettings } = await import("./SettingsModal");
     const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(SettingsModal)));
-    // 2026-10-14: the technical cards are one row away, on their own page
+    // 2026-10-26: General is gone; its Advanced row is at the bottom of Account
     expect(html).toContain('data-settings-card="general.advanced" data-settings-subpage-row');
     for (const id of ["general.threadCleanup", "general.roomTurns", "general.mcpCalls"]) {
       expect(html).not.toContain(`data-settings-card="${id}"`);
@@ -234,8 +234,8 @@ describe("Settings → General, compact", () => {
     expect(html).toContain('data-settings-card="general.aboutMe" data-settings-subpage-row');
     expect(html).not.toContain('id="profile-about-me"');
     // every other card on the page is the collapsible kind; the account card
-    // (2026-10-15) is always open, never collapsed
+    // (2026-10-15) is always open, never collapsed, and so is Security keys (2026-10-26)
     expect(html).not.toContain('data-settings-card="general.profile"');
-    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toEqual(['data-settings-card="general.account"']);
+    expect(html.match(/data-settings-card="[^"]*"(?! data-open| data-settings-subpage-row)/g)).toEqual(['data-settings-card="general.account"', 'data-settings-card="security"']);
   });
 });

@@ -15,19 +15,26 @@ const MERGED: Partial<Record<AppSettingsSection, { section: AppSettingsSection; 
   decisionModel: { section: "engines", cardId: "engines.decisionModel" },
   privacy: { section: "notifications", cardId: "notifications.privacy" },
   memory: { section: "organization", cardId: "organization.memory" },
+  // 2026-10-26: Security keys and the vault are cards of Account.
+  security: { section: "account", cardId: "security" },
+  credentials: { section: "account", cardId: "credentials.items" },
 };
 
 /** Sections hidden from the app since 2026-10-14 (managing several
  * people is Sagax Business's job; the app shows what concerns the person
  * signed in). Their server routes stay. An old link opens the nearest page:
- * General. 2026-10-15: People and Installations joined them, so Email (a
+ * Account (General is out of the navigation since 2026-10-26). 2026-10-15: People and Installations joined them, so Email (a
  * card of People) opens General too. */
 const HIDDEN: Partial<Record<AppSettingsSection, AppSettingsSection>> = {
-  companion: "general",
-  activity: "general",
-  mail: "general",
-  people: "general",
-  workspaces: "general",
+  companion: "account",
+  activity: "account",
+  mail: "account",
+  people: "account",
+  workspaces: "account",
+  // Published pages moved to Connect apps > Manage; openSettings opens it there.
+  pages: "account",
+  // General is gone (2026-10-26): what it held is in Account and Models and voice.
+  general: "account",
 };
 
 /** Cards of General > Advanced that moved to Organization (2026-10-15):

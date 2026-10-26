@@ -92,6 +92,8 @@ struct ChatView: View {
     @StateObject var follow = BottomFollow()
     @StateObject var citations = CitationDrafts()
     @State var shareFile: ShareFile?
+    /// The bot's "Share as Template" sheet (a public template link).
+    @State var sharingTemplate: Bot?
     @State var showingPhotoPicker = false
     /// The composer's "+" > Take Photo: the system camera.
     @State var showingCamera = false
@@ -131,7 +133,11 @@ struct ChatView: View {
     /// When the mic was pressed, and the wait before a press becomes a hold.
     @State var micPressStart: Date?
     @State var micHoldTask: Task<Void, Never>?
-    @AppStorage(PrefKey.activityDetail) var activityDetail = ActivityDetail.full.rawValue
+    /// Settings > Appearance > Tool calls ("Details"), the desktop's switch.
+    @ObservedObject var toolCalls = ToolCallsSetting.shared
+    /// Settings > Appearance > Threads: off drops thread receipts from the chat.
+    @ObservedObject var threadPrefs = SidebarPrefsModel.shared
+    var activityDetail: String { toolCalls.detail.rawValue }
     @AppStorage(PrefKey.quickReplies) var quickReplies = ""
     /// The run card above the composer (ST4, WP14 `RunCardView`).
     @AppStorage(RunCardPreference.key) var showRunCard = true
@@ -217,7 +223,7 @@ struct ChatView: View {
     /// The transcript as the reader has asked to see it: every chip, folded
     /// runs, or none at all.
     var rows: [TranscriptRow] {
-        transcriptRows(messages, detail: ActivityDetail(rawValue: activityDetail) ?? .full)
+        transcriptRows(messages, detail: toolCalls.detail, showThreads: threadPrefs.showThreads)
     }
 
     /// The composer's chip row, as edited in Settings.
@@ -238,6 +244,8 @@ struct ChatView: View {
         // whole chain as one opaque type made the optimizer abort ("Possible
         // non-terminating type substitution") when archiving Release.
         AnyView(screen)
+        // "Use bot color as accent": this bot's colour while its chat is open
+        .modifier(OpenBotAccent(color: current.isBot ? current.color : nil))
         .sheet(item: $openBotConversation) { row in
             if case let .bot(bot) = current {
                 BotConversationPage(row: row, selfBot: bot).environmentObject(session)
@@ -285,6 +293,10 @@ struct ChatView: View {
         }
         .sheet(item: $shareFile) { file in
             ActivityShareSheet(items: [file.url])
+        }
+        .sheet(item: $sharingTemplate) { bot in
+            ShareTemplateSheet(bot: bot)
+                .environmentObject(session)
         }
         .photosPicker(
             isPresented: $showingPhotoPicker,
@@ -1010,5 +1022,19 @@ struct ChatLiveTail: View {
             .accessibilityLabel("\(name) is working")
             .accessibilityIdentifier("chat-thinking")
         }
+    }
+}
+
+/// Tells the theme which bot is open (Settings > Appearance > Use bot color
+/// as accent, src/lib/bot-accent.ts `useBotAccent`): its colour while the
+/// chat is on screen, the skin's own once it leaves.
+private struct OpenBotAccent: ViewModifier {
+    let color: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { ThemeStore.shared.setOpenBot(color) }
+            .onValueChange(of: color) { ThemeStore.shared.setOpenBot($0) }
+            .onDisappear { if let color { ThemeStore.shared.setOpenBot(nil, leaving: color) } }
     }
 }

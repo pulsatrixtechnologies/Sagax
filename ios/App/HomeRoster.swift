@@ -356,7 +356,8 @@ struct HomeChatRow: View {
                     BotMascotView(bot: bot, size: HomeMetrics.rowMascotDrawn, state: state, animated: state.showsActivity)
                 case let .room(room):
                     if let peer = people.peer(room, session: session) {
-                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascotDrawn, presenceId: peer.id)
+                        PersonAvatar(initials: peer.initials, size: HomeMetrics.rowMascotDrawn, presenceId: peer.id,
+                                     avatarUrl: people.directory?.person(peer.id)?.avatarUrl)
                     } else {
                         GroupMascotView(
                             members: room.memberIds.compactMap { session.state.bot($0) },
@@ -376,7 +377,12 @@ struct HomeChatRow: View {
             }
             .frame(width: HomeMetrics.rowMascot, height: HomeMetrics.rowMascot)
             .overlay(alignment: .bottomTrailing) {
-                if let selection { HomeSelectionMark(selected: selection.selected).offset(x: 4, y: 2) }
+                if let selection {
+                    HomeSelectionMark(selected: selection.selected).offset(x: 4, y: 2)
+                } else if case let .bot(bot) = chat, let sharer = people.sharer(of: bot, session: session) {
+                    // #985: the face of the person who shared this bot
+                    SharerBadge(sharer: sharer, avatarSize: HomeMetrics.rowMascotDrawn)
+                }
             }
             .padding(.top, (HomeMetrics.rowHeight - HomeMetrics.rowMascot) / 2)
             .padding(.leading, HomeMetrics.rowLeading)

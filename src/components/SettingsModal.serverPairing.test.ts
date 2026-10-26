@@ -46,7 +46,7 @@ describe("Settings > Pair devices is hidden", () => {
     const html = render();
     expect(html).not.toContain('<option value="companion"');
     expect(html).not.toContain(">Pair devices<");
-    expect(html).toContain('<option value="general" selected="">General</option>');
+    expect(html).toContain('<option value="account" selected="">Account</option>');
     expect(html).not.toContain("SERVER_PAIRING_CARD_MARKER");
     expect(html).not.toContain("COMPANION_SECTION");
   });

@@ -38,7 +38,7 @@ final class SettingsUITests: XCTestCase {
         app.launchArguments = arguments
         app.launch()
         XCTAssertTrue(app.element("settings-close").waitForExistence(timeout: 20))
-        XCTAssertTrue(app.element("settings-general").waitForExistence(timeout: 20))
+        XCTAssertTrue(app.element("settings-appearance").waitForExistence(timeout: 20))
         return app
     }
 
