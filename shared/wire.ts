@@ -869,6 +869,38 @@ export interface WireMessage {
   connectorSetup?: ConnectorSetupView;
 }
 
+const threadStamp = (task: { updatedAt?: number; createdAt?: number }): number =>
+  typeof task.updatedAt === "number" && Number.isFinite(task.updatedAt) ? task.updatedAt
+    : typeof task.createdAt === "number" && Number.isFinite(task.createdAt) ? task.createdAt : 0;
+
+/** Pin, then newest update. Equal stamps keep the caller's order. */
+export function orderedThreadList<T extends { pinned?: boolean; updatedAt?: number; createdAt?: number }>(tasks: readonly T[]): T[] {
+  return tasks
+    .map((task, index) => ({ task, index }))
+    .sort((a, b) => {
+      const pin = Number(b.task.pinned === true) - Number(a.task.pinned === true);
+      if (pin) return pin;
+      const recency = threadStamp(b.task) - threadStamp(a.task);
+      if (recency) return recency;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.task);
+}
+
+/** 0 is the "until new activity" sentinel. The event stream never drops an expired snooze, so check the clock too. */
+export const isSnoozed = (task: Pick<WireTask, "snoozedUntil">, now = Date.now()): boolean =>
+  task.snoozedUntil !== undefined && (task.snoozedUntil === 0 || task.snoozedUntil > now);
+
+type OpenThreadCandidate = Pick<WireTask, "routineRunId" | "archivedAt" | "closedBy" | "openedBy" | "snoozedUntil" | "pinned" | "updatedAt" | "createdAt">;
+
+/** The top row of the bot's thread list, so deleting the open thread never pulls a hidden one into view. */
+export function nextOpenThread<T extends OpenThreadCandidate>(tasks: readonly T[], now = Date.now()): T | undefined {
+  const own = tasks.filter((task) => !task.routineRunId);
+  const open = own.filter((task) => task.archivedAt === undefined);
+  const listed = open.filter((task) => task.pinned === true || !(task.closedBy || task.openedBy || isSnoozed(task, now)));
+  return [listed, open, own].map((candidates) => orderedThreadList(candidates)[0]).find((task) => task !== undefined);
+}
+
 export interface OptionCardData {
   /** calls: one per outbound call the card covers, in subtitle order. Absent
    * on cards from older computers. */
