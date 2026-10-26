@@ -4022,6 +4022,7 @@
   "newBot.presetsFromOrganization": "From {name}",
   "newBot.presetsImported": "Imported presets",
   "newBot.profileFailed": "Your bot was created, but its preset could not be fully applied. Review its instructions in settings: {error}",
+  "newBot.memberSettings.serverDefault": "Server default",
   "newBot.quickCreate": "Sagax creates the bot with this server's defaults. You can change everything afterwards.",
   "newBot.randomFemaleName": "Random female name",
   "newBot.randomMaleName": "Random male name",
