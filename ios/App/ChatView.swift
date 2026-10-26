@@ -57,6 +57,7 @@ struct ChatView: View {
     @State var showingTasks = false
     /// A bot-to-bot conversation opened read only (BB1).
     @State var openBotConversation: BotConversation?
+    @State var earlierConversationsOpen = false
     @State var showingComputer = false
     @State var showingPlus = false
     /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
@@ -530,12 +531,16 @@ struct ChatView: View {
         let fresh = session.isFreshTopic(current)
         let transcript = fresh ? [] : rows
         let storedBot: Bot? = { if case let .bot(bot) = current { return session.state.bot(bot.id) }; return nil }()
-        let conversationRows = BotConversations.visible(
+        let visibleConversations = BotConversations.visible(
             storedBot?.botConversations ?? [],
             openThreadId: threadId,
             mainThreadId: storedBot?.mainThreadId,
             fallbackThreadId: storedBot?.threadId ?? threadId,
             linkedThreadIds: BotConversations.linkedThreadIds(in: messages))
+        // Rows older than the first line fold behind "Earlier topics".
+        let conversationSplit = BotConversations.split(
+            visibleConversations, firstStart: transcript.first?.head.at, hasMore: session.state.hasMore[threadId] == true)
+        let conversationRows = conversationSplit.inline
         let conversationAnchors = BotConversations.anchors(
             conversationRows, rowStarts: transcript.map { $0.head.at }, hasMore: session.state.hasMore[threadId] == true)
         // A VStack with the composer as a sibling, rather than a scroll view
@@ -574,6 +579,14 @@ struct ChatView: View {
                             .font(.footnote)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
+                        }
+
+                        if !fresh, !conversationSplit.leading.isEmpty {
+                            EarlierConversationsFold(
+                                rows: BotConversations.deduped(conversationSplit.leading),
+                                open: $earlierConversationsOpen,
+                                other: { session.state.bot($0) },
+                                select: { openBotConversation = $0 })
                         }
 
                         ForEach(Array(transcript.enumerated()), id: \.element.id) { index, row in

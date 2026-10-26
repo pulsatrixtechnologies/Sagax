@@ -138,7 +138,7 @@ import { CHAT_BUBBLE_WIDTH_CLASS, chatBubbleWidth } from "@/lib/chat-bubble-widt
 import { ScreenFrame } from "./ScreenFrame";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { RenameTitle } from "./RenameTitle";
-import { BotConversationLine, conversationAnchors } from "./BotConversations";
+import { BotConversationLine, EarlierConversationList, conversationAnchors, splitLeadingConversations, visibleConversationRows } from "./BotConversations";
 import { TaskPicker, ThreadReturnLink } from "./TaskPicker";
 
 import { ExportTranscriptMenu } from "./ExportTranscriptMenu";
@@ -1152,11 +1152,10 @@ const MessagesList = memo(function MessagesList({
   // already holds its line (the origin's "Go to conversation" receipt).
   const selfBot = storeBots.find((candidate) => candidate.id === botId);
   const conversationRows = useMemo(() => {
-    const rows = selfBot?.botConversations ?? [];
-    if (!selfBot || !rows.length || threadId !== (selfBot.mainThreadId ?? selfBot.threadId)) return [];
-    const linked = new Set(transcript.flatMap((message) => [message.threadRef?.threadId, message.comm?.threadId]).filter(Boolean));
-    return rows.filter((row) => row.threadId !== threadId && !linked.has(row.threadId));
-  }, [selfBot, threadId, transcript]);
+    const visible = visibleConversationRows(selfBot, threadId, transcript);
+    // The rows older than the first line fold behind "Earlier topics".
+    return splitLeadingConversations(visible, messages[0]?.at, hasMore).inline;
+  }, [selfBot, threadId, transcript, messages, hasMore]);
   const conversationAt = useMemo(
     () => conversationAnchors(conversationRows, items.map((item) => listedItemMessages(item)[0]?.at ?? 0), hasMore),
     [conversationRows, items, hasMore],
@@ -1553,7 +1552,7 @@ function FreshTopicDivider({ onResume }: { onResume: () => void }) {
 
 /** One discreet line above a topic: the earlier topics, folded until asked
  * for (2026-10-18: less on screen; ⌘F still searches them). */
-function PreviousTopicsLine({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+export function PreviousTopicsLine({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
     <div className="flex justify-center" data-previous-topics={open ? "open" : "closed"}>
       <button
@@ -2067,7 +2066,17 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // the live topic, once it is read back to its start (2026-10-18); the
   // line, a link, a search hit or the activity pill draws them.
   const streamDrawn = !fresh && streamHasEarlier && (previousOpen || streamFocusEarlier || streamReach !== null || streamShownFor === bot.threadId);
+  // The bot-to-bot conversations older than the topic's first line fold behind
+  // the same line, listed once per bot; with no earlier topic to fold, they
+  // get a line of their own.
+  const earlierConversations = useMemo(
+    () => splitLeadingConversations(visibleConversationRows(bot, bot.threadId, messages), windowedMessages[0]?.at, Boolean(bot.hasMore)).leading,
+    [bot, messages, windowedMessages],
+  );
   const showPreviousLine = fresh || (streamHasEarlier && (streamDrawn || streamReadBack));
+  const [conversationsOpenFor, setConversationsOpenFor] = useState<string | null>(null);
+  const conversationsOpen = showPreviousLine ? (fresh ? previousOpen : streamDrawn) : conversationsOpenFor === bot.threadId;
+  const toggleConversations = useCallback(() => setConversationsOpenFor((current) => current === bot.threadId ? null : bot.threadId), [bot.threadId]);
   // A link, a search hit or the activity pill into an earlier topic is a
   // jump up: bottom-follow would pull the pane back at the next growth.
   useEffect(() => {
@@ -2321,6 +2330,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
           {/* The single stream: earlier topics above the live one, once the
               live one is read back to its first message. */}
           {showPreviousLine && <PreviousTopicsLine open={fresh ? previousOpen : streamDrawn} onToggle={fresh || !streamDrawn ? togglePrevious : () => { setPreviousOpenFor(null); setStreamShownFor(null); clearStreamReach(); }} />}
+          {!showPreviousLine && earlierConversations.length > 0 && <PreviousTopicsLine open={conversationsOpen} onToggle={toggleConversations} />}
+          {conversationsOpen && earlierConversations.length > 0 && <EarlierConversationList self={bot} rows={earlierConversations} bots={state.bots} showToolCalls={showToolCalls} />}
           {streamDrawn && (
             <>
               <StreamEarlierTopics bot={bot} rows={rows} place={place} engine={streamEngine} scrollRef={scrollRef} followRef={followRef} reach={streamReach} onReached={clearStreamReach} onQuote={quoteEarlier} />
