@@ -1,6 +1,6 @@
 // Plugins, main view ("Connect Apps"): every app, MCP server, catalog plugin
 // and skill in one list. The chrome matches the reference design's Connect Apps: the
-// title with "N connected" at its right, the search with Bot templates
+// title with "N connected" at its right, the search with Browse bots
 // beside it, All and the main categories, the rest under More, then the
 // sections in two columns. View all opens a section as its own page.
 import { useEffect, useState, type ReactNode } from "react";
