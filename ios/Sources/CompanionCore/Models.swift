@@ -654,6 +654,30 @@ public struct BotProject: Codable, Hashable, Identifiable, Sendable {
     public var emoji: String?
 }
 
+/// One step of a bot's setup checklist (GET /api/bots/:id/overview `setup`).
+public struct BotSetupStep: Codable, Hashable, Sendable {
+    /// "identity", "soul", "folder", "apps" or "schedule".
+    public var id: String
+    public var done: Bool
+
+    public init(id: String, done: Bool) {
+        self.id = id
+        self.done = done
+    }
+}
+
+/// A bot-to-bot conversation waiting on the person (`WireWaitingApproval`).
+public struct BotWaitingApproval: Codable, Hashable, Sendable {
+    public var threadId: String
+    /// The bot that opened it.
+    public var openedByName: String?
+
+    public init(threadId: String, openedByName: String? = nil) {
+        self.threadId = threadId
+        self.openedByName = openedByName
+    }
+}
+
 public struct BotTask: Codable, Hashable, Sendable {
     public var threadId: String
     /// A room thread's own turn limit, minutes (#216); nil follows the
@@ -912,6 +936,9 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// older harness included) means the shipped `cursor` silhouette.
     public var mascotBody: String?
     public var tasks: [BotTask]?
+    /// Bot-to-bot conversations waiting on the person: never listed, their
+    /// cards join the open conversation (WireBot.waitingApprovals).
+    public var waitingApprovals: [BotWaitingApproval]? = nil
     public var projects: [BotProject]?
     public var messages: [Message]?
     public var activeLeafId: String?
@@ -1092,9 +1119,12 @@ public struct BotOverview: Codable, Hashable, Sendable {
     /// record. Older computers omit the key entirely (legacy all-tools
     /// behavior); an empty list is an explicit no-tools record.
     public var grants: [BotOverviewGrant]?
+    /// The setup checklist (`setup`, newer servers): what the bot panel's
+    /// Suggestions card offers to finish.
+    public var setup: [BotSetupStep]? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case who, does, reaches, wont, recent, grants
+        case who, does, reaches, wont, recent, grants, setup
     }
 
     public init(
@@ -1130,6 +1160,7 @@ public struct BotOverview: Codable, Hashable, Sendable {
         } else {
             grants = nil
         }
+        setup = (try? container.decodeIfPresent([Lossy<BotSetupStep>].self, forKey: .setup))?.compactMap(\.value)
     }
 }
 

@@ -16,6 +16,7 @@ export function ConversationLink({
   title,
   testId,
   attributes,
+  compact = false,
   children,
 }: {
   bot: { name: string; color: MausColor } & Partial<Bot>;
@@ -26,11 +27,13 @@ export function ConversationLink({
   title?: string;
   testId?: string;
   attributes?: Record<string, string>;
+  /** A left-aligned line in a list, not a centered one. */
+  compact?: boolean;
   /** Rendered beside the line, e.g. an opened sheet. */
   children?: ReactNode;
 }) {
   return (
-    <div className="flex justify-center py-1">
+    <div className={compact ? "flex justify-start py-0.5" : "flex justify-center py-1"}>
       <button
         type="button"
         {...(testId ? { "data-testid": testId } : {})}

@@ -40,7 +40,55 @@ export function conversationAnchors(rows: readonly BotConversationRow[], rowStar
   return { before, after };
 }
 
-export function BotConversationLine({ self, row, bots, showToolCalls = false }: { self: Pick<Bot, "id" | "name" | "color">; row: BotConversationRow; bots: readonly Bot[]; showToolCalls?: boolean }) {
+/** The conversations to draw for a thread: only the main chat names them, and
+ * one the transcript already links to keeps its own line there. */
+export function visibleConversationRows(selfBot: Pick<Bot, "botConversations" | "mainThreadId" | "threadId"> | undefined, threadId: string, transcript: readonly Message[]): BotConversationRow[] {
+  const rows = selfBot?.botConversations ?? [];
+  if (!selfBot || !rows.length || threadId !== (selfBot.mainThreadId ?? selfBot.threadId)) return [];
+  const linked = new Set(transcript.flatMap((message) => [message.threadRef?.threadId, message.comm?.threadId]).filter(Boolean));
+  return rows.filter((row) => row.threadId !== threadId && !linked.has(row.threadId));
+}
+
+/** Splits the rows into the ones older than the first loaded line (they open
+ * the topic, so they fold behind "Earlier topics") and the ones that sit in
+ * the middle of the transcript. With no line yet, every row is a leading one.
+ * Rows older than a partial window stay out while earlier pages remain. */
+export function splitLeadingConversations(rows: readonly BotConversationRow[], firstAt: number | undefined, hasMore: boolean): { leading: BotConversationRow[]; inline: BotConversationRow[] } {
+  const leading: BotConversationRow[] = [];
+  const inline: BotConversationRow[] = [];
+  for (const row of rows) {
+    const at = row.startedAt ?? row.updatedAt ?? 0;
+    if (firstAt === undefined || at < firstAt) {
+      if (!hasMore) leading.push(row);
+    } else inline.push(row);
+  }
+  return { leading, inline };
+}
+
+/** One row per bot, the most recent, newest first. */
+export function dedupeConversations(rows: readonly BotConversationRow[]): BotConversationRow[] {
+  const latest = new Map<string, BotConversationRow>();
+  const when = (row: BotConversationRow) => row.updatedAt ?? row.startedAt ?? 0;
+  for (const row of rows) {
+    const key = row.otherBotId || row.threadId;
+    const kept = latest.get(key);
+    if (!kept || when(row) > when(kept)) latest.set(key, row);
+  }
+  return [...latest.values()].sort((a, b) => when(b) - when(a));
+}
+
+/** The compact list inside the unfolded "Earlier topics". */
+export function EarlierConversationList({ self, rows, bots, showToolCalls = false }: { self: Pick<Bot, "id" | "name" | "color">; rows: readonly BotConversationRow[]; bots: readonly Bot[]; showToolCalls?: boolean }) {
+  const list = dedupeConversations(rows);
+  if (!list.length) return null;
+  return (
+    <div className="flex flex-col items-start px-1 py-1" data-earlier-conversations>
+      {list.map((row) => <BotConversationLine key={`earlier:${row.threadId}`} self={self} row={row} bots={bots} showToolCalls={showToolCalls} compact />)}
+    </div>
+  );
+}
+
+export function BotConversationLine({ self, row, bots, showToolCalls = false, compact = false }: { self: Pick<Bot, "id" | "name" | "color">; row: BotConversationRow; bots: readonly Bot[]; showToolCalls?: boolean; compact?: boolean }) {
   const [run, setRun] = useState<ExchangeRun | null>(null);
   const other = avatarBot({ id: row.otherBotId, name: row.otherName }, bots);
   const open = () => {
@@ -65,6 +113,7 @@ export function BotConversationLine({ self, row, bots, showToolCalls = false }: 
       testId="bot-exchange-chip"
       attributes={{ "data-bot-conversation": row.direction, "data-thread-chip": row.threadId }}
       label={t("chat.goToConversationWith", { name: row.otherName })}
+      compact={compact}
       onClick={open}
     >
       {run && <ExchangeSheet run={run} bots={bots} showToolCalls={showToolCalls} onClose={() => setRun(null)} />}

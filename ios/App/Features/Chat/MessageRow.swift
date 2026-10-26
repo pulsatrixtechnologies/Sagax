@@ -30,7 +30,8 @@ struct MessageRow: View {
     /// Cite in the Select Text sheet (CO8); nil where nothing can be sent.
     @Environment(\.citeIntoComposer) private var citeIntoComposer
     @ObservedObject private var speaker = MessageSpeaker.shared
-    @AppStorage(PrefKey.activityDetail) private var activityDetail = ActivityDetail.full.rawValue
+    @ObservedObject private var toolCalls = ToolCallsSetting.shared
+    private var activityDetail: String { toolCalls.detail.rawValue }
     /// iPad desktop shell: the hover row beside the bubble (MessageActions.tsx).
     @Environment(\.desktopChatText) private var desktop
 

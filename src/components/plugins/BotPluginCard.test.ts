@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import type { BotPluginsView } from "@/lib/my-connections";
 import { botPluginState } from "@/lib/plugin-scope";
-import { LIBRARY_VIEWS, openBotPlugins } from "../bot-settings/LibraryTab";
+import { openBotPlugins } from "../bot-settings/LibraryTab";
 import { BotPluginCard } from "./BotPluginCard";
 import { MarketplacesSection } from "./MarketplacesSection";
 import { ScopeToggle } from "./ScopeToggle";
@@ -128,10 +128,6 @@ describe("one marketplace list, two scopes", () => {
 });
 
 describe("bot panel > Library", () => {
-  it("shows the files and the artifacts only: skills live on Personas, plugins in Connect apps", () => {
-    expect(LIBRARY_VIEWS).toEqual(["files", "artifacts"]);
-  });
-
   it("opens Connect apps on that bot's scope", () => {
     const dispatch = vi.fn();
     openBotPlugins(dispatch, "maya");

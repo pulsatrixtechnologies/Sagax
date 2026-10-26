@@ -129,10 +129,13 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
     public var path: String
     /// The resolved absolute path on the computer, while it is available.
     public var localPath: String?
+    /// Pinned in the Library tab; kept on the server, so it follows the
+    /// person across devices (`POST /api/threads/:id/files/:fileId/pin`).
+    public var pinned: Bool
 
-    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath }
+    private enum CodingKeys: String, CodingKey { case id, messageId, source, name, mime, at, size, available, path, localPath, pinned }
 
-    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil) {
+    public init(id: String, messageId: String = "", source: Source, name: String, mime: String? = nil, at: Double, size: Int? = nil, available: Bool = true, path: String = "", localPath: String? = nil, pinned: Bool = false) {
         self.id = id
         self.messageId = messageId
         self.source = source
@@ -143,6 +146,7 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         self.available = available
         self.path = path
         self.localPath = localPath
+        self.pinned = pinned
     }
 
     public init(from decoder: Decoder) throws {
@@ -157,6 +161,7 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         available = try values.decodeIfPresent(Bool.self, forKey: .available) ?? false
         path = try values.decodeIfPresent(String.self, forKey: .path) ?? ""
         localPath = try values.decodeIfPresent(String.self, forKey: .localPath)
+        pinned = try values.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
     }
 
     /// Media tab when true, Files tab otherwise. Falls back to the extension
@@ -166,6 +171,14 @@ public struct ThreadFile: Decodable, Hashable, Identifiable, Sendable {
         let ext = (name as NSString).pathExtension.lowercased()
         return ["png", "jpg", "jpeg", "gif", "webp", "heic"].contains(ext)
     }
+}
+
+struct ArtifactFavoriteBody: Encodable {
+    let favorite: Bool
+}
+
+struct ThreadFilePinBody: Encodable {
+    let pinned: Bool
 }
 
 struct ThreadFilesResponse: Decodable {

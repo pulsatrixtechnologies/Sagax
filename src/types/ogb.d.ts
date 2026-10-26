@@ -155,7 +155,9 @@ const __BASE_VERSION__: string;
        * this app is locked to, and leaving it (signs out, back to the launch
        * screen). This app's own UI only. */
       serverMode?: {
-        state: () => Promise<{ active: false } | { active: true; id: string; name: string; origin: string }>;
+        state: () => Promise<{ active: false } | { active: true; id: string; name: string; origin: string; label?: string; orgName?: string }>;
+        /** Rename the locked server for this person (`label`; empty clears it) or record the organization name it announced. */
+        setName?: (input: { label?: string; orgName?: string }) => Promise<{ ok: boolean }>;
         leave: () => Promise<{ left: boolean }>;
         /** Probe this computer's loopback model servers now and publish
          * them to the server (electron/desktop-bridge.mjs). Absent on an
@@ -178,12 +180,17 @@ const __BASE_VERSION__: string;
             origin?: string;
             /** An organization server (signs people in with Pulsatrix). */
             org?: boolean;
+            /** The name this person gave the server, and the organization name it announced. */
+            label?: string;
+            orgName?: string;
             dataDir?: string;
             missing?: boolean;
           }>;
         }>;
         /** Local targets answer {ok, error?} (error strings are an open set); remote ones answer nothing. */
         switch: (id: string) => Promise<{ ok: boolean; error?: string } | void>;
+        /** Rename a saved server (`label`; empty clears it) or record the organization name it announced. */
+        setName?: (id: string, input: { label?: string; orgName?: string }) => Promise<{ ok: boolean }>;
         addFromLink: (link: string, name?: string) => Promise<boolean | void>;
         /** Register a named local environment; an omitted dataDir lands beside the app's own. */
         create: (name: string, dataDir?: string) => Promise<{ ok: boolean; error?: string; state: unknown }>;

@@ -208,6 +208,9 @@ public struct ShapeFrame: Sendable {
     public var color: String
     /// How far the body is from its resting outline (0...1).
     public var morphed: Double
+    /// The body's thickness as a share of its resting one (0...1, `bodyDepth`):
+    /// a move that shrinks the body to a dot or a bar thins its slices with it.
+    public var depth: Double = 1
     public var light: (x: Double, y: Double, r: Double)
     public var dots: [ShapeDot]
     public var specks: [ShapeDot]
@@ -641,6 +644,12 @@ public enum ShapeFrames {
         var t: Double
     }
 
+    /// The body's thickness now as a share of its resting one (`bodyDepth`).
+    public static func bodyDepth(_ radii: [Double], _ rest: [Double]) -> Double {
+        let base = rest.min() ?? 0
+        return base > 0 ? ShapeMath.clamp01((radii.min() ?? 0) / base) : 1
+    }
+
     public static func blend(_ a: ShapeFace, _ b: ShapeFace, _ t: Double) -> ShapeFace {
         func eye(_ x: ShapeEye, _ y: ShapeEye) -> ShapeEye {
             ShapeEye(w: ShapeMath.lerp(x.w, y.w, t), h: ShapeMath.lerp(x.h, y.h, t), tilt: ShapeMath.lerp(x.tilt, y.tilt, t), open: ShapeMath.lerp(x.open, y.open, t))
@@ -661,6 +670,7 @@ public enum ShapeFrames {
         }
         let unit = ShapeEngineData.bodyUnit, c = ShapeEngineData.bodyCenter
         let morphed = ShapeMath.clamp01(zip(input.radii, input.rest).reduce(0) { max($0, abs($1.0 - $1.1)) } / 0.08)
+        let depth = ShapeFrames.bodyDepth(input.radii, input.rest)
         let w = input.pose?.weight ?? 0
         let pose = input.pose?.pose
         let dots = (pose?.dots ?? []).map { dot -> ShapeDot in
@@ -692,7 +702,7 @@ public enum ShapeFrames {
             body: body,
             eyes: shown.filter { $0.alpha > 0.001 }.map { $0.points.map(ShapeMath.toBox) },
             x: input.body.x, y: input.body.y, rot: input.body.rot, sx: input.body.sx, sy: input.body.sy,
-            color: input.color, morphed: morphed,
+            color: input.color, morphed: morphed, depth: depth,
             light: (c.x + ShapeEngineData.clayLight.x * unit, c.y + ShapeEngineData.clayLight.y * unit, ShapeEngineData.clayLight.r * unit),
             dots: dots, specks: specks, badge: badge, rings: rings, ribbons: ribbons
         )

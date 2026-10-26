@@ -57,6 +57,7 @@ struct ChatView: View {
     @State var showingTasks = false
     /// A bot-to-bot conversation opened read only (BB1).
     @State var openBotConversation: BotConversation?
+    @State var earlierConversationsOpen = false
     @State var showingComputer = false
     @State var showingPlus = false
     /// The bot panel, full screen, and the tab it opens on (`BotPanelDoor`).
@@ -130,7 +131,11 @@ struct ChatView: View {
     /// When the mic was pressed, and the wait before a press becomes a hold.
     @State var micPressStart: Date?
     @State var micHoldTask: Task<Void, Never>?
-    @AppStorage(PrefKey.activityDetail) var activityDetail = ActivityDetail.full.rawValue
+    /// Settings > Appearance > Tool calls ("Details"), the desktop's switch.
+    @ObservedObject var toolCalls = ToolCallsSetting.shared
+    /// Settings > Appearance > Threads: off drops thread receipts from the chat.
+    @ObservedObject var threadPrefs = SidebarPrefsModel.shared
+    var activityDetail: String { toolCalls.detail.rawValue }
     @AppStorage(PrefKey.quickReplies) var quickReplies = ""
     /// The run card above the composer (ST4, WP14 `RunCardView`).
     @AppStorage(RunCardPreference.key) var showRunCard = true
@@ -216,11 +221,7 @@ struct ChatView: View {
     /// The transcript as the reader has asked to see it: every chip, folded
     /// runs, or none at all.
     var rows: [TranscriptRow] {
-        // threads off: no "Open thread" receipt in the single stream (#1026)
-        transcriptRows(
-            chatMessages(messages, showThreads: sidebarPrefs.showThreads),
-            detail: ActivityDetail(rawValue: activityDetail) ?? .full
-        )
+        transcriptRows(messages, detail: toolCalls.detail, showThreads: threadPrefs.showThreads)
     }
 
     /// The composer's chip row, as edited in Settings.
@@ -241,6 +242,8 @@ struct ChatView: View {
         // whole chain as one opaque type made the optimizer abort ("Possible
         // non-terminating type substitution") when archiving Release.
         AnyView(screen)
+        // "Use bot color as accent": this bot's colour while its chat is open
+        .modifier(OpenBotAccent(color: current.isBot ? current.color : nil))
         .sheet(item: $openBotConversation) { row in
             if case let .bot(bot) = current {
                 BotConversationPage(row: row, selfBot: bot).environmentObject(session)
@@ -534,12 +537,16 @@ struct ChatView: View {
         let fresh = session.isFreshTopic(current)
         let transcript = fresh ? [] : rows
         let storedBot: Bot? = { if case let .bot(bot) = current { return session.state.bot(bot.id) }; return nil }()
-        let conversationRows = BotConversations.visible(
+        let visibleConversations = BotConversations.visible(
             storedBot?.botConversations ?? [],
             openThreadId: threadId,
             mainThreadId: storedBot?.mainThreadId,
             fallbackThreadId: storedBot?.threadId ?? threadId,
             linkedThreadIds: BotConversations.linkedThreadIds(in: messages))
+        // Rows older than the first line fold behind "Earlier topics".
+        let conversationSplit = BotConversations.split(
+            visibleConversations, firstStart: transcript.first?.head.at, hasMore: session.state.hasMore[threadId] == true)
+        let conversationRows = conversationSplit.inline
         let conversationAnchors = BotConversations.anchors(
             conversationRows, rowStarts: transcript.map { $0.head.at }, hasMore: session.state.hasMore[threadId] == true)
         // A VStack with the composer as a sibling, rather than a scroll view
@@ -578,6 +585,14 @@ struct ChatView: View {
                             .font(.footnote)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
+                        }
+
+                        if !fresh, !conversationSplit.leading.isEmpty {
+                            EarlierConversationsFold(
+                                rows: BotConversations.deduped(conversationSplit.leading),
+                                open: $earlierConversationsOpen,
+                                other: { session.state.bot($0) },
+                                select: { openBotConversation = $0 })
                         }
 
                         ForEach(Array(transcript.enumerated()), id: \.element.id) { index, row in
@@ -1001,5 +1016,19 @@ struct ChatLiveTail: View {
             .accessibilityLabel("\(name) is working")
             .accessibilityIdentifier("chat-thinking")
         }
+    }
+}
+
+/// Tells the theme which bot is open (Settings > Appearance > Use bot color
+/// as accent, src/lib/bot-accent.ts `useBotAccent`): its colour while the
+/// chat is on screen, the skin's own once it leaves.
+private struct OpenBotAccent: ViewModifier {
+    let color: String?
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { ThemeStore.shared.setOpenBot(color) }
+            .onValueChange(of: color) { ThemeStore.shared.setOpenBot($0) }
+            .onDisappear { if let color { ThemeStore.shared.setOpenBot(nil, leaving: color) } }
     }
 }
