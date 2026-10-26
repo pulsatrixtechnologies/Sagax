@@ -19155,18 +19155,18 @@
         }
       }
     },
-    "Always allow changes in the whole folder": {
+    "Always allow changes in the whole folder, deletions included": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Always allow changes in the whole folder"
+            "value": "Always allow changes in the whole folder, deletions included"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toujours permettre les modifications dans tout le dossier"
+            "value": "Toujours permettre les modifications dans tout le dossier, suppressions comprises"
           }
         }
       }
