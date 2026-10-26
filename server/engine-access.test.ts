@@ -268,6 +268,16 @@ describe("who an access card is for (2026-10-01)", () => {
     expect(accessCardAudience({ ...base, reason: "routine_delegation", runAsPrincipalId: BOB })).toEqual([BOB, OWNER]);
     expect(accessCardAudience({ ...base, reason: "routine_delegation", runAsPrincipalId: OWNER })).toEqual([OWNER]);
   });
+  it("#1137: the owner pays, so the person who wrote reads the card too, and nobody else", () => {
+    const card = { kind: "access", access: { ...base, reason: "no_access", cause: "owner_model_offline", payer: "owner", payerPrincipalId: OWNER, ownerPays: true, speakerPrincipalId: BOB } };
+    expect(accessCardAudience(card.access)).toEqual([OWNER, BOB]);
+    expect(accessCardVisibleTo(card, BOB)).toBe(true);
+    expect(accessCardVisibleTo(card, ALICE)).toBe(false);
+    // without ownerPays, the speaker's id is not an audience
+    expect(accessCardAudience({ ...card.access, ownerPays: undefined })).toEqual([OWNER]);
+    expect(engineAccessNotice("no_access", "pi", { cause: "owner_model_offline", ownerName: "Ada" })).toBe("Ada's model isn't reachable right now.");
+    expect(engineAccessNotice("no_access", "pi", { cause: "owner_model_offline" })).toBe("The owner's model isn't reachable right now.");
+  });
   it("keeps a refused organization key shared, and a person's own refused key theirs", () => {
     expect(accessCardAudience({ ...base, reason: "key_refused" })).toBeNull();
     expect(accessCardVisibleTo({ kind: "access", access: { ...base, reason: "key_refused" } }, ALICE)).toBe(true);

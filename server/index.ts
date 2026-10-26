@@ -1050,6 +1050,7 @@ import { grandfatheredFromBots, migratedCrabFromBots } from "../shared/achieveme
 import { createBotMemoryRoutes } from "./routes/bot-memory.ts";
 import { createToolGrantRoutes } from "./routes/tool-grants.ts";
 import { createBotRuntimeSettingsRoutes } from "./routes/bot-runtime-settings.ts";
+import { createGroupBotPayerRoutes } from "./routes/group-bot-payer.ts";
 import {
   botMaxConcurrentThreads,
   botMaxParallelPerPerson,
@@ -1204,7 +1205,8 @@ import { SANDBOX_CONTROL_REFUSAL, SandboxControlHolds } from "./sandbox-control.
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
 import { DesktopLocalModels } from "./desktop-local-models.ts";
 import { withDesktopModelPerson } from "./desktop-model-grant.ts";
-import { setDesktopInjectModels } from "./drivers/local-inject.ts";
+import { isDesktopInjectModel, setDesktopInjectModels } from "./drivers/local-inject.ts";
+import { defaultTurnPayerMode, effectiveTurnPayerMode, type TurnPayerMode } from "../shared/turn-payer.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
 import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
@@ -7785,6 +7787,7 @@ const wireBot = (bot: BotRecord): WireBot => {
     ...(waitingApprovals.length ? { waitingApprovals } : {}),
     ...(botConversations.length ? { botConversations } : {}),
     mainThreadId: botMainThread(bot.id),
+    ...(IDENTITY.kind === "perspicax" ? { turnPayerDefault: defaultTurnPayerFor(bot) } : {}),
     avatarUrl: visible.avatarUrl ?? null, ...(lead ? { instructionsLead: lead } : {}), ...(tasks ? { tasks: tasks.map((task) => wireTask(task, bot.modelSelection, coordinated)) } : {}) };
 };
 
@@ -19031,7 +19034,10 @@ async function startTurn(
       automationSource: opts?.automationSource,
     });
     const person = earlySpeaker.origin === "person" ? earlySpeaker.principalId?.trim().toLowerCase() : "";
-    if (person && sharedBotForViewer(recordedBotOwner(bot), person)) {
+    // #1137: when the owner pays, the bot answers on the owner's model, not
+    // on a model of the viewer's own.
+    const ownerPays = speakerPayerMode(bot, earlySpeaker) === "owner";
+    if (person && !ownerPays && sharedBotForViewer(recordedBotOwner(bot), person)) {
       const selection = applyViewerModelOverride(
         bot.modelSelection,
         viewerBotOverrideStore.getOne(person, bot.id),
@@ -19042,6 +19048,11 @@ async function startTurn(
       );
       if (selection !== bot.modelSelection) bot = { ...bot, modelSelection: selection };
     }
+    // #1137 "each person pays": the bot's model cannot run for this person,
+    // so it answers with their default model (their first starred model
+    // they can run), for this turn only.
+    const ownDefault = speakerDefaultSelection(bot, earlySpeaker);
+    if (ownDefault) bot = { ...bot, modelSelection: ownDefault };
   }
   // Auto (docs/plans/2026-10-08-auto-model.md): this turn's model. A
   // person's turn runs on the orchestration model; work a bot handed out
@@ -19435,7 +19446,8 @@ async function startTurn(
   // a turn, and so is a fresh delegated turn (a hop, as ask_bot's is); other
   // card continuations resume a turn already admitted.
   const freshHop = Boolean(opts.coordination && !opts.coordination.resumed);
-  const accessRefusal = opts.cardContinuation && !opts.compactOnly && !freshHop ? null : orgEngineRefusal(bot, instance, speaker);
+  const accessRefusal = opts.cardContinuation && !opts.compactOnly && !freshHop ? null
+    : orgEngineRefusal(bot, instance, speaker) ?? ownerModelOfflineRefusal(bot, instance, speaker, bot.modelSelection.model);
   if (accessRefusal) {
     if (warmOnly) {
       console.error(`[voice-call] warm skipped: ${accessRefusal.reason}`);
@@ -20719,8 +20731,10 @@ async function startTurn(
       if (!warmOnly) turnTrace(threadId, "send");
       // Each picture within the model's limits: a scaled copy for a large one.
       const modelImages = await fitTurnImagesForModel(turnImages, { language: languageOfPerson(turnPlace.principal) });
-      const dispatch = await guardTurnDispatch(withDesktopModelPerson(turnPlace.principal, () => {
-        if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(turnPlace.principal, model, instance.driverKind);
+      // #1137: when the owner pays, the owner's computer serves its model.
+      const deskPerson = desktopModelPersonFor(bot, instance, speaker, turnPlace.principal);
+      const dispatch = await guardTurnDispatch(withDesktopModelPerson(deskPerson, () => {
+        if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(deskPerson, model, instance.driverKind);
         return instance.adapter.sendTurn({
         threadId,
         botId: bot.id,
@@ -23145,13 +23159,19 @@ async function runGroupMemberTurn(
   const roomAutoSpeakerId = store.activePath(threadId).findLast((message) => message.role === "user" && message.sender?.id)?.sender?.id;
   const roomAuto = bot.modelSelection.auto === true ? autoPickForTurn({
     bot, threadId,
-    speaker: roomAutoSpeakerId ? { origin: "person", principalId: roomAutoSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" },
+    speaker: roomAutoSpeakerId ? { origin: "person", principalId: roomAutoSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" },
     role: orchestration ? "worker" : "orchestration",
     text: [operation?.goalRun?.goal, orchestration?.turnInstructions].filter(Boolean).join("\n"),
   }) : null;
-  const roomSelection = roomAuto?.pick.selection ?? bot.modelSelection;
-  /** The selection this room turn runs: the Auto pick while the bot is still on Auto. */
-  const roomTurnSelection = (ready: BotRecord): ModelSelection => roomAuto && ready.modelSelection.auto === true ? roomSelection : ready.modelSelection;
+  // #1137 "each person pays": the bot's model cannot run for the person who
+  // wrote, so the bot answers with their default model, for this turn only.
+  const roomOwnDefault = !roomAuto && roomAutoSpeakerId
+    ? speakerDefaultSelection(bot, { origin: "person", principalId: roomAutoSpeakerId, groupId })
+    : null;
+  const roomSelection = roomAuto?.pick.selection ?? roomOwnDefault ?? bot.modelSelection;
+  /** The selection this room turn runs: the Auto pick while the bot is still
+   * on Auto, or the person's own default model (#1137). */
+  const roomTurnSelection = (ready: BotRecord): ModelSelection => roomOwnDefault ?? (roomAuto && ready.modelSelection.auto === true ? roomSelection : ready.modelSelection);
   const instance = registry.get(roomSelection.instanceId);
   const userName = cfg.profile?.name?.trim() || "User";
   if (providerInstancesChanging.has(roomSelection.instanceId)) {
@@ -23192,8 +23212,9 @@ async function runGroupMemberTurn(
       if (owner) turnRoutinePayers.set(threadId, owner);
     }
   }
+  const roomAccessSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
   const roomAccessRefusal = cardContinuation ? null
-    : orgEngineRefusal(bot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" });
+    : orgEngineRefusal(bot, instance, roomAccessSpeaker) ?? ownerModelOfflineRefusal(bot, instance, roomAccessSpeaker, roomTurnSelection(bot).model);
   if (roomAccessRefusal) {
     const engine = engineDisplayName(instance);
     const card = accessCardFor(bot, roomAccessRefusal, engine);
@@ -23379,7 +23400,7 @@ async function runGroupMemberTurn(
       bot,
       threadId,
       generation: internalGeneration,
-      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "owner-routine" },
+      speaker: roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "owner-routine" },
       taken: Object.keys(integrations.custom ?? {}),
       from: { botId: bot.id, name: bot.name, color: bot.color },
     });
@@ -23832,7 +23853,7 @@ async function runGroupMemberTurn(
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {})) },
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
-    { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }) },
+    { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },
@@ -23987,7 +24008,7 @@ async function runGroupMemberTurn(
     // notes only in a room: a private chat reaches a room through the
     // explicit, disclosed session_search, never automatically
     const roomRecalled = cardContinuation ? "" : autoRecallPrompt(bot, threadId, resolvedLatestImages.text, { conversations: false, userName });
-    const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
+    const roomSpeaker: TurnSpeaker = roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" };
     // The person's engine command for this member (shared/harness-commands.ts
     // groupCommandTarget): it reaches the engine verbatim, like in a 1:1.
     const roomCommandRoute = hop === 0 && !cardContinuation && !orchestration && latestUser?.text
@@ -24046,9 +24067,11 @@ async function runGroupMemberTurn(
           : { model: instance.models.default }),
       });
     };
-    guardTurnDispatch(withDesktopModelPerson(roomPlace.principal, () => Promise.resolve().then(() => {
+    // #1137: when the owner pays, the owner's computer serves its model.
+    const roomDeskPerson = desktopModelPersonFor(readyBot, instance, roomSpeaker, roomPlace.principal);
+    guardTurnDispatch(withDesktopModelPerson(roomDeskPerson, () => Promise.resolve().then(() => {
       const selectedModel = instance.instanceId === roomTurnSelection(readyBot).instanceId ? roomTurnSelection(readyBot).model : instance.models.default;
-      if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(roomPlace.principal, selectedModel, instance.driverKind);
+      if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(roomDeskPerson, selectedModel, instance.driverKind);
       return IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined);
     })), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
@@ -26670,7 +26693,86 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
     hasLocalKey: (principalId, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver),
     serverEngineAllowed: serverEngineAllowedFor,
+    payerMode: speakerPayerMode(bot, speaker),
   };
+}
+/** #1137 (shared/turn-payer.ts): the default "who pays" of a bot with no
+ * choice of its own: the owner when the bot runs on a local model of the
+ * owner's computer or on an engine the owner signed in to with their own
+ * subscription; otherwise each person. Read on the stored bot, so a
+ * viewer's own model or an Auto pick never moves it. */
+function defaultTurnPayerFor(bot: BotRecord): TurnPayerMode {
+  if (IDENTITY.kind !== "perspicax") return "speaker";
+  const stored = store.bot(bot.id) ?? bot;
+  const owner = effectiveBotOwner(stored).trim();
+  if (!owner) return "speaker";
+  const driver = registry.get(stored.modelSelection.instanceId)?.driverKind ?? "";
+  return defaultTurnPayerMode({
+    ownerLocalModel: desktopLocalModels.personOfModel(stored.modelSelection.model) === owner.toLowerCase(),
+    ownerSubscription: subscriptionDriver(driver) && (engineLogins?.signedIn(owner, driver) ?? false),
+  });
+}
+/** #1137: who pays for this bot's replies, in this group when there is one
+ * (its override for the bot), else the bot's own choice, else the default. */
+function turnPayerModeFor(bot: BotRecord, groupId?: string): TurnPayerMode {
+  if (IDENTITY.kind !== "perspicax") return "speaker";
+  const stored = store.bot(bot.id) ?? bot;
+  const group = groupId ? store.group(groupId) : undefined;
+  return effectiveTurnPayerMode({ group: group?.botPayers?.[bot.id], bot: stored.turnPayer, fallback: defaultTurnPayerFor(stored) });
+}
+function speakerPayerMode(bot: BotRecord, speaker: TurnSpeaker): TurnPayerMode {
+  return turnPayerModeFor(bot, speaker.origin === "person" ? speaker.groupId : undefined);
+}
+/** #1137: this turn runs on the owner's credentials because the owner pays
+ * for the people who write to the bot. */
+function ownerPaysTurn(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): boolean {
+  if (IDENTITY.kind !== "perspicax") return false;
+  return turnPayer(orgEngineInput(bot, instance, speaker)).ownerPays === true;
+}
+/** #1137: whose computer's local models this turn may reach. When the owner
+ * pays, the owner's: the bot answers on its owner's model through the
+ * relay of the owner's computer, even when that person does not share their
+ * local models with others (nobody else reaches the model directly). */
+function desktopModelPersonFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, fallback: string | null): string | null {
+  if (!ownerPaysTurn(bot, instance, speaker)) return fallback;
+  return effectiveBotOwner(bot).trim().toLowerCase() || fallback;
+}
+/** #1137: the owner pays and the bot runs on the owner's computer's model,
+ * which is not connected now: one clear line instead of the access card's
+ * advice (nothing the person who writes can do about it). */
+function ownerModelOfflineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, model: string): OrgAccessRefusal | null {
+  if (!ownerPaysTurn(bot, instance, speaker)) return null;
+  const owner = effectiveBotOwner(bot);
+  if (!desktopLocalModels.ownerComputerOffline(owner, model)) return null;
+  const person = principals.byId(owner);
+  const ownerName = person?.name?.trim() || person?.login?.trim() || "";
+  return {
+    reason: "no_access", cause: "owner_model_offline", payer: "owner", payerPrincipalId: owner, ownerPays: true,
+    ...(ownerName ? { ownerName } : {}),
+    ...(speaker.origin === "person" && speaker.principalId ? { speakerPrincipalId: speaker.principalId } : {}),
+  };
+}
+/** #1137 "each person pays": the bot's model cannot run for this person
+ * (no credentials of theirs for its engine, or a local model of someone
+ * else's computer that is not shared with them), so the bot answers with
+ * that person's default model: the first model they starred that they can
+ * run. Null when the bot's own model runs for them, or nothing does. */
+function speakerDefaultSelection(bot: BotRecord, speaker: TurnSpeaker): ModelSelection | null {
+  if (IDENTITY.kind !== "perspicax" || bot.modelSelection.auto === true || speaker.origin !== "person") return null;
+  const person = speaker.principalId?.trim().toLowerCase() || "";
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  if (!person || !isPrincipalId(person) || person === owner) return null;
+  if (speakerPayerMode(bot, speaker) !== "speaker") return null;
+  const runs = (selection: ModelSelection): boolean => {
+    const instance = registry.get(selection.instanceId);
+    if (!instance?.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance) || orgEngineAllowRefusal(instance.instanceId)) return false;
+    if (isDesktopInjectModel(selection.model) && !desktopLocalModels.available(person, selection.model)) return false;
+    return !orgEngineRefusal(bot, instance, speaker);
+  };
+  if (runs(bot.modelSelection)) return null;
+  const starred = starredModelSelections(userPreferenceStore.get(person).preferences["sagax.modelFavorites.v1"]);
+  const pick = starred.find((selection) => !sameModelSelection(selection, bot.modelSelection) && runs(selection));
+  return pick ? { instanceId: pick.instanceId, model: pick.model } : null;
 }
 /** 2026-10-16 the people an organization's provided account serves.
  * An admin (and this server's own operator) runs every engine on it; a
@@ -26784,7 +26886,7 @@ const AUTO_REFUSAL_TTL_MS = 30 * 60_000;
 const autoRefusals = new Map<string, number>();
 function autoPayerKey(bot: BotRecord, speaker: TurnSpeaker): string {
   if (IDENTITY.kind !== "perspicax") return "server";
-  return turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker) }).principalId.toLowerCase() || "unknown";
+  return turnPayer({ speaker, owner: { principalId: effectiveBotOwner(bot) }, peerOwnerPrincipalId: peerOwnerPrincipal(speaker), payerMode: speakerPayerMode(bot, speaker) }).principalId.toLowerCase() || "unknown";
 }
 /** J4: a plan window crossing the warning line (or spent) says so once, to
  * the person whose plan it is (everyone on the solo server). */
@@ -26928,14 +27030,20 @@ function autoPickForTurn(input: {
   return { payer, pick: pickOrchestrationModel(request) };
 }
 /** A refused turn: why, and whose credentials it needed. */
-type OrgAccessRefusal = { reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true };
-function orgRefusalOf(plan: Extract<EngineCredentialPlan, { ok: false }>): OrgAccessRefusal {
+type OrgAccessRefusal = {
+  reason: EngineAccessRefusal; cause?: NoAccessCause; payer?: "speaker" | "owner"; payerPrincipalId?: string; routine?: true;
+  /** #1137: the owner pays; the person who wrote reads the card too. */
+  ownerPays?: true; speakerPrincipalId?: string; ownerName?: string;
+};
+function orgRefusalOf(plan: Extract<EngineCredentialPlan, { ok: false }>, speaker?: TurnSpeaker): OrgAccessRefusal {
+  const speakerId = speaker?.origin === "person" ? speaker.principalId?.trim() : undefined;
   return {
     reason: plan.reason,
     ...(plan.cause ? { cause: plan.cause } : {}),
     ...(plan.payer ? { payer: plan.payer } : {}),
     ...(plan.payerPrincipalId ? { payerPrincipalId: plan.payerPrincipalId } : {}),
     ...(plan.routine ? { routine: true as const } : {}),
+    ...(plan.ownerPays ? { ownerPays: true as const, ...(speakerId ? { speakerPrincipalId: speakerId } : {}) } : {}),
   };
 }
 /** The organization refusal for a turn, or null (checked when the turn is
@@ -26943,7 +27051,7 @@ function orgRefusalOf(plan: Extract<EngineCredentialPlan, { ok: false }>): OrgAc
 function orgEngineRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): OrgAccessRefusal | null {
   if (IDENTITY.kind !== "perspicax") return null;
   const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-  return plan.ok ? null : orgRefusalOf(plan);
+  return plan.ok ? null : orgRefusalOf(plan, speaker);
 }
 /** A turn admitted with a person's key that Perspicax no longer gives (and
  * nothing after it serves): the dispatch stops with the access card. */
@@ -26971,7 +27079,7 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
     loginDir: principalLoginDir,
   });
-  if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan) : { reason: outcome.reason }, outcome.detail);
+  if (!outcome.ok) throw new EngineAccessLost(outcome.plan ? orgRefusalOf(outcome.plan, speaker) : { reason: outcome.reason }, outcome.detail);
   const { plan } = outcome;
   const provider = plan.provider;
   const payerSub = plan.payerPrincipalId ? (plan.payer === "owner" ? input.owner.sub : input.person?.(plan.payerPrincipalId)?.sub) : undefined;
@@ -27124,15 +27232,28 @@ function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof w
 }
 /** Where a person sets their model keys (Perspicax console, slice 4). */
 function perspicaxKeysUrl(): string | undefined {
-  return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/pulsabot/keys` : undefined;
+  // #1137: the console's own address for a person's model keys (anthropic,
+  // openai, xai, google, moonshot); the old /console/pulsabot/keys only
+  // redirects there.
+  return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/credentials?kind=model` : undefined;
 }
 /** The access card of a refused or lost turn: who has to act (the person
  * who speaks, or the owner for a routine) and where. */
 function accessCardFor(bot: BotRecord, refusal: OrgAccessRefusal, engine: string, detail?: string): WireAccessCard {
-  const keysUrl = refusal.reason === "no_access" ? perspicaxKeysUrl() : undefined;
+  const offline = refusal.cause === "owner_model_offline";
+  const keysUrl = refusal.reason === "no_access" && !offline ? perspicaxKeysUrl() : undefined;
   const instance = registry.get(bot.modelSelection.instanceId);
   const driver = instance?.driverKind ?? "";
+  const owner = effectiveBotOwner(bot).trim().toLowerCase();
+  // #1137: a person writing to someone else's bot that runs on each
+  // person's own access: the card says so and offers to choose a model.
+  const speakerPays = refusal.reason === "no_access" && !offline && !refusal.routine && refusal.payer === "speaker"
+    && Boolean(refusal.payerPrincipalId) && refusal.payerPrincipalId!.trim().toLowerCase() !== owner;
   return {
+    ...(bot.name?.trim() ? { botName: bot.name.trim().slice(0, 200) } : {}),
+    ...(refusal.ownerPays ? { ownerPays: true as const, ...(refusal.speakerPrincipalId ? { speakerPrincipalId: refusal.speakerPrincipalId } : {}) } : {}),
+    ...(offline && refusal.ownerName ? { ownerName: refusal.ownerName.slice(0, 200) } : {}),
+    ...(speakerPays ? { speakerPays: true as const } : {}),
     reason: refusal.reason,
     engine,
     botId: bot.id,
@@ -27143,7 +27264,7 @@ function accessCardFor(bot: BotRecord, refusal: OrgAccessRefusal, engine: string
     ...(refusal.payer ? { payer: refusal.payer } : {}),
     ...(refusal.payerPrincipalId ? { payerPrincipalId: refusal.payerPrincipalId } : {}),
     ...(refusal.routine ? { routine: true as const } : {}),
-    ...(refusal.reason === "no_access" && subscriptionDriver(driver) ? { subscriptionSignIn: true as const } : {}),
+    ...(refusal.reason === "no_access" && !offline && subscriptionDriver(driver) ? { subscriptionSignIn: true as const } : {}),
   };
 }
 
@@ -36099,6 +36220,10 @@ ROUTES.push(createBotRuntimeSettingsRoutes({
     }
     return updated;
   },
+  turnPayerDefault: (target) => {
+    const record = store.bot(target.id);
+    return record ? defaultTurnPayerFor(record) : "speaker";
+  },
   grants: toolGrants,
   audit: (action, auth, req, detail) => appendAdminAction(DATA_DIR, action === "bot.runtime_settings"
     ? {
@@ -36112,6 +36237,33 @@ ROUTES.push(createBotRuntimeSettingsRoutes({
       target: { kind: "bot", id: (detail.subject as { id: string }).id },
       after: detail, actor: adminActorFor(auth, req),
     }),
+}));
+// #1137: a group's override of who pays for one of its bots (server/routes/group-bot-payer.ts).
+ROUTES.push(createGroupBotPayerRoutes({
+  organization: () => IDENTITY.kind === "perspicax",
+  group: (id) => store.group(id),
+  bot: (id) => store.bot(id),
+  mayChoose: (auth, botId) => {
+    const record = store.bot(botId);
+    if (!record) return false;
+    if (auth.kind === "loopback") return auth.trust !== "service";
+    if (auth.scopes.includes("admin")) return true;
+    return !callerBotsReadOnly(auth) && memberOwnsBot(auth, record);
+  },
+  save: (groupId, botPayers) => {
+    const updated = store.patchGroup(groupId, { botPayers });
+    if (!updated) return null;
+    const wire = publicGroupState(updated);
+    broadcast({ kind: "group", group: wire });
+    return wire;
+  },
+  audit: (auth, req, detail) => appendAdminAction(DATA_DIR, {
+    category: "bot", action: "bot.turn_payer",
+    target: { kind: "bot", ...detail.bot },
+    changed: [`groups.${detail.group.id}.turnPayer`],
+    before: { turnPayer: detail.before }, after: { turnPayer: detail.after, ...(detail.group.name ? { group: detail.group.name } : {}) },
+    actor: adminActorFor(auth, req),
+  }),
 }));
 // B2.1: the guard before the approval card (server/agent-tool-card-guard.ts).
 const agentCardGuard = createAgentCardGuard({

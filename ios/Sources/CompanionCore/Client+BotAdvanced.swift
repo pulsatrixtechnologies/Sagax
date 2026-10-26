@@ -167,6 +167,18 @@ public extension CompanionClient {
         return try await send(makeRequest("PATCH", "/api/bots/\(botId)", encodedBody: patch), as: BotResponse.self).bot
     }
 
+    /// `PATCH /api/bots/:id/runtime-settings {turnPayer}` (#1137): who pays
+    /// for the bot's replies, "owner" or "speaker"; nil goes back to the
+    /// default. The server's bot frame follows.
+    func setBotTurnPayer(botId: String, turnPayer: String?) async throws {
+        try await send(setBotTurnPayerRequest(botId: botId, turnPayer: turnPayer))
+    }
+
+    func setBotTurnPayerRequest(botId: String, turnPayer: String?) throws -> URLRequest {
+        guard Self.validRouteID(botId), turnPayer == nil || turnPayer == "owner" || turnPayer == "speaker" else { throw APIError.badURL }
+        return try makeRequest("PATCH", "/api/bots/\(botId)/runtime-settings", body: ["turnPayer": turnPayer.map { $0 as Any } ?? NSNull()])
+    }
+
     /// `PATCH /api/bots/:id {mcpServers: null}`: back to every enabled server.
     func clearBotMcpServers(botId: String) async throws -> Bot {
         guard Self.validRouteID(botId) else { throw APIError.badURL }

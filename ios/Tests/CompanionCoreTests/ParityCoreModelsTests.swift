@@ -33,6 +33,20 @@ final class ParityCoreModelsTests: XCTestCase {
         XCTAssertEqual(try roundTrip(message), message)
     }
 
+    // #1137: who pays for a shared bot's replies.
+    func testDecodesWhoPaysOnAnAccessCardAndABot() throws {
+        let access = try decode(AccessCard.self, #"""
+        {"reason":"no_access","engine":"pi","botId":"b1","ownerPrincipalId":"p1","cause":"owner_model_offline",
+         "botName":"Helper","ownerPays":true,"speakerPrincipalId":"p2","ownerName":"Sam","speakerPays":true}
+        """#)
+        XCTAssertEqual(access.botName, "Helper")
+        XCTAssertEqual(access.ownerPays, true)
+        XCTAssertEqual(access.speakerPrincipalId, "p2")
+        XCTAssertEqual(access.ownerName, "Sam")
+        XCTAssertEqual(access.speakerPays, true)
+        XCTAssertEqual(try roundTrip(access), access)
+    }
+
     func testDecodesARoutineDelegationAccessCard() throws {
         let access = try decode(AccessCard.self, #"""
         {"reason":"routine_delegation","engine":"","botId":"b1","ownerPrincipalId":"p1",

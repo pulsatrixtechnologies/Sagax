@@ -138,6 +138,13 @@ struct BotPanelModel: View {
                     .accessibilityLabel(Text("Reasoning effort"))
                 }
             }
+            // #1137: who pays for this bot's replies (organization server)
+            if BotPayerModel(bot: bot, session: session).visible {
+                PanelCard {
+                    Text("Who pays for replies").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
+                    BotPayerPicker(bot: bot).padding(.top, 4)
+                }
+            }
             if session.surfaceGate.allows(.botFallback) {
                 AnyView(BotPanelFallback(bot: bot, instances: instances))
             }

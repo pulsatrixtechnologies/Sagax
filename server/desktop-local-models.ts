@@ -404,6 +404,25 @@ export class DesktopLocalModels {
     return this.published.get(meta.person)?.endpoints.find((row) => row.id === meta.endpointId)?.anthropic === true;
   }
 
+  /** The person whose computer serves this desk model (lowercase), or null
+   * for any other model. Known while that computer is offline too. */
+  personOfModel(modelId: string | null | undefined): string | null {
+    if (!isDesktopInjectModel(modelId)) return null;
+    this.load();
+    const decoded = decodeInjectId(modelId ?? "");
+    if (!decoded || !isDesktopHostId(decoded.host)) return null;
+    return this.hostMeta.get(decoded.host)?.person ?? null;
+  }
+
+  /** #1137: the owner pays for a turn on their own computer's model, and
+   * that computer is not connected now (the turn says so by name). */
+  ownerComputerOffline(owner: string | null | undefined, modelId: string | null | undefined): boolean {
+    const person = this.personOfModel(modelId);
+    const who = owner?.trim().toLowerCase() || "";
+    if (!person || !who || person !== who) return false;
+    return !this.bridges.connected(person);
+  }
+
   available(person: string | null, modelId: string): boolean {
     const decoded = decodeInjectId(modelId);
     if (!decoded || !isDesktopHostId(decoded.host)) return false;

@@ -94,6 +94,10 @@ async function createBot(auth: Auth, name: string): Promise<{ id: string; thread
   expect(created.status, created.text).toBe(201);
   const patched = await api("PATCH", `/api/bots/${created.body.bot.id}`, auth, { modelSelection: { instanceId: "claude", model: "fake-model" } });
   expect(patched.status, patched.text).toBe(200);
+  // #1137: each person pays here, so each one's own subscription lists the
+  // commands (on the owner's own subscription the owner would pay by default)
+  const payer = await api("PATCH", `/api/bots/${created.body.bot.id}/runtime-settings`, auth, { turnPayer: "speaker" });
+  expect(payer.status, payer.text).toBe(200);
   return { id: created.body.bot.id, threadId: created.body.bot.threadId };
 }
 

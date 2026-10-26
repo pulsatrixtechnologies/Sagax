@@ -74,7 +74,7 @@ describe("Model providers on an organization server", () => {
     expect(html).not.toContain("My subscriptions and keys");
     expect(html).not.toContain("data-my-engines");
     expect(html.match(/data-my-keys-link/g)).toHaveLength(1);
-    expect(html).toContain('href="https://px.example.test/console/pulsabot/keys"');
+    expect(html).toContain('href="https://px.example.test/console/credentials?kind=model"');
     expect(html).toContain("Manage my keys in Perspicax");
     setLocale("fr");
     expect(await render()).toContain("Gérer mes clés dans Perspicax");

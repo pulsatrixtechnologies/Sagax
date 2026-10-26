@@ -77521,6 +77521,230 @@
           }
         }
       }
+    },
+    "%@'s model isn't reachable right now.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@'s model isn't reachable right now."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle de %@ n'est pas joignable en ce moment."
+          }
+        }
+      }
+    },
+    "The owner's model isn't reachable right now.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The owner's model isn't reachable right now."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le modèle du propriétaire n'est pas joignable en ce moment."
+          }
+        }
+      }
+    },
+    "%@'s owner pays for its replies, and their %@ access isn't available right now.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@'s owner pays for its replies, and their %@ access isn't available right now."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le propriétaire de %1$@ paie ses réponses, et son accès %2$@ n'est pas disponible en ce moment."
+          }
+        }
+      }
+    },
+    "%@'s owner pays for its replies, and their account is disabled.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@'s owner pays for its replies, and their account is disabled."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le propriétaire de %@ paie ses réponses, et son compte est désactivé."
+          }
+        }
+      }
+    },
+    "You pay for %@'s replies to everyone who writes to it, and you don't have %@ access: connect your %@ subscription or add your key in Perspicax.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You pay for %@'s replies to everyone who writes to it, and you don't have %@ access: connect your %@ subscription or add your key in Perspicax."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous payez les réponses de %1$@ pour tous ceux qui lui écrivent, et vous n'avez pas d'accès %2$@ : connectez votre abonnement %3$@ ou ajoutez votre clé dans Perspicax."
+          }
+        }
+      }
+    },
+    "Replies from %@ are paid by the person who writes, and you don't have %@ access: connect your %@ subscription, add your key in Perspicax, or choose a model you can pay for.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replies from %@ are paid by the person who writes, and you don't have %@ access: connect your %@ subscription, add your key in Perspicax, or choose a model you can pay for."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les réponses de %1$@ sont payées par la personne qui écrit, et vous n'avez pas d'accès %2$@ : connectez votre abonnement %3$@, ajoutez votre clé dans Perspicax ou choisissez un modèle que vous pouvez payer."
+          }
+        }
+      }
+    },
+    "Replies from %@ are paid by the person who writes, and your organization has not given you %@ on its account: connect your own %@ subscription, add your key in Perspicax, or choose a model you can pay for.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replies from %@ are paid by the person who writes, and your organization has not given you %@ on its account: connect your own %@ subscription, add your key in Perspicax, or choose a model you can pay for."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les réponses de %1$@ sont payées par la personne qui écrit, et votre organisation ne vous a pas donné %2$@ sur son compte : connectez votre propre abonnement %3$@, ajoutez votre clé dans Perspicax ou choisissez un modèle que vous pouvez payer."
+          }
+        }
+      }
+    },
+    "this bot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "this bot"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ce robot"
+          }
+        }
+      }
+    },
+    "Who pays for replies": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Who pays for replies"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qui paie les réponses"
+          }
+        }
+      }
+    },
+    "The owner": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The owner"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le propriétaire"
+          }
+        }
+      }
+    },
+    "Each person": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each person"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque personne"
+          }
+        }
+      }
+    },
+    "Default (%@)": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default (%@)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par défaut (%@)"
+          }
+        }
+      }
+    },
+    "The owner's engine, subscription or local model answers everyone who writes to this bot: they need nothing of their own.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The owner's engine, subscription or local model answers everyone who writes to this bot: they need nothing of their own."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le moteur, l'abonnement ou le modèle local du propriétaire répond à tous ceux qui écrivent à ce robot : ils n'ont besoin de rien."
+          }
+        }
+      }
+    },
+    "Each person pays for their own messages. When this bot's engine isn't available to them, it answers with their default model (their first starred model).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each person pays for their own messages. When this bot's engine isn't available to them, it answers with their default model (their first starred model)."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque personne paie ses propres messages. Quand le moteur de ce robot ne lui est pas offert, il répond avec son modèle par défaut (son premier modèle étoilé)."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

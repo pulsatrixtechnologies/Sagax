@@ -255,6 +255,27 @@ final class BotAdvancedTests: XCTestCase {
         XCTAssertEqual(request.url?.absoluteString.hasSuffix("/api/bots/b1/grants/user%3Apr_0000"), true)
     }
 
+    // #1137: who pays for the bot's replies, on the runtime settings route.
+    func testTurnPayerRequestAndDefault() throws {
+        let set = try client.setBotTurnPayerRequest(botId: "b1", turnPayer: "owner")
+        XCTAssertEqual(set.httpMethod, "PATCH")
+        XCTAssertEqual(set.url?.path, "/api/bots/b1/runtime-settings")
+        let body = try XCTUnwrap(set.httpBody.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        XCTAssertEqual(body["turnPayer"] as? String, "owner")
+        let clear = try client.setBotTurnPayerRequest(botId: "b1", turnPayer: nil)
+        let cleared = try XCTUnwrap(clear.httpBody.flatMap { try JSONSerialization.jsonObject(with: $0) as? [String: Any] })
+        XCTAssertTrue(cleared["turnPayer"] is NSNull)
+        XCTAssertThrowsError(try client.setBotTurnPayerRequest(botId: "b1", turnPayer: "admin"))
+
+        let json = #"{"id":"b1","threadId":"t","name":"B","title":"","description":"","notifications":true,"color":"blue","unread":false,"modelSelection":{"instanceId":"pi","model":"m"},"createdAt":1%@}"#
+        func bot(_ extra: String) throws -> Bot {
+            try JSONDecoder().decode(Bot.self, from: Data(json.replacingOccurrences(of: "%@", with: extra).utf8))
+        }
+        XCTAssertNil(try bot("").effectiveTurnPayer)
+        XCTAssertEqual(try bot(#","turnPayerDefault":"owner""#).effectiveTurnPayer, "owner")
+        XCTAssertEqual(try bot(#","turnPayerDefault":"owner","turnPayer":"speaker""#).effectiveTurnPayer, "speaker")
+    }
+
     func testPerspicaxRowsAndRefusals() async throws {
         let answer = PerspicaxAnswer(
             selected: [.init(profile: .init(id: "p1", name: "One"), heldByMe: true), .init(profile: .init(id: "p9", name: "Theirs"), heldByMe: false)],

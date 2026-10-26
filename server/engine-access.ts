@@ -32,7 +32,9 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *     Perspicax only through the routine delegation of the person it speaks
  *     for, never through a sign-in. */
 export type TurnSpeaker =
-  | { origin: "person"; principalId?: string }
+  /** `groupId`: the group the person writes in, whose "who pays" override
+   * for the bot applies (shared/turn-payer.ts). */
+  | { origin: "person"; principalId?: string; groupId?: string }
   | { origin: "operator" }
   | { origin: "owner-routine"; principalId?: string }
   | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true; routinePayer?: string };
@@ -73,8 +75,9 @@ export function speakerPrincipal(speaker: TurnSpeaker, ownerPrincipalId: string,
 /** The notification body for a refused turn (never provider text). A
  * no_access turn is the payer's to fix: the person who speaks, or the
  * owner for the bot's routines (engine-credentials.ts). */
-export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed"; routine?: boolean } = {}): string {
+export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline"; routine?: boolean; ownerName?: string } = {}): string {
   if (reason === "engine_missing") return `This bot uses ${engine}, which is not installed on this server.`;
+  if (refusal.cause === "owner_model_offline") return `${refusal.ownerName?.trim() || "The owner"}'s model isn't reachable right now.`;
   if (reason === "key_refused") return "The provider refused this bot's key.";
   if (refusal.cause === "payer_disabled") {
     return refusal.routine || refusal.payer === "owner"
@@ -282,7 +285,7 @@ export function accessCardForViewer<T extends { access?: { ownerPrincipalId: str
  * private only when the refused key was a person's own (`payerPrincipalId`);
  * the organization's key concerns everyone, so that card stays shared (its
  * provider words still go to the owner and admins only). Null: shared. */
-export function accessCardAudience(access: { reason: string; ownerPrincipalId: string; payerPrincipalId?: string; runAsPrincipalId?: string }): string[] | null {
+export function accessCardAudience(access: { reason: string; ownerPrincipalId: string; payerPrincipalId?: string; runAsPrincipalId?: string; ownerPays?: boolean; speakerPrincipalId?: string }): string[] | null {
   const ids = (list: Array<string | undefined>) => {
     const out: string[] = [];
     for (const id of list) {
@@ -293,7 +296,8 @@ export function accessCardAudience(access: { reason: string; ownerPrincipalId: s
   };
   if (access.reason === "routine_delegation") return ids([access.runAsPrincipalId, access.ownerPrincipalId]);
   if (access.reason === "key_refused") return access.payerPrincipalId?.trim() ? ids([access.payerPrincipalId]) : null;
-  return ids([access.payerPrincipalId || access.ownerPrincipalId]);
+  // #1137: the owner pays, so the person who wrote learns why too.
+  return ids([access.payerPrincipalId || access.ownerPrincipalId, access.ownerPays ? access.speakerPrincipalId : undefined]);
 }
 
 /** The notifications of a refused or paused routine run, split by who can
@@ -322,7 +326,7 @@ export function routineAccessNotifications<N extends { threadId: string; audienc
 /** Whether a stored row reaches this viewer: an access card only reaches its
  * audience (accessCardAudience); every other row is unchanged. An empty
  * audience reaches nobody. */
-export function accessCardVisibleTo(message: { kind?: unknown; access?: { reason: string; ownerPrincipalId: string; payerPrincipalId?: string; runAsPrincipalId?: string } }, viewerId: string | undefined | null): boolean {
+export function accessCardVisibleTo(message: { kind?: unknown; access?: { reason: string; ownerPrincipalId: string; payerPrincipalId?: string; runAsPrincipalId?: string; ownerPays?: boolean; speakerPrincipalId?: string } }, viewerId: string | undefined | null): boolean {
   if (message.kind !== "access" || !message.access) return true;
   const audience = accessCardAudience(message.access);
   if (!audience) return true;
