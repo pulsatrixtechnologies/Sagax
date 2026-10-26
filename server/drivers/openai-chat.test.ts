@@ -178,8 +178,31 @@ describe("createOpenAIChatRuntime tool approvals", () => {
       expect(withheld.content).toMatch(/tool selection excludes/i);
       // A withheld (failed) tool result ends the turn: the final answer is not
       // an execution receipt.
-      expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: false });
+      expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "tool_error" });
+      // ...but it adds no banner to the chat: neither an error nor a notice.
+      expect(events.filter((event) => event.type === "runtime.error")).toEqual([]);
+      expect(events.some((event) => JSON.stringify(event).includes("execution receipt"))).toBe(false);
     } finally { await instance.dispose(); }
+  }, 20_000);
+
+  it("a skipped MCP server is logged, never announced in the chat", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+      if (!String(input).endsWith("/chat/completions")) return new Response(JSON.stringify({ data: [] }));
+      return new Response('data: {"choices":[{"index":0,"delta":{"content":"Done."}}]}\n\ndata: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n', { headers: { "content-type": "text/event-stream" } });
+    }));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const instance = await OpenAICompatDriver.create({
+      instanceId: "skip", displayName: "Skip", enabled: true,
+      config: OpenAICompatDriver.decodeConfig({ url: "https://api.example.test/v1", apiKeyEnv: "K", model: "m" }),
+      environment: { K: "synthetic" },
+    });
+    const events: RuntimeEvent[] = []; instance.adapter.onEvent((event) => events.push(event));
+    try {
+      await instance.adapter.sendTurn({ threadId: "skipped", text: "hi", approvalMode: "full", integrations: { custom: { broken: { command: "/nonexistent/sagax-test-mcp", args: [], env: {} } } } });
+      await vi.waitFor(() => expect(events.some((event) => event.type === "turn.completed")).toBe(true), { timeout: 10_000 });
+      expect(events.filter((event) => event.type === "runtime.notice")).toEqual([]);
+      expect(warn.mock.calls.some((call) => String(call[0]).includes("was skipped for this turn"))).toBe(true);
+    } finally { warn.mockRestore(); await instance.dispose(); }
   }, 20_000);
 
   const cardRaisedFor = async (approvalMode: "ask" | "full") => {
@@ -321,7 +344,9 @@ describe("createOpenAIChatRuntime tool approvals", () => {
       const completed = events.find((event) => event.type === "turn.completed") as any;
       expect(completed.ok).toBe(false);
       expect(completed.stopReason).toBe("tool_error");
-      expect(events.some((event) => event.type === "runtime.error" && /One or more tool operations failed/.test((event as any).message ?? ""))).toBe(true);
+      // The stop is on the turn and in the tool rows; no banner reaches the chat.
+      expect(events.some((event) => event.type === "runtime.error")).toBe(false);
+      expect(events.some((event) => event.type === "runtime.notice")).toBe(false);
       expect(events.some((event) => event.type === "cap.exhausted")).toBe(false);
     } finally {
       await instance.dispose();

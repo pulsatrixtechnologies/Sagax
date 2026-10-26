@@ -2786,11 +2786,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                         || current.asks.size || current.runningTools.size) return;
                     stalled = true;
                     latency.stallRetried = true;
-                    emit({
-                      ...base(threadId, turnId),
-                      type: "runtime.notice",
-                      message: `${support.displayName} sent nothing for ${Math.round(stallMs / 1000)} s, so Sagax asked again.`,
-                    });
+                    // Internal detail for the logs, not a row in the chat.
+                    console.warn(`[acp] ${support.displayName} sent nothing for ${Math.round(stallMs / 1000)} s, so Sagax asked again.`);
                     session.acp.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
                   }, stallMs);
                   stallTimer.unref?.();
@@ -2815,11 +2812,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                     && session.current === current && session.sessionId === sessionId
                     && session.child.exitCode === null) {
                   reasoningRetries += 1;
-                  emit({
-                    ...base(threadId, turnId),
-                    type: "runtime.notice",
-                    message: `${support.displayName} returned its reasoning without an answer, so Sagax asked it to finish.`,
-                  });
+                  // Internal detail for the logs, not a row in the chat.
+                  console.warn(`[acp] ${support.displayName} returned its reasoning without an answer, so Sagax asked it to finish.`);
                   continue;
                 }
                 if (reasoningOnly) {

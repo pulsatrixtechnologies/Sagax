@@ -785,6 +785,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       let stopReason: string | null = null;
       let failure: string | undefined;
       let toolFailed = false;
+      let toolStopped = false;
       const denials: string[] = [];
       const seenCalls = new Set<string>();
       let nudged = false;
@@ -799,7 +800,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         const toolLimit = (options.toolLimit ?? providerToolLimit(options.driverKind)) - (questionAllowed ? 1 : 0);
         tools = await mountChatTools(options.tools === false ? undefined : turn.integrations, abort.signal, options.computerUse, scope, turn.mcpCallTimeoutMs, toolLimit);
         for (const { server, reason } of tools.skipped) {
-          emit({ ...base(turn.threadId, turnId), type: "runtime.notice", message: `MCP server "${server}" was skipped for this turn: ${safeText(reason)}` });
+          // A technical detail for the logs, never a row in the chat.
+          console.warn(`[chat-tools] MCP server "${server}" was skipped for this turn: ${safeText(reason)}`);
         }
         let optionalQuestionOnly = questionAllowed && tools.definitions.length === 0;
         // The runtime's one built-in tool rides the same list: ask_user is
@@ -934,8 +936,11 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
               // A failed or denied tool op ends the turn: the final answer is
               // not an execution receipt, and a person's "no" must never be
               // answered with a prompt to run the same thing again.
+              // The stop is recorded on the turn (stopReason) and the tool rows
+              // carry the detail; no banner is added to the chat for it.
               stopReason = "tool_error";
-              throw new ChatProtocolError("One or more tool operations failed or were denied. See the tool results; the final response is not an execution receipt.");
+              toolStopped = true;
+              break;
             }
             // Input parked while this final answer streamed: answer it in one
             // more round rather than end the turn with it unread.
@@ -1060,7 +1065,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           }
           if (screenshotParts.length) messages.push({ role: "user", content: screenshotParts });
         }
-        if (!ok) throw new ChatProtocolError(stoppedAfter(`${MAX_CHAT_ROUNDS} steps`));
+        if (!ok && !toolStopped) throw new ChatProtocolError(stoppedAfter(`${MAX_CHAT_ROUNDS} steps`));
       } catch (value) {
         stopReason = abort.signal.aborted ? "interrupted" : stopReason ?? "error";
         failure = safeText(asError(value).message).slice(0, 2_000);
