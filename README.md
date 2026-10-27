@@ -190,6 +190,16 @@ chosen bots along, with their conversations and memory.
 Self-hosting guides: [docs/self-hosting.md](docs/self-hosting.md), and
 [docs/deploy-vps.md](docs/deploy-vps.md) for a personal server on a VPS.
 
+A server of your own in one line, with Docker
+([docs/install.md](docs/install.md), or hand
+[SETUP_PROMPT.md](SETUP_PROMPT.md) to your coding agent):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pulsatrixtechnologies/Sagax/main/install.sh | bash
+```
+
+`sagax update` moves it to the next release.
+
 ## Security and privacy
 
 - **No telemetry.** Sagax sends no analytics. A build check fails when a

@@ -221,3 +221,47 @@ describe("CI concurrency", () => {
     expect(commands).toContain("pnpm exec vitest run server/shared-computers.e2e.test.ts");
   });
 });
+
+describe("public server image (install.sh, docs/install.md)", () => {
+  const release = parse(readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8"));
+  const job = release.jobs["server-image"];
+
+  it("builds once per published release: no new push or pull-request trigger (JC 2026-10-14)", () => {
+    expect(Object.keys(release.on).sort()).toEqual(["push", "release", "workflow_dispatch"]);
+    expect(release.on.release.types).toEqual(["published"]);
+    expect(release.on.push.branches).toEqual(["main"]);
+    expect(release.on.push.paths).toEqual(["package.json"]);
+    expect(release.on).not.toHaveProperty("pull_request");
+    expect(release.on).not.toHaveProperty("schedule");
+    expect(job.needs).toBe("prepare");
+    expect(job.if).toBe("needs.prepare.outputs.server_image == 'true'");
+    const decide = release.jobs.prepare.steps.find((step: { id?: string }) => step.id === "image");
+    expect(decide.run).toContain("^pulsa-v([0-9]+\\.[0-9]+\\.[0-9]+)$");
+    // A release event never rebuilds the installers.
+    const pin = release.jobs.prepare.steps.find((step: { id?: string }) => step.id === "pin");
+    expect(pin.run).toContain('if [ "$GITHUB_EVENT_NAME" = release ] || [ -n "$SERVER_IMAGE_TAG" ]; then');
+  });
+
+  it("never delays the installers: no release job waits for it", () => {
+    for (const [name, other] of Object.entries(release.jobs) as [string, { needs?: string | string[] }][]) {
+      if (name === "server-image") continue;
+      expect([other.needs ?? []].flat()).not.toContain("server-image");
+    }
+  });
+
+  it("publishes amd64 and arm64 from the tagged commit, scanned and signed, with no deployment config", () => {
+    const steps = JSON.stringify(job.steps);
+    const build = job.steps.find((step: { id?: string }) => step.id === "build");
+    expect(build.with.platforms).toBe("linux/amd64,linux/arm64");
+    expect(build.with.context).toBe(".");
+    expect(build.with).not.toHaveProperty("file");
+    expect(build.with["build-args"]).toContain("ENGINE_SET=all");
+    expect(job.steps[0].with.ref).toBe("${{ needs.prepare.outputs.sha }}");
+    expect(job.permissions).toEqual({ contents: "read", "id-token": "write", packages: "write" });
+    expect(steps).toContain("node scripts/vuln-attestation.mjs vuln.json vuln-amd64.json vuln-arm64.json");
+    expect(steps).toContain('cosign sign --yes \\"${STAGING}@${DIGEST}\\"');
+    expect(steps).toContain("IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}");
+    expect(steps).toContain("type=raw,value=latest,enable=${{ needs.prepare.outputs.image_latest == 'true' }}");
+    expect(steps).not.toMatch(/secrets\.(?!GITHUB_TOKEN|TRIVYIGNORE_PRIVATE)/);
+  });
+});

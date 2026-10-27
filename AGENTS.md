@@ -427,6 +427,21 @@ routines at once, no card, several bots in one order (one call per bot):
 - Without the person's request (a tool, a page, a teammate) the quote fails
   and the proposal stays a card. Test: `server/primary-applies.e2e.test.ts`.
 
+## One-line self-hosted install (2026-10-26)
+
+`install.sh` (repository root) installs the server from the public image
+`ghcr.io/pulsatrixtechnologies/sagax:<X.Y.Z>` into `~/sagax` (or `--dir`):
+`.env` created once (0600, never overwritten, holds the generated vault key
+`SAGAX_MCP_OAUTH_KEY`, which is never printed), plus generated
+`compose.yaml`, `Caddyfile` and the `sagax` helper (`update [X.Y.Z]`, `pair`,
+`status`, `logs`, anything else forwarded to the server CLI in the
+container). The image is built only by `release.yml` job `server-image`, on
+the `release: published` event of a `pulsa-vX.Y.Z` tag (or a dispatch with
+`server_image_tag`); never add a push or PR trigger for it. Nothing waits for
+that job. Keep the checkout path (`deploy/docker-compose.yml`, `--build`)
+working. Tests: `scripts/install-sh.test.ts` (fake docker, shellcheck),
+`scripts/ci-workflow.test.ts`. Docs: `docs/install.md`, `SETUP_PROMPT.md`.
+
 ## Bot creation wizard (2026-10-26)
 
 Decision: a guided wizard beside New bot's quick dialog (kept), same look as
