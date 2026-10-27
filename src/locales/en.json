@@ -6629,6 +6629,7 @@
   "thread.goneShowing": "That thread is no longer here. Showing {name} instead.",
   "toolDetail.completed": "Completed",
   "toolDetail.failed": "Failed",
+  "toolDetail.failedNoOutput": "The tool failed and returned no error message.",
   "toolDetail.input": "Input",
   "toolDetail.label": "{name} · {status} · Tool details",
   "toolDetail.noOutput": "No output was recorded for this call.",
