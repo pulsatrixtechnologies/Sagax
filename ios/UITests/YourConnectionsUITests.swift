@@ -1,6 +1,7 @@
 import XCTest
 
-/// Manage > Your connections (P2-4, #218): the person's own MCP servers
+/// The person's own connections (P2-4, #218): their MCP servers in My
+/// accounts, their GitHub in Sources (2026-10-27)
 /// and GitHub account on an organization server, read and revoked from the
 /// phone. A server is added for the person through the API, then the phone
 /// switches it off and removes it; each write is read back from
@@ -86,12 +87,12 @@ final class YourConnectionsUITests: XCTestCase {
         app.launch()
         let manage = element("connect-apps-manage", in: app)
         XCTAssertTrue(manage.waitForExistence(timeout: 20))
-        manage.tap()
+        app.buttons["My accounts"].firstMatch.tap()
 
         let row = element("your-connections-server.\(server)", in: app)
         for _ in 0..<8 where !(row.exists && row.isHittable) { app.swipeUp() }
-        XCTAssertTrue(row.waitForExistence(timeout: 10), "Manage > Your connections lists the person's server")
-        XCTAssertTrue(element("your-connections-github", in: app).exists, "and the GitHub account")
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "My accounts lists the person's server")
+        XCTAssertFalse(element("your-connections-github", in: app).exists, "GitHub is in Sources, not here")
 
         let toggle = element("your-connections-toggle.\(server)", in: app)
         XCTAssertTrue(toggle.exists)
@@ -106,5 +107,8 @@ final class YourConnectionsUITests: XCTestCase {
         confirm.tap()
         XCTAssertTrue(eventually { self.mine() == nil }, "removed on the server")
         XCTAssertTrue(eventually { !row.exists }, "and from the list")
+
+        app.buttons["Sources"].firstMatch.tap()
+        XCTAssertTrue(element("your-connections-github", in: app).waitForExistence(timeout: 10), "the GitHub account is in Sources")
     }
 }

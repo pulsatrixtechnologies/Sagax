@@ -1,10 +1,13 @@
-// Manage > My accounts: the connectors of the person's engine accounts,
+// Connect apps > My accounts: the connectors of the person's engine accounts,
 // grouped by engine, one row each with the app's real logo (providerMark,
 // the sidebar foot's resolution since #1143), its name and its state.
 // Claude's come from GET /api/me/harness-connectors (the caller's own
 // claude.ai account: a name and a status); Grok's are the xAI account's
-// cloud connectors, managed on grok.com. Both read the same way. A group
-// with no connector is hidden.
+// cloud connectors, managed on grok.com; a ChatGPT (Codex) group shows the
+// day the server lists that account's connectors. They read the same way.
+// A group with no connector is hidden. Each card names the service it
+// reaches (CapabilityTags) and sits under its engine: the summary panel
+// "What your engines reach" is gone (JC, 2026-10-27).
 import { ExternalLink, RefreshCw } from "lucide-react";
 
 import { openExternalLink } from "@/lib/app-links";
@@ -15,15 +18,17 @@ import { providerMark } from "@/lib/plugins-model";
 import { GROK_CONNECTORS_URL } from "../../../shared/grok-cloud-connectors";
 import { CATEGORY_MODAL } from "../category-modal";
 import { ConnectFromEngine } from "../ConnectFromEngine";
-import { ClaudeMark, GrokMark } from "../ProviderIcons";
+import { ClaudeMark, GrokMark, CodexMark } from "../ProviderIcons";
 import { PluginIcon } from "./PluginParts";
-import { CapabilityTags, EngineCapabilities } from "./EngineCapabilities";
-import { claudeAiConnectorCapabilities, engineConnectorOffers, grokConnectorCapabilities } from "../../../shared/engine-connectors";
+import { CapabilityTags } from "./EngineCapabilities";
+import { claudeAiConnectorCapabilities, grokConnectorCapabilities } from "../../../shared/engine-connectors";
 
 export type HarnessConnectorStatus = "connected" | "needs_auth" | "failed" | "unknown";
 
+export type HarnessEngine = "claude" | "grok" | "codex";
+
 export interface HarnessConnectorGroup {
-  id: "claude" | "grok";
+  id: HarnessEngine;
   name: string;
   manageUrl: string;
   /** the engine account's line: an email or "Signed in" (absent: none) */
@@ -43,6 +48,8 @@ const STATUS_KEY: Record<HarnessConnectorStatus, LocaleKey> = {
 export function connectorGroups(input: {
   claude?: { available: boolean; connectors: Array<{ name: string; status: HarnessConnectorStatus }>; manageUrl?: string; account?: string } | null;
   grok?: { connectors: readonly { id: string; name: string }[]; account?: string } | null;
+  /** ChatGPT apps of a Codex sign-in (the server says `available: false` today) */
+  codex?: { available: boolean; connectors?: Array<{ name: string; status: HarnessConnectorStatus }>; manageUrl?: string } | null;
 }): HarnessConnectorGroup[] {
   const groups: HarnessConnectorGroup[] = [];
   const claude = input.claude;
@@ -53,26 +60,26 @@ export function connectorGroups(input: {
   if (input.grok && input.grok.connectors.length) {
     groups.push({ id: "grok", name: "Grok", manageUrl: GROK_CONNECTORS_URL, ...(input.grok.account ? { account: input.grok.account } : {}), connectors: input.grok.connectors.map((connector) => ({ id: connector.id, name: connector.name })) });
   }
+  const codex = input.codex;
+  if (codex?.available) {
+    const connectors = (codex.connectors ?? []).filter((connector) => connector.name.trim() !== "");
+    if (connectors.length) groups.push({ id: "codex", name: "ChatGPT", manageUrl: codex.manageUrl ?? "https://chatgpt.com/#settings/Connectors", connectors });
+  }
   return groups;
 }
 
 export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { groups: HarnessConnectorGroup[]; refreshing?: boolean; onRefresh?: () => void }) {
   if (groups.length === 0) return null;
-  // what mail, calendar, Teams and SharePoint go through (parité R9 + R11)
-  const offers = engineConnectorOffers({
-    claude: groups.find((group) => group.id === "claude")?.connectors ?? null,
-    grok: groups.some((group) => group.id === "grok"),
-  });
   return (
     <>
       {groups.map((group) => (
         <section key={group.id} className="mt-6 first:mt-0" data-harness-group={group.id}>
           <div className="mb-2 flex items-center gap-2">
-            <span className="flex size-5 shrink-0 items-center justify-center">{group.id === "claude" ? <ClaudeMark size={16} /> : <GrokMark size={16} />}</span>
+            <span className="flex size-5 shrink-0 items-center justify-center"><EngineMark id={group.id} /></span>
             <h3 className="min-w-0 truncate text-[13px] font-semibold text-ink">{t("connectApps.accounts.harness", { provider: group.name })}</h3>
             {group.account && <span className="min-w-0 truncate text-[11.5px] text-ink-secondary">{group.account}</span>}
             <span className="flex-1" />
-            {group.id === "claude" && onRefresh && (
+            {group.id !== "grok" && onRefresh && (
               <button type="button" onClick={onRefresh} disabled={refreshing} className="ui-icon-button disabled:opacity-50" aria-label={t("harnessConnectors.refresh")} title={t("harnessConnectors.refresh")}>
                 <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
               </button>
@@ -86,6 +93,7 @@ export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { grou
               <ExternalLink size={12} /> {t("connectApps.providers.manage", { provider: group.name })}
             </button>
           </div>
+          {group.id === "grok" && <p className="mb-2 text-[11.5px] leading-relaxed text-ink-tertiary" data-harness-grok-note>{t("connectApps.capabilities.grokOrg")}</p>}
           <div className={CATEGORY_MODAL.grid}>
             {group.connectors.map((connector) => {
               const mark = providerMark(connector.name);
@@ -96,7 +104,7 @@ export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { grou
                   <span className="min-w-0 flex-1">
                     <span className="flex min-w-0 items-baseline gap-2">
                       <span className="truncate text-[13px] font-medium leading-[18px] text-ink">{connector.name}</span>
-                      <CapabilityTags capabilities={group.id === "claude" ? claudeAiConnectorCapabilities(connector.name) : grokConnectorCapabilities(connector.id ?? "")} name={connector.name} />
+                      <CapabilityTags capabilities={group.id === "grok" ? grokConnectorCapabilities(connector.id ?? "") : claudeAiConnectorCapabilities(connector.name)} name={connector.name} />
                     </span>
                     <span
                       className={cn("block truncate text-[12px] leading-[18px]", connector.status === "connected" ? "text-success" : missing ? "text-warning" : "text-ink-secondary")}
@@ -112,7 +120,12 @@ export function HarnessConnectorGroups({ groups, refreshing, onRefresh }: { grou
           </div>
         </section>
       ))}
-      {offers.length > 0 && <div className="mt-6"><EngineCapabilities offers={offers} /></div>}
     </>
   );
+}
+
+function EngineMark({ id }: { id: HarnessEngine }) {
+  if (id === "claude") return <ClaudeMark size={16} />;
+  if (id === "grok") return <GrokMark size={16} />;
+  return <CodexMark size={16} />;
 }

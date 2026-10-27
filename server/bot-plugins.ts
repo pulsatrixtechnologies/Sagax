@@ -1,6 +1,6 @@
 // Claude Code plugins on a bot (Connect apps, scope "For this bot"). The
 // marketplaces are the installation's one list (server/plugin-marketplaces.ts,
-// Connect apps > Manage > Advanced > Marketplaces); Sagax copies the plugins
+// Connect apps > Sources > Marketplaces); Sagax copies the plugins
 // the owner picks from there into the bot's own folder. Claude loads each
 // enabled folder with `--plugin-dir`. Every other engine gets the same
 // enabled skills and commands in the turn prompt (server/plugin-turn.ts).

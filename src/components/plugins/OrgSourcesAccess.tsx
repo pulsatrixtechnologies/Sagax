@@ -1,11 +1,12 @@
-// Settings > Organization > Organization sources and access (an organization
-// admin only; back in Settings since 2026-10-26, after a stay in Connect apps
-// > Manage > Advanced from 2026-10-15): "Allowed marketplaces", the organization's
-// labeled GitHub access tokens (server/org-github-tokens.ts) and the GitHub
-// OAuth App, whose device flow lets each person "Connect GitHub"
-// (server/github-connect.ts). The client id stays a public app setting. The
-// tokens are access tokens: a saved one is a label and a hint, never shown
-// again.
+// Connect apps > Sources > Organization sources and access (an organization
+// admin only; it moved between Connect apps and Settings, and since
+// 2026-10-27 it is the admin part of Sources, with every other GitHub
+// setting; Settings > Organization keeps one link): "Allowed marketplaces",
+// the organization's labeled GitHub access tokens
+// (server/org-github-tokens.ts) and the GitHub OAuth App, whose device flow
+// lets each person "Connect GitHub" (server/github-connect.ts). The client
+// id stays a public app setting. The tokens are access tokens: a saved one
+// is a label and a hint, never shown again.
 //
 // Each block saves through PATCH /api/org/settings and shows its own result
 // beside its button. The answer carries the organization's settings, so the

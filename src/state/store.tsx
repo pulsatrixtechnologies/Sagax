@@ -1352,7 +1352,9 @@ export interface AppState {
   routineFocus: { botId: string; routineId: string } | null;
   /** A place inside Connect apps to open at: "pages" is Manage > My
    * accounts, at the person's published pages. */
-  pluginsPage: "pages" | null;
+  /** a link that opens Connect apps on one tab: My accounts at the
+   * published pages, or Sources */
+  pluginsPage: "pages" | "sources" | null;
   /** The Triggers pop-up (webhooks, as a sentence: when this happens, that
    * bot should…). */
   triggersOpen: boolean;
@@ -1784,7 +1786,7 @@ export type Action =
    * notification of a routine run refused in another person's thread. */
   | { type: "openBotActivity"; botId: string; itemId: string }
   | { type: "botActivityOpened" }
-  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "pages" | null; focusApps?: string[] }
+  | { type: "togglePlugins"; open?: boolean; surface?: "apps" | "mcp"; botId?: string | null; page?: "pages" | "sources" | null; focusApps?: string[] }
   | { type: "toggleTriggers"; open?: boolean }
   | { type: "toggleNewBot"; open?: boolean }
   | { type: "openBotWizard"; botId?: string | null; redo?: boolean }
@@ -2989,7 +2991,7 @@ export function reducer(state: AppState, action: Action): AppState {
         pluginsSurface: action.surface ?? state.pluginsSurface,
         // A bot panel opens it on that bot; a change of surface while it is
         // open keeps the bot it is on.
-        pluginsBotId: !open ? null : action.page === "pages" ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
+        pluginsBotId: !open ? null : action.page ? null : action.botId !== undefined ? action.botId : state.pluginsOpen ? state.pluginsBotId : null,
         pluginsPage: open ? action.page ?? null : null,
         pluginsFocusApps: !open ? null : action.focusApps?.length ? action.focusApps : state.pluginsOpen ? state.pluginsFocusApps : null,
         ...(open ? { settingsOpen: false, appSettingsOpen: false, newBotOpen: false, shortcutsOpen: false, triggersOpen: false } : {}),

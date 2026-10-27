@@ -319,10 +319,10 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| Add your MCP server ({name, url/command, auth, ...}) | Connect apps > Manage | `sagax_settings` get, set `connections.mcpServer` | secret |
-| Your MCP server on or off ({name, enabled}) | Connect apps > Manage | `sagax_settings` set `connections.mcpServerEnabled` | simple |
-| Remove your MCP server (its name) | Connect apps > Manage | `sagax_settings` set `connections.mcpServerRemove` | suppression |
-| Disconnect GitHub (true) | Connect apps > Manage > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
+| Add your MCP server ({name, url/command, auth, ...}) | Connect apps > My accounts | `sagax_settings` get, set `connections.mcpServer` | secret |
+| Your MCP server on or off ({name, enabled}) | Connect apps > My accounts | `sagax_settings` set `connections.mcpServerEnabled` | simple |
+| Remove your MCP server (its name) | Connect apps > My accounts | `sagax_settings` set `connections.mcpServerRemove` | suppression |
+| Disconnect GitHub (true) | Connect apps > Sources > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
 | Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key | Settings > Models and voice > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
 
 ### Coffre et clés
@@ -357,7 +357,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | New conversations confidential | Settings > Organization > Privacy | `sagax_settings` get, set `org.confidentialByDefault` | organisation |
 | Allow vault export | Settings > Organization > Credentials | `sagax_settings` get, set `org.allowVaultExport` | organisation |
 | People from before: days | Settings > Organization > People | `sagax_settings` get, set `org.interimAttachDays` | organisation |
-| Plugin marketplaces | Connect apps > Sources | `sagax_settings` get, set `org.pluginMarketplaces` | organisation |
+| Plugin marketplaces | Connect apps > Sources > Organization sources and access | `sagax_settings` get, set `org.pluginMarketplaces` | organisation |
 | Public links for published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesLinkSharing` | organisation |
 | Reader comments on published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesReaderComments` | organisation |
 

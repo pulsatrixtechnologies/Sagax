@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildPluginItems } from "./plugins-model";
+import type { PluginItem } from "./plugins-model";
 import { discoverItems, installedEntries, privateSkills, readableName } from "./installed-model";
 
 const servers = [
@@ -61,6 +62,13 @@ describe("installed entries", () => {
     expect(privateSkills(items).map((skill) => skill.id)).toEqual(["weekly-summary"]);
     // Discover keeps what can still be added
     expect(discoverItems(items).map((item) => item.key)).toEqual(["plugin:pdf-tools@claude-plugins-official"]);
+  });
+
+  it("Discover keeps an app a conversation needs while it is not connected (its Connect apps pill lands on it)", () => {
+    const app = (id: string, status: "connected" | "needs-auth"): PluginItem => ({ key: `app:${id}`, kind: "app", id, name: id, description: "", category: "productivity", installed: true, status, source: "catalog" } as PluginItem);
+    const items = [app("notion", "needs-auth"), app("linear", "connected"), app("figma", "needs-auth")];
+    expect(discoverItems(items, ["Notion", "linear"]).map((item) => item.key)).toEqual(["app:notion"]);
+    expect(discoverItems(items)).toEqual([]);
   });
 
   it("says a sign-in is waiting when one part needs it, and an update when the plugin has one", () => {

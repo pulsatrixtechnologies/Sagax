@@ -51,7 +51,7 @@ export function settingsSectionLabel(section: AppSettingsSection): string {
 
 type SettingsDispatch = (action:
   | { type: "toggleAppSettings"; open: true; section: AppSettingsSection }
-  | { type: "togglePlugins"; open: true; page: "pages" }) => void;
+  | { type: "togglePlugins"; open: true; page: "pages" | "sources" }) => void;
 
 /** Opens Settings on a section, and a card when the sentence points at one.
  * A section that became a card of another page opens that card. */
@@ -59,6 +59,12 @@ export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSec
   // Published pages moved to Connect apps > Manage (2026-10-26).
   if (section === "pages") {
     dispatch({ type: "togglePlugins", open: true, page: "pages" });
+    return;
+  }
+  // The organization's sources and access moved to Connect apps > Sources
+  // (2026-10-27).
+  if (cardId === "organization.plugins") {
+    dispatch({ type: "togglePlugins", open: true, page: "sources" });
     return;
   }
   dispatch({ type: "toggleAppSettings", open: true, section: currentSettingsSection(section, cardId) });

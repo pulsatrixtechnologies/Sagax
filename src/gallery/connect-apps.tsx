@@ -1,23 +1,23 @@
 /** Isolated gallery for Playwright screenshots of Connect apps and Browse
- * bots in their window (the presentational views with sample rows, no
- * server). Not shipped in the app.
- * ?view=apps|apps-section|bots|bots-in-apps|manage&skin=<id>&lang=<code>
+ * bots in their window (no server). Not shipped in the app.
+ * ?view=manage|org-settings|bots|bots-in-apps&skin=<id>&lang=<code>&role=member|admin
  * manage: the real Connect apps panel (PluginsPanel) on a stand-in /api
  * shaped like an organization member's (2026-10-26): GitHub added by hand
  * and again by a marketplace plugin, five plugins, the person's Claude
  * account with Gmail, Google Drive and Google Calendar, a Grok account.
- * Names are neutral. scripts/capture-connect-apps-manage.mjs clicks
- * through Manage's four tabs. */
+ * Names are neutral. role=admin: the same person as an organization admin
+ * (the organization's sources and access). org-settings: Settings >
+ * Organization for that person. scripts/capture-connect-apps-manage.mjs
+ * clicks through the tabs. */
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { X } from "lucide-react";
-import { ConnectAppsView } from "../components/plugins/ConnectAppsView";
 import { BotCatalogView } from "../components/bot-catalog/BotCatalogView";
 import { CATEGORY_MODAL, cardActionClass } from "../components/category-modal";
-import { ScopeToggle } from "../components/plugins/ScopeToggle";
 import { PluginsPanel } from "../components/PluginsPanel";
+import { PerspicaxOrgSettings } from "../components/PerspicaxOrgSettings";
+import type { PerspicaxOrg } from "../lib/perspicax-org";
 import { catalogCategories, catalogSections, catalogTemplates } from "../lib/bot-catalog";
-import type { PluginFilter, PluginItem } from "../lib/plugins-model";
 import { setLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
@@ -27,26 +27,6 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 setLocale(params.get("lang") ?? "fr");
-
-const app = (id: string, name: string, description: string, category: PluginItem["category"], recommended = false): PluginItem => ({
-  key: `featured:${id}`, kind: "featured", id, name, description, category, installed: false, status: "available", action: "connect", source: "catalog", recommended,
-});
-
-const ITEMS: PluginItem[] = [
-  app("notion", "Notion", "Pages, bases de données et notes d'équipe", "productivity", true),
-  app("linear", "Linear", "Billets, projets et cycles", "productivity", true),
-  app("slack", "Slack", "Canaux, messages et fils", "communication", true),
-  app("gmail", "Gmail", "Courriels et brouillons", "communication"),
-  app("asana", "Asana", "Tâches et projets", "productivity"),
-  app("trello", "Trello", "Tableaux et cartes", "productivity"),
-  app("todoist", "Todoist", "Listes de tâches", "productivity"),
-  app("airtable", "Airtable", "Bases et vues", "productivity"),
-  app("clickup", "ClickUp", "Tâches, documents et objectifs", "productivity"),
-  app("teams", "Microsoft Teams", "Conversations et réunions", "communication"),
-  app("zoom", "Zoom", "Réunions et enregistrements", "communication"),
-  app("figma", "Figma", "Fichiers de design et commentaires", "design"),
-  app("github", "GitHub", "Dépôts, PR et billets", "code"),
-];
 
 function Frame({ children }: { children: React.ReactNode }) {
   return (
@@ -61,33 +41,7 @@ function Frame({ children }: { children: React.ReactNode }) {
   );
 }
 
-const CONNECT = <button type="button" className={cardActionClass("quiet")}>Connecter</button>;
 const crumbToApps = [{ label: t("connectApps.title"), onSelect: () => {} }];
-
-/** Connect apps' home, or (section) Productivity opened alone with View all. */
-function Apps({ section }: { section?: boolean }) {
-  const [filter, setFilter] = useState<PluginFilter>("all");
-  const [search, setSearch] = useState("");
-  return (
-    <Frame>
-      <ConnectAppsView
-        items={ITEMS}
-        loading={false}
-        search={search}
-        onSearch={setSearch}
-        filter={section ? "productivity" : filter}
-        onFilter={setFilter}
-        onOpenManage={() => {}}
-        onBrowseBots={() => {}}
-        onViewAll={() => {}}
-        onOpenItem={() => {}}
-        renderAction={() => CONNECT}
-        subpage={section ? { title: t("connectApps.filter.productivity"), trail: crumbToApps, onBack: () => {} } : undefined}
-        scope={<ScopeToggle scope="workspace" botName="Rocket" onScope={() => {}} />}
-      />
-    </Frame>
-  );
-}
 
 const TEMPLATES = catalogTemplates([]);
 
@@ -121,23 +75,33 @@ function Bots({ inApps }: { inApps?: boolean }) {
   );
 }
 
-// ?view=manage: the stand-in /api an organization member's panel reads.
+// ?view=manage: the stand-in /api an organization member's panel reads
+// (&role=admin: an organization admin's).
+const admin = params.get("role") === "admin";
+const ORG: PerspicaxOrg = {
+  org: { name: "Example Org", identity: { kind: "perspicax", issuer: "https://px.example.test" } },
+  link: { state: "ok" }, viewerRole: admin ? "admin" : "member",
+  settings: {
+    pluginMarketplaces: { mode: "list", allow: ["example-org/*", "anthropics/claude-plugins-official"] },
+    github: { clientId: "Ov23liExample0001", fromEnvironment: false },
+    githubTokens: [{ id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a" }],
+  },
+};
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 const MANAGE_API: Record<string, unknown> = {
   "/api/instances": { instances: [
     { instanceId: "claude-main", driverKind: "claudeAgent", displayName: "Claude", access: "subscription", snapshot: { state: "available", authenticated: true, account: { email: "person@example.com", method: "login" } } },
     { instanceId: "grok-main", driverKind: "grokAgent", displayName: "Grok", access: "subscription", snapshot: { state: "available", authenticated: true, account: { method: "login" } } },
   ] },
-  "/api/config": { viewer: { role: "member", principalId: "p-1" }, features: {} },
+  "/api/config": { viewer: { role: admin ? "admin" : "member", principalId: "p-1" }, features: {} },
   "/api/bots": { bots: [
     { id: "bot-a", name: "Rocket", instanceId: "claude-main", model: "default", ownerUserId: "p-1", threads: [], messages: [] },
     { id: "bot-b", name: "Atlas", instanceId: "grok-main", model: "default", ownerUserId: "p-1", mcpServers: ["twilio-docs"], threads: [], messages: [] },
   ], groups: [], sections: [] },
-  "/api/org": {
-    org: { name: "Example Org", identity: { kind: "perspicax", issuer: "https://px.example.test" } },
-    link: { state: "ok" }, viewerRole: "member", settings: { pluginMarketplaces: { mode: "any" }, github: { clientId: null, fromEnvironment: false } },
-  },
-  "/api/me/connections": { github: { state: "none", deviceFlow: false }, servers: [], sandbox: true },
+  "/api/org": ORG,
+  "/api/me/connections": { github: { state: "none", deviceFlow: true }, servers: [
+    { name: "notes", kind: "remote", type: "http", url: "https://mcp.notion.com/mcp", domain: "mcp.notion.com", auth: "oauth", tokenConfigured: false, enabled: true, addedAt: 1, authState: "connected" },
+  ], sandbox: true },
   "/api/mcp/servers": { servers: [
     { name: "twilio-docs", type: "http", url: "https://mcp.twilio.com/docs", enabled: true, source: "twilio", headerKeys: [], auth: "none" },
     { name: "github", type: "http", url: "https://api.githubcopilot.com/mcp/", enabled: true, headerKeys: ["Authorization"], auth: "none" },
@@ -183,7 +147,7 @@ const MANAGE_API: Record<string, unknown> = {
   "/api/webhooks": { webhooks: [], attempts: [] },
 };
 
-if (params.get("view") === "manage") {
+if (params.get("view") === "manage" || params.get("view") === "org-settings") {
   const realFetch = window.fetch.bind(window);
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, location.href);
@@ -199,10 +163,18 @@ function Manage() {
   return <PluginsPanel />;
 }
 
+/** Settings > Organization as the settings window draws it. */
+function OrgSettings() {
+  return (
+    <div className="mx-auto max-w-[760px] px-6 py-8" data-gallery-org-settings>
+      <PerspicaxOrgSettings org={ORG} onChanged={() => {}} />
+    </div>
+  );
+}
+
 const VIEWS: Record<string, () => React.ReactNode> = {
   manage: () => <Manage />,
-  apps: () => <Apps />,
-  "apps-section": () => <Apps section />,
+  "org-settings": () => <OrgSettings />,
   bots: () => <Bots />,
   "bots-in-apps": () => <Bots inApps />,
 };
@@ -210,7 +182,7 @@ const VIEWS: Record<string, () => React.ReactNode> = {
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <StoreProvider>
-      <div className="min-h-screen bg-app text-ink">{(VIEWS[params.get("view") ?? "apps"] ?? VIEWS.apps!)()}</div>
+      <div className="min-h-screen bg-app text-ink">{(VIEWS[params.get("view") ?? "manage"] ?? VIEWS.manage!)()}</div>
     </StoreProvider>
   </StrictMode>,
 );

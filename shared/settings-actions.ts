@@ -686,7 +686,7 @@ org("org.memberEnvironmentAutonomy", "memberEnvironmentAutonomy", "any", "Member
 org("org.confidentialByDefault", "confidentialThreadsByDefault", "boolean", "New conversations confidential", "Settings > Organization > Privacy");
 org("org.allowVaultExport", "allowVaultExport", "boolean", "Allow vault export", "Settings > Organization > Credentials");
 org("org.interimAttachDays", "interimAttachDays", "number", "People from before: days", "Settings > Organization > People");
-org("org.pluginMarketplaces", "pluginMarketplaces", "any", "Plugin marketplaces", "Connect apps > Sources");
+org("org.pluginMarketplaces", "pluginMarketplaces", "any", "Plugin marketplaces", "Connect apps > Sources > Organization sources and access");
 // published pages (lot R8): the admins' switch for public links, a card at every level
 add({
   key: "org.pagesLinkSharing", family: "organization", target: "none", value: "boolean", label: "Public links for published pages", where: "Settings > Pages > Organization pages",
@@ -703,12 +703,12 @@ add({
 
 // ── connections (the person's own) ─────────────────────────────────────
 add({
-  key: "connections.mcpServer", family: "connections", target: "none", value: "object", label: "Add your MCP server ({name, url|command, auth, ...})", where: "Connect apps > Manage",
+  key: "connections.mcpServer", family: "connections", target: "none", value: "object", label: "Add your MCP server ({name, url|command, auth, ...})", where: "Connect apps > My accounts",
   read: () => ({ path: "/api/me/mcp/servers" }),
   write: (_ids, v) => ({ method: "POST", path: "/api/me/mcp/servers", body: v }), classes: always("secret"),
 });
 add({
-  key: "connections.mcpServerEnabled", family: "connections", target: "none", value: "object", label: "Your MCP server on or off ({name, enabled})", where: "Connect apps > Manage",
+  key: "connections.mcpServerEnabled", family: "connections", target: "none", value: "object", label: "Your MCP server on or off ({name, enabled})", where: "Connect apps > My accounts",
   write: (_ids, v) => {
     const s = v as { name?: unknown; enabled?: unknown } | null;
     if (!s || typeof s.name !== "string" || typeof s.enabled !== "boolean") return "value is {name, enabled}.";
@@ -716,12 +716,12 @@ add({
   },
 });
 add({
-  key: "connections.mcpServerRemove", family: "connections", target: "none", value: "string", label: "Remove your MCP server (its name)", where: "Connect apps > Manage",
+  key: "connections.mcpServerRemove", family: "connections", target: "none", value: "string", label: "Remove your MCP server (its name)", where: "Connect apps > My accounts",
   write: (_ids, v) => typeof v === "string" && v ? { method: "DELETE", path: `/api/me/mcp/servers/${enc(v)}` } : "value is the server's name.",
   classes: always("delete"),
 });
 add({
-  key: "connections.githubDisconnect", family: "connections", target: "none", value: "boolean", label: "Disconnect GitHub (true)", where: "Connect apps > Manage > GitHub",
+  key: "connections.githubDisconnect", family: "connections", target: "none", value: "boolean", label: "Disconnect GitHub (true)", where: "Connect apps > Sources > GitHub",
   write: (_ids, v) => v === true ? { method: "DELETE", path: "/api/me/github" } : "value is true.", classes: always("delete", "secret"),
 });
 add({

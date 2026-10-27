@@ -1,11 +1,14 @@
-// Plugins, main view ("Connect Apps"): every app, MCP server, catalog plugin
-// and skill in one list. The chrome matches the reference design's Connect Apps: the
-// title with "N connected" at its right, the search with Browse bots
-// beside it, All and the main categories, the rest under More, then the
-// sections in two columns. View all opens a section as its own page.
-import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, LayoutGrid, Loader2, Search } from "lucide-react";
+// Connect Apps: one page (2026-10-27, JC: one place per subject). The
+// title with "N connected" at its right, the install scope, then four tabs:
+// Installed, Discover (the catalog, its search and Browse Bots; the view a
+// person lands on), My accounts and Sources (with the organization's part
+// for an admin). No sub-page repeats a tab: "Manage plugins and skills" and
+// a section opened alone are gone, View all filters Discover in place.
+// The shared row parts (pills, section titles, PluginRow) live here too.
+import type { ReactNode } from "react";
+import { ChevronRight, RefreshCw } from "lucide-react";
 
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
@@ -13,14 +16,12 @@ import {
   MAIN_CATEGORIES,
   MORE_CATEGORIES,
   connectedSummary,
-  mainSections,
   type PluginFilter,
   type PluginItem,
   type PluginSection,
   type PluginTypeFilter,
 } from "@/lib/plugins-model";
-import { Breadcrumb, type Crumb } from "../Breadcrumb";
-import { CATEGORY_MODAL, categoryChipClass } from "../category-modal";
+import { CATEGORY_MODAL } from "../category-modal";
 import { PluginIcon, PluginStatusLabel } from "./PluginParts";
 
 /** The pills: All, then each category in the section order (only those with
@@ -88,171 +89,99 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
-const PAGE = 60;
+export type ConnectAppsTab = "installed" | "discover" | "accounts" | "sources";
+export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["installed", "discover", "accounts", "sources"];
 
-/** A section opened alone (View all) in the panel's window: its title, the
- * pages above it, and back. */
-export interface ConnectAppsSubpage {
-  title: string;
-  trail: readonly Crumb[];
-  onBack: () => void;
+const TAB_KEY = {
+  installed: "connectApps.manage.tab.installed",
+  discover: "connectApps.manage.tab.discover",
+  accounts: "connectApps.manage.tab.accounts",
+  sources: "connectApps.manage.tab.sources",
+} as const satisfies Record<ConnectAppsTab, LocaleKey>;
+
+/** Where "N connected" leads (#1132, #1194): Installed, or My accounts when
+ * the number is only the engine accounts' connectors (nothing of the
+ * person's own is connected, and not in a bot's scope). */
+export function connectedTab(input: { botScope: boolean; engineConnected: number; ownConnected: number }): ConnectAppsTab {
+  return !input.botScope && input.engineConnected > 0 && input.ownConnected === 0 ? "accounts" : "installed";
 }
 
 export interface ConnectAppsViewProps {
-  items: PluginItem[];
-  loading: boolean;
-  search: string;
-  onSearch: (value: string) => void;
-  filter: PluginFilter;
-  onFilter: (filter: PluginFilter) => void;
-  /** the type filter (a View all on a kind or a source) */
-  type?: PluginTypeFilter;
-  onType?: (type: PluginTypeFilter) => void;
-  /** marketplace (or other) sources: a type of their own and a section */
-  extraSources?: string[];
-  /** connectors a Claude account brings, counted in "N connected" */
+  tab: ConnectAppsTab;
+  onTab: (tab: ConnectAppsTab) => void;
+  /** tabs with nothing to show are left out (Sources when nothing reads
+   * or changes a source) */
+  tabs?: readonly ConnectAppsTab[];
+  /** what "N connected" counts: the installed rows */
+  items: readonly PluginItem[];
+  /** connectors an engine account brings, counted in "N connected" */
   extraConnected?: number;
-  sourceLabel?: (source: string) => string;
-  onOpenManage: () => void;
-  /** Browse Bots, top right beside the title (2026-10-16: it left the avatar
-   * menu, then the search row); absent, no button */
-  onBrowseBots?: () => void;
-  /** View all on a section: the panel opens it as a page of its own (absent:
-   * the section's filter is applied in place) */
-  onViewAll?: (section: PluginSection) => void;
-  /** this view is a section opened alone: a breadcrumb and its title */
-  subpage?: ConnectAppsSubpage;
-  onOpenItem: (item: PluginItem) => void;
-  /** the row's Add / Connect button */
-  renderAction: (item: PluginItem) => ReactNode;
-  /** what goes under a row (an account name field, a status line) */
-  renderBelow?: (item: PluginItem) => ReactNode;
-  /** notices between the search and the list */
-  notices?: ReactNode;
+  /** "N connected": the tab that lists them (#1194) */
+  onOpenConnected: () => void;
   /** the install scope (everyone, or one bot) under the title */
   scope?: ReactNode;
-  /** apps a conversation needs (its Connect apps pill): shown first */
-  focus?: readonly string[];
+  /** notices between the tabs and the panel */
+  notices?: ReactNode;
+  refreshing: boolean;
+  onRefresh: () => void;
+  installed?: ReactNode;
+  discover?: ReactNode;
+  accounts?: ReactNode;
+  sources?: ReactNode;
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { items, loading, search, onSearch, filter, onFilter, type = "any", onType, extraSources = [], extraConnected = 0, sourceLabel,
-    onOpenManage, onBrowseBots, onViewAll, subpage, onOpenItem, renderAction, renderBelow, notices, scope, focus } = props;
-  const [limit, setLimit] = useState(PAGE);
-  useEffect(() => setLimit(PAGE), [filter, type, search]);
-
-  const sections = mainSections(items, search, filter, type, extraSources, focus);
+  const { tab, onTab, tabs = CONNECT_APPS_TABS, items, extraConnected = 0, onOpenConnected, scope, notices, refreshing, onRefresh } = props;
+  const shown = tabs.includes(tab) ? tab : tabs.includes("discover") ? "discover" : tabs[0] ?? "discover";
   const summary = connectedSummary(items, extraConnected);
-  const single = subpage !== undefined || (sections.length === 1 && (search.trim() !== "" || filter !== "all" || type !== "any"));
-  const viewAll = (section: PluginSection) => {
-    if (!section.filter) return;
-    if (onViewAll) { onViewAll(section); return; }
-    if ("filter" in section.filter) onFilter(section.filter.filter);
-    else onType?.(section.filter.type);
-  };
-
-  const more = moreCategoryPills(items, filter);
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-plugins-main={subpage ? "section" : "home"}>
+    <div className="flex min-h-0 flex-1 flex-col" data-plugins-main={shown}>
       <header className={CATEGORY_MODAL.titleBar}>
-        {subpage && <Breadcrumb trail={subpage.trail} current={subpage.title} onBack={subpage.onBack} backData={{ "data-plugins-back": "" }} />}
         <div className="flex items-center justify-between gap-4">
-          <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{subpage ? subpage.title : t("connectApps.title")}</h2>
-          <ConnectedButton summary={summary} onOpen={onOpenManage} />
+          <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{t("connectApps.title")}</h2>
+          <ConnectedButton summary={summary} onOpen={onOpenConnected} />
         </div>
-        {scope && <div className="mt-3">{scope}</div>}
+        {/* the install scope is about plugins: My accounts is the person's own */}
+        {scope && shown !== "accounts" && <div className="mt-3">{scope}</div>}
       </header>
-
-      <div className={CATEGORY_MODAL.toolbar}>
-        {!subpage && (
-          <div className={CATEGORY_MODAL.chips} role="toolbar" aria-label={t("connectApps.filtersAria")} data-plugins-chips>
-            {categoryPills(items, filter).map((chip) => (
-              <button
-                key={chip}
-                type="button"
-                aria-pressed={filter === chip}
-                data-plugins-chip={chip}
-                onClick={() => onFilter(chip)}
-                className={categoryChipClass(filter === chip)}
-              >
-                {filterLabel(chip, sourceLabel)}
-              </button>
-            ))}
-            {more.length > 0 && (
-              <MoreCategories pills={more} filter={filter} onFilter={onFilter} sourceLabel={sourceLabel} />
-            )}
-          </div>
-        )}
-        <div className={subpage ? "flex items-center gap-2" : "mt-3 flex items-center gap-2"}>
-          <label className={CATEGORY_MODAL.search}>
-            <Search size={16} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-            <input
-              value={search}
-              onChange={(event) => onSearch(event.target.value)}
-              placeholder={t("connectApps.searchPlaceholder")}
-              aria-label={t("connectApps.searchPlaceholder")}
-              data-plugins-search
-              className={CATEGORY_MODAL.searchInput}
-            />
-          </label>
-          {!subpage && onBrowseBots && (
+      <div className="flex shrink-0 items-end gap-2 border-b border-hairline-weak px-4 sm:px-8" data-plugins-manage-bar>
+        <div role="tablist" aria-label={t("connectApps.tabsAria")} className="flex min-w-0 flex-1 gap-5 overflow-x-auto" data-plugins-manage-tabs>
+          {tabs.map((id) => (
             <button
+              key={id}
               type="button"
-              data-plugins-browse-bots
-              onClick={onBrowseBots}
-              className={CATEGORY_MODAL.outlineButton}
+              role="tab"
+              id={`plugins-tab-${id}`}
+              aria-selected={shown === id}
+              aria-controls={`plugins-tabpanel-${id}`}
+              data-plugins-tab={id}
+              onClick={() => onTab(id)}
+              className={cn(
+                "-mb-px shrink-0 border-b-2 px-0.5 pb-2 pt-1 text-[13px] leading-[18px] transition-colors motion-reduce:transition-none",
+                shown === id ? "border-ink font-medium text-ink" : "border-transparent text-ink-secondary hover:text-ink",
+              )}
             >
-              <LayoutGrid size={16} className="text-ink-secondary" aria-hidden="true" />
-              <span>{t("connectApps.botTemplates")}</span>
-              <ChevronRight size={14} className="text-ink-secondary" aria-hidden="true" />
+              {t(TAB_KEY[id])}
             </button>
-          )}
+          ))}
         </div>
+        <button type="button" onClick={onRefresh} disabled={refreshing} className="ui-icon-button mb-1 disabled:opacity-50" aria-label={t("connectors.refreshTitle")} title={t("connectors.refreshTitle")}>
+          <RefreshCw size={15} className={cn(refreshing && "animate-spin")} />
+        </button>
       </div>
-
       {notices}
-
-      <div className={`${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list}`} data-plugins-list>
-        {loading && items.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-24 text-[13px] text-ink-secondary">
-            <Loader2 size={14} className="animate-spin" /> {t("connectors.loadingCatalog")}
-          </div>
-        ) : sections.every((section) => section.items.length === 0) ? (
-          <div className="flex min-h-56 flex-col items-center justify-center text-center">
-            <div className="text-[14px] font-medium text-ink">{t("connectors.noAppsFound")}</div>
-            <div className="mt-1 text-[12.5px] text-ink-secondary">{t("connectors.tryDifferentSearch")}</div>
-          </div>
-        ) : (
-          sections.map((section) => {
-            const shown = single ? section.items.slice(0, limit) : section.items;
-            return (
-              <section key={section.id} data-plugins-section={section.id} className={CATEGORY_MODAL.section}>
-                {!subpage && (
-                  <div className={CATEGORY_MODAL.sectionHead}>
-                    <h3 className={CATEGORY_MODAL.sectionTitle}>{sectionTitle(section, sourceLabel)}</h3>
-                    {!single && section.filter && section.total > section.items.length && (
-                      <button type="button" data-plugins-view-all={section.id} onClick={() => viewAll(section)} className={CATEGORY_MODAL.sectionLink}>
-                        {t("connectApps.viewAll")}
-                      </button>
-                    )}
-                  </div>
-                )}
-                <div className={CATEGORY_MODAL.grid}>
-                  {shown.map((item) => (
-                    <PluginRow key={item.key} item={item} onOpen={onOpenItem} action={renderAction(item)} below={renderBelow?.(item)} />
-                  ))}
-                </div>
-                {single && section.items.length > shown.length && (
-                  <div className="mt-3 flex justify-center">
-                    <button type="button" onClick={() => setLimit((current) => current + PAGE)} className="ui-button">
-                      {t("connectApps.showMore", { count: section.items.length - shown.length })}
-                    </button>
-                  </div>
-                )}
-              </section>
-            );
-          })
-        )}
+      <div
+        role="tabpanel"
+        id={`plugins-tabpanel-${shown}`}
+        aria-labelledby={`plugins-tab-${shown}`}
+        className={`${CATEGORY_MODAL.pane} ${CATEGORY_MODAL.list}`}
+        data-plugins-list
+        data-plugins-manage={shown}
+      >
+        {shown === "installed" && props.installed}
+        {shown === "discover" && props.discover}
+        {shown === "accounts" && props.accounts}
+        {shown === "sources" && props.sources}
       </div>
     </div>
   );
@@ -265,7 +194,7 @@ function ConnectedButton({ summary, onOpen }: { summary: ReturnType<typeof conne
       data-plugins-connected
       onClick={onOpen}
       className="flex shrink-0 items-center gap-2 text-[13px] leading-[18px] text-ink hover:text-ink"
-      aria-label={t("connectApps.manageAria", { count: summary.count })}
+      aria-label={t("connectApps.connectedAria", { count: summary.count })}
     >
       {summary.icons.length > 0 && (
         <span className="flex -space-x-1.5" aria-hidden="true">
@@ -279,50 +208,6 @@ function ConnectedButton({ summary, onOpen }: { summary: ReturnType<typeof conne
       <span>{t("connectApps.connectedCount", { count: summary.count })}</span>
       <ChevronRight size={14} className="text-ink-secondary" aria-hidden="true" />
     </button>
-  );
-}
-
-/** The categories that are not on the row, as the reference design's More chip. */
-function MoreCategories({ pills, filter, onFilter, sourceLabel }: {
-  pills: PluginFilter[];
-  filter: PluginFilter;
-  onFilter: (filter: PluginFilter) => void;
-  sourceLabel?: (source: string) => string;
-}) {
-  const [open, setOpen] = useState(false);
-  const chosen = pills.includes(filter);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        data-plugins-more
-        aria-pressed={chosen}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={() => setOpen((value) => !value)}
-        className={categoryChipClass(chosen)}
-      >
-        {t("connectApps.filter.more")}
-        <ChevronDown size={12} className="ml-1 inline" aria-hidden="true" />
-      </button>
-      {open && (
-        <div role="menu" className="absolute left-0 top-8 z-20 min-w-40 rounded-xl border border-border bg-card p-1 shadow-lg">
-          {pills.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              role="menuitem"
-              aria-pressed={filter === chip}
-              data-plugins-chip={chip}
-              onClick={() => { onFilter(chip); setOpen(false); }}
-              className="block w-full rounded-lg px-3 py-1.5 text-left text-[12.5px] text-ink hover:bg-hover"
-            >
-              {filterLabel(chip, sourceLabel)}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }
 
