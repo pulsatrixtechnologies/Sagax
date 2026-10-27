@@ -1,7 +1,8 @@
 // Who can see this bot, on a workspace served to several people: everyone
 // who can sign in (the default), admins only, or the listed addresses (and
-// @domain entries) plus admins. Shown to admins only, and not in the desktop
-// app, where nobody else signs in. Saving is the change: the server narrows
+// @domain entries) plus admins. Shown to admins and to the bot's own owner
+// (#1098; the server keeps the owner in the audience), and not in the
+// desktop app, where nobody else signs in. Saving is the change: the server narrows
 // every member's lists, conversations, files and live updates at once
 // (server/bot-visibility.ts). No confirmation step: it is a setting.
 import { useEffect, useState } from "react";

@@ -34,7 +34,7 @@ export interface RosterMember {
 
 const sectionKey = (section?: string): string => section?.trim() || "";
 
-export const PEER_ACCESS_HELP = "Call list_bots for reachable teammates. If the intended Primary Bot is missing, ask the user to check team membership and this bot's allowed peers, or message the Primary Bot directly. A Primary Bot's access to another team does not grant that team's bots access back to the Primary Bot. Do not use computer control to bypass this.";
+export const PEER_ACCESS_HELP = "Call list_bots for reachable teammates. A bot always reaches its own person's Primary Bot, whatever its team or allowed peers. If the intended Primary Bot is missing, it belongs to another person: ask the user to check team membership and this bot's allowed peers, or message the Primary Bot directly. Do not use computer control to bypass this.";
 
 /** SAGAX_OPEN_TEAMS=1 runs the workspace as one team: any bot may reach a bot
  * in any section, so sections only group the sidebar. Off by default. Peer
@@ -117,11 +117,14 @@ export function peerStatusWords(status: PeerStatus): string {
  * throwing mid-turn: the list is operator-owned local state, so degrading to
  * the documented default is safer than failing a turn. */
 export const peerAllowed = (
-  from: { peers?: string[]; visibility?: unknown },
-  target: string | { id: string; visibility?: unknown },
+  from: { id?: string; peers?: string[]; visibility?: unknown; chiefOfStaff?: boolean },
+  target: string | { id: string; visibility?: unknown; chiefOfStaff?: boolean },
 ): boolean => {
   const targetId = typeof target === "string" ? target : target.id;
-  if (Array.isArray(from.peers) && !from.peers.includes(targetId)) return false;
+  // #1098 (2026-10-27): a Primary Bot and the bots of its own person reach
+  // each other whatever either one's peer list says.
+  const ownPrimary = typeof target !== "string" && typeof from.id === "string" && primaryLink(from as RosterMember, target as RosterMember);
+  if (!ownPrimary && Array.isArray(from.peers) && !from.peers.includes(targetId)) return false;
   // Given the record, also require the same audience: a teammate that other
   // people can see would carry this bot's words, or bring back a restricted
   // bot's answers, to people who cannot see the other (bot-visibility.ts).
@@ -144,6 +147,26 @@ export function peerInScope(from: RosterMember, target: RosterMember): boolean {
   return !peerScope || peerScope(from, target);
 }
 
+/** Whether two bots belong to the same person. index.ts sets it on an
+ * organization server (the bots' effective owners); unset (a solo server,
+ * one person) every bot is the same person's. */
+let sameOwnerCheck: ((a: RosterMember, b: RosterMember) => boolean) | null = null;
+
+export function setSameOwner(check: ((a: RosterMember, b: RosterMember) => boolean) | null): void {
+  sameOwnerCheck = check;
+}
+
+export function sameOwnerBots(a: RosterMember, b: RosterMember): boolean {
+  return !sameOwnerCheck || sameOwnerCheck(a, b);
+}
+
+/** #1098 (2026-10-27): a Primary Bot and a bot of the same person, in
+ * either direction. Its team and peer lists never cut that link: the
+ * person's own bots always reach their Primary Bot, and it reaches them. */
+export function primaryLink(from: RosterMember, target: RosterMember): boolean {
+  return Boolean(from.chiefOfStaff || target.chiefOfStaff) && sameOwnerBots(from, target);
+}
+
 /** Which bots a Primary Bot covers whatever their team (2026-10-20: the
  * Primary Bot sees and changes every bot its person owns or may manage, no
  * managed-team setting needed). index.ts sets it on an organization server
@@ -164,7 +187,7 @@ export function primaryCovers(from: RosterMember, target: RosterMember): boolean
  * Primary Bot covering it. Every route that refuses "a different section"
  * reads this, so list_bots and the comms routes agree. */
 export function canAccessBot(from: RosterMember, target: RosterMember): boolean {
-  return canAccessTeam(from, target.section) || primaryCovers(from, target);
+  return canAccessTeam(from, target.section) || primaryCovers(from, target) || primaryLink(from, target);
 }
 
 /** A temporary agent that was archived (create_agent, then delete_agent or

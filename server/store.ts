@@ -3322,42 +3322,19 @@ export class Store {
    * place (Cloud, Local VM, This computer, Browser) goes back to Auto, and
    * every conversation pin goes, whoever set it. Off stays: it withholds
    * every screen, and lifting it would widen what the bot may reach.
-   * A bot or a conversation that was kept off this computer (Cloud, Local
-   * VM or Browser, by Works on or by a person's or a legacy pin) may reach
-   * it on Auto, so it starts again on Ask, as on an engine switch, and a
-   * prepared grant is dropped: nothing it may now do on this computer runs
-   * without asking until a person raises the level again. An auto pin
-   * recorded where Auto had landed held nothing back, so it changes no level.
-   * Idempotent; one save when anything changed. */
-  retireFixedWorkspaces(): { bots: number; pins: number; asked: number } {
+   * Levels are never touched (#1098, 2026-10-27): the one-time move of
+   * 2026-10-18 that put a bot or a conversation kept off this computer back
+   * on Ask, emptied its Always allow list and dropped its prepared grant has
+   * run on every install that had such a place; it is not replayed, so a
+   * place an older client or a restored file brings back never costs the
+   * person the level and the list they chose. A new install has no place
+   * to move. Idempotent; one save when anything changed. */
+  retireFixedWorkspaces(): { bots: number; pins: number } {
     let bots = 0;
     let pins = 0;
-    let asked = 0;
     const touched = new Set<string>();
-    const askNow = { approvalMode: "ask" as const, autoApprove: false, alwaysAllow: [] as string[] };
-    const narrower = (place: unknown) => place === "cloud" || place === "vm" || place === "browser";
     for (const bot of this.bots) {
-      const botKeptOff = narrower(bot.computer);
       for (const task of bot.tasks ?? []) {
-        // A conversation held off this computer, by the bot's Works on or by
-        // its own pin, may reach it on Auto: back to Ask.
-        const keptOff = botKeptOff || (narrower(task.surface) && task.surfaceSource !== "auto");
-        // its own level, else the bot's that it follows (a pin alone held it
-        // off, so the bot keeps its own level and this conversation asks)
-        // An exception may store only part of a level (autoApprove alone,
-        // or nothing): read it as the turn runs it (threadApprovalFields),
-        // so a thread that falls back to an Auto bot still asks.
-        const ownLevel = isApprovalException(task.approvalOwn);
-        const level = ownLevel ? approvalModeFor(threadApprovalFields(bot, task)) : approvalModeFor(bot);
-        if (keptOff && level !== "ask") {
-          Object.assign(task, structuredClone(askNow), { approvalOwn: "safety" as const });
-          asked++;
-          touched.add(bot.id);
-        }
-        if (keptOff && bot.approvalGrant) {
-          delete bot.approvalGrant;
-          touched.add(bot.id);
-        }
         if (task.surface === undefined && task.surfaceSource === undefined) continue;
         if (task.surface !== undefined) pins++;
         delete task.surface;
@@ -3365,22 +3342,15 @@ export class Store {
         touched.add(bot.id);
       }
       if (bot.computer !== undefined && autoOnlyDestination(bot.computer) === undefined) {
-        if (botKeptOff) {
-          if (approvalModeFor(bot) !== "ask") {
-            Object.assign(bot, structuredClone(askNow));
-            asked++;
-          }
-          delete bot.approvalGrant;
-        }
         delete bot.computer;
         bots++;
         touched.add(bot.id);
       }
     }
-    if (!touched.size) return { bots, pins, asked };
+    if (!touched.size) return { bots, pins };
     this.saveBots();
     for (const botId of touched) this.emit({ type: "bot", botId });
-    return { bots, pins, asked };
+    return { bots, pins };
   }
 
   /** A Works on change is the newest explicit choice, so this bot's

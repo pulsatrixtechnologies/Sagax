@@ -106,19 +106,18 @@ it("marks a failed one-way send so restart recovery cannot duplicate its notice"
   expect((await failureNotice())?.tool?.handoffId).toEqual(expect.any(String));
 }), 45_000);
 
-it("does not grant a specialist direct access to its supervising Chief", () => fixture(async f => {
+it("lets a specialist reach its own person's Primary Bot directly (#1098)", () => fixture(async f => {
   f.plan[f.lead.id] = {
-    steps: [{ expectError: true, arguments: { bot_ids: [f.chief.id], message: "Contact the Chief without a shared room" } }],
-    reply: "The direct request was refused",
+    steps: [{ arguments: { bot_ids: [f.chief.id], message: "Contact the Chief without a shared room" } }],
+    reply: "Asked the Chief", resumeReply: "The Chief answered",
   };
+  f.plan[f.chief.id] = { reply: "Chief here" };
   f.save();
-  await f.cli("send", "--bot", f.lead.id, "--task", f.lead.activeTaskId, "--text", "Check the direct peer boundary");
+  await f.cli("send", "--bot", f.lead.id, "--task", f.lead.activeTaskId, "--text", "Ask the Primary Bot directly");
   expect((await f.cli("wait", "--bot", f.lead.id, "--task", f.lead.activeTaskId, "--timeout", "30")).status).toBe("settled");
-  expect(f.nodes()).toEqual([]);
   const response = f.evidence().find((turn: any) => turn.botId === f.lead.id).evidence.find((entry: any) => entry.step).response;
-  expect(response.result.isError).toBe(true);
-  expect(response.result.content[0].text).toContain("sender's section boundary");
-  expect((await f.api("/api/bots")).groups).toEqual([]);
+  expect(response.result.isError).toBeFalsy();
+  await expect.poll(() => f.evidence().some((turn: any) => turn.botId === f.chief.id), { timeout: 15_000 }).toBe(true);
 }), 45_000);
 
 it.each([false, true])("starts independent work immediately and frees the Chief while waiting (source fails: %s)", fail => fixture(async f => {

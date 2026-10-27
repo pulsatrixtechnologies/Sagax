@@ -43,6 +43,21 @@ export function canEditBotField(
   return isClientBotPatchField(field);
 }
 
+/** #1098 (2026-10-27): whether the "Who can see it" section is this
+ * viewer's to change: an admin or the owner at this computer
+ * (`ownerOrAdmin`), or the bot's owner who is a member of the workspace's
+ * teams. A desktop has nobody else to hide it from, and an organization
+ * server shares a bot through its grants instead. */
+export function showBotVisibility(
+  config: ConfigStatus | null | undefined,
+  bot: { ownerUserId?: string | null },
+  where: { served: boolean; ownerOrAdmin: boolean | null; perspicaxOrg: boolean },
+): boolean {
+  if (!where.served || where.perspicaxOrg) return false;
+  if (where.ownerOrAdmin === true) return true;
+  return viewerIsOrgMember(config) && viewerOwnsBot(config, bot) && canEditBotField(config, bot, "visibility");
+}
+
 /** The Primary Bot switch. Taking and leaving the role is the owner's own
  * route (POST and DELETE /api/bots/:id/primary) on a bot that exists; on a
  * draft the owner sends chiefOfStaff with the new bot (2026-10-26: a member

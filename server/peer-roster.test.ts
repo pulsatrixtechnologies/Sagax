@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   canAccessTeam,
@@ -18,6 +18,7 @@ import {
   uniquePeerName,
   roomPeerRosterSystemPrompt,
   roomRosterLine,
+  setSameOwner,
   teammateAvailabilityPrompt,
   type RosterMember,
 } from "./peer-roster.ts";
@@ -91,6 +92,10 @@ describe("peerAllowed", () => {
 });
 
 describe("owner-granted cross-team coordination", () => {
+  // These bots are different people's: one person's own bots always reach
+  // their Primary Bot (the describe after this one).
+  beforeEach(() => { setSameOwner(() => false); });
+  afterEach(() => { setSameOwner(null); });
   it("labels actual Chiefs and explains unreachable Chiefs without changing access", () => {
     const chief = { id: "chief", name: "Clive", section: "Personal", chiefOfStaff: true, managedSections: ["Work"] };
     expect(canReachPeer(self, chief)).toBe(false);
@@ -119,6 +124,30 @@ describe("owner-granted cross-team coordination", () => {
     expect(canAccessTeam({ ...chief, managedSections: "Personal" as unknown as string[] }, "Personal")).toBe(false);
     expect(canAccessTeam({ ...chief, managedSections: [null] as unknown as string[] }, "Personal")).toBe(false);
     expect(canAccessTeam({ ...chief, managedSections: [""] }, undefined)).toBe(true);
+  });
+});
+
+describe("one person's own Primary Bot (#1098)", () => {
+  afterEach(() => { setSameOwner(null); });
+  const primary: RosterMember = { id: "primary", name: "Clive", section: "Personal", chiefOfStaff: true };
+
+  it("is reached by every bot of the same person, whatever its team or allowed peers, and reaches them", () => {
+    // a solo server: one person
+    expect(canReachPeer(self, primary)).toBe(true);
+    expect(canReachPeer({ ...self, peers: ["writer"] }, primary)).toBe(true);
+    expect(canReachPeer({ ...primary, peers: [] }, self)).toBe(true);
+    expect(reachablePeers([...fleet, primary], { ...self, peers: [] }).map(bot => bot.id)).toEqual(["primary"]);
+    // the link is to the Primary Bot only: another team's bot stays out
+    expect(canReachPeer(self, fleet[4]!)).toBe(false);
+    // hidden and audience still apply
+    expect(canReachPeer(self, { ...primary, hidden: true })).toBe(false);
+    expect(canReachPeer(self, { ...primary, visibility: "admins" })).toBe(false);
+  });
+
+  it("is not reached by another person's bot", () => {
+    setSameOwner((a, b) => a.id === b.id);
+    expect(canReachPeer(self, primary)).toBe(false);
+    expect(canReachPeer({ ...primary, managedSections: ["Work"] }, self)).toBe(true);
   });
 });
 

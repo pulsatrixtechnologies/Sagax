@@ -8,6 +8,7 @@ import {
   memberBody,
   memberBot,
   noteSeen,
+  ownerKeepsSight,
   parseVisibility,
   pathSubject,
   roomFeeds,
@@ -114,6 +115,20 @@ describe("visibility values", () => {
     expect(sameAudience({ people: ["a@x.test", "b@x.test"] }, { people: ["b@x.test", "a@x.test"] })).toBe(true);
     expect(sameAudience({ people: ["a@x.test"] }, { people: ["a@x.test", "b@x.test"] })).toBe(false);
     expect(sameAudience({ people: ["a@x.test"] }, "admins")).toBe(false);
+  });
+});
+
+describe("an owner choosing who sees their own bot (#1098)", () => {
+  it("keeps the owner in every audience they pick", () => {
+    expect(ownerKeepsSight("everyone", "ada@example.test")).toBe("everyone");
+    expect(ownerKeepsSight("admins", "Ada@Example.test")).toEqual({ people: ["ada@example.test"] });
+    expect(ownerKeepsSight({ people: ["bob@example.test"] }, "ada@example.test")).toEqual({ people: ["bob@example.test", "ada@example.test"] });
+    // already in it, by address or by domain
+    expect(ownerKeepsSight({ people: ["@example.test"] }, "ada@example.test")).toEqual({ people: ["@example.test"] });
+    // no address to add: as chosen
+    expect(ownerKeepsSight("admins", undefined)).toBe("admins");
+    expect(viewerSees(ADA, ownerKeepsSight("admins", "ada@example.test"))).toBe(true);
+    expect(viewerSees(BOB, ownerKeepsSight("admins", "ada@example.test"))).toBe(false);
   });
 });
 
