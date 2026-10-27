@@ -517,9 +517,17 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         refuse(res, 405, "method_not_allowed", `Use ${allowed} here.`);
         return true;
       }
+      // Below the route's role, only a grant bound to this very request lets
+      // a person reach their own thing (2026-10-26, `own-computer`).
+      let ownOnly = false;
       if (ROLE_RANK[viewer.role] < ROLE_RANK[hit.route.min]) {
-        refuse(res, 403, "forbidden_role", `This needs the ${hit.route.min} role in Perspicax.`);
-        return true;
+        const grant = assertion.grant;
+        const granted = Boolean(hit.route.ownerGrant && grant && grant.kind === hit.route.ownerGrant && grant.method === method && grant.path === sub);
+        if (!granted) {
+          refuse(res, 403, "forbidden_role", `This needs the ${hit.route.min} role in Perspicax.`);
+          return true;
+        }
+        ownOnly = true;
       }
       let body: unknown = null;
       const rawUpload = method === "POST" && hit.route.rawBody !== undefined && !/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""));
@@ -558,6 +566,7 @@ export function createOrgAdminRoutes(deps: OrgAdminRouteDeps): (req: IncomingMes
         botVisible: (facts) => botInReach(reach, managedTeams, facts),
         record: (entry) => deps.recordAction?.(viewer.principalId, entry),
         now,
+        ...(ownOnly ? { ownOnly: true } : {}),
       };
       try {
         await answer(res, await hit.route.handle(ctx));

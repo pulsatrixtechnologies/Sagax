@@ -991,6 +991,17 @@ everywhere since 2026-10-09:
 | `POST computers/{id}/start`, `stop`, `pause`, `resume`, `update` | admin | power and rebuild a server environment (`{}`, or `{"confirm": true}` while a bot works there) |
 | `POST computers/{id}/reset`, `delete` | admin | erase a server environment (`{"confirm": true}` required) |
 
+A person reaches **their own** server environment without the admin role
+(2026-10-26): `GET computers`, `GET computers/{id}` and `POST
+computers/{id}/start`, `stop`, `pause`, `resume`, `reset` accept an
+assertion with the person's own role and a `grant` claim `{ "kind":
+"own-computer", "method", "path" }` bound to that very request (`path`
+below `/api/org/admin/`, no query; any other shape refuses the assertion).
+The route then answers only the person's own computers: the list keeps
+them, anyone else's computer is `404 not_found`. `update` and `delete`
+take no grant and stay an admin's. Perspicax signs the grant only after
+it has checked the owner itself.
+
 Code: `server/org-admin-computers.ts`. A server environment is the
 organization's machine for one person (sagax-sandboxd,
 `docs/user-sandbox.md`): an admin acts on it with the calls the person's
