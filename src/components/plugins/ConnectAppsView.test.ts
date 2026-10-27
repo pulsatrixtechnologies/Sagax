@@ -15,6 +15,7 @@ import { setLocale } from "@/lib/i18n";
 import { buildPluginItems } from "@/lib/plugins-model";
 import { installedEntries, privateSkills } from "@/lib/installed-model";
 import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors";
+import { connectedAppItems } from "@/lib/connected-apps";
 import { bringsLabel, InstalledView, type InstalledViewProps } from "./InstalledView";
 import { ConnectAppsView, connectedTab } from "./ConnectAppsView";
 import { HarnessConnectorGroups, connectorGroups } from "./HarnessConnectorGroups";
@@ -63,6 +64,18 @@ describe("Connect apps tabs", () => {
     const html = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, items, extraConnected: 3, onOpenConnected: () => clicks.push("x"), refreshing: false, onRefresh: noop }));
     // the count is the person's connected rows plus the engine connectors
     expect(html).toMatch(/data-plugins-connected[\s\S]*?>\d+ connected</);
+  });
+
+  it("N connected shows the real logos of the connected apps, whole on round chips; a generic mark only without any", () => {
+    const logos = connectedAppItems({ servers: [], featured: [], account: [{ name: "Gmail", status: "connected" }, { name: "Google Drive", status: "connected" }] });
+    const html = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, items, extraConnected: 2, logos, onOpenConnected: noop, refreshing: false, onRefresh: noop }));
+    expect(html).toContain('data-connected-logo="account:Gmail"');
+    expect(html).toContain("gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png");
+    expect(html).toMatch(/data-connected-logo="account:Gmail"[^>]*class="[^"]*overflow-hidden rounded-full bg-white/);
+    expect(html).not.toContain("data-plugins-connected-generic");
+    const generic = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, items, onOpenConnected: noop, refreshing: false, onRefresh: noop }));
+    expect(generic).not.toContain("data-connected-logo");
+    expect(generic).toContain("data-plugins-connected-generic");
   });
 
   it("has four tabs on the Connect Apps page itself, and no Advanced zone", () => {

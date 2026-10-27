@@ -90,6 +90,7 @@ import { PublishedPagesSettings } from "./PublishedPages";
 import { MarketplacesSection } from "./plugins/MarketplacesSection";
 import { PluginStatusLabel } from "./plugins/PluginParts";
 import { pluginShareLink } from "@/lib/plugin-link";
+import { connectedAppItems } from "@/lib/connected-apps";
 import { DataCenterDialog, type DataCenter } from "./plugins/DataCenterDialog";
 import { AddAccountButton, PluginDetailView, SignInButton, type DetailAccount, type PluginDetailProps } from "./plugins/PluginDetailView";
 import { SkillPage } from "./plugins/SkillPage";
@@ -868,6 +869,13 @@ export function PluginsPanel() {
         tabs={tabs}
         items={scopedItems}
         extraConnected={scope === "bot" ? 0 : claudeConnectors}
+        // the sidebar foot's real logos: the person's account connectors and
+        // the connected servers (a bot's scope counts plugins: no logos)
+        logos={scope === "bot" ? [] : connectedAppItems({
+          servers: mcp.servers ?? [],
+          featured: featured ?? [],
+          account: harness.answer?.claude?.available ? harness.answer.claude.connectors ?? [] : [],
+        })}
         // #1132/#1194: the number counts the engine accounts' connectors
         // too, and those are listed under My accounts: with no app of its
         // own installed, the button opens there instead of an empty Installed.

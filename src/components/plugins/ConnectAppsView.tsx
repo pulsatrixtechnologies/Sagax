@@ -6,7 +6,7 @@
 // a section opened alone are gone, View all filters Discover in place.
 // The shared row parts (pills, section titles, PluginRow) live here too.
 import type { ReactNode } from "react";
-import { ChevronRight, RefreshCw } from "lucide-react";
+import { ChevronRight, Puzzle, RefreshCw } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -116,6 +116,9 @@ export interface ConnectAppsViewProps {
   items: readonly PluginItem[];
   /** connectors an engine account brings, counted in "N connected" */
   extraConnected?: number;
+  /** the connected apps with their real logos (connectedAppItems, the
+   * sidebar foot's list); none: one generic mark */
+  logos?: readonly PluginItem[];
   /** "N connected": the tab that lists them (#1194) */
   onOpenConnected: () => void;
   /** the install scope (everyone, or one bot) under the title */
@@ -131,7 +134,7 @@ export interface ConnectAppsViewProps {
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { tab, onTab, tabs = CONNECT_APPS_TABS, items, extraConnected = 0, onOpenConnected, scope, notices, refreshing, onRefresh } = props;
+  const { tab, onTab, tabs = CONNECT_APPS_TABS, items, extraConnected = 0, logos = [], onOpenConnected, scope, notices, refreshing, onRefresh } = props;
   const shown = tabs.includes(tab) ? tab : tabs.includes("discover") ? "discover" : tabs[0] ?? "discover";
   const summary = connectedSummary(items, extraConnected);
   return (
@@ -139,7 +142,7 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
       <header className={CATEGORY_MODAL.titleBar}>
         <div className="flex items-center justify-between gap-4">
           <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{t("connectApps.title")}</h2>
-          <ConnectedButton summary={summary} onOpen={onOpenConnected} />
+          <ConnectedButton count={summary.count} logos={logos} onOpen={onOpenConnected} />
         </div>
         {/* the install scope is about plugins: My accounts is the person's own */}
         {scope && shown !== "accounts" && <div className="mt-3">{scope}</div>}
@@ -187,25 +190,34 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
   );
 }
 
-function ConnectedButton({ summary, onOpen }: { summary: ReturnType<typeof connectedSummary>; onOpen: () => void }) {
+/** Most logos "N connected" shows side by side. */
+export const CONNECTED_LOGOS = 4;
+
+/** "N connected" with the real logos of the connected apps, overlapping on
+ * round white chips like the sidebar foot (each logo whole inside its chip);
+ * one generic mark only when no connected app has one to show. */
+function ConnectedButton({ count, logos, onOpen }: { count: number; logos: readonly PluginItem[]; onOpen: () => void }) {
+  const shown = logos.slice(0, CONNECTED_LOGOS);
   return (
     <button
       type="button"
       data-plugins-connected
       onClick={onOpen}
       className="flex shrink-0 items-center gap-2 text-[13px] leading-[18px] text-ink hover:text-ink"
-      aria-label={t("connectApps.connectedAria", { count: summary.count })}
+      aria-label={t("connectApps.connectedAria", { count })}
     >
-      {summary.icons.length > 0 && (
-        <span className="flex -space-x-1.5" aria-hidden="true">
-          {summary.icons.map((item) => (
-            <span key={item.key} className="rounded-md ring-2 ring-app">
-              <PluginIcon item={item} className="size-5 rounded-md" />
+      {shown.length > 0 ? (
+        <span className="flex items-center -space-x-1.5" aria-hidden="true" data-plugins-connected-logos>
+          {shown.map((item) => (
+            <span key={item.key} data-connected-logo={item.key} className="flex size-[22px] shrink-0 items-center justify-center overflow-hidden rounded-full bg-white ring-2 ring-app">
+              <PluginIcon item={item} className="size-[16px] rounded-full" />
             </span>
           ))}
         </span>
-      )}
-      <span>{t("connectApps.connectedCount", { count: summary.count })}</span>
+      ) : count > 0 ? (
+        <Puzzle size={16} className="text-ink-secondary" aria-hidden="true" data-plugins-connected-generic />
+      ) : null}
+      <span>{t("connectApps.connectedCount", { count })}</span>
       <ChevronRight size={14} className="text-ink-secondary" aria-hidden="true" />
     </button>
   );

@@ -720,6 +720,24 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Tout le catalogue est déjà installé." } }
       }
     },
+    "Open in Connect apps": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open in Connect apps" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir dans Connecter des applications" } }
+      }
+    },
+    "Connect GitHub or a token: Connect apps > Sources.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect GitHub or a token: Connect apps > Sources." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connecter GitHub ou un jeton : Connecter des applications > Sources." } }
+      }
+    },
+    "Add, sign in, turn on or off: Connect apps > My accounts.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add, sign in, turn on or off: Connect apps > My accounts." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter, se connecter, activer ou désactiver : Connecter des applications > Mes comptes." } }
+      }
+    },
     "Mascots": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Mascots" } },

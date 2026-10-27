@@ -201,6 +201,8 @@ enum ConnectAppsRoute: Hashable {
 
 /// The whole panel: the main view and what it pushes.
 struct ConnectAppsPage: View {
+    /// the tab to open on (Settings > My connections' links); nil: Discover
+    var initialTab: ConnectAppsTab? = nil
     @Environment(\.themePalette) var themePalette
     @EnvironmentObject private var session: Session
     @StateObject private var model = ConnectAppsModel()
@@ -215,7 +217,7 @@ struct ConnectAppsPage: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ConnectAppsMain(model: model, botTemplates: botTemplates.map { destination in
+            ConnectAppsMain(model: model, initialTab: initialTab, botTemplates: botTemplates.map { destination in
                 {
                     // Connect apps closes, then Browse Bots opens
                     if let settingsPop { settingsPop() } else { dismiss() }
@@ -390,7 +392,14 @@ struct ConnectAppsMain: View {
     var botTemplates: (() -> Void)? = nil
     let push: (ConnectAppsRoute) -> Void
     @State private var expanded: Set<ConnectApps.SectionID> = []
-    @State private var tab: ConnectAppsTab = ConnectAppsTab.launch
+    @State private var tab: ConnectAppsTab
+
+    init(model: ConnectAppsModel, initialTab: ConnectAppsTab? = nil, botTemplates: (() -> Void)? = nil, push: @escaping (ConnectAppsRoute) -> Void) {
+        _model = ObservedObject(wrappedValue: model)
+        self.botTemplates = botTemplates
+        self.push = push
+        _tab = State(initialValue: initialTab ?? ConnectAppsTab.launch)
+    }
 
     /// Sources shows when the marketplaces can be read or changed from this
     /// pairing, or the person has a GitHub connection to manage.
@@ -582,8 +591,10 @@ struct ConnectAppsMain: View {
 // MARK: - Manage
 
 /// The four tabs of Connect apps, as the desktop names them.
-enum ConnectAppsTab: Hashable {
+enum ConnectAppsTab: Hashable, Identifiable {
     case installed, discover, accounts, sources
+
+    var id: Self { self }
 
     var title: String {
         switch self {
@@ -800,7 +811,12 @@ struct ConnectAppsManage: View {
             Section { ConnectAppsProviders() }
         }
         if service == .all || service == .servers, session.surfaceGate.allows(.myConnections) {
-            YourConnectionsSection(part: .servers)
+            // the large layout keeps its cards (a token field, Add an MCP server)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Section { DesktopMyConnectionsSettings(part: .servers) }
+            } else {
+                YourConnectionsSection(part: .servers)
+            }
         }
         if service == .all || service == .slack {
             SlackConnectionsSection { slackAvailable = $0 }
@@ -813,7 +829,11 @@ struct ConnectAppsManage: View {
     private var sources: some View {
         // the person's own GitHub (#218): every GitHub setting is in Sources
         if session.surfaceGate.allows(.myConnections) {
-            YourConnectionsSection(part: .github)
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                Section { DesktopMyConnectionsSettings(part: .github) }
+            } else {
+                YourConnectionsSection(part: .github)
+            }
         }
         Section {
             ForEach(model.marketplaces) { market in

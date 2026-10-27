@@ -395,7 +395,9 @@ struct DesktopSettingsPage: View {
         case .appearance: AnyView(DesktopAppearanceSettings())
         case .experimental: AnyView(DesktopExperimentalSettings())
         case .connections: AnyView(DesktopAPIKeysSettings())
-        case .myConnections: AnyView(DesktopMyConnectionsSettings())
+        // 2026-10-27: GitHub and the person's MCP servers live in Connect
+        // apps (Sources, My accounts); this page links there
+        case .myConnections: AnyView(DesktopMyConnectionsLinks())
         case .decisionModel: AnyView(DesktopDecisionModelSettings())
         // Models and voice (#518): the providers, then API keys and the
         // Decision model as cards of the page
