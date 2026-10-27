@@ -18,7 +18,7 @@
 // the original line, byte for byte.
 //
 // No key material is ever logged or put in an error message.
-import { createCipheriv, createDecipheriv, randomFillSync, type KeyObject } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, randomFillSync, type KeyObject } from "node:crypto";
 
 import { ContentSealError, open, seal, type ContentKeyMaterial } from "./content-crypto.ts";
 
@@ -206,42 +206,76 @@ export class FileSealer {
 
 // ---------------------------------------------------------------------------
 // Log lines
+//
+// A log keeps one physical line per record (counts, line numbers and a
+// rotation that cuts on a line boundary stay as they are), but records are
+// sealed together, a block of consecutive lines in one AES-256-GCM message,
+// so a reader pays the cipher once per block, not per line:
+//
+//   {"sb":"<block id>"}                                     every line but the last
+//   {"sb":"<block id>","n":<n>,"l":<length>,"sealed":"<key id>:<base64>","p":[<projection>…]}
+//
+// The last line holds the original lines joined by "\n" (an NDJSON line
+// never holds a raw newline), and each record's cleartext projection (what
+// readers filter on before opening). The additional data binds the key, its
+// owner, the log's context, the block id, the count and the projection text:
+// a block moved to another log, cut, or with its projection edited does not
+// open.
 
-/** The property a sealed line carries: `<key id>:<base64>`. */
-export const SEALED_LINE_FIELD = "sealed";
+export const BLOCK_PREFIX = '{"sb":"';
+export const BLOCK_ID_CHARS = 16;
+/** A placeholder line is exactly `{"sb":"<id>"}`. */
+export const PLACEHOLDER_LENGTH = BLOCK_PREFIX.length + BLOCK_ID_CHARS + 2;
 
-const aadCache = new Map<string, Buffer>();
-export function lineAad(key: { keyId: string; owner: string }, context: string): Buffer {
-  const id = `${key.keyId}\u0000${key.owner}\u0000${context}`;
-  let aad = aadCache.get(id);
-  if (!aad) {
-    // one per log file and key: a reader opens thousands of lines of each
-    if (aadCache.size > 512) aadCache.clear();
-    aadCache.set(id, (aad = Buffer.from(`sagax-line:v1\u0000${id}`, "utf8")));
-  }
-  return aad;
+export function blockAad(key: { keyId: string; owner: string }, context: string, blockId: string, n: number, projection: string): Buffer {
+  return Buffer.from(`sagax-log:v2\u0000${key.keyId}\u0000${key.owner}\u0000${context}\u0000${blockId}\u0000${n}\u0000${projection}`, "utf8");
 }
 
-/** One NDJSON line (without its newline) sealed: the projection's fields in
- * the clear, the line itself under `sealed`. */
-export function sealLine(key: FileKey, context: string, line: string, projection: Record<string, unknown>): string {
-  const blob = seal(key.dek, line, lineAad(key, context));
-  return JSON.stringify({ ...projection, [SEALED_LINE_FIELD]: `${key.keyId}:${blob.toString("base64")}` });
+/** The physical lines of one sealed block (no newlines). */
+export function sealBlock(key: FileKey, context: string, lines: readonly string[], projections: readonly Record<string, unknown>[]): string[] {
+  const blockId = randomBytes(BLOCK_ID_CHARS / 2).toString("hex");
+  const projection = JSON.stringify(projections);
+  const sealed = seal(key.dek, lines.join("\n"), blockAad(key, context, blockId, lines.length, projection)).toString("base64");
+  const out: string[] = [];
+  const placeholder = `${BLOCK_PREFIX}${blockId}"}`;
+  for (let i = 0; i < lines.length - 1; i++) out.push(placeholder);
+  // the lengths first: a reader slices the line, never scans the base64
+  out.push(`${BLOCK_PREFIX}${blockId}","n":${lines.length},"l":${sealed.length},"sealed":"${key.keyId}:${sealed}","p":${projection}}`);
+  return out;
 }
 
-/** The key id of a parsed sealed line, or null for a plain record. */
-export function sealedLineKeyId(record: unknown): string | null {
-  if (!record || typeof record !== "object") return null;
-  const value = (record as Record<string, unknown>)[SEALED_LINE_FIELD];
-  if (typeof value !== "string") return null;
-  const colon = value.indexOf(":");
-  return colon > 0 ? value.slice(0, colon) : null;
+export interface BlockLine {
+  blockId: string;
+  /** null: a placeholder (not the block's last line) */
+  last: { n: number; projection: string; keyId: string; sealed: string } | null;
 }
 
-/** The original line of a parsed sealed record. */
-export function openLine(record: Record<string, unknown>, key: FileKey, context: string): string {
-  const value = record[SEALED_LINE_FIELD];
-  if (typeof value !== "string") throw new ContentSealError("malformed");
-  const colon = value.indexOf(":");
-  return open(key.dek, Buffer.from(value.slice(colon + 1), "base64"), lineAad(key, context)).toString("utf8");
+/** A physical line of a sealed block, read by offsets (the base64 is never
+ * parsed or scanned). Null: not a block line. */
+export function parseBlockLine(raw: string): BlockLine | null {
+  if (!raw.startsWith(BLOCK_PREFIX) || raw.length < PLACEHOLDER_LENGTH) return null;
+  const blockId = raw.slice(BLOCK_PREFIX.length, BLOCK_PREFIX.length + BLOCK_ID_CHARS);
+  const rest = BLOCK_PREFIX.length + BLOCK_ID_CHARS;
+  if (raw.length === PLACEHOLDER_LENGTH) return raw.endsWith('"}') ? { blockId, last: null } : null;
+  if (!raw.startsWith('","n":', rest)) return null;
+  const nEnd = raw.indexOf(",", rest + 6);
+  const n = Number(raw.slice(rest + 6, nEnd));
+  if (!raw.startsWith('"l":', nEnd + 1)) return null;
+  const lEnd = raw.indexOf(",", nEnd + 5);
+  const length = Number(raw.slice(nEnd + 5, lEnd));
+  if (!Number.isInteger(n) || n < 1 || !Number.isInteger(length) || length < 0 || !raw.startsWith('"sealed":"', lEnd + 1)) return null;
+  const valueStart = lEnd + 11;
+  const colon = raw.indexOf(":", valueStart);
+  if (colon < valueStart + 1 || colon > valueStart + 64) return null;
+  const sealedEnd = colon + 1 + length;
+  if (!raw.startsWith('","p":', sealedEnd) || !raw.endsWith("}")) return null;
+  return { blockId, last: { n, projection: raw.slice(sealedEnd + 6, raw.length - 1), keyId: raw.slice(valueStart, colon), sealed: raw.slice(colon + 1, sealedEnd) } };
+}
+
+/** The original lines of a block. */
+export function openBlock(key: FileKey, context: string, blockId: string, last: NonNullable<BlockLine["last"]>): string[] {
+  const plain = open(key.dek, Buffer.from(last.sealed, "base64"), blockAad(key, context, blockId, last.n, last.projection)).toString("utf8");
+  const lines = plain.split("\n");
+  if (lines.length !== last.n) throw new ContentSealError("malformed");
+  return lines;
 }

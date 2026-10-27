@@ -14,7 +14,7 @@
 import { basename, join } from "node:path";
 
 import { EVENTS_DIR } from "../config.ts";
-import { appendLog, registerSealedLog, sealLogLine } from "../content-at-rest.ts";
+import { appendLog, appendLogBuffered, registerSealedLog } from "../content-at-rest.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { redactSecrets } from "../redact.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -50,6 +50,7 @@ registerSealedLog({
   dir: EVENTS_DIR,
   scope: (_record, file) => ({ thread: basename(file, ".ndjson") }),
   projection: (record) => ({ type: record.type, createdAt: record.createdAt, ...(typeof record.itemType === "string" ? { itemType: record.itemType } : {}) }),
+  perFile: true,
 });
 
 const defaultAppend: EventLogAppend = (path, data, options) => appendLog(path, data, options);
@@ -326,9 +327,16 @@ export class EventBus {
     const warning = this.pendingLogWarnings.get(threadId);
     const events = items.map((item) => item.event);
     const file = join(EVENTS_DIR, `${threadId}.ndjson`);
-    const lines = items.map((item) => sealLogLine(file, item.event as unknown as Record<string, unknown>, item.line));
-    if (warning) lines.unshift(sealLogLine(file, warning as unknown as Record<string, unknown>));
+    const lines = items.map((item) => item.line);
+    const records = items.map((item) => item.event as unknown as Record<string, unknown>);
+    if (warning) { lines.unshift(JSON.stringify(warning)); records.unshift(warning as unknown as Record<string, unknown>); }
     try {
+      // Sealed at rest (server/content-at-rest.ts): what a short window
+      // brings is sealed as one block, so a reader opens it once
+      if (this.appendLog === defaultAppend && appendLogBuffered(file, records, lines, { mode: 0o600, after: () => capThreadLog(file, currentThreadLogCap()) })) {
+        if (warning) this.pendingLogWarnings.delete(threadId);
+        return;
+      }
       await this.appendLog(file, lines.join("\n") + "\n", { mode: 0o600 });
       if (warning) this.pendingLogWarnings.delete(threadId);
       // Best-effort size cap (#1280): an open thread's canonical log

@@ -34,7 +34,7 @@ import { closeSync, type Dirent, lstatSync, openSync, readdirSync, readFileSync,
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { parseLogLine } from "./content-at-rest.ts";
+import { flushLogBuffer, isProjectedRecord, LogReader } from "./content-at-rest.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
 type Env = Record<string, string | undefined>;
@@ -115,19 +115,24 @@ export function taskEngineKeys(task: { threadId: string; resumeCursors?: Record<
 /** The session ids a thread's event log announced (`session.started`),
  * for threads from before `engineSessions` was kept. */
 export function eventLogSessionIds(path: string): string[] {
+  flushLogBuffer(path);
   const out = new Set<string>();
   let text = "";
   try {
     if (!lstatSync(path).isFile() || lstatSync(path).size > MAX_TEXT_BYTES) return [];
     text = readFileSync(path, "utf8");
   } catch { return []; }
-  for (const line of text.split("\n")) {
-    if (!line.includes("session.started")) continue;
-    try {
-      // a line sealed at rest keeps its type in the clear and opens here
-      const event = (parseLogLine(path, line) ?? {}) as { type?: unknown; sessionId?: unknown };
-      if (event.type === "session.started") { const key = sessionKey(event.sessionId); if (key) out.add(key); }
-    } catch { /* a torn line, or a key not open on this launch */ }
+  // sealed at rest: a block's clear types say which records to open
+  // (server/content-at-rest.ts); a torn line, or a key not open on this
+  // launch, is skipped
+  const lines = text.split("\n");
+  const reader = new LogReader(path, (projection) => projection.type !== "session.started");
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (!line.includes("session.started") && !line.startsWith('{"sb":"')) continue;
+    let event: { type?: unknown; sessionId?: unknown } | null | undefined;
+    try { event = reader.at(lines, index) as typeof event; } catch { continue; }
+    if (event && event.type === "session.started" && !isProjectedRecord(event)) { const key = sessionKey(event.sessionId); if (key) out.add(key); }
   }
   return [...out];
 }

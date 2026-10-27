@@ -30,6 +30,7 @@
 import { createHash, createSecretKey, randomUUID } from "node:crypto";
 import {
   closeSync,
+  existsSync,
   fstatSync,
   fsyncSync,
   lstatSync,
@@ -63,17 +64,20 @@ import {
   looksSealed,
   openBuffer,
   openChunk,
-  openLine,
-  SEALED_LINE_FIELD,
   parseHeader,
   plainSizeOf,
   sealBuffer,
-  sealLine,
-  sealedLineKeyId,
+  BLOCK_ID_CHARS,
+  BLOCK_PREFIX,
+  PLACEHOLDER_LENGTH,
+  openBlock,
+  parseBlockLine,
+  sealBlock,
+  type BlockLine,
   type FileKey,
   type SealedHeader,
 } from "./content-file-crypto.ts";
-import { contentAutoMigrate, contentEncryptionOn, contentKeyById, contentKeyForBot, contentKeyForOwner, contentKeyForThread, onContentAtRest } from "./message-db.ts";
+import { contentAutoMigrate, contentEncryptionOn, contentKeyById, contentKeyForBot, contentKeyForOwner, contentKeyForThread, contentOwnerOfThread, onContentAtRest } from "./message-db.ts";
 
 export type ContentScope = { thread: string } | { bot: string } | { owner: string };
 
@@ -712,13 +716,24 @@ export function holdPlainSync(holder: string, paths: readonly string[]): void {
   }
 }
 
-/** The same for files of any size, opened as streams. */
+const opening = new Map<string, Promise<unknown>>();
+
+/** The same for files of any size, opened as streams. Resolves once every
+ * one of `paths` is open (one another holder was opening included). */
 export async function holdPlain(holder: string, paths: readonly string[]): Promise<void> {
-  const added = hold(holder, paths);
-  await Promise.all(added.map(async (path) => {
+  for (const path of hold(holder, paths)) {
+    if (opening.has(path)) continue;
     const info = atRestInfoSync(path);
-    if (info?.sealed) await replaceInPlace(path, null, { quick: true });
-  }));
+    if (!info?.sealed) continue;
+    const run = replaceInPlace(path, null, { quick: true }).finally(() => { if (opening.get(path) === run) opening.delete(path); });
+    opening.set(path, run);
+  }
+  await waitPlain(paths);
+}
+
+/** Wait until those of `paths` being opened for a turn are open. */
+export async function waitPlain(paths: readonly string[]): Promise<void> {
+  await Promise.all(paths.map((path) => opening.get(path)).filter((run): run is Promise<unknown> => Boolean(run)));
 }
 
 /** The turn ended: its files are sealed again once idle (GRACE_MS). */
@@ -752,7 +767,8 @@ function scopeFor(path: string, fallback: ContentScope): ContentScope {
 }
 
 // ---------------------------------------------------------------------------
-// Log lines
+// Log lines (format in server/content-file-crypto.ts: one physical line per
+// record, records sealed together in blocks)
 
 interface SealedLogSpec {
   dir: string;
@@ -760,6 +776,8 @@ interface SealedLogSpec {
   scope(record: Record<string, unknown>, file: string): ContentScope;
   /** the fields a reader filters on before opening, kept in the clear */
   projection(record: Record<string, unknown>): Record<string, unknown>;
+  /** the key is the file's (a thread's or a bot's log), not each row's */
+  perFile?: boolean;
 }
 
 const logs: SealedLogSpec[] = [];
@@ -782,54 +800,203 @@ export function logContext(file: string): string {
   return `${basename(dirname(file))}/${basename(file)}`;
 }
 
-/** One record as the line to append (no newline): sealed when the log is a
- * sealed one and its key is available, else the plain JSON as before. */
-export function sealLogLine(file: string, record: Record<string, unknown>, line = JSON.stringify(record)): string {
+/** The most records one block holds. */
+const BLOCK_MAX = 256;
+/** A migration rewrites a log into blocks of this many records. */
+const BLOCK_COMPACT = 64;
+
+/** Records as the physical lines to append (no newlines): consecutive
+ * records under one key sealed as one block, a record without a key (off,
+ * not available yet) as its plain JSON, as before. */
+export function sealLogLines(file: string, records: readonly Record<string, unknown>[], lines: readonly string[], blockMax = BLOCK_MAX): string[] {
   const spec = logOf(file);
-  if (!spec) return line;
-  let key: FileKey | null;
-  try { key = sealingKey(spec.scope(record, file)); } catch { key = null; }
-  if (!key) {
-    if (contentEncryptionOn()) scheduleAtRest(graceMs + 50);
-    return line;
+  if (!spec) return [...lines];
+  const out: string[] = [];
+  let run: { key: FileKey; lines: string[]; projections: Record<string, unknown>[] } | null = null;
+  const flush = () => {
+    if (run) out.push(...sealBlock(run.key, logContext(file), run.lines, run.projections));
+    run = null;
+  };
+  const fileKey = spec.perFile ? sealingKeySafe(spec.scope(records[0] ?? {}, file)) : undefined;
+  for (let i = 0; i < lines.length; i++) {
+    const record = records[i]!;
+    let key: FileKey | null;
+    try { key = fileKey !== undefined ? fileKey : sealingKey(spec.scope(record, file)); } catch { key = null; }
+    if (!key) {
+      flush();
+      out.push(lines[i]!);
+      if (contentEncryptionOn()) scheduleAtRest(graceMs + 50);
+      continue;
+    }
+    if (run && (run.key.keyId !== key.keyId || run.lines.length >= blockMax)) flush();
+    if (!run) run = { key, lines: [], projections: [] };
+    run.lines.push(lines[i]!);
+    run.projections.push(spec.projection(record));
   }
-  return sealLine(key, logContext(file), line, spec.projection(record));
+  flush();
+  return out;
 }
 
-/** A parsed line as its original record: a plain record comes back as it
- * is; a sealed one opened. Null: erased (its key destroyed) or a line that
- * does not open here (copied from another log). Throws
- * ContentKeyUnavailable when its key is locked on this launch. */
-export function openLogRecord(file: string, value: unknown): unknown {
-  const keyId = sealedLineKeyId(value);
-  if (!keyId) return value;
-  const key = keyById(keyId);
-  if (key === "destroyed") return null;
-  if (!key) throw new ContentKeyUnavailable();
-  try { return JSON.parse(openLine(value as Record<string, unknown>, key, logContext(file))); }
-  catch { return null; }
+/** One record as the line(s) to append, joined by newlines (no trailing one). */
+export function sealLogLine(file: string, record: Record<string, unknown>, line = JSON.stringify(record)): string {
+  return sealLogLines(file, [record], [line]).join("\n");
 }
 
 const projected = new WeakSet<object>();
-/** A sealed line a reader chose not to open: only its cleartext projection. */
+/** A sealed record a reader chose not to open: only its cleartext projection. */
 export function isProjectedRecord(value: unknown): boolean {
   return typeof value === "object" && value !== null && projected.has(value);
 }
 
-/** JSON.parse of one raw line of a log, opened. Throws on a torn line
- * (SyntaxError) and a locked key (ContentKeyUnavailable), like a reader
- * expects; null when erased. `projectionOnly`: a sealed line whose clear
- * fields say the reader will not use it is not opened; its projection comes
- * back instead (isProjectedRecord), so it still counts where a plain line
- * would have. */
-export function parseLogLine(file: string, raw: string, projectionOnly?: (projection: Record<string, unknown>) => boolean): unknown {
-  const value: unknown = JSON.parse(raw);
-  if (projectionOnly && sealedLineKeyId(value) && projectionOnly(value as Record<string, unknown>)) {
-    const { [SEALED_LINE_FIELD]: _sealed, ...projection } = value as Record<string, unknown>;
-    projected.add(projection);
-    return projection;
+/** A sealed record whose key was destroyed (erased), or that does not open
+ * here (copied from another log): a reader leaves it out. */
+export const ERASED = null;
+
+/**
+ * Reads a window of a log's lines, sealed or plain. A block is opened once
+ * (its last line is in the window: a window always ends at a line the
+ * writer finished, and a block is written in one append), and only when one
+ * of its records is asked for and not dropped by `projectionOnly` (the
+ * record's clear fields say the reader will not use it: its projection comes
+ * back instead, isProjectedRecord). Opened text lives in the reader only, for
+ * the one read.
+ */
+export class LogReader {
+  private readonly context: string;
+  private readonly projectionOnly: ((projection: Record<string, unknown>) => boolean) | undefined;
+  private readonly blocks = new Map<string, { last: NonNullable<BlockLine["last"]>; projections: Record<string, unknown>[] | null; lines: string[] | null | "erased" }>();
+  /** a sealed record was met whose key is locked on this launch */
+  locked = false;
+
+  constructor(file: string, projectionOnly?: (projection: Record<string, unknown>) => boolean) {
+    this.context = logContext(file);
+    this.projectionOnly = projectionOnly;
   }
-  return openLogRecord(file, value);
+
+  /** Where line `index` of `lines` is in its block: the block's last line
+   * index and the record's position. Null when it is not a block line, or
+   * its block's end is not in the window. */
+  /** per window: the index of each placeholder's block end (-1: none) */
+  private readonly ends = new WeakMap<readonly string[], Int32Array>();
+  private readonly lastLines = new Map<string, NonNullable<BlockLine["last"]> | null>();
+
+  private lastOf(blockId: string, raw: string): NonNullable<BlockLine["last"]> | null {
+    let last = this.lastLines.get(blockId);
+    if (last === undefined) {
+      last = parseBlockLine(raw)?.last ?? null;
+      this.lastLines.set(blockId, last);
+    }
+    return last;
+  }
+
+  /** For a window, once: the index of each block line's block end (-1: a
+   * block whose end is not in the window; -2: not a block line). One pass
+   * from the end, comparing a few characters per line. */
+  private endsOf(lines: readonly string[]): Int32Array {
+    let ends = this.ends.get(lines);
+    if (ends) return ends;
+    ends = new Int32Array(lines.length);
+    let end = -1;
+    let id = "";
+    for (let k = lines.length - 1; k >= 0; k--) {
+      const raw = lines[k]!;
+      if (raw.charCodeAt(0) !== 123 || !raw.startsWith(BLOCK_PREFIX)) { ends[k] = -2; end = -1; continue; }
+      if (raw.length !== PLACEHOLDER_LENGTH) {
+        end = k;
+        id = raw.slice(BLOCK_PREFIX.length, BLOCK_PREFIX.length + BLOCK_ID_CHARS);
+        ends[k] = k;
+        continue;
+      }
+      ends[k] = end >= 0 && raw.startsWith(id, BLOCK_PREFIX.length) && end - k <= BLOCK_MAX ? end : -1;
+      if (ends[k] < 0) end = -1;
+    }
+    this.ends.set(lines, ends);
+    return ends;
+  }
+
+  private locate(lines: readonly string[], index: number): { position: number; blockId: string; last: NonNullable<BlockLine["last"]> } | null | undefined {
+    const end = this.endsOf(lines)[index]!;
+    if (end === -2) return undefined;
+    if (end === -1) return null;
+    const raw = lines[end]!;
+    const blockId = raw.slice(BLOCK_PREFIX.length, BLOCK_PREFIX.length + BLOCK_ID_CHARS);
+    const last = this.lastOf(blockId, raw);
+    if (!last) return null;
+    const position = last.n - 1 - (end - index);
+    return position >= 0 ? { position, blockId, last } : null;
+  }
+
+  private block(blockId: string, last: NonNullable<BlockLine["last"]>) {
+    let entry = this.blocks.get(blockId);
+    if (!entry) this.blocks.set(blockId, (entry = { last, projections: null, lines: null }));
+    return entry;
+  }
+
+  private open(entry: { last: NonNullable<BlockLine["last"]>; lines: string[] | null | "erased" }, blockId: string): string[] | "erased" {
+    if (entry.lines) return entry.lines;
+    return this.openNow(entry, blockId);
+  }
+
+  private openNow(entry: { last: NonNullable<BlockLine["last"]>; lines: string[] | null | "erased" }, blockId: string): string[] | "erased" {
+    const key = keyById(entry.last.keyId);
+    if (key === "destroyed") return (entry.lines = "erased");
+    if (!key) { this.locked = true; throw new ContentKeyUnavailable(); }
+    let lines: string[] | "erased";
+    try { lines = openBlock(key, this.context, blockId, entry.last); }
+    catch { lines = "erased"; }
+    entry.lines = lines;
+    return lines;
+  }
+
+  /** The original text of line `index`: the plain line, or the record's
+   * line opened. Null: erased or not readable here; undefined: a block line
+   * whose block is not in the window. Throws ContentKeyUnavailable. */
+  raw(lines: readonly string[], index: number): string | null | undefined {
+    const at = this.locate(lines, index);
+    if (at === undefined) return lines[index]!;
+    if (at === null) return undefined;
+    const opened = this.open(this.block(at.blockId, at.last), at.blockId);
+    return opened === "erased" ? null : opened[at.position]!;
+  }
+
+  /** The record of line `index`, parsed: undefined for a torn or unknown
+   * line (like a JSON.parse that throws), null for an erased one. Throws
+   * ContentKeyUnavailable. */
+  at(lines: readonly string[], index: number): unknown {
+    const raw = lines[index]!;
+    if (!raw) return undefined;
+    const at = this.locate(lines, index);
+    if (at === undefined) {
+      try { return JSON.parse(raw); } catch { return undefined; }
+    }
+    if (at === null) return undefined;
+    const entry = this.block(at.blockId, at.last);
+    if (this.projectionOnly) {
+      if (!entry.projections) {
+        try { entry.projections = JSON.parse(entry.last.projection) as Record<string, unknown>[]; } catch { entry.projections = []; }
+      }
+      const projection = entry.projections[at.position];
+      if (projection && typeof projection === "object" && this.projectionOnly(projection)) {
+        const copy = { ...projection };
+        projected.add(copy);
+        return copy;
+      }
+    }
+    const opened = this.open(entry, at.blockId);
+    if (opened === "erased") return ERASED;
+    try { return JSON.parse(opened[at.position]!); } catch { return undefined; }
+  }
+
+  /** Every record of `lines`, in order (undefined: torn, null: erased). */
+  all(lines: readonly string[]): unknown[] {
+    return lines.map((_line, index) => this.at(lines, index));
+  }
+}
+
+/** One plain line (a plain log, or a line a writer wrote plain): JSON.parse
+ * as before; a sealed block line alone cannot open (LogReader reads them). */
+export function parseLogLine(_file: string, raw: string): unknown {
+  return JSON.parse(raw);
 }
 
 const inFlight = new Map<string, number>();
@@ -846,128 +1013,175 @@ export async function appendLog(file: string, data: string, options: { mode?: nu
   }
 }
 
-export function appendLogSync(file: string, data: string, options: { mode?: number } = {}): void {
-  appendFileSync(file, data, options);
-}
+// Busy logs (a thread's events and native messages) are sealed in blocks of
+// what arrived in a short window, so a reader opens one block for many
+// lines. The lines wait in memory (as the events themselves do) for at most
+// LOG_WINDOW_MS; a read of the same log in this process writes them first,
+// and so do the process's exit and a backup.
+const LOG_WINDOW_MS = 1_000;
+const buffers = new Map<string, { records: Record<string, unknown>[]; lines: string[]; mode?: number; after?: () => void }>();
+let bufferTimer: ReturnType<typeof setTimeout> | null = null;
 
-type LineAction = { line: string; changed: boolean };
-
-/** One line as the migration wants it: sealed under its key (on), plain
- * (off). A line that does not parse, or a sealed line whose key is gone,
- * is kept exactly as it is. */
-function migrateLine(spec: SealedLogSpec, file: string, raw: string, on: boolean, keep: { locked: boolean; plain: boolean }): LineAction {
-  if (!raw) return { line: raw, changed: false };
-  let value: unknown;
-  try { value = JSON.parse(raw); } catch { return { line: raw, changed: false }; }
-  const keyId = sealedLineKeyId(value);
-  let original = raw;
-  let record = value as Record<string, unknown>;
-  if (keyId) {
-    const key = keyById(keyId);
-    if (!key) { keep.locked = true; return { line: raw, changed: false }; }
-    if (key === "destroyed") return { line: raw, changed: false };
-    try { original = openLine(value as Record<string, unknown>, key, logContext(file)); record = JSON.parse(original) as Record<string, unknown>; }
-    catch { return { line: raw, changed: false }; }
-    if (on) {
-      let want: FileKey | null = null;
-      try { want = sealingKey(spec.scope(record, file)); } catch { want = null; }
-      if (!want || want.keyId === keyId) return { line: raw, changed: false };
-      return { line: sealLine(want, logContext(file), original, spec.projection(record)), changed: true };
-    }
-    return { line: original, changed: true };
+/** Append records to a sealed log through its window. False when the log is
+ * not sealed now (encryption off, not a sealed log): the caller writes as
+ * before. */
+export function appendLogBuffered(file: string, records: readonly Record<string, unknown>[], lines: readonly string[], options: { mode?: number; after?: () => void } = {}): boolean {
+  if (!contentEncryptionOn() || !logOf(file) || exported) return false;
+  let buffer = buffers.get(file);
+  if (!buffer) buffers.set(file, (buffer = { records: [], lines: [], ...options }));
+  buffer.records.push(...records);
+  buffer.lines.push(...lines);
+  if (options.after) buffer.after = options.after;
+  if (buffer.lines.length >= BLOCK_MAX) flushLogBuffer(file);
+  else if (!bufferTimer) {
+    bufferTimer = setTimeout(() => { bufferTimer = null; flushLogBuffers(); }, LOG_WINDOW_MS);
+    bufferTimer.unref?.();
   }
-  if (!on || !record || typeof record !== "object") return { line: raw, changed: false };
-  let want: FileKey | null = null;
-  try { want = sealingKey(spec.scope(record, file)); } catch { want = null; }
-  if (!want) { keep.plain = true; return { line: raw, changed: false }; }
-  return { line: sealLine(want, logContext(file), raw, spec.projection(record)), changed: true };
+  return true;
 }
 
-/** What a migrated line opens to, for the read-back check. */
-function plainOf(file: string, raw: string): string {
-  let value: unknown;
-  try { value = JSON.parse(raw); } catch { return raw; }
-  const keyId = sealedLineKeyId(value);
-  if (!keyId) return raw;
-  const key = keyById(keyId);
-  if (!key || key === "destroyed") return raw;
-  try { return openLine(value as Record<string, unknown>, key, logContext(file)); } catch { return raw; }
-}
-
-/** The lines of `file` from byte 0 to `end` (exclusive), read in chunks;
- * the last one may be a fragment (no newline yet). */
-async function* linesOf(file: string, end: number): AsyncGenerator<{ line: string; complete: boolean }> {
-  const handle = await openHandle(file, "r");
+/** Write what waits for `file` now (before reading it, or rewriting it). */
+export function flushLogBuffer(file: string): void {
+  const buffer = buffers.get(file);
+  if (!buffer) return;
+  buffers.delete(file);
   try {
-    const buffer = Buffer.allocUnsafe(64 * 1024);
-    let carry = "";
-    for (let position = 0; position < end;) {
-      const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, end - position), position);
-      if (!bytesRead) break;
-      position += bytesRead;
-      const parts = (carry + buffer.toString("utf8", 0, bytesRead)).split("\n");
-      carry = parts.pop()!;
-      for (const line of parts) yield { line, complete: true };
-      // the loop's other work first
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    if (carry) yield { line: carry, complete: false };
-  } finally {
-    await handle.close().catch(() => undefined);
+    const lines = sealLogLines(file, buffer.records, buffer.lines);
+    appendFileSync(file, `${lines.join("\n")}\n`, { mode: buffer.mode ?? 0o600 });
+    buffer.after?.();
+  } catch (error) {
+    console.error(`content encryption: a log could not be written (${error instanceof Error ? error.message : "unknown"})`);
   }
 }
 
-/** Rewrite one log file with its lines sealed (or opened). The copy is
- * read back and every line compared with the original's (what each opens
- * to, byte for byte) before it replaces anything; lines appended during the
- * copy are carried over (and checked) in a last short synchronous step. */
+/** Write every waiting log now (the window's end, exit, a backup). */
+export function flushLogBuffers(): void {
+  for (const file of Array.from(buffers.keys())) flushLogBuffer(file);
+}
+
+/** A log deleted with its thread: what waited for it goes too. */
+export function dropLogBuffer(file: string): void {
+  buffers.delete(file);
+}
+
+process.once("exit", () => { try { flushLogBuffers(); } catch { /* exiting */ } });
+
+/** The original lines of a log, read in chunks that end on a block's end:
+ * `[original, kept]` pairs, where `kept` is set for a line copied as it is
+ * (erased, locked, or a block cut by the window: never regrouped). */
+async function* originalsOf(file: string, start: number, end: number, onLocked: () => void, contextFile = file): AsyncGenerator<{ raw: string; original: string | null; record: Record<string, unknown> | null }> {
+  const reader = new LogReader(contextFile);
+  let pending: string[] = [];
+  const emit = function* (lines: string[], complete: boolean) {
+    // keep the lines of a block whose end is not here yet
+    let cut = lines.length;
+    if (!complete) {
+      while (cut > 0 && lines[cut - 1]!.startsWith(BLOCK_PREFIX) && !parseBlockLine(lines[cut - 1]!)?.last) cut--;
+    }
+    for (let i = 0; i < cut; i++) {
+      let original: string | null | undefined;
+      try { original = reader.raw(lines, i); }
+      catch { onLocked(); original = null; }
+      let record: Record<string, unknown> | null = null;
+      if (typeof original === "string") { try { record = JSON.parse(original) as Record<string, unknown>; } catch { record = null; } }
+      yield { raw: lines[i]!, original: typeof original === "string" ? original : null, record };
+    }
+    return lines.slice(cut);
+  };
+  for await (const { line, complete } of linesOfFrom(file, start, end)) {
+    if (!complete) { pending.push(line); break; }
+    pending.push(line);
+    if (pending.length >= 1024) pending = yield* emit(pending, false);
+  }
+  yield* emit(pending, true);
+}
+
+/** Lines `lines` rewritten as the migration wants them: sealed in blocks of
+ * BLOCK_COMPACT under each record's key (on), or plain (off). A line that
+ * does not open here is kept as it is. */
+function rewriteLines(_spec: SealedLogSpec, file: string, items: ReadonlyArray<{ raw: string; original: string | null; record: Record<string, unknown> | null }>, on: boolean, keep: { plain: boolean }): string[] {
+  const out: string[] = [];
+  let run: Array<{ original: string; record: Record<string, unknown> }> = [];
+  const flush = () => {
+    if (!run.length) return;
+    const lines = sealLogLines(file, run.map((item) => item.record), run.map((item) => item.original), BLOCK_COMPACT);
+    for (const line of lines) if (!line.startsWith(BLOCK_PREFIX)) keep.plain = true;
+    out.push(...lines);
+    run = [];
+  };
+  for (const item of items) {
+    if (item.original === null || item.record === null || typeof item.record !== "object") { flush(); out.push(item.original ?? item.raw); continue; }
+    if (on) run.push({ original: item.original, record: item.record });
+    else { flush(); out.push(item.original); }
+  }
+  flush();
+  return out;
+}
+
+/** Rewrite one log file: sealed in blocks (on, also gathering small
+ * blocks), or plain (off). The copy is read back and every line compared
+ * with the original's (what each opens to, byte for byte) before it
+ * replaces anything; lines appended during the copy are carried over (and
+ * checked) in a last short synchronous step. */
 export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: ReplaceOutcome; plainLeft: boolean }> {
   return withLock(file, async () => {
     const spec = logOf(file);
     if (!spec) return { outcome: "skipped" as const, plainLeft: false };
+    flushLogBuffer(file);
     let before: Stats;
     try { before = await lstat(file); } catch { return { outcome: "skipped" as const, plainLeft: false }; }
     if (!before.isFile()) return { outcome: "skipped" as const, plainLeft: false };
     const temp = tempFor(file);
-    const keep = { locked: false, plain: false };
-    let changed = 0;
+    const keep = { plain: false };
+    let locked = false;
     let out: FileHandle | null = null;
     try {
-      // the complete lines present now; a fragment at the end waits for the last step
       let consumed = 0;
-      let lineCount = 0;
+      const originals: Array<string | null> = [];
       out = await openHandle(temp, "wx", 0o600);
-      const pending: string[] = [];
-      for await (const { line, complete } of linesOf(file, before.size)) {
-        if (!complete) break;
-        const action = migrateLine(spec, file, line, on, keep);
-        if (action.changed) changed++;
-        pending.push(`${action.line}\n`);
-        consumed += Buffer.byteLength(line, "utf8") + 1;
-        lineCount++;
-        if (pending.length >= 512) { await out.write(pending.join("")); pending.length = 0; }
+      let batch: Array<{ raw: string; original: string | null; record: Record<string, unknown> | null }> = [];
+      const write = async () => {
+        if (!batch.length) return;
+        await out!.write(`${rewriteLines(spec, file, batch, on, keep).join("\n")}\n`);
+        batch = [];
+      };
+      // complete lines only: a fragment at the end waits for the last step
+      let lastComplete = 0;
+      {
+        const handle = await openHandle(file, "r");
+        try {
+          const probe = Buffer.allocUnsafe(Math.min(before.size, 64 * 1024));
+          const at = Math.max(0, before.size - probe.length);
+          const { bytesRead } = await handle.read(probe, 0, probe.length, at);
+          const newline = probe.subarray(0, bytesRead).lastIndexOf(0x0a);
+          lastComplete = newline >= 0 ? at + newline + 1 : 0;
+        } finally { await handle.close(); }
       }
-      if (pending.length) await out.write(pending.join(""));
-      if (!changed) return { outcome: "skipped" as const, plainLeft: keep.plain };
+      for await (const item of originalsOf(file, 0, lastComplete, () => { locked = true; })) {
+        batch.push(item);
+        originals.push(item.original ?? item.raw);
+        consumed += Buffer.byteLength(item.raw, "utf8") + 1;
+        if (batch.length >= 512) await write();
+        if (originals.length % 256 === 0) await new Promise((resolve) => setImmediate(resolve));
+      }
+      await write();
       await out.sync();
       testFault?.(temp, file);
       // read back: line for line, the copy opens to what the original does
-      const copyLines = linesOf(temp, Number.MAX_SAFE_INTEGER)[Symbol.asyncIterator]();
-      let compared = 0;
-      for await (const { line } of linesOf(file, consumed)) {
-        const copy = await copyLines.next();
-        if (copy.done || plainOf(file, copy.value.line) !== plainOf(file, line)) { await copyLines.return?.(undefined); return { outcome: "skipped" as const, plainLeft: keep.plain }; }
-        compared++;
+      let index = 0;
+      for await (const item of originalsOf(temp, 0, Number.MAX_SAFE_INTEGER, () => { locked = true; }, file)) {
+        if (index >= originals.length || (item.original ?? item.raw) !== originals[index]) return { outcome: "skipped" as const, plainLeft: keep.plain || locked };
+        index++;
+        if (index % 256 === 0) await new Promise((resolve) => setImmediate(resolve));
       }
-      const extra = await copyLines.next();
-      await copyLines.return?.(undefined);
-      if (!extra.done || compared !== lineCount) return { outcome: "skipped" as const, plainLeft: keep.plain };
-      // the last step, synchronous: no append runs between it and the
-      // rename (appendLog is waited for, appendLogSync cannot interleave)
+      if (index !== originals.length) return { outcome: "skipped" as const, plainLeft: keep.plain || locked };
+      // the last step, synchronous: nothing appends between it and the rename
+      flushLogBuffer(file);
       for (let tries = 0; inFlight.get(file) && tries < 200; tries++) await new Promise((resolve) => setTimeout(resolve, 5));
-      if (inFlight.get(file)) return { outcome: "changed" as const, plainLeft: keep.plain };
+      if (inFlight.get(file)) return { outcome: "changed" as const, plainLeft: keep.plain || locked };
+      flushLogBuffer(file);
       const now = lstatSync(file);
-      if (now.dev !== before.dev || now.ino !== before.ino || now.size < consumed) return { outcome: "changed" as const, plainLeft: keep.plain };
+      if (now.dev !== before.dev || now.ino !== before.ino || now.size < consumed) return { outcome: "changed" as const, plainLeft: keep.plain || locked };
       let tail = "";
       if (now.size > consumed) {
         const fd = openSync(file, "r");
@@ -984,24 +1198,38 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
       }
       const tailLines = tail.split("\n");
       const torn = tailLines.pop()!;
-      const appended: string[] = [];
-      for (const raw of tailLines) {
-        const action = migrateLine(spec, file, raw, on, keep);
-        if (plainOf(file, action.line) !== plainOf(file, raw)) return { outcome: "skipped" as const, plainLeft: keep.plain };
-        appended.push(`${action.line}\n`);
+      if (tailLines.length) {
+        const reader = new LogReader(file);
+        const items = tailLines.map((raw, i) => {
+          let original: string | null | undefined;
+          try { original = reader.raw(tailLines, i); } catch { locked = true; original = null; }
+          let record: Record<string, unknown> | null = null;
+          if (typeof original === "string") { try { record = JSON.parse(original) as Record<string, unknown>; } catch { record = null; } }
+          return { raw, original: typeof original === "string" ? original : null, record };
+        });
+        const rewritten = rewriteLines(spec, file, items, on, keep);
+        const check = new LogReader(file);
+        for (let i = 0; i < rewritten.length; i++) {
+          let back: string | null | undefined;
+          try { back = check.raw(rewritten, i); } catch { back = null; }
+          if ((back ?? rewritten[i]) !== (items[i]!.original ?? items[i]!.raw)) return { outcome: "skipped" as const, plainLeft: keep.plain || locked };
+        }
+        const data = Buffer.from(`${rewritten.join("\n")}\n${torn}`, "utf8");
+        for (let written = 0; written < data.length;) written += writeSync(out.fd, data, written, data.length - written);
+        fsyncSync(out.fd);
+      } else if (torn) {
+        const data = Buffer.from(torn, "utf8");
+        for (let written = 0; written < data.length;) written += writeSync(out.fd, data, written, data.length - written);
+        fsyncSync(out.fd);
       }
-      const fd = out.fd;
-      const rest = Buffer.from(appended.join("") + torn, "utf8");
-      for (let written = 0; written < rest.length;) written += writeSync(fd, rest, written, rest.length - written);
-      if (rest.length) fsyncSync(fd);
       const last = lstatSync(file);
-      if (last.ino !== now.ino || last.size !== now.size) return { outcome: "changed" as const, plainLeft: keep.plain };
+      if (last.ino !== now.ino || last.size !== now.size) return { outcome: "changed" as const, plainLeft: keep.plain || locked };
       await out.close();
       out = null;
       renameSync(temp, file);
-      return { outcome: "done" as const, plainLeft: keep.plain };
+      return { outcome: "done" as const, plainLeft: keep.plain || locked };
     } catch {
-      return { outcome: "skipped" as const, plainLeft: keep.plain };
+      return { outcome: "skipped" as const, plainLeft: keep.plain || locked };
     } finally {
       if (out) await out.close().catch(() => undefined);
       await unlink(temp).catch(() => undefined);
@@ -1009,30 +1237,90 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
   });
 }
 
-/** Whether a log file still holds a plain line (on) or a sealed one (off),
- * from `offset`, read in chunks: the migration only rewrites the files that
- * need it. */
-async function logNeedsWork(file: string, on: boolean, offset: number): Promise<{ needs: boolean; size: number }> {
+/** The same rewrite, synchronously and whole (a thread changing hands: its
+ * lines take the new key before anything can be erased). */
+export function migrateLogFileSync(file: string): ReplaceOutcome {
+  const spec = logOf(file);
+  if (!spec) return "skipped";
+  flushLogBuffer(file);
+  let before: Stats;
+  try { before = lstatSync(file); } catch { return "skipped"; }
+  if (!before.isFile()) return "skipped";
+  const text = readFileSync(file, "utf8");
+  const lines = text.split("\n");
+  const torn = lines.pop()!;
+  const reader = new LogReader(file);
+  const items = lines.map((raw, i) => {
+    let original: string | null | undefined;
+    try { original = reader.raw(lines, i); } catch { original = null; }
+    let record: Record<string, unknown> | null = null;
+    if (typeof original === "string") { try { record = JSON.parse(original) as Record<string, unknown>; } catch { record = null; } }
+    return { raw, original: typeof original === "string" ? original : null, record };
+  });
+  const rewritten = rewriteLines(spec, file, items, contentEncryptionOn(), { plain: false });
+  const check = new LogReader(file);
+  for (let i = 0; i < rewritten.length; i++) {
+    let back: string | null | undefined;
+    try { back = check.raw(rewritten, i); } catch { back = null; }
+    if ((back ?? rewritten[i]) !== (items[i]!.original ?? items[i]!.raw)) return "skipped";
+  }
+  const temp = tempFor(file);
+  try {
+    const fd = openSync(temp, "wx", 0o600);
+    try {
+      const data = Buffer.from(`${rewritten.join("\n")}${rewritten.length ? "\n" : ""}${torn}`, "utf8");
+      for (let written = 0; written < data.length;) written += writeSync(fd, data, written, data.length - written);
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
+    const now = lstatSync(file);
+    if (!sameFile(before, now)) return "changed";
+    renameSync(temp, file);
+    return "done";
+  } catch {
+    return "skipped";
+  } finally {
+    try { unlinkSync(temp); } catch { /* renamed */ }
+  }
+}
+
+/** Whether a log file still holds a plain record (on), small blocks to
+ * gather (on, once idle), a block under another key (a thread's own log),
+ * or a sealed line (off), from `offset`, read in chunks: the migration only
+ * rewrites the files that need it. */
+async function logNeedsWork(file: string, on: boolean, offset: number, idle: boolean): Promise<{ needs: boolean; size: number }> {
+  const spec = logOf(file);
   let size = 0;
   try { size = (await lstat(file)).size; } catch { return { needs: false, size: 0 }; }
   if (size <= offset) return { needs: false, size };
+  const want = on && spec?.perFile ? sealingKeySafe(spec.scope({}, file))?.keyId ?? null : null;
+  let blocks = 0;
+  let records = 0;
   try {
     let first = offset > 0;
     for await (const { line } of linesOfFrom(file, offset, size)) {
       // a check that starts mid-file skips its first (partial) line
       if (first) { first = false; continue; }
       if (!line) continue;
-      const sealed = line.includes(`"${SEALED_LINE_FIELD}":"`);
-      if (on && !sealed && line.startsWith("{")) return { needs: true, size };
-      if (!on && sealed) return { needs: true, size };
+      const block = line.startsWith(BLOCK_PREFIX);
+      if (!on && block) return { needs: true, size };
+      if (on && !block && line.startsWith("{")) return { needs: true, size };
+      if (on && block) {
+        records++;
+        const parsed = parseBlockLine(line);
+        if (parsed?.last) {
+          blocks++;
+          if (want && parsed.last.keyId !== want) return { needs: true, size };
+        }
+      }
     }
   } catch {
     return { needs: false, size: 0 };
   }
-  return { needs: false, size };
+  // small blocks (a busy log's live windows) are gathered once it is idle
+  return { needs: on && idle && records >= BLOCK_COMPACT && records / Math.max(1, blocks) < 16, size };
 }
 
-async function* linesOfFrom(file: string, start: number, end: number): AsyncGenerator<{ line: string }> {
+async function* linesOfFrom(file: string, start: number, end: number): AsyncGenerator<{ line: string; complete: boolean }> {
   const handle = await openHandle(file, "r");
   try {
     const buffer = Buffer.allocUnsafe(64 * 1024);
@@ -1043,10 +1331,10 @@ async function* linesOfFrom(file: string, start: number, end: number): AsyncGene
       position += bytesRead;
       const parts = (carry + buffer.toString("utf8", 0, bytesRead)).split("\n");
       carry = parts.pop()!;
-      for (const line of parts) yield { line };
+      for (const line of parts) yield { line, complete: true };
       await new Promise((resolve) => setImmediate(resolve));
     }
-    if (carry) yield { line: carry };
+    if (carry) yield { line: carry, complete: false };
   } finally {
     await handle.close().catch(() => undefined);
   }
@@ -1102,7 +1390,70 @@ function scheduleAtRest(delay = PAUSE_MS): void {
 onContentAtRest({
   changed: () => { seen.clear(); logSeen.clear(); scheduleAtRest(); },
   beforeErase: (owner, keyIds) => resealBeforeErase(owner, keyIds),
+  moved: (threadIds, botIds) => resealMoved(threadIds, botIds),
 });
+
+let threadFiles: (threadId: string) => string[] = () => [];
+/** server/index.ts: the stored files a thread's messages show. */
+export function setAtRestThreadFiles(files: (threadId: string) => string[]): void {
+  threadFiles = files;
+}
+
+/** Threads (and bots) that changed hands, now (contentOwnerChanged): their
+ * logs, decision rows, attachments and the bots' memory are re-sealed under
+ * the key they take now, synchronously, before anything can be erased. */
+function resealMoved(threadIds: readonly string[], botIds: readonly string[]): void {
+  const threads = new Set(threadIds);
+  for (const spec of logs) {
+    if (spec.perFile) {
+      for (const threadId of threads) {
+        const file = join(spec.dir, `${threadId}.ndjson`);
+        if (existsSync(file)) migrateLogFileSync(file);
+      }
+      continue;
+    }
+    // a log of many threads: the files that hold one of them (their clear projection names it)
+    let names: string[];
+    try { names = readdirSync(spec.dir); } catch { continue; }
+    for (const name of names) {
+      if (!/\.ndjson(\.\d+)?$/.test(name)) continue;
+      const file = join(spec.dir, name);
+      flushLogBuffer(file);
+      let text: string;
+      try { text = readFileSync(file, "utf8"); } catch { continue; }
+      if ([...threads].some((threadId) => text.includes(`"threadId":"${threadId}"`))) migrateLogFileSync(file);
+    }
+  }
+  // an attachment a moved thread shows: under its new owner's key (never a
+  // confidential thread's own: another thread may show it too)
+  for (const threadId of threads) {
+    let paths: string[];
+    try { paths = threadFiles(threadId); } catch { paths = []; }
+    if (!paths.length) continue;
+    const want = sealingKeySafe({ owner: contentOwnerOfThread(threadId) });
+    for (const path of paths) {
+      const info = atRestInfoSync(path);
+      if (!info?.sealed || !want || info.keyId === want.keyId) continue;
+      replaceInPlaceSync(path, want);
+    }
+  }
+  if (botIds.length) {
+    const bots = new Set(botIds);
+    for (const root of roots) {
+      let files: Iterable<{ path: string; scope: ContentScope }>;
+      try { files = root.files(); } catch { continue; }
+      for (const { path, scope } of files) {
+        if (!("bot" in scope) || !bots.has(scope.bot)) continue;
+        const info = atRestInfoSync(path);
+        const want = sealingKeySafe(scope);
+        if (!info?.sealed || !want || info.keyId === want.keyId) continue;
+        replaceInPlaceSync(path, want);
+      }
+    }
+  }
+  seen.clear();
+  logSeen.clear();
+}
 
 /** One whole pass over every root and sealed log (tests and the bench call
  * it directly; the server runs it on timers). */
@@ -1205,7 +1556,7 @@ export function runAtRestMigration(options: { sliceMs?: number; pauseMs?: number
         const known = logSeen.get(file);
         const offset = known && known.ino === stat.ino && known.on === on && stat.size >= known.size ? known.size : 0;
         if (offset === stat.size) continue;
-        const check = await logNeedsWork(file, on, offset);
+        const check = await logNeedsWork(file, on, offset, Date.now() - stat.mtimeMs >= graceMs);
         if (!check.needs) { logSeen.set(file, { ino: stat.ino, size: check.size, on }); continue; }
         await whilePaused();
         const result = await (current = migrateLogFile(file, on));
@@ -1347,26 +1698,32 @@ export function exportPlainCopy(source: string, destination: string, relativePat
 
 function exportPlainLog(source: string, destination: string, mode: number): { size: number; sha256: string } | null {
   const text = readFileSync(source, "utf8");
-  if (!text.includes(`"sealed":"`)) return null;
+  if (!text.includes(BLOCK_PREFIX)) return null;
   const file = join(dirname(source), basename(source));
-  const lines = text.split("\n").map((raw) => {
-    if (!raw.includes(`"sealed":"`)) return raw;
-    let value: unknown;
-    try { value = JSON.parse(raw); } catch { return raw; }
-    const keyId = sealedLineKeyId(value);
-    if (!keyId) return raw;
-    const key = exportKey(keyId);
-    if (key === "locked") throw new ContentExportLocked();
+  const lines = text.split("\n");
+  const torn = lines.pop()!;
+  const reader = new LogReader(file);
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i]!;
+    if (!raw.startsWith(BLOCK_PREFIX)) { out.push(raw); continue; }
+    const parsed = parseBlockLine(raw);
+    const keyId = parsed?.last?.keyId ?? (() => {
+      for (let j = i + 1; j < lines.length; j++) { const next = parseBlockLine(lines[j]!); if (next?.blockId === parsed?.blockId && next?.last) return next.last.keyId; }
+      return null;
+    })();
+    if (keyId && exportKey(keyId) === "locked") throw new ContentExportLocked();
+    let original: string | null | undefined;
+    try { original = reader.raw(lines, i); } catch { throw new ContentExportLocked(); }
     // erased (its key destroyed): left out, like an erased message
-    if (key === "foreign") return null;
-    try { return openLine(value as Record<string, unknown>, key, logContext(file)); } catch { return null; }
-  }).filter((line): line is string => line !== null);
-  const data = Buffer.from(lines.join("\n"), "utf8");
-  const out = openSync(destination, "wx", mode);
+    if (typeof original === "string") out.push(original);
+  }
+  const data = Buffer.from(`${out.join("\n")}${out.length ? "\n" : ""}${torn}`, "utf8");
+  const fd = openSync(destination, "wx", mode);
   try {
-    for (let written = 0; written < data.length;) written += writeSync(out, data, written, data.length - written);
+    for (let written = 0; written < data.length;) written += writeSync(fd, data, written, data.length - written);
   } finally {
-    closeSync(out);
+    closeSync(fd);
   }
   return { size: data.length, sha256: createHash("sha256").update(data).digest("hex") };
 }

@@ -20,7 +20,10 @@ import {
   describeHandle,
   exportPlainCopy,
   holdPlain,
-  parseLogLine,
+  flushLogBuffers,
+  LogReader,
+  sealLogLines,
+  setAtRestThreadFiles,
   readAtRestSync,
   releasePlain,
   replaceInPlace,
@@ -32,11 +35,12 @@ import {
 } from "./content-at-rest.ts";
 import { ContentSealError } from "./content-crypto.ts";
 import { contentKeysForExport } from "./content-export.ts";
-import { CHUNK_BYTES, FileSealer, openBuffer, parseHeader, plainSizeOf, sealBuffer, type FileKey } from "./content-file-crypto.ts";
+import { CHUNK_BYTES, FileSealer, openBuffer, parseBlockLine, parseHeader, plainSizeOf, sealBuffer, type FileKey } from "./content-file-crypto.ts";
 import { azureKeyVaultProvider } from "./content-key-azure.ts";
 import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
 import { appendNative } from "./drivers/native.ts";
-import { closeMessageDb, closeMessageSearch, configureContentEncryption, contentKeyForOwner, eraseContentOwner, runContentMigration, unlockContentKeys } from "./message-db.ts";
+import { chatFollowups, closeMessageDb, closeMessageSearch, configureContentEncryption, contentKeyForOwner, contentOwnerChanged, eraseContentOwner, insertMessage, readThread, runContentMigration, saveChatFollowup, unlockContentKeys } from "./message-db.ts";
+import { appendDecision, flushDecisionLog, readDecisions } from "./decision-log.ts";
 import { journalFile, readMemoryJournal, recordMemoryChange, flushMemoryJournal, resetMemoryJournalState } from "./memory-journal.ts";
 import { readMemoryDoc } from "./memory-store.ts";
 import { readRecentLines } from "./thread-events.ts";
@@ -46,8 +50,9 @@ import { open as openHandle } from "node:fs/promises";
 import { createSecretKey, randomBytes } from "node:crypto";
 
 let botOwners: Record<string, string> = {};
+let threadOwners: Record<string, { owner: string; confidential: boolean }> = {};
 const turn = (mode: "on" | "off", provider?: Parameters<typeof configureContentEncryption>[0]["provider"]) =>
-  configureContentEncryption({ mode, autoMigrate: false, resolveBotOwner: (botId) => botOwners[botId] ?? WORKSPACE_OWNER, ...(provider ? { provider } : {}) });
+  configureContentEncryption({ mode, autoMigrate: false, resolveBotOwner: (botId) => botOwners[botId] ?? WORKSPACE_OWNER, resolveOwner: (threadId) => threadOwners[threadId] ?? { owner: WORKSPACE_OWNER, confidential: false }, ...(provider ? { provider } : {}) });
 const migrateAll = async () => {
   for (let i = 0; i < 20; i++) {
     const pass = await runAtRestMigration({ sliceMs: Infinity });
@@ -88,6 +93,7 @@ beforeEach(async () => {
   mkdirSync(NATIVE_DIR, { recursive: true });
   process.env.SAGAX_MCP_OAUTH_KEY = "cd".repeat(32); // a synthetic vault key, this process only
   botOwners = {};
+  threadOwners = {};
   resetAtRestState();
   resetMemoryJournalState();
   setAtRestGrace(0);
@@ -245,11 +251,18 @@ describe("attachments", () => {
 describe("event logs", () => {
   it("seals every line under the thread's key and reads the log as before", () => {
     appendNative("t1", { dir: "out", source: "test", msg: { text: "the meadow password" } });
+    appendNative("t1", { dir: "in", source: "test", msg: { text: "a second line" } });
     const file = join(NATIVE_DIR, "t1.ndjson");
+    // the lines of a short window are sealed together, as one block
+    flushLogBuffers();
+    expect(readFileSync(file, "utf8").split("\n").filter(Boolean)).toHaveLength(2);
     expect(readFileSync(file, "utf8")).not.toContain("meadow");
-    expect(JSON.parse(readFileSync(file, "utf8").split("\n")[0]!)).toMatchObject({ dir: "out" });
+    expect(JSON.parse(readFileSync(file, "utf8").split("\n")[1]!).p).toEqual([{ dir: "out", at: expect.any(String) }, { dir: "in", at: expect.any(String) }].map(({ dir, at }) => ({ at, dir })));
     const { lines } = readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value));
-    expect(lines[0]?.msg.text).toBe("the meadow password");
+    expect(lines.map((line) => line.msg.text)).toEqual(["the meadow password", "a second line"]);
+    // a reader that needs only the "in" line opens nothing it drops
+    const only = readRecentLines(file, 10, (value): value is { dir: string } => Boolean(value), (projection) => projection.dir !== "in");
+    expect(only.lines.map((line) => (line as { msg?: unknown }).msg === undefined)).toEqual([true, false]);
   });
 
   it("migrates a plain log to sealed and back, line for line", async () => {
@@ -262,7 +275,8 @@ describe("event logs", () => {
     const sealed = readFileSync(file, "utf8");
     expect(sealed).not.toContain("harbor");
     expect(sealed.split("\n").filter(Boolean)).toHaveLength(50);
-    expect(sealed.split("\n").filter(Boolean).map((line) => JSON.stringify(parseLogLine(file, line)))).toEqual(plain);
+    const physical = sealed.split("\n").filter(Boolean);
+    expect(new LogReader(file).all(physical).map((record) => JSON.stringify(record))).toEqual(plain);
     turn("off");
     await migrateAll();
     expect(readFileSync(file, "utf8")).toBe(`${plain.join("\n")}\n`);
@@ -395,11 +409,60 @@ describe("Key Vault (fake client) that stops answering", () => {
   });
 });
 
+describe("a thread that changes hands", () => {
+  it("is re-sealed whole under its new owner at once: the old owner's erasure right after takes nothing of it", async () => {
+    await import("./harness/bus.ts");
+    threadOwners = { t1: { owner: "person-a", confidential: true } };
+    botOwners = { b1: "person-a" };
+    insertMessage("t1", { id: "m1", role: "user", kind: "text", text: "the orchid contract", at: 1 });
+    saveChatFollowup({ id: "f1", kind: "bot", ownerId: "b1", threadId: "t1", payload: { text: "queued zebra" } });
+    appendNative("t1", { dir: "out", source: "test", msg: { text: "native quartz" } });
+    flushLogBuffers();
+    writeFileSync(join(EVENTS_DIR, "t1.ndjson"), `${sealLogLines(join(EVENTS_DIR, "t1.ndjson"), [{ type: "content.delta", createdAt: "x" }], [JSON.stringify({ type: "content.delta", createdAt: "x", delta: "event lantern" })]).join("\n")}\n`);
+    appendDecision(DATA_DIR, { threadId: "t1", botId: "b1", tool: "Bash", summary: "decision harbor", decision: "user-approved", source: "user" });
+    await flushDecisionLog(DATA_DIR);
+    writeMemoryFile("b1", "memory velvet\n");
+    const saved = await saveFile(chunksOf(Buffer.from(prose(70_000))), "shared.txt", "text/plain", { owner: "person-a" });
+    setAtRestThreadFiles((threadId) => (threadId === "t1" ? [saved.path] : []));
+    await migrateAll();
+    expect(sealedOnDisk(saved.path) && sealedOnDisk(join(workspaceDir("b1"), "MEMORY.md"))).toBe(true);
+    const keysOf = () => ({
+      native: readFileSync(join(NATIVE_DIR, "t1.ndjson"), "utf8").split("\n").filter(Boolean).map((line) => parseBlockLine(line)?.last?.keyId).filter(Boolean),
+      file: atRestInfoSync(saved.path)?.keyId,
+      memory: atRestInfoSync(join(workspaceDir("b1"), "MEMORY.md"))?.keyId,
+    });
+    const before = keysOf();
+    // the bot and its confidential thread go to person-b, then person-a is erased at once
+    threadOwners = { t1: { owner: "person-b", confidential: true } };
+    botOwners = { b1: "person-b" };
+    contentOwnerChanged(["t1"], ["b1"]);
+    // re-sealed in the transfer itself, before any erasure
+    const after = keysOf();
+    expect(after.native.length && after.native.every((keyId) => !before.native.includes(keyId))).toBe(true);
+    expect(after.file).not.toBe(before.file);
+    expect(after.memory).not.toBe(before.memory);
+    setAttachmentStillShown(() => false);
+    eraseContentOwner("person-a");
+    setAttachmentStillShown(() => true);
+    closeMessageDb();
+    expect(readThread("t1", join(DATA_DIR, "none.json")).messages.map((message) => message.text)).toEqual(["the orchid contract"]);
+    expect(chatFollowups().map((followup) => followup.payload.text)).toEqual(["queued zebra"]);
+    expect(readRecentLines(join(NATIVE_DIR, "t1.ndjson"), 10, (value): value is { msg: { text: string } } => Boolean(value)).lines.map((line) => line.msg.text)).toEqual(["native quartz"]);
+    expect(readRecentLines(join(EVENTS_DIR, "t1.ndjson"), 10, (value): value is { delta: string } => Boolean(value)).lines.map((line) => line.delta)).toEqual(["event lantern"]);
+    expect(readDecisions(DATA_DIR, 10).map((row) => row.summary)).toEqual(["decision harbor"]);
+    expect(readMemoryFile("b1").text).toBe("memory velvet\n");
+    expect(readAtRestSync(saved.path).toString()).toBe(prose(70_000));
+    // and none of it is under the erased person's keys any more
+    expect(readFileSync(join(NATIVE_DIR, "t1.ndjson"), "utf8")).not.toContain("quartz");
+  });
+});
+
 describe("erasure and backups", () => {
   it("backs the workspace up in the clear inside the archive and restores plain files the destination seals", async () => {
     writeMemoryFile("b1", "the harbor velvet memory\n");
     const saved = await saveFile(chunksOf(Buffer.from(`${prose(150_000)} copperlantern`)), "doc.txt", "text/plain");
     appendNative("t1", { dir: "out", source: "test", msg: { text: "meadowquartz tool output" } });
+    flushLogBuffers();
     await migrateAll();
     expect(sealedOnDisk(saved.path) && sealedOnDisk(join(workspaceDir("b1"), "MEMORY.md"))).toBe(true);
     closeMessageDb();
@@ -443,6 +506,7 @@ describe("erasure and backups", () => {
   it("copies sealed files and logs in the clear for the archive, and refuses a locked key", async () => {
     writeMemoryFile("b1", "the copper harbor\n");
     appendNative("t1", { dir: "out", source: "test", msg: { text: "velvet quartz" } });
+    flushLogBuffers();
     await migrateAll();
     const out = join(DATA_DIR, "export");
     mkdirSync(out);

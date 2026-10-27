@@ -6,7 +6,7 @@ import { appendFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 import { NATIVE_DIR } from "../config.ts";
-import { registerSealedLog, sealLogLine } from "../content-at-rest.ts";
+import { appendLogBuffered, registerSealedLog } from "../content-at-rest.ts";
 import { redactSecrets } from "../redact.ts";
 import { threadLogsForgotten } from "../forgotten-threads.ts";
 import { capThreadLog, currentThreadLogCap } from "../thread-log-rotation.ts";
@@ -60,6 +60,7 @@ registerSealedLog({
   dir: NATIVE_DIR,
   scope: (_record, file) => ({ thread: basename(file, ".ndjson") }),
   projection: (record) => ({ at: record.at, dir: record.dir }),
+  perFile: true,
 });
 
 export function appendNative(threadId: string, entry: { dir: "in" | "out"; source: string; msg: unknown }) {
@@ -73,8 +74,11 @@ export function appendNative(threadId: string, entry: { dir: "in" | "out"; sourc
     // 0644 files people paste into bug reports, so values are masked while
     // the shape stays intact.
     const record = { at: new Date().toISOString(), ...entry, msg: redactSecrets(withoutInlineData(entry.msg)) };
-    // sealed under the thread's key at rest (server/content-at-rest.ts)
-    appendFileSync(file, sealLogLine(file, record) + "\n", { mode: 0o600 });
+    const line = JSON.stringify(record);
+    // sealed at rest under the thread's key (server/content-at-rest.ts), the
+    // messages of a short window in one block
+    if (appendLogBuffered(file, [record], [line], { mode: 0o600, after: () => capThreadLog(file, currentThreadLogCap()) })) return;
+    appendFileSync(file, line + "\n", { mode: 0o600 });
     // Best-effort size cap (#1280) — same rule as the write itself: never
     // let logging break the run it is observing.
     capThreadLog(file, currentThreadLogCap());

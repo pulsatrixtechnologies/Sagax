@@ -34,8 +34,8 @@ import { basename, join } from "node:path";
 
 import type { AutoVerdictSource } from "./auto-approve.ts";
 import { DATA_DIR } from "./config.ts";
-import { appendLog, parseLogLine, registerSealedLog, sealLogLine, withLogFileLock } from "./content-at-rest.ts";
-import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
+import { appendLog, LogReader, registerSealedLog, sealLogLine, sealLogLines, withLogFileLock } from "./content-at-rest.ts";
+import { WORKSPACE_OWNER } from "./content-keys.ts";
 import { redactSecrets } from "./redact.ts";
 import { csvCell, monthKey } from "./usage-ledger.ts";
 
@@ -216,19 +216,25 @@ export function scrubThreadDecisions(dataDir: string, threadId: string): Promise
           return;
         }
         let touched = false;
-        const lines = text.split("\n").map((line) => {
+        const raw = text.split("\n");
+        const reader = new LogReader(file);
+        // one record per line, as read; a scrubbed one is written plain here and
+        // the migration seals it again with its neighbours
+        const lines = raw.map((line, index) => {
           if (!line) return line;
-          try {
-            const value = parseLogLine(file, line) as Partial<DecisionRow> | null;
-            if (value?.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined && value.call === undefined)) return line;
-            touched = true;
-            changed += 1;
-            return sealLogLine(file, metadataOnly(value) as Record<string, unknown>);
-          } catch {
-            return line;
-          }
+          let value: Partial<DecisionRow> | null | undefined;
+          try { value = reader.at(raw, index) as Partial<DecisionRow> | null | undefined; } catch { return null; }
+          if (!value || value.threadId !== threadId || (value.summary === undefined && value.rule === undefined && value.origin === undefined && value.call === undefined)) return null;
+          touched = true;
+          changed += 1;
+          return JSON.stringify(metadataOnly(value));
         });
-        if (touched) await writeFile(file, lines.join("\n"), { mode: 0o600 });
+        if (touched) {
+          // the untouched lines stay as they are, except a block's own lines,
+          // which are rewritten with it (every line of a touched block opened)
+          const out = rewriteScrubbed(file, raw, lines, reader);
+          await writeFile(file, out.join("\n"), { mode: 0o600 });
+        }
       });
     }
   }).catch(() => {
@@ -239,6 +245,36 @@ export function scrubThreadDecisions(dataDir: string, threadId: string): Promise
     if (writeQueues.get(dataDir) === queued) writeQueues.delete(dataDir);
   });
   return queued.then(() => changed);
+}
+
+/** A month file with some rows scrubbed (`changed[i]`, the plain row, or
+ * null to keep line i): a sealed block that holds a scrubbed row is sealed
+ * again whole, every other line stays byte for byte. */
+function rewriteScrubbed(file: string, raw: readonly string[], changed: ReadonlyArray<string | null>, reader: LogReader): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < raw.length;) {
+    const line = raw[i]!;
+    if (!line.startsWith('{"sb":"')) { out.push(changed[i] ?? line); i++; continue; }
+    // the block: up to its last line
+    let end = i;
+    while (end < raw.length - 1 && raw[end]!.startsWith('{"sb":"') && !raw[end]!.includes('","n":')) end++;
+    const span = raw.slice(i, end + 1);
+    if (!changed.slice(i, end + 1).some((value) => value !== null)) { out.push(...span); i = end + 1; continue; }
+    const originals: string[] = [];
+    const records: Record<string, unknown>[] = [];
+    for (let k = i; k <= end; k++) {
+      let original = changed[k];
+      if (original === null || original === undefined) {
+        try { original = reader.raw(raw, k) ?? null; } catch { original = null; }
+      }
+      if (original === null) continue;
+      originals.push(original);
+      try { records.push(JSON.parse(original) as Record<string, unknown>); } catch { records.push({}); }
+    }
+    out.push(...sealLogLines(file, records, originals));
+    i = end + 1;
+  }
+  return out;
 }
 
 /** The server binds its configured window once; see decisionRetentionDays. */
@@ -378,17 +414,14 @@ function readRows(path: string, projectionOnly?: (projection: Record<string, unk
     return [];
   }
   const rows: DecisionRow[] = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    try {
-      // a row sealed at rest opens here (server/content-at-rest.ts)
-      const value: unknown = parseLogLine(path, line, projectionOnly);
-      if (isDecisionRow(value)) rows.push(value);
-    } catch (error) {
-      // a locked key fails the read rather than show a shorter history
-      if (error instanceof ContentKeyUnavailable) throw error;
-      /* a line torn mid-write — skip the fragment, keep the rest */
-    }
+  const lines = text.split("\n");
+  // rows sealed at rest open here, a block at a time (server/content-at-rest.ts);
+  // a locked key throws rather than show a shorter history, a torn line is skipped
+  const reader = new LogReader(path, projectionOnly);
+  for (let index = 0; index < lines.length; index++) {
+    if (!lines[index]) continue;
+    const value = reader.at(lines, index);
+    if (isDecisionRow(value)) rows.push(value);
   }
   return rows;
 }

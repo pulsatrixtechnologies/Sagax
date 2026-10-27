@@ -34,8 +34,7 @@ import {
   writeMemoryDoc,
 } from "./memory-store.ts";
 import { redactSecretsInText } from "./redact.ts";
-import { appendLog, openLogRecord, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
-import { ContentKeyUnavailable } from "./content-keys.ts";
+import { appendLog, LogReader, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
 
 /** "upkeep" is the harness itself: background capture and the tidy-up
  * (server/memory-upkeep.ts) for a bot with Memory upkeep switched on. */
@@ -92,6 +91,7 @@ registerSealedLog({
   dir: JOURNAL_DIR,
   scope: (_record, file) => ({ bot: basename(file, ".ndjson") }),
   projection: (record) => ({ id: record.id, at: record.at, kind: record.kind }),
+  perFile: true,
 });
 
 // ── unified diff ──────────────────────────────────────────────────────
@@ -282,17 +282,14 @@ export function readMemoryJournal(botId: string, limit = 50): MemoryJournalEntry
   const lines = text.split("\n");
   const maxRows = Math.min(MAX_ROWS, Math.max(1, limit));
   // when the window starts mid-file its first line is a fragment: skip it
+  // rows sealed at rest open here (server/content-at-rest.ts): a locked key
+  // fails the read rather than show a shorter history; a torn final line from
+  // a crash mid-append is skipped, not fatal
+  const reader = new LogReader(journalFile(botId));
   for (let index = lines.length - 1; index >= (offset > 0 ? 1 : 0) && rows.length < maxRows; index--) {
-    const line = lines[index];
-    if (!line) continue;
-    try {
-      const value: unknown = openLogRecord(journalFile(botId), JSON.parse(line));
-      if (isEntry(value)) rows.push(value);
-    } catch (error) {
-      // a locked key fails the read rather than show a shorter history
-      if (error instanceof ContentKeyUnavailable) throw error;
-      // a torn final line from a crash mid-append is skipped, not fatal
-    }
+    if (!lines[index]) continue;
+    const value: unknown = reader.at(lines, index);
+    if (isEntry(value)) rows.push(value);
   }
   return rows;
 }

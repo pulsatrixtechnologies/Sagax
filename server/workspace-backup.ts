@@ -14,7 +14,7 @@ import { isMainThread, Worker } from "node:worker_threads";
 import * as tar from "tar";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { writeFileAtomic } from "./atomic.ts";
-import { exportPlainCopy, isAtRestTemp, pauseAtRestMigration, useExportedContentKeys } from "./content-at-rest.ts";
+import { exportPlainCopy, flushLogBuffers, isAtRestTemp, pauseAtRestMigration, useExportedContentKeys } from "./content-at-rest.ts";
 import { contentKeysForExport, unsealDatabaseCopy, type ExportedContentKey } from "./content-export.ts";
 import { mergePrincipalFiles } from "./principals.ts";
 import { removeThreadTrees } from "./runtime/store.ts";
@@ -545,6 +545,8 @@ export async function createWorkspaceBackup(dataDir: string, options: CreateWork
   let completed = false;
   // no file sealed or opened in place while the folder is copied
   const resumeAtRest = await pauseAtRestMigration();
+  // the log lines still waiting in this process reach the disk first
+  flushLogBuffers();
   try {
     worker = new Worker(existsSync(source) ? source : new URL("./workspace-backup.worker.js", import.meta.url), {
       workerData: { dataDir, options: { ...options, contentKeys: options.contentKeys ?? contentKeysForExport() }, jobId }, execArgv: [],

@@ -45,7 +45,7 @@ import { open as openFileHandle, rm as removeDirectory } from "node:fs/promises"
 import { hostname, userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { ToolResults, TOOL_RESULT_MAX_CHARS } from "./tool-results.ts";
-import { basename, join, sep } from "node:path";
+import { basename, dirname, join, sep } from "node:path";
 import { authorizeExternalRuntime, externalRuntimeIsActive, type ExternalRuntimeGrant } from "./external-runtime.ts";
 
 import { z } from "zod";
@@ -433,7 +433,7 @@ import { BUILT_IN_DRIVERS } from "./drivers/builtIn.ts";
 import { orgWithholdHostTools } from "./org-engine-admission.ts";
 import { openCodeProviderKeysAllowed, setOpenCodeProviderKeyPolicy } from "./drivers/acp/opencode-go.ts";
 import { getOrCreateChannel, mirrorActivity, mirrorExchange, mirrorReply, type CommsBus } from "./comms-visibility.ts";
-import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, configureContentEncryption, unlockContentKeys, eraseContentOwner, vacuumAfterSealing } from "./message-db.ts";
+import { openApprovalCardMessages, readMessageText, recallMessages, recentMessages, searchMessagesAsync, closeMessageSearch, closeMessageDb, chatFollowups, cancelledChatFollowup, settleChatFollowups, threadsReferencing, configureContentEncryption, unlockContentKeys, eraseContentOwner, contentOwnerChanged, vacuumAfterSealing } from "./message-db.ts";
 import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
 import { contentEncryptionFromEnv } from "./content-encryption-env.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
@@ -583,7 +583,7 @@ import {
   workspaceDir,
 } from "./workspace.ts";
 import { holdBotMemoryPlain, listMemoryTopics, memoryDate, readMemoryFile, readMemoryTopic, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
-import { atRestStream, describeHandle, holdPlain, readAtRestSync, releasePlain, setAtRestHolderCheck } from "./content-at-rest.ts";
+import { atRestStream, describeHandle, holdPlain, readAtRestSync, releasePlain, setAtRestHolderCheck, setAtRestThreadFiles, waitPlain } from "./content-at-rest.ts";
 import {
   beginMemoryTurn,
   endMemoryTurn,
@@ -5573,27 +5573,53 @@ function storedFamily(name: string): string[] {
 }
 
 /** Content encryption at rest (server/content-at-rest.ts): the stored
- * files this turn's engine may open by path, plain in place before it
- * starts and until it ends. Pictures always (a driver may hand the engine
- * the path); in solo the attachment tags of this turn too, and in the
- * background those of the thread's earlier messages, which the engine may
- * read again. An organization server's engines get copies (staging). */
-async function holdTurnAttachments(threadId: string, texts: readonly (string | undefined)[], images: readonly TurnImageInput[]): Promise<void> {
-  const holder = turnHolder(threadId);
-  const now = new Set<string>();
-  for (const image of images) {
-    now.add(image.path);
-    try { now.add(modelImageCopyPath(ATTACHMENTS_DIR, image.path)); } catch { /* not in the attachments folder */ }
-  }
+ * files this turn's engine may open by path go plain in place, off the
+ * turn's path: pictures always (a driver may hand the engine the path), in
+ * solo the attachment tags of this turn and those of the thread's earlier
+ * messages (the engine may read one again). An engine reads a file only at a
+ * tool call, seconds after it starts, long after these are open; the server's
+ * own readers open sealed files themselves. The turn waits only for what is
+ * read by path before the engine starts: an archive (its listing, solo) and
+ * the pictures of an engine that takes a picture by path (`picturesByPath`).
+ * An organization server's engines get copies (staging). */
+async function holdTurnAttachments(threadId: string, texts: readonly (string | undefined)[], images: readonly TurnImageInput[], options: { picturesByPath?: boolean } = {}): Promise<void> {
   const solo = IDENTITY.kind !== "perspicax";
-  if (solo) for (const text of texts) for (const name of storedNamesIn(text)) for (const path of storedFamily(name)) now.add(path);
-  if (now.size) await holdPlain(holder, [...now]).catch(() => undefined);
-  if (!solo) return;
-  const earlier = new Set<string>();
-  for (const message of store.messagesFor(threadId)) {
-    for (const name of storedNamesIn(message.text)) for (const path of storedFamily(name)) if (!now.has(path)) earlier.add(path);
-  }
-  if (earlier.size) void holdPlain(holder, [...earlier]).catch(() => undefined);
+  const open = async (): Promise<void> => {
+    const holder = turnHolder(threadId);
+    const now = new Set<string>();
+    const wait = new Set<string>();
+    for (const image of images) {
+      now.add(image.path);
+      if (options.picturesByPath) wait.add(image.path);
+      try { now.add(modelImageCopyPath(ATTACHMENTS_DIR, image.path)); } catch { /* not in the attachments folder */ }
+    }
+    if (solo) {
+      for (const text of texts) for (const name of storedNamesIn(text)) {
+        for (const path of storedFamily(name)) now.add(path);
+        if (isArchiveAttachment(name)) wait.add(join(ATTACHMENTS_DIR, name));
+      }
+      for (const message of store.messagesFor(threadId)) {
+        for (const name of storedNamesIn(message.text)) for (const path of storedFamily(name)) now.add(path);
+      }
+    }
+    if (!now.size) return;
+    const opening = holdPlain(holder, [...now]).catch(() => undefined);
+    if (wait.size) await waitPlain([...wait]).catch(() => undefined);
+    void opening;
+  };
+  // the turn waits only when something is read by path before the engine starts
+  const mustWait = Boolean(options.picturesByPath && images.length) || (solo && texts.some((text) => storedNamesIn(text).some(isArchiveAttachment)));
+  if (mustWait) return open();
+  setImmediate(() => { void open().catch(() => undefined); });
+}
+
+/** As soon as the person types in (or opens) a conversation: its bot's
+ * memory and the thread's attachments start opening for the turn to come,
+ * so the turn finds them ready (the hold lets go on its own when no turn
+ * follows). */
+function openForComingTurn(botId: string, threadId: string): void {
+  void holdBotMemoryPlain(botId, turnHolder(threadId));
+  void holdTurnAttachments(threadId, [], []);
 }
 
 /** The provider text for this turn with the speaker's own attachments
@@ -6806,6 +6832,18 @@ configureContentEncryption({ ...contentEncryptionFromEnv(process.env), resolveOw
 setAtRestHolderCheck((holder) => !holder.startsWith("turn:") || runningTurnEngines.has(holder.slice(5)));
 // an erased person's upload another conversation still shows stays readable
 setAttachmentStillShown((path) => threadsReferencing(basename(path)).length > 0);
+// what a thread that changes hands shows is re-sealed with it
+setAtRestThreadFiles((threadId) => {
+  const paths = new Set<string>();
+  for (const message of store.messagesFor(threadId)) {
+    for (const name of storedNamesIn(message.text)) for (const path of storedFamily(name)) paths.add(path);
+    // what the bot attached (attach_file, a generated picture)
+    for (const attachment of message.attachments ?? []) {
+      if (typeof attachment.path === "string" && dirname(attachment.path) === ATTACHMENTS_DIR) for (const path of storedFamily(basename(attachment.path))) paths.add(path);
+    }
+  }
+  return [...paths];
+});
 await unlockContentKeys();
 {
   const vacuumMs = vacuumAfterSealing();
@@ -19974,8 +20012,8 @@ async function startTurn(
   // this message's attachments before anything reads them; the bot's memory
   // files in parallel with the rest of the setup, awaited before the engine
   // starts (below).
-  const memoryOpening = !warmOnly && supportsWorkspaceFiles(instance.driverKind) ? holdBotMemoryPlain(bot.id, turnHolder(threadId)) : null;
-  if (!warmOnly) await holdTurnAttachments(threadId, [text], resolvedImages.images);
+  if (!warmOnly && supportsWorkspaceFiles(instance.driverKind)) void holdBotMemoryPlain(bot.id, turnHolder(threadId));
+  if (!warmOnly) await holdTurnAttachments(threadId, [text], resolvedImages.images, { picturesByPath: instance.driverKind === "codex" });
   const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
   let providerText = promptWithDataContext(usesNativeImageInput ? resolvedImages.text : text, opts?.dataContext);
   const turnImages = usesNativeImageInput ? resolvedImages.images : [];
@@ -20620,9 +20658,8 @@ async function startTurn(
       const worksInWorkspace = supportsWorkspaceFiles(instance.driverKind);
       if (worksInWorkspace) {
         ensureWorkspace(bot.id);
-        // memory sealed at rest is opened back to plain in place for the
-        // engine's file tools, until the turn ends (server/content-at-rest.ts)
-        if (memoryOpening) await memoryOpening;
+        // memory sealed at rest opens back to plain in place for the engine's
+        // file tools (started above, off the turn's path), until the turn ends
         // baseline for the journal's turn-boundary diff (see the bus hook)
         // A warm has no turn to journal. endMemoryTurn would close the previous one.
         if (!warmOnly && bot.memoryEnabled !== false) beginMemoryTurn(bot.id, threadId);
@@ -24255,7 +24292,7 @@ async function runGroupMemberTurn(
     ? extractTurnImages(latestUser.text)
     : { text: latestUser?.text ?? "", images: [] };
   // stored files sealed at rest go plain for the engine (server/content-at-rest.ts)
-  if (!cardContinuation) await holdTurnAttachments(threadId, [latestUser?.text], [...burstImages, ...resolvedLatestImages.images]);
+  if (!cardContinuation) await holdTurnAttachments(threadId, [latestUser?.text], [...burstImages, ...resolvedLatestImages.images], { picturesByPath: instance.driverKind === "codex" });
   // Organization server: where this room turn's tools run (the person whose
   // message it answers), and their own attachments pointed there.
   const roomRoutine = !roomSpeakerId && roomRoutineSpeaker(threadId) !== null;
@@ -24726,7 +24763,7 @@ async function runGroupMemberTurn(
   const worksInWorkspace = supportsWorkspaceFiles(instance.driverKind);
   const workspace = worksInWorkspace ? ensureWorkspace(bot.id) : undefined;
   // memory sealed at rest goes plain for the engine's file tools, as in a 1:1 turn
-  if (workspace) await holdBotMemoryPlain(bot.id, turnHolder(threadId));
+  if (workspace) void holdBotMemoryPlain(bot.id, turnHolder(threadId));
   // a room member's memory writes are journaled the same as a 1:1 turn's
   if (workspace && bot.memoryEnabled !== false) beginMemoryTurn(bot.id, threadId);
   // The room's folder pins here — on the first turn that actually
@@ -29808,6 +29845,8 @@ function threadWarmRequest(auth: RequestAuth, botId: string, body: Record<string
   // bot's first command does not wait for the cluster or a node
   // (server/sandbox-typing-prewake.ts). Opening the conversation never does.
   if (body.typing === true) prewakeComputerWhileTyping(bot.id, actorPrincipalId(auth));
+  // files sealed at rest start opening for the coming turn (server/content-at-rest.ts)
+  openForComingTurn(bot.id, threadId);
   return { status: 200, body: { warm: prewarmThread(bot.id, threadId, actorPrincipalId(auth) || "local", { speaker: speakerFor(auth) }) } };
 }
 const typingPrewake = new TypingPrewakeThrottle();
@@ -36704,6 +36743,11 @@ const orgBotsDeps: BotsDeps = {
     if (previous) grants.push({ target: `user:${previous}`, level: "manage", by: previous, at: Date.now() } as (typeof grants)[number]);
     if (bot.chiefOfStaff) store.clearPrimaryBot(botId);
     store.patchBot(botId, { ownerUserId: ownerPrincipalId });
+    // its memory and the threads that follow its owner (no person of their
+    // own) take the new owner's key now, whole (docs/content-encryption.md):
+    // the previous owner's erasure never takes them
+    const following = store.tasks(botId).filter((task) => !task.ownerPrincipalId).map((task) => task.threadId);
+    contentOwnerChanged(following, [botId]);
     botMailResync();
     store.setBotGrants(botId, grants);
     settleMemberAutoLevels([botId]);

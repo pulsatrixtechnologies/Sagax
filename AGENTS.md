@@ -7352,14 +7352,18 @@ generated files, scaled pictures, Office pictures, archive manifests and
 unpacked folders) are sealed in place (64 KiB AES-256-GCM chunks, additional
 data = key, owner, context, chunk index, last chunk); the memory journal,
 `events/`, `native/`, `decisions/` and `admin-activity/` are sealed line by
-line (clear projection for filters). New files are written plain as before
+line in blocks (one physical line per record, a block opened once;
+clear projection for filters). New files are written plain as before
 and sealed by the background migration once idle (10 min); every
 replacement is read back and compared before an atomic rename. Never read
 such a file with `readFileSync` for content in new code: use
 `readAtRestSync`, `readMemoryText`, `atRestStream` / `openMessageFile`'s
-`stream()`, and for a log line `parseLogLine`. An engine reads them by
-path: a turn holds them plain in place (`holdPlain`, `holdBotMemoryPlain`,
-released with `releasePlain(turn:<thread>)`). A locked key throws
+`stream()`, and for a log `LogReader` (a busy log's writer goes through
+`appendLogBuffered`). An engine reads them by path: they are held plain in
+place off the turn's path, from the composer's warm request (`holdPlain`,
+`holdBotMemoryPlain`, released with `releasePlain(turn:<thread>)`). A thread
+or bot that changes hands goes through `contentOwnerChanged`, which
+re-seals everything of it at once. A locked key throws
 `ContentKeyUnavailable`; a memory read never answers empty on it
 (`isAtRestRefusal`). Tests: `server/content-at-rest.test.ts`. Benchmark:
 `scripts/bench-content-at-rest.ts [--before <checkout of main>]`.

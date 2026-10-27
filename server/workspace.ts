@@ -47,6 +47,8 @@ registerAtRestRoot({
  * turn (in parallel, off the event loop) and kept plain until
  * releasePlain(holder) at its end. Files already plain cost a stat. */
 export async function holdBotMemoryPlain(botId: string, holder: string): Promise<void> {
+  // nothing on the caller's path: the listing and the opening run on a later turn of the loop
+  await new Promise((resolve) => setImmediate(resolve));
   try {
     await holdPlain(holder, memoryPathsOnDisk(botId).map((relativePath) => join(workspaceDir(botId), relativePath)));
   } catch {

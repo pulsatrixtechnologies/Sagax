@@ -149,26 +149,24 @@ try {
   out.memoryPromptLoadMs = round(await time(200, () => call(workspace, "memorySystemPrompt", "bot1", {})), 3);
   out.memorySearchMs = round(await time(40, () => call(workspace, "searchMemoryFiles", "bot1", `${vocabulary[5]} ${vocabulary[6]}`)), 3);
   if (atRest && "holdBotMemoryPlain" in workspace) {
-    const holds: number[] = [];
+    // what a turn waits for (the call; the opening runs beside it), and how
+    // long the opening itself takes in the background
+    const path: number[] = [];
+    const background: number[] = [];
     for (let i = 0; i < 7; i++) {
       await settle();
       const at = performance.now();
-      await call<Promise<void>>(workspace, "holdBotMemoryPlain", "bot1", `turn:x${i}`);
-      holds.push(performance.now() - at);
+      const opening = call<Promise<void>>(workspace, "holdBotMemoryPlain", "bot1", `turn:x${i}`);
+      path.push(performance.now() - at);
+      await opening;
+      background.push(performance.now() - at);
       call(atRest, "releasePlain", `turn:x${i}`);
     }
-    out.memoryOpenForTurnMs = round(median(holds), 2);
-    const warm: number[] = [];
-    await call<Promise<void>>(workspace, "holdBotMemoryPlain", "bot1", "turn:warm");
-    for (let i = 0; i < 7; i++) {
-      const at = performance.now();
-      await call<Promise<void>>(workspace, "holdBotMemoryPlain", "bot1", `turn:w${i}`);
-      warm.push(performance.now() - at);
-    }
-    out.memoryAlreadyOpenMs = round(median(warm), 3);
+    out.memoryTurnPathMs = round(median(path), 3);
+    out.memoryOpenedBesideMs = round(median(background), 2);
   } else {
-    out.memoryOpenForTurnMs = null;
-    out.memoryAlreadyOpenMs = null;
+    out.memoryTurnPathMs = null;
+    out.memoryOpenedBesideMs = null;
   }
 
   // ---- attachments
@@ -198,56 +196,63 @@ try {
         for await (const _chunk of stream) { /* drain */ }
       }), 3);
       if (atRest) {
-        const opens: number[] = [];
+        const path: number[] = [];
+        const background: number[] = [];
         for (let i = 0; i < 3; i++) {
           await settle();
           const at = performance.now();
-          await call<Promise<void>>(atRest, "holdPlain", `turn:a${i}`, [target]);
-          opens.push(performance.now() - at);
+          const opening = call<Promise<void>>(atRest, "holdPlain", `turn:a${i}`, [target]);
+          path.push(performance.now() - at);
+          await opening;
+          background.push(performance.now() - at);
           call(atRest, "releasePlain", `turn:a${i}`);
         }
-        out.attachment20MBOpenForTurnMs = round(median(opens), 1);
-      } else out.attachment20MBOpenForTurnMs = null;
+        out.attachment20MBTurnPathMs = round(median(path), 3);
+        out.attachment20MBOpenedBesideMs = round(median(background), 1);
+      } else {
+        out.attachment20MBTurnPathMs = null;
+        out.attachment20MBOpenedBesideMs = null;
+      }
     }
     for (const path of paths) rmSync(path, { force: true });
   }
 
-  // ---- event logs: the native tee (synchronous, one line per message)
-  const nativeDir = config.NATIVE_DIR as string;
-  mkdirSync(nativeDir, { recursive: true });
-  const payload = { type: "session/update", params: { text: prose(300) } };
-  const appends: number[] = [];
-  for (let i = 0; i < 5_000; i++) {
-    const at = performance.now();
-    call(native, "appendNative", "thread1", { dir: "in", source: "bench", msg: payload });
-    appends.push(performance.now() - at);
-  }
-  out.logAppendP50Us = round(median(appends) * 1000, 1);
-  const file = join(nativeDir, "thread1.ndjson");
-  const all = (value: unknown): value is object => Boolean(value);
-  out.logTail300Ms = round(await time(20, () => call(threadEvents, "readRecentLines", file, 300, all)), 3);
-  const filtered = (value: unknown): value is { dir: string } => Boolean(value) && (value as { dir?: string }).dir === "in";
-  out.logTail2000FilterMs = round(await time(20, () => call(threadEvents, "readRecentLines", file, 2000, filtered)), 3);
-
-  // ---- the canonical event log as the bus writes it (sealed under the
-  // thread's key when on), read by the activity view (tool runs only)
+  // ---- event logs, written as the server writes them: the native tee one
+  // message at a time, the bus in batches; sealed (on) in blocks of what a
+  // window brings (here 16 lines, about a second of a busy turn)
   await load<Any>("server/harness/bus.ts");
   const activity = await load<Any>("server/activity.ts");
+  const nativeDir = config.NATIVE_DIR as string;
   const eventsDir = config.EVENTS_DIR as string;
+  mkdirSync(nativeDir, { recursive: true });
   mkdirSync(eventsDir, { recursive: true });
-  const eventsFile = join(eventsDir, "thread2.ndjson");
-  const eventLines: string[] = [];
+  const payload = { type: "session/update", params: { text: prose(300) } };
+  const appendStart = performance.now();
+  for (let i = 0; i < 5_000; i++) {
+    call(native, "appendNative", "thread1", { dir: i % 2 ? "in" : "out", source: "bench", msg: payload });
+    if (atRest && i % 16 === 15) call(atRest, "flushLogBuffers");
+  }
+  if (atRest) call(atRest, "flushLogBuffers");
+  out.logAppendMeanUs = round(((performance.now() - appendStart) / 5_000) * 1000, 1);
+  const eventsFile = join(eventsDir, "thread1.ndjson");
+  const batch: Array<{ record: Record<string, unknown>; line: string }> = [];
+  const physical: string[] = [];
   for (let i = 0; i < 20_000; i++) {
     const tool = i % 10 === 0;
     const record = tool
-      ? { eventId: `e${i}`, provider: "bench", providerInstanceId: "p", threadId: "thread2", createdAt: new Date(1_800_000_000_000 + i).toISOString(), turnId: `t${Math.floor(i / 100)}`, type: i % 20 === 0 ? "item.started" : "item.completed", itemType: "tool", itemId: `i${Math.floor(i / 20)}`, title: "Bash", ok: true }
-      : { eventId: `e${i}`, provider: "bench", providerInstanceId: "p", threadId: "thread2", createdAt: new Date(1_800_000_000_000 + i).toISOString(), turnId: `t${Math.floor(i / 100)}`, type: "content.delta", streamKind: "assistant_text", itemId: `m${i}`, delta: prose(200) };
-    const line = JSON.stringify(record);
-    eventLines.push(atRest ? call<string>(atRest, "sealLogLine", eventsFile, record, line) : line);
+      ? { eventId: `e${i}`, provider: "bench", providerInstanceId: "p", threadId: "thread1", createdAt: new Date(1_800_000_000_000 + i).toISOString(), turnId: `t${Math.floor(i / 100)}`, type: i % 20 === 0 ? "item.started" : "item.completed", itemType: "tool", itemId: `i${Math.floor(i / 20)}`, title: "Bash", ok: true }
+      : { eventId: `e${i}`, provider: "bench", providerInstanceId: "p", threadId: "thread1", createdAt: new Date(1_800_000_000_000 + i).toISOString(), turnId: `t${Math.floor(i / 100)}`, type: "content.delta", streamKind: "assistant_text", itemId: `m${i}`, delta: prose(200) };
+    batch.push({ record, line: JSON.stringify(record) });
+    if (batch.length === 16) {
+      physical.push(...(atRest && "sealLogLines" in atRest ? call<string[]>(atRest, "sealLogLines", eventsFile, batch.map((item) => item.record), batch.map((item) => item.line)) : batch.map((item) => item.line)));
+      batch.length = 0;
+    }
   }
-  writeFileSync(eventsFile, `${eventLines.join("\n")}\n`);
-  out.activityToolRuns20kMs = round(await time(20, () => call(activity, "readToolRuns", eventsDir, "thread2")), 2);
-  out.inspectorTail300Ms = round(await time(20, () => call(threadEvents, "readRecentLines", eventsFile, 300, all)), 3);
+  writeFileSync(eventsFile, `${physical.join("\n")}\n`);
+  const inspector = (limit: number) => call(threadEvents, "readThreadEvents", { eventsDir, nativeDir, threadId: "thread1", limit });
+  out.inspector300Ms = round(await time(20, () => inspector(300)), 3);
+  out.inspector2000Ms = round(await time(20, () => inspector(2000)), 3);
+  out.activityToolRunsMs = round(await time(20, () => call(activity, "readToolRuns", eventsDir, "thread1")), 2);
   console.log(JSON.stringify(out));
 } finally {
   call(db, "closeMessageDb");

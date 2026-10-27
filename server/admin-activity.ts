@@ -20,8 +20,8 @@ import { mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import { DATA_DIR } from "./config.ts";
-import { appendLog, parseLogLine, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
-import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
+import { appendLog, LogReader, registerSealedLog, sealLogLine } from "./content-at-rest.ts";
+import { WORKSPACE_OWNER } from "./content-keys.ts";
 import { actorLabel, boundRetentionDays, pruneMonthFiles, type DecisionActor, type DecisionRow } from "./decision-log.ts";
 import { redactSecrets } from "./redact.ts";
 import { csvCell, monthKey } from "./usage-ledger.ts";
@@ -346,16 +346,13 @@ function readRows(path: string): AdminActionRow[] {
     return [];
   }
   const rows: AdminActionRow[] = [];
-  for (const line of text.split("\n")) {
-    if (!line) continue;
-    try {
-      // a row sealed at rest opens here (server/content-at-rest.ts)
-      const value: unknown = parseLogLine(path, line);
-      if (isRow(value)) rows.push(value);
-    } catch (error) {
-      if (error instanceof ContentKeyUnavailable) throw error;
-      /* a line torn mid-write */
-    }
+  const lines = text.split("\n");
+  // rows sealed at rest open here (server/content-at-rest.ts); a torn line is skipped
+  const reader = new LogReader(path);
+  for (let index = 0; index < lines.length; index++) {
+    if (!lines[index]) continue;
+    const value = reader.at(lines, index);
+    if (isRow(value)) rows.push(value);
   }
   return rows;
 }
@@ -551,18 +548,14 @@ export function readOrgAuditPage(dataDir: string, input: {
       continue;
     }
     const lines = text.split("\n");
+    const reader = new LogReader(join(dataDir, DIR, `${month}.ndjson`));
     for (let index = lines.length - 1; index >= 0; index--) {
       const lineNumber = index + 1;
       if (beforeMonth === month && lineNumber >= beforeLine) continue;
       const line = lines[index];
       if (!line) continue;
-      let value: unknown;
-      try {
-        value = parseLogLine(join(dataDir, DIR, `${month}.ndjson`), line);
-      } catch (error) {
-        if (error instanceof ContentKeyUnavailable) throw error;
-        continue;
-      }
+      // a locked key throws ContentKeyUnavailable; a torn or erased line is skipped
+      const value: unknown = reader.at(lines, index);
       if (!isRow(value) || !categories.has(value.category)) continue;
       if (input.target && value.target?.id !== input.target) continue;
       const at = Date.parse(value.at);
