@@ -831,9 +831,8 @@ struct ChatListView: View {
         showingPlusMenu = false
         switch item {
         case .createBot:
-            createBotSection = nil
-            showingCreateBot = true
-        case .createBotWizard:
+            // 2026-10-27: Create a bot, the wizard's first screen; the full
+            // form (this sheet), the imports and quick create stay there
             BotWizardPresenter.shared.open()
         case .createGroup:
             showingNewGroup = true
@@ -1353,6 +1352,7 @@ extension ChatListView {
             case .newChat?: showingNewChat = true
             case .newGroupChat?: showingNewGroup = true
             case .createBot?, .createBotImport?: showingCreateBot = true
+            case .botWizard?: BotWizardPresenter.shared.open()
             case .settingsTop?, .settingsBottom?, .plugins?, .account?, .botComputer?, .appearance?: showingSettings = true
             default: break
             }
@@ -1875,8 +1875,7 @@ extension ChatListView {
                     openSearchResult(destination)
                 } createBot: {
                     showingNewChat = false
-                    createBotSection = nil
-                    showingCreateBot = true
+                    BotWizardPresenter.shared.open()
                 } createGroup: {
                     showingNewChat = false
                     showingNewGroup = true

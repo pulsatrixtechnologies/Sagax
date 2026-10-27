@@ -79240,6 +79240,698 @@
           }
         }
       }
+    },
+    "Other ways to start": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other ways to start"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autres façons de commencer"
+          }
+        }
+      }
+    },
+    "Start from a template": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start from a template"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partir d'un modèle"
+          }
+        }
+      }
+    },
+    "The full form: a preset or a built-in role, then every setting under More options.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The full form: a preset or a built-in role, then every setting under More options."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le formulaire complet : un préréglage ou un rôle intégré, puis tous les réglages sous Plus d'options."
+          }
+        }
+      }
+    },
+    "Browse templates": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse templates"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parcourir les modèles"
+          }
+        }
+      }
+    },
+    "Import from Grok Bot or Claude Code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import from Grok Bot or Claude Code"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importer de Grok Bot ou Claude Code"
+          }
+        }
+      }
+    },
+    "Import a zip file": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import a zip file"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importer un fichier zip"
+          }
+        }
+      }
+    },
+    "Quick create": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quick create"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Création rapide"
+          }
+        }
+      }
+    },
+    "Creates the bot at once with this server's defaults. You can change everything afterwards.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creates the bot at once with this server's defaults. You can change everything afterwards."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crée le bot tout de suite avec les valeurs par défaut de ce serveur. Vous pourrez tout changer ensuite."
+          }
+        }
+      }
+    },
+    "Your Bot designer asks you the questions and fills in each step live. It is created for you, as your own bot, the moment you choose this.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Bot designer asks you the questions and fills in each step live. It is created for you, as your own bot, the moment you choose this."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre Concepteur de bots vous pose les questions et remplit chaque étape en direct. Il est créé pour vous, comme votre propre bot, dès que vous choisissez ceci."
+          }
+        }
+      }
+    },
+    "Connect an engine first: the bot that guides you needs one to answer. You can also fill it in yourself right now.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect an engine first: the bot that guides you needs one to answer. You can also fill it in yourself right now."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connectez d'abord un moteur : le bot qui vous guide en a besoin pour répondre. Vous pouvez aussi le remplir vous-même tout de suite."
+          }
+        }
+      }
+    },
+    "Connect an engine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect an engine"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter un moteur"
+          }
+        }
+      }
+    },
+    "Creating your Bot designer…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creating your Bot designer…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Création de votre Concepteur de bots…"
+          }
+        }
+      }
+    },
+    "One approval level, and the rules that come first. Pick an effect for the ones that suit this bot.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One approval level, and the rules that come first. Pick an effect for the ones that suit this bot."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un seul niveau d'approbation, et les règles qui passent en premier. Choisissez un effet pour celles qui conviennent à ce bot."
+          }
+        }
+      }
+    },
+    "Optional: apps, MCP servers, the computer and the browser. By default the Workspace is on Auto, no MCP server is used, and apps connect later.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional: apps, MCP servers, the computer and the browser. By default the Workspace is on Auto, no MCP server is used, and apps connect later."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optionnel : les apps, les serveurs MCP, l'ordinateur et le navigateur. Par défaut, l'espace de travail est sur Auto, aucun serveur MCP n'est utilisé et les apps se connectent plus tard."
+          }
+        }
+      }
+    },
+    "A summary of your bot. Edit opens a step; try it with a first message before you finish.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A summary of your bot. Edit opens a step; try it with a first message before you finish."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un résumé de votre bot. Modifier ouvre une étape ; essayez-le avec un premier message avant de terminer."
+          }
+        }
+      }
+    },
+    "Its role in one sentence, shown in rosters, on the phone and to other bots. Longer instructions go in the Soul step.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its role in one sentence, shown in rosters, on the phone and to other bots. Longer instructions go in the Soul step."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son rôle en une phrase, affiché dans les listes, sur le téléphone et aux autres bots. Les instructions plus longues vont à l'étape Soul."
+          }
+        }
+      }
+    },
+    "A role fills in the role sentence, a starting soul and the suggestions of the next steps. Everything stays editable.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A role fills in the role sentence, a starting soul and the suggestions of the next steps. Everything stays editable."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un rôle remplit la phrase de rôle, une soul de départ et les suggestions des étapes suivantes. Tout reste modifiable."
+          }
+        }
+      }
+    },
+    "Rules apply before the approval level, whatever the level. An effect you pick is saved at once for this bot; Off removes the rule.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rules apply before the approval level, whatever the level. An effect you pick is saved at once for this bot; Off removes the rule."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les règles passent avant le niveau d'approbation, quel qu'il soit. L'effet choisi est enregistré tout de suite pour ce bot ; Non retire la règle."
+          }
+        }
+      }
+    },
+    "Suggested: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggested: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suggéré : %@"
+          }
+        }
+      }
+    },
+    "Effect of the rule: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effect of the rule: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effet de la règle : %@"
+          }
+        }
+      }
+    },
+    "botWizard.rules.effect.off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non"
+          }
+        }
+      }
+    },
+    "Allow": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser"
+          }
+        }
+      }
+    },
+    "Ask": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demander"
+          }
+        }
+      }
+    },
+    "Should this bot use apps or a computer?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Should this bot use apps or a computer?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce bot doit-il utiliser des apps ou un ordinateur ?"
+          }
+        }
+      }
+    },
+    "Yes adds the Tools and apps step next. Later keeps the defaults: Workspace on Auto, no MCP server, apps connected later.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yes adds the Tools and apps step next. Later keeps the defaults: Workspace on Auto, no MCP server, apps connected later."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oui ajoute l'étape Outils et apps ensuite. Plus tard garde les valeurs par défaut : espace de travail sur Auto, aucun serveur MCP, apps connectées plus tard."
+          }
+        }
+      }
+    },
+    "Yes": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oui"
+          }
+        }
+      }
+    },
+    "Pick the MCP servers one by one in its Access settings.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick the MCP servers one by one in its Access settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez les serveurs MCP un par un dans ses réglages d'accès."
+          }
+        }
+      }
+    },
+    "Every MCP server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Every MCP server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les serveurs MCP"
+          }
+        }
+      }
+    },
+    "No MCP server": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No MCP server"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun serveur MCP"
+          }
+        }
+      }
+    },
+    "MCP: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP : %@"
+          }
+        }
+      }
+    },
+    "No description yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No description yet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de description"
+          }
+        }
+      }
+    },
+    "Not written yet": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not written yet"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore écrite"
+          }
+        }
+      }
+    },
+    "Written · %lld of %lld answers": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Written · %lld of %lld answers"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrite · %1$lld réponses sur %2$lld"
+          }
+        }
+      }
+    },
+    "No rule": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No rule"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune règle"
+          }
+        }
+      }
+    },
+    "Workspace: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espace de travail : %@"
+          }
+        }
+      }
+    },
+    "Apps connected later": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps connected later"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps connectées plus tard"
+          }
+        }
+      }
+    },
+    "Apps to connect: %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps to connect: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps à connecter : %@"
+          }
+        }
+      }
+    },
+    "No routine": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No routine"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune routine"
+          }
+        }
+      }
+    },
+    "%lld asked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld asked"
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld demandée"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld demandées"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld denied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld denied"
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld refusée"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld refusées"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld allowed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld allowed"
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld autorisée"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld autorisées"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "version": "1.0"

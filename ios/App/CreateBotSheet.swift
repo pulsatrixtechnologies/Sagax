@@ -21,10 +21,14 @@ struct CreateBotSheet: View {
     var section: String?
     let close: () -> Void
     let created: (Bot) -> Void
+    /// The header's Wizard button; off when the wizard itself opened this
+    /// form (its "Start from a template", 2026-10-27).
+    var showsWizard = true
 
-    init(section: String? = nil, close: @escaping () -> Void, created: @escaping (Bot) -> Void) {
+    init(section: String? = nil, close: @escaping () -> Void, showsWizard: Bool = true, created: @escaping (Bot) -> Void) {
         self.section = section
         self.close = close
+        self.showsWizard = showsWizard
         self.created = created
         _options = State(initialValue: NewBotFormOptions(section: section))
     }
@@ -274,7 +278,7 @@ struct CreateBotSheet: View {
                 .foregroundStyle(Theme.textPrimary)
             Spacer()
             // 2026-10-26: the guided wizard, beside this quick creation
-            if !readOnly {
+            if !readOnly && showsWizard {
                 Button {
                     close()
                     BotWizardPresenter.shared.open()

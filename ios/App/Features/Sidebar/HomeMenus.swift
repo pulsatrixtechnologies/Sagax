@@ -484,7 +484,6 @@ enum NewMenuLabels {
     static func title(_ item: NewMenuItem, session: Session) -> String {
         switch item {
         case .createBot: String(localized: "Create new Bot")
-        case .createBotWizard: String(localized: "Create a bot with the wizard")
         case .createGroup: String(localized: "Create group chat")
         case let .bot(id): session.state.bot(id)?.name ?? id
         case let .person(id): PeopleDirectory.shared.directory?.people.first { $0.principalId == id }?.name ?? id
@@ -494,7 +493,6 @@ enum NewMenuLabels {
     static func identifier(_ item: NewMenuItem) -> String {
         switch item {
         case .createBot: "plus-menu.new-bot"
-        case .createBotWizard: "plus-menu.bot-wizard"
         case .createGroup: "plus-menu.new-group"
         case let .bot(id): "plus-menu.bot.\(id)"
         case let .person(id): "plus-menu.person.\(id)"
@@ -527,7 +525,6 @@ struct NewMenuItems: View {
                 Button { select(item) } label: {
                     switch item {
                     case .createBot: Label(NewMenuLabels.title(item, session: session), systemImage: "square.and.pencil")
-                    case .createBotWizard: Label(NewMenuLabels.title(item, session: session), systemImage: "wand.and.stars")
                     case .createGroup: Label(NewMenuLabels.title(item, session: session), systemImage: "person.2")
                     default: Text(verbatim: NewMenuLabels.title(item, session: session))
                     }

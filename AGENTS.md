@@ -540,6 +540,9 @@ the guided first run (#1035). Desktop `src/components/bot-wizard/`, iOS
 - Recap (v2): read only, the bot in one card (avatar, name, role,
   description, Try it), one line per step with Edit (`recapLines`), the test
   conversation under it; Finish in the footer.
+- iOS (v2, 2026-10-27): the same six points in `ios/App/BotWizard/` (pure parts in
+  `ios/Sources/CompanionCore/BotWizard.swift`); the "+" menus' Create new Bot opens
+  Create a bot, whose Start from a template is the old Create New Bot sheet.
 - Captures: `node --experimental-strip-types scripts/testing/capture-bot-wizard.ts <outDir> [skin] [lang]`
   (headless; `SAGAX_CAPTURE_CHROME` names another headless shell).
 

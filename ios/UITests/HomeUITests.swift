@@ -223,6 +223,10 @@ final class HomeUITests: XCTestCase {
         let item = app.buttons["plus-menu.new-bot"]
         XCTAssertTrue(item.waitForExistence(timeout: 5))
         item.tap()
+        // 2026-10-27: Create a bot first; the full form is its Start from a template
+        let template = app.buttons["wizard-other-template"]
+        XCTAssertTrue(template.waitForExistence(timeout: 10))
+        template.tap()
         let create = app.buttons["create-bot-submit"]
         XCTAssertTrue(create.waitForExistence(timeout: 5))
         create.tap()

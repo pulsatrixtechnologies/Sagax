@@ -141,9 +141,9 @@ public enum AccountMenuItem: String, Hashable, Sendable, CaseIterable {
 }
 
 public enum NewMenuItem: Hashable, Sendable {
+    /// Create a bot: the wizard's first screen ("Create a bot", 2026-10-27),
+    /// where the full form, the imports and quick create stay one tap away.
     case createBot
-    /// The bot creation wizard, beside the quick creation (2026-10-26).
-    case createBotWizard
     case createGroup
     /// Open this bot's conversation.
     case bot(String)
@@ -300,7 +300,7 @@ public enum NavigationMenus {
     /// Create group chat, every bot, then the organization's people.
     public static func new(gate: SurfaceGate, bots: [Bot], people: [String]) -> [[NewMenuItem]] {
         var create: [NewMenuItem] = []
-        if gate.allows(.createBot) { create.append(contentsOf: [.createBot, .createBotWizard]) }
+        if gate.allows(.createBot) { create.append(.createBot) }
         create.append(.createGroup)
         var groups = [create]
         let shown = bots.filter { $0.hidden != true }
