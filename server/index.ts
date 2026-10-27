@@ -15187,12 +15187,15 @@ bus.subscribe((event: RuntimeEvent) => {
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(languageOfPerson(cardAnswerer)))
         : undefined;
       // 2026-10-26 (#1065): the second "Toujours permettre", the whole
-      // folder of the file this card reads, beside the exact path
-      const ownerRuleFolderCandidate = ownerRuleCandidate && !strictCall
+      // folder of the file this card reads, beside the exact path.
+      // An admin card offers it only for a read inside one agent root
+      // (this bot's workspace, or this conversation's task folder).
+      const ownerRuleFolderCandidate = ownerRuleCandidate && (!strictCall || (ruleFrom === "admin" && !heldCard))
         ? folderRuleCandidate({
           tool: ownerTool,
           ...(typeof event.input === "string" ? { input: event.input } : {}),
           ...(event.command?.command ? { command: event.command.command } : {}),
+          ...(asker ? { roots: [workspaceDir(asker.id), join(TASK_WORKSPACES_DIR, asker.id, event.threadId)] } : {}),
         }, { ...(ruleFrom ? { from: ruleFrom } : {}), held: heldCard }, serverApprovalWords(cfg.language))
         : undefined;
       // Auto's reviewer is the engine's own. Claude accepts `--permission-mode
@@ -31730,10 +31733,16 @@ function saveOwnerRuleFromCard(auth: RequestAuth, threadId: string, requestId: s
   if (ruleScope !== undefined && ruleScope !== null && ruleScope !== "exact" && ruleScope !== "folder") return { status: 400, error: "ruleScope must be exact or folder" };
   // 2026-10-26 (#1065): "folder" keeps the card's folder rule (every file
   // of the folder and its subfolders), only an allow, only where the card
-  // offered it; never an admin's or a held card (none offers it)
+  // offered it. An ordinary card has no `from`. An admin card offers the
+  // folder only for a read of one agent root (`from: "admin"`, no writes).
   const wholeFolder = ruleScope === "folder";
-  if (wholeFolder && (rule !== "allow" || !card.ownerRuleFolder || card.ownerRule?.from !== undefined)) {
-    return { status: 409, error: "This approval cannot be remembered for the whole folder." };
+  if (wholeFolder) {
+    const folder = card.ownerRuleFolder;
+    const ordinary = rule === "allow" && Boolean(folder) && card.ownerRule?.from === undefined;
+    const adminRead = rule === "allow" && folder?.from === "admin" && folder.writes !== true && card.ownerRule?.from === "admin";
+    if (!ordinary && !adminRead) {
+      return { status: 409, error: "This approval cannot be remembered for the whole folder." };
+    }
   }
   if (!card.ownerRule || card.answered || card.dismissed || card.expired) {
     return { status: 409, error: "This approval cannot be remembered as a rule." };
