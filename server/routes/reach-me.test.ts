@@ -27,6 +27,7 @@ async function serve(person: string | null = "pr_member") {
   dirs.push(dir);
   const settings = createReachMeStore(dir);
   const tokens: string[] = [];
+  const whatsapp: Array<{ call: string; args: unknown }> = [];
   const routes = [createReachMeRoutes({
     person: () => person ?? undefined,
     bot: (id) => (id === "bot_abc" ? { id } : null),
@@ -35,6 +36,14 @@ async function serve(person: string | null = "pr_member") {
     telegram: {
       connect: async (_person, _bot, token) => { tokens.push(token); return { ok: true, username: "my_bot", link: "https://t.me/my_bot?start=abc" }; },
       disconnect: () => {},
+    },
+    whatsapp: {
+      connect: async (_person, _bot, input) => { whatsapp.push({ call: "connect", args: input }); return { ok: true }; },
+      update: (_person, _bot, input) => { whatsapp.push({ call: "update", args: input }); return { ok: true }; },
+      disconnect: () => { whatsapp.push({ call: "disconnect", args: null }); },
+      renewLink: () => { whatsapp.push({ call: "renewLink", args: null }); return { ok: true }; },
+      sendCode: async (_person, _bot, number) => { whatsapp.push({ call: "sendCode", args: number }); return { ok: true }; },
+      confirm: (_person, _bot, code) => { whatsapp.push({ call: "confirm", args: code }); return code === "K7Q2WX" ? { ok: true } : { ok: false, status: 400, error: "That is not the code." }; },
     },
   })];
   const server = createServer(async (req, res) => {
@@ -49,7 +58,7 @@ async function serve(person: string | null = "pr_member") {
     const response = await fetch(`${base}${path}`, { method, headers: { "content-type": "application/json" }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, body: await response.json() as Record<string, unknown> };
   };
-  return { call, settings, tokens };
+  return { call, settings, tokens, whatsapp };
 }
 
 describe("Reach me routes", () => {
@@ -75,5 +84,23 @@ describe("Reach me routes", () => {
     expect(JSON.stringify(linked.body)).not.toContain(TOKEN);
     expect(tokens).toEqual([TOKEN]);
     expect((await call("DELETE", "/api/bots/bot_abc/reach-me/telegram")).status).toBe(200);
+  });
+  it("WhatsApp: the person connects their own number, the token and app secret never come back, the code proves their number", async () => {
+    const { call, whatsapp } = await serve();
+    const accessToken = "FAKEACCESSTOKENFORTESTS0123456789";
+    const appSecret = "0123456789abcdef0123456789abcdef";
+    expect((await call("POST", "/api/bots/bot_abc/reach-me/whatsapp", { accessToken })).status).toBe(400);
+    const connected = await call("POST", "/api/bots/bot_abc/reach-me/whatsapp", { accessToken, phoneNumberId: "106540352242922", appSecret, templateName: "sagax_card", templateLanguage: "fr" });
+    expect(connected.status).toBe(200);
+    expect(JSON.stringify(connected.body)).not.toContain(accessToken);
+    expect(JSON.stringify(connected.body)).not.toContain(appSecret);
+    expect(whatsapp[0]).toEqual({ call: "connect", args: { accessToken, phoneNumberId: "106540352242922", appSecret, templateName: "sagax_card", templateLanguage: "fr" } });
+    expect((await call("PUT", "/api/bots/bot_abc/reach-me/whatsapp", { templateName: "sagax_card_v2" })).status).toBe(200);
+    expect((await call("POST", "/api/bots/bot_abc/reach-me/whatsapp/link", {})).status).toBe(200);
+    expect((await call("POST", "/api/bots/bot_abc/reach-me/whatsapp/link", { number: "+1 514 555 0123" })).status).toBe(200);
+    expect(await call("POST", "/api/bots/bot_abc/reach-me/whatsapp/link", { code: "WRONG1" })).toMatchObject({ status: 400 });
+    expect((await call("POST", "/api/bots/bot_abc/reach-me/whatsapp/link", { code: "K7Q2WX" })).status).toBe(200);
+    expect((await call("DELETE", "/api/bots/bot_abc/reach-me/whatsapp")).status).toBe(200);
+    expect(whatsapp.map((entry) => entry.call)).toEqual(["connect", "update", "renewLink", "sendCode", "confirm", "confirm", "disconnect"]);
   });
 });

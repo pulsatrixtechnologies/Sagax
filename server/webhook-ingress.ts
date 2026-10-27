@@ -140,11 +140,39 @@ function lowerHeaders(req: IncomingMessage): Record<string, string | undefined> 
   return out;
 }
 
+/** Receivers that are not triggers, on the same listener: "Me joindre" by
+ * WhatsApp (server/reach-me/whatsapp.ts), Meta's subscription check (GET)
+ * and the person's messages (POST, signed with their app secret). */
+export interface WebhookIngressReceivers {
+  reachMeWhatsApp?(endpointId: string, request: { method: string; query: URLSearchParams; headers: Record<string, string | undefined>; rawBody: string }): Promise<{ status: number; contentType: string; body: string }>;
+}
+
 export function createWebhookIngressHandler(
   manager: WebhookManager,
   claimRequest?: () => () => void,
   limiter: AuthFailureLimiter = new AuthFailureLimiter(),
+  receivers: WebhookIngressReceivers = {},
 ) {
+  /** `/reach-me/whatsapp/<endpoint>`: refusals count like a bad token. */
+  const handleReachMeWhatsApp = async (endpointId: string, url: URL, req: IncomingMessage, res: ServerResponse) => {
+    const bucket = `reach-me-whatsapp:${endpointId}`;
+    if (limiter.blocked(bucket)) {
+      res.setHeader("retry-after", String(Math.ceil(WEBHOOK_AUTH_FAILURE_WINDOW_MS / 1000)));
+      return json(res, 429, { error: "Too many failed attempts" });
+    }
+    if (!receivers.reachMeWhatsApp) return json(res, 404, { error: "Unknown webhook endpoint" });
+    try {
+      const rawBody = req.method === "POST" ? await readRawBody(req) : "";
+      const answer = await receivers.reachMeWhatsApp(endpointId, { method: req.method ?? "GET", query: url.searchParams, headers: lowerHeaders(req), rawBody });
+      if (answer.status === 401 || answer.status === 403 || answer.status === 404) limiter.fail(bucket);
+      res.writeHead(answer.status, { "content-type": answer.contentType, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      return res.end(answer.body);
+    } catch (error) {
+      const parsedError = statusErrorSchema.safeParse(error);
+      const status = parsedError.success ? parsedError.data.status ?? 500 : 500;
+      return json(res, status, { error: status === 413 || status === 400 ? (error as Error).message : "The webhook could not be accepted. Try again later." });
+    }
+  };
   /** A typed trigger (`/sources/<endpointId>`): the provider proves itself
    * with its own signature scheme (GitHub, Slack, Sentry, PagerDuty and
    * Linear HMAC; GitLab token; Microsoft Graph clientState), because none of
@@ -208,6 +236,8 @@ export function createWebhookIngressHandler(
     }
     const sourceMatch = url.pathname.match(/^\/sources\/(wh_[A-Za-z0-9_-]+)$/);
     if (sourceMatch) return handleSource(sourceMatch[1]!, url, req, res);
+    const reachMatch = url.pathname.match(/^\/reach-me\/whatsapp\/(rmwa_[A-Za-z0-9_-]{16,64})$/);
+    if (reachMatch) return handleReachMeWhatsApp(reachMatch[1]!, url, req, res);
     const match = url.pathname.match(/^\/hooks\/(wh_[A-Za-z0-9_-]+)(?:\/([^/]+))?$/);
     if (!match) return json(res, 404, { error: "Unknown webhook endpoint" });
     if (req.method !== "POST") return json(res, 405, { error: "Webhooks accept POST requests" });
@@ -295,11 +325,11 @@ export function advertisedWebhookBase(raw: string): string {
 
 export async function listenWebhookIngress(
   manager: WebhookManager,
-  options: { host?: string; port: number; publicBaseUrl?: string; claimRequest?: () => () => void; limiter?: AuthFailureLimiter },
+  options: { host?: string; port: number; publicBaseUrl?: string; claimRequest?: () => () => void; limiter?: AuthFailureLimiter; receivers?: WebhookIngressReceivers },
 ): Promise<WebhookIngress> {
   const host = options.host ?? "127.0.0.1";
   const advertised = options.publicBaseUrl === undefined ? undefined : advertisedWebhookBase(options.publicBaseUrl);
-  const server = createServer(createWebhookIngressHandler(manager, options.claimRequest, options.limiter));
+  const server = createServer(createWebhookIngressHandler(manager, options.claimRequest, options.limiter, options.receivers));
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once("error", onError);

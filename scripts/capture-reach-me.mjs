@@ -3,7 +3,9 @@
  * Headless screenshots of "Me joindre" (2026-10-26): src/gallery/reach-me.html,
  * light and dark: the bot's Overview with the Reach me group by default
  * (push, any hour), set up (text with the person's number, Telegram
- * linking, hours on weekdays) and connected (Telegram, Teams not ready).
+ * linking, hours on weekdays), connected (Telegram, Teams not ready) and
+ * WhatsApp (the person's own Meta app fields, the code step with the
+ * webhook settings, the number proven with the template).
  * The script answers /api itself; nothing is sent anywhere. Headless
  * Chromium only: no window opens.
  * Usage: node scripts/capture-reach-me.mjs [--out DIR] [--port N]
@@ -48,6 +50,9 @@ try {
     default: { saved: false, settings: { channels: ["push"], hours: { always: true } }, channels: { push: { ready: true, devices: 2 }, sms: { ready: false }, teams: { ready: true }, telegram: { ready: false }, whatsapp: { ready: false } } },
     setup: { saved: true, settings: { channels: ["push", "sms", "telegram"], smsNumber: "+15145550123", hours: { always: false, timeZone: "America/Toronto", ranges: [{ days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00" }] } }, channels: { push: { ready: true, devices: 2 }, sms: { ready: true }, teams: { ready: true }, telegram: { ready: false, username: "cryptic_maison_bot", linking: true }, whatsapp: { ready: false } } },
     connected: { saved: true, settings: { channels: ["telegram", "teams"], hours: { always: true } }, channels: { push: { ready: true, devices: 1 }, sms: { ready: false }, teams: { ready: false, reason: "no Teams connector" }, telegram: { ready: true, connected: true, username: "cryptic_maison_bot" }, whatsapp: { ready: false } } },
+    "whatsapp-connect": { saved: true, settings: { channels: ["push", "whatsapp"], hours: { always: true } }, channels: { push: { ready: true, devices: 2 }, sms: { ready: false }, teams: { ready: true }, telegram: { ready: false }, whatsapp: { ready: false, webhookPublic: true, linking: false, replies: false, hasAppSecret: false, windowOpen: false } } },
+    "whatsapp-linking": { saved: true, settings: { channels: ["whatsapp"], hours: { always: true } }, channels: { push: { ready: true, devices: 2 }, sms: { ready: false }, teams: { ready: true }, telegram: { ready: false }, whatsapp: { ready: false, linking: true, displayNumber: "+1 555-010-0000", verifiedName: "Boutique Exemple", linkUrl: "https://wa.me/15550100000?text=SAGAX%20K7Q2WX", linkCode: "K7Q2WX", webhookUrl: "https://bots.example.test/reach-me/whatsapp/rmwa_galleryfixture0000", verifyToken: "gallery-verify-fixture", webhookPublic: true, replies: true, hasAppSecret: true, templateName: "sagax_carte", templateLanguage: "fr", windowOpen: false } } },
+    "whatsapp-connected": { saved: true, settings: { channels: ["push", "whatsapp"], hours: { always: false, timeZone: "America/Toronto", ranges: [{ days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00" }] } }, channels: { push: { ready: true, devices: 1 }, sms: { ready: false }, teams: { ready: true }, telegram: { ready: false }, whatsapp: { ready: true, connected: true, linking: false, displayNumber: "+1 555-010-0000", verifiedName: "Boutique Exemple", number: "***0123", webhookUrl: "https://bots.example.test/reach-me/whatsapp/rmwa_galleryfixture0000", verifyToken: "gallery-verify-fixture", webhookPublic: true, replies: true, hasAppSecret: true, templateName: "sagax_carte", templateLanguage: "fr", windowOpen: true } } },
   };
   let state = "default";
   await page.route("**/api/**", async (route) => {

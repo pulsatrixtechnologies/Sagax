@@ -7,8 +7,8 @@
 // - Channels: push (iOS APNs and Android FCM, the phones the person
 //   registered), sms (Perspicax Voice, to the person's own proven number),
 //   teams (the person's own Teams chat through their engine connector),
-//   telegram (the person's own bot from BotFather), whatsapp (the channel
-//   interface only, not wired yet).
+//   telegram (the person's own bot from BotFather), whatsapp (the person's
+//   own WhatsApp Business number, WhatsApp Cloud API).
 // - Hours: always, or ranges of days and times in a time zone the person
 //   picks. Outside them nothing leaves the app for that bot's cards; a card
 //   still open when the next range starts is sent then.
@@ -18,9 +18,8 @@
 export const REACH_CHANNELS = ["push", "sms", "teams", "telegram", "whatsapp"] as const;
 export type ReachChannelId = (typeof REACH_CHANNELS)[number];
 
-/** The channels that are wired today. WhatsApp keeps its place in the type
- * (and the screen says it comes later) but is never sent through. */
-export const REACH_WIRED: readonly ReachChannelId[] = ["push", "sms", "teams", "telegram"];
+/** The channels that are wired. */
+export const REACH_WIRED: readonly ReachChannelId[] = ["push", "sms", "teams", "telegram", "whatsapp"];
 
 /** One range: days of the week (0 Sunday to 6 Saturday) and a start and an
  * end time, HH:MM, in the settings' time zone. An end before its start runs
@@ -80,7 +79,7 @@ export function normalizePhone(value: string): string | null {
 export type ReachMeParse = { ok: true; settings: ReachMeSettings } | { ok: false; error: string; field: string };
 
 /** The settings as the screen or a bot sent them, or why not. Unknown
- * channels are refused, duplicates dropped, WhatsApp kept (it waits). */
+ * channels are refused, duplicates dropped. */
 export function parseReachMe(value: unknown): ReachMeParse {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "Send an object { channels, smsNumber?, hours }.", field: "body" };
   const input = value as Record<string, unknown>;

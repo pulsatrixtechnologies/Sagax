@@ -4,8 +4,8 @@ When a bot has a question or an approval that waits on you, it can reach you
 outside the app. You choose how, and when, for each bot: Bot panel >
 Overview > Reach me. Nobody else chooses for you and no administrator has to
 turn it on. Your Primary Bot can change it for you from any conversation
-(`sagax_settings`, keys `notifications.reachMe` and
-`notifications.reachMeTelegram`).
+(`sagax_settings`, keys `notifications.reachMe`,
+`notifications.reachMeTelegram` and `notifications.reachMeWhatsApp`).
 
 ## Channels
 
@@ -15,7 +15,7 @@ turn it on. Your Primary Bot can change it for you from any conversation
 | Text message | Your Perspicax Voice line, and your own number verified on it | Text back the code, then `oui`/`non` (or your answer) |
 | Microsoft Teams | A bot of yours whose engine has a Teams connector (Microsoft 365 on claude.ai, Microsoft Teams on grok.com) | Write the code and your answer in your own Teams chat with yourself, within 40 minutes |
 | Telegram | Your own Telegram bot, made with BotFather | Reply to it with the code and your answer |
-| WhatsApp | Not available yet | |
+| WhatsApp | Your own WhatsApp Business number (WhatsApp Cloud API, your Meta app) | Reply with the code and your answer |
 
 Every message carries a short code for that card only, for example
 `KM3X`. Answer `KM3X oui` to allow, `KM3X non` to deny, or `KM3X` followed
@@ -39,6 +39,29 @@ that bot; a card still open when your next range starts is sent then.
 
 The token is sealed on the server and never shown again. Disconnect forgets
 it and the chat.
+
+## WhatsApp
+
+1. In your Meta app (WhatsApp > API Setup), copy an access token and your
+   business number's Phone Number ID. For replies, copy the app secret too
+   (App settings > Basic).
+2. On the bot page, turn WhatsApp on, paste them, Connect. Sagax checks them
+   with Meta and shows the business number.
+3. Prove your own number: open the WhatsApp link and send `SAGAX <code>`,
+   or type your number and get the code by your message template, then type
+   it back. Only that number is written to or read from.
+4. For replies, in your Meta app (WhatsApp > Configuration), paste the
+   callback URL and the verify token (Copy buttons on the bot page) and
+   subscribe to `messages`. This needs the server's public webhook address
+   (`SAGAX_WEBHOOK_PUBLIC_URL`); without one, WhatsApp only notifies you and
+   you answer in Sagax.
+
+WhatsApp lets a business write plain text only within 24 hours of your last
+message. Outside that window Sagax uses your approved message template: set
+its name and language on the bot page; it needs one body parameter, which
+carries the card's text. Every message is billed by Meta to your account:
+Sagax never retries one. The token and app secret are sealed on the server
+and never shown again. Disconnect forgets them and your number.
 
 ## Teams
 

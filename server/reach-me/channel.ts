@@ -5,10 +5,9 @@
 // "any text from that number".
 //
 // Wired: sms (./sms.ts, Perspicax Voice), teams (./teams.ts, the person's
-// own engine connector), telegram (./telegram.ts, the person's own bot).
-// Push is the push hub's (server/push/). WhatsApp: the same contract, not
-// wired yet (it needs a WhatsApp Business account and a webhook per
-// person; a later lot).
+// own engine connector), telegram (./telegram.ts, the person's own bot),
+// whatsapp (./whatsapp.ts, the person's own WhatsApp Business number).
+// Push is the push hub's (server/push/).
 import type { ReachChannelId } from "../../shared/reach-me.ts";
 
 /** One card going out, in the words the person reads. */
@@ -52,7 +51,7 @@ export interface ReachInbound {
   /** The person the channel proved (their own number, their own chat). */
   person: string;
   text: string;
-  /** sms: the number it came from (must be the one the code went to). */
+  /** sms, whatsapp: the number it came from (must be the one the code went to). */
   from?: string;
 }
 
@@ -64,7 +63,7 @@ function clip(text: string, max: number): string {
   return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
 }
 
-/** The message every text channel sends (sms, Teams, Telegram): the bot,
+/** The message every text channel sends (sms, Teams, Telegram, WhatsApp): the bot,
  * what it asks, and how to answer with the code. */
 export function composeReachText(out: ReachOutbound): string {
   const fr = out.language === "fr";
@@ -99,7 +98,8 @@ export function composeReachText(out: ReachOutbound): string {
   return lines.join("\n").slice(0, 1_100);
 }
 
-/** What the person hears back on a channel that answers for free (Telegram). */
+/** What the person hears back on a channel that answers for free (Telegram,
+ * WhatsApp inside its 24 hour window). */
 export function reachAckText(outcome: "allowed" | "denied" | "answered" | "needs_key" | "unclear" | "settled" | "unknown_code" | "refused" | "rate_limited", language: "fr" | "en"): string {
   const fr = language === "fr";
   switch (outcome) {

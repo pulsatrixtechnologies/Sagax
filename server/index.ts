@@ -1159,6 +1159,7 @@ import { createReachCodeStore, createReachMeStore } from "./reach-me/store.ts";
 import { ReachMeSecrets } from "./reach-me/secrets.ts";
 import { createSmsChannel } from "./reach-me/sms.ts";
 import { ReachTelegram } from "./reach-me/telegram.ts";
+import { ReachWhatsApp } from "./reach-me/whatsapp.ts";
 import { ReachTeams, REACH_TEAMS_RUN_NAME, REACH_TEAMS_WEBHOOK } from "./reach-me/teams.ts";
 import { setReachMeSmsHandler } from "./reach-me/inbound.ts";
 import { createReachMeRoutes } from "./routes/reach-me.ts";
@@ -1477,6 +1478,8 @@ const pushHub = new PushHub({
 /** "Me joindre" (server/reach-me/): set once its channels exist, further down. */
 let reachMeService: ReachMe | null = null;
 let reachMeTeams: ReachTeams | null = null;
+/** "Me joindre" by WhatsApp: its webhook rides the webhook receiver, which starts first. */
+let reachMeWhatsApp: ReachWhatsApp | null = null;
 /** Turns another bot's words joined as an aside (tryAsideDelivery): no phone
  * tool for the rest of that turn (review of #960). Cleared when a turn starts. */
 const phoneToolTaintedThreads = new Set<string>();
@@ -23414,6 +23417,11 @@ try {
   webhookIngress = await listenWebhookIngress(webhooks, {
     port: WEBHOOK_PORT, publicBaseUrl: WEBHOOK_PUBLIC_URL,
     claimRequest: () => workspaceMaintenance.request(),
+    receivers: {
+      reachMeWhatsApp: async (endpointId, request) => reachMeWhatsApp
+        ? reachMeWhatsApp.webhook(endpointId, request)
+        : { status: 404, contentType: "text/plain; charset=utf-8", body: "Unknown endpoint" },
+    },
   });
   const advertised = WEBHOOK_PUBLIC_URL ? ` (advertised as ${webhookIngress.baseUrl})` : "";
   console.log(`openmausbot webhook receiver on http://${webhookIngress.host}:${webhookIngress.port}${advertised}`);
@@ -34724,6 +34732,14 @@ const reachMeTeamsChannel = new ReachTeams({
   failed: (person, botId, threadId, reason) => reachMeAudit({ person, botId, threadId, channel: "teams", action: "send_failed", reason }),
 });
 reachMeTeams = reachMeTeamsChannel;
+reachMeWhatsApp = new ReachWhatsApp({
+  settings: reachMeSettings,
+  secrets: reachMeSecrets,
+  onReply: (person, text, from) => reachMeService!.handleReply({ channel: "whatsapp", person, text, from }),
+  language: reachMeLanguage,
+  // Meta reaches the webhook receiver only at its public URL (SAGAX_WEBHOOK_PUBLIC_URL)
+  webhookBase: () => webhookIngress ? { url: webhookIngress.baseUrl, public: Boolean(WEBHOOK_PUBLIC_URL) } : null,
+});
 function reachMeAudit(row: { person: string; botId: string; threadId: string; channel: ReachChannelId; action: string; outcome?: string; reason?: string }): void {
   try {
     appendAdminAction(DATA_DIR, {
@@ -34747,6 +34763,7 @@ reachMeService = new ReachMe({
     }),
     teams: reachMeTeamsChannel.channel(),
     telegram: reachMeTelegram.channel(),
+    whatsapp: reachMeWhatsApp.channel(),
   },
   card: reachMeCard,
   answerer: reachMeAnswerer,
@@ -34776,9 +34793,10 @@ ROUTES.push(createReachMeRoutes({
     sms: reachMeService!.channelStatus("sms", person, botId),
     teams: reachMeService!.channelStatus("teams", person, botId),
     telegram: { ...reachMeService!.channelStatus("telegram", person, botId), ...reachMeTelegram.view(person, botId) },
-    whatsapp: { ready: false, reason: "WhatsApp comes later." },
+    whatsapp: { ...reachMeService!.channelStatus("whatsapp", person, botId), ...reachMeWhatsApp!.view(person, botId) },
   }),
   telegram: reachMeTelegram,
+  whatsapp: reachMeWhatsApp,
 }));
 if (IDENTITY.kind === "perspicax") setInterval(() => presence.sweep(), PRESENCE_SWEEP_MS).unref();
 ROUTES.push(createPresenceRoutes({

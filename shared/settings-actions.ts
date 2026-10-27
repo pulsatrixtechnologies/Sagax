@@ -494,9 +494,10 @@ add({
   write: (ids, v) => ({ method: "PUT", path: `/api/me/bot-overrides/${enc(ids.target!)}`, body: v }),
 });
 // 2026-10-26 "Me joindre": how this bot reaches the person speaking outside
-// the app (push, sms with their own number, teams, telegram) and when (hours
-// in a time zone). The person's own setting: no admin. The Telegram token
-// is a secret: the policy's secret class asks on a card.
+// the app (push, sms with their own number, teams, telegram, whatsapp) and
+// when (hours in a time zone). The person's own setting: no admin. The
+// Telegram token and the WhatsApp access token and app secret are secrets:
+// the policy's secret class asks on a card.
 add({
   key: "notifications.reachMe", family: "notifications", target: "bot", value: "object",
   label: "Reach me: how this bot reaches you outside the app when a card waits on you ({ channels: push|sms|teams|telegram|whatsapp, smsNumber?: your own E.164 number, hours: { always: true } or { always: false, timeZone, ranges: [{ days: 0-6, start: HH:MM, end: HH:MM }] } })",
@@ -511,6 +512,23 @@ add({
   write: (ids, v) => (v && typeof v === "object" && (v as { disconnect?: unknown }).disconnect === true)
     ? { method: "DELETE", path: `/api/bots/${enc(ids.target!)}/reach-me/telegram` }
     : { method: "POST", path: `/api/bots/${enc(ids.target!)}/reach-me/telegram`, body: v },
+  classes: (value, ctx) => carriesSecret(value) ? ["secret"] : serverWide(value, { ...ctx, organization: false }),
+});
+add({
+  key: "notifications.reachMeWhatsApp", family: "notifications", target: "bot", value: "object",
+  label: "Reach me by WhatsApp: connect your own WhatsApp Business number ({ accessToken, phoneNumberId, appSecret?, templateName?, templateLanguage? } from your Meta app), change { templateName?, templateLanguage?, appSecret? } with { update: true }, prove your number with { link: {} } (a wa.me code), { link: { number } } (the code by your template) then { link: { code } }, or { disconnect: true }",
+  where: "Bot panel > Overview > Reach me > WhatsApp",
+  write: (ids, v) => {
+    const value = (v && typeof v === "object" ? v : {}) as { disconnect?: unknown; update?: unknown; link?: unknown };
+    const path = `/api/bots/${enc(ids.target!)}/reach-me/whatsapp`;
+    if (value.disconnect === true) return { method: "DELETE", path };
+    if (value.link !== undefined) return { method: "POST", path: `${path}/link`, body: value.link && typeof value.link === "object" ? value.link : {} };
+    if (value.update === true) {
+      const { update: _update, ...rest } = value as Record<string, unknown>;
+      return { method: "PUT", path, body: rest };
+    }
+    return { method: "POST", path, body: v };
+  },
   classes: (value, ctx) => carriesSecret(value) ? ["secret"] : serverWide(value, { ...ctx, organization: false }),
 });
 add({

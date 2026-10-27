@@ -1221,7 +1221,9 @@ for themself, for every bot they can see: no admin, no owner check.
   the day it starts). Stored per person and bot in `<data>/reach-me.json`
   (0600, `server/reach-me/store.ts`). No choice saved: push only at any
   hour, the behavior before. Routes `GET/PUT /api/bots/:id/reach-me`,
-  `POST/DELETE /api/bots/:id/reach-me/telegram` (`server/routes/reach-me.ts`,
+  `POST/DELETE /api/bots/:id/reach-me/telegram`, `POST/PUT/DELETE
+  /api/bots/:id/reach-me/whatsapp` and `POST .../whatsapp/link`
+  (`server/routes/reach-me.ts`,
   client-scoped). `sagax_settings` keys `notifications.reachMe` and
   `notifications.reachMeTelegram` (the token is a secret: its card).
 - Out (`server/reach-me/service.ts`): `observePushFrame` asks `allowsPush`
@@ -1277,8 +1279,21 @@ for themself, for every bot they can see: no admin, no owner check.
     BotFather, token sealed (`server/reach-me/secrets.ts`, vault key), linked
     by a one-time `/start` code; Sagax polls `getUpdates` only while a link
     or a Telegram card waits; any other chat is ignored.
-  - whatsapp: the contract's place only (it needs a WhatsApp Business
-    account and a webhook per person): "À venir" on the page.
+  - whatsapp (`server/reach-me/whatsapp.ts`, 2026-10-27): the person's own
+    WhatsApp Business number (Cloud API): access token and Phone Number ID
+    checked with Meta, token and app secret sealed (`secrets.ts`). Their own
+    number is proven by a code: `SAGAX <code>` sent from WhatsApp (wa.me
+    link, through the webhook) or the code by their template typed back
+    (`POST .../reach-me/whatsapp/link`). Out: plain text inside the 24 h
+    window (their last message), else their approved template (name and
+    language set by them, one body parameter). Back: webhook receiver path
+    `/reach-me/whatsapp/<rmwa_...>` (`server/webhook-ingress.ts`
+    `receivers`): GET answers the verify token, POST needs
+    `X-Hub-Signature-256` with their app secret, their Phone Number ID and
+    their proven number; the code must have gone to that number
+    (`ReachCode.whatsappTo`). Needs `SAGAX_WEBHOOK_PUBLIC_URL` for replies;
+    without it, send only. Every message is billed to their Meta account:
+    mocks only in tests. `sagax_settings` key `notifications.reachMeWhatsApp`.
 - UI: "Me joindre" on the bot's Overview, under its email address
   (`src/components/bot-settings/BotReachMe.tsx`); no id on screen (the
   Telegram bot by its @username). iOS: not on the phone's bot panel yet;
