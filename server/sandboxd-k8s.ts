@@ -35,6 +35,7 @@ import {
 } from "./sandboxd-k8s-spec.ts";
 import { SandboxError, SandboxService } from "./sandboxd-core.ts";
 import { SANDBOX_STARTING_CODE } from "./sandbox-k8s-wake.ts";
+import { SPARE_TICK_MS, SpareScaler, spareConfigFromEnv } from "./sandboxd-k8s-spare.ts";
 import { runsConfigFromEnv } from "./sandboxd-runs-spec.ts";
 import type { ContainerStats, ContainerSummary, DockerApi, ExecRequest, ExecResult, TtyExec, TtySize } from "./sandboxd-docker.ts";
 import { createSandboxdHandler, createSandboxdUpgradeHandler } from "./sandboxd.ts";
@@ -231,10 +232,14 @@ export function kubernetesApi(sandbox: SandboxdConfig, k8s: K8sSandboxConfig, cl
     const running = phase === "Running";
     const paused = pausedFlag && !running;
     const image = annotations[IMAGE_ANNOTATION];
+    // 2026-10-26: a Pod waiting for a node, its volume or its image read
+    // "stopped" and the screen said off while it was on its way up.
+    const starting = !running && !paused && phase === "Pending";
     return {
       name,
       running: running || paused,
       ...(paused ? { paused: true } : {}),
+      ...(starting ? { starting: true } : {}),
       labels,
       ...(image ? { image } : {}),
     };
@@ -632,6 +637,19 @@ export async function startKubernetesProvisioner(env: NodeJS.ProcessEnv = proces
     void backend.syncSpare();
     const spareSweep = setInterval(() => { void backend.syncSpare(); }, 30_000);
     spareSweep.unref();
+  }
+  // 2026-10-26: the reserve node follows the people at work (server/sandboxd-k8s-spare.ts).
+  // The dedicated-node reserve (k8s.dedicated.spare, syncSpare above) already
+  // follows the people at work: when it is on, it owns the reserve alone.
+  const spare = spareConfigFromEnv(env, sandbox.maxRunning);
+  if (spare && k8s.dedicated?.spare) {
+    console.log("sandboxd: SAGAX_SANDBOX_K8S_SPARE_DEPLOYMENT ignored: the dedicated-node reserve drives the reserve");
+  } else if (spare) {
+    const scaler = new SpareScaler(client, k8s.namespace, sandbox.instance, spare);
+    void scaler.reconcile();
+    const spareTick = setInterval(() => { void scaler.reconcile(); }, SPARE_TICK_MS);
+    spareTick.unref();
+    console.log(`sandboxd: spare reserve ${spare.namespace}/${spare.deployment}: ${spare.count} while someone works, none from ${spare.maxActive} at work`);
   }
   let runsServer: { close(callback?: () => void): unknown } | null = null;
   if (runs) {

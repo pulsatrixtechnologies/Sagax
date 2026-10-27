@@ -36,6 +36,9 @@ export interface SandboxStatus {
   overQuota: boolean;
   busy: number;
   limits: { memoryMb: number; cpus: number; pids: number; diskMb: number; tmpMb: number };
+  /** Kubernetes: the sandbox's Pod is on its way up (state stays
+   * "stopped" for older readers). Absent otherwise. */
+  starting?: true;
 }
 
 /** The usage panel of the person's Computer tab: a light sample, scoped to
@@ -197,6 +200,7 @@ export class SandboxService {
     return {
       key,
       state,
+      ...(state === "stopped" && container?.starting ? { starting: true as const } : {}),
       lastUsedAt: this.lastUsed.get(key) ?? null,
       workspaceBytes: usage?.bytes ?? null,
       overQuota: usage ? usage.bytes > this.config.limits.workspaceQuotaBytes : false,

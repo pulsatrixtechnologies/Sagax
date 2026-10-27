@@ -324,7 +324,7 @@ function usePageVisible(): boolean {
 export function serverScreenState(status: ServerEnvironmentStatus | null, pending: PowerAction | null): ScreenState {
   if (!status) return "starting";
   const power = powerState(status.state, pending);
-  if (status.waking && power !== "running" && power !== "paused") return "starting";
+  if ((status.waking || status.starting) && power !== "running" && power !== "paused") return "starting";
   if (!status.configured) return "off";
   return power === "unavailable" ? "error" : power;
 }
@@ -415,7 +415,7 @@ export function ServerComputerScreen({ caption, initial = null }: { caption: str
     : undefined;
   const hint = waking && wakingSeen ? wakingHint(wakingSeen.elapsedMs + Math.max(0, Date.now() - wakingSeen.at)) : undefined;
   const controls = {
-    play: status?.configured && power === "off" && !waking ? () => void act("start") : undefined,
+    play: status?.configured && power === "off" && state !== "starting" ? () => void act("start") : undefined,
     resume: power === "paused" ? () => void act("resume") : undefined,
     pause: power === "running" ? () => void act("pause") : undefined,
     stop: power === "running" || power === "paused" ? () => void act("shutdown") : undefined,

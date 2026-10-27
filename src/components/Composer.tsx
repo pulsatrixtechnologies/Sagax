@@ -263,7 +263,7 @@ export function Composer({
     (next: string) => {
       markDraftEdited(draftId);
       setText(next);
-      if (next.trim()) prewarmConversation(api, warmBotId, warmThreadId);
+      if (next.trim()) prewarmConversation(api, warmBotId, warmThreadId, Date.now(), true);
     },
     [draftId, setText, warmBotId, warmThreadId],
   );

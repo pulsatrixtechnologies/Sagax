@@ -33,6 +33,10 @@ export interface UserSandboxView {
    * screen's clock may differ from the server's). Only while a status read
    * fails during the wake window; never the webhook or another detail. */
   waking?: { since: number; elapsedMs: number };
+  /** The environment's Pod is on its way up (a node being added, the volume
+   * attaching, the image pulling): the screen says "starting", not off.
+   * Read from the provisioner's status, which never starts anything. */
+  starting?: true;
 }
 
 export { UserSandboxUnavailable };
@@ -229,6 +233,7 @@ export class UserSandboxManager {
       const [status, info] = await Promise.all([client.status(this.keyFor(principalId)), this.provisionerInfo(client)]);
       return {
         state: status.state,
+        ...(status.starting ? { starting: true as const } : {}),
         lastUsedAt: status.lastUsedAt,
         workspaceBytes: status.workspaceBytes,
         overQuota: status.overQuota,

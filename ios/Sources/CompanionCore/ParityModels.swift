@@ -337,6 +337,13 @@ public struct ServerEnvironmentStatus: Decodable, Equatable, Sendable {
     public var idleMinutes: Int?
     public var pendingDeletionAt: Double?
     public var error: String?
+    /// The environment's Pod is on its way up (a node being added, the
+    /// volume attaching, the image pulling). Absent on an older server.
+    public var starting: Bool?
+
+    /// Starting rather than off: its Pod is on its way up, or the
+    /// environments' cluster is waking. Reading it never starts anything.
+    public var isStarting: Bool { starting == true || error == "cluster_starting" }
 
     public init(
         configured: Bool,
@@ -347,7 +354,8 @@ public struct ServerEnvironmentStatus: Decodable, Equatable, Sendable {
         limits: Limits? = nil,
         idleMinutes: Int? = nil,
         pendingDeletionAt: Double? = nil,
-        error: String? = nil
+        error: String? = nil,
+        starting: Bool? = nil
     ) {
         self.configured = configured
         self.state = state
@@ -358,6 +366,7 @@ public struct ServerEnvironmentStatus: Decodable, Equatable, Sendable {
         self.idleMinutes = idleMinutes
         self.pendingDeletionAt = pendingDeletionAt
         self.error = error
+        self.starting = starting
     }
 
     /// "Disk space" on the Bot Computer screen.

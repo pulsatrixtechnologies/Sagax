@@ -16,6 +16,15 @@ describe("prewarmConversation", () => {
     expect(api).toHaveBeenCalledWith("/api/bots/b1/warm", expect.objectContaining({ method: "POST", body: JSON.stringify({ threadId: "t1" }) }));
   });
 
+  it("says when the person types, on its own refresh, so an open just before does not swallow it (2026-10-26)", () => {
+    const api = vi.fn(() => Promise.resolve({ warm: "started" }));
+    expect(prewarmConversation(api, "b1", "t1", 0)).toBe(true);
+    expect(prewarmConversation(api, "b1", "t1", 2_000, true)).toBe(true);
+    expect(prewarmConversation(api, "b1", "t1", 5_000, true)).toBe(false);
+    expect(api).toHaveBeenLastCalledWith("/api/bots/b1/warm", expect.objectContaining({ body: JSON.stringify({ threadId: "t1", typing: true }) }));
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
   it("swallows a refusal (an older server answers 404)", async () => {
     const api = vi.fn(() => Promise.reject(new Error("404")));
     expect(prewarmConversation(api, "b1", "t1", 0)).toBe(true);

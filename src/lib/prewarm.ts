@@ -10,16 +10,20 @@ const lastCall = new Map<string, number>();
 
 type Api = (path: string, init?: RequestInit & { timeoutMs?: number }) => Promise<unknown>;
 
-export function prewarmConversation(api: Api, botId: string | undefined, threadId: string | undefined, now = Date.now()): boolean {
+/** `typing`: the person is writing a message (not only looking): the server
+ * may also wake the bot's cloud computer so the first command does not wait
+ * for it (2026-10-26). Opening a conversation never wakes a computer. */
+export function prewarmConversation(api: Api, botId: string | undefined, threadId: string | undefined, now = Date.now(), typing = false): boolean {
   if (!botId || !threadId) return false;
-  const key = `${botId}:${threadId}`;
+  // Typing has its own refresh: an open just before must not swallow it.
+  const key = `${botId}:${threadId}${typing ? ":typing" : ""}`;
   const last = lastCall.get(key);
   if (last !== undefined && now - last < REFRESH_MS) return false;
   lastCall.set(key, now);
   if (lastCall.size > 200) lastCall.clear();
   void api(`/api/bots/${encodeURIComponent(botId)}/warm`, {
     method: "POST",
-    body: JSON.stringify({ threadId }),
+    body: JSON.stringify(typing ? { threadId, typing: true } : { threadId }),
     timeoutMs: 10_000,
   }).catch(() => {});
   return true;

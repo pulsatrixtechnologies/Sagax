@@ -1220,6 +1220,7 @@ import { isDesktopInjectModel, setDesktopInjectModels } from "./drivers/local-in
 import { defaultTurnPayerMode, effectiveTurnPayerMode, type TurnPayerMode } from "../shared/turn-payer.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import { cloudOnlyBot } from "./cloud-only-bots.ts";
+import { TypingPrewakeThrottle } from "./sandbox-typing-prewake.ts";
 import { FLOW_TOOLS_MCP_NAME } from "./flow-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME, AUTO_COMPUTER_RULES, COMPUTER_SELECT_TOOL, autoComputerGuidance, autoComputerReason, autoComputerToolRefusal, autoStartLine, autoStartTarget, parseAutoComputerTarget, selectAutoComputer, type AutoComputerState, type AutoComputerTarget, type AutoStart, type FixedWorksOn } from "./auto-computer.ts";
 import { parseWorkspaceLine, workspaceLineName } from "../shared/workspace-line.ts";
@@ -28867,7 +28868,26 @@ function threadWarmRequest(auth: RequestAuth, botId: string, body: Record<string
   } catch {
     return { status: 200, body: { warm: "skipped" } };
   }
+  // 2026-10-26: the person is typing: wake their cloud computer now, so the
+  // bot's first command does not wait for the cluster or a node
+  // (server/sandbox-typing-prewake.ts). Opening the conversation never does.
+  if (body.typing === true) prewakeComputerWhileTyping(bot.id, actorPrincipalId(auth));
   return { status: 200, body: { warm: prewarmThread(bot.id, threadId, actorPrincipalId(auth) || "local", { speaker: speakerFor(auth) }) } };
+}
+const typingPrewake = new TypingPrewakeThrottle();
+/** Same places as a routine's prewake: the person's server environment, or a
+ * bot that runs only in the cloud. UserSandboxManager.prewake does the rest
+ * (Kubernetes with the cluster wake only, a bot that used it lately only). */
+function prewakeComputerWhileTyping(botId: string, principalId: string | null | undefined): void {
+  if (!userSandbox || IDENTITY.kind !== "perspicax") return;
+  const principal = principalId?.trim().toLowerCase();
+  if (!principal) return;
+  const bot = store.bot(botId);
+  if (!bot || bot.computer === "off") return;
+  const place = decideWorkplace({ desktopTargeted: false, routine: false, principal, personAsked: false });
+  if (place.target !== "user-sandbox" && !cloudOnlyBot(botId)) return;
+  if (!typingPrewake.take(principal, botId, Date.now())) return;
+  void userSandbox.prewake(principal, botId);
 }
 // 2026-10-16: a person's custom auto-review rules (server/routes/custom-rules.ts).
 ROUTES.push(createCustomRuleRoutes({

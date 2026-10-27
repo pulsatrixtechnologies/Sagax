@@ -38,7 +38,8 @@ struct SandboxDesktopScreen: View {
         switch status?.state {
         case "running": return "running"
         case "paused": return "paused"
-        case "missing", "stopped": return "off"
+        case "missing", "stopped": return status?.isStarting == true ? "starting" : "off"
+        case "unavailable" where status?.isStarting == true: return "starting"
         default: return status == nil ? "starting" : "unavailable"
         }
     }

@@ -587,5 +587,12 @@ describe("a pod that does not run in time (2026-10-19, cold node pool)", () => {
     const refusal = await service.ensure(person).catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(SandboxError);
     expect(refusal).toMatchObject({ status: 503, code: SANDBOX_STARTING_CODE });
+    // 2026-10-26: while the Pod waits, a status read says it is on its way
+    // up (the screen shows "starting", never off) and starts nothing more.
+    const pods = () => [...cluster.objects.keys()].filter((path) => path.includes("/pods/")).length;
+    const before = pods();
+    const status = await service.status(person);
+    expect(status).toMatchObject({ state: "stopped", starting: true });
+    expect(pods()).toBe(before);
   });
 });
