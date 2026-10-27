@@ -585,8 +585,9 @@ posixOnly("Perspicax organization, slice 3: directory, sharing with a user, acce
     const created = await api("POST", "/api/bots", erin, { name: "Zed" });
     expect(created.status, created.text).toBe(201);
     const zed = created.body.bot;
-    // no New bot policy saved: an organization's new bot starts on Ask
-    expect(zed.approvalMode).toBe("ask");
+    // no New bot policy saved: an organization's new bot starts on
+    // Approve for me, as on a solo server (#1098)
+    expect(zed.approvalMode).toBe("auto");
     expect(zed.ownerUserId).toBe((await api("GET", "/api/auth/session", erin)).body.principalId);
     // an admin reaches a member's Direct only when it is shared with them
     expect((await api("PATCH", `/api/bots/${zed.id}`, alice, { approvalMode: "custom" })).status).toBe(404);

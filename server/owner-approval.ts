@@ -97,6 +97,10 @@ export interface RuleCall {
    * team, never from the call's arguments.
    * Set only for the person's own turn on their own computer. */
   app?: ScreenAppIdentity;
+  /** 2026-10-27 (#1098): the call runs in the person's own sandbox (their
+   * cloud computer, their Local VM): their allow rules answer there even
+   * while the organization turned "Toujours permettre" off. Never a scope. */
+  ownSandbox?: boolean;
 }
 
 /** `mcp__srv__tool` and `srv__tool` are one tool; a built-in keeps its name. */
@@ -481,7 +485,7 @@ export function matchOwnerRule(rules: readonly OwnerRule[], call: RuleCall): Own
   const scope = callScopeFor(call);
   const destructive = destructiveKindOf(call);
   const weight = (rule: OwnerRule) => RULE_BEHAVIORS.indexOf(rule.behavior);
-  const allowRules = standingGrantsAllowed();
+  const allowRules = standingGrantsAllowed({ ownSandbox: call.ownSandbox === true });
   return rules
     .filter((rule) => (allowRules || rule.behavior !== "allow") && ruleMatches(rule, call, scope, destructive))
     .sort((a, b) =>

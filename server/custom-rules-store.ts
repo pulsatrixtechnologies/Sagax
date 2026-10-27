@@ -157,10 +157,11 @@ export class CustomRuleStore {
 
   /** The rules the reviewer applies for one person (and, with `botId`,
    * one bot): their own, without their allow rules while the organization
-   * turned Always allow off, then the organization's enabled rules. */
-  rulesOf(ownerId: string, botId?: string): CustomRule[] {
+   * turned Always allow off (never for a call in their own sandbox,
+   * `ownSandbox`, #1098), then the organization's enabled rules. */
+  rulesOf(ownerId: string, botId?: string, where?: { ownSandbox?: boolean }): CustomRule[] {
     if (this.unreadable) return [];
-    const alwaysAllow = this.orgPolicy().alwaysAllow;
+    const alwaysAllow = where?.ownSandbox === true || this.orgPolicy().alwaysAllow;
     return [
       ...this.ownRulesOf(ownerId, botId).filter((rule) => alwaysAllow || rule.behavior !== "allow"),
       ...this.orgRules().filter((rule) => rule.enabled),

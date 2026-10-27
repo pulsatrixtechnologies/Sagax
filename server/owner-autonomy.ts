@@ -73,11 +73,19 @@ export function ownerLineageOrigin(input: {
     // Only a routine whose trigger is known to be its schedule or a manual run.
     case "owner-routine": return (input.automation === "schedule" || input.automation === "manual")
       && (speaker.principalId === undefined || same(speaker.principalId)) ? "owner" : "other";
-    case "peer":
-      // A hop from a routine may carry what a webhook brought in: only a hop
-      // from the owner's own words counts.
-      if (speaker.routine) return "other";
+    case "peer": {
+      // A hop from a routine may carry what a webhook brought in. 2026-10-27
+      // (#1098): a hop between two of the owner's own bots from the owner's
+      // own routine (its schedule or a manual run, the trigger the hop
+      // carries) is the owner's too; a webhook, a typed trigger or an unknown
+      // source stays someone else's.
+      if (speaker.routine) {
+        const trigger = speaker.routineTrigger ?? input.automation;
+        return (trigger === "schedule" || trigger === "manual") && same(input.peerFromOwner)
+          && (speaker.principalId === undefined || same(speaker.principalId)) && !input.unattended ? "owner" : "other";
+      }
       return same(input.peerFromOwner) && same(speaker.principalId) && !input.unattended ? "owner" : "other";
+    }
   }
   return "other";
 }

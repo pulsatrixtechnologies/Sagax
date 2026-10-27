@@ -12,7 +12,9 @@
 //   saves a standing grant (a session allow, a saved command, an Always
 //   allow rule or key), and the standing grants people already saved stop
 //   answering while it is off (autoVerdict, matchOwnerRule, the store's
-//   rulesOf). On again, they answer again.
+//   rulesOf). On again, they answer again. 2026-10-27 (#1098): never in the
+//   person's own sandbox (their cloud computer, their Local VM): what happens
+//   there is theirs, so their Allow rules keep answering and saving there.
 //
 // The admin sets both in the Perspicax console (server/org-admin-ops.ts,
 // `org-approvals`). This module holds the live policy for the pure deciders,
@@ -42,8 +44,10 @@ export function setOrgApprovalPolicySource(read: (() => OrgApprovalPolicy) | nul
 
 /** Whether "Toujours permettre" may save or use a standing grant now. With
  * no store registered (a test, a tool), the default: allowed. A policy that
- * cannot be read refuses (fail closed). */
-export function standingGrantsAllowed(): boolean {
+ * cannot be read refuses (fail closed). `ownSandbox`: the call runs in the
+ * person's own sandbox, where the switch never applies (#1098). */
+export function standingGrantsAllowed(where?: { ownSandbox?: boolean }): boolean {
+  if (where?.ownSandbox === true) return true;
   if (!source) return true;
   try {
     return source().alwaysAllow;

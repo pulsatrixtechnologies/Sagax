@@ -77,7 +77,8 @@ export function approvalStepUp(input: {
 }): StepUpDecision {
   const { keys, person, threadId, requestId, card, behavior } = input;
   if (behavior !== "allow") return null;
-  if (answerWidens(input.answer) && !standingGrantsAllowed()) return orgRefusal();
+  // #1098: a card in the person's own sandbox keeps its standing grants
+  if (answerWidens(input.answer) && !standingGrantsAllowed({ ownSandbox: card?.ownSandbox === true })) return orgRefusal();
   if (!card || card.answered || card.dismissed || card.expired) {
     // No live card to read: nothing tells what this Allow would do. For a
     // person who chose any class, it is refused, never let through.
@@ -116,7 +117,7 @@ export function alwaysAllowStepUp(input: {
   stepUp: unknown;
 }): StepUpDecision {
   const { keys, person, card } = input;
-  if (!standingGrantsAllowed()) return orgRefusal();
+  if (!standingGrantsAllowed({ ownSandbox: card?.ownSandbox === true })) return orgRefusal();
   if (!card) return null;
   const required = keys.required(person, stepUpClassesForCard(card, input.risks, { alwaysAllowKey: input.key }), input.policyPerson);
   if (!required.length) return null;

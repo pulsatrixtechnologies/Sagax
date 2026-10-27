@@ -27,11 +27,6 @@ export function valueDigest(value: unknown): string {
   return createHash("sha256").update(canonical(value)).digest("hex").slice(0, 32);
 }
 
-/** A change to rules, permissions or standing grants: never an Always allow. */
-function ruleChange(classes: readonly string[]): boolean {
-  return classes.includes("rule-change") || classes.includes("always-grant");
-}
-
 /** The rule "Always allow" would keep for a raw act. A write that is more
  * than a plain one (any class but irreversible) is bound to its exact body. */
 export function actRuleCandidate(target: ActTarget, classes: readonly string[], describe: (target: ActTarget) => string): ActRuleCandidate {
@@ -219,9 +214,12 @@ export function createBotActService(deps: BotActDeps): BotActService {
         if (result.status < 400) input.plan.onDone?.("run");
         return result;
       }
-      // 2026-10-20 (security review): a change to rules or permissions never
-      // has an Always allow, so a bot never replays an escalation unasked
-      const plannedRule = ruleChange(input.plan.stepUpClasses) || input.plan.noRule ? undefined : input.plan.rule ?? actRuleCandidate(input.target, input.plan.stepUpClasses, describeOf);
+      // 2026-10-27 (#1098): a change to the person's own tools, MCP, rules
+      // or secrets keeps its card at every level (no mode answers it), and
+      // its Always allow is offered too: the person's own rule for this bot,
+      // bound to the exact value (actRuleCandidate, settings-actions.ts), so
+      // the bot never replays a different change unasked.
+      const plannedRule = input.plan.noRule ? undefined : input.plan.rule ?? actRuleCandidate(input.target, input.plan.stepUpClasses, describeOf);
       const allowedBy = plannedRule ? ruleFor(performActor, input.botId, plannedRule, input.plan.stepUpClasses) : null;
       if (allowedBy) {
         const planned = { personKey: performActor.kind === "person" ? performActor.personKey : null, classes: [] as string[] };
@@ -254,7 +252,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
       if (!decision.ok) return refuse(decision.status, decision.error);
       if (decision.effect === "run") return run(performActor, decision.target);
       const classes = actClassesOf(decision.target);
-      const candidate = ruleChange(classes) ? undefined : actRuleCandidate(decision.target, classes, describeOf);
+      const candidate = actRuleCandidate(decision.target, classes, describeOf);
       const allowedBy = candidate ? ruleFor(performActor, input.botId, candidate, classes) : null;
       if (allowedBy) {
         const result = await run(performActor, decision.target);
@@ -324,7 +322,7 @@ export function createBotActService(deps: BotActDeps): BotActService {
   }
 
   function ruleFor(actor: PerformActor, botId: string, candidate: ActRuleCandidate, classes: readonly string[]): { id: string } | null {
-    if (!deps.actRule || ruleChange(classes)) return null;
+    if (!deps.actRule) return null;
     return deps.actRule({ person: actor.kind === "person" ? actor.personKey : null, botId, candidate, classes });
   }
 

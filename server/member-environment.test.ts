@@ -95,6 +95,15 @@ describe("own-environment autonomy, security review 2026-10-16", () => {
     expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER }, internalTurn: true, peerFromOwner: OWNER })).toBe("owner");
   });
 
+  it("a hop between the person's own bots from their own scheduled or manual routine is theirs; a webhook's is not (#1098)", () => {
+    const lineage = { botOwnerPrincipalId: OWNER, internalTurn: true, routineLineage: true, peerFromOwner: OWNER };
+    for (const trigger of ["schedule", "manual"]) {
+      expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER, routine: true, routineTrigger: trigger }, automationTrigger: trigger })).toBe("owner");
+    }
+    expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER, routine: true, routineTrigger: "webhook" }, automationTrigger: "webhook" })).toBe("other");
+    expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER, routine: true, routineTrigger: "schedule" }, automationTrigger: "schedule", peerFromOwner: "pr_bob" })).toBe("other");
+  });
+
   it("a webhook, a trigger, someone else's routine or bot, a routine's hop, a guest stay other", () => {
     const lineage = { botOwnerPrincipalId: OWNER };
     const routine = { routineLineage: true, automation: true, unattended: true };

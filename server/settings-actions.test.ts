@@ -8,13 +8,13 @@ import { createSettingsActions, settingStepUpClasses, type SettingsActionDeps } 
 const PERSON: TurnFacts = { automation: false, guest: false, requestUsable: true, senderUnproven: false, provenPerson: "pr_owner", sharedServer: true };
 
 function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "full"; facts?: TurnFacts; routeStatus?: number; answer?: unknown } = {}) {
-  const planned: Array<{ effect: string; path: string; method: string; body?: unknown; stepUpClasses: readonly string[]; primary?: unknown }> = [];
+  const planned: Array<{ effect: string; path: string; method: string; body?: unknown; stepUpClasses: readonly string[]; primary?: unknown; rule?: { scope: Record<string, string> }; noRule?: boolean }> = [];
   const audits: unknown[] = [];
   const screens: unknown[] = [];
   const acts = {
     async handlePlanned(input: Parameters<BotActService["handlePlanned"]>[0]) {
       const target = input.target.kind === "route" ? input.target : { method: "UI", path: `ui:${input.target.command}`, body: input.target.input };
-      planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses, ...(input.plan.primary ? { primary: input.plan.primary } : {}) });
+      planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses, ...(input.plan.primary ? { primary: input.plan.primary } : {}), ...(input.plan.rule ? { rule: input.plan.rule } : {}), ...(input.plan.noRule ? { noRule: true } : {}) });
       if (target.method === "GET") return { status: 200, body: { text: JSON.stringify(over.answer ?? {}) } };
       if (input.plan.effect === "hold") return { status: 200, body: { held: true, text: "Approval needed." } };
       const status = over.routeStatus ?? 200;
@@ -122,6 +122,14 @@ describe("sagax_settings", () => {
     const h = harness({ keyRequired: (_person, classes) => classes.filter((name) => name === "rule-change") });
     expect((await h.call({ action: "set", key: "bot.approvalMode", target: "b2", value: "auto" })).body.text).toContain("security key");
     expect(h.planned[0]!.stepUpClasses).toContain("rule-change");
+  });
+
+  it("#1098: a change to rules or the approval level keeps its card and offers Always allow for this exact value", async () => {
+    const h = harness({ mode: "ask" });
+    await h.call({ action: "set", key: "bot.approvalMode", target: "b2", value: "auto" });
+    expect(h.planned[0]!.effect).toBe("hold");
+    expect(h.planned[0]!.noRule).toBeUndefined();
+    expect(h.planned[0]!.rule?.scope).toMatchObject({ setting: "bot.approvalMode", target: "b2", value: expect.any(String) });
   });
 
   it("relays the route's own refusal: a member does not do by bot what they cannot do by hand", async () => {

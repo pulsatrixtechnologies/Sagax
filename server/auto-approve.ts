@@ -286,6 +286,10 @@ export function autoVerdict(
     /** The call is one of Sagax's own tools that must never answer itself:
      * a rule change (rules_update and the like, "rule-change" class). */
     ruleChange?: boolean;
+    /** 2026-10-27 (#1098): the call runs in the person's own sandbox (their
+     * cloud computer, their Local VM): the organization's "Toujours
+     * permettre" switch does not take their standing grants away there. */
+    ownSandbox?: boolean;
   },
 ): AutoVerdict {
   // A question is for a person, whatever channel it arrived on — and
@@ -301,7 +305,7 @@ export function autoVerdict(
   // "Toujours permettre" off, no standing grant answers (a saved Allow rule
   // of a gate, a saved command, an allow rule in the person's words); each
   // call is approved on its card.
-  if (!standingGrantsAllowed() && context && (context.ruleAllowed || context.commandAllowed || context.customRule?.behavior === "allow" || context.recipientsAllowed)) {
+  if (context && !standingGrantsAllowed({ ownSandbox: context.ownSandbox === true }) && (context.ruleAllowed || context.commandAllowed || context.customRule?.behavior === "allow" || context.recipientsAllowed)) {
     context = {
       ...context,
       ruleAllowed: false,

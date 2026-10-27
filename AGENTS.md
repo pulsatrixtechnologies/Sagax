@@ -287,7 +287,9 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   rule itself is always-grant.
 - Families: engine cards (all engines, the broker decides), act and
   sagax_settings cards (`server/bot-act.ts`: setting + target, exact value
-  digest when more than a simple change), the ConnectWise widget
+  digest when more than a simple change; #1098: a change to rules,
+  permissions, tools, MCP or secrets keeps its card at every level and offers
+  Always allow too, always bound to its exact value), the ConnectWise widget
   (`cw_widget:cw_psa__write`, apart from the bot's own calls), native
   safety holds (exact fingerprint), "Send on your behalf?" (one call, its
   targets), routine, profile and model proposals, skills (exact content),
@@ -297,6 +299,21 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   a card needing a key or with no rule is skipped.
 - Every automatic answer writes a decision row `source: owner-rule` (or
   `admin-rule`) with the rule id.
+- The person's own sandbox (#1098, 2026-10-27): a call of a member's bot in
+  its owner's cloud computer or Local VM, mounted for this turn (card
+  `ownSandbox`), offers the session allow, the Always allow key and the saved
+  command (`sandboxCommandCandidate`: the exact line, `/workspace`, the engine
+  marked `@sagax-environment`, so it never answers the same text elsewhere)
+  to the owner (`cardStandingGrants`); the shared host keeps admin or
+  `host.shell`. The organization's "Toujours permettre" off never takes the
+  person's Allow rules away there (`standingGrantsAllowed({ ownSandbox })`).
+- The person's own lineage (#1098): a hop between their own bots from their
+  own scheduled or manual routine counts as their own turn
+  (`ownerLineageOrigin`, the trigger the hop carries); a webhook keeps its card.
+- By voice (#1098): a Live call decides a proposal (routine, profile, default
+  model, team setup, meeting) through its own resolver (`liveProposal`,
+  `resolveLiveProposal`); a card the person protects with a key, and a skill
+  (its content is reviewed on screen), stay on screen.
 - Not covered yet: email draft send, team memory, confidential memory,
   team setup cards.
 - Tests: `server/always-allow.e2e.test.ts` (engine card, key, bulk, act,
@@ -2345,6 +2362,10 @@ the driver tests or `src/components/ApprovalModeSelector.fullAccess.test.ts`:
   with `{ approvalMode: "full", confirmFullAccess }` alone (the default, for
   new threads and routines). The first grant needs `confirmFullAccess: true`;
   the server keeps `fullAccessConsent` on the bot so later grants skip it.
+  #1098 (2026-10-27): with that consent, the owner also opens a new
+  conversation on Full (`POST /api/bots/<id>/tasks` with `approvalMode:
+  "full"`, `newConversationFullAllowed`), on an organization server and on a
+  solo server from any of the operator's apps once the desktop confirmed it.
 - Settings > Organization > Allow full access (`organization.allowFullAccess`,
   admin only, `PATCH /api/org/settings`). Off until an admin turns it on
   (2026-10-11, `orgFullAccessAllowed` reads `=== true`); a saved value
@@ -2380,11 +2401,12 @@ and `server/store.org-approval-default.test.ts`:
   /api/bot-defaults` answers `approvalMode` (that level) and the New bot
   dialog starts on it when the saved template names no mode
   (`newBotStartMode`).
-- Organization server (`orgNewBotApprovalMode`): `defaults.approvalMode`
-  (`newBotDefaults.profile.approvalMode`, what the console's `POST settings`
-  writes) `auto` starts on Approve for me; anything else, no policy saved
-  included, starts on Ask (`full` and `custom` need the owner's consent,
-  which a new bot cannot have). Existing bots are never moved.
+- Organization server (`orgNewBotApprovalMode`, #1098 2026-10-27): Approve
+  for me, as on a solo server; only an explicit `ask` as
+  `defaults.approvalMode` (`newBotDefaults.profile.approvalMode`, what the
+  console's `POST settings` writes) starts on Ask (`full` and `custom` need
+  the owner's consent, which a new bot cannot have, so they start on Approve
+  for me). Existing bots are never moved.
 - The first start of a data directory moves bots and threads still on Ask, or
   with no mode, onto Approve for me, then writes `approval-default-auto.v1`.
   Where new bots start on Ask (an organization not set to `auto`) nothing

@@ -4,7 +4,7 @@ import { join, parse, sep } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as atomic from "./atomic.ts";
-import { CommandAllowlistStore, commandAllowlistCandidate, validateCommandAllowlistCandidate } from "./command-allowlist.ts";
+import { CommandAllowlistStore, commandAllowlistCandidate, sandboxCommandCandidate, validateCommandAllowlistCandidate } from "./command-allowlist.ts";
 
 let directory: string;
 let filename: string;
@@ -147,5 +147,20 @@ describe("command allowlist", () => {
     expect(store.matches("bot-a", candidate())).toBe(true);
     expect(readFileSync(filename, "utf8")).toBe(saved);
     expect(new CommandAllowlistStore(filename).list("bot-a")).toEqual([rule]);
+  });
+});
+
+describe("a command in the owner's own sandbox (#1098)", () => {
+  it("is the exact line in the sandbox's folder, never the same text on another computer", () => {
+    const saved = sandboxCommandCandidate("mcp__sagax-environment__run_command", JSON.stringify({ command: "npm test" }), "claude");
+    expect(saved).toEqual({ command: "npm test", cwd: "/workspace", providerInstanceId: "claude@sagax-environment" });
+    const store = new CommandAllowlistStore(filename);
+    store.add("bot-a", saved!);
+    expect(store.matches("bot-a", sandboxCommandCandidate("sagax-environment__run_command", { command: "npm test" }, "claude")!)).toBe(true);
+    // the host's native shell with the same text and folder is not the sandbox
+    expect(store.matches("bot-a", { command: "npm test", cwd: "/workspace", providerInstanceId: "claude" })).toBe(false);
+    expect(sandboxCommandCandidate("mcp__sagax-desktop__run_command", JSON.stringify({ command: "npm test" }), "claude")).toBeNull();
+    expect(sandboxCommandCandidate("mcp__sagax-environment__write_file", JSON.stringify({ path: "a" }), "claude")).toBeNull();
+    expect(sandboxCommandCandidate("mcp__sagax-environment__run_command", "not json", "claude")).toBeNull();
   });
 });
