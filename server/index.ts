@@ -43851,9 +43851,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (field) return json(res, 403, { error: `forbidden: a phone may change a bot's name, look, instructions, notifications, model and memory, not "${field}"` });
       }
       // Organization server: the bot's owner, signed in, turns Full on as
-      // the bot's default (its new threads and routines) while the
-      // organization allows it (org-full-access.ts). A request of its own:
-      // nothing else rides along.
+      // the bot's level. Every conversation reads that level when a turn
+      // starts. The organization must allow Full (org-full-access.ts). A
+      // request of its own: nothing else rides along.
       if (IDENTITY.kind === "perspicax" && body.approvalMode === "full") {
         const target = store.bot(m[1]);
         if (!target) return json(res, 404, { error: "no such bot" });
@@ -43867,10 +43867,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (target.busy && !primaryAskedReplay()) return json(res, 409, { error: "stop this bot's turn before changing its approval level" });
         if (target.approvalGrant) return json(res, 409, { error: "the bot's approval mode is still being confirmed" });
         if (!supportsApprovalMode(target.modelSelection, "full")) return json(res, 400, { error: "This provider does not support Full access" });
-        // The settings control shows the open conversation. The grant has to
-        // land on that thread too, or the menu snaps back to the thread's
-        // previous level while only the bot default changed. Only a thread
-        // this caller is shown: never another member's conversation.
+        // The open conversation is recorded with the grant so its standing
+        // allows are cleared and the change is audited. The turn reads the
+        // bot either way. Only a thread this caller is shown: never another
+        // member's conversation.
         const followTask = parsedFull.threadId ? store.taskByThread(target.id, parsedFull.threadId) : undefined;
         const followViewer = scopedThreadViewer() ?? sessionPrincipal(auth) ?? undefined;
         const follow = threadFollowsFullGrant({

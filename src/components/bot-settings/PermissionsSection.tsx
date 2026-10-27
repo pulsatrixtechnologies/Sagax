@@ -62,7 +62,6 @@ export function PermissionsSection({
   const { draft } = useBotEditor();
   const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [fullAccessTarget, setFullAccessTarget] = useState<string | null>(null);
-  const [allThreads, setAllThreads] = useState(true);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
   const [primaryError, setPrimaryError] = useState<string | null>(null);
   // Taking the role and leaving it go through the owner's own route (one
@@ -77,8 +76,8 @@ export function PermissionsSection({
       .then((response) => dispatch({ type: "botPatched", bot: response.bot }))
       .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
   };
-  // Organization server: the owner sets Full as the bot's default (its new
-  // threads and routines) over HTTP while the organization allows it.
+  // Organization server: the owner sets Full as the bot's level over HTTP
+  // while the organization allows it. Every conversation reads that level.
   const perspicaxOrg = usePerspicaxOrg();
   const viewerId = state.config?.viewer?.principalId ?? null;
   const orgFullAccess = draft ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
@@ -105,7 +104,6 @@ export function PermissionsSection({
       return;
     }
     if (mode === "full") {
-      setAllThreads(true);
       setFullAccessTarget(bot.id);
       return;
     }
@@ -276,14 +274,10 @@ export function PermissionsSection({
         {...commandAllowlistTarget}
         onClose={() => setCommandAllowlistTarget(null)}
       />}
-      {/* Applying Full to every thread, the command list (also in the
-          approval menu) and sending on your behalf: folded. */}
+      {/* The command list (also in the approval menu) and sending on your
+          behalf: folded. The level belongs to the bot, so there is no
+          separate control for existing conversations. */}
       {!draft && advanced && !only && (showApproval || showOutboundUi) && <AdvancedFold id="permissions">
-        {showApproval && approvalMode === "full" && trustedModesAvailable && <button
-          type="button" disabled={Boolean(bot.busy)}
-          className={cn(PILL, "self-start")}
-          onClick={() => { setAllThreads(true); setFullAccessTarget(bot.id); }}
-        >{t("botPanel.permissions.applyFull")}</button>}
         {showApproval && ownerOrAdmin === true && <button
           type="button"
           className={cn(PILL, "self-start")}
@@ -304,8 +298,6 @@ export function PermissionsSection({
       <FullAccessWarning
         open={fullAccessTarget !== null}
         scope={orgFullAccess !== undefined ? "organization" : "bot"}
-        allThreads={allThreads}
-        onAllThreadsChange={draft || orgFullAccess !== undefined ? undefined : setAllThreads}
         onCancel={() => setFullAccessTarget(null)}
         onConfirm={() => {
           const target = fullAccessTarget;
@@ -315,7 +307,7 @@ export function PermissionsSection({
             grantOrgFull(target, true);
             return;
           }
-          dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: allThreads } });
+          dispatch({ type: "updateBot", botId: target, patch: { approvalMode: "full", confirmFullAccess: true } });
         }}
       />
     </div>

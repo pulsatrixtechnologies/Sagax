@@ -37,9 +37,8 @@ export async function deliverFullAccessApproval(
 }
 
 /** Full access is the person's explicit grant to this receiving bot, including
- * delegated work. It never inherits the sender's mode or elevates another bot
- * — with the one exception below (delegatedApprovalMode), applied
- * where a Primary Bot's delegated thread is created rather than here.
+ * delegated work. It never inherits the sender's mode or elevates another
+ * bot. A turn reads the receiving bot's current level.
  * Custom is a provider-config choice rather than an app Full-access grant, so
  * peer-started Custom turns use Auto. Provider support and grant confirmation
  * are checked by the caller. */
@@ -52,17 +51,8 @@ export function approvalModeForOrigin(mode: ApprovalMode, origin: { peerInitiate
  * its own and is never compared. */
 const LEVEL_RANK: Partial<Record<ApprovalMode, number>> = { ask: 0, edits: 1, auto: 2, full: 3 };
 
-/** The level work a bot hands to a teammate starts at, or null to keep the
- * teammate's own. A Primary Bot's level flows down: the person set it on
- * the Primary Bot so the team's work runs that way, and switching every
- * thread it opens with a teammate back off "Ask for approval" was the
- * friction people reported. Only a Primary Bot passes its level on, only the
- * level of the conversation it delegates from, and only upward: a teammate
- * already on a higher level keeps it, and one on Custom keeps its own config.
- * The level is capped at what the teammate's engine implements (Full or
- * Auto-accept edits are not everywhere), stepping down to the next level it
- * has, and a bot a member owns on an organization server never gets Full.
- * A bot never raises itself this way. */
+/** Kept for the level table tests. A turn does not call this. Every
+ * conversation reads the receiving bot's current level. */
 export function delegatedApprovalMode(input: {
   senderIsChief: boolean;
   /** The Chief's level in the conversation it is delegating from. */
@@ -92,12 +82,8 @@ export function delegatedApprovalMode(input: {
   return null;
 }
 
-/** Whether work a bot hands to a teammate runs with Full access: the Full
- * case of delegatedApprovalMode, kept for callers that only ask about Full.
- * Only a Primary Bot passes access on, only the Full access the person gave
- * it for the conversation it is delegating from, never to a bot a member
- * owns on an organization server, and only to an engine that implements
- * Full. A bot never elevates itself this way. */
+/** Kept for the level table tests. A turn does not call this. Full access
+ * on delegated work is the receiving bot's own level. */
 export function delegationInheritsFullAccess(input: {
   senderIsChief: boolean;
   senderHasFullAccess: boolean;

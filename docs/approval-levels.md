@@ -12,7 +12,7 @@ Access, OMB also applies its own configuration tools without another approval.
 | **Ask for approval** | Requests approval for commands and file changes, the way the provider's supervised mode does. |
 | **Auto-accept edits** | Approves file edits automatically; other actions can still require approval. Offered where the provider has such a mode (Claude, Grok, Antigravity). |
 | **Approve for me** | Uses the provider's automatic review on Codex, Claude, Cursor, and Grok to approve routine actions and ask about others. Providers without an equivalent fall back to asking. |
-| **Full access** | Enables the provider's permissive mode for commands, edits, and selected-computer actions, including potentially destructive or sensitive work. Residual native permission prompts are answered for you. OMB profile changes, routine actions, team setup, bot deletion, and enabled skill authoring apply without a second approval. Peer-review prompts are skipped within the bot's authorized scope. Delegation uses the receiving bot's setting, never the sender's — except from a Primary Bot, whose level flows down (below). Actual questions and missing credentials still need your input. |
+| **Full access** | Enables the provider's permissive mode for commands, edits, and selected-computer actions, including potentially destructive or sensitive work. Residual native permission prompts are answered for you. OMB profile changes, routine actions, team setup, bot deletion, and enabled skill authoring apply without a second approval. Peer-review prompts are skipped within the bot's authorized scope. Delegation uses the receiving bot's own current level, never the sender's (below). Actual questions and missing credentials still need your input. |
 | **Custom (`config.toml`)** | Codex only. Sagax reads and reapplies the effective approval and sandbox settings from your Codex configuration. |
 
 The composer is the same in Simple and Advanced mode (Settings, Appearance,
@@ -258,30 +258,20 @@ reviewer, so every other call reaches Sagax's approval path, where the
 person's rules and saved commands still answer without a card. Off by
 default until each engine is benched; read at each turn, no deploy needed.
 
-### A Primary Bot's level covers the work it delegates
+### Every conversation uses the bot's own level
 
-Approvals were where a team's owner spent their day: every teammate a Primary
-Bot brought in started at "Ask for approval", so the owner either answered a
-card every few minutes or switched each new thread by hand. So **a Primary
-Bot's level flows down**. Work it delegates (`coordinate_bots` into a
-teammate's thread, and `delegate_bot`) starts at the level of the Primary Bot
-conversation it came from: Auto-accept edits, Approve for me, or Full access.
-The delegated thread is switched to that level, keeps it, and opens with a
-line saying so ("Approve for me — delegated by Clive, a Primary Bot on Approve
-for me"); you can still change it in that thread. Work a Primary Bot hands out
-inside a room runs at its level for that turn.
+The approval level belongs to the bot. Every conversation, hidden or visible,
+a routine run, and work another bot hands over reads that bot's current level
+when the turn starts. Changing the level changes all of them. A conversation
+does not keep a copy from the day it was created, and a Primary Bot does not
+write its level onto a teammate.
 
-It only ever raises: a teammate already on a higher level keeps it, a teammate
-on Custom keeps its own configuration, and a Primary Bot delegating from an
-Ask conversation passes nothing on. A teammate's engine caps the level: one
-without Full access gets Approve for me, and one without Auto-accept edits
-(Codex, whose Ask already writes the workspace) stays on its own level. On an
-organization server, a teammate inherits a Primary Bot's Full only when its
-own owner allowed Full for it and the organization allows Full; otherwise a
-Full Primary Bot's work reaches it as Approve for me. The teammate's own default
-and its other conversations do not change, and an ordinary bot's delegation
-still uses the recipient's setting. Questions and missing credentials still
-reach you.
+A read-only task a bot opens for itself stays on Ask. That choice is stored
+on the task and shown as Ask. Safety holds, an Ask or Deny rule, the
+organization's Full access policy, and the owner's consent still apply on
+top of the level. A provider that cannot run the level asks instead.
+
+Questions and missing credentials still reach you.
 
 ## Answering a request
 

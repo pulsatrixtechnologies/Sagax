@@ -48293,24 +48293,24 @@
         }
       }
     },
-    "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread.": {
+    "Every conversation, routine and delegated run uses this bot's current approval level.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Default for new threads, routines and delegated work. When enabling Full access, you can also apply it to every existing thread."
+            "value": "Every conversation, routine and delegated run uses this bot's current approval level."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Par défaut pour les nouveaux fils, les routines et le travail délégué. En activant l'Accès complet, vous pouvez aussi l'appliquer à tous les fils existants."
+            "value": "Chaque conversation, routine et travail délégué utilise le niveau d'approbation actuel de ce bot."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Padrão para novas conversas, rotinas e trabalho delegado. Ao ativar o Acesso total, você também pode aplicá-lo a todas as conversas existentes."
+            "value": "Cada conversa, rotina e trabalho delegado usa o nível de aprovação atual deste bot."
           }
         }
       }
