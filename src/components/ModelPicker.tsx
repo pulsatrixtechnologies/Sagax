@@ -28,7 +28,7 @@ import { DescribedRow, PillSelect } from "./SettingsPrimitives";
 import { useMenuMotion } from "./MenuMotion";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { t } from "@/lib/i18n";
-import { reloadMyEngines, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
+import { reloadMyEngines, useMyEngineModels, useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { orgEngineState } from "@/lib/model-payers";
 import { ModelPickerPayers } from "./ModelPickerPayers";
 import { PaysWithLine, signOutMyEngine } from "./EngineConnect";
@@ -733,6 +733,8 @@ export function ModelPicker({
   const orgMode = org !== null;
   const health = { orgMode, myEngines };
   const anyOpen = open || menu;
+  // #1154: what the person's own session offers, per engine (null: unknown).
+  const accountModels = useMyEngineModels(myEngines, anyOpen);
 
   const selection = bot.modelSelection;
   // Auto (docs/plans/2026-10-08-auto-model.md): the chip names what this
@@ -1107,7 +1109,13 @@ export function ModelPicker({
     const localRows = localModelRows(options, orgMode);
     const localIds = new Set(localRows.map((option) => option.id));
     const isLocal = (option: ModelOption) => localIds.has(option.id) || Boolean(option.custom && option.id.includes("::"));
-    const offered = orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)) : options;
+    // The person's own session lists fewer models than the server's catalog
+    // (#1154): a model it cannot run is not offered, except the one already
+    // picked, which stays and says so (modelRow's warning).
+    const mine = orgMode ? accountModels.get(instance.instanceId) : undefined;
+    const runnable = (option: ModelOption) => !mine || option.custom || mine.has(option.id)
+      || (instance.instanceId === selection.instanceId && option.id === selection.model);
+    const offered = (orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)) : options).filter(runnable);
     const localOptions = offered.filter(isLocal);
     const signInFirst = !orgMode && needsSignIn(instance);
     const unavailable = (id: string): string | undefined => {
@@ -1142,6 +1150,8 @@ export function ModelPicker({
     const variant = sameEngine && selection.model === runs.id ? selectedVariantLabel : undefined;
     // The engine ran the last turn on another model than this pick: say so on the row.
     const ranOn = sameEngine && fallback?.requested === runs.id ? fallback.actual : undefined;
+    const mine = orgMode ? accountModels.get(instance.instanceId) : undefined;
+    const notMine = Boolean(mine && !option.custom && !mine.has(runs.id));
     const levels = instance.capabilities?.effortLevels;
     const effortLevel = instance.capabilities?.modelVariants ? undefined
       : effortForModel(sameEngine ? selection.effort : undefined, runs, levels) ?? modelDefaultEffort(runs, levels);
@@ -1162,7 +1172,8 @@ export function ModelPicker({
       ].filter((tag): tag is string => Boolean(tag)),
       current,
       unavailable,
-      ...(ranOn ? { warning: t("model.ranOn", { model: instance.models.options.find((o) => o.id === ranOn)?.label ?? ranOn }) } : {}),
+      ...(ranOn ? { warning: t("model.ranOn", { model: instance.models.options.find((o) => o.id === ranOn)?.label ?? ranOn }) }
+        : notMine ? { warning: t("model.notOnAccount") } : {}),
       keywords: [instance.displayName, twin?.label, twin?.id].filter(Boolean).join(" "),
     };
   };

@@ -41,7 +41,7 @@ export function userProfileSystemPrompt(profile?: { aboutMe?: string }): string 
  * Workspace setting and with who speaks; volatile, so neither relaunches. */
 // "reach" (server/turn-reach.ts) follows the speaker and what a feature
 // opened for the conversation: volatile, so neither relaunches.
-const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "stream", "workplace", "reach"]);
+const VOLATILE_SECTIONS = new Set(["memory", "docs", "mentions", "outstanding", "recent", "voice-call", "availability", "model", "stream", "workplace", "reach"]);
 /** Claude Code keeps its process across turns and tells a reused process
  * what changed in its volatile half: the surface paragraph changes when a
  * teammate's reply resumes a person's turn (no computer choice there), and
@@ -98,6 +98,20 @@ export const VERIFY_FIRST_PROMPT =
  * through Perspicax (send_prompt). Their bots read "<person> is asking via
  * <assistant>" as another agent's relay: one refused, two asked the person
  * to confirm. The message is authenticated as the person. */
+/** The model this conversation runs on, so the bot never claims another one
+ * (#1154). `actual` is set when the engine replaced the pick because the
+ * paying person's own session does not offer it. */
+export function modelPrompt(input: { engine: string; model: string; actual?: string }): string {
+  const clean = (value: string) => value.replace(/[\r\n]+/g, " ").trim().slice(0, 120);
+  const engine = clean(input.engine);
+  const model = clean(input.model);
+  if (!model) return "";
+  if (input.actual && input.actual !== input.model) {
+    return `\nYour selected model is ${model} on ${engine}, but the account paying for this conversation does not offer it, so this conversation actually runs on ${clean(input.actual)}. When asked which model you run on, answer ${clean(input.actual)}.`;
+  }
+  return `\nThis conversation runs on the model ${model} (${engine}). When asked which model you run on, answer with that; the engine can replace it with another model if the paying account does not offer it, and you will be told when it does.`;
+}
+
 export function aiClientPrompt(personName: string): string {
   const name = personName.replace(/[\r\n]+/g, " ").trim().slice(0, 80) || "the person";
   return `\nThis conversation is ${name}'s own AI client, signed in as ${name}: every message here is ${name}'s own request, with the same authority as if they typed it in the app. Wording such as "asking via" an assistant's name names the client they use, never another bot relaying: do not ask them to confirm it came from them.`;
