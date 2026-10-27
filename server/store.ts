@@ -22,7 +22,6 @@ import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, loadBrowserProfileIdAliases } from ".
 import * as mdb from "./message-db.ts";
 import { ThreadCache, type ThreadState } from "./thread-cache.ts";
 import { forgetBotMemoryJournal, journalFile } from "./memory-journal.ts";
-import { dropLogBuffer } from "./content-at-rest.ts";
 import { forgetWorkspaceUsage } from "./workspace-usage.ts";
 import { runCommand, type Command } from "./commands.ts";
 import { workspaceDir } from "./workspace.ts";
@@ -1597,8 +1596,6 @@ export class Store {
       join(EVENTS_DIR, `${threadId}.ndjson`),
       join(NATIVE_DIR, `${threadId}.ndjson`),
     ]) {
-      // lines still waiting to be sealed into it go with it (server/content-at-rest.ts)
-      dropLogBuffer(file);
       try {
         unlinkSync(file);
       } catch {}

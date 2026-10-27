@@ -7358,8 +7358,8 @@ and sealed by the background migration once idle (10 min); every
 replacement is read back and compared before an atomic rename. Never read
 such a file with `readFileSync` for content in new code: use
 `readAtRestSync`, `readMemoryText`, `atRestStream` / `openMessageFile`'s
-`stream()`, and for a log `LogReader` (a busy log's writer goes through
-`appendLogBuffered`). An engine reads them by path: they are held plain in
+`stream()`, and for a log `LogReader` (a writer seals with `sealLogLines`
+and appends at once: every line on disk when the append returns). An engine reads them by path: they are held plain in
 place off the turn's path, from the composer's warm request (`holdPlain`,
 `holdBotMemoryPlain`, released with `releasePlain(turn:<thread>)`). A thread
 or bot that changes hands goes through `contentOwnerChanged`, which

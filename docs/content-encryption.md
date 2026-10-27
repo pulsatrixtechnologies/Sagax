@@ -266,12 +266,12 @@ native message's `at` and `dir`; a decision's `at`, `threadId`, `botId`,
 `decision`, `source`; an admin row's `at`, `category`, `action`; a journal
 row's `id`, `at`, `kind`. A reader that drops a record by those fields does
 not open its block (the Activity view opens only the blocks that hold a
-tool's start or end, and only the bot's own decisions). A thread's events and
-native messages are sealed in blocks of what a one-second window brings
-(`appendLogBuffered`): the lines wait in memory, as the events themselves
-do, and a read of the same log, a backup, a rewrite and the process's exit
-write them first; a deleted thread's waiting lines go with it. The
-migration gathers a log's small blocks into blocks of 64 once it is idle.
+tool's start or end, and only the bot's own decisions). Every line is
+sealed and on disk when its append returns, as durable as a plain one:
+nothing waits in memory. What one append brings is one block (a batch of the
+bus); a log appended a line at a time (the native tee) has blocks of one,
+which the migration gathers into blocks of 64, checked line for line before
+it replaces anything, once the log has been quiet for a minute.
 
 **Every reader opens both kinds**: `readAtRestSync`, `readMemoryText`,
 `atRestStream` (`openMessageFile(...).stream()`), `LogReader`. A plain
@@ -279,9 +279,8 @@ file reads exactly as before.
 
 **Writes are not slowed**: a new or edited file is written plain, as before,
 and the background migration seals it once idle (`GRACE_MS`, 10 minutes since
-its last write or use); a busy log's lines are sealed together at the end of
-their window (faster than one write per line), a decision, admin or journal
-row as it is appended; a record whose key is not available yet is written
+its last write or use); a log line is sealed as it is appended (a batch of
+the bus as one block); a record whose key is not available yet is written
 plain and sealed later.
 
 **Engines read by path**, so a turn holds its files plain in place
@@ -354,44 +353,45 @@ kept originals are never exported. A restore brings plain files, which the
 destination's migration seals under its own keys.
 
 **Still plain**: a file while a turn holds it (and up to 10 minutes after;
-an opened conversation with no turn, 10 minutes); a busy log's last second
-of lines, in memory only;
+an opened conversation with no turn, 10 minutes);
 the copies staged on a person's computer or in their server environment;
 conversation work folders (`task-workspaces/`) and the engines' own
 transcripts; logs that carry no content by design (usage ledger, problem
 log, remote-control and terminal audits, the decision model's log).
 
 **Performance** (`node --experimental-strip-types scripts/bench-content-at-rest.ts --before <main checkout>`,
-synthetic text, medians, macOS arm64, Node 26, 2026-10-27, a shared host:
-compare columns; "before" is main without this change, "on" reads what the
-migration already sealed; logs written as the server writes them, the busy
-ones in one-second windows, here 16 lines):
+synthetic text, medians of 4 runs, macOS arm64, Node 26, 2026-10-27, a
+loaded shared host: compare columns, not values; "before" is main without
+this change, "on" reads what the migration already sealed; logs written as
+the server writes them, every line on disk when its append returns: the
+native tee a line at a time, the bus 4 events per append):
 
 | Measure | Before | Off | On |
 |---|---:|---:|---:|
-| memory write (8 KB, index included) | 5.7-6.5 ms | 5.9-6.6 ms | 5.7-6.1 ms |
-| memory read (MEMORY.md) | 0.02-0.05 ms | 0.02 ms | 0.04 ms |
-| memory in the prompt (MEMORY.md + 29 topic heads) | 0.61-0.63 ms | 0.58-0.61 ms | 0.59 ms |
-| memory search | 0.29-0.30 ms | 0.29-0.31 ms | 0.32-0.33 ms |
-| what a turn waits for memory (30 sealed files) | n/a | 0.003 ms | 0.006-0.014 ms |
-| memory opened beside the turn (from typing) | n/a | 0.7 ms | 12-18 ms |
-| upload 100 KB / 1 MB / 5 MB / 20 MB | 0.7-0.9 / 1.1-1.3 / 2.1-2.6 / 7.0-7.5 ms | 0.7 / 1.1 / 2.2-3.0 / 7.1-7.3 ms | 0.7-0.9 / 1.0-1.2 / 2.1-2.6 / 6.5-6.7 ms |
-| download 100 KB / 1 MB / 5 MB / 20 MB | 0.3-0.4 / 0.6-0.7 / 1.7-1.9 / 6.1-6.5 ms | 0.5-0.7 / 0.6 / 1.7-2.0 / 5.9-6.5 ms | 0.4-0.5 / 0.9-1.1 / 2.0-2.2 / 6.1-6.9 ms |
-| 64 KB range of a 20 MB file | 0.22-0.25 ms | 0.26-0.28 ms | 0.21-0.27 ms |
-| what a turn waits for a sealed 20 MB attachment | n/a | 0.03 ms | 0.05 ms |
-| that attachment opened beside the turn | n/a | 0 | 25-27 ms |
-| log append (native tee), per line | 36-43 µs | 35-38 µs | 13-15 µs |
-| inspector, 300 lines (events + native) | 0.54 ms | 0.55-0.61 ms | 1.0 ms |
-| inspector, 2,000 lines | 4.9-5.5 ms | 3.2-3.4 ms | 5.5-5.9 ms |
-| Activity tool runs (2,000 of 20,000 events) | 2.4-2.5 ms | 1.5-1.6 ms | 2.1-2.2 ms |
+| memory write (8 KB, index included) | 7.2 ms | 7.8 ms | 7.2 ms |
+| memory read (MEMORY.md) | 0.022 ms | 0.025 ms | 0.044 ms |
+| memory in the prompt | 0.81 ms | 0.77 ms | 0.83 ms |
+| memory search | 0.39 ms | 0.42 ms | 0.44 ms |
+| what a turn waits for memory (30 sealed files) | n/a | 0.016 ms | 0.012 ms |
+| upload 5 MB / 20 MB | 11.7 / 32.8 ms | 13.7 / 35.5 ms | 9.7 / 32.1 ms |
+| download 5 MB / 20 MB | 7.8 / 20.6 ms | 7.3 / 24.2 ms | 9.6 / 31.3 ms |
+| what a turn waits for a sealed 20 MB attachment | n/a | 0.05 ms | 0.12 ms |
+| native tee append, per line (sealed, on disk) | 116 µs | 76 µs | 142 µs |
+| bus append, per event (4 per append) | 23 µs | 27 µs | 41 µs |
+| inspector, 300 lines, log being written | 0.88 ms | 0.97 ms | 3.8 ms |
+| inspector, 2,000 lines, log being written | 12.8 ms | 5.7 ms | 56.6 ms |
+| Activity tool runs, log being written | 3.8 ms | 2.5 ms | 3.6 ms |
+| inspector, 300 lines, log quiet (gathered) | 0.69 ms | 0.77 ms | 1.3 ms |
+| inspector, 2,000 lines, log quiet (gathered) | 10.2 ms | 7.3 ms | 11.9 ms |
+| Activity tool runs, log quiet (gathered) | 3.5 ms | 2.1 ms | 2.8 ms |
 
-Migration (640 files and 20 logs, 57 MB): sealed in 6.1-8.1 s (7-9 MB/s,
-paced), event-loop delay p99 2-2.4 ms, longest 5-14 ms (8 ms on the same
-host with nothing running); back to plain (`off`) in 6-9 s.
+Migration (640 files and 20 logs, 57 MB): sealed in 10-11 s on this loaded
+host (5-6 MB/s, paced), event-loop delay p99 4-5 ms, longest 20-22 ms; back
+to plain in 10-16 s.
 
-Every write and every file read is at main's level; a turn waits for no
-opening. A log read pays for the blocks it opens (base64 and AES-GCM over the
-bytes, about 0.6 µs a line): the tail reader no longer rebuilds its window
-at every chunk, which brings 2,000 lines and the Activity view to main's
-level, but a 300-line inspector page still takes about 0.45 ms more. Opening
-in place happens once per stretch of work (10 minutes idle), beside the turn.
+A turn waits for no opening and every file read and write is at main's
+level. Sealing a log line on its own costs about 5 µs on top of the write;
+reading one opens it on its own (about 5 µs a line): a log still being
+written, a line at a time, reads several times slower than main until the
+migration gathers it, a minute after it goes quiet; then reads are close to
+main.

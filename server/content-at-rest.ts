@@ -46,7 +46,6 @@ import {
   utimesSync,
   writeFileSync,
   writeSync,
-  appendFileSync,
   type Stats,
 } from "node:fs";
 import { appendFile, chmod, link, lstat, open as openHandle, rename, unlink, utimes, type FileHandle } from "node:fs/promises";
@@ -1013,58 +1012,12 @@ export async function appendLog(file: string, data: string, options: { mode?: nu
   }
 }
 
-// Busy logs (a thread's events and native messages) are sealed in blocks of
-// what arrived in a short window, so a reader opens one block for many
-// lines. The lines wait in memory (as the events themselves do) for at most
-// LOG_WINDOW_MS; a read of the same log in this process writes them first,
-// and so do the process's exit and a backup.
-const LOG_WINDOW_MS = 1_000;
-const buffers = new Map<string, { records: Record<string, unknown>[]; lines: string[]; mode?: number; after?: () => void }>();
-let bufferTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Append records to a sealed log through its window. False when the log is
- * not sealed now (encryption off, not a sealed log): the caller writes as
- * before. */
-export function appendLogBuffered(file: string, records: readonly Record<string, unknown>[], lines: readonly string[], options: { mode?: number; after?: () => void } = {}): boolean {
-  if (!contentEncryptionOn() || !logOf(file) || exported) return false;
-  let buffer = buffers.get(file);
-  if (!buffer) buffers.set(file, (buffer = { records: [], lines: [], ...options }));
-  buffer.records.push(...records);
-  buffer.lines.push(...lines);
-  if (options.after) buffer.after = options.after;
-  if (buffer.lines.length >= BLOCK_MAX) flushLogBuffer(file);
-  else if (!bufferTimer) {
-    bufferTimer = setTimeout(() => { bufferTimer = null; flushLogBuffers(); }, LOG_WINDOW_MS);
-    bufferTimer.unref?.();
-  }
-  return true;
-}
-
-/** Write what waits for `file` now (before reading it, or rewriting it). */
-export function flushLogBuffer(file: string): void {
-  const buffer = buffers.get(file);
-  if (!buffer) return;
-  buffers.delete(file);
-  try {
-    const lines = sealLogLines(file, buffer.records, buffer.lines);
-    appendFileSync(file, `${lines.join("\n")}\n`, { mode: buffer.mode ?? 0o600 });
-    buffer.after?.();
-  } catch (error) {
-    console.error(`content encryption: a log could not be written (${error instanceof Error ? error.message : "unknown"})`);
-  }
-}
-
-/** Write every waiting log now (the window's end, exit, a backup). */
-export function flushLogBuffers(): void {
-  for (const file of Array.from(buffers.keys())) flushLogBuffer(file);
-}
-
-/** A log deleted with its thread: what waited for it goes too. */
-export function dropLogBuffer(file: string): void {
-  buffers.delete(file);
-}
-
-process.once("exit", () => { try { flushLogBuffers(); } catch { /* exiting */ } });
+// A log line is sealed and on disk when its append returns, as durable as
+// a plain one: nothing waits in memory. What one append brings (a batch of
+// the bus) is one block; a log appended a line at a time (the native tee)
+// gets blocks of one, which the migration gathers into blocks of 64, checked
+// before it replaces anything, once the log has been quiet for LOG_IDLE_MS.
+const LOG_IDLE_MS = 60_000;
 
 /** The original lines of a log, read in chunks that end on a block's end:
  * `[original, kept]` pairs, where `kept` is set for a line copied as it is
@@ -1127,7 +1080,6 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
   return withLock(file, async () => {
     const spec = logOf(file);
     if (!spec) return { outcome: "skipped" as const, plainLeft: false };
-    flushLogBuffer(file);
     let before: Stats;
     try { before = await lstat(file); } catch { return { outcome: "skipped" as const, plainLeft: false }; }
     if (!before.isFile()) return { outcome: "skipped" as const, plainLeft: false };
@@ -1176,10 +1128,8 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
       }
       if (index !== originals.length) return { outcome: "skipped" as const, plainLeft: keep.plain || locked };
       // the last step, synchronous: nothing appends between it and the rename
-      flushLogBuffer(file);
       for (let tries = 0; inFlight.get(file) && tries < 200; tries++) await new Promise((resolve) => setTimeout(resolve, 5));
       if (inFlight.get(file)) return { outcome: "changed" as const, plainLeft: keep.plain || locked };
-      flushLogBuffer(file);
       const now = lstatSync(file);
       if (now.dev !== before.dev || now.ino !== before.ino || now.size < consumed) return { outcome: "changed" as const, plainLeft: keep.plain || locked };
       let tail = "";
@@ -1242,7 +1192,6 @@ export function migrateLogFile(file: string, on: boolean): Promise<{ outcome: Re
 export function migrateLogFileSync(file: string): ReplaceOutcome {
   const spec = logOf(file);
   if (!spec) return "skipped";
-  flushLogBuffer(file);
   let before: Stats;
   try { before = lstatSync(file); } catch { return "skipped"; }
   if (!before.isFile()) return "skipped";
@@ -1287,7 +1236,7 @@ export function migrateLogFileSync(file: string): ReplaceOutcome {
  * gather (on, once idle), a block under another key (a thread's own log),
  * or a sealed line (off), from `offset`, read in chunks: the migration only
  * rewrites the files that need it. */
-async function logNeedsWork(file: string, on: boolean, offset: number, idle: boolean): Promise<{ needs: boolean; size: number }> {
+async function logNeedsWork(file: string, on: boolean, offset: number, idle: boolean): Promise<{ needs: boolean; size: number; later?: boolean }> {
   const spec = logOf(file);
   let size = 0;
   try { size = (await lstat(file)).size; } catch { return { needs: false, size: 0 }; }
@@ -1316,8 +1265,9 @@ async function logNeedsWork(file: string, on: boolean, offset: number, idle: boo
   } catch {
     return { needs: false, size: 0 };
   }
-  // small blocks (a busy log's live windows) are gathered once it is idle
-  return { needs: on && idle && records >= BLOCK_COMPACT && records / Math.max(1, blocks) < 16, size };
+  // small blocks (a log appended a line at a time) are gathered once it is quiet
+  const fragmented = on && records >= BLOCK_COMPACT && records / Math.max(1, blocks) < 16;
+  return { needs: fragmented && idle, size, ...(fragmented && !idle ? { later: true } : {}) };
 }
 
 async function* linesOfFrom(file: string, start: number, end: number): AsyncGenerator<{ line: string; complete: boolean }> {
@@ -1418,7 +1368,6 @@ function resealMoved(threadIds: readonly string[], botIds: readonly string[]): v
     for (const name of names) {
       if (!/\.ndjson(\.\d+)?$/.test(name)) continue;
       const file = join(spec.dir, name);
-      flushLogBuffer(file);
       let text: string;
       try { text = readFileSync(file, "utf8"); } catch { continue; }
       if ([...threads].some((threadId) => text.includes(`"threadId":"${threadId}"`))) migrateLogFileSync(file);
@@ -1556,7 +1505,10 @@ export function runAtRestMigration(options: { sliceMs?: number; pauseMs?: number
         const known = logSeen.get(file);
         const offset = known && known.ino === stat.ino && known.on === on && stat.size >= known.size ? known.size : 0;
         if (offset === stat.size) continue;
-        const check = await logNeedsWork(file, on, offset, Date.now() - stat.mtimeMs >= graceMs);
+        const quiet = Math.min(graceMs, LOG_IDLE_MS);
+        const check = await logNeedsWork(file, on, offset, quiet <= 0 || Date.now() - stat.mtimeMs >= quiet);
+        // small blocks of a log still written to: looked at again once it is quiet
+        if (check.later) { pass.waiting++; continue; }
         if (!check.needs) { logSeen.set(file, { ino: stat.ino, size: check.size, on }); continue; }
         await whilePaused();
         const result = await (current = migrateLogFile(file, on));

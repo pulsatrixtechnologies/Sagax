@@ -13,7 +13,7 @@
 // thousands of native lines and the panel wants the recent ones first.
 import { closeSync, fstatSync, openSync, readSync, type Stats } from "node:fs";
 import { join } from "node:path";
-import { flushLogBuffer, isProjectedRecord, LogReader } from "./content-at-rest.ts";
+import { isProjectedRecord, LogReader } from "./content-at-rest.ts";
 import type { RuntimeEvent } from "./contracts.ts";
 import type { InspectorEntry, InspectorPage, NativeRecord } from "../shared/inspector.ts";
 
@@ -108,8 +108,6 @@ function parseRecent<T>(reader: LogReader, text: string, includeFirst: boolean, 
 export type ProjectionOnly = (projection: Record<string, unknown>) => boolean;
 
 export function readRecentLines<T>(file: string, limit: number, valid: RecordGuard<T>, projectionOnly?: ProjectionOnly): { lines: T[]; total: number } {
-  // what this process still holds for the log goes to disk first
-  flushLogBuffer(file);
   // one reader for the whole read: a block opened once, however the window grows
   const reader = new LogReader(file, projectionOnly);
   let fd: number;

@@ -34,7 +34,7 @@ import { closeSync, type Dirent, lstatSync, openSync, readdirSync, readFileSync,
 import { join, resolve, sep } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import { flushLogBuffer, isProjectedRecord, LogReader } from "./content-at-rest.ts";
+import { isProjectedRecord, LogReader } from "./content-at-rest.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
 type Env = Record<string, string | undefined>;
@@ -115,7 +115,6 @@ export function taskEngineKeys(task: { threadId: string; resumeCursors?: Record<
 /** The session ids a thread's event log announced (`session.started`),
  * for threads from before `engineSessions` was kept. */
 export function eventLogSessionIds(path: string): string[] {
-  flushLogBuffer(path);
   const out = new Set<string>();
   let text = "";
   try {

@@ -6,6 +6,7 @@
 // backup's plaintext copy.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -20,7 +21,6 @@ import {
   describeHandle,
   exportPlainCopy,
   holdPlain,
-  flushLogBuffers,
   LogReader,
   sealLogLines,
   setAtRestThreadFiles,
@@ -253,16 +253,43 @@ describe("event logs", () => {
     appendNative("t1", { dir: "out", source: "test", msg: { text: "the meadow password" } });
     appendNative("t1", { dir: "in", source: "test", msg: { text: "a second line" } });
     const file = join(NATIVE_DIR, "t1.ndjson");
-    // the lines of a short window are sealed together, as one block
-    flushLogBuffers();
+    // each line is on disk, sealed, when its append returns
     expect(readFileSync(file, "utf8").split("\n").filter(Boolean)).toHaveLength(2);
     expect(readFileSync(file, "utf8")).not.toContain("meadow");
-    expect(JSON.parse(readFileSync(file, "utf8").split("\n")[1]!).p).toEqual([{ dir: "out", at: expect.any(String) }, { dir: "in", at: expect.any(String) }].map(({ dir, at }) => ({ at, dir })));
+    expect(readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line).p[0].dir)).toEqual(["out", "in"]);
     const { lines } = readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value));
     expect(lines.map((line) => line.msg.text)).toEqual(["the meadow password", "a second line"]);
     // a reader that needs only the "in" line opens nothing it drops
     const only = readRecentLines(file, 10, (value): value is { dir: string } => Boolean(value), (projection) => projection.dir !== "in");
     expect(only.lines.map((line) => (line as { msg?: unknown }).msg === undefined)).toEqual([true, false]);
+  });
+
+  it("has every line on disk, sealed, when its append returns: a hard kill right after loses none", () => {
+    // a separate process appends one line and is killed at once: no flush, no timer, no exit handler
+    const script = [
+      `const db = await import(${JSON.stringify(new URL("./message-db.ts", import.meta.url).href)});`,
+      `db.configureContentEncryption({ mode: "on", autoMigrate: false });`,
+      `const native = await import(${JSON.stringify(new URL("./drivers/native.ts", import.meta.url).href)});`,
+      `native.appendNative("killed", { dir: "out", source: "test", msg: { text: "written before the kill" } });`,
+      `process.kill(process.pid, "SIGKILL");`,
+    ].join("\n");
+    const result = spawnSync(process.execPath, ["--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script], { env: { ...process.env }, encoding: "utf8" });
+    expect(result.signal).toBe("SIGKILL");
+    const file = join(NATIVE_DIR, "killed.ndjson");
+    expect(readFileSync(file, "utf8")).not.toContain("written before the kill");
+    const { lines } = readRecentLines(file, 10, (value): value is { msg: { text: string } } => Boolean(value));
+    expect(lines.map((line) => line.msg.text)).toEqual(["written before the kill"]);
+  });
+
+  it("gathers a log's one-line blocks into blocks once it is quiet, checked line for line", async () => {
+    for (let i = 0; i < 70; i++) appendNative("t9", { dir: "out", source: "test", msg: { text: `line ${i}` } });
+    const file = join(NATIVE_DIR, "t9.ndjson");
+    const blocks = () => readFileSync(file, "utf8").split("\n").filter((line) => line.includes('"sealed":"')).length;
+    expect(blocks()).toBe(70);
+    await migrateAll();
+    expect(blocks()).toBe(2);
+    const { lines } = readRecentLines(file, 100, (value): value is { msg: { text: string } } => Boolean(value));
+    expect(lines.map((line) => line.msg.text)).toEqual(Array.from({ length: 70 }, (_, i) => `line ${i}`));
   });
 
   it("migrates a plain log to sealed and back, line for line", async () => {
@@ -417,7 +444,6 @@ describe("a thread that changes hands", () => {
     insertMessage("t1", { id: "m1", role: "user", kind: "text", text: "the orchid contract", at: 1 });
     saveChatFollowup({ id: "f1", kind: "bot", ownerId: "b1", threadId: "t1", payload: { text: "queued zebra" } });
     appendNative("t1", { dir: "out", source: "test", msg: { text: "native quartz" } });
-    flushLogBuffers();
     writeFileSync(join(EVENTS_DIR, "t1.ndjson"), `${sealLogLines(join(EVENTS_DIR, "t1.ndjson"), [{ type: "content.delta", createdAt: "x" }], [JSON.stringify({ type: "content.delta", createdAt: "x", delta: "event lantern" })]).join("\n")}\n`);
     appendDecision(DATA_DIR, { threadId: "t1", botId: "b1", tool: "Bash", summary: "decision harbor", decision: "user-approved", source: "user" });
     await flushDecisionLog(DATA_DIR);
@@ -462,7 +488,6 @@ describe("erasure and backups", () => {
     writeMemoryFile("b1", "the harbor velvet memory\n");
     const saved = await saveFile(chunksOf(Buffer.from(`${prose(150_000)} copperlantern`)), "doc.txt", "text/plain");
     appendNative("t1", { dir: "out", source: "test", msg: { text: "meadowquartz tool output" } });
-    flushLogBuffers();
     await migrateAll();
     expect(sealedOnDisk(saved.path) && sealedOnDisk(join(workspaceDir("b1"), "MEMORY.md"))).toBe(true);
     closeMessageDb();
@@ -506,7 +531,6 @@ describe("erasure and backups", () => {
   it("copies sealed files and logs in the clear for the archive, and refuses a locked key", async () => {
     writeMemoryFile("b1", "the copper harbor\n");
     appendNative("t1", { dir: "out", source: "test", msg: { text: "velvet quartz" } });
-    flushLogBuffers();
     await migrateAll();
     const out = join(DATA_DIR, "export");
     mkdirSync(out);

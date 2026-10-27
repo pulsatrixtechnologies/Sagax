@@ -218,8 +218,10 @@ try {
   }
 
   // ---- event logs, written as the server writes them: the native tee one
-  // message at a time, the bus in batches; sealed (on) in blocks of what a
-  // window brings (here 16 lines, about a second of a busy turn)
+  // message at a time (appendFileSync, a line sealed on its own), the bus
+  // a batch per append (here 4 events, sealed as one block); every line is
+  // on disk when its append returns. Read live (small blocks), then after the
+  // migration gathered them (the log quiet).
   await load<Any>("server/harness/bus.ts");
   const activity = await load<Any>("server/activity.ts");
   const nativeDir = config.NATIVE_DIR as string;
@@ -228,28 +230,32 @@ try {
   mkdirSync(eventsDir, { recursive: true });
   const payload = { type: "session/update", params: { text: prose(300) } };
   const appendStart = performance.now();
-  for (let i = 0; i < 5_000; i++) {
-    call(native, "appendNative", "thread1", { dir: i % 2 ? "in" : "out", source: "bench", msg: payload });
-    if (atRest && i % 16 === 15) call(atRest, "flushLogBuffers");
-  }
-  if (atRest) call(atRest, "flushLogBuffers");
-  out.logAppendMeanUs = round(((performance.now() - appendStart) / 5_000) * 1000, 1);
+  for (let i = 0; i < 5_000; i++) call(native, "appendNative", "thread1", { dir: i % 2 ? "in" : "out", source: "bench", msg: payload });
+  out.nativeAppendPerLineUs = round(((performance.now() - appendStart) / 5_000) * 1000, 1);
   const eventsFile = join(eventsDir, "thread1.ndjson");
+  const { appendFileSync } = await import("node:fs");
   const batch: Array<{ record: Record<string, unknown>; line: string }> = [];
-  const physical: string[] = [];
+  let busMs = 0;
   for (let i = 0; i < 20_000; i++) {
     const tool = i % 10 === 0;
     const record = tool
       ? { eventId: `e${i}`, provider: "bench", providerInstanceId: "p", threadId: "thread1", createdAt: new Date(1_800_000_000_000 + i).toISOString(), turnId: `t${Math.floor(i / 100)}`, type: i % 20 === 0 ? "item.started" : "item.completed", itemType: "tool", itemId: `i${Math.floor(i / 20)}`, title: "Bash", ok: true }
       : { eventId: `e${i}`, provider: "bench", providerInstanceId: "p", threadId: "thread1", createdAt: new Date(1_800_000_000_000 + i).toISOString(), turnId: `t${Math.floor(i / 100)}`, type: "content.delta", streamKind: "assistant_text", itemId: `m${i}`, delta: prose(200) };
     batch.push({ record, line: JSON.stringify(record) });
-    if (batch.length === 16) {
-      physical.push(...(atRest && "sealLogLines" in atRest ? call<string[]>(atRest, "sealLogLines", eventsFile, batch.map((item) => item.record), batch.map((item) => item.line)) : batch.map((item) => item.line)));
+    if (batch.length === 4) {
+      const at = performance.now();
+      const lines = atRest && "sealLogLines" in atRest ? call<string[]>(atRest, "sealLogLines", eventsFile, batch.map((item) => item.record), batch.map((item) => item.line)) : batch.map((item) => item.line);
+      appendFileSync(eventsFile, `${lines.join("\n")}\n`, { mode: 0o600 });
+      busMs += performance.now() - at;
       batch.length = 0;
     }
   }
-  writeFileSync(eventsFile, `${physical.join("\n")}\n`);
+  out.busAppendPerEventUs = round((busMs / 20_000) * 1000, 1);
   const inspector = (limit: number) => call(threadEvents, "readThreadEvents", { eventsDir, nativeDir, threadId: "thread1", limit });
+  out.inspector300LiveMs = round(await time(20, () => inspector(300)), 3);
+  out.inspector2000LiveMs = round(await time(20, () => inspector(2000)), 3);
+  out.activityToolRunsLiveMs = round(await time(20, () => call(activity, "readToolRuns", eventsDir, "thread1")), 2);
+  await settle();
   out.inspector300Ms = round(await time(20, () => inspector(300)), 3);
   out.inspector2000Ms = round(await time(20, () => inspector(2000)), 3);
   out.activityToolRunsMs = round(await time(20, () => call(activity, "readToolRuns", eventsDir, "thread1")), 2);
