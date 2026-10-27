@@ -173,13 +173,19 @@ final class RoomInfoTests: XCTestCase {
         theirs.humanIds = ["boss"]
         access = RoomInfoAccess(room: theirs, gate: gate, viewer: me, bots: bots)
         XCTAssertFalse(access.canLeave)
-        // the owner who is a plain member adds no people (channelRosterActions)
+        // the owner who is a plain member adds people too, as on the desktop
+        // (channelRosterActions, #1061): the server limits them to the
+        // people the organization directory shows them
         let mine = RoomInfoAccess(room: room(ownerId: "p-me"), gate: gate, viewer: me, bots: bots)
         XCTAssertTrue(mine.editable)
         XCTAssertTrue(mine.canDelete)
-        XCTAssertFalse(mine.canAddHuman)
+        XCTAssertTrue(mine.canAddHuman)
+        XCTAssertTrue(mine.canManageRoster)
         let admin = RoomViewer(principalId: "p-me", role: "admin")
         XCTAssertTrue(RoomInfoAccess(room: room(ownerId: "p-me"), gate: gate, viewer: admin, bots: bots).canAddHuman)
+        // an unknown role (no organization session yet) adds no one, as the desktop's null role
+        let unknown = RoomViewer(principalId: "p-me", role: nil)
+        XCTAssertFalse(RoomInfoAccess(room: room(ownerId: "p-me"), gate: gate, viewer: unknown, bots: bots).canAddHuman)
     }
 
     func testRosterOpensOnAPickerAndOffersOnlyWhatTheViewerMayTick() {

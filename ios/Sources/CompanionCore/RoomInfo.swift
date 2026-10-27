@@ -195,7 +195,10 @@ public struct RoomInfoAccess: Hashable, Sendable {
         canMoveSection = manages && !organization
         // A solo server's viewer is its operator (the desktop's "owner" role).
         let role = organization ? viewer.role : "owner"
-        canAddHuman = manages && owns && (role == "owner" || role == "admin")
+        // The room's owner adds people whatever their organization role, as
+        // on the desktop (`channelRosterActions`, #1061): the server limits a
+        // member to the people the organization directory shows them.
+        canAddHuman = manages && owns && role != nil
         canAddOwnBot = manages && RoomOwnership.ownBotToAdd(room, bots: bots, viewer: viewer) != nil
         let own = RoomOwnership.ownBotIds(bots, viewer: viewer)
         removableBotIds = manages ? Set(room.memberIds.filter { owns || own.contains($0) }) : []
