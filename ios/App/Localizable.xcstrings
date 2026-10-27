@@ -31292,6 +31292,12 @@
         }
       }
     },
+    "You can add or remove your own bots. The group's owner manages the rest.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You can add or remove your own bots. The group's owner manages the rest." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous pouvez ajouter ou retirer vos propres bots. Le propriétaire du groupe gère le reste." } }
+      }
+    },
     "Add my bot": {
       "localizations": {
         "en": {

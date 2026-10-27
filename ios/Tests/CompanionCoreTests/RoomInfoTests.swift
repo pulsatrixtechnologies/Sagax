@@ -182,6 +182,36 @@ final class RoomInfoTests: XCTestCase {
         XCTAssertTrue(RoomInfoAccess(room: room(ownerId: "p-me"), gate: gate, viewer: admin, bots: bots).canAddHuman)
     }
 
+    func testRosterOpensOnAPickerAndOffersOnlyWhatTheViewerMayTick() {
+        let gate = SurfaceGate(scope: .serverClient, organization: true)
+        let me = RoomViewer(principalId: "p-me", role: "member")
+        var archived = bot("old", owner: "p-me")
+        archived.hidden = true
+        let bots = [bot("a"), bot("mine", owner: "p-me"), bot("mine2", owner: "p-me"), archived]
+        // someone else's room: only the viewer's own bots, never theirs (#1240)
+        let theirs = room(ownerId: "boss", humanIds: ["boss", "p-me"], memberIds: ["a", "mine"])
+        XCTAssertEqual(RoomOwnership.rosterBotChoices(theirs, bots: bots, viewer: me, owns: false).map(\.id), ["mine", "mine2"])
+        let access = RoomInfoAccess(room: theirs, gate: gate, viewer: me, bots: bots)
+        XCTAssertTrue(access.canAddBot)
+        XCTAssertTrue(access.canManageRoster, "a member with bots manages their own in the roster (#1260)")
+        // the owner picks among every bot; an archived one only while a member
+        let mine = room(ownerId: "p-me", memberIds: ["a", "old"])
+        XCTAssertEqual(RoomOwnership.rosterBotChoices(mine, bots: bots, viewer: me, owns: true).map(\.id), ["a", "mine", "mine2", "old"])
+        // everything already in: no "+ Add", the roster still opens
+        let full = room(ownerId: "boss", memberIds: ["a", "mine", "mine2"])
+        let fullAccess = RoomInfoAccess(room: full, gate: gate, viewer: me, bots: bots)
+        XCTAssertFalse(fullAccess.canAddBot)
+        XCTAssertTrue(fullAccess.canManageRoster)
+        // no bot of one's own in someone else's room: nothing to manage
+        let stranger = RoomViewer(principalId: "p-x", role: "member")
+        XCTAssertFalse(RoomInfoAccess(room: theirs, gate: gate, viewer: stranger, bots: bots).canManageRoster)
+    }
+
+    func testNextHumanIdsKeepsPlacesAndAppendsAdditions() {
+        XCTAssertEqual(RoomOwnership.nextHumanIds(current: ["p-a", "B@x.test"], picked: ["p-a", "b@x.test", "p-c"], added: ["p-c"]), ["p-a", "b@x.test", "p-c"])
+        XCTAssertEqual(RoomOwnership.nextHumanIds(current: ["p-a", "p-b"], picked: ["p-b", "p-c"], added: ["P-C", "p-c"]), ["p-b", "p-c"])
+    }
+
     // MARK: Who answers
 
     func testDefaultResponderFallsBackAndAutoKeepsTheLead() {

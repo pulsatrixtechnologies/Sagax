@@ -4,3 +4,34 @@
 export function nextMemberIds(current: string[], picked: Set<string>, order: string[]): string[] {
   return [...current.filter((id) => picked.has(id)), ...order.filter((id) => picked.has(id) && !current.includes(id))];
 }
+
+const norm = (id: string) => id.trim().toLowerCase();
+
+// The same for a room's people: who stays keeps their place, additions land
+// at the end. Ids compare lowercased (emails, principal ids), as the server
+// stores them.
+export function nextHumanIds(current: readonly string[], picked: ReadonlySet<string>, added: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const keep = (id: string) => {
+    const entry = norm(id);
+    if (!entry || seen.has(entry) || !picked.has(entry)) return false;
+    seen.add(entry);
+    return true;
+  };
+  return [...current.map(norm).filter(keep), ...added.map(norm).filter(keep)];
+}
+
+// The bots one person may tick in a room's roster (#1240, #1260): the room's
+// owner picks among every bot listed; anyone else only among their own
+// (server/group-ownership.ts). An archived bot stays listed while it is
+// still a member, so it can still be taken out.
+export function rosterBotChoices<T extends { id: string; hidden?: boolean; ownerUserId?: string }>(
+  bots: readonly T[],
+  input: { memberIds: readonly string[]; ownsRoom: boolean; actorId: string },
+): T[] {
+  const actor = norm(input.actorId);
+  return bots.filter((bot) => {
+    if (bot.hidden && !input.memberIds.includes(bot.id)) return false;
+    return input.ownsRoom || (actor !== "" && norm(bot.ownerUserId ?? "") === actor);
+  });
+}

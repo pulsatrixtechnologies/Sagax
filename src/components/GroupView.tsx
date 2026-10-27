@@ -95,10 +95,11 @@ import { ApprovalCard, approvalCardStaysInChat } from "./ApprovalCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { QuestionCard } from "./QuestionCard";
 import { ChannelMembers, channelRosterActions } from "./ChannelMembers";
-import { GroupPeoplePicker, useOrgDirectory } from "./GroupPeoplePicker";
+import { useOrgDirectory } from "./GroupPeoplePicker";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { groupHumanLabel } from "@/lib/private-threads";
-import { ManageMembersPanel } from "./ManageMembersPanel";
+import { ManageMembersPanel, type RosterFocus } from "./ManageMembersPanel";
+import { rosterBotChoices } from "@/lib/room-members";
 import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
@@ -1186,22 +1187,21 @@ export function GroupView({ group: stored }: { group: Group }) {
   const composerDock = useComposerDockPad(composerDockRef);
   const [bulletinOpen, setBulletinOpen] = useState(false);
   const [bulletinDraft, setBulletinDraft] = useState(group.bulletin);
-  const [membersOpen, setMembersOpen] = useState(false);
+  // The roster dialog, open on the section that opened it (#1240, #1260).
+  const [membersOpen, setMembersOpen] = useState<RosterFocus | null>(null);
   // The group panel shares the bot panel's slot: one open flag in the store.
   const panelOpen = state.settingsOpen && !group.dm;
   // Organization server: a group's people come from the Perspicax directory
   // (by principal id) and read by their names.
   const perspicaxOrg = usePerspicaxOrg();
   const orgDirectory = useOrgDirectory(perspicaxOrg !== null && !group.dm);
-  const [pickingPeople, setPickingPeople] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const { replyTo, selectReply, clearReply, consumeReply, restoreReply } = useReplyDraft(
     group.threadId,
     `group:${group.id}:${group.threadId}`,
     group.messages,
   );
-  const membersTriggerRef = useRef<HTMLButtonElement>(null);
-  const closeMembers = useCallback(() => setMembersOpen(false), []);
+  const closeMembers = useCallback(() => setMembersOpen(null), []);
   useEffect(() => setFindOpen(false), [group.threadId]);
   useEffect(() => {
     const onFind = (event: KeyboardEvent) => {
@@ -1276,6 +1276,11 @@ export function GroupView({ group: stored }: { group: Group }) {
   // Your own bots: a member who does not own the room still brings them in
   // and takes them out (server/group-ownership.ts).
   const ownBotIds = new Set(state.bots.filter((bot) => actorId !== "" && (bot.ownerUserId ?? "").trim().toLowerCase() === actorId).map((bot) => bot.id));
+  // "+ Add" under Bots opens the roster on its bots (#1240): shown while one
+  // this person may tick is not in the room yet.
+  const canAddRosterBot = rosterBotChoices(state.bots, { memberIds: group.memberIds, ownsRoom, actorId }).some((bot) => !group.memberIds.includes(bot.id));
+  // "Manage members": anyone who can change something in the roster.
+  const canManageRoster = ownsRoom || roster.canAddHuman || ownBotIds.size > 0;
   const speaker = members.find((b) => b.id === group.busyBotId);
 
   // Mascot stays while a member works; the finished reply pops in above it.
@@ -1363,7 +1368,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   const unreadDivider = useUnreadDivider({ threadId: group.threadId, messages: group.messages, following });
 
   useEffect(() => setBulletinDraft(group.bulletin), [group.id, group.bulletin]);
-  useEffect(() => setMembersOpen(false), [group.id]);
+  useEffect(() => setMembersOpen(null), [group.id]);
   // The room's panel, when it was already open as the room opened (it follows
   // the selection from the previous conversation), is drawn in place on the
   // first frame; only a panel the person opens here slides in.
@@ -1421,8 +1426,18 @@ export function GroupView({ group: stored }: { group: Group }) {
       <ExchangeColumnProvider node={exchangeColumnNode}>
       <div ref={exchangeColumnRef} className="relative isolate flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
-      {membersOpen && !remoteClient && !group.dm && (
-        <ManageMembersPanel group={group} onClose={closeMembers} triggerRef={membersTriggerRef} />
+      {membersOpen && !group.dm && (
+        <ManageMembersPanel
+          group={group}
+          onClose={closeMembers}
+          focus={membersOpen}
+          ownsRoom={ownsRoom}
+          canAddHuman={roster.canAddHuman}
+          actorId={actorId}
+          people={channelHumans}
+          directory={orgDirectory}
+          organization={perspicaxOrg !== null}
+        />
       )}
       {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header: laid out like a bot chat's. The centered chip (stacked
@@ -1747,16 +1762,7 @@ export function GroupView({ group: stored }: { group: Group }) {
                   bots={[]}
                   onOpenHuman={perspicaxOrg ? (id) => dispatch({ type: "openPersonPanel", personId: id.replace(/^user:/, "") }) : undefined}
                   {...roster}
-                  onAddHuman={() => {
-                    if (perspicaxOrg) {
-                      setPickingPeople(true);
-                      return;
-                    }
-                    const email = window.prompt("Adresse courriel")?.trim().toLowerCase() ?? "";
-                    if (!email) return;
-                    const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), email])];
-                    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
-                  }}
+                  onAddHuman={() => setMembersOpen("people")}
                   onRemoveHuman={(id) => {
                     dispatch({
                       type: "patchGroup",
@@ -1765,17 +1771,6 @@ export function GroupView({ group: stored }: { group: Group }) {
                     });
                   }}
                 />
-                {perspicaxOrg && pickingPeople && (
-                  <GroupPeoplePicker
-                    directory={orgDirectory}
-                    taken={[viewerId, ...(group.humanIds ?? [])]}
-                    onAdd={(principalId) => {
-                      const humanIds = [...new Set([...(group.humanIds ?? []).map((id) => id.trim().toLowerCase()), principalId])];
-                      dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
-                    }}
-                    onDone={() => setPickingPeople(false)}
-                  />
-                )}
               </PanelSection>
               <PanelSection title={t("sidebar.section.bots")}>
                 <ChannelMembers
@@ -1792,20 +1787,14 @@ export function GroupView({ group: stored }: { group: Group }) {
                   onRemoveBot={(id) => {
                     dispatch({ type: "patchGroup", groupId: group.id, patch: { memberIds: group.memberIds.filter((memberId) => memberId !== id) } });
                   }}
-                  onAddBot={() => {
-                    const owned = state.bots.find((bot) => (bot.ownerUserId ?? "").trim().toLowerCase() === actorId && !group.memberIds.includes(bot.id));
-                    dispatch({
-                      type: "patchGroup",
-                      groupId: group.id,
-                      patch: { memberIds: owned ? [...group.memberIds, owned.id] : [...group.memberIds] },
-                    });
-                  }}
+                  canAddBot={canAddRosterBot}
+                  onAddBot={() => setMembersOpen("bots")}
                 />
-                {editable && (
+                {canManageRoster && (
                   <button
-                    ref={membersTriggerRef}
                     type="button"
-                    onClick={() => setMembersOpen(true)}
+                    data-manage-members-open=""
+                    onClick={() => setMembersOpen("people")}
                     className="mt-2 rounded-lg bg-raised px-3 py-2 text-[13px] text-ink hover:bg-raised-hover"
                   >
                     {t("room.members.manage")}
