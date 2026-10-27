@@ -1,0 +1,297 @@
+{
+  "_comment": [
+    "The native tools each pinned engine CLI exposes (solo) and offers a withheld",
+    "organization turn (org), as scripts/capture-engine-native-tools.ts recorded them.",
+    "Regenerate an engine after bumping it in engines.lock.json; never edit by hand.",
+    "server/drivers/engine-tools.test.ts checks each tool against ORG_ENGINE_TOOLS."
+  ],
+  "engines": {
+    "claude": {
+      "version": "2.1.288",
+      "captured": "2026-10-27",
+      "how": "init event of `claude -p` with an MCP server and the permission prompt tool, tool search on; org: the driver's --tools and --disallowedTools",
+      "solo": [
+        "AskUserQuestion",
+        "Bash",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "DesignSync",
+        "Edit",
+        "EnterPlanMode",
+        "EnterWorktree",
+        "ExitPlanMode",
+        "ExitWorktree",
+        "ListAgents",
+        "Monitor",
+        "NotebookEdit",
+        "PushNotification",
+        "Read",
+        "ReportFindings",
+        "ScheduleWakeup",
+        "SendMessage",
+        "Skill",
+        "Task",
+        "TaskStop",
+        "ToolSearch",
+        "WebFetch",
+        "WebSearch",
+        "Workflow",
+        "Write"
+      ],
+      "org": [
+        "AskUserQuestion",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "SendMessage",
+        "Skill",
+        "Task",
+        "ToolSearch",
+        "WebSearch"
+      ]
+    },
+    "codex": {
+      "version": "0.160.0",
+      "captured": "2026-10-27",
+      "how": "first request of `codex exec` to a local fake Responses model with an MCP server; org: + codexHostToolArgs",
+      "solo": [
+        "apply_patch",
+        "create_goal",
+        "exec_command",
+        "get_goal",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "read_mcp_resource",
+        "request_user_input",
+        "tool_search",
+        "update_goal",
+        "view_image",
+        "web_search",
+        "write_stdin"
+      ],
+      "org": [
+        "apply_patch",
+        "create_goal",
+        "get_goal",
+        "list_mcp_resource_templates",
+        "list_mcp_resources",
+        "read_mcp_resource",
+        "request_user_input",
+        "tool_search",
+        "update_goal",
+        "web_search"
+      ]
+    },
+    "gemini": {
+      "version": "0.62.0",
+      "captured": "2026-10-27",
+      "how": "tools offered to a local fake model by a control and a withheld turn of the Sagax driver (scripts/verify-org-host-tools.ts)",
+      "solo": [
+        "activate_skill",
+        "enter_plan_mode",
+        "glob",
+        "google_web_search",
+        "grep_search",
+        "invoke_agent",
+        "list_background_processes",
+        "list_directory",
+        "read_background_output",
+        "read_file",
+        "replace",
+        "run_shell_command",
+        "update_topic",
+        "web_fetch",
+        "write_file",
+        "write_todos"
+      ],
+      "org": [
+        "update_topic"
+      ]
+    },
+    "grok": {
+      "version": "1.0.46",
+      "captured": "2026-10-27",
+      "how": "tools offered to a local fake model by a control and a withheld turn of the Sagax driver (scripts/verify-org-host-tools.ts)",
+      "solo": [
+        "ask_user_question",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "get_command_or_subagent_output",
+        "grep",
+        "image_edit",
+        "image_gen",
+        "image_to_video",
+        "kill_command_or_subagent",
+        "list_dir",
+        "monitor",
+        "read_file",
+        "reference_to_video",
+        "run_terminal_command",
+        "scheduler_create",
+        "scheduler_delete",
+        "scheduler_list",
+        "search_replace",
+        "search_tool",
+        "send_feedback",
+        "session_title",
+        "spawn_subagent",
+        "todo_write",
+        "use_tool",
+        "workflow",
+        "write"
+      ],
+      "org": [
+        "search_tool",
+        "session_title",
+        "use_tool"
+      ]
+    },
+    "hermes": {
+      "version": "0.21.5",
+      "captured": "2026-10-27",
+      "how": "tools offered to a local fake model by a control and a withheld turn of the Sagax driver (scripts/verify-org-host-tools.ts)",
+      "solo": [
+        "browser_exec",
+        "browser_vault_enter_code",
+        "browser_vault_fill",
+        "browser_vault_list",
+        "browser_vault_save_login",
+        "browser_vault_unlock",
+        "delegate_task",
+        "execute_code",
+        "memory",
+        "patch",
+        "read_file",
+        "search_files",
+        "skill_manage",
+        "skill_view",
+        "skills_list",
+        "terminal",
+        "tool_call",
+        "tool_describe",
+        "tool_search",
+        "vision_analyze",
+        "web_extract",
+        "web_search",
+        "write_file"
+      ],
+      "org": [
+        "tool_call",
+        "tool_describe",
+        "tool_search"
+      ]
+    },
+    "kimi": {
+      "version": "2.1.1",
+      "captured": "2026-10-27",
+      "how": "tools offered to a local fake model by a control and a withheld turn of the Sagax driver (scripts/verify-org-host-tools.ts)",
+      "solo": [
+        "Agent",
+        "AgentSwarm",
+        "AskUserQuestion",
+        "Bash",
+        "CreateGoal",
+        "CronCreate",
+        "CronDelete",
+        "CronList",
+        "Edit",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "FetchURL",
+        "GetGoal",
+        "Glob",
+        "Grep",
+        "Read",
+        "ReadMediaFile",
+        "SetGoalBudget",
+        "Skill",
+        "TaskList",
+        "TaskOutput",
+        "TaskStop",
+        "TodoList",
+        "UpdateGoal",
+        "WaitFor",
+        "Write"
+      ],
+      "org": [
+        "AskUserQuestion",
+        "CreateGoal",
+        "EnterPlanMode",
+        "ExitPlanMode",
+        "GetGoal",
+        "SetGoalBudget",
+        "TodoList",
+        "UpdateGoal"
+      ]
+    },
+    "opencode": {
+      "version": "1.18.34",
+      "captured": "2026-10-27",
+      "how": "tools offered to a local fake model by a control and a withheld turn of the Sagax driver (scripts/verify-org-host-tools.ts)",
+      "solo": [
+        "bash",
+        "edit",
+        "glob",
+        "grep",
+        "read",
+        "skill",
+        "task",
+        "todowrite",
+        "webfetch",
+        "write"
+      ],
+      "org": [
+        "todowrite"
+      ]
+    },
+    "pi": {
+      "version": "1.0.1",
+      "captured": "2026-10-27",
+      "how": "keys of createAllTools in the package; org: --no-builtin-tools",
+      "solo": [
+        "bash",
+        "edit",
+        "find",
+        "grep",
+        "ls",
+        "powershell",
+        "read",
+        "write"
+      ],
+      "org": []
+    },
+    "qwen": {
+      "version": "0.24.7",
+      "captured": "2026-10-27",
+      "how": "tools offered to a local fake model by a control and a withheld turn of the Sagax driver (scripts/verify-org-host-tools.ts)",
+      "solo": [
+        "agent",
+        "ask_user_question",
+        "edit",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "get_goal",
+        "glob",
+        "grep_search",
+        "list_agents",
+        "notebook_edit",
+        "read_file",
+        "run_shell_command",
+        "skill",
+        "tool_call",
+        "tool_search",
+        "update_goal",
+        "write_file"
+      ],
+      "org": [
+        "ask_user_question",
+        "enter_plan_mode",
+        "exit_plan_mode",
+        "get_goal",
+        "tool_call",
+        "tool_search",
+        "update_goal"
+      ]
+    }
+  }
+}

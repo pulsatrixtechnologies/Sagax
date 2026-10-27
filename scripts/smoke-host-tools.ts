@@ -11,7 +11,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { claudeDisallowedTools } from "../server/drivers/host-tools.ts";
+import { CLAUDE_ORG_TOOLS, claudeDisallowedTools, claudeOrgTools } from "../server/drivers/host-tools.ts";
 
 const HOST_ACTING = ["Bash", "BashOutput", "KillShell", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit", "Glob", "Grep", "LS", "WebFetch", "EnterWorktree", "ExitWorktree", "Workflow"];
 
@@ -26,7 +26,10 @@ const ORG_ALLOW = [
 async function initTools(withhold: boolean, allow: string[] = []): Promise<string[]> {
   const dir = mkdtempSync(join(tmpdir(), "sagax-host-tools-"));
   const args = ["-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--strict-mcp-config"];
-  const denied = claudeDisallowedTools(undefined, withhold);
+  // the driver's flags (server/drivers/claude.ts): the allowlist, then the deny rules
+  const orgTools = claudeOrgTools(undefined, withhold);
+  if (orgTools !== null) args.push("--tools", orgTools);
+  const denied = claudeDisallowedTools(undefined, withhold, orgTools !== null);
   if (denied.length) args.push("--disallowedTools", denied.join(","));
   if (allow.length) args.push("--allowedTools", allow.join(","));
   const child = spawn(process.env.CLAUDE_CLI ?? "claude", args, {
@@ -65,6 +68,8 @@ check("control: a solo turn has Bash", solo.includes("Bash"));
 const leaked = HOST_ACTING.filter((tool) => org.includes(tool));
 check("organization turn: no shell, file or fetch tool on the Sagax server", leaked.length === 0, leaked.join(",") || `${org.length} tools left`);
 check("organization turn: a Bash call cannot be made (tool absent)", !org.includes("Bash"));
+const offList = org.filter((tool) => !tool.startsWith("mcp__") && !CLAUDE_ORG_TOOLS.includes(tool));
+check("organization turn: every built-in left is on the allowlist (CLAUDE_ORG_TOOLS)", offList.length === 0, offList.join(",") || org.join(","));
 check("organization turn with standing SAGAX_CLAUDE_ALLOW rules: Bash still absent (deny wins)", !orgWithAllow.includes("Bash"));
 console.log(failed ? `\n${failed} check(s) failed` : "\nall checks passed");
 process.exit(failed ? 1 : 0);

@@ -875,9 +875,9 @@ const support = (loadCatalog: OpenCodeCatalogLoader): AcpSupport => ({
   // scripts/verify-org-host-tools.ts).
   withholdsHostTools: true,
   withheldWorkspace,
-  applyTurnEnv: (env, { fullAuto, botId, cwd, withholdHostTools }) => {
+  applyTurnEnv: (env, { fullAuto, botId, cwd, withholdHostTools, mcpServers }) => {
     if (withholdHostTools === true) {
-      opencodeHostToolEnv(env, true, fullAuto);
+      opencodeHostToolEnv(env, true, fullAuto, mcpServers.map((server) => server.name));
       return;
     }
     // In Sagax's own folders nothing is the person's project: a bot wrote

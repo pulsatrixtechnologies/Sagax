@@ -43,7 +43,7 @@ import {
   ONE_SHOT_SYSTEM_PROMPT,
   oneShotIsolationArgs,
 } from "./claude.ts";
-import { CLAUDE_UNUSED_TOOLS } from "./host-tools.ts";
+import { CLAUDE_ORG_TOOLS, CLAUDE_UNUSED_TOOLS } from "./host-tools.ts";
 import { AUTO_ALLOWLIST_COPY, claudeLaunchLevel } from "../testing/claude-level.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
 import { rebuiltSessionNotice } from "../resume-recovery.ts";
@@ -1388,6 +1388,33 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(seen.argv[seen.argv.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
     const denied = String(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).split(",");
     for (const tool of ["Bash", "Read", "Write", "Edit", "WebFetch"]) expect(denied).toContain(tool);
+    // and names its built-ins: the allowlist, nothing a newer CLI adds
+    expect(seen.argv[seen.argv.indexOf("--tools") + 1]).toBe(CLAUDE_ORG_TOOLS.join(","));
+  });
+
+  it("keeps only the allowlisted built-ins of an owner's selection on an organization server, and the selection as is on a solo one", async () => {
+    await create(undefined, {}, { tools: ["Bash", "WebSearch", "Agent", "SomeFutureTool"] });
+    const dump = join(scratch, "org-selected.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const org = await instance.adapter.sendTurn({ threadId: "t-org-selected", text: "hello", withholdHostTools: true });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === org.turnId);
+    let seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv[seen.argv.indexOf("--tools") + 1]).toBe("WebSearch,Agent");
+    const solo = await instance.adapter.sendTurn({ threadId: "t-solo-selected", text: "hello" });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === solo.turnId);
+    seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv[seen.argv.indexOf("--tools") + 1]).toBe("Bash,WebSearch,Agent,SomeFutureTool");
+  });
+
+  it("passes no --tools on a solo server without a selection", async () => {
+    await create();
+    const dump = join(scratch, "solo-default.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const { turnId } = await instance.adapter.sendTurn({ threadId: "t-solo-default", text: "hello" });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).not.toContain("--tools");
+    expect(String(seen.argv[seen.argv.indexOf("--disallowedTools") + 1]).split(",")).not.toContain("Bash");
   });
 
   it("keeps questions answerable in per-bot Full access", async () => {

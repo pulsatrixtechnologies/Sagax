@@ -8,7 +8,7 @@
 //   - every computer (this Mac, a Local VM, a VPS, or a Boat cloud
 //     computer through server/harness-mcp-proxy.ts computer) as the one
 //     stdio `computer` server in turn.integrations.localComputer
-import { CLAUDE_UNUSED_COMMANDS, claudeDisallowedTools } from "./host-tools.ts";
+import { CLAUDE_UNUSED_COMMANDS, claudeDisallowedTools, claudeOrgTools } from "./host-tools.ts";
 import { AUTO_COMPUTER_MCP_NAME } from "../auto-computer.ts";
 import { FLOW_TOOLS_MCP_NAME } from "../flow-tools.ts";
 import { isFlowToolsServer } from "./acp/grok-read-only-tools.ts";
@@ -1939,10 +1939,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (turn.guestConfined && permissionMode !== "default") {
         throw new Error("A guest's turn on this Cloud runs only in Ask.");
       }
-      if (turn.guestConfined) args.push("--restricted", "--tools", GUEST_CLAUDE_TOOLS.join(","));
+      // Organization server: only the built-ins on the allowlist
+      // (CLAUDE_ORG_TOOLS), so one a newer CLI adds stays off; null on a
+      // solo server, where the turn keeps everything it had.
+      const orgTools = claudeOrgTools(turn.guestConfined ? GUEST_CLAUDE_TOOLS : config.tools, turn.withholdHostTools === true);
+      if (turn.guestConfined) args.push("--restricted", "--tools", orgTools ?? GUEST_CLAUDE_TOOLS.join(","));
+      else if (orgTools !== null) args.push("--tools", orgTools);
       else if (config.tools !== undefined) args.push("--tools", config.tools.join(","));
-      // Organization server: no shell, file or fetch tool on the Sagax server.
-      const disallowedTools = claudeDisallowedTools(config.disallowedTools, turn.withholdHostTools === true, turn.guestConfined === true || config.tools !== undefined);
+      // And no shell, file or fetch tool on the Sagax server, as deny rules
+      // (they hold for subagents and a plugin's agents too).
+      const disallowedTools = claudeDisallowedTools(config.disallowedTools, turn.withholdHostTools === true, turn.guestConfined === true || config.tools !== undefined || orgTools !== null);
       if (disallowedTools.length) {
         args.push("--disallowedTools", disallowedTools.join(","));
       }

@@ -119,7 +119,10 @@ describe("organization server: each admitted ACP engine withholds its own tools"
     const org = await turn(f, true);
     const permission = JSON.parse(org.env.OPENCODE_PERMISSION!);
     for (const key of OPENCODE_HOST_PERMISSIONS) expect(permission[key]).toBe("deny");
-    expect(permission["*"]).toBe("allow");
+    // an allowlist: everything else off, the todo list and Sagax's MCP servers back in
+    expect(permission["*"]).toBe("deny");
+    expect(permission.todowrite).toBe("allow");
+    for (const [key, value] of Object.entries(permission)) if (key.endsWith("_*")) expect(value).toBe("allow");
     expect(org.env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe("1");
     expect(real(org.cwd)).toBe(real(withheldWorkspace()));
   });

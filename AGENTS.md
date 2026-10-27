@@ -2946,9 +2946,11 @@ driver's default `cli`.
   cannot withhold its own tools (Droid, Cursor Agent, Antigravity, a custom
   ACP agent: "Engines on an organization server" below) is still refused
   with 409 `host_tools` and hidden from the model picker.
-- Bumping an engine: change the lock only (version, and the hashes for a
-  native or Python engine). Perspicax reads the lock from the Sagax checkout
-  at its next `build-push.sh`.
+- Bumping an engine: change the lock (version, and the hashes for a
+  native or Python engine), then capture its native tools with that CLI
+  (`node --experimental-strip-types scripts/capture-engine-native-tools.ts
+  <engine> <cli>`) and classify any new one (next section). Perspicax reads
+  the lock from the Sagax checkout at its next `build-push.sh`.
 
 ## Engines on an organization server (2026-10-08)
 
@@ -2967,18 +2969,30 @@ engine inside the person's environment (sagax-sandboxd) is not built
 
 | Engine (driver) | Mechanism (`server/drivers/host-tools.ts`) | Verified how | Allowed on org |
 |---|---|---|---|
-| Claude Code (`claudeAgent`) | `--disallowedTools` host tools | `scripts/smoke-host-tools.ts`, real CLI | yes |
+| Claude Code (`claudeAgent`) | `--tools` allowlist (`CLAUDE_ORG_TOOLS`), then `--disallowedTools` host tools (they hold for subagents) | `scripts/smoke-host-tools.ts`, real 2.1.288 | yes |
 | Codex (`codex`) | features off, read-only sandbox, requests declined | `server/drivers/codex.test.ts` | yes |
 | Grok Build (`grokAgent`) | ACP `agentProfile` with `search_tool`, `use_tool` only | real 1.0.46, `scripts/verify-tool-scope.ts` | yes |
 | pi (`piAgent`) | `--no-builtin-tools --exclude-tools --no-extensions` | `scripts/verify-pi-tool-scope.ts` | yes |
 | Gemini CLI (`geminiAgent`) | `--admin-policy` deny of every host tool (top tier: a denied tool is not offered), `-e none`, `--skip-trust` with `--allowed-mcp-server-names` = Sagax's servers, empty workspace | real 0.62.0, `scripts/verify-org-host-tools.ts gemini` | yes |
 | Qwen Code (`qwenAgent`) | `--core-tools` allowlist (`tool_search`, `tool_call`, `ask_user_question`), `--exclude-tools`, `--allowed-mcp-server-names`, system settings (`QWEN_CODE_SYSTEM_SETTINGS_PATH`): no memory, dream or skill agent, no hook; empty workspace | real 0.24.7, `scripts/verify-org-host-tools.ts qwen` | yes |
 | Kimi Code (`kimiAgent`) | `<KIMI_CODE_HOME>/agents/agent.md` overriding the default profile: `tools` allowlist (questions, plan, goals, todo, `mcp__*`), `disallowedTools`; empty workspace | real 2.1.1, `scripts/verify-org-host-tools.ts kimi` | yes |
-| OpenCode (`opencodeGo`) | `OPENCODE_PERMISSION` with every host permission `deny` (a denied tool is not offered), `OPENCODE_DISABLE_PROJECT_CONFIG=1`, empty workspace | real 1.18.34, `scripts/verify-org-host-tools.ts opencode` | yes |
+| OpenCode (`opencodeGo`) | `OPENCODE_PERMISSION` allowlist: `*` denied (a denied tool is not offered), the todo list and the turn's MCP servers let back in, every host permission denied by name; `OPENCODE_DISABLE_PROJECT_CONFIG=1`, empty workspace | real 1.18.34, `scripts/verify-org-host-tools.ts opencode` | yes |
 | Hermes Agent (`hermesAgent`) | `HERMES_HOME` of Sagax's (`<data>/engine-policies/hermes-org`): the server's config with `platform_toolsets.acp: []`, every host toolset disabled, no `mcp_servers`, hooks, plugins or skills; `.env` and `auth.json` linked, not copied; empty workspace | real 0.21.5, `scripts/verify-org-host-tools.ts hermes` | yes |
 | Droid (`droidAgent`) | none: `droid exec -o acp` ignores `--only-tools` and `--remove-tools`, its ACP session takes no tool selection | real 0.230.0: Execute, Read, Edit and the rest still offered | no |
 | Cursor Agent (`cursorAgent`) | none: Cursor's service picks the tools and the model; deny rules only refuse a call, and no stand-in model can check it | not verifiable offline | no |
 | Antigravity, Custom ACP | none verified | - | no |
+
+Every native tool of every pinned CLI is on its engine's allowlist or deny
+list (`ORG_ENGINE_TOOLS` in `server/drivers/host-tools.ts`), never on
+neither: `server/drivers/engine-tools.test.ts` checks the inventory the
+pinned CLI exposed (`server/drivers/engine-native-tools.json`, written by
+`scripts/capture-engine-native-tools.ts`), fails when the lock's version is
+not the inventoried one, and names each unclassified tool with what to
+decide. Claude, Grok, pi, Qwen, Kimi, OpenCode and Hermes take the
+allowlist themselves, so a tool a CLI adds stays off; Codex and Gemini take
+no allowlist that leaves approvals as they are, so their deny lists hold
+and the pinned inventory catches a new tool at the bump. A solo turn, or a
+turn in the person's own environment, is unchanged.
 
 Keep these rules, each covered by `server/drivers/acp/org-host-tools.test.ts`,
 `server/org-engine-admission.test.ts`, `src/components/EnginesSettings.org.test.ts`
