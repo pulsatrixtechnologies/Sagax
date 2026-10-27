@@ -11203,5 +11203,9 @@
   "approval.status.viaChannel": "via {name}",
   "botPanel.reachMe.push.deviceOne": "On your paired phone.",
   "voice.noDashes.title": "No em or en dashes in replies",
-  "voice.noDashes.short": "Replaces them in the final text of bot replies: a range word between times and numbers, a colon after a list label, a comma elsewhere. On by default in French."
+  "voice.noDashes.short": "Replaces them in the final text of bot replies: a range word between times and numbers, a colon after a list label, a comma elsewhere. On by default in French.",
+  "model.fast.label": "Fast model",
+  "model.fast.none": "None, always the model Auto picks",
+  "model.fast.hint": "Quick turns and light parallel subtasks run on it, usually a local model. Reasoning stays on the larger or cloud model.",
+  "model.auto.why.fast": "Auto: {model} for this quick turn, the fast model set for this bot on {engine}; the larger model stays for reasoning."
 }

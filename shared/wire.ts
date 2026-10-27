@@ -82,6 +82,12 @@ export interface ModelSelection {
    * path or client that does not know Auto still runs a valid model. Only
    * true is stored; picking a model in the chip clears it. */
   auto?: true;
+  /** Fast model (#1209): with Auto on, a quick turn and the work a bot hands
+   * out in parallel (a quick task, an automation, general work) run on this
+   * model, usually a small local one; reasoning, coding, long reading and
+   * vision stay on the larger or cloud model Auto picks. Ignored without
+   * Auto, or when the engine is not usable for the turn. */
+  fast?: { instanceId: string; model: string };
 }
 
 /** Which cloud computer backs computer: "cloud"; absent means Boat. */

@@ -758,6 +758,7 @@ export interface BotZipImportOptions extends BotZipImportViewer {
 const effortSchema = z.enum(EFFORT_LEVELS);
 const selectionSchema = z.object({
   instanceId: z.string().min(1).max(80), model: z.string().min(1).max(200), effort: effortSchema.optional(), variant: z.string().max(80).optional(), auto: z.literal(true).optional(),
+  fast: z.object({ instanceId: z.string().min(1).max(80), model: z.string().min(1).max(200) }).optional(),
 });
 const settingsSchema = z.object({
   modelSelection: selectionSchema.optional(),

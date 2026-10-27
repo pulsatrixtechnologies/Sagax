@@ -7062,3 +7062,19 @@ links stay as they are; tool calls and reasoning never go through it. The
 setting is the person's own (`sagax.voiceDashes.v1`, Settings > Models and
 voice > Voice), on by default for French. A solo server cannot read the
 browser's choice, so it follows the server language there.
+
+## Fast model and Perspicax conventions (2026-10-26, #1209)
+
+`ModelSelection.fast` ({ instanceId, model }, kept only with Auto, set in the
+Auto pane of the model window): a quick turn (`classifyTask` says quick) and
+the work a bot hands out in the light classes (`FAST_CLASSES`: quick,
+automation, general) run on that model, usually a local one; reasoning,
+coding, long reading, large context and vision keep the tier's model. The
+engine must list the model for this payer (`AutoEngine.fast`, set by
+`autoEnginesFor`, custom and local rows included); otherwise Auto picks as
+before. The pick's chain goes on to the larger model, so a refusal climbs.
+A turn with Perspicax tools mounted also gets
+`PERSPICAX_CONVENTIONS_PROMPT` (`server/perspicax-conventions.ts`): fields in
+`set` with `action`, `parent`/`id`, `expect`, dry run first, ids and flags,
+local times without an offset, one projection for a big result, totals by
+aggregate. The server's own instructions win if they differ.

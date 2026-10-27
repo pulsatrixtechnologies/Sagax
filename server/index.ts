@@ -1047,6 +1047,7 @@ import { ComputerTeachRecordings } from "./computer-teach.ts";
 import { createLocalComputerAutoRoutes } from "./routes/local-computer-auto.ts";
 import { createUserPreferenceRoutes } from "./routes/user-preferences.ts";
 import { replaceDashes, voiceDashesEnabled, VOICE_DASHES_PREFERENCE } from "../shared/voice-dashes.ts";
+import { PERSPICAX_CONVENTIONS_PROMPT } from "./perspicax-conventions.ts";
 import { createUserPreferenceStore, preferencesFrameAllowed, type PersonPreferences } from "./user-preferences.ts";
 import { createViewerBotOverrideRoutes } from "./routes/viewer-bot-overrides.ts";
 import { createViewerBotOverrideStore } from "./viewer-bot-overrides.ts";
@@ -5889,7 +5890,9 @@ async function perspicaxTurnIntegration(input: {
   // Pulsatrix Flow's compute (server/flow-tools.ts) rides with the
   // Perspicax tools whose data it works on.
   if (Object.keys(custom).length && !taken.has(FLOW_TOOLS_MCP_NAME)) custom[FLOW_TOOLS_MCP_NAME] = flowToolsIntegration();
-  if (!plan.unavailable.length) return { custom, prompt: "" };
+  // The calling conventions ride with the tools they are about (#1209).
+  const conventions = Object.keys(custom).some((name) => name !== FLOW_TOOLS_MCP_NAME) ? PERSPICAX_CONVENTIONS_PROMPT : "";
+  if (!plan.unavailable.length) return { custom, prompt: conventions };
   const lines = plan.unavailable.map((entry) => entry.reason === "no_delegation"
     ? `Perspicax tools of profile "${entry.name}" are not available in this routine run: ${PERSPICAX_UNAVAILABLE_WHY.no_delegation}.`
     : `Perspicax tools of profile "${entry.name}" are not available in this turn: ${PERSPICAX_UNAVAILABLE_WHY[entry.reason]}. Tell them so if they ask for these tools.`);
@@ -5909,7 +5912,7 @@ async function perspicaxTurnIntegration(input: {
     });
   }
   // sections are concatenated as is: this one brings its own separation
-  return { custom, prompt: `\n\n${lines.join("\n")}` };
+  return { custom, prompt: `${conventions}\n\n${lines.join("\n")}` };
 }
 
 // ── computer control (who is driving) ──────────────────────────────────
@@ -6233,7 +6236,7 @@ function checkedModelSelection(
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return { ok: false, status: 400, error: "modelSelection must be an object" };
   }
-  const value = raw as { instanceId?: unknown; model?: unknown; effort?: unknown; variant?: unknown; auto?: unknown };
+  const value = raw as { instanceId?: unknown; model?: unknown; effort?: unknown; variant?: unknown; auto?: unknown; fast?: unknown };
   if (typeof value.instanceId !== "string" || !value.instanceId.trim()) {
     return { ok: false, status: 400, error: "modelSelection.instanceId is required" };
   }
@@ -6255,6 +6258,14 @@ function checkedModelSelection(
     return { ok: false, status: 400, error: "modelSelection.auto must be a boolean" };
   }
   if (value.auto === true) selection.auto = true;
+  // The fast model (#1209): a model the engine lists, kept only with Auto.
+  if (value.fast !== undefined && value.fast !== null) {
+    const fast = value.fast as { instanceId?: unknown; model?: unknown };
+    if (typeof fast !== "object" || typeof fast.instanceId !== "string" || !fast.instanceId.trim() || typeof fast.model !== "string" || !fast.model.trim()) {
+      return { ok: false, status: 400, error: "modelSelection.fast needs an instanceId and a model" };
+    }
+    if (value.auto === true) selection.fast = { instanceId: fast.instanceId.trim(), model: fast.model.trim() };
+  }
   if (value.effort !== undefined) {
     if (!isEffortLevel(value.effort)) {
       return { ok: false, status: 400, error: `effort "${String(value.effort)}" is not recognized` };
@@ -27401,10 +27412,17 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
     }
     const options = instance.models.options.filter((option) => !option.custom &&
       (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
+    // The bot's fast model (#1209): any row this engine lists, a local or
+    // custom one included, when hosted models allow it.
+    const fastWanted = bot.modelSelection.fast?.instanceId === instance.instanceId
+      ? instance.models.options.find((option) => option.id === bot.modelSelection.fast?.model &&
+        (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })))
+      : undefined;
     engines.push({
       instanceId: instance.instanceId,
       driverKind: instance.driverKind,
       displayName: engineDisplayName(instance),
+      ...(fastWanted ? { fast: { id: fastWanted.id, label: fastWanted.label || fastWanted.id } } : {}),
       models: { default: instance.models.default, options },
       ...(instance.adapter.capabilities.effortLevels ? { effortLevels: instance.adapter.capabilities.effortLevels } : {}),
       via,
@@ -27467,7 +27485,13 @@ function autoPickForTurn(input: {
     });
     return { payer, pick: pickWorkerModel({ ...request, task: { text: parsed.text, attachments, ...(role ? { role } : {}) } }) };
   }
-  return { payer, pick: pickOrchestrationModel(request) };
+  const quick = parsedQuickTask(input.text);
+  return { payer, pick: pickOrchestrationModel(request, quick) };
+}
+/** The words of a turn as Auto reads them to tell a quick one (#1209). */
+function parsedQuickTask(text: string): { text: string; attachments: Array<{ kind: "image" | "file"; name?: string }> } {
+  const parsed = attachmentsInText(text);
+  return { text: parsed.text, attachments: parsed.attachments.map((item) => ({ kind: item.kind, ...(item.name ? { name: item.name } : {}) })) };
 }
 /** A refused turn: why, and whose credentials it needed. */
 type OrgAccessRefusal = {

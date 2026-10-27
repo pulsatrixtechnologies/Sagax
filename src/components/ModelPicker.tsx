@@ -1080,6 +1080,22 @@ export function ModelPicker({
     if (threadId) setChangedBotModel(true);
   };
 
+  // The fast model (#1209): a local model Auto runs quick turns and light
+  // parallel subtasks on, the larger or cloud model staying for reasoning.
+  const fastKey = (instanceId: string, model: string) => `${instanceId}\u0000${model}`;
+  const fastChoices = autoOn
+    ? selectable.flatMap((instance) => localModelRows(instance.models.options, orgMode)
+      .filter((option) => !localRowUnavailable(instance.driverKind, option.id, option.anthropic))
+      .map((option) => ({ key: fastKey(instance.instanceId, option.id), label: `${instance.displayName} · ${option.label || option.id}` })))
+    : [];
+  const chooseFast = (key: string) => {
+    if (bot.busy || viewerLocal) return;
+    const [instanceId, model] = key.split("\u0000");
+    const { fast: _fast, ...rest } = selection;
+    const next = instanceId && model ? { ...rest, fast: { instanceId, model } } : rest;
+    dispatch({ type: "setModel", botId: bot.id, threadId: threadId ?? bot.threadId, updateBotDefault: true, selection: next });
+  };
+
   // An engine's models under two headings. Local: models on this machine
   // (solo) or on the person's own computer (organization server), and a
   // local server's models (`server::model`). Cloud: everything else the
@@ -1533,6 +1549,24 @@ export function ModelPicker({
       {autoInfo && <p data-model-auto-details className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink-secondary">{t("model.auto.settings.body")}</p>}
       {autoOn && autoShown && (
         <p data-model-auto-reason className="mt-1.5 text-[12px] leading-relaxed text-ink">{autoReasonSentence(autoShown)}</p>
+      )}
+      {autoOn && !viewerLocal && fastChoices.length > 0 && (
+        <label data-model-fast className="mt-2 flex flex-col gap-1 text-[12px] text-ink-secondary">
+          <span className="font-medium text-ink">{t("model.fast.label")}</span>
+          <select
+            value={selection.fast ? fastKey(selection.fast.instanceId, selection.fast.model) : ""}
+            disabled={Boolean(bot.busy)}
+            onChange={(event) => chooseFast(event.target.value)}
+            aria-label={t("model.fast.label")}
+            className="rounded-lg border border-hairline/40 bg-inset px-2 py-1.5 text-[12.5px] text-ink focus:outline-none"
+          >
+            <option value="">{t("model.fast.none")}</option>
+            {fastChoices.map((choice) => (
+              <option key={choice.key} value={choice.key}>{choice.label}</option>
+            ))}
+          </select>
+          <span>{t("model.fast.hint")}</span>
+        </label>
       )}
     </div>
   );
