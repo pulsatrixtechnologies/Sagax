@@ -232,10 +232,14 @@ test("the preload gives the bundled organization page the desktop-UI parts, and 
   const remote = preloadBridge({ pageOrigin: ORG, bundled: false });
   const bundled = preloadBridge({ pageOrigin: ORG, bundled: true });
   assert.deepEqual(bundled.syncCalls, ["workspace:bundled-ui"]);
-  for (const key of ["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]) {
+  for (const key of ["floatingBots", "dataWindow", "retroAssistant", "onOpenAppSettings", "openExternal", "confirm", "updater", "serverMode", "computerSharing"]) {
     assert.equal(remote.bridge[key], undefined, `a plain remote page has no ${key}`);
     assert.ok(bundled.bridge[key], `the bundled page has ${key}`);
   }
+  // Caption buttons are on every remote page, bundled or not: the window
+  // draws them itself when the title bar is hidden.
+  assert.ok(remote.bridge.windowControls, "a remote page keeps the caption buttons");
+  assert.ok(bundled.bridge.windowControls, "the bundled page has the caption buttons");
   for (const key of ["remoteClient", "environments", "setCredential", "saveFile", "pickFolder", "screenFrame", "companion", "desktopViewer", "approvals", "exportDiagnostics", "exportLogs"]) {
     assert.equal(bundled.bridge[key], undefined, `the bundled page never gets ${key}`);
   }

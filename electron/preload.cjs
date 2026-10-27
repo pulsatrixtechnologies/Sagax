@@ -47,7 +47,10 @@ ipcRenderer.on("app:open-settings", (_event, section) => {
 // helpers here. Main enforces the same rule on the sensitive channels.
 const localOrigin = process.argv.find((arg) => arg.startsWith("--omb-local-origin="))?.slice("--omb-local-origin=".length) ?? null;
 const isLocalPage = !localOrigin || location.origin === localOrigin;
-const REMOTE_SAFE = new Set(["platform", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "notify", "withdrawNotification", "onNotificationClick", "systemIdle", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
+// windowControls stays on every remote page: a Windows window with a hidden
+// title bar draws its own caption buttons, including when the page is not
+// this app's bundled UI (electron/window-controls-remote.node-test.mjs).
+const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "onCapabilitiesChanged", "applySkin", "setUnreadCount", "nudgeWindow", "notify", "withdrawNotification", "onNotificationClick", "systemIdle", "permStatus", "workspaces", "takeSignInReturn", "pulsatrixSignIn", "orgJoin"]);
 // An organization server's page drawn from THIS app's bundle
 // (electron/bundled-ui.cjs) is the desktop's own UI on that server, so it
 // also gets the desktop-UI parts that hold no local data: floating bots and
