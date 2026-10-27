@@ -42,13 +42,19 @@ describe("ToolActivity", () => {
   });
 
   it("folds a failed MCP call to its product; the tool id only opens with the row", () => {
-    const tool = { name: "mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query", ok: false, input: JSON.stringify({ resource: "Accounts" }), durationMs: 27_000 };
+    // The product name comes from the server (#1216, #1219): the declared name wins,
+    // and without one the gateway prefix reads titled.
+    const id = "mcp__claude_ai_Example_Gateway__acme_desk__query";
+    const tool = { name: id, ok: false, input: JSON.stringify({ resource: "Accounts" }), durationMs: 27_000, product: "Acme Service Desk" };
     const folded = renderToStaticMarkup(createElement(ToolActivity, { tool }));
-    expect(folded).toContain(">Could not use Twilio<");
+    expect(folded).toContain(">Could not use Acme Service Desk<");
     expect(folded).toContain(">Accounts<");
-    expect(folded).not.toContain("twilio_api");
+    expect(folded).not.toContain("acme_desk");
+    const undeclared = renderToStaticMarkup(createElement(ToolActivity, { tool: { ...tool, product: undefined } }));
+    expect(undeclared).toContain(">Could not use Acme Desk<");
+    expect(undeclared).not.toContain("acme_desk");
     const opened = renderToStaticMarkup(createElement(ToolActivity, { tool, defaultOpen: true }));
-    expect(opened).toContain(">mcp__claude_ai_Pulsatrix_Perspicax__twilio_api__query<");
+    expect(opened).toContain(`>${id}<`);
   });
 
   it("distinguishes running, failed and unrecorded output", () => {
@@ -60,7 +66,9 @@ describe("ToolActivity", () => {
     expect(render(false)).toContain('data-phase="failed"');
     expect(render(false)).toContain("text-danger");
     expect(render(false)).toContain(">Could not read a file<");
-    expect(render(false)).toContain("No output was recorded");
+    // a failed call with no text says so, never "nothing was recorded" (#1189)
+    expect(render(false)).toContain("The tool failed and returned no error message.");
+    expect(render(false)).not.toContain("No output was recorded");
     expect(render(true)).toContain("No output was recorded");
     expect(render(true)).not.toContain("thinking-shimmer");
   });

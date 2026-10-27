@@ -111,6 +111,20 @@ class Scroller {
   }
 }
 
+class FakeElement {
+  parentElement: FakeElement | null = null;
+  scrollHeight = 0;
+  clientHeight = 0;
+  scrollTop = 0;
+  constructor(readonly tag = "div", readonly role?: string) {}
+  closest(selector: string): FakeElement | null {
+    const parts = selector.split(",").map((part) => part.trim());
+    const matches = (node: FakeElement) => parts.includes(node.tag) || Boolean(node.role && parts.includes(`[role="${node.role}"]`));
+    if (matches(this)) return this;
+    return this.parentElement?.closest(selector) ?? null;
+  }
+}
+
 type Props = Parameters<typeof useTranscriptViewport<Row>>[0];
 let scroller: Scroller;
 let frames: FrameRequestCallback[];
@@ -182,8 +196,13 @@ beforeEach(() => {
     observe() {}
     disconnect() {}
   });
-  vi.stubGlobal("HTMLTextAreaElement", class {});
-  vi.stubGlobal("HTMLInputElement", class {});
+  // The few DOM classes the hook tests a gesture's target against: an element
+  // matches a selector by its tag or role, and has no scrollable ancestor.
+  vi.stubGlobal("Element", FakeElement);
+  vi.stubGlobal("HTMLElement", FakeElement);
+  vi.stubGlobal("HTMLTextAreaElement", class extends FakeElement { constructor() { super("textarea"); } });
+  vi.stubGlobal("HTMLInputElement", class extends FakeElement { constructor() { super("input"); } });
+  vi.stubGlobal("getComputedStyle", () => ({ overflowY: "visible" }));
   return () => vi.unstubAllGlobals();
 });
 
@@ -230,7 +249,7 @@ describe("transcript viewport", () => {
     view.rerender({ pinOn: [true] });
     expect(scroller.scrollTop).toBe(11 * ROW + 80 - 400);
 
-    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40 } as never));
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never));
     expect(view.current.following).toBe(false);
     const reading = scroller.scrollTop;
     view.rerender({ messages: rows(12) });
@@ -262,11 +281,58 @@ describe("transcript viewport", () => {
     view.act(() => press("PageUp"));
     expect(view.current.following).toBe(false);
 
-    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: 30 } as never));
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: 30, deltaX: 0 } as never));
     expect(view.current.following).toBe(true);
     view.act(() => view.current.scrollHandlers.onTouchStart({ touches: [{ clientY: 100 }] } as never));
     view.act(() => view.current.scrollHandlers.onTouchMove({ touches: [{ clientY: 110 }] } as never));
     expect(view.current.following).toBe(false);
+  });
+
+  it("ignores gestures that cannot move the transcript, and a send brings the reader back to the bottom", async () => {
+    // a short chat has nothing to scroll: an upward wheel, swipe or key keeps following
+    const short = mount({ messages: rows(4) });
+    short.act(() => short.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never));
+    short.act(() => press("PageUp"));
+    short.act(() => short.current.scrollHandlers.onTouchStart({ touches: [{ clientY: 100 }] } as never));
+    short.act(() => short.current.scrollHandlers.onTouchMove({ touches: [{ clientY: 140 }] } as never));
+    expect(short.current.following).toBe(true);
+
+    react.runtime.slots = [];
+    scroller = new Scroller();
+    const view = mount({ messages: rows(30) });
+    expect(view.current.following).toBe(true);
+    // momentum noise and a mostly horizontal swipe are not a scroll up
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -1, deltaX: 0 } as never));
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -20, deltaX: 60 } as never));
+    expect(view.current.following).toBe(true);
+    // a code block that can still scroll up takes the wheel itself
+    const pane = new FakeElement("pre");
+    Object.assign(pane, { scrollHeight: 600, clientHeight: 200, scrollTop: 100 });
+    const line = new FakeElement("span");
+    line.parentElement = pane;
+    vi.stubGlobal("getComputedStyle", (node: FakeElement) => ({ overflowY: node === pane ? "auto" : "visible" }));
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0, target: line } as never));
+    expect(view.current.following).toBe(true);
+    // the arrow keys of a menu, a listbox or a dialog move their selection
+    for (const role of ["menu", "listbox", "dialog"]) {
+      view.act(() => press("ArrowUp", new FakeElement("div", role)));
+      expect(view.current.following).toBe(true);
+    }
+    view.act(() => press("Home", new HTMLInputElement()));
+    expect(view.current.following).toBe(true);
+
+    // the reader scrolls up, then sends: follow is on again and the reply shows
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never));
+    expect(view.current.following).toBe(false);
+    scroller.scrollTop = 200;
+    view.rerender({ messages: [...rows(30), { id: "sent", role: "user" }] });
+    await Promise.resolve();
+    view.rerender({});
+    expect(view.current.following).toBe(true);
+    expect(scroller.scrollTop).toBe(scroller.bottom);
+    // a bot row that follows the send keeps the reader at the bottom
+    view.rerender({ messages: [...rows(30), { id: "sent", role: "user" }, { id: "reply", role: "bot" }] });
+    expect(scroller.scrollTop).toBe(scroller.bottom);
   });
 
   it("mounts only the last window of a long thread and re-tails it when another thread opens", () => {
@@ -362,7 +428,7 @@ describe("transcript viewport", () => {
 
   it("holds the reader's rows and grows the window once they have scrolled away", () => {
     const view = mount({ messages: rows(300) });
-    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40 } as never));
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never));
     scroller.scrollTop = 2_000;
     for (let total = 301; total <= 900; total++) view.rerender({ messages: rows(total) });
     expect(view.current.hiddenCount).toBe(180);
@@ -551,7 +617,7 @@ describe("transcript viewport", () => {
     // Leave the bottom and scroll near the top (<= AUTO_EXPAND_TOP_THRESHOLD)
     view.act(() => {
       scroller.scrollTop = 200;
-      view.current.scrollHandlers.onWheel({ deltaY: -40 } as never);
+      view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never);
       view.current.scrollHandlers.onScroll();
     });
 
@@ -565,7 +631,7 @@ describe("transcript viewport", () => {
 
     view.act(() => {
       scroller.scrollTop = 150;
-      view.current.scrollHandlers.onWheel({ deltaY: -40 } as never);
+      view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never);
       view.current.scrollHandlers.onScroll();
     });
 

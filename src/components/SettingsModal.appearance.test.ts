@@ -477,10 +477,13 @@ describe("Settings → Notifications", () => {
     fixture.section = "notifications";
     const html = render();
     const groups = [...html.matchAll(/data-settings-group="([^"]+)"/g)].map((match) => match[1]);
-    // Privacy is an organization server's only
-    expect(groups).toEqual(["alerts", "nudges"]);
+    // Privacy is an organization server's only; Blocked people is everyone's
+    // and Reports an admin's (App Store 1.2, #1184)
+    expect(groups).toEqual(["alerts", "nudges", "blockedPeople"]);
     expect(html).toContain(">Alerts</h3>");
     expect(html).toContain(">Nudges</h3>");
+    expect(html).toContain(">Blocked people</h3>");
+    expect(html).not.toContain('data-settings-group="reports"');
     expect(html).toContain("· On this computer");
     expect(html).not.toContain("How a new message or a nudge gets your attention");
     expect(html).not.toContain("Play a sound when a person writes to you");

@@ -236,8 +236,13 @@ test("main draws the bundle only for the active organization server and trusts i
   assert.match(main, /function syncBundledUi\(\) \{\n  const origin = bundledOrigin\(environmentsState\);/);
   assert.match(main, /environmentsState = next;\n  syncBundledUi\(\);/, "every saved change re-syncs the handler");
   assert.match(main, /environmentsState = readEnvironments\(\);\n  syncBundledUi\(\);/, "and the first read at launch");
-  // floating bots, Hibou 98 and the Data window follow the desktop's own UI, local or bundled
-  assert.equal((main.match(/isTrustedMain: \(event\) => isDesktopUiSender\(event\)/g) ?? []).length, 3);
+  // floating bots, Hibou 98, the Data window and a popped-out artifact's own
+  // window (#1203) follow the desktop's own UI, local or bundled
+  assert.equal((main.match(/isTrustedMain: \(event\) => isDesktopUiSender\(event\)/g) ?? []).length, 4);
+  for (const factory of ["createRetroAssistantWindow", "createFloatingBotWindows", "createDataWindows", "createArtifactWindows"]) {
+    const call = main.slice(main.indexOf(`= ${factory}({`));
+    assert.match(call.slice(0, call.indexOf("\n});")), /isTrustedMain: \(event\) => isDesktopUiSender\(event\)/, `${factory} trusts the desktop UI only`);
+  }
   assert.match(main, /ipcMain\.on\("workspace:bundled-ui"/);
   assert.match(main, /event\.senderFrame === win\.webContents\.mainFrame/);
 });
