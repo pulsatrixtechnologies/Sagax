@@ -1,7 +1,9 @@
 // New Group Chat (reference 17): a full-height sheet 62 pt from the top with
-// an X, the title and a "Next" capsule that stays grey until two bots are
+// an X, the title and a "Next" capsule that stays grey until two members are
 // picked. A "To:" token field filters the bots below it (32 pt mascot and
-// name on a 54 pt pitch); picked bots become tokens. "Next" leads to a name
+// name on a 54 pt pitch); picked bots become tokens. On an organization
+// server the organization's people follow the bots, and a group may hold
+// people only, with no bot (#1150). "Next" leads to a name
 // step, then the room is made with `createRoom`. The server names it after
 // the first member if the name is left blank, as the desktop's dialog does.
 import SwiftUI
@@ -15,6 +17,8 @@ struct NewGroupSheet: View {
     @EnvironmentObject private var session: Session
     @State private var query = ""
     @State private var picked: [String] = []
+    @State private var pickedPeople: [String] = []
+    @ObservedObject private var directory = PeopleDirectory.shared
     @State private var step: Step = .members
     @State private var name = ""
     @State private var creating = false
@@ -36,7 +40,18 @@ struct NewGroupSheet: View {
     }
 
     private var pickedBots: [Bot] { picked.compactMap { session.state.bot($0) } }
-    private var canContinue: Bool { picked.count >= Self.minimumMembers && !creating }
+
+    /// The people one may add: the directory on an organization server.
+    private var people: [OrgDirectoryPerson] {
+        guard session.surfaceGate.allows(.people) else { return [] }
+        return directory.directory?.messageable(viewer: session.roomViewer.actorId, query: query) ?? []
+    }
+
+    private var pickedPeopleRows: [OrgDirectoryPerson] {
+        pickedPeople.compactMap { directory.directory?.person($0) }
+    }
+
+    private var canContinue: Bool { picked.count + pickedPeople.count >= Self.minimumMembers && !creating }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -58,6 +73,7 @@ struct NewGroupSheet: View {
         }
         .ignoresSafeArea(.keyboard)
         .onAppear { focus = .search }
+        .task(id: session.connection?.id) { await directory.load(session) }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("new-group-sheet")
     }
@@ -141,6 +157,12 @@ struct NewGroupSheet: View {
                             .accessibilityIdentifier("new-group-row.\(bot.id)")
                             .accessibilityAddTraits(picked.contains(bot.id) ? .isSelected : [])
                     }
+                    ForEach(people) { person in
+                        Button { togglePerson(person) } label: { personRow(person) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("new-group-person.\(person.principalId)")
+                            .accessibilityAddTraits(pickedPeople.contains(person.principalId) ? .isSelected : [])
+                    }
                 }
                 .padding(.top, 208 - 176)
                 .padding(.bottom, 24)
@@ -158,15 +180,18 @@ struct NewGroupSheet: View {
                 .padding(.trailing, 6)
             HStack(spacing: 4) {
                 // the last two picks as tokens, the rest counted
-                let shown = pickedBots.suffix(2)
-                if pickedBots.count > shown.count {
-                    Text(verbatim: "+\(pickedBots.count - shown.count)")
+                let tokens: [(id: String, name: String, remove: () -> Void)] =
+                    pickedBots.map { bot in (bot.id, bot.name, { toggle(bot) }) }
+                    + pickedPeopleRows.map { person in (person.principalId, People.displayName(person), { togglePerson(person) }) }
+                let shown = tokens.suffix(2)
+                if tokens.count > shown.count {
+                    Text(verbatim: "+\(tokens.count - shown.count)")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.textSecondary)
                 }
-                ForEach(Array(shown)) { bot in
-                    Button { toggle(bot) } label: {
-                        Text(verbatim: bot.name)
+                ForEach(Array(shown), id: \.id) { token in
+                    Button { token.remove() } label: {
+                        Text(verbatim: token.name)
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.accentInk)
                             .lineLimit(1)
@@ -176,11 +201,11 @@ struct NewGroupSheet: View {
                     }
                     .buttonStyle(.plain)
                     .fixedSize()
-                    .accessibilityLabel(Text("Remove \(bot.name)"))
+                    .accessibilityLabel(Text("Remove \(token.name)"))
                 }
                 ZStack(alignment: .leading) {
-                    if query.isEmpty && picked.isEmpty {
-                        Text("Search Bots")
+                    if query.isEmpty && picked.isEmpty && pickedPeople.isEmpty {
+                        Text(people.isEmpty ? "Search Bots" : "Search bots and people")
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.parity(Color(hex: 0x6B6B6D), Theme.placeholder))
                             .padding(.leading, 1.4)
@@ -193,7 +218,7 @@ struct NewGroupSheet: View {
                         .withoutKeyboardSuggestions()
                         .submitLabel(.search)
                         .focused($focus, equals: .search)
-                        .accessibilityLabel(Text("Search Bots"))
+                        .accessibilityLabel(Text(people.isEmpty ? "Search Bots" : "Search bots and people"))
                         .accessibilityIdentifier("new-group-search")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -227,6 +252,43 @@ struct NewGroupSheet: View {
         .contentShape(Rectangle())
     }
 
+    private func personRow(_ person: OrgDirectoryPerson) -> some View {
+        let label = People.displayName(person)
+        return HStack(spacing: 0) {
+            Text(verbatim: People.initials(label))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 32, height: 32)
+                .background(Theme.card, in: Circle())
+                .accessibilityHidden(true)
+                .padding(.leading, 22)
+            Text(verbatim: label)
+                .font(Theme.Font.body)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .padding(.leading, 14)
+            Spacer(minLength: 8)
+            if pickedPeople.contains(person.principalId) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(Theme.blue)
+                    .padding(.trailing, 23)
+            }
+        }
+        .frame(height: 54)
+        .contentShape(Rectangle())
+    }
+
+    private func togglePerson(_ person: OrgDirectoryPerson) {
+        Haptics.selection()
+        if let index = pickedPeople.firstIndex(of: person.principalId) {
+            pickedPeople.remove(at: index)
+        } else {
+            pickedPeople.append(person.principalId)
+            query = ""
+        }
+    }
+
     private func toggle(_ bot: Bot) {
         Haptics.selection()
         if let index = picked.firstIndex(of: bot.id) {
@@ -241,10 +303,20 @@ struct NewGroupSheet: View {
 
     private var nameStep: some View {
         VStack(spacing: 0) {
-            GroupMascotView(members: pickedBots, size: HomeMetrics.pinnedMascot, background: Theme.bg)
-                .padding(.top, 40)
-                .accessibilityHidden(true)
-            Text(verbatim: pickedBots.map(\.name).joined(separator: ", "))
+            if pickedBots.isEmpty {
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Theme.textSecondaryHome)
+                    .frame(width: HomeMetrics.pinnedMascot, height: HomeMetrics.pinnedMascot)
+                    .background(Theme.card, in: Circle())
+                    .padding(.top, 40)
+                    .accessibilityHidden(true)
+            } else {
+                GroupMascotView(members: pickedBots, size: HomeMetrics.pinnedMascot, background: Theme.bg)
+                    .padding(.top, 40)
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: (pickedBots.map(\.name) + pickedPeopleRows.map(People.displayName)).joined(separator: ", "))
                 .font(HomeMetrics.font12)
                 .foregroundStyle(Theme.textSecondaryHome)
                 .lineLimit(2)
@@ -286,9 +358,10 @@ struct NewGroupSheet: View {
         creating = true
         focus = nil
         let members = picked
+        let humans = pickedPeople
         let chosen = name.trimmingCharacters(in: .whitespacesAndNewlines)
         Task {
-            let room = await session.createRoom(name: chosen.isEmpty ? nil : chosen, memberIds: members)
+            let room = await session.createRoom(name: chosen.isEmpty ? nil : chosen, memberIds: members, humanIds: humans)
             creating = false
             if let room {
                 Haptics.success()

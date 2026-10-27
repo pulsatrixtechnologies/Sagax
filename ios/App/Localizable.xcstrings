@@ -13377,6 +13377,22 @@
         }
       }
     },
+    "Search bots and people": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search bots and people"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher des bots et des personnes"
+          }
+        }
+      }
+    },
     "Search Bots": {
       "localizations": {
         "en": {

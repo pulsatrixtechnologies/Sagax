@@ -1484,8 +1484,11 @@ public struct CompanionClient: Sendable {
     /// bulletin and members answering when mentioned. The phone has no setup
     /// step to finish later, so a room without it would sit "pending setup"
     /// on the desktop.
-    public func createRoom(name: String?, memberIds: [String]) async throws -> Room {
+    public func createRoom(name: String?, memberIds: [String], humanIds: [String] = []) async throws -> Room {
         var body: [String: Any] = ["memberIds": memberIds, "setup": Self.roomSetup]
+        // People on top of the bots; with no bot at all this is a people-only
+        // group chat (the server lists the creator too).
+        if !humanIds.isEmpty { body["humanIds"] = humanIds }
         if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty { body["name"] = name }
         return try await send(try makeRequest("POST", "/api/groups", body: body), as: CreatedRoom.self).group
     }

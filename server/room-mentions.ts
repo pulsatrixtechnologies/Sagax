@@ -35,12 +35,17 @@ export function roomMentionNotification(input: {
   text: string;
   sender: { principalId: string; name: string; avatarUrl?: string };
   people: readonly MentionablePerson[];
+  /** A people-only group (no bot, #1150): every message reaches the other
+   * people, as in a direct message, not only the ones tagged. */
+  everyone?: boolean;
 }): Notification | null {
   const { room, sender } = input;
   if (room.peopleDm || room.dm || !sender.principalId || !sender.name) return null;
   const inRoom = new Set((room.humanIds ?? []).map(key));
   const others = input.people.filter((person) => inRoom.has(key(person.id)) && key(person.id) !== key(sender.principalId));
-  const audience = mentionedPeople(input.text, others, { allowAll: room.mentionAll === true }).map(key);
+  const audience = input.everyone
+    ? [...new Set(others.map((person) => key(person.id)).filter((id) => !id.startsWith("team:")))]
+    : mentionedPeople(input.text, others, { allowAll: room.mentionAll === true }).map(key);
   if (!audience.length) return null;
   return {
     kind: "message",
