@@ -113,6 +113,7 @@ import { outboundWiring, primaryOutboundDecision, primaryPurchaseCard } from "./
 import { OnePassword } from "./onepassword.ts";
 import { createCredentialVaultRoutes, vaultPrincipalFor } from "./routes/credential-vault.ts";
 import { createCredentialVaultInternalRoutes } from "./routes/credential-vault-internal.ts";
+import { withCommandVariables } from "./credential-command-env.ts";
 
 import { createRoomTurnLevels } from "./room-turn-level.ts";
 import { HELD_NOTE, approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, delegatedApprovalMode } from "./auto-approve.ts";
@@ -4257,6 +4258,9 @@ function agentsIntegration(
       SAGAX_MEETINGS: meetingNotetakerEnabled(cfg) && !store.groupByThread(threadId) ? "1" : "0",
       // phone_tool: the person speaking owns this bot, in a 1:1 turn of their
       // own, and a phone of theirs offers tools now. The route re-checks.
+      // vault_http_request: this bot may send an API key of the person here
+      // (server/credential-http.ts). The route re-checks every call.
+      SAGAX_VAULT_HTTP: vaultHttpMounted(botId, threadId) ? "1" : "0",
       SAGAX_PHONE_TOOLS: (() => {
         const bot = store.bot(botId);
         if (!bot) return "";
@@ -7063,6 +7067,23 @@ function onePasswordReaderFor(threadId: string): typeof readOnePasswordField {
     }
     return readOnePasswordField(ref, field);
   };
+}
+/** 2026-10-26: whether a turn's agents tools list vault_http_request. */
+function vaultHttpMounted(botId: string, threadId: string): boolean {
+  const principalId = vaultPrincipalForThread(threadId);
+  return Boolean(principalId) && credentialVault.injectable(principalId!, botId, threadId);
+}
+/** 2026-10-26: the API keys the person exposed to this bot's commands
+ * (server/credential-command-env.ts), read again for every turn and command. */
+function commandVariablesFor(botId: string, threadId: string, principalId: string | null = vaultPrincipalForThread(threadId)): Record<string, string> {
+  return principalId ? credentialVault.commandVariables(principalId, botId, threadId) : {};
+}
+/** The command variables a turn's engine shell gets: none where the engine
+ * has no shell of its own on this computer (an organization server). */
+function turnCommandEnvironment(instance: Parameters<typeof withholdHostToolsFor>[0], botId: string, threadId: string): { commandEnvironment?: Record<string, string> } {
+  if (withholdHostToolsFor(instance)) return {};
+  const vars = commandVariablesFor(botId, threadId);
+  return Object.keys(vars).length ? { commandEnvironment: vars } : {};
 }
 /** Whose vault a turn on this conversation reads: the one local vault on a
  * desktop or a solo server; on an organization server the person the turn
@@ -21104,6 +21125,7 @@ async function startTurn(
         mentionTurn: tagged.length > 0 || Boolean(userMessage.voiceCall?.interrupted),
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        ...turnCommandEnvironment(instance, bot.id, threadId),
         // Auto may leave their computer mid-turn: the engine's own traffic
         // goes through it only when the Workspace is fixed there.
         ...(() => { const networkProxy = turnAuto?.auto ? undefined : turnNetworkProxy(threadId, bot.id, turnPlace); return networkProxy ? { networkProxy } : {}; })(),
@@ -24516,6 +24538,7 @@ async function runGroupMemberTurn(
         cwd,
         integrations,
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
+        ...turnCommandEnvironment(instance, readyBot.id, threadId),
         ...(() => { const networkProxy = turnNetworkProxy(threadId, readyBot.id, roomPlace); return networkProxy ? { networkProxy } : {}; })(),
         ...(integrations.browser && browserIsThePlace(roomPlan) ? { preloadBrowserTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg) && !managedPolicy.restrictsMcp(),
@@ -28377,10 +28400,11 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
     principalForThread: vaultPrincipalForThread,
     inRoom: (threadId) => Boolean(store.groupByThread(threadId)),
   }),
-  // request_login (server/routes/credential-vault-internal.ts)
+  // request_login and vault_http_request (server/routes/credential-vault-internal.ts)
   createCredentialVaultInternalRoutes({
     vault: credentialVault,
     principalForThread: vaultPrincipalForThread,
+    readOnePassword: (threadId) => onePasswordReaderFor(threadId),
     endPersonSignIn: async (botId, threadId) => {
       const session = await personBrowserSession(botId, threadId);
       if (session) browserRuntime.endPersonSignIn(session);
@@ -39268,7 +39292,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           const autoRefusal = autoState && autoComputerToolRefusal(autoState.selected, USER_SANDBOX_MCP_NAME, String(toolName ?? ""));
           if (autoRefusal) return json(res, 200, { result: { content: [{ type: "text", text: autoRefusal }], isError: true } });
           const result = await handleUserSandboxMcp(rpcMethod, frame?.params, {
-            exec: (input) => userSandbox.exec(ownerId, input, internalCapability.botId),
+            // the command variables the person exposed to this bot (credential-command-env.ts)
+            exec: (input) => userSandbox.exec(ownerId, withCommandVariables(input, commandVariablesFor(internalCapability.botId, internalCapability.threadId, ownerId)), internalCapability.botId),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId, internalCapability.botId),
             // An admin manages this person's plugins and MCP servers: the
             // engines' own plugin and MCP commands do not run for them.

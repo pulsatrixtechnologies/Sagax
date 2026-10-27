@@ -32,7 +32,11 @@ import {
   itemIdFromHandle,
   vaultHandle,
   normalizeVaultDomain,
+  parseCommandVariable,
+  parseVaultInjection,
+  VAULT_INJECTION_MODES,
   vaultDomainMatches,
+  type VaultApiInjection,
   type VaultFillField,
   type VaultGrantMode,
   type VaultItemKind,
@@ -158,6 +162,13 @@ const purchaseSchema = z.object({
   filledFields: z.array(z.string().min(1).max(40)).max(20).optional(),
 }).strict();
 
+const injectionSchema = z.object({
+  mode: z.enum(VAULT_INJECTION_MODES),
+  header: z.string().min(1).max(64).optional(),
+  param: z.string().min(1).max(64).optional(),
+  basePath: z.string().min(1).max(200).optional(),
+}).strict();
+
 const itemSchema = z.object({
   id: z.string().regex(/^[a-z0-9]{8,40}$/),
   kind: z.enum(VAULT_ITEM_KINDS),
@@ -173,6 +184,10 @@ const itemSchema = z.object({
   contact: contactSchema.optional(),
   source: z.enum(["local", "1password"]),
   onePassword: onePasswordRefSchema.optional(),
+  /** 2026-10-26: an API key Sagax sends itself to the item's sites
+   * (server/credential-http.ts), and the command variable the person chose. */
+  injection: injectionSchema.optional(),
+  commandVariable: z.string().regex(/^[A-Z_][A-Z0-9_]{0,63}$/).optional(),
   grants: z.array(grantSchema).max(200),
   createdAt: z.number(),
   updatedAt: z.number(),
@@ -240,6 +255,10 @@ export interface VaultItemInput {
   totpSeed?: unknown;
   apiKey?: unknown;
   notes?: unknown;
+  /** apiKey: how Sagax sends it (VaultApiInjection); null turns it off. */
+  injection?: unknown;
+  /** apiKey: the command variable's name; null or "" turns it off. */
+  commandVariable?: unknown;
   /** A card, an address or a contact. A blank secret on an edit keeps it. */
   card?: unknown;
   address?: unknown;
@@ -263,6 +282,19 @@ export interface VaultImportOutcome {
   overLimit: number;
   /** Refused by the vault's rules (a seed it cannot read, a site it refuses). */
   refused: number;
+}
+
+export type RequestResolution =
+  | { ok: true; value: string; injection: VaultApiInjection; username?: string; domains: string[]; label: string }
+  | { ok: false; code: "unknown_item" | "not_injectable" | "not_granted" | "wrong_origin" | "no_value" | "unavailable"; message: string };
+
+/** Whether a URL's path is under the injection's base path (/v1 covers /v1
+ * and /v1/..., never /v10). */
+function underBasePath(injection: VaultApiInjection, url: string): boolean {
+  if (!injection.basePath) return true;
+  let path: string;
+  try { path = new URL(url).pathname; } catch { return false; }
+  return path === injection.basePath || path.startsWith(`${injection.basePath}/`);
 }
 
 export type FillResolution =
@@ -330,6 +362,8 @@ export function listingOf(item: StoredVaultItem, now: number = Date.now()): Vaul
     ...(item.address ? { address: { ...item.address } } : {}),
     ...(item.contact ? { contact: { ...item.contact } } : {}),
     source: item.source,
+    ...(item.injection ? { injection: { ...item.injection } } : {}),
+    ...(item.commandVariable ? { commandVariable: item.commandVariable } : {}),
     grants: activeGrants(item, now).map((grant) => ({ ...grant })),
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
@@ -628,6 +662,101 @@ export class CredentialVault {
       // the fill still happens; only "last used" is not recorded
     }
     return { ok: true, value, item: listingOf(item, now), field: request.field };
+  }
+
+  /** 2026-10-26: the API key to send on a bot's HTTP request
+   * (server/credential-http.ts), only for an API key the person set to be
+   * sent by Sagax, a bot allowed here, and a URL on one of the item's sites
+   * (and under its base path). Marks the item used. The caller must never
+   * put the value in a tool result, a message, an error or a log. */
+  async resolveForRequest(
+    principalId: string,
+    request: { handle: unknown; botId: string; threadId: string; url: string },
+    readOnePassword?: OnePasswordFieldReader,
+  ): Promise<RequestResolution> {
+    const itemId = itemIdFromHandle(request.handle);
+    let item: StoredVaultItem | undefined;
+    try {
+      item = itemId ? this.load(principalId).items[itemId] : undefined;
+    } catch (error) {
+      return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
+    }
+    if (!item) return { ok: false, code: "unknown_item", message: "No saved API key has this handle. Call request_login with the API's host so the person can allow one." };
+    if (item.kind !== "apiKey" || !item.injection) {
+      return { ok: false, code: "not_injectable", message: `${botName(item)} is not an API key Sagax sends on requests. The person turns that on in Settings > Credentials (How Sagax sends it).` };
+    }
+    if (!this.granted(principalId, item.id, request.botId, request.threadId)) {
+      return { ok: false, code: "not_granted", message: `You are not allowed to use ${botName(item)} here. Call request_login with the API's host so the person can allow it.` };
+    }
+    if (!item.domains.length || !vaultDomainMatches(item.domains, request.url) || !underBasePath(item.injection, request.url)) {
+      return { ok: false, code: "wrong_origin", message: `${botName(item)} is only sent to ${item.domains.map((domain) => `${domain}${item!.injection?.basePath ?? ""}`).join(", ") || "its own sites"} over https, and this URL is not one of them. Nothing was sent.` };
+    }
+    let value: string | null = item.apiKey ?? null;
+    if (item.source === "1password" && item.onePassword) {
+      if (!readOnePassword) return { ok: false, code: "unavailable", message: "1Password is not available on this computer right now. Nothing was sent." };
+      try {
+        value = await readOnePassword(item.onePassword, "apiKey");
+      } catch {
+        return { ok: false, code: "unavailable", message: "1Password did not answer. Nothing was sent." };
+      }
+    }
+    if (!value) return { ok: false, code: "no_value", message: `${botName(item)} has no API key saved. Nothing was sent.` };
+    const now = this.now();
+    try {
+      this.mutate(principalId, (items) => {
+        const current = items[item!.id];
+        if (current) {
+          current.lastUsedAt = now;
+          current.lastUsedBy = request.botId;
+          current.grants = activeGrants(current, now);
+        }
+      });
+    } catch {
+      // the request still goes; only "last used" is not recorded
+    }
+    return {
+      ok: true,
+      value,
+      injection: { ...item.injection },
+      ...(item.username ? { username: item.username } : {}),
+      domains: [...item.domains],
+      label: item.source === "1password" ? "a 1Password API key" : item.name,
+    };
+  }
+
+  /** 2026-10-26: the command variables the person exposed to this bot
+   * (an API key with a variable name, allowed for this bot in this
+   * conversation), read again for every command. 1Password items are left
+   * out (their value is read only at use, with 1Password's own approval). */
+  commandVariables(principalId: string, botId: string, threadId: string): Record<string, string> {
+    let items: Record<string, StoredVaultItem>;
+    try {
+      items = this.load(principalId).items;
+    } catch {
+      return {};
+    }
+    const now = this.now();
+    const out: Record<string, string> = {};
+    for (const item of Object.values(items).sort((left, right) => left.createdAt - right.createdAt)) {
+      if (item.kind !== "apiKey" || item.source !== "local" || !item.commandVariable || !item.apiKey) continue;
+      if (!activeGrants(item, now).some((grant) => grant.botId === botId && (grant.mode === "always" || grant.threadId === threadId))) continue;
+      if (!(item.commandVariable in out)) out[item.commandVariable] = item.apiKey;
+    }
+    return out;
+  }
+
+  /** Whether this bot may send at least one API key of this person here:
+   * its agents tools then list vault_http_request. */
+  injectable(principalId: string, botId: string, threadId: string): boolean {
+    let items: Record<string, StoredVaultItem>;
+    try {
+      items = this.load(principalId).items;
+    } catch {
+      return false;
+    }
+    const now = this.now();
+    return Object.values(items).some((item) => item.kind === "apiKey" && item.injection && item.domains.length > 0
+      && activeGrants(item, now).some((grant) => grant.botId === botId && (grant.mode === "always" || grant.threadId === threadId)));
   }
 
   /** Items read from another manager's file (Settings > Credentials,
@@ -984,6 +1113,20 @@ function applyInput(item: StoredVaultItem, input: VaultItemInput, creating: bool
     if (apiKey) item.apiKey = apiKey;
     else delete item.apiKey;
   }
+  if (item.kind === "apiKey" && input.injection !== undefined) {
+    if (input.injection === null || input.injection === "") delete item.injection;
+    else {
+      const injection = parseVaultInjection(input.injection);
+      if (typeof injection === "string") throw new CredentialVaultError(injection, "invalid_injection");
+      item.injection = injection;
+    }
+  }
+  if (item.kind === "apiKey" && input.commandVariable !== undefined) {
+    const name = parseCommandVariable(input.commandVariable);
+    if (name && typeof name === "object") throw new CredentialVaultError(name.error, "invalid_variable");
+    if (name) item.commandVariable = name;
+    else delete item.commandVariable;
+  }
   if (input.notes !== undefined) {
     const notes = text(input.notes, "notes", 16_384);
     if (notes.trim()) item.notes = notes;
@@ -1006,6 +1149,9 @@ function applyInput(item: StoredVaultItem, input: VaultItemInput, creating: bool
   }
   if (item.kind === "login" && !item.domains.length) {
     throw new CredentialVaultError("A login needs at least one site it may be filled on", "invalid_domains");
+  }
+  if (item.kind === "apiKey" && item.injection && !item.domains.length) {
+    throw new CredentialVaultError("An API key Sagax sends needs at least one site it is sent to", "invalid_domains");
   }
 }
 

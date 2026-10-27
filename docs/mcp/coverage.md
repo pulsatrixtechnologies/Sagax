@@ -132,6 +132,7 @@ Reading the table:
 | mcp:add | sagax | `add_mcp_server` | `mcp:add` | covered |
 | credentials:request | sagax | `request_credential` | `credentials:request` | covered |
 | credentials:login | sagax | `request_login` | `credentials:login` | covered |
+| credentials:http | sagax | `vault_http_request` | `credentials:http` | covered |
 | computers:select | sagax | `select_computer` | `computers:select` | covered |
 | computers:use | sagax | `shared_computer` | `computers:use` | covered |
 | vm:exec | sagax | `vm_exec` | `vm:exec` | covered |

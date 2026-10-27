@@ -152,6 +152,11 @@ export interface SendTurnInput {
    * credentials this one turn runs with. Absent in solo mode: the instance's
    * own configuration, as always. */
   access?: TurnAccessInput;
+  /** 2026-10-26 (server/credential-command-env.ts): API keys the person
+   * exposed to this bot's commands, by the names they chose. A driver whose
+   * engine runs commands in its own shell adds them to that process's
+   * environment, and starts a fresh process when they change. */
+  commandEnvironment?: Record<string, string>;
   /** The automatic recall block the harness put in front of the person's
    * message inside `text`. It informs this turn only, so a driver that
    * replays the turn as sent later can leave it out. */

@@ -98,6 +98,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"POST","kind":"exact","route":"/api/internal/create-bot","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/create-room","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/create-room","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
+  {"method":"ANY","kind":"exact","route":"/api/internal/credentials/http","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/delegate-bot","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"ANY","kind":"exact","route":"/api/internal/desktop/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/internal/desktop/mcp","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},

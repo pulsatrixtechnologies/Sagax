@@ -6295,6 +6295,23 @@ export blocks of `server/credential-vault.test.ts` and
 the launcher forwards a throwaway `SAGAX_MCP_OAUTH_KEY` and sends the owner
 capability on its own starter rename).
 
+## API keys Sagax sends itself, command variables (2026-10-26)
+
+An API key of the vault can be sent by Sagax on a bot's request: the item's
+`injection` (Bearer, named header, Basic, query parameter, optional base path)
+and its Sites are the binding; the bot calls `vault_http_request` (listed only
+with `SAGAX_VAULT_HTTP=1`, `CredentialVault.injectable`) with the handle and
+never sees the key. `server/credential-http.ts`: https only, public addresses
+only (`addressClass`, pinned connection), same-origin redirects only, 30 s,
+1 MB, every echo of the key and its encodings removed from body, headers and
+errors; audit has host, method, status only. `commandVariable` (off by
+default, the person's choice, one line on the row, no admin) exposes the key
+to the allowed bots' commands: sandbox `run_command` via
+`withCommandVariables`, Claude's own shell via `SendTurnInput.commandEnvironment`.
+Do not log a resolved value; do not touch `server/credential-fill.ts` for it.
+Doc: `docs/api-key-injection.md`. Tests: `server/credential-http.test.ts`,
+`server/credential-command-env.test.ts`.
+
 ## My Chrome: a bot drives the person's own Chrome (2026-10-19)
 
 Port of OpenMausBot #2706 (My Chrome) with what Sagax needs of #2925, #2928,

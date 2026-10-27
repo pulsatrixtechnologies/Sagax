@@ -58,6 +58,10 @@ export interface VaultItemDraft {
   card?: { pan?: string; cvv?: string; expMonth?: number; expYear?: number; holder?: string };
   address?: { recipient?: string; line1?: string; line2?: string; city?: string; region?: string; postal?: string; country?: string; phone?: string };
   contact?: { fullName?: string; email?: string; phone?: string; company?: string };
+  /** apiKey: how Sagax sends it on a bot's request; null stops it. */
+  injection?: import("../../shared/credential-vault").VaultApiInjection | null;
+  /** apiKey: the command variable's name; "" turns it off. */
+  commandVariable?: string;
 }
 
 const ITEM = (id: string) => `/api/me/credentials/${encodeURIComponent(id)}`;
