@@ -58,8 +58,10 @@ describe("Coding branches: the card", () => {
     expect(routines).toContain(`class="${GROUPED_CARD}"`);
     for (const part of GROUPED_ROW.split(" ")) {
       expect(branches).toContain(part);
-      expect(routines).toContain(part);
+      // Routine rows are condensed on purpose (#1164): py-1.5 replaces the row's py-2.5.
+      if (!part.startsWith("py-")) expect(routines).toContain(part);
     }
+    expect(routines).toContain("py-1.5");
     expect(branches.match(/data-code-row="branch"/g)).toHaveLength(2);
     // RoutineList and the branch card draw from one place, never copies
     expect(readFileSync(new URL("../routines/RoutineList.tsx", import.meta.url), "utf8")).toContain("GROUPED_CARD");

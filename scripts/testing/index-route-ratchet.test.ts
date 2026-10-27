@@ -18,7 +18,9 @@ const EXACT: Record<string, number> = {
   // and the terminal session WebSocket upgrade (#353). Moving them to server/routes lowers these.
   // 186 and 93: connector routes left index.ts with the connected-apps client.
   'path === "/': 186,
-  "path.match(": 93,
+  // 91: the thread file pin and the bot history routes moved to server/routes (#1099), after the
+  // library pin (#1112) and the history owner rule (#1107) had taken it over 93.
+  "path.match(": 91,
   "path.startsWith(": 14,
   ".exec(path)": 24,
   ".test(path)": 9,

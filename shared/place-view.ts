@@ -8,7 +8,7 @@
 // do when it can't be used.
 //
 // The English below mirrors src/locales/en.json `place.view.*`,
-// `place.action.*` and `place.askAdmin`/`place.backOnAuto` exactly (a test
+// `place.action.*` and `place.backOnAuto` exactly (a test
 // holds them together), the way shared/live-approval.ts mirrors its keys:
 // the server has no i18n.
 
@@ -203,7 +203,6 @@ export const PLACE_EN = {
   "place.action.usePlace": "Use {place}",
   "place.action.changeRoutine": "Change where it runs",
   "place.action.openComputerPanel": "Open Computer panel",
-  "place.askAdmin": "Ask an Admin to change it.",
   "place.backOnAuto": "This conversation is back on Auto.",
 } as const;
 export type PlaceKey = keyof typeof PLACE_EN;
@@ -278,12 +277,6 @@ const STATE: Record<PlaceState, { key: string; action: PlaceActionId | null }> =
  * way on (sourceAction). Every other state's action removes its cause. */
 const PASSING: ReadonlySet<PlaceState> = new Set(["cc-unavailable", "cc-no-start", "cc-clearing", "cc-provider", "place-failed"]);
 
-/** Actions that change a setting, a sign-in or the plan: a User can't take
- * them, so the line ends "Ask an Admin to change it." instead. */
-const ADMIN_ONLY: ReadonlySet<PlaceActionId> = new Set([
-  "choose-model", "open-tools", "sign-in", "see-plan", "manage-computers", "open-my-cloud",
-  "add-boat-key", "turn-on-browser", "open-team-map", "open-vm-settings", "change-routine",
-]);
 /** Starting or waking a computer early: a User's own message does it, so
  * there is nothing to ask anyone for. */
 const ADMIN_SHORTCUT: ReadonlySet<PlaceActionId> = new Set(["start", "wake"]);
@@ -423,10 +416,9 @@ export function placeViewOf(state: PlaceState, params: PlaceParams, context: Pla
   // Simple mode leaves Local VM setup to Advanced.
   if (action === "open-vm-settings" && context.mode === "simple") action = null;
   if (action && context.role === "user" && ADMIN_SHORTCUT.has(action)) action = null;
-  if (action && context.role === "user" && ADMIN_ONLY.has(action)) {
-    action = null;
-    line = `${line} ${translate("place.askAdmin")}`;
-  }
+  // 2026-10-26 (no admin gating, #1107): a member manages the settings of their
+  // own environment, so no other action is withheld from a User and no line
+  // sends them to an Admin.
   // Simple mode has no composer chip, so a pin's way back is the grid's
   // choice, by the grid's own name for it.
   const label = !action ? null

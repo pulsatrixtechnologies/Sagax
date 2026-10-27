@@ -81,11 +81,13 @@ describe("J11: a failed place's row", () => {
     expect(show(pinned).buttons[0]).toContain("Clear this conversation&#x27;s place");
   });
 
-  it("gives a User no button that changes a setting, and says who can", () => {
+  it("gives a User the same button as an Admin and never sends them to an Admin", () => {
     fixture.ownerOrAdmin = false;
     const { html, buttons } = show(stored(hours), vi.fn());
-    expect(html).toContain("They come back on 1 November. Ask an Admin to change it.");
-    expect(buttons).toHaveLength(0);
+    expect(html).toContain("They come back on 1 November.");
+    expect(html).not.toMatch(/Admin|undefined/);
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toContain("See your plan");
   });
 
   it("reads Needs a Boat key as My Cloud's on a desktop with a paid plan", () => {

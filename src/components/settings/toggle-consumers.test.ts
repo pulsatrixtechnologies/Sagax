@@ -44,8 +44,12 @@ describe("Connect apps sidebar entry (always available)", () => {
     const sidebar = read("components/Sidebar.tsx");
     expect(sidebar).not.toContain("connectedAppsEnabled");
     expect(sidebar).toContain("<SidebarConnectApps iconOnly");
-    expect(sidebar).toContain("<SidebarConnectApps onOpen=");
-    expect((sidebar.match(/<SidebarConnectApps/g) ?? []).length).toBe(2);
+    // the wide foot is SidebarFoot (#1105), which draws the Connect apps pill itself
+    expect(sidebar).toContain("<SidebarFoot places={accountPlaces} onOpenApps=");
+    expect((sidebar.match(/<SidebarConnectApps/g) ?? []).length).toBe(1);
+    const foot = read("components/SidebarFoot.tsx");
+    expect(foot).not.toContain("connectedAppsEnabled");
+    expect(foot).toContain("chat.connectApps.pill");
     // the chat no longer draws a connect-apps pill
     const chat = read("components/ChatView.tsx");
     expect(chat).not.toContain("ConversationConnectApps");

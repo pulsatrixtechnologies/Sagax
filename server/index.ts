@@ -1128,9 +1128,8 @@ import { createArtifactStore } from "./artifacts.ts";
 import { createArtifactInternalRoutes, createArtifactRoutes } from "./routes/artifacts.ts";
 import { createArtifactRefresher } from "./artifact-refresh.ts";
 import { createArtifactSourceRunner, toolResultValue, type ToolAnswer } from "./artifact-sources.ts";
-import { createRoutineWatchEvaluator, previewWatch, RoutineWatchStates, type RoutineWatchDeps, type WatchPlace, type WatchRoutine } from "./routine-watch.ts";
+import { createRoutineWatchEvaluator, RoutineWatchStates, type RoutineWatchDeps, type WatchPlace, type WatchRoutine } from "./routine-watch.ts";
 import { RemoteMcpClient } from "./mcp-http.ts";
-import { parseRoutinePrecheck } from "./routine-precheck.ts";
 import { createMeetingService, type MeetingService } from "./meetings/meeting-requests.ts";
 import { parseEvalJson } from "./meetings/meet-scripts.ts";
 import type { MeetingBrowser } from "./meetings/meeting-session.ts";
@@ -1235,6 +1234,10 @@ import { SandboxClusterWaker } from "./sandbox-k8s-wake.ts";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "../shared/sandbox-wake.ts";
 import { UserSandboxManager, UserSandboxUnavailable, userSandboxSettingsFromEnv } from "./user-sandbox-manager.ts";
 import { createUserSandboxRoutes } from "./user-sandbox-routes.ts";
+import { createBotHistoryRoutes } from "./routes/bot-history.ts";
+import { createMeEngineModelsRoutes } from "./routes/me-engine-models.ts";
+import { createRoutineWatchCheckRoutes } from "./routes/routine-watch-check.ts";
+import { createThreadFilePinRoutes } from "./routes/thread-file-pins.ts";
 import { remoteComputerForTurn, sandboxPrincipalForTurn, screenVisibleToPrincipal, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
 import { INTEGRATIONS_ADMIN_ONLY, enginePluginCommandRefusal } from "./person-integrations.ts";
@@ -34160,8 +34163,37 @@ if (IDENTITY.kind === "perspicax") {
 // Slice 4 (D10): a person's own engines. What their own turns run with (on
 // their bots and on bots shared with them: engine-credentials.ts), and their
 // own subscription sign-in, in their own login directory.
+ROUTES.push(createThreadFilePinRoutes({
+  hasConversation: (threadId) => Boolean(store.botByThread(threadId) || store.groupByThread(threadId)),
+  hasFile: (threadId, fileId) => threadFileRefsFor(threadId).some((candidate) => candidate.id === fileId),
+  setPin: (threadId, fileId, pinned) => threadFilePins.set(threadId, fileId, pinned),
+}));
+ROUTES.push(createBotHistoryRoutes<BotRecord, ReturnType<typeof wireBot>>({
+  bot: (id) => store.bot(id) ?? undefined,
+  mayManage: (auth, bot) => ownerOrAdminOf(auth, bot),
+  setSoul: (id, soul) => store.setSoul(id, soul) ?? undefined,
+  wireBot: (bot) => wireBot(bot),
+  broadcast: (event) => broadcast(event),
+}));
+ROUTES.push(createRoutineWatchCheckRoutes({
+  watchDeps: routineWatchDeps,
+  hasBot: (botId) => Boolean(store.bot(botId)),
+  hiddenTarget: (auth, path, botId) => hiddenRoutineTarget({ botId }, visibleTo(viewerFor(auth, path))),
+  needsRun: (auth, botId) => routineNeedsRun(auth, botId),
+  needsRunBody: NEEDS_RUN,
+  routine: (routineId, botId) => routines!.listRoutines().find((routine) => routine.id === routineId && routine.botId === botId),
+  effectiveRunAs: (routine) => effectiveRunAs(routine),
+  actorPrincipalId: (auth) => routineActor(auth)?.actorPrincipalId,
+}));
 if (IDENTITY.kind === "perspicax" && engineLogins) {
   const logins = engineLogins;
+  ROUTES.push(createMeEngineModelsRoutes({
+    principalOf: (auth) => {
+      const principalId = auth.kind === "session" ? auth.session.principalId?.trim() || "" : localPrincipalId();
+      return principalId && isPrincipalId(principalId) ? principalId : "";
+    },
+    accountModels: (principalId, instanceId) => logins.accountModels(principalId, instanceId),
+  }));
   ROUTES.push(async ({ req, res, url, path, method, auth, json, readBody }) => {
     if (path !== "/api/me/engines" && !path.startsWith("/api/me/engines/")) return PASS;
     res.setHeader("cache-control", "no-store");
@@ -34201,13 +34233,6 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         };
       });
       return json(res, 200, { engines, ...(perspicaxKeysUrl() ? { keysUrl: perspicaxKeysUrl() } : {}) });
-    }
-    const modelsOf = /^\/api\/me\/engines\/([\w.-]+)\/models$/.exec(path);
-    if (modelsOf && method === "GET") {
-      // #1154: what this person's own session can run, so the model menu
-      // never lists a model their turns would silently replace.
-      const models = await logins.accountModels(principalId, modelsOf[1]).catch(() => null);
-      return json(res, 200, { models });
     }
     const status = /^\/api\/me\/engines\/([\w.-]+)\/login\/status$/.exec(path);
     const action = /^\/api\/me\/engines\/([\w.-]+)\/login\/(start|complete|cancel|sign-out)$/.exec(path);
@@ -42492,31 +42517,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       cloudRoutineAuthors?.wrote(routine.id, writer);
       return json(res, 201, { routine: routineOnWire(routine) });
     }
-    // 2026-10-26 "Check now" in the routine editor: one reading of a watch
-    // (server/routine-watch.ts) where the routine would read it, no model,
-    // no state kept. The same rights as saving a routine of that bot.
-    if (path === "/api/routines/watch-check" && method === "POST") {
-      const body = await readBody(req) as { botId?: unknown; precheck?: unknown; routineId?: unknown; runOn?: unknown } | null;
-      const botId = typeof body?.botId === "string" ? body.botId : "";
-      const hidden = hiddenRoutineTarget({ botId }, visible);
-      if (hidden || !store.bot(botId)) return json(res, 404, { error: hidden ?? "no such bot" });
-      if (routineNeedsRun(auth, botId)) return json(res, 403, NEEDS_RUN);
-      let watch;
-      try {
-        watch = parseRoutinePrecheck(body?.precheck);
-      } catch (error) {
-        return json(res, 400, { error: error instanceof Error ? error.message : String(error) });
-      }
-      if (watch.kind !== "watch") return json(res, 400, { error: "Choose a watch to check" });
-      const existing = typeof body?.routineId === "string" ? routines!.listRoutines().find((routine) => routine.id === body.routineId && routine.botId === botId) : undefined;
-      const runAs = existing ? effectiveRunAs(existing) : routineActor(auth)?.actorPrincipalId;
-      const result = await previewWatch(routineWatchDeps, {
-        id: existing?.id ?? "preview", botId,
-        ...(runAs ? { runAs } : {}),
-        runOn: body?.runOn === "cloud" ? "cloud" : existing?.runOn ?? "maus",
-      }, watch);
-      return json(res, 200, result);
-    }
     // The desktop shell polls this to decide whether to hold the computer
     // awake: a run in flight, or a routine due within the hour.
     if (path === "/api/routines/wake" && method === "GET") {
@@ -43266,23 +43266,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       );
       const pinned = threadFilePins.ids(threadId);
       return json(res, 200, { files: files.map((file) => pinned.has(file.id) ? { ...file, pinned: true } : file) });
-    }
-
-    // Pin or unpin one of those files: `{ "pinned": true | false }`. The pin
-    // is kept on the server so it follows the person to their other devices.
-    m = path.match(/^\/api\/threads\/([\w-]+)\/files\/([a-f0-9]{24})\/pin$/);
-    if (m && method === "POST") {
-      const threadId = m[1]!;
-      if (!store.botByThread(threadId) && !store.groupByThread(threadId)) {
-        return json(res, 404, { error: "no such conversation" });
-      }
-      const body = await readBody(req, 1024);
-      if (typeof body?.pinned !== "boolean") return json(res, 400, { error: "pinned must be true or false" });
-      if (!threadFileRefsFor(threadId).some((candidate) => candidate.id === m![2])) {
-        return json(res, 404, { error: "no such file in this conversation" });
-      }
-      if (!threadFilePins.set(threadId, m[2]!, body.pinned)) return json(res, 409, { error: "too many pinned files in this conversation" });
-      return json(res, 200, { ok: true, pinned: body.pinned });
     }
 
     // One of those files by its opaque id: `preview=1` streams an image
@@ -46439,67 +46422,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return json(res, 403, { error: "forbidden: only the bot owner or an admin can read what it does", code: "bot_activity_owner_only" });
       }
       return json(res, 200, await botOverview(bot));
-    }
-
-    // 2026-10-26: a member reads and undoes the history of their own
-    // bots (request-auth.ts lets a session through; the owner rule is here).
-    m = path.match(/^\/api\/bots\/([\w-]+)\/history(?:\/rollback)?$/);
-    if (m && (method === "GET" || method === "POST") && store.bot(m[1]) && !ownerOrAdminOf(auth, store.bot(m[1])!)) {
-      return json(res, 403, { error: "forbidden: only the bot owner or an admin can read or undo its history", code: "bot_history_owner_only" });
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/history$/);
-    if (m && method === "GET") {
-      if (!store.bot(m[1])) return json(res, 404, { error: "no such bot" });
-      // Writes queue in profile-versions.ts and land asynchronously; a client
-      // reading history right after causing a change must see its own row.
-      await flushProfileHistory(m[1]);
-      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100));
-      // A soul row's full before/after can be the entire standing
-      // instructions (up to 24,000 bytes) — fine for a rollback, which
-      // reads the file server-side, but not for a client that only asked
-      // to see what changed. Strip the bodies (keep the byte-count
-      // summary) unless the caller explicitly wants them.
-      const full = url.searchParams.get("full") === "1";
-      const rows = readHistory(m[1], limit).map((row) => {
-        if (full || row.field !== "soul") return row;
-        const rest: typeof row = { ...row };
-        delete rest.before;
-        delete rest.after;
-        return rest;
-      });
-      const bot = store.bot(m[1]);
-      if (!bot) return json(res, 404, { error: "no such bot" });
-      return json(res, 200, { rows, revision: profileRevision(bot) });
-    }
-    m = path.match(/^\/api\/bots\/([\w-]+)\/history\/rollback$/);
-    if (m && method === "POST") {
-      const body = await readBody(req);
-      // Same flush as the GET route: the row this rollback targets may have
-      // been recorded moments ago and not yet reached disk.
-      await flushProfileHistory(m[1]);
-      const bot = store.bot(m[1]);
-      if (!bot) return json(res, 404, { error: "no such bot" });
-      if (body?.expectedRevision !== profileRevision(bot)) {
-        return json(res, 409, { error: "This bot's profile changed; reload history before undoing" });
-      }
-      const row = typeof body?.id === "string"
-        ? readHistory(bot.id, Number.MAX_SAFE_INTEGER).find((r) => r.id === body.id && r.field === "soul")
-        : undefined;
-      if (!row || row.field !== "soul" || typeof row.before !== "string") {
-        return json(res, 400, { error: "rollback is available for SOUL.md entries only" });
-      }
-      if (!row.canRestore) {
-        return json(res, 400, { error: row.restoreUnavailableReason });
-      }
-      const parsed = parseBotProfilePatch({ soul: row.before });
-      if (!parsed.ok) return json(res, 400, { error: parsed.error });
-      const before = profileSnapshot(bot);
-      const updated = store.setSoul(bot.id, parsed.patch.soul ?? "");
-      if (!updated) return json(res, 404, { error: "no such bot" });
-      recordProfileChange(bot.id, "user", "rollback", before, profileSnapshot(updated));
-      const visible = wireBot(updated);
-      broadcast({ kind: "bot", bot: visible });
-      return json(res, 200, { bot: visible });
     }
 
     // onboarding/ask cards persist their answered/dismissed state

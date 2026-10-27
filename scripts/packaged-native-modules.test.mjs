@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const temporaryDirectories = [];
+/** The assembler, the term scan it imports and its allowlist: a scratch checkout needs both next to each other. */
+const SCRIPTS = ["build-npm-package.mjs", "npm-package-terms.mjs", "npm-package-allowlist.json"];
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
@@ -36,7 +38,7 @@ describe("packaged native modules", () => {
       writeFileSync(join(checkout, file), "");
     }
     mkdirSync(join(checkout, "scripts"));
-    copyFileSync(join(root, "scripts", "build-npm-package.mjs"), join(checkout, "scripts", "build-npm-package.mjs"));
+    for (const script of SCRIPTS) copyFileSync(join(root, "scripts", script), join(checkout, "scripts", script));
     execFileSync(process.execPath, [join(checkout, "scripts", "build-npm-package.mjs")], { stdio: "pipe" });
     const manifest = JSON.parse(readFileSync(join(checkout, "release", "npm", "package.json"), "utf8"));
     expect(manifest.dependencies).toEqual(pins);
@@ -47,7 +49,7 @@ describe("packaged native modules", () => {
     temporaryDirectories.push(checkout);
     writeFileSync(join(checkout, "package.json"), JSON.stringify({ forkVersion: "0.0.1", dependencies: { "@duckdb/node-api": "^1.0.0", "@resvg/resvg-js": "2.6.2" } }));
     mkdirSync(join(checkout, "scripts"));
-    copyFileSync(join(root, "scripts", "build-npm-package.mjs"), join(checkout, "scripts", "build-npm-package.mjs"));
+    for (const script of SCRIPTS) copyFileSync(join(root, "scripts", script), join(checkout, "scripts", script));
     expect(() => execFileSync(process.execPath, [join(checkout, "scripts", "build-npm-package.mjs")], { stdio: "pipe" })).toThrow(/@duckdb\/node-api/);
   });
 

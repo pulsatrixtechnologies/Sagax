@@ -49,7 +49,7 @@ describe("ComposeToPicker people", () => {
     expect(composePeople(people, "pr_alice", "").map((p) => p.principalId)).toEqual(["pr_bob"]);
     expect(composePeople(people, "pr_alice", "zz")).toEqual([]);
     expect(composeRows("browse", [], true, [people[1]!]).map((row) => row.kind)).toEqual(["create-bot", "create-bot-wizard", "create-group", "person"]);
-    expect(composeRows("group", [], true, [people[1]!]).map((row) => row.kind)).toEqual(["create-group"]);
+    expect(composeRows("group", [], true, [people[1]!]).map((row) => row.kind)).toEqual(["create-group", "person"]);
   });
 
   it("opens the direct conversation with the person chosen", () => {

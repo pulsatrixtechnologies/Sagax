@@ -34,21 +34,14 @@ describe("U1: one line and at most one action for every state", () => {
     }
   });
 
-  it("gives a User no action that changes a setting, and says who can", () => {
+  it("gives a User the same action as an Admin, except the early start", () => {
     for (const state of PLACE_STATES) {
       const admin = placeViewOf(state, PARAMS, { role: "admin", server: "my-cloud" });
       const user = placeViewOf(state, PARAMS, { role: "user", server: "my-cloud" });
-      if (!admin.action || admin.action.id === "try-again" || admin.action.id === "watch" || admin.action.id === "clear-pin" || admin.action.id === "open-computer-panel") {
-        expect(user, state).toEqual(admin);
-        continue;
-      }
       // Starting a computer early is a shortcut: a User's own message starts it.
-      if (admin.action.id === "start" || admin.action.id === "wake") {
-        expect(user, state).toEqual({ ...admin, action: null });
-        continue;
-      }
-      expect(user.action, state).toBeNull();
-      expect(user.line, state).toBe(`${admin.line} Ask an Admin to change it.`);
+      if (admin.action?.id === "start" || admin.action?.id === "wake") expect(user, state).toEqual({ ...admin, action: null });
+      else expect(user, state).toEqual(admin);
+      expect(user.line, state).not.toMatch(/Admin/);
     }
   });
 
@@ -56,7 +49,7 @@ describe("U1: one line and at most one action for every state", () => {
     const catalog = en as Record<string, string>;
     for (const [key, value] of Object.entries(PLACE_EN)) expect(catalog[key], key).toBe(value);
     const mirrored = new Set(Object.keys(PLACE_EN));
-    const inCatalog = Object.keys(catalog).filter((key) => /^place\.(view|action)\./.test(key) || key === "place.askAdmin" || key === "place.backOnAuto");
+    const inCatalog = Object.keys(catalog).filter((key) => /^place\.(view|action)\./.test(key) || key === "place.backOnAuto");
     expect(inCatalog.filter((key) => !mirrored.has(key))).toEqual([]);
   });
 
