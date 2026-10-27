@@ -2731,6 +2731,12 @@ function applyAutoReviewDefault(auth: RequestAuth, botId: string, threadId: stri
   if (mode && !memberAutoRefused(thread, [approvalModeFor(thread)], mode)) store.patchTask(botId, threadId, { approvalMode: mode, autoApprove: mode === "auto" });
 }
 
+/** Why a caller may not save a command that runs unasked (#1098): the
+ * truth of canManageCommandAllowlist. The command runs on the server, the
+ * shared organization server included, so the bot's owner alone does not. */
+const COMMAND_ALLOWLIST_ADD_REFUSAL = IDENTITY.kind === "perspicax"
+  ? "Saved commands run on the organization's server: an organization admin saves them, or someone an admin gave \"Run commands on the organization's server\" in Perspicax. You can still allow this command once."
+  : "Saved commands run on this computer: only its owner (an admin session) saves them. You can still allow this command once.";
 function canManageCommandAllowlist(auth: RequestAuth): boolean {
   if (auth.kind === "loopback") return auth.trust !== "service";
   // 2026-10-19: or a person an admin gave host.shell in Perspicax
@@ -12257,7 +12263,7 @@ const unansweredApprovals = new UnansweredApprovals();
 const pendingCommandRules = new Map<string, { botId: string; candidate: CommandAllowlistCandidate }>();
 
 function commandRememberRefusal(auth: RequestAuth, threadId: string, requestId: string, behavior: string): string | null {
-  if (!canManageCommandAllowlist(auth)) return "Only the owner or an admin can save bot-wide command permissions.";
+  if (!canManageCommandAllowlist(auth)) return COMMAND_ALLOWLIST_ADD_REFUSAL;
   if (behavior !== "allow" || !pendingCommandRules.has(`${threadId}:${requestId}`)) {
     return "This live request does not contain a command that can be saved. Allow it once instead.";
   }
@@ -26515,6 +26521,25 @@ function mcpServerResponse() {
     ...(policy && !policy.mcp.allowCustom ? { managed: { organizationName: policy.organizationName, allowlist: policy.mcp.allowlist } } : {}),
   };
 }
+/** GET /api/mcp/servers for a person who does not manage the installation's
+ * servers: the names a bot's MCP choice offers, and their state. */
+function mcpServerNamesResponse() {
+  const full = mcpServerResponse();
+  return {
+    servers: full.servers.map((server) => {
+      const row = server as Record<string, unknown>;
+      return {
+        name: String(row.name),
+        ...(typeof row.type === "string" ? { type: row.type } : {}),
+        ...(typeof row.enabled === "boolean" ? { enabled: row.enabled } : {}),
+        ...(typeof row.auth === "string" ? { auth: row.auth } : {}),
+        ...(typeof row.source === "string" ? { source: row.source } : {}),
+        ...(typeof row.managedBy === "string" ? { managedBy: row.managedBy } : {}),
+      };
+    }),
+    ...(full.managed ? { managed: { organizationName: full.managed.organizationName } } : {}),
+  };
+}
 /** Adding or editing a server the organisation has not approved is refused. */
 function mcpPolicyRefusal(name: string, server: object): string | undefined {
   return managedPolicy.mcpRefusal(name, "url" in server && typeof server.url === "string" ? server.url : undefined);
@@ -31595,6 +31620,22 @@ function botProfilePrompt(bot: BotRecord): string {
  * automation, another person, or a session that names nobody (a relay, a
  * chat-only paired device: a solo server's admin pairing carries the
  * operator's principal, a chat-only one none, as for POST /api/bots). */
+/** 2026-10-26 (#1098): whether this turn is the bot owner's own direct
+ * request (the person typed it), with the strict judgment of
+ * ownEnvironmentTurnOrigin: never a routine or its lineage, a relay from
+ * another bot, a webhook, an email, any automation or another person. The
+ * per-turn caps (bots created, files attached) are anti-loop limits for
+ * those turns; when the person asks, the person's word is the limit. */
+function personDirectTurn(bot: BotRecord, threadId: string): boolean {
+  return ownEnvironmentTurnOrigin({
+    speaker: turnSpeakers.get(threadId),
+    ownerPrincipalId: effectiveBotOwner(bot),
+    internalTurn: isInternalTurn(threadId),
+    routineLineage: turnRoutineLineage.has(threadId),
+    automation: Boolean(directRequestOwners.get(threadId)?.automation),
+    unattended: isUnattended(bot.id, threadId),
+  }) === "owner";
+}
 function botCreationTurnOrigin(bot: BotRecord, threadId: string): "owner" | "other" {
   return ownEnvironmentOrigin(bot, threadId);
 }
@@ -38929,7 +38970,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const requestedName = typeof body.name === "string" ? body.name : undefined;
         try {
           const vm = await attachmentVmForTurn(internalCapability);
-          const outcome = await attachForTurn(internalCapability, MAX_ATTACHED_FILES_PER_TURN, {
+          // The cap is an anti-loop limit for automated turns; the person's
+          // own request attaches what they asked for.
+          const outcome = await attachForTurn(internalCapability, personDirectTurn(from, threadId) ? Number.POSITIVE_INFINITY : MAX_ATTACHED_FILES_PER_TURN, {
             save: () => {
               // The agents capability carries no VM; the thread's claimed desktop does.
               return saveBotAttachment({
@@ -40795,8 +40838,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusedCreator = creatorRefusal();
         if (refusedCreator) return json(res, refusedCreator.status, { error: refusedCreator.error, code: refusedCreator.code });
         if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
-        if (internalCapability.createdBots >= MAX_CREATED_BOTS_PER_TURN) {
-          return json(res, 429, { error: `You can create at most ${MAX_CREATED_BOTS_PER_TURN} bots in one turn. Use the team you have before adding more.` });
+        if (internalCapability.createdBots >= MAX_CREATED_BOTS_PER_TURN && !personDirectTurn(chief, fromThreadId)) {
+          return json(res, 429, { error: `You can create at most ${MAX_CREATED_BOTS_PER_TURN} bots in one turn that your person did not ask for directly. Use the team you have before adding more.` });
         }
         if (store.bots.length >= MAX_WORKSPACE_BOTS) {
           return json(res, 409, { error: `this workspace is limited to ${MAX_WORKSPACE_BOTS} bots` });
@@ -40843,8 +40886,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const refusedLater = creatorRefusal();
         if (refusedLater) return json(res, refusedLater.status, { error: refusedLater.error, code: refusedLater.code });
         if (ownerBotsReadOnly(chief)) return json(res, 403, BOTS_READ_ONLY);
-        if (internalCapability.createdBots >= MAX_CREATED_BOTS_PER_TURN) {
-          return json(res, 429, { error: `You can create at most ${MAX_CREATED_BOTS_PER_TURN} bots in one turn. Use the team you have before adding more.` });
+        if (internalCapability.createdBots >= MAX_CREATED_BOTS_PER_TURN && !personDirectTurn(chief, fromThreadId)) {
+          return json(res, 429, { error: `You can create at most ${MAX_CREATED_BOTS_PER_TURN} bots in one turn that your person did not ask for directly. Use the team you have before adding more.` });
         }
         if (store.bots.length >= MAX_WORKSPACE_BOTS) return json(res, 409, { error: `this workspace is limited to ${MAX_WORKSPACE_BOTS} bots` });
         const duplicate = store.bots.find(
@@ -44014,7 +44057,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const owned = store.bot(m[1]);
       const ownerReadOrRemove = ((method === "GET" && !m[2]) || (method === "DELETE" && Boolean(m[2]))) &&
         Boolean(owned) && (computerOwner(auth) || ownerOrAdminOf(auth, owned!));
-      if (!canManageCommandAllowlist(auth) && !ownerReadOrRemove) return json(res, 403, { error: "Only the owner or an admin can manage command permissions." });
+      if (!canManageCommandAllowlist(auth) && !ownerReadOrRemove) {
+        return json(res, 403, { error: method === "POST" ? COMMAND_ALLOWLIST_ADD_REFUSAL : "Only the bot's owner, an admin, or someone allowed to run commands on this server can see or remove its saved command permissions." });
+      }
       const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
       if (method === "GET" && !m[2]) return json(res, 200, commandAllowlistResponse(bot));
       if (method === "POST" && !m[2]) {
@@ -45256,6 +45301,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "GET") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // A client session (iOS parity) previews the prompt of a bot it owns.
+      if (!ownerOrAdminOf(auth, bot) && !computerOwner(auth)) {
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can read its prompt", code: "not_bot_owner" });
+      }
       return json(res, 200, previewSystemPrompt(bot));
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/overview$/);
@@ -46412,6 +46461,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && method === "PATCH") {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // A client session organizes the folders of a bot it owns (its own
+      // threads), never another person's bot.
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can organize its folders", code: "not_bot_owner" });
       const order = parseFolderOrder(await readBody(req));
       if (!order.ok) return json(res, 400, { error: order.error });
       const projects = store.reorderProjects(bot.id, order.projectIds);
@@ -46422,6 +46474,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     if (m && ((method === "POST" && !m[2]) || (method === "PATCH" && m[2]) || (method === "DELETE" && m[2]))) {
       const bot = store.bot(m[1]);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      if (!ownerOrAdminOf(auth, bot)) return json(res, 403, { error: "forbidden: only the bot owner or an admin can organize its folders", code: "not_bot_owner" });
       if (m[2] && !store.project(bot.id, m[2])) return json(res, 404, { error: "no such folder" });
       if (method === "DELETE") {
         const updated = store.deleteProject(bot.id, m[2]!);
@@ -46445,9 +46498,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       let cwd: string | undefined;
       if (body.cwd !== undefined) {
         // Opening a conversation is client-scoped, choosing where its file
-        // tools run has the same authority as editing the bot's folder.
-        if (!auth.scopes.includes("admin")) {
-          return json(res, 403, { error: "Choosing a working folder requires the admin scope" });
+        // tools run has the same authority as editing the bot's folder: an
+        // admin, or on an organization server the bot's owner holding the
+        // folder permission (folders.botWorkingFolder, the PATCH rule).
+        const folderPermission = BOT_FIELD_PERMISSIONS.cwd!;
+        if (!auth.scopes.includes("admin") && !(IDENTITY.kind === "perspicax" && ownerOrAdminOf(auth, bot) && callerCan(auth, folderPermission))) {
+          return json(res, 403, { error: "Choosing a working folder needs the right to choose your bots' working folder.", ...(IDENTITY.kind === "perspicax" ? permissionRefusal(folderPermission) : {}) });
         }
         const checked = await validateBotCwdFor(body.cwd, { principalId: terminalPrincipalId(auth), botId: bot.id, sessions: remoteSessions });
         if (!checked.ok) return json(res, 400, { error: checked.error });
@@ -47857,6 +47913,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
 
     // ── custom MCP servers (a local command or a URL; secrets write-only) ──
     if (method === "GET" && path === "/api/mcp/servers") {
+      // A client session (request-auth.ts CLIENT_ALLOW) that does not manage
+      // the installation's servers reads only what its own bot's MCP choice
+      // needs: each server's name, kind and state. Never a command, its
+      // arguments, a URL, a header or variable name, or an OAuth client.
+      if (auth.kind === "session" && !auth.scopes.includes("admin") && !callerCan(auth, "host.shell")) {
+        return json(res, 200, mcpServerNamesResponse());
+      }
       await probeMcpOAuth(undefined, url.searchParams.get("reprobe") === "1");
       return json(res, 200, mcpServerResponse());
     }
@@ -48903,6 +48966,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const previewOnly = m[2] === "screenshot" || m[2] === "join";
       const bot = previewOnly ? computerPreviewBot(botId, url) : store.bot(botId);
       if (!bot) return json(res, 404, { error: "no such bot" });
+      // A client session reaches only the preview routes (request-auth.ts
+      // CLIENT_ALLOW): the live view and capture of a cloud computer of a
+      // bot it owns, or of this computer's own person. Never another
+      // person's bot; starting, stopping and running stay admin scope.
+      if (auth.kind === "session" && !auth.scopes.includes("admin") && !(previewOnly && (computerOwner(auth) || memberOwnsBot(auth, bot)))) {
+        return json(res, 403, { error: "forbidden: only the bot owner or an admin can open its computer", code: "not_bot_owner" });
+      }
       const orgComputer = orgAccountComputerRefusal();
       if (orgComputer) return json(res, 409, orgComputer);
       const threadPreview = previewOnly && url.searchParams.has("threadId");

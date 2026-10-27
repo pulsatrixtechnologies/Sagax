@@ -210,6 +210,14 @@ public extension SurfaceGate {
         // Read from the conversation the app already holds; nothing fetched.
         case .inspector:
             return true
+        // 2026-10-26 (#1098): the folders of their bot's threads
+        // (/api/bots/:id/projects), its prompt preview
+        // (/api/bots/:id/system-prompt): the handlers answer the bot's owner.
+        case .threadFolders, .promptPreview:
+            return true
+        // `fallback`: BOT_FIELD_PERMISSIONS, bots.behaviour.
+        case .botFallback:
+            return can("bots.behaviour")
         default:
             return false
         }

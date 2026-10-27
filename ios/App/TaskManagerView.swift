@@ -117,7 +117,7 @@ struct TaskManagerView: View {
                     }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    if !isSelecting, case let .bot(bot) = current, session.surfaceGate.allows(.threadFolders) {
+                    if !isSelecting, case let .bot(bot) = current, session.surfaceGate.allows(.threadFolders, bot: bot) {
                         Menu {
                             Button { actions.newFolder(for: bot) } label: {
                                 Label("New folder", systemImage: "folder.badge.plus")

@@ -320,7 +320,7 @@ private struct BotPanelOverview: View {
         .task(id: bot.id) {
             overview = await session.botOverview(for: bot)
             loaded = true
-            if session.surfaceGate.allows(.promptPreview), let client = session.profileClient {
+            if session.surfaceGate.allows(.promptPreview, bot: bot), let client = session.profileClient {
                 do { prompt = try await client.systemPrompt(botId: bot.id) } catch { promptFailed = true }
             }
         }
@@ -345,7 +345,7 @@ private struct BotPanelOverview: View {
 
     @ViewBuilder
     private var promptCard: some View {
-        if session.surfaceGate.allows(.promptPreview) {
+        if session.surfaceGate.allows(.promptPreview, bot: bot) {
             PanelCard {
                 Button { withAnimation(.easeOut(duration: 0.15)) { promptOpen.toggle() } } label: {
                     HStack(spacing: 12) {

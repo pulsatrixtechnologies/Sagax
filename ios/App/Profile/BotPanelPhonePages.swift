@@ -38,7 +38,7 @@ struct BotOverviewPage: View {
     @EnvironmentObject private var session: Session
 
     var body: some View {
-        BotOverviewView(bot: bot, showsPromptPreview: session.surfaceGate.allows(.promptPreview))
+        BotOverviewView(bot: bot, showsPromptPreview: session.surfaceGate.allows(.promptPreview, bot: bot))
             .navigationTitle(Text(DesktopPanelSection.overview.title))
             .navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("panel-page.overview")

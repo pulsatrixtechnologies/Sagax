@@ -145,7 +145,9 @@ struct BotPanelModel: View {
                     BotPayerPicker(bot: bot).padding(.top, 4)
                 }
             }
-            if session.surfaceGate.allows(.botFallback) {
+            // An organization member sets the backup models of a bot they
+            // own (bots.behaviour, PATCH /api/bots/:id {fallback}).
+            if session.surfaceGate.allows(.botFallback, bot: bot) {
                 AnyView(BotPanelFallback(bot: bot, instances: instances))
             }
         }

@@ -141,7 +141,7 @@ struct BotThreadsMenu: View {
     @EnvironmentObject private var session: Session
 
     var body: some View {
-        if showsThreads && session.surfaceGate.allows(.threadFolders) {
+        if showsThreads && session.surfaceGate.allows(.threadFolders, bot: bot) {
             Button { actions.newFolder(for: bot) } label: {
                 Label("New folder", systemImage: "folder.badge.plus")
             }
