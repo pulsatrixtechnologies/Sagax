@@ -656,6 +656,7 @@ import { RepeatDetector, callKey } from "./repeat-detector.ts";
 import { dispatchLoopStop, makeLoopStopSubscriber } from "./loop-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
+import { routineAutoPauseAfter } from "../shared/routine-auto-pause.ts";
 import { routineRunReportable } from "./routine-report.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
@@ -21213,7 +21214,9 @@ function routineRunFallbackText(card: NonNullable<Message["routineRun"]>): strin
   const detail = card.summary ?? card.error;
   // A report reads as the bot's own message, the routine named under it.
   if (card.status === "completed" && (!card.goalStatus || card.goalStatus === "completed") && card.summary) return `${card.summary}\n\nRoutine “${card.routineName}”`;
-  return `Routine “${card.routineName}” ${state}${detail ? `\n\n${detail}` : ""}`;
+  // 2026-10-26: older clients without the notice still read the pause.
+  const paused = card.autoPausedAfter ? ` and was paused after ${card.autoPausedAfter} failures in a row` : "";
+  return `Routine “${card.routineName}” ${state}${paused}${detail ? `\n\n${detail}` : ""}`;
 }
 
 /** An approval or question card in a run's own task waits on the person. */
@@ -22470,6 +22473,8 @@ const agentRoutine = (
     skippedRuns: routine.skippedRuns ?? 0,
     lastSkippedAt: routineTimestamp(routine.lastSkippedAt),
     failureStreak: routine.failureStreak ?? 0,
+    autoPauseAfter: routineAutoPauseAfter(routine),
+    ...(routine.autoPaused ? { autoPaused: { at: new Date(routine.autoPaused.at).toISOString(), failures: routine.autoPaused.failures } } : {}),
     enabled: routine.enabled,
     runOn: routine.runOn,
     durationMinutes: routine.durationMinutes,

@@ -8,6 +8,12 @@
 // message stays stored, the failure stays in the routine's history and the
 // run's detail (View run), and in the Updates inbox.
 //
+// 2026-10-26: the failure that paused its routine (N failed runs in a row,
+// shared/routine-auto-pause.ts) carries `routineRun.autoPausedAfter`. Its
+// banner says so and offers Resume in one click (the routine back on, the
+// failure count from zero); it leaves like the others, and also as soon as
+// the routine is back on.
+//
 // Desktop (src/components/TransientNotice.tsx) and iOS
 // (ios/Sources/CompanionCore/TransientNotices.swift) read the same rule; the
 // iOS copy is checked against ios/Tests/CompanionCoreTests/Fixtures/
@@ -28,7 +34,7 @@ export const TRANSIENT_NOTICE_RULES = {
 
 type NoticeMessage = {
   kind: string;
-  routineRun?: { status: string; goalStatus?: string | null } | null;
+  routineRun?: { status: string; goalStatus?: string | null; autoPausedAfter?: number | null } | null;
   access?: { routine?: boolean | null; reason?: string } | null;
 };
 
@@ -40,6 +46,11 @@ export function isFailedRoutineRunNotice(message: NoticeMessage): boolean {
   return (TRANSIENT_NOTICE_RULES.routineRunStatuses as readonly string[]).includes(run.status);
 }
 
+/** The failure that paused its routine: the banner offers Resume. */
+export function isRoutineAutoPausedNotice(message: NoticeMessage): boolean {
+  return message.kind === "routine.run" && (message.routineRun?.autoPausedAfter ?? 0) > 0;
+}
+
 /** The card a routine leaves when its owner's access could not run it. */
 export function isRoutineAccessNotice(message: NoticeMessage): boolean {
   return message.kind === "access" && message.access?.routine === true && message.access.reason !== "routine_delegation";
@@ -47,7 +58,7 @@ export function isRoutineAccessNotice(message: NoticeMessage): boolean {
 
 /** True for a message the chat draws as a passing banner, never as a row. */
 export function isTransientChatNotice(message: NoticeMessage): boolean {
-  return isFailedRoutineRunNotice(message) || isRoutineAccessNotice(message);
+  return isFailedRoutineRunNotice(message) || isRoutineAutoPausedNotice(message) || isRoutineAccessNotice(message);
 }
 
 /** A routine access banner is settled once the same bot's routine has run
@@ -58,5 +69,5 @@ export function routineAccessSettled(
 ): boolean {
   const botId = notice.access?.botId;
   return later.some((message) => message.at > notice.at && message.kind === "routine.run" && Boolean(message.routineRun)
-    && !isFailedRoutineRunNotice(message) && (!botId || !message.from?.botId || message.from.botId === botId));
+    && !isFailedRoutineRunNotice(message) && !isRoutineAutoPausedNotice(message) && (!botId || !message.from?.botId || message.from.botId === botId));
 }

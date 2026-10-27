@@ -10665,5 +10665,14 @@
   "botPayer.error": "Impossible d'enregistrer qui paie.",
   "botPayer.groupHelp": "Pour vos robots dans ce groupe : qui paie leurs réponses ici. « Comme sur le robot » garde le réglage du robot.",
   "botPayer.groupRow": "Qui paie pour {bot}",
-  "botPayer.asOnBot": "Comme sur le robot ({value})"
+  "botPayer.asOnBot": "Comme sur le robot ({value})",
+  "routines.autoPause.label": "Mettre en pause automatiquement",
+  "routines.autoPause.never": "Jamais",
+  "routines.autoPause.optionOne": "Après 1 exécution échouée",
+  "routines.autoPause.option": "Après {count} exécutions échouées de suite",
+  "routines.autoPause.help": "Quand autant d'exécutions échouent de suite, la routine se met en pause et vous le dit. Relancer la réactive et remet le compte à zéro. Les exécutions échouées restent dans l'historique.",
+  "routines.autoPause.pausedAfter": "En pause après {count} échecs de suite",
+  "routines.autoPause.pausedAfterOne": "En pause après un échec",
+  "routines.autoPause.resume": "Relancer",
+  "routines.autoPause.resumeLabel": "Relancer {name}"
 }

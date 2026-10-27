@@ -358,6 +358,9 @@ enum RoutineWording {
     /// " · Paused" when it is off.
     static func subtitle(_ routine: Routine) -> String {
         let base = schedule(routine.schedule)
+        if RoutineAutoPause.isAutoPaused(routine), let failures = routine.autoPaused?.failures {
+            return "\(base) · \(autoPaused(failures))"
+        }
         return routine.enabled ? base : String(localized: "\(base) · Paused")
     }
 
@@ -447,6 +450,17 @@ enum RoutineWording {
         case .none:
             return String(localized: "No days chosen")
         }
+    }
+
+    /// 2026-10-26 (RoutineAutoPause): "Paused after 5 failures in a row".
+    static func autoPaused(_ failures: Int) -> String {
+        failures == 1 ? String(localized: "Paused after a failure") : String(localized: "Paused after \(failures) failures in a row")
+    }
+
+    /// The editor's words for a choice of RoutineAutoPause.choices.
+    static func autoPauseOption(_ count: Int) -> String {
+        if count == 0 { return String(localized: "Never") }
+        return count == 1 ? String(localized: "After 1 failed run") : String(localized: "After \(count) failed runs in a row")
     }
 
     static func nextRun(_ routine: Routine, now: Date = Date()) -> String {

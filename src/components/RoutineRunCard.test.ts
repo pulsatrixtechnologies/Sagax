@@ -162,4 +162,19 @@ describe("RoutineRunCard", () => {
     expect(hasRoutineExecutionTask(tasks, "deleted-thread")).toBe(false);
     expect(hasRoutineExecutionTask(undefined, "execution-thread")).toBe(false);
   });
+
+  it("says the failure paused its routine and offers Resume only when given (2026-10-26)", () => {
+    const paused = message("failed", { error: "engine unavailable", autoPausedAfter: 5 });
+    const withResume = renderToStaticMarkup(createElement(RoutineRunCard, { message: paused, onResume: () => {} }));
+    expect(withResume).toContain('data-routine-auto-paused="5"');
+    expect(withResume).toContain("Paused after 5 failures in a row");
+    expect(withResume).toContain("data-routine-resume");
+    expect(withResume).toContain("engine unavailable");
+    const noResume = renderToStaticMarkup(createElement(RoutineRunCard, { message: paused }));
+    expect(noResume).not.toContain("data-routine-resume");
+    const plain = renderToStaticMarkup(createElement(RoutineRunCard, { message: message("failed", { error: "x" }), onResume: () => {} }));
+    expect(plain).not.toContain("data-routine-auto-paused");
+    expect(plain).not.toContain("data-routine-resume");
+    expect(renderToStaticMarkup(createElement(RoutineRunCard, { message: message("failed", { autoPausedAfter: 1 }) }))).toContain("Paused after a failure");
+  });
 });

@@ -1,7 +1,7 @@
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Play } from "lucide-react";
 
 import { cn } from "@/lib/cn";
-import { routineDateTime, routineRunError } from "@/lib/routine-display";
+import { routineAutoPausedText, routineDateTime, routineRunError } from "@/lib/routine-display";
 import { t } from "@/lib/i18n";
 import { ChatMarkdown } from "./ChatMarkdown";
 import type { RoutineRunCardData } from "../../shared/routine-run";
@@ -60,10 +60,14 @@ export function hasRoutineExecutionTask(
 export function RoutineRunCard({
   message,
   onOpen,
+  onResume,
 }: {
   message: Message;
   /** Opens the isolated execution task; absent when it no longer exists. */
   onOpen?: () => void;
+  /** 2026-10-26: the failure paused its routine (N in a row): turn it back
+   * on in one click, the failure count from zero. Absent: no button. */
+  onResume?: () => void;
 }) {
   const run = message.routineRun;
   // Newer computers can send this message kind to an older or partially
@@ -94,6 +98,7 @@ export function RoutineRunCard({
   const review = run.goalStatus === "needs-input";
   const actionLabel = review ? t("routines.post.review") : t("routines.post.openRun");
   const at = run.scheduledFor ?? message.at;
+  const pausedAfter = run.autoPausedAfter && run.autoPausedAfter > 0 ? run.autoPausedAfter : null;
 
   return (
     <section
@@ -113,8 +118,25 @@ export function RoutineRunCard({
             {copy.label}
           </span>
         </>}
+        {pausedAfter && <>
+          <span aria-hidden="true">·</span>
+          <span data-routine-auto-paused={pausedAfter} className="font-medium text-warning">{routineAutoPausedText(pausedAfter)}</span>
+        </>}
         <span aria-hidden="true">·</span>
         <time dateTime={new Date(at).toISOString()}>{routineDateTime(at)}</time>
+        {pausedAfter && onResume && <>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            data-routine-resume
+            onClick={onResume}
+            aria-label={t("routines.autoPause.resumeLabel", { name: run.routineName })}
+            className="inline-flex items-center gap-0.5 rounded font-medium text-accent transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <Play aria-hidden="true" size={11} />
+            {t("routines.autoPause.resume")}
+          </button>
+        </>}
         {onOpen && run.executionThreadId && <>
           <span aria-hidden="true">·</span>
           <button

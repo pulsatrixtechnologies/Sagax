@@ -702,6 +702,14 @@ private struct RoutineRow: View {
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("routines-row-run-as.\(routine.name)")
                 }
+                // 2026-10-26: paused by itself after failures in a row; the
+                // schedule above stays, Resume turns it back on
+                if RoutineAutoPause.isAutoPaused(routine), let failures = routine.autoPaused?.failures {
+                    Text(verbatim: RoutineWording.autoPaused(failures))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Theme.warning)
+                        .accessibilityIdentifier("routines-row-auto-paused.\(routine.name)")
+                }
             }
             Spacer()
             if unseenFailure {

@@ -61,7 +61,8 @@ import { RoutineAwayBanner } from "@/components/routines/RoutineAwayBanner";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
 import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/CronScheduleFields";
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
-import { routineRunError, routineRunLabel, upcomingRoutines } from "@/lib/routine-display";
+import { routineAutoPauseChoices, routineAutoPausedText, routineAutoPauseOption, routineDateTime, routineRunError, routineRunLabel, upcomingRoutines } from "@/lib/routine-display";
+import { ROUTINE_AUTO_PAUSE_DEFAULT, routineAutoPauseAfter } from "../../shared/routine-auto-pause";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { copyText } from "@/lib/copy-text";
 import { t, activeLocale } from "@/lib/i18n";
@@ -388,6 +389,8 @@ function EventEditor({
   );
   const [intervalTimeoutDefaultApplied, setIntervalTimeoutDefaultApplied] = useState(Boolean(existingRoutine));
   const [overlap, setOverlap] = useState<"skip" | "queue">(existingRoutine?.overlap ?? "skip");
+  // 2026-10-26: failed runs in a row that pause this routine (0 never).
+  const [autoPauseAfter, setAutoPauseAfter] = useState(() => existingRoutine ? routineAutoPauseAfter(existingRoutine) : ROUTINE_AUTO_PAUSE_DEFAULT);
   const [continuity, setContinuity] = useState(Boolean(existingRoutine?.continuity));
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(existingRoutine?.onlyWhenPresent === true);
@@ -586,6 +589,7 @@ function EventEditor({
           durationMinutes,
           timeoutMinutes,
           overlap,
+          autoPauseAfter,
           // Room goals can't carry a report yet, and a one-time run has no next run.
           continuity: routineTarget === "bot" && recurrence !== "none" && continuity,
           onlyWhenPresent,
@@ -897,6 +901,15 @@ function EventEditor({
                         </select>
                       </label>
                       <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-secondary">{t(overlap === "queue" ? "routines.overlapQueueHelp" : "routines.overlapSkipHelp")}</p>
+                    </div>}
+                    {recurrence !== "none" && <div data-routine-auto-pause className="mt-3">
+                      <label className="flex flex-wrap items-center gap-2 text-[12px] text-ink">
+                        <span>{t("routines.autoPause.label")}</span>
+                        <select aria-label={t("routines.autoPause.label")} value={autoPauseAfter} onChange={(event) => setAutoPauseAfter(Number(event.target.value))} className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong">
+                          {routineAutoPauseChoices(autoPauseAfter).map((count) => <option key={count} value={count}>{routineAutoPauseOption(count)}</option>)}
+                        </select>
+                      </label>
+                      <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-secondary">{t("routines.autoPause.help")}</p>
                     </div>}
                   </div>
                 </details>
@@ -1668,8 +1681,9 @@ export function EventDetails({
           {!wide && descriptionBlock}
           {attachments.length > 0 && <div className="flex items-start gap-3"><Paperclip size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1 space-y-2"><AttachmentChips attachments={attachments} />{call && <div className="text-[11px] leading-relaxed text-ink-secondary">{call.botIds.length > 1 ? t("routineCalendar.detailRefsShared") : t("routineCalendar.detailRefsStay")}</div>}</div></div>}
           {!isCall && <div className="flex items-start gap-3"><Clock3 size={17} className="mt-1 shrink-0 text-ink-secondary" /><div><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.drawer.runLimit")}</div><div className="mt-1 text-[12.5px] text-ink">{safetyLimit == null ? t("routineCalendar.noTimeLimit") : t("routineCalendar.stopsAfter", { duration: durationLabel(safetyLimit) })}</div></div></div>}
+          {routine && !routine.enabled && routine.autoPaused && <div data-routine-auto-paused={routine.autoPaused.failures} className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-[11.5px] text-warning"><CircleAlert size={15} className="mt-0.5 shrink-0" /><span className="min-w-0">{routineAutoPausedText(routine.autoPaused.failures)} · {routineDateTime(routine.autoPaused.at)}</span></div>}
           {routine?.weekRuns && <div data-routine-week-runs className="text-[11.5px] text-ink-secondary">{t("routines.weekRuns", routine.weekRuns)}</div>}
-          {run && <div role="status" aria-live="polite" className="rounded-xl border border-hairline/40 bg-inset p-3"><div className="flex items-center gap-2 text-[12px] font-medium text-ink">{run.status === "running" && <Loader2 size={13} className="animate-spin text-accent" />}{routineRunLabel(run)}</div>{run.output && <div className="mt-2 whitespace-pre-wrap text-[11.5px] leading-relaxed text-ink-secondary">{run.output}</div>}{run.error && <div className="mt-2 text-[11.5px] text-danger">{routineRunError(run.error)}</div>}</div>}
+          {run && <div role="status" aria-live="polite" className="rounded-xl border border-hairline/40 bg-inset p-3"><div className="flex items-center gap-2 text-[12px] font-medium text-ink">{run.status === "running" && <Loader2 size={13} className="animate-spin text-accent" />}{routineRunLabel(run)}</div>{run.output && <div className="mt-2 whitespace-pre-wrap text-[11.5px] leading-relaxed text-ink-secondary">{run.output}</div>}{run.error && <div className="mt-2 text-[11.5px] text-danger">{routineRunError(run.error)}</div>}{run.autoPaused && <div data-run-auto-paused className="mt-2 text-[11.5px] font-medium text-warning">{routineAutoPausedText(run.autoPaused.failures)}</div>}</div>}
           {run?.attention && <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-warning"><CircleAlert size={15} className="mt-0.5 shrink-0" /><div className="min-w-0 whitespace-pre-wrap text-[11.5px] leading-relaxed">{run.attention}</div></div>}
           {run?.status === "waiting" && !run.attention && <div className="rounded-xl border border-accent/30 bg-accent/10 px-3 py-2.5 text-[11.5px] text-accent-text">{t("routineCalendar.runWaiting")}</div>}
           {error && <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}

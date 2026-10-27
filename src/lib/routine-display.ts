@@ -1,6 +1,7 @@
 import type { Routine, RoutineRun } from "./routines";
 import { activeLocale, t } from "./i18n";
 import { scheduleLabel } from "./schedule-label";
+import { ROUTINE_AUTO_PAUSE_CHOICES } from "../../shared/routine-auto-pause";
 
 export function routineRunTime(run: RoutineRun): number {
   return run.createdAt || run.startedAt || run.scheduledFor;
@@ -121,4 +122,22 @@ export function routineUpcomingState(routine: Routine, runs: readonly Pick<Routi
   if (live) return { label: t(`routines.status.${live}`), tone: "info" };
   if ((routine.failureStreak ?? 0) > 0) return { label: t("routines.scope.status.failing"), tone: "warning" };
   return { label: t("routines.activeSchedule"), tone: "neutral" };
+}
+
+/** 2026-10-26 (shared/routine-auto-pause.ts): "Paused after 5 failures in
+ * a row", the words of the notice, the list and the history. */
+export function routineAutoPausedText(failures: number): string {
+  return failures === 1 ? t("routines.autoPause.pausedAfterOne") : t("routines.autoPause.pausedAfter", { count: failures });
+}
+
+/** The editor's choices, the routine's own count kept when it is another. */
+export function routineAutoPauseChoices(current: number): number[] {
+  const choices: number[] = [...ROUTINE_AUTO_PAUSE_CHOICES];
+  if (!choices.includes(current)) choices.push(current);
+  return choices.sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : a - b));
+}
+
+export function routineAutoPauseOption(count: number): string {
+  if (count === 0) return t("routines.autoPause.never");
+  return count === 1 ? t("routines.autoPause.optionOne") : t("routines.autoPause.option", { count });
 }

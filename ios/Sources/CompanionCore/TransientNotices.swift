@@ -8,6 +8,10 @@ import Foundation
 /// The message stays stored: the failure stays in the routine's history, the
 /// run's detail (View run) and the Updates inbox.
 ///
+/// 2026-10-26: the failure that paused its routine (N failed runs in a row,
+/// RoutineAutoPause) carries `routineRun.autoPausedAfter`: its banner says so
+/// and offers Resume in one click.
+///
 /// Same rules as the desktop's shared/transient-notices.ts:
 /// TransientNoticesTests reads Fixtures/transient-notices.json, which
 /// shared/transient-notices.test.ts keeps in step with that file.
@@ -25,6 +29,11 @@ public enum TransientNotices {
         return routineRunStatuses.contains(run.status)
     }
 
+    /// The failure that paused its routine: the banner offers Resume.
+    public static func isRoutineAutoPaused(_ message: Message) -> Bool {
+        message.kind == .routineRun && (message.routineRun?.autoPausedAfter ?? 0) > 0
+    }
+
     public static func isRoutineAccess(_ message: Message) -> Bool {
         guard message.kind == .access, let access = message.access else { return false }
         return access.routine == true && access.reason != "routine_delegation"
@@ -32,7 +41,7 @@ public enum TransientNotices {
 
     /// True for a message the chat draws as a passing banner, never a row.
     public static func isTransient(_ message: Message) -> Bool {
-        isFailedRoutineRun(message) || isRoutineAccess(message)
+        isFailedRoutineRun(message) || isRoutineAutoPaused(message) || isRoutineAccess(message)
     }
 
     /// A routine access notice is settled once the same bot's routine has
@@ -41,7 +50,7 @@ public enum TransientNotices {
         let botId = notice.access?.botId
         return later.contains { message in
             message.at > notice.at && message.kind == .routineRun && message.routineRun != nil
-                && !isFailedRoutineRun(message)
+                && !isFailedRoutineRun(message) && !isRoutineAutoPaused(message)
                 && (botId == nil || message.from?.botId == nil || message.from?.botId == botId)
         }
     }

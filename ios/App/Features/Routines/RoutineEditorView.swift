@@ -53,6 +53,8 @@ struct RoutineEditorView: View {
     @State private var runAs: String?
     @State private var onlyWhenPresent: Bool
     @State private var postResults: Bool
+    /// 2026-10-26: failed runs in a row that pause it (0 never).
+    @State private var autoPauseAfter: Int
 
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
     /// `seed`: a new routine from the Automations calendar ("More options"
@@ -78,6 +80,7 @@ struct RoutineEditorView: View {
         _onlyWhenPresent = State(initialValue: routine?.onlyWhenPresent == true)
         // Default silent for a new routine; an existing one keeps its choice.
         _postResults = State(initialValue: routine?.postResults == true)
+        _autoPauseAfter = State(initialValue: routine.map(RoutineAutoPause.after) ?? RoutineAutoPause.defaultAfter)
     }
 
     private var advanced: Bool { session.surfaceGate.allows(.routineAdvancedEditor) }
@@ -377,6 +380,15 @@ struct RoutineEditorView: View {
                     }
                     .accessibilityIdentifier("routine-editor-overlap")
                 }
+                // the person's own choice for their routine, no admin
+                if form.recurrence != .none {
+                    Picker(String(localized: "Pause automatically"), selection: $autoPauseAfter) {
+                        ForEach(RoutineAutoPause.choices(keeping: autoPauseAfter), id: \.self) { count in
+                            Text(verbatim: RoutineWording.autoPauseOption(count)).tag(count)
+                        }
+                    }
+                    .accessibilityIdentifier("routine-editor-auto-pause")
+                }
                 if advanced {
                     Picker(String(localized: "Duration"), selection: $duration) {
                         ForEach(Set(RoutineDurations.options + [duration]).sorted(), id: \.self) { minutes in
@@ -397,6 +409,9 @@ struct RoutineEditorView: View {
                         Text(overlap == "queue" ? "Keep one scheduled run waiting until this routine finishes. Skip further occurrences until it starts. Manual runs are separate." : "Skip scheduled occurrences while this routine is working. Manual runs are separate.")
                     }
                     if advanced { Text("Duration is how long the routine fills on the calendar.") }
+                    if form.recurrence != .none {
+                        Text("When this many runs fail in a row, the routine pauses itself and tells you. Resume turns it back on and starts the count again. Failed runs stay in the history.")
+                    }
                 }
             }
         }
@@ -566,6 +581,7 @@ struct RoutineEditorView: View {
             input.onlyWhenPresent = onlyWhenPresent
             input.postResults = postResults
         }
+        if form.recurrence != .none { input.autoPauseAfter = autoPauseAfter }
         if await session.saveRoutine(input, original: routine) != nil {
             await onSaved()
             dismiss()

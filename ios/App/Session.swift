@@ -3073,6 +3073,14 @@ final class Session: ObservableObject {
         } catch { actionError = error.localizedDescription; return nil }
     }
 
+    /// 2026-10-26: Resume on the notice of a routine that paused itself
+    /// (RoutineAutoPause): back on, the failure count from zero.
+    func resumeRoutine(id: String) async -> Routine? {
+        guard let client else { return nil }
+        do { return try await client.setRoutineEnabled(id: id, enabled: true) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
     func setRoutineEnabled(_ routine: Routine, enabled: Bool) async -> Routine? {
         guard let client else { return nil }
         do { return try await client.setRoutineEnabled(id: routine.id, enabled: enabled) }

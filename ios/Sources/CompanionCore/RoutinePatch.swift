@@ -50,6 +50,9 @@ public enum RoutinePatch {
         if let postResults = input.postResults, postResults != (original.postResults == true) {
             body["postResults"] = postResults
         }
+        if let after = input.autoPauseAfter, after != RoutineAutoPause.after(original) {
+            body["autoPauseAfter"] = after
+        }
         return body
     }
 
@@ -77,6 +80,7 @@ public enum RoutinePatch {
         if let runAs = input.runAs, !runAs.isEmpty { body["runAs"] = runAs }
         if input.onlyWhenPresent == true { body["onlyWhenPresent"] = true }
         if let postResults = input.postResults { body["postResults"] = postResults }
+        if let after = input.autoPauseAfter, after != RoutineAutoPause.defaultAfter { body["autoPauseAfter"] = after }
         return body
     }
 

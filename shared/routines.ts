@@ -5,6 +5,7 @@
  * re-exports these under the same names. */
 import type { RoutineCronSchedule } from "./routine-schedule.ts";
 import type { RoutineWindowTiming } from "./routine-timing.ts";
+import type { RoutineAutoPause } from "./routine-auto-pause.ts";
 
 export interface RoutineIntervalWindow {
   start: string;
@@ -137,6 +138,13 @@ export interface Routine {
   skippedRuns?: number;
   lastSkippedAt?: number;
   failureStreak?: number;
+  /** 2026-10-26 (shared/routine-auto-pause.ts): failed runs in a row that
+   * pause this routine. Absent: the default (5); 0 never pauses. */
+  autoPauseAfter?: number;
+  /** The routine paused itself after this many failures in a row. */
+  autoPaused?: RoutineAutoPause;
+  /** Failures before this no longer count (turned back on). */
+  failuresClearedAt?: number;
   /** Runs that finished in the last seven days, and how many of them completed. */
   weekRuns?: { ok: number; total: number };
   attachments?: RoutineContextAttachment[];
@@ -227,6 +235,8 @@ export interface RoutineRun {
   cost?: number | null;
   denials?: string[];
   createdAt: number;
+  /** 2026-10-26: this failure paused its routine after this many failures in a row. */
+  autoPaused?: { failures: number };
   seenAt?: number;
   /** Slice 6: a queued run Perspicax rate limited waits until then (ms). */
   admitAfter?: number;
@@ -257,6 +267,9 @@ export interface RoutineInput {
   /** 2026-10-22: post this routine's results in the conversation. `null`
    * clears it back to the installation default; omission preserves it. */
   postResults?: boolean | null;
+  /** 2026-10-26: failed runs in a row that pause the routine (0 never);
+   * `null` goes back to the default, omission preserves it. */
+  autoPauseAfter?: number | null;
   attachments?: RoutineContextAttachment[];
   /** Omission preserves routing; null resets it to the bot's main thread. */
   resultsThreadId?: string | null;

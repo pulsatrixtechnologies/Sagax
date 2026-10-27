@@ -30,11 +30,15 @@ public struct RoutineRunCard: Codable, Hashable, Sendable {
     /// What the run said, already redacted and capped by the computer.
     public var summary: String?
     public var error: String?
+    /// This failure paused the routine after this many failed runs in a row
+    /// (RoutineAutoPause); the passing notice offers Resume.
+    public var autoPausedAfter: Int?
 
     public init(
         runId: String, routineId: String, routineName: String, status: String,
         scheduledFor: Double? = nil, deferredAt: Double? = nil, goalStatus: String? = nil,
-        executionThreadId: String? = nil, summary: String? = nil, error: String? = nil
+        executionThreadId: String? = nil, summary: String? = nil, error: String? = nil,
+        autoPausedAfter: Int? = nil
     ) {
         self.runId = runId
         self.routineId = routineId
@@ -46,11 +50,12 @@ public struct RoutineRunCard: Codable, Hashable, Sendable {
         self.executionThreadId = executionThreadId
         self.summary = summary
         self.error = error
+        self.autoPausedAfter = autoPausedAfter
     }
 
     private enum CodingKeys: String, CodingKey {
         case runId, routineId, routineName, scheduledFor, status, deferredAt
-        case goalStatus, executionThreadId, summary, error
+        case goalStatus, executionThreadId, summary, error, autoPausedAfter
     }
 
     /// Field by field and forgiving: a card is a decoration on a message the
@@ -69,7 +74,11 @@ public struct RoutineRunCard: Codable, Hashable, Sendable {
         executionThreadId = try? c.decodeIfPresent(String.self, forKey: .executionThreadId)
         summary = try? c.decodeIfPresent(String.self, forKey: .summary)
         error = try? c.decodeIfPresent(String.self, forKey: .error)
+        autoPausedAfter = (try? c.decodeIfPresent(Int.self, forKey: .autoPausedAfter)).flatMap { $0 > 0 ? $0 : nil }
     }
+
+    /// "Paused after 5 failures in a row" when this failure paused its routine.
+    public var autoPausedText: String? { autoPausedAfter.map(RoutineAutoPause.pausedText) }
 
     public var knownStatus: Status? { Status(rawValue: status) }
 

@@ -10665,5 +10665,14 @@
   "botPayer.error": "Could not save who pays.",
   "botPayer.groupHelp": "For your bots in this group: who pays for their replies here. \"As on the bot\" keeps the bot's own setting.",
   "botPayer.groupRow": "Who pays for {bot}",
-  "botPayer.asOnBot": "As on the bot ({value})"
+  "botPayer.asOnBot": "As on the bot ({value})",
+  "routines.autoPause.label": "Pause automatically",
+  "routines.autoPause.never": "Never",
+  "routines.autoPause.optionOne": "After 1 failed run",
+  "routines.autoPause.option": "After {count} failed runs in a row",
+  "routines.autoPause.help": "When this many runs fail in a row, the routine pauses itself and tells you. Resume turns it back on and starts the count again. Failed runs stay in the history.",
+  "routines.autoPause.pausedAfter": "Paused after {count} failures in a row",
+  "routines.autoPause.pausedAfterOne": "Paused after a failure",
+  "routines.autoPause.resume": "Resume",
+  "routines.autoPause.resumeLabel": "Resume {name}"
 }

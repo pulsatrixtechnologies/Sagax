@@ -14530,7 +14530,16 @@
       "botPayer.error": "b85f8117a3fec4b6ebd100c3cd3b6d40d8cb294b2272470f0b743b78027171a5",
       "botPayer.groupHelp": "baa92333638777c4ebc6f3cea247342cd6df0789257ceb951a620e2b2bffca89",
       "botPayer.groupRow": "d3b2d8a264770f0a32a9fe3fdd404a78570a6389861d38816f091ab846d3207d",
-      "botPayer.asOnBot": "b7a9c9a53e59a4e004d42c46cec9f95e64c3b4423d6fb8ef829f7a87dc3b3a96"
+      "botPayer.asOnBot": "b7a9c9a53e59a4e004d42c46cec9f95e64c3b4423d6fb8ef829f7a87dc3b3a96",
+      "routines.autoPause.label": "7bb34863505093769085b79ef31bc22cdc860a88b687c410020b1fe38da1e71c",
+      "routines.autoPause.never": "6300ef800bb884295b0b4b35682b75cecd7cc550d202db56d04a0643b8fb873f",
+      "routines.autoPause.optionOne": "403946eefefccd047a53944f449910ced566010edb7bb77945d4b700e0d685d7",
+      "routines.autoPause.option": "251bf591a6522e62b528b2954956b16fc848b4fb125170a01fb056df1571d436",
+      "routines.autoPause.help": "1f9b211cab946f23eb843538dbbec7f05ea47eb8beac32124280baeb8fde7663",
+      "routines.autoPause.pausedAfter": "729289948b2348f02ea8fb97d7ce28e13d9fb7ab48ccba4ed674e1b7896b4ebe",
+      "routines.autoPause.pausedAfterOne": "4a40ea3a175c190492ad0770d82d6a11d1043a2e04df912eceb17316cbf24967",
+      "routines.autoPause.resume": "d640c7421da066618a39daf4266da5f61f66a9b1afcd626481b831a17064965d",
+      "routines.autoPause.resumeLabel": "05f2dae7f5838c7161c94772fc285127afd6de3e26ccbb1b59fb041a8add27cd"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

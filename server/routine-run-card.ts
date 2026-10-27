@@ -27,5 +27,6 @@ export function routineRunCard(run: RoutineRun, cardThreadId?: string): RoutineR
   if (run.threadId) card.executionThreadId = run.threadId;
   if (summary) card.summary = summary;
   if (error) card.error = error;
+  if (run.autoPaused) card.autoPausedAfter = run.autoPaused.failures;
   return card;
 }

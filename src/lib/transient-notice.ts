@@ -2,7 +2,7 @@
 // routine run that failed, or a routine's access card. Each shows once: an id
 // is remembered as shown the moment it appears, so a reload, another window
 // or the thread opened later never brings it back.
-import { isRoutineAccessNotice, isTransientChatNotice, routineAccessSettled, TRANSIENT_NOTICE_RULES } from "../../shared/transient-notices";
+import { isRoutineAccessNotice, isRoutineAutoPausedNotice, isTransientChatNotice, routineAccessSettled, TRANSIENT_NOTICE_RULES } from "../../shared/transient-notices";
 import type { Message } from "@/state/store";
 
 const STORAGE_KEY = "sagax.transientNotices.shown";
@@ -44,4 +44,13 @@ export function rememberShownNotice(shown: Set<string>, id: string): void {
   } catch {
     // private window or blocked storage: this window still remembers it
   }
+}
+
+/** 2026-10-26: the failure that paused its routine is settled once that
+ * routine is back on (Resume, the switch, the editor). A routine not
+ * loaded yet is not settled. */
+export function routineAutoPauseSettled(notice: Message, routines: ReadonlyArray<{ id: string; enabled: boolean }>): boolean {
+  if (!isRoutineAutoPausedNotice(notice)) return false;
+  const routine = routines.find((candidate) => candidate.id === notice.routineRun?.routineId);
+  return routine?.enabled === true;
 }

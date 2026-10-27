@@ -10,6 +10,7 @@ final class TransientNoticesTests: XCTestCase {
         let routineGoalStatuses: [String]
         let visibleMs: Double
         let freshMs: Double
+        let autoPaused: [String]
         let transient: [Message]
         let rows: [Message]
     }
@@ -54,6 +55,18 @@ final class TransientNoticesTests: XCTestCase {
         var done = list.rows[0]; done.at = now - 100; done.from = Sender(botId: "b1", name: "Ada", color: "teal")
         XCTAssertTrue(TransientNotices.settled(access, in: [access, done]))
         XCTAssertNil(TransientNotices.pick([access, done], now: now, shown: []))
+    }
+
+    /// 2026-10-26: the failure that paused its routine offers Resume, a
+    /// blocked team goal included, and never settles an access notice.
+    func testAutoPausedNoticesAreTheDesktopList() throws {
+        let list = try fixture()
+        let paused = (list.transient + list.rows).filter(TransientNotices.isRoutineAutoPaused).map(\.id)
+        XCTAssertEqual(paused, list.autoPaused)
+        let access = try XCTUnwrap(list.transient.first { $0.id == "access" })
+        var goal = try XCTUnwrap(list.transient.first { $0.id == "goal-auto-paused" })
+        goal.at = access.at + 1000; goal.from = Sender(botId: "b1", name: "Ada", color: "teal")
+        XCTAssertFalse(TransientNotices.accessSettled(access, later: [goal][...]))
     }
 
     func testMemoryKeepsShownIds() throws {

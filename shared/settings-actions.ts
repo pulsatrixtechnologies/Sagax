@@ -343,6 +343,7 @@ routineField("routine.room", "groupId", "string?", "Room of a room routine", "Au
 routineField("routine.timeoutMinutes", "timeoutMinutes", "number?", "Time limit", "Automations > routine > Advanced");
 routineField("routine.overlap", "overlap", "enum:skip|queue", "When a run is still going", "Automations > routine > Advanced");
 routineField("routine.onlyWhenPresent", "onlyWhenPresent", "boolean", "Only when present", "Automations > routine > Advanced");
+routineField("routine.autoPauseAfter", "autoPauseAfter", "number?", "Pause after this many failures in a row (0 never, null the default 5)", "Automations > routine > Advanced");
 routineField("routine.runAs", "runAs", "string", "Runs as (a person)", "Automations > routine > Runs as", always("others"));
 add({
   key: "routine.create", family: "routine", target: "none", value: "object",

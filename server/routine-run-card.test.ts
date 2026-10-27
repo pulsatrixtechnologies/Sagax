@@ -39,4 +39,9 @@ describe("routineRunCard", () => {
     expect(card.status).toBe("nothing_to_report");
     expect(card.summary).toBeUndefined();
   });
+
+  it("says when the failure paused its routine (2026-10-26)", () => {
+    expect(routineRunCard(run({ status: "failed", error: "down", autoPaused: { failures: 5 } }), "main").autoPausedAfter).toBe(5);
+    expect(routineRunCard(run({ status: "failed", error: "down" }), "main")).not.toHaveProperty("autoPausedAfter");
+  });
 });

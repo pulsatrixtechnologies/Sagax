@@ -2,6 +2,8 @@
 // (shared/transient-notices.ts): a routine run that failed, a routine's
 // access card. It leaves on its own after a few seconds, when the person
 // closes it, or (access) once the routine has run again; it never comes back.
+// 2026-10-26: the failure that paused its routine also leaves (or never
+// shows) once that routine is back on (`settled`).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 
@@ -10,8 +12,10 @@ import { pickTransientNotice, readShownNotices, rememberShownNotice, transientNo
 import { TRANSIENT_NOTICE_RULES } from "../../shared/transient-notices";
 import type { Message } from "@/state/store";
 
-export function TransientNotice({ messages, render }: {
+export function TransientNotice({ messages, render, settled }: {
   messages: readonly Message[];
+  /** Settled outside the messages (an auto-paused routine back on). */
+  settled?: (message: Message) => boolean;
   /** The notice's own content: the routine run line, the access card. */
   render: (message: Message, close: () => void) => ReactNode;
 }) {
@@ -21,14 +25,15 @@ export function TransientNotice({ messages, render }: {
   useEffect(() => {
     shown.current ??= readShownNotices();
     if (active) {
-      if (transientNoticeSettled(active, messages)) setActive(null);
+      if (transientNoticeSettled(active, messages) || settled?.(active)) setActive(null);
       return;
     }
     const next = pickTransientNotice(messages, Date.now(), shown.current);
     if (!next) return;
     rememberShownNotice(shown.current, next.id);
+    if (settled?.(next)) return;
     setActive(next);
-  }, [messages, active]);
+  }, [messages, active, settled]);
 
   useEffect(() => {
     if (!active) return;

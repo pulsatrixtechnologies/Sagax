@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { routineRunError, routineRunsOn } from "./routine-display";
+import { routineAutoPauseChoices, routineAutoPausedText, routineAutoPauseOption, routineRunError, routineRunsOn } from "./routine-display";
 
 describe("where a routine runs", () => {
   it("on My Cloud, every routine runs on schedule even when the person's computer is off", () => {
@@ -50,5 +50,17 @@ describe("a failed run's error", () => {
     expect(routineRunError("rpc_error")).toMatch(/^The bot's engine stopped this run with an internal error/);
     expect(routineRunError("auth_required")).toMatch(/sign-in, key or credit/);
     expect(routineRunError("shutdown_timeout")).toBe("The bot's engine stopped this run (shutdown_timeout). Open the results thread for the details.");
+  });
+});
+
+describe("auto-pause words and choices (2026-10-26)", () => {
+  it("offers Never first, then the counts, keeping a routine's own other count", () => {
+    expect(routineAutoPauseChoices(5)).toEqual([0, 1, 2, 3, 5, 10, 20]);
+    expect(routineAutoPauseChoices(7)).toEqual([0, 1, 2, 3, 5, 7, 10, 20]);
+    expect(routineAutoPauseOption(0)).toBe("Never");
+    expect(routineAutoPauseOption(1)).toBe("After 1 failed run");
+    expect(routineAutoPauseOption(5)).toBe("After 5 failed runs in a row");
+    expect(routineAutoPausedText(5)).toBe("Paused after 5 failures in a row");
+    expect(routineAutoPausedText(1)).toBe("Paused after a failure");
   });
 });
