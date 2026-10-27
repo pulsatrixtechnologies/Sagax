@@ -11,7 +11,7 @@
 import Foundation
 
 public enum People {
-    static func norm(_ value: String?) -> String {
+    public static func norm(_ value: String?) -> String {
         (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
