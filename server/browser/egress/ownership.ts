@@ -56,6 +56,8 @@ export function sessionOfStat(stat: string): number | null {
 export interface EngineSessions {
   live: ReadonlySet<number>;
   ended: ReadonlySet<number>;
+  /** The bot each session was started for, when known (procs.ts runAsBotEngine). */
+  bots?: ReadonlyMap<number, string>;
 }
 
 export interface ProcFiles {
@@ -86,8 +88,10 @@ export class ListenerOwnership {
     this.now = options.now ?? Date.now;
   }
 
-  /** Whether every listener on this loopback port belongs to a process in a bot engine's session. */
-  async botOwned(port: number): Promise<boolean> {
+  /** Whether every listener on this loopback port belongs to a process in a bot engine's session. `accept`, when
+   * given, must also accept the bot each of those sessions was started for (a shared server: the browser's own
+   * person's bots only, #1098); a session of no known bot is then refused. */
+  async botOwned(port: number, accept?: (botId: string | undefined) => boolean): Promise<boolean> {
     if (this.platform !== "linux") return false;
     let inodes = (await this.snapshot(LISTENERS_TTL_MS)).get(port);
     if (!inodes?.length) inodes = (await this.snapshot(MISS_RETRY_MS)).get(port);
@@ -99,6 +103,7 @@ export class ListenerOwnership {
       if (pid === undefined) return false;
       const session = await this.proc.readFile(`/proc/${pid}/stat`).then(sessionOfStat, () => null);
       if (session === null || !(await this.isBotSession(session, sessions))) return false;
+      if (accept && !accept(sessions.bots?.get(session))) return false;
     }
     return true;
   }

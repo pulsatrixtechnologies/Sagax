@@ -5,6 +5,7 @@ import { browserProfileDeletionBlockReason, browserProfilesMutation, newBrowserP
 import { isOwnerOrAdmin, readSessionState } from "@/lib/session";
 import { t } from "@/lib/i18n";
 import { MY_CHROME_PROFILE, myChromeCall } from "@/lib/my-chrome";
+import { canEditConfig } from "@/lib/viewer";
 
 /** Browser-panel and workspace settings share one editor. The server owns
  * session routing and erasure; this UI never handles cookies or partitions. */
@@ -14,7 +15,12 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
   disabled?: boolean;
 }) {
   const { state, dispatch, flushBotPatches } = useStore();
-  const profiles = state.config?.browserProfiles ?? [];
+  // #1098: on an organization server a person keeps their own profiles
+  // (/api/me/experimental) beside the server's shared ones, which only
+  // someone who edits the installation manages.
+  const allProfiles = state.config?.browserProfiles ?? [];
+  const personalMode = state.config?.personalSettings === true && !canEditConfig(state.config);
+  const profiles = allProfiles.filter((profile) => (personalMode ? profile.personal : !profile.personal));
   const bots = state.bots ?? [];
   const currentBot = bot ? bots.find((candidate) => candidate.id === bot.id) ?? bot : undefined;
   const [canManage, setCanManage] = useState<boolean | null>(null);
@@ -28,10 +34,10 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
   useEffect(() => {
     let alive = true;
     void readSessionState().then((session) => {
-      if (alive) setCanManage(isOwnerOrAdmin(session));
+      if (alive) setCanManage(personalMode || isOwnerOrAdmin(session));
     });
     return () => { alive = false; };
-  }, []);
+  }, [personalMode]);
   // My Chrome is a choice only where the server offers it (the desktop).
   const [myChromeOffered, setMyChromeOffered] = useState(false);
   const [shellBotIds, setShellBotIds] = useState<string[]>([]);
@@ -60,6 +66,15 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
 
   const save = async (next: BrowserProfile[]): Promise<boolean> => {
     try {
+      if (personalMode) {
+        // A new profile goes without an id: the server names it.
+        await api("/api/me/experimental", {
+          method: "PATCH",
+          body: JSON.stringify({ browserProfiles: next.map((profile) => (profile.personal ? { id: profile.id, name: profile.name } : { name: profile.name })) }),
+        });
+        dispatch({ type: "configStatus", config: await api<ConfigStatus>("/api/config") });
+        return true;
+      }
       const config: ConfigStatus = await api("/api/config", {
         method: "PATCH",
         body: JSON.stringify(browserProfilesMutation(profiles, next)),
@@ -158,10 +173,10 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
             className={inputClass}
           >
             <option value="">{t("settings.profiles.own")}</option>
-            {profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+            {allProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
             <option value="guest">{t("settings.profiles.temporary")}</option>
             {(myChromeOffered || selected === MY_CHROME_PROFILE) && <option value={MY_CHROME_PROFILE}>{t("settings.profiles.myChrome")}</option>}
-            {selected && selected !== "guest" && selected !== MY_CHROME_PROFILE && !profiles.some((profile) => profile.id === selected)
+            {selected && selected !== "guest" && selected !== MY_CHROME_PROFILE && !allProfiles.some((profile) => profile.id === selected)
               ? <option value={selected} disabled>{t("settings.profiles.removed")}</option> : null}
           </select>
           <p className="text-[11px] leading-relaxed text-ink-secondary">
@@ -178,7 +193,7 @@ export function BrowserProfilesManager({ bot, onProfileChanged, disabled = false
             <button type="submit" disabled={locked || !name.trim() || profiles.length >= 20} className={`${buttonClass} flex items-center gap-1`}><Plus size={13} />{t("settings.profiles.create")}</button>
           </form>
           {profiles.length >= 20 && <p className="text-[11px] text-ink-secondary">{t("settings.profiles.limit")}</p>}
-          {!profiles.length && <p className="text-[12px] text-ink-secondary">{t("settings.profiles.sharedEmpty")}</p>}
+          {!profiles.length && <p className="text-[12px] text-ink-secondary">{t(personalMode ? "settings.profiles.personalEmpty" : "settings.profiles.sharedEmpty")}</p>}
           <div className="divide-y divide-hairline/30">
             {profiles.map((profile) => {
               const users = bots.filter((candidate) => candidate.browserProfile === profile.id).map((candidate) => candidate.name);

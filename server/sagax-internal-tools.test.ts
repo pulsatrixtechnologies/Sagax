@@ -132,32 +132,34 @@ describe("Sagax's own tools, security review 2026-10-16", () => {
     }
   });
 
-  it("in solo (unconfined) no SQL, describe, show or export answers itself: the bypass probes get a card", () => {
+  it("in solo the same rule as an organization server answers: no forced card, a visible reach keeps its card (#1098)", () => {
     const root = mkdtempSync(join(tmpdir(), "sagax-data-solo-"));
     try {
       writeFileSync(join(root, "sales.csv"), "a\n1\n");
       const solo = (tool: string, args: Record<string, unknown> | string) => sagaxInternalSelfAnswers(tool, typeof args === "string" ? args : JSON.stringify(args), [root], false);
+      // the person's own SQL, describe, show and export on their own tables answer themselves
+      for (const tool of ["data__data_sql", "mcp__data__data_show", "data__data_export", "data__data_describe"]) {
+        expect(solo(tool, { sql: "SELECT region, sum(amount) FROM sales GROUP BY 1", table: "sales", format: "csv" }), tool).toBe(true);
+      }
+      expect(solo("data__data_sql", "{}")).toBe(true);
+      // what visibly reaches out still gets a card
       for (const text of [
         "SELECT * FROM read_csv(chr(47)||'etc'||chr(47)||'hosts')",
         "SELECT * FROM read_csv($$/etc/hosts$$)",
         "SELECT * FROM read_csv('../../etc/hosts')",
         "SELECT * FROM read_csv(concat('/et', 'c/hosts'))",
-        "SELECT 1",
+        "SELECT * FROM read_csv('https://example.com/a.csv')",
+        "ATTACH 'x.db' AS x",
       ]) {
-        for (const tool of ["data__data_sql", "mcp__data__data_show", "data__data_export", "data__data_describe"]) {
-          expect(solo(tool, { sql: text, target: text, table: "sales", format: "csv" }), `${tool}: ${text}`).toBe(false);
-        }
+        expect(solo("data__data_sql", { sql: text }), text).toBe(false);
       }
-      expect(solo("data__data_sql", "")).toBe(false);
-      expect(solo("data__data_sql", "{}")).toBe(false);
-      // a load of a file inside the bot's own workspace still answers itself
       expect(solo("data__data_load", { source: join(root, "sales.csv") })).toBe(true);
-      // never a remote, a relative or an escaping path in solo
-      expect(solo("data__data_load", { source: "https://example.com/a.csv" })).toBe(false);
+      // a public https load answers itself; a private one, a relative or an escaping path does not
+      expect(solo("data__data_load", { source: "https://example.com/a.csv" })).toBe(true);
+      expect(solo("data__data_load", { source: "https://10.0.0.5/a.csv" })).toBe(false);
       expect(solo("data__data_load", { source: "../../etc/hosts" })).toBe(false);
       expect(solo("data__data_load", { source: `${root}/../../etc/hosts` })).toBe(false);
       expect(solo("data__data_load", { source: "/etc/hosts", kind: "csv" })).toBe(false);
-      // the agents tools are not Data
       expect(solo("agents__delegate_bot", "{}")).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });

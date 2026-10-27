@@ -94,13 +94,31 @@ export interface EgressSetup {
   config(): BrowserEgressConfig | undefined;
   listeners?: OwnListeners;
   ownership?: Pick<ListenerOwnership, "botOwned">;
+  /** A shared server (many people's bots side by side): whether the bot an engine session was started for
+   * (`engineBot`, undefined when unknown) belongs to the person whose browser `session` is. Given, a bot's
+   * browser opens only the servers its own person's bots started (#1098); absent, any bot's. */
+  sameOwner?(session: string, engineBot: string | undefined): boolean;
+}
+
+/** On a shared server: whether the bot a browser is for (`browserBot`) and the bot an engine session was started for
+ * (`engineBot`) are the same person's, so that browser may open the servers that engine started (#1098). The same
+ * bot, or two bots with the same owner. An unknown bot, or one with no owner, matches nothing but itself. */
+export function sameOwnerBots(
+  browserBot: string | undefined,
+  engineBot: string | undefined,
+  botOf: (id: string) => { ownerUserId?: unknown } | null | undefined,
+): boolean {
+  if (!browserBot || !engineBot) return false;
+  if (browserBot === engineBot) return true;
+  const owner = botOf(browserBot)?.ownerUserId;
+  return typeof owner === "string" && owner.trim() !== "" && owner === botOf(engineBot)?.ownerUserId;
 }
 
 interface Blocked { target: string; reason: Refusal }
 
 /** One gate per browser session for the life of the server, so a Chrome keeps the port it launched with. */
 export class BrowserEgress {
-  private setup: Required<EgressSetup> | null = null;
+  private setup: (Required<Omit<EgressSetup, "sameOwner">> & Pick<EgressSetup, "sameOwner">) | null = null;
   private readonly gates = new Map<string, Promise<EgressGate>>();
   private readonly blocked = new Map<string, Blocked[]>();
 
@@ -113,14 +131,17 @@ export class BrowserEgress {
     };
   }
 
-  rules(): EgressRules {
+  /** The rules for `session`'s browser (on a shared server, its bot ports are its own person's bots' only). */
+  rules(session?: string): EgressRules {
     const setup = this.setup;
     if (!setup) throw new Error("The browser's network gate is not set up.");
     const config = setup.config();
+    const sameOwner = setup.sameOwner;
+    const accept = sameOwner ? (engineBot: string | undefined) => session !== undefined && sameOwner(session, engineBot) : undefined;
     return {
       host: setup.host,
       ownPort: (port) => setup.listeners.has(port),
-      botPort: (port) => setup.ownership.botOwned(port),
+      botPort: (port) => (accept ? setup.ownership.botOwned(port, accept) : setup.ownership.botOwned(port)),
       localNetwork: config?.localNetwork !== false,
       allowed: allowList(setup.host === "server" ? config?.allow : undefined),
     };
@@ -132,7 +153,7 @@ export class BrowserEgress {
     let gate = this.gates.get(session);
     if (!gate) {
       gate = openGate({
-        decide: (target, addresses) => refusalFor(target, addresses, this.rules()),
+        decide: (target, addresses) => refusalFor(target, addresses, this.rules(session)),
         onRefusal: (target, reason) => this.note(session, target, reason as Refusal),
       });
       this.gates.set(session, gate);

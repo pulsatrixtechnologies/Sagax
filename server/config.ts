@@ -22,6 +22,7 @@ import type { McpServerSpec } from "./contracts.ts";
 import type { MailSettings } from "./mail-config.ts";
 import { isRemoteMcpServer, parseStoredMcpServer, reservedMcpServerLog, reservedMcpServerName } from "./mcp-registry.ts";
 import { parseJson, schemaIssue, type JsonObject, type JsonValue } from "./schema.ts";
+import { isPersonalBrowserProfileId } from "../shared/person-settings.ts";
 import { browserEgressConfigSchema, type BrowserEgressConfig } from "./browser/egress/policy.ts";
 import { currentEnvName, defaultDataDir } from "../electron/legacy-names.mjs";
 
@@ -159,7 +160,9 @@ const browserProfileSchema = z.object({
   // "guest" is the throwaway session's reserved id, never a saved profile
   // Lowercase is part of the storage contract: durable Chromium partition
   // directories would otherwise collide on case-insensitive filesystems.
-  id: z.string().regex(BROWSER_PROFILE_ID).refine((id) => id !== "guest", "guest is reserved"),
+  id: z.string().regex(BROWSER_PROFILE_ID).refine((id) => id !== "guest", "guest is reserved")
+    // a person's own profile ids (shared/person-settings.ts, #1098)
+    .refine((id): boolean => !isPersonalBrowserProfileId(id), "mine- ids are a person's own profiles"),
   name: z.string().trim().min(1).max(40),
 }).strict();
 // #567 accepted mixed-case and duplicate ids. This schema exists only at the

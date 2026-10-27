@@ -12,14 +12,17 @@
 //   waits on an approval card. Detection is by the element's role and name
 //   from the bot's last snapshot, the key pressed, the text typed and the
 //   address opened; when the call cannot be named (an unknown ref, a button
-//   with no name, Enter outside a search box) it is a card too.
+//   with no name, Enter outside a search box) it is a card too;
+// - #1098 (2026-10-27): a step of the person's own work on a site they
+//   allowed (save, next, continue, create, add, ok...) is a card only at Ask;
+//   at Auto and above it runs. A payment, a send and a delete keep their card.
 
 export const MY_CHROME_PROFILE = "my-chrome";
 
 /** Added to the browser prompt for a bot set to My Chrome. */
 export const MY_CHROME_SYSTEM_PROMPT = " Your browser is the person's own Chrome (My Chrome), where they are signed in: it works only on the sites they allowed, in tabs you open (a banner shows them you drive it), and stops the moment they press Stop. There are no scripts, cookies or saved state there; address elements by their @eN refs. A payment or purchase, a send (a form, an email, a message, a post) or a delete waits on the person's approval card: say what you are about to do, and never try to get around a refusal.";
 
-export type SensitiveKind = "payment" | "send" | "delete" | "unclear";
+export type SensitiveKind = "payment" | "send" | "delete" | "step" | "unclear";
 
 export interface SensitiveAction {
   kind: SensitiveKind;
@@ -110,12 +113,17 @@ const DELETE = [
   "fermer le compte", "deactivate", "desactiver", "revoke", "revoquer", "empty", "vider", "clear all", "tout effacer",
   "reset", "reinitialiser", "wipe",
 ];
+// What goes to someone else: a card at every level.
 const SEND = [
   "send", "envoyer", "submit", "soumettre", "post", "publier", "publish", "tweet", "reply", "repondre", "comment", "commenter",
   "share", "partager", "invite", "inviter", "sign", "signer", "apply", "postuler", "request", "message", "forward", "transferer",
+  "upload", "televerser",
+];
+// A step of the person's own work on the site (#1098): a card at Ask only.
+const STEP = [
   "save", "enregistrer", "sauvegarder", "update", "mettre a jour", "confirm", "confirmer", "valider", "validate", "ok", "yes", "oui",
   "accept", "accepter", "agree", "approve", "approuver", "done", "termine", "terminer", "finish", "continue", "continuer",
-  "next", "suivant", "create", "creer", "add", "ajouter", "upload", "televerser", "join", "rejoindre",
+  "next", "suivant", "create", "creer", "add", "ajouter", "join", "rejoindre",
 ];
 // A sign-in button submits the person's own login (the vault filled it).
 const SIGN_IN = ["sign in", "log in", "login", "se connecter", "connexion", "ouvrir une session", "s identifier"];
@@ -133,6 +141,7 @@ export function sensitiveElement(ref: RefInfo | undefined): SensitiveKind | null
   if (["checkbox", "radio", "combobox", "textbox", "searchbox", "slider", "spinbutton", "heading", "paragraph", "statictext"].includes(role)) return null;
   if (has(name, SIGN_IN)) return null;
   if (has(name, SEND)) return "send";
+  if (has(name, STEP)) return "step";
   if (name.trim() === "" && (role === "button" || BUTTONISH.has(role))) return "unclear";
   return null;
 }
@@ -184,6 +193,7 @@ const KIND_WORDS: Record<SensitiveKind, string> = {
   payment: "a payment or purchase",
   send: "a send or submit",
   delete: "a delete",
+  step: "a save or next step",
   unclear: "an action Sagax cannot name",
 };
 
@@ -264,6 +274,9 @@ export interface MyChromeToolDeps {
   confirm(summary: string, allowKey?: string): Promise<"allow" | "deny" | "timeout">;
   /** What the gate refused since the last call (blocked navigations). */
   notes(): string[];
+  /** The bot's level runs work unasked (Auto, Full): a step of the person's
+   * own work (save, next...) runs with no card (#1098). */
+  stepsUnasked?: boolean;
 }
 
 /** The "Always allow" grant of a sensitive action: one kind (payment, send,
@@ -288,7 +301,8 @@ function toolText(text: string, isError = false) {
 export async function runMyChromeTool(deps: MyChromeToolDeps): Promise<unknown> {
   const refusal = myChromeToolRefusal(deps.params);
   if (refusal) return toolText(refusal, true);
-  const sensitive = deps.memory.classify(deps.session, deps.params);
+  const classified = deps.memory.classify(deps.session, deps.params);
+  const sensitive = classified?.kind === "step" && deps.stepsUnasked === true ? null : classified;
   if (sensitive) {
     let page = "";
     try { page = await deps.pageUrl(); } catch { /* the card still names the action */ }

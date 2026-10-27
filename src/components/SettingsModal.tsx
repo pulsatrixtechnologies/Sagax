@@ -177,10 +177,12 @@ export function memberHidesSection(id: AppSettingsSection, input: {
   /** server.experimental (implied by server.settings). Defaults to editConfig
    * for an older server that sends no permission list. */
   manageExperimental?: boolean;
+  /** Organization server (#1098): the viewer's own Experimental switches. */
+  personalSettings?: boolean;
 }): boolean {
   // Experimental is its own delegable right (server.experimental): a member an
   // admin gave it sees the section without the rest of the installation.
-  if (id === "experimental") return !(input.manageExperimental ?? input.editConfig);
+  if (id === "experimental") return !(input.manageExperimental ?? input.editConfig) && input.personalSettings !== true;
   if (id === "decisionModel" || id === "workspaces") return !input.editConfig;
   if (id === "backups" || id === "import") return !input.manageBackups;
   if (id === "computer") return !input.manageComputers && !input.organization;
@@ -474,7 +476,7 @@ export function SettingsModal() {
     // (2026-10-09: and to a person whose profile includes people.activityLog)
     if (id === "activity" && !(servedPage() && (ownerOrAdmin === true || (perspicaxOrg !== null && viewerCan(state.config, "people.activityLog"))))) return false;
     // Installation writes the server refuses with 403: hide the section.
-    if (memberHidesSection(id, { editConfig, manageComputers, manageBackups, organization, manageExperimental })) return false;
+    if (memberHidesSection(id, { editConfig, manageComputers, manageBackups, organization, manageExperimental, personalSettings: state.config?.personalSettings === true })) return false;
     // Decision model is experimental, off until its switch is on.
     if (id === "decisionModel" && !decisionModelEnabled(state.config)) return false;
     // Simple hides technical sections. Their saved values stay.

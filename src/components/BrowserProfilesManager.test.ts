@@ -3,12 +3,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, BrowserProfile } from "@/state/store";
 
-const fixture = vi.hoisted(() => ({ profiles: [] as BrowserProfile[], bots: [] as Bot[] }));
+const fixture = vi.hoisted(() => ({ profiles: [] as BrowserProfile[], bots: [] as Bot[], member: false }));
 vi.mock("@/state/store", () => ({
   api: vi.fn(),
   ApiError: class extends Error {},
   useStore: () => ({
-    state: { config: { browserProfiles: fixture.profiles }, bots: fixture.bots },
+    state: {
+      config: fixture.member
+        ? { browserProfiles: fixture.profiles, personalSettings: true, viewer: { role: "member" } }
+        : { browserProfiles: fixture.profiles },
+      bots: fixture.bots,
+    },
     dispatch: vi.fn(),
     flushBotPatches: vi.fn(),
   }),
@@ -17,6 +22,7 @@ import { BrowserProfilesManager } from "./BrowserProfilesManager";
 
 const bot = { id: "pepper", name: "Pepper", browserProfile: "work" } as Bot;
 beforeEach(() => {
+  fixture.member = false;
   fixture.profiles = [{ id: "work", name: "Work", partitionId: "LegacyWork" }];
   fixture.bots = [bot, { id: "scout", name: "Scout", browserProfile: "work" } as Bot];
 });
@@ -58,5 +64,16 @@ describe("browser profile manager", () => {
     expect(html).toContain("This profile was removed.");
     expect(html).toContain('value="work" disabled="" selected=""');
     expect(html).toContain("Each bot still has its own browser.");
+  });
+
+  it("on an organization server, a member manages their own profiles and picks from theirs and the server's (#1098)", () => {
+    fixture.member = true;
+    fixture.profiles = [{ id: "work", name: "Work" }, { id: "mine-0123456789abcdef0123456789abcdef", name: "My bank", personal: true }];
+    const manager = renderToStaticMarkup(createElement(BrowserProfilesManager));
+    expect(manager).toContain("My bank");
+    expect(manager).not.toContain("Work");
+    const picker = renderToStaticMarkup(createElement(BrowserProfilesManager, { bot }));
+    expect(picker).toContain(">My bank</option>");
+    expect(picker).toContain(">Work</option>");
   });
 });

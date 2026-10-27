@@ -347,7 +347,7 @@ import { assertWithinBudget, noteSpend, spendAlertText, spendState, takeSpendAle
 import { fleetAvailable, fleetRequest, fleetSocketPath } from "./fleet-client.ts";
 import { entitled } from "./enterprise.ts";
 import { HOSTED_CONTRACT_HEADER, HOSTED_CONTRACT_METADATA, HOSTED_CONTRACT_VERSION } from "./hosted-contract.ts";
-import { cliCommandRefusal, describeSpawnFailure, execCli } from "./procs.ts";
+import { cliCommandRefusal, describeSpawnFailure, execCli, runAsBotEngine } from "./procs.ts";
 import { blockedTarget, buildSpendNotification, deliverableNotification, quietForCall, summarize, type Notification } from "./notify.ts";
 import { approvalPlain, describeAllowRule, describeApproval, mcpAllowKey, parseToolId } from "../shared/approval-describe.ts";
 import { ComputerAppReader } from "./computer-app.ts";
@@ -680,7 +680,7 @@ import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-r
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
 import { BUILT_IN_BROWSER_SYSTEM_PROMPT, pauseBrowserStream } from "./browser-engine.ts";
 import { BrowserRuntime, browserProfileChangeRefusal, browserRuntimeEnv } from "./browser-runtime.ts";
-import { browserEgress } from "./browser/egress/registry.ts";
+import { browserEgress, sameOwnerBots } from "./browser/egress/registry.ts";
 import { BrowserLive } from "./browser-live.ts";
 import { BrowserNetworkDebug } from "./browser-network-debug.ts";
 import {
@@ -980,6 +980,9 @@ import type { BotHost } from "./turn-route.ts";
 import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
+import { PersonSettingsStore, personSettingsPrincipal, personalProfilePartition } from "./person-settings.ts";
+import { createPersonSettingsRoutes } from "./routes/person-settings.ts";
+import { isPersonalBrowserProfileId, type PersonalFeature } from "../shared/person-settings.ts";
 import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
@@ -4972,13 +4975,16 @@ function cancelDirectTurnDispatch(botId: string, expectedThreadId?: string): Dir
 // Sagax's own listeners, cloud metadata, link-local addresses, nor (on a
 // server) the local network (server/browser/egress, port of OpenMausBot #2930).
 // A shared server (organization, hosted workspace, service trust) runs many
-// people's bots side by side: one bot's browser never reaches the servers
-// another bot started, so no bot port is open there without
+// people's bots side by side: a bot's browser reaches the servers its own
+// person's bots started (#1098, 2026-10-27: the person's environment is
+// theirs), never another person's; anything else needs
 // browserEngine.egress.allow (Sagax addition to the port).
 const sharedEgressHost = !DESKTOP_MANAGED && (IDENTITY.kind === "perspicax" || HOSTED_WORKSPACE || LOOPBACK.trust === "service");
+/** The bot each browser session this server launched is for. */
+const browserSessionBots = new Map<string, string>();
 browserEgress.configure({
   host: DESKTOP_MANAGED ? "desktop" : CLOUD_HOME ? "cloud" : "server", config: () => cfg.browserEngine?.egress,
-  ...(sharedEgressHost ? { ownership: { botOwned: async () => false } } : {}),
+  ...(sharedEgressHost ? { sameOwner: (session: string, engineBot: string | undefined) => sameOwnerBots(browserSessionBots.get(session), engineBot, (id) => store.bot(id)) } : {}),
 });
 const browserRuntime = new BrowserRuntime({
   egressNotice: (session) => browserEgress.takeNotice(session),
@@ -5094,7 +5100,7 @@ function currentBrowserSession(botId: string, requestedProfile: string | undefin
     }
     return session;
   }
-  const target = profile ? browserProfilePartitionTarget(cfg, profile) : null;
+  const target = profile ? browserProfilePartitionTarget(cfg, profile) ?? personalProfileTarget(botId, profile) : null;
   return browserSessionId(botId, target?.partitionId ?? "");
 }
 async function forgetTemporaryBrowser(botId: string): Promise<void> {
@@ -5141,7 +5147,7 @@ async function browserIntegration(botId: string, requestedProfile: string | unde
   // My Chrome: the person's own Chrome through the gate. Never saved to or
   // restored from disk; never in a confidential conversation (its own guest).
   const ownChrome = !confidential && profile === MY_CHROME_PROFILE;
-  const profileTarget = !confidential && profile && profile !== "guest" && !ownChrome ? browserProfilePartitionTarget(cfg, profile) : null;
+  const profileTarget = !confidential && profile && profile !== "guest" && !ownChrome ? browserProfilePartitionTarget(cfg, profile) ?? personalProfileTarget(botId, profile) : null;
   const partitionId = confidential || profile === "guest" ? "guest" : ownChrome ? MY_CHROME_PROFILE : (profileTarget?.partitionId ?? "");
   const session = currentBrowserSession(botId, profile, threadForSession);
   const persistent = !confidential && profile !== "guest" && !ownChrome;
@@ -5162,6 +5168,7 @@ async function browserIntegration(botId: string, requestedProfile: string | unde
       ...(attachCdpUrl ? {} : { egressPort: await browserEgress.open(session) }),
     });
   usedBrowserSessions.set(session, spec);
+  browserSessionBots.set(session, botId);
   await prepareBrowserSessionState(status.binaryPath, session, { env: spec.env, persistent, isCurrent: () => {
     const current = store.bot(botId);
     return !!current && current.browser !== false && builtInBrowserEnabled(cfg)
@@ -5281,9 +5288,8 @@ function dataDownloadDir(scopeKey: string): string {
 }
 /** 2026-10-16 security review: where a Data load may reach and still
  * answer itself without a card: the bot's workspace and its task workspaces
- * (sagax-internal-tools.ts sagaxInternalSelfAnswers). In solo, where DuckDB
- * is not confined, only such a load answers itself; SQL, describe, show and
- * export keep their card there (2026-10-17). */
+ * (sagax-internal-tools.ts sagaxInternalSelfAnswers), solo included since
+ * #1098 (2026-10-27). */
 function dataSelfAnswerRoots(bot: BotRecord, threadId: string): string[] {
   // On an organization server: exactly the folders the turn's own Data
   // scope is confined to (data/scope.ts), never another person's or a
@@ -7123,6 +7129,31 @@ function vaultPrincipalForThread(threadId: string): string | null {
 // payer's), and the address guard for a SearXNG instance on an
 // organization server (its own network is not a member's to reach).
 const webSearchStore = createWebSearchStore(DATA_DIR);
+// A person's own Experimental switches and browser profiles on an
+// organization server (#1098, 2026-10-27, server/person-settings.ts): set by
+// the person, no right to edit the installation needed.
+const personSettings = new PersonSettingsStore(DATA_DIR);
+/** Whose own settings apply: an organization server's person. A solo
+ * server's one person edits the installation itself. */
+function personSettingsOwner(principalId: string | null | undefined): string | null {
+  return IDENTITY.kind === "perspicax" ? personSettingsPrincipal(principalId) : null;
+}
+/** A personal Experimental switch for this person: their own value, else the installation's. */
+function personalFeatureOn(feature: PersonalFeature, installation: boolean, principalId: string | null | undefined): boolean {
+  const owner = personSettingsOwner(principalId);
+  const own = owner ? personSettings.get(owner).features[feature] : undefined;
+  return typeof own === "boolean" ? own : installation;
+}
+/** A bot's browser profile that is its owner's own (shared/person-settings.ts). */
+function personalProfileTarget(botId: string, profileId: string): { profileId: string; partitionId: string } | null {
+  if (!isPersonalBrowserProfileId(profileId)) return null;
+  const owner = personSettingsOwner(recordedBotOwner(store.bot(botId) ?? {}));
+  return owner && personalProfileOf(owner, profileId) ? { profileId, partitionId: personalProfilePartition(owner, profileId) } : null;
+}
+function personalProfileOf(principalId: string | null | undefined, profileId: unknown): boolean {
+  const owner = personSettingsOwner(principalId);
+  return Boolean(owner && isPersonalBrowserProfileId(profileId) && personSettings.get(owner).browserProfiles.some((profile) => profile.id === profileId));
+}
 function webSearchScopeForThread(threadId: string) {
   const organization = IDENTITY.kind === "perspicax";
   return webSearchScope(organization, organization ? vaultPrincipalForThread(threadId) : null);
@@ -8096,7 +8127,7 @@ function previewSystemPrompt(bot: BotRecord) {
       id: "setup",
       label: "Setup",
       text: setupSystemPrompt(agentsMounted && setupModeActive({ soul: bot.soul, description: bot.description, text: "" }), {
-        skills: skillAuthoringEnabled(cfg),
+        skills: personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), recordedBotOwner(bot)),
         cwd: bot.cwd,
       }),
     },
@@ -12445,7 +12476,7 @@ function sseFrameFor(
   // viewer block, never another person's.
   if (payload?.kind === "config" && clientFrame !== null && client.identity) {
     const identity = client.identity();
-    const projected = orgXaiMediaView(configForViewer(configForAccess(payload as ReturnType<typeof configStatus>, client.admin), identity), identity);
+    const projected = orgXaiMediaView(configForPerson(configForAccess(payload as ReturnType<typeof configStatus>, client.admin), identity), identity);
     return `id: ${STREAM_ID}:${seq}\ndata: ${JSON.stringify({ ...projected, seq })}\n\n`;
   }
   // A live screen of a person's cloud computer reaches that person only.
@@ -15419,8 +15450,7 @@ bus.subscribe((event: RuntimeEvent) => {
           emailDraftApproved: emailDraftCall && !strictCard && !guestDriven && !event.requiresExplicitApproval,
           // 2026-10-16: Sagax's own person-scoped tools answer themselves
           // (sagax-internal-tools.ts) on any engine and at any level, except
-          // a Data call that is not visibly contained (in solo: anything but
-          // a load inside the bot's workspace), a send, a rule change or a
+          // a Data call that is not visibly contained, a send, a rule change or a
           // class the person protects with a security key.
           sagaxInternal: !strictCard && !guestDriven && !event.requiresExplicitApproval && internalTool !== null
             && sagaxInternalSelfAnswers(event.mcpTool ?? event.tool, typeof event.input === "string" ? event.input : undefined, asker ? dataSelfAnswerRoots(asker, event.threadId) : [], IDENTITY.kind === "perspicax"),
@@ -19293,8 +19323,8 @@ async function generateThreadTitle(
  * title); and the spend cap is not reached. Regenerate title answers a
  * refusal with its reason, a finished Live call's title takes it as "no
  * title". */
-function threadTitleGate(bot: Pick<BotRecord, "modelSelection">): { ok: true; instance: ProviderInstance } | { ok: false; refusal: string } {
-  if (!llmThreadTitlesEnabled(cfg)) return { ok: false, refusal: "generated thread titles are turned off on this server" };
+function threadTitleGate(bot: Pick<BotRecord, "modelSelection">, principalId?: string | null): { ok: true; instance: ProviderInstance } | { ok: false; refusal: string } {
+  if (!personalFeatureOn("llmThreadTitles", llmThreadTitlesEnabled(cfg), principalId)) return { ok: false, refusal: "generated thread titles are turned off on this server" };
   if (hostedModels && !hostedModels.allows(bot.modelSelection)) return { ok: false, refusal: hostedModels.error() };
   const instance = registry.get(bot.modelSelection.instanceId);
   if (!instance?.generateText) return { ok: false, refusal: "this bot's model can't generate a title — rename the thread instead" };
@@ -19705,7 +19735,7 @@ async function startTurn(
     // swap happens only while the row still carries the snippet — a rename
     // by a person has already broken that equality by then.
     const snippet = titled?.title;
-    if (titled && snippet && !titled.openedBy?.botId && llmThreadTitlesEnabled(cfg) && instance.generateText) {
+    if (titled && snippet && !titled.openedBy?.botId && personalFeatureOn("llmThreadTitles", llmThreadTitlesEnabled(cfg), vaultPrincipalForThread(threadId)) && instance.generateText) {
       void generateThreadTitle(instance, resolvedImages.text)
         .then((title) => {
           if (title) store.retitleTask(bot.id, threadId, snippet, title);
@@ -20197,7 +20227,7 @@ async function startTurn(
       // the setup prompt block, and the peer-comms integration below: a driver
       // that never mounts agent tools (or a turn already at the comms-depth cap)
       // must not be steered into — or told about — tools it cannot call.
-      const skillAuthoring = skillAuthoringEnabled(cfg) && agentsMounted;
+      const skillAuthoring = personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), vaultPrincipalForThread(threadId)) && agentsMounted;
       // Setup mode's turn-text rewrite (parseSetupCommand/expandSetupTurnText)
       // must not run ahead of a system prompt that can't explain it: a driver
       // without agent tools sees the user's literal "/setup ..." message. The
@@ -21191,7 +21221,7 @@ async function startTurn(
       const modelImages = await fitTurnImagesForModel(turnImages, { language: languageOfPerson(turnPlace.principal) });
       // #1137: when the owner pays, the owner's computer serves its model.
       const deskPerson = desktopModelPersonFor(bot, instance, speaker, turnPlace.principal);
-      const dispatch = await guardTurnDispatch(withDesktopModelPerson(deskPerson, () => {
+      const dispatch = await guardTurnDispatch(withDesktopModelPerson(deskPerson, () => runAsBotEngine(bot.id, () => {
         if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(deskPerson, model, instance.driverKind);
         return instance.adapter.sendTurn({
         threadId,
@@ -21244,7 +21274,7 @@ async function startTurn(
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         cwd,
       });
-      }), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
+      })), () => !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await instance.adapter.interruptTurn(threadId).catch(() => {});
       });
       if (warmOnly) {
@@ -23908,7 +23938,7 @@ async function runGroupMemberTurn(
   assertModelVariantSupported(roomTurnSelection(bot), instance.adapter.capabilities);
   const integrations: NonNullable<Parameters<typeof instance.adapter.sendTurn>[0]["integrations"]> = {};
   const skillAuthoring =
-    skillAuthoringEnabled(cfg) &&
+    personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), vaultPrincipalForThread(threadId)) &&
     hop === 0 &&
     !skillAuthoringClaim.claimed &&
     !cardContinuation &&
@@ -24683,11 +24713,11 @@ async function runGroupMemberTurn(
     };
     // #1137: when the owner pays, the owner's computer serves its model.
     const roomDeskPerson = desktopModelPersonFor(readyBot, instance, roomSpeaker, roomPlace.principal);
-    guardTurnDispatch(withDesktopModelPerson(roomDeskPerson, () => Promise.resolve().then(() => {
+    guardTurnDispatch(withDesktopModelPerson(roomDeskPerson, () => runAsBotEngine(readyBot.id, () => Promise.resolve().then(() => {
       const selectedModel = instance.instanceId === roomTurnSelection(readyBot).instanceId ? roomTurnSelection(readyBot).model : instance.models.default;
       if (IDENTITY.kind === "perspicax") desktopLocalModels.assertAvailable(roomDeskPerson, selectedModel, instance.driverKind);
       return IDENTITY.kind === "perspicax" ? orgTurnAccess(threadId, readyBot, instance, roomSpeaker).then(sendRoomTurn) : sendRoomTurn(undefined);
-    })), () => abandoned || Boolean(isCancelled?.()), async () => {
+    }))), () => abandoned || Boolean(isCancelled?.()), async () => {
         // Stop may have landed while the adapter was authenticating, before
         // it had an active process for the first interrupt to reach. Now that
         // sendTurn completed setup, revoke again and interrupt the real turn.
@@ -25560,7 +25590,7 @@ function startGroupTurn(
   const startTitle = (titleBot: (typeof members)[number]) => {
     const titleInstance = registry.get(titleBot.modelSelection.instanceId);
     // An engine the organisation disallows never receives the text, even for a title.
-    if (titled && snippet && titleText.trim() && llmThreadTitlesEnabled(cfg) && titleInstance?.generateText && !policyModelRefusal(titleInstance)) {
+    if (titled && snippet && titleText.trim() && personalFeatureOn("llmThreadTitles", llmThreadTitlesEnabled(cfg), vaultPrincipalForThread(threadId)) && titleInstance?.generateText && !policyModelRefusal(titleInstance)) {
       void generateThreadTitle(titleInstance, titleText)
         .then((title) => {
           if (title) store.retitleGroupTask(group.id, threadId, snippet, title);
@@ -26967,6 +26997,24 @@ function configStatus() {
     ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines() } : {}),
     // organization server: new threads start confidential (server/confidential-threads.ts)
     ...(IDENTITY.kind === "perspicax" ? { confidentialThreadsByDefault: confidentialThreadsByDefault() } : {}),
+  };
+}
+
+/** configForViewer, then a person's own Experimental switches and browser
+ * profiles on an organization server (#1098): `features` shows their value
+ * where they set one, and their own profiles follow the installation's,
+ * marked `personal`. `personalSettings` tells the app they may set them. */
+function configForPerson<T extends Parameters<typeof configForViewer>[0]>(status: T, viewer: ViewerIdentity | null): T & { viewer?: ViewerIdentity } {
+  const shown = configForViewer(status, viewer);
+  const owner = personSettingsOwner(viewer?.principalId);
+  if (!owner) return shown;
+  const own = personSettings.get(owner);
+  const base = shown as unknown as { features?: Record<string, unknown>; browserProfiles?: unknown[] };
+  return {
+    ...shown,
+    personalSettings: true,
+    features: { ...base.features, ...own.features },
+    browserProfiles: [...(base.browserProfiles ?? []), ...own.browserProfiles.map((profile) => ({ ...profile, personal: true }))],
   };
 }
 
@@ -28916,7 +28964,7 @@ ROUTES.push(createTtsProviderRoutes({
     broadcast({ kind: "config", ...status });
     return status;
   },
-  view: (auth, status) => { const viewer = viewerIdentity(auth); return orgXaiMediaView(configForViewer(configForAccess(status as ReturnType<typeof configStatus>, auth.scopes.includes("admin")), viewer), viewer); },
+  view: (auth, status) => { const viewer = viewerIdentity(auth); return orgXaiMediaView(configForPerson(configForAccess(status as ReturnType<typeof configStatus>, auth.scopes.includes("admin")), viewer), viewer); },
 }));
 // Server mode: a person's appearance, language, notifications and mascot
 // settings follow them across devices (shared/user-preferences.ts).
@@ -33828,10 +33876,18 @@ function botsReadOnlyRefusal(principalId: string | undefined | null): Record<str
  * the permission that would let them (none: it stays an admin's). A field
  * of MEMBER_BOT_FIELDS needs nothing more; BOT_FIELD_PERMISSIONS maps the
  * others. Null when every field is allowed. */
+/** A browserProfile value that names one of the server's shared profiles. */
+function sharedBrowserProfileValue(value: unknown): boolean {
+  return typeof value === "string" && (cfg.browserProfiles ?? []).some((profile) => profile.id === value);
+}
 function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: string; permission?: PermissionKey } | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return { field: "body" };
   for (const field of Object.keys(body)) {
     if (isMemberBotField(field)) continue;
+    // #1098: the bot's own session, the temporary one, My Chrome or one of
+    // the owner's own profiles is the owner's environment; only a shared
+    // profile of the server keeps bots.computer.
+    if (field === "browserProfile" && !sharedBrowserProfileValue((body as Record<string, unknown>).browserProfile)) continue;
     const permission = BOT_FIELD_PERMISSIONS[field];
     if (!permission) return { field };
     if (IDENTITY.kind !== "perspicax" || !callerCan(auth, permission)) return { field, permission: IDENTITY.kind === "perspicax" ? permission : undefined };
@@ -34904,6 +34960,37 @@ ROUTES.push(createWebSearchRoutes({
   store: webSearchStore,
   scope: (auth) => webSearchScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
   refuseAddress: webSearchAddressRefusal,
+}));
+// A person's own Experimental switches and browser profiles (#1098,
+// server/routes/person-settings.ts): theirs, on an organization server.
+ROUTES.push(createPersonSettingsRoutes({
+  store: personSettings,
+  principal: (auth) => personSettingsOwner(sessionPrincipal(auth)),
+  removalRefusal: (principalId, removed) => {
+    const busy = store.bots.find((bot) => bot.busy && recordedBotOwner(bot) === principalId && removed.includes(bot.browserProfile ?? ""));
+    return busy ? `stop ${busy.name}'s turn before removing its browser profile` : null;
+  },
+  saved: (principalId, before, after) => {
+    const kept = new Set(after.browserProfiles.map((profile) => profile.id));
+    const removed = before.browserProfiles.map((profile) => profile.id).filter((id) => !kept.has(id));
+    if (!removed.length) return;
+    for (const bot of store.bots) {
+      if (recordedBotOwner(bot) === principalId && removed.includes(bot.browserProfile ?? "")) store.patchBot(bot.id, { browserProfile: undefined });
+    }
+    // The removed profiles' signed-in state goes with them.
+    const engine = browserEngineStatus();
+    for (const id of removed) {
+      const session = browserSessionId("", personalProfilePartition(principalId, id));
+      usedBrowserSessions.delete(session);
+      browserSessionBots.delete(session);
+      browserLive.closeForSession(session);
+      browserNetworkDebug.clearSession(session);
+      if (engine.kind !== "ready") continue;
+      void clearBrowserSessionState(engine.binaryPath, session, { env: { PATH: augmentedPath() }, encryptionKey: browserEngineEncryptionKey() })
+        .then((closed) => (closed ? browserRuntime.close(session) : undefined))
+        .catch(() => undefined);
+    }
+  },
 }));
 // The signed-in person's own photo (server/routes/me-avatar.ts): written to
 // Perspicax with their own sign-in token, then shown everywhere at once.
@@ -38032,7 +38119,7 @@ function liveSignedIn(auth: RequestAuth): boolean {
 function liveCallTitle(botId: string, threadId: string, excerpt: string): Promise<string | null> | null {
   const bot = store.projectBotForTask(botId, threadId);
   if (!bot) return null;
-  const gate = threadTitleGate(bot);
+  const gate = threadTitleGate(bot, vaultPrincipalForThread(threadId));
   return gate.ok ? generateThreadTitle(gate.instance, excerpt, "call") : null;
 }
 const liveCalls = new LiveCallController({
@@ -39511,6 +39598,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               });
             },
             notes: () => myChrome.takeNotes(browser.session),
+            // #1098: at Auto and Full a save or next step runs with no card.
+            stepsUnasked: ["auto", "full"].includes(sourceApprovalMode(bot.id, internalCapability.threadId)),
           });
         }
         requireActiveInternalCapability();
@@ -40662,7 +40751,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         });
       }
       if (method === "GET" && path === "/api/internal/skills") {
-        if (!skillAuthoringEnabled(cfg)) return json(res, 403, { error: "skill authoring is not enabled in Settings" });
+        if (!personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), vaultPrincipalForThread(internalCapability.threadId))) return json(res, 403, { error: "skill authoring is not enabled in Settings" });
         if (!internalCapability.skillAuthoring) {
           return json(res, 403, { error: "skill authoring is not enabled for this turn" });
         }
@@ -40677,7 +40766,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         });
       }
       if (method === "POST" && path === "/api/internal/skills/stage") {
-        if (!skillAuthoringEnabled(cfg)) return json(res, 403, { error: "skill authoring is not enabled in Settings" });
+        if (!personalFeatureOn("skillAuthoring", skillAuthoringEnabled(cfg), vaultPrincipalForThread(internalCapability.threadId))) return json(res, 403, { error: "skill authoring is not enabled in Settings" });
         if (!internalCapability.skillAuthoring) {
           return json(res, 403, { error: "skill authoring is not enabled for this turn" });
         }
@@ -44882,7 +44971,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (settings.avatarUrl && !storedAvatarExists(settings.avatarUrl)) {
         return json(res, 400, { error: "avatarUrl must reference an existing stored image" });
       }
-      if (settings.browserProfile && settings.browserProfile !== "guest" && !(cfg.browserProfiles ?? []).some(profile => profile.id === settings.browserProfile)) {
+      if (settings.browserProfile && settings.browserProfile !== "guest" && !(cfg.browserProfiles ?? []).some(profile => profile.id === settings.browserProfile)
+        && !personalProfileOf(creatingBotOwnerId(auth), settings.browserProfile)) {
         return json(res, 400, { error: "browserProfile must name an existing browser profile" });
       }
       if (settings.mcpServers?.some(name => mcpServerNameError(name) !== null) || (settings.mcpServers?.length ?? 0) > MAX_MCP_SERVERS) {
@@ -45626,7 +45716,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         else if (
           typeof requestedProfile === "string" &&
           (requestedProfile === "guest" || (requestedProfile === MY_CHROME_PROFILE && myChrome.offered) ||
-            (cfg.browserProfiles ?? []).some((profile) => profile.id === requestedProfile))
+            (cfg.browserProfiles ?? []).some((profile) => profile.id === requestedProfile) ||
+            // #1098: one of the bot owner's own profiles
+            personalProfileOf(recordedBotOwner(existingBot ?? {}), requestedProfile))
         ) {
           patch.browserProfile = requestedProfile;
         } else return json(res, 400, { error: "browserProfile must name an existing browser profile" });
@@ -47912,7 +48004,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!current) return json(res, 404, { error: "no such task" });
       const notYours = cloudThreadRefusal(auth, m[2]);
       if (notYours) return json(res, 403, { error: notYours });
-      const gate = threadTitleGate(current);
+      const gate = threadTitleGate(current, sessionPrincipal(auth));
       if (!gate.ok) return json(res, 409, { error: gate.refusal });
       if (titleRegenerations.has(m[2])) return json(res, 409, { error: "a new title is already being generated for this thread" });
       const excerpt = titleConversationExcerpt(store.messagesTail(m[2], 200).messages);
@@ -49221,7 +49313,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const settingsDelegate = IDENTITY.kind === "perspicax" && !auth.scopes.includes("admin") && callerCan(auth, "server.settings");
       const view = configForAccess(configStatus(), auth.scopes.includes("admin") || settingsDelegate);
       const shown = settingsDelegate ? { ...view, ...("signIn" in view ? { signIn: { admins: [], members: [] } } : {}), profile: { ...view.profile, email: "" } } : view;
-      return json(res, 200, orgXaiMediaView(configForViewer(shown, viewerIdentity(auth)), viewerIdentity(auth)));
+      return json(res, 200, orgXaiMediaView(configForPerson(shown, viewerIdentity(auth)), viewerIdentity(auth)));
     }
     if ((method === "PUT" || method === "PATCH") && path === "/api/config") {
       const body = await readBody(req);
@@ -49299,7 +49391,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
       if (!Object.keys(patch).length) {
         // Only a Grok voice key that was not kept: nothing else to save.
-        if (grokVoiceFold) return json(res, 200, orgXaiMediaView(configForViewer(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)), viewerIdentity(auth)));
+        if (grokVoiceFold) return json(res, 200, orgXaiMediaView(configForPerson(configForAccess(configStatus(), auth.scopes.includes("admin")), viewerIdentity(auth)), viewerIdentity(auth)));
         return json(res, 400, { error: "nothing to save" });
       }
       if (patch.decider) {
@@ -49356,7 +49448,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (patch.browserProfiles !== undefined) {
         const retained = new Set(patch.browserProfiles.map((profile) => profile.id));
         const activeReference = store.bots.find(
-          (bot) => bot.busy && bot.browserProfile && bot.browserProfile !== "guest" && !retained.has(bot.browserProfile),
+          (bot) => bot.busy && bot.browserProfile && bot.browserProfile !== "guest" && !isPersonalBrowserProfileId(bot.browserProfile) && !retained.has(bot.browserProfile),
         );
         if (activeReference) {
           return json(res, 409, {
@@ -49611,7 +49703,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // below free of awaits.
         const retained = new Set(patch.browserProfiles.map((profile) => profile.id));
         const activeReference = store.bots.find(
-          (bot) => bot.busy && bot.browserProfile && bot.browserProfile !== "guest" && !retained.has(bot.browserProfile),
+          (bot) => bot.busy && bot.browserProfile && bot.browserProfile !== "guest" && !isPersonalBrowserProfileId(bot.browserProfile) && !retained.has(bot.browserProfile),
         );
         if (activeReference) {
           return json(res, 409, {
@@ -49747,7 +49839,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const retained = new Set(patch.browserProfiles.map((profile) => profile.id));
         try {
           for (const bot of store.bots) {
-            if (bot.browserProfile && bot.browserProfile !== "guest" && !retained.has(bot.browserProfile)) {
+            if (bot.browserProfile && bot.browserProfile !== "guest" && !isPersonalBrowserProfileId(bot.browserProfile) && !retained.has(bot.browserProfile)) {
               // The profile list and every bot reference change in the same
               // config request. Non-renderer clients therefore cannot leave a
               // bot pointing at a deleted cookie partition.
@@ -49817,7 +49909,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         finalized.acknowledgements.every(Boolean),
         removedBrowserProfileIds.length === 1 ? "The browser profile" : "The browser profiles",
       );
-      return json(res, 200, orgXaiMediaView(configForViewer(finalized.value, viewerIdentity(auth)), viewerIdentity(auth)));
+      return json(res, 200, orgXaiMediaView(configForPerson(finalized.value, viewerIdentity(auth)), viewerIdentity(auth)));
       } finally {
         for (const provider of transitioningProviders) computerProviderConfigTransitions.delete(provider);
         if (changingLocalVmMode) localVmModeChangeBusy = false;
