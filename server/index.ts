@@ -312,6 +312,12 @@ import { IdleEnginePool, markOomVictim, MemoryWatch, memoryGuardSettings } from 
 import { checkWidgetForTurn, WidgetCheckAttempts, WidgetRenderer } from "./widget-check.ts";
 import { bundledKnowledgeIndex } from "./self-knowledge.ts";
 import { createSelfKnowledgeInternalRoutes } from "./routes/self-knowledge-internal.ts";
+import { createWebSearchInternalRoutes } from "./routes/web-search-internal.ts";
+import { createWebSearchRoutes } from "./routes/web-search.ts";
+import { createWebSearchStore, webSearchScope } from "./web-search/store.ts";
+import { engineHasNativeWebSearch } from "./web-search/native.ts";
+import { isIP } from "node:net";
+import { blockedAddressReason, defaultMediaProxyResolver } from "./media-proxy-guard.ts";
 import { createSettingsActionsInternalRoutes } from "./routes/settings-actions-internal.ts";
 import { createPrimaryApprovalsInternalRoutes } from "./routes/primary-approvals-internal.ts";
 import { createPrimaryApprovals, primaryAnswerable, type PrimaryCard, type PrimaryDecision, type PrimaryTurn } from "./primary-approvals.ts";
@@ -4071,6 +4077,8 @@ function agentsIntegration(
   roomCoordination = false,
   ownThreadCreation = false,
   hostFiles = false,
+  /** The turn's engine has no web search of its own (server/web-search/native.ts). */
+  noNativeWebSearch = false,
 ) {
   const token = mintInternalCapability({
     botId,
@@ -4188,6 +4196,13 @@ function agentsIntegration(
       // The claim tools (server/perspicax-claims.ts) while this turn has a
       // Perspicax profile mounted for the person speaking; the route re-checks.
       SAGAX_CLAIMS: perspicaxMcp?.hasMounted(threadId, generation, botId) ? "1" : "0",
+      // sagax_web_search: an engine without a web search of its own, for a
+      // person who saved a search provider (a local file read, no network).
+      // The route re-checks; the key never goes in this env.
+      SAGAX_WEB_SEARCH: noNativeWebSearch && (() => {
+        const scope = webSearchScopeForThread(threadId);
+        return scope ? webSearchStore.ready(scope) : false;
+      })() ? "1" : "0",
     },
   };
 }
@@ -6903,6 +6918,30 @@ function vaultPrincipalForThread(threadId: string): string | null {
   if (IDENTITY.kind !== "perspicax") return LOCAL_VAULT_PRINCIPAL;
   if (turnRoutineLineage.has(threadId)) return turnRoutinePayers.get(threadId)?.trim().toLowerCase() || null;
   return turnSpeakerPrincipals.get(threadId)?.trim().toLowerCase() || null;
+}
+// Web search with the person's own key (server/web-search/, 2026-10-26):
+// the sealed store, whose settings a turn uses (the speaker's, a routine's
+// payer's), and the address guard for a SearXNG instance on an
+// organization server (its own network is not a member's to reach).
+const webSearchStore = createWebSearchStore(DATA_DIR);
+function webSearchScopeForThread(threadId: string) {
+  const organization = IDENTITY.kind === "perspicax";
+  return webSearchScope(organization, organization ? vaultPrincipalForThread(threadId) : null);
+}
+async function webSearchAddressRefusal(raw: string): Promise<string | null> {
+  if (IDENTITY.kind !== "perspicax") return null;
+  let host: string;
+  try { host = new URL(raw).hostname.replace(/^\[|\]$/g, ""); } catch { return "Enter the instance's address, starting with http:// or https://."; }
+  const refused = "On an organization server, the SearXNG instance must be reachable on the public internet.";
+  if (/^(?:localhost|.*\.localhost|.*\.local|.*\.internal)$/i.test(host)) return refused;
+  let addresses: string[];
+  try {
+    addresses = isIP(host) ? [host] : (await defaultMediaProxyResolver(host)).map((entry) => entry.address);
+  } catch {
+    return "The SearXNG address could not be found.";
+  }
+  if (!addresses.length) return "The SearXNG address could not be found.";
+  return addresses.some((address) => blockedAddressReason(address) !== null) ? refused : null;
 }
 // A loopback caller is the owner only on the desktop (its mutations need
 // Electron's per-launch capability). On a headless server a bot's shell is
@@ -20481,7 +20520,7 @@ async function startTurn(
           ? store.activePath(threadId).findLast(message => message.role === "user" && message.kind === "text")
           : userMessage;
         const ownThreadCreation = boundedCoordination && !coordinated && Boolean(origin && !origin.peerAsk);
-        integrations.agents = agentsIntegration(bot.id, threadId, commsDepth, skillAuthoring, dispatchClaimId, opts?.coordination?.id, boundedCoordination, ownThreadCreation, worksInWorkspace);
+        integrations.agents = agentsIntegration(bot.id, threadId, commsDepth, skillAuthoring, dispatchClaimId, opts?.coordination?.id, boundedCoordination, ownThreadCreation, worksInWorkspace, !engineHasNativeWebSearch(instance.driverKind, withholdHostToolsFor(instance)));
       }
       if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
         integrations.hooks = hooksIntegration(bot.id, threadId, dispatchClaimId);
@@ -23371,7 +23410,7 @@ async function runGroupMemberTurn(
     !cardContinuation &&
     instance.adapter.capabilities.agentsMcp === true;
   if ((hop < MAX_COMMS_DEPTH || orchestration?.roomHandoffId) && instance.adapter.capabilities.agentsMcp === true) {
-    integrations.agents = agentsIntegration(bot.id, threadId, hop, skillAuthoring, internalGeneration, orchestration?.roomHandoffId, !orchestration || Boolean(orchestration.roomHandoffId), false, supportsWorkspaceFiles(instance.driverKind));
+    integrations.agents = agentsIntegration(bot.id, threadId, hop, skillAuthoring, internalGeneration, orchestration?.roomHandoffId, !orchestration || Boolean(orchestration.roomHandoffId), false, supportsWorkspaceFiles(instance.driverKind), !engineHasNativeWebSearch(instance.driverKind, withholdHostToolsFor(instance)));
   }
   if (instance.adapter.capabilities.hooks === true && hooksEnabled()) {
     integrations.hooks = hooksIntegration(bot.id, threadId, internalGeneration);
@@ -27975,6 +28014,14 @@ const INTERNAL_ROUTES: InternalRouteHandler[] = [
   }),
   // sagax_approvals (server/routes/primary-approvals-internal.ts)
   createPrimaryApprovalsInternalRoutes({ handle: (input) => primaryApprovals().handle(input) }),
+  // sagax_web_search (server/routes/web-search-internal.ts): the person's own key
+  createWebSearchInternalRoutes({
+    config: (capability) => {
+      const scope = webSearchScopeForThread(capability.threadId);
+      return scope ? webSearchStore.config(scope) : null;
+    },
+    refuseAddress: webSearchAddressRefusal,
+  }),
   // sagax_help (server/routes/self-knowledge-internal.ts)
   createSelfKnowledgeInternalRoutes({
     index: bundledKnowledgeIndex,
@@ -33707,6 +33754,13 @@ ROUTES.push(createRoutineAwayRoutes<Routine>({
   },
   clear: (id) => routines?.clearAwaySkips(id) ?? null,
   onWire: (routine) => routineOnWire(routine),
+}));
+// The person's web search provider and key (server/routes/web-search.ts):
+// their own, no admin right, on a solo or an organization server.
+ROUTES.push(createWebSearchRoutes({
+  store: webSearchStore,
+  scope: (auth) => webSearchScope(IDENTITY.kind === "perspicax", sessionPrincipal(auth)),
+  refuseAddress: webSearchAddressRefusal,
 }));
 // The signed-in person's own photo (server/routes/me-avatar.ts): written to
 // Perspicax with their own sign-in token, then shown everywhere at once.

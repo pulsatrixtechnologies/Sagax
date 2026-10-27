@@ -22,6 +22,7 @@ import { callPhoneTool, PHONE_TOOL_NAME } from "./agents-phone-tools.ts";
 import { callConnectorSetupTool, CONNECTOR_SETUP_TOOL_NAME } from "./agents-connector-setup.ts";
 import { ARTIFACT_TOOL_NAMES, callArtifactTool } from "./agents-call-artifacts.ts";
 import { HELP_TOOL_NAMES } from "./agents-help-tools.ts";
+import { WEB_SEARCH_TOOL_NAMES } from "./agents-web-search-tools.ts";
 import { SETTINGS_TOOL_NAMES } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_NAMES } from "./agents-approvals-tools.ts";
 import { AGENT_API_TOOL_NAMES, catalogProfileFromEnv, PERSPICAX_TOOL_NAMES, SHARED_COMPUTER_TOOL_NAMES, WEEKDAYS } from "./agents-catalog.ts";
@@ -569,6 +570,18 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     if (typeof args.question !== "string" || !args.question.trim()) return { text: "question: what the person wants to know about Sagax or Perspicax.", isError: true };
     const { ok, body } = await apiResponse("/api/internal/self-knowledge", { method: "POST", body: JSON.stringify({ question: args.question }) });
     if (!ok) return { text: String(body.error ?? "The knowledge base is unavailable; check your own tool list before you answer."), isError: true };
+    return { text: String(body.text ?? "") };
+  }
+  // sagax_web_search (server/routes/web-search-internal.ts): the server runs
+  // the search with the person's own key; the key never comes through here.
+  if (WEB_SEARCH_TOOL_NAMES.has(name)) {
+    if (EXTERNAL_RUNTIME) return { text: `Unknown tool: ${name}`, isError: true };
+    if (typeof args.query !== "string" || !args.query.trim()) return { text: "query: what to search for.", isError: true };
+    const { ok, body } = await apiResponse("/api/internal/web-search", {
+      method: "POST",
+      body: JSON.stringify({ query: args.query, ...(typeof args.count === "number" ? { count: args.count } : {}) }),
+    });
+    if (!ok) return { text: String(body.error ?? "The web search failed."), isError: true };
     return { text: String(body.text ?? "") };
   }
   // sagax_settings (server/settings-actions.ts): every setting, as the person

@@ -53,6 +53,8 @@ export function excludedWorkspaceAuthPath(path: string): boolean {
   // File-backed provider keys (server/engine-api-keys.ts), solo and per person.
   if (/^engine-api-keys\.(?:enc|json)(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   if (/^principals\/[^/]+\/engine-api-keys\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
+  // The person's web search provider and key (server/web-search/store.ts).
+  if (/^(?:principals\/[^/]+\/)?web-search\.enc(?:$|\.\d+\.[0-9a-f-]+\.tmp$)/.test(path)) return true;
   // Hermes reads `.env` itself. A verification server's home is the data
   // directory, and a turn's private home lives under engine-policies.
   if (/(?:^|\/)\.hermes\/\.env$/.test(path)) return true;

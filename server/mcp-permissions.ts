@@ -90,6 +90,8 @@ export const MCP_PERMISSIONS: readonly McpPermission[] = [
   p("files:attach", "own", "attach_file"),
   p("widgets:check", "read", "check_widget"),
   p("help:read", "read", "sagax_help"),
+  // the person's own search provider, with their key (server/web-search/)
+  p("web:search", "read", "sagax_web_search"),
   p("widgets:show", "own", "show_widget"),
   p("widgets:update", "own", "update_widget"),
   p("apps:show", "own", "show_html"),

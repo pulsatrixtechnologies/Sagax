@@ -29,6 +29,7 @@ import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
+import { WebSearchSettings } from "./settings/WebSearchSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
 import { MicrophonePermissionRow, MicrophoneSettings } from "./settings/MicrophoneSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
@@ -462,6 +463,8 @@ export function EnginesSettings() {
         memberIssuer={member && org ? org.org.identity.issuer : undefined}
       />
       {keys && <KeysSection issuer={org?.org.identity.issuer} />}
+      {/* the person's own web search provider and key: theirs, no admin right */}
+      <WebSearchSettings />
       {/* this computer's microphone: everyone's, whoever edits the installation */}
       <div data-settings-card="connections.audio">
         <SettingsGroup title={t("settings.audio.title")} groupId="audio">

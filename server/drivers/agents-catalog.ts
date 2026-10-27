@@ -23,6 +23,7 @@ import { HELP_TOOL_DEFINITIONS } from "./agents-help-tools.ts";
 import { SETTINGS_TOOL_DEFINITIONS } from "./agents-settings-tools.ts";
 import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
 import { phoneToolDefinition, phoneToolsFromEnv } from "./agents-phone-tools.ts";
+import { WEB_SEARCH_TOOL_DEFINITION } from "./agents-web-search-tools.ts";
 import type { PhoneToolId } from "../../shared/phone-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
@@ -83,6 +84,10 @@ export interface CatalogProfile {
   /** The tools a phone of the person speaking offers right now (phone_tool,
    * agents-phone-tools.ts). Absent or empty is off, so the wire goldens stay. */
   phoneTools?: PhoneToolId[];
+  /** sagax_web_search (agents-web-search-tools.ts): the engine has no web
+   * search of its own and the turn's person saved a search provider.
+   * Absent is off, so the wire goldens stay. */
+  webSearch?: boolean;
 }
 
 /** The profile a spawned proxy was given. Everything is off unless the
@@ -112,6 +117,7 @@ export function catalogProfileFromEnv(env: NodeJS.ProcessEnv): CatalogProfile {
     perspicax: !externalRuntime && env.SAGAX_PERSPICAX_TOOLS === "1",
     claims: env.SAGAX_CLAIMS === "1",
     phoneTools: externalRuntime ? [] : phoneToolsFromEnv(env.SAGAX_PHONE_TOOLS),
+    ...(!externalRuntime && env.SAGAX_WEB_SEARCH === "1" ? { webSearch: true } : {}),
   };
 }
 
@@ -1843,6 +1849,7 @@ function catalogTools(profile: CatalogProfile) {
     ...(profile.perspicax && !profile.externalRuntime && !profile.coordinating ? [PLACE_PHONE_CALL_TOOL_SPEC] : []),
     ...(profile.claims && !profile.externalRuntime ? CLAIM_TOOLS : []),
     ...(profile.phoneTools?.length && !profile.externalRuntime ? [phoneToolDefinition(profile.phoneTools)] : []),
+    ...(profile.webSearch === true && !profile.externalRuntime ? [WEB_SEARCH_TOOL_DEFINITION] : []),
   ];
   if (!profile.agentApi || profile.externalRuntime) return base;
   return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || (tool.name !== "create_agent" && tool.name !== "delete_agent"))];

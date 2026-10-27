@@ -692,6 +692,20 @@ add({
   classes: always("secret"),
 });
 
+add({
+  key: "connections.webSearch", family: "connections", target: "none", value: "object",
+  label: "Your web search provider ({provider: brave|exa|parallel|firecrawl|searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key",
+  where: "Settings > Models and voice > Web search",
+  read: () => ({ path: "/api/me/web-search" }),
+  write: (_ids, v) => {
+    if (v === null) return { method: "DELETE", path: "/api/me/web-search" };
+    const w = v as { provider?: unknown; baseUrl?: unknown; key?: unknown } | null;
+    if (!w || typeof w !== "object" || typeof w.provider !== "string") return "value is {provider, baseUrl}, or null.";
+    if ("key" in w) return "The key is pasted by the person in Settings > Models and voice > Web search, never through a bot.";
+    return { method: "PUT", path: "/api/me/web-search", body: { provider: w.provider, ...(typeof w.baseUrl === "string" ? { baseUrl: w.baseUrl } : {}) } };
+  },
+});
+
 // ── credentials (the person's vault; export and import stay theirs) ───
 add({
   key: "credentials.item", family: "credentials", target: "credential", value: "object",
