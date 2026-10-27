@@ -1,6 +1,13 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Personal account": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Personal account" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Compte personnel" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Conta pessoal" } }
+      }
+    },
     "Weekdays around %@": {
       "localizations": {
         "en": {

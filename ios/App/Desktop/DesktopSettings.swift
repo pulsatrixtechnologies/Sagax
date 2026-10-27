@@ -333,7 +333,8 @@ struct DesktopSettingsNav: View {
     }
 
     private var detail: String? {
-        guard let email = session.account?.email, email != displayName else { return session.connection?.name }
+        // The person's email, never the server's name (2026-10-26).
+        guard let email = session.account?.email, email != displayName else { return String(localized: "Personal account") }
         return email
     }
 
