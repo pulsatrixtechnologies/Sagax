@@ -484,6 +484,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/rules\\/sets\\/([a-z0-9-]+)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/rules\\/sets$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/rules$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/skills(?:\\/[a-z0-9-]+)?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/tasks\\/([\\w-]+)(?:\\/|$)","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/tasks\\/[\\w-]+$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/[\\w-]+\\/voice\\/(?:listen|speech)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
