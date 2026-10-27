@@ -688,6 +688,8 @@ describe("agents-proxy MCP surface", () => {
     expect(init.result.serverInfo.name).toBe("openmausbot-agents");
     const list = await rpc("tools/list");
     expect(list.result.tools.map((t: { name: string }) => t.name)).toEqual([
+      // #1190: the interactive question tool comes first
+      "ask_choice",
       "tool_result_read",
       "list_shared_computers",
       "shared_computer",
@@ -913,7 +915,8 @@ describe("agents-proxy MCP surface", () => {
       "sunday",
     ]);
     expect(create.inputSchema.properties.enabled).toMatchObject({ type: "boolean" });
-    expect(create.description).toContain("created paused unless enabled is true");
+    // #1138: a new routine starts active; enabled false creates it paused
+    expect(create.description).toContain("A new routine starts active; pass enabled false to create it paused.");
     const action = list.result.tools.find((t: { name: string }) => t.name === "propose_routine_action");
     expect(action.inputSchema.properties.action.enum).toContain("rotate_webhook_key");
     expect(action.inputSchema.properties.changes.properties).not.toHaveProperty("enabled");

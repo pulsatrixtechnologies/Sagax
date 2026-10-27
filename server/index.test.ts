@@ -256,6 +256,18 @@ const api = async (method: string, path: string, body?: unknown): Promise<{ stat
   return { status: res.status, body: await res.json() };
 };
 
+/** Another person on this solo server, and the bots of theirs seeded in
+ * bots.json (one per test that needs a teammate whose changes keep a card). */
+const FOREIGN_OWNER = "pr_00000000-0000-4000-8000-00000000f0f0";
+const FOREIGN_TEAMMATES = ["test-foreign-room", "test-foreign-routine", "test-foreign-gates", "test-foreign-budget", "test-foreign-profile"] as const;
+/** One seeded bot of another person, renamed and placed for the test. */
+const foreignTeammate = async (id: (typeof FOREIGN_TEAMMATES)[number], fields: Record<string, unknown> = {}) => {
+  if (Object.keys(fields).length) expect((await api("PATCH", `/api/bots/${id}`, fields)).status).toBe(200);
+  const bot = (await api("GET", "/api/bots?messages=0")).body.bots.find((candidate: { id: string }) => candidate.id === id);
+  expect(bot?.ownerUserId).toBe(FOREIGN_OWNER);
+  return bot as { id: string; threadId: string; name: string };
+};
+
 /** Pair a device the way a phone or a second person does, and act as them. */
 const asPairedPerson = async (label: string) => {
   const opened = await api("POST", "/api/auth/pairing", {});
@@ -571,6 +583,35 @@ beforeAll(async () => {
           unread: false,
         }],
       },
+      // Bots of another person (#1138: a change to a bot of the same person
+      // applies at once; a bot of someone else keeps its card). A solo server
+      // makes every bot the operator's, so the tests that walk that card take
+      // one of these through foreignTeammate.
+      ...FOREIGN_TEAMMATES.map((id, index) => ({
+        id,
+        threadId: `${id}-thread`,
+        name: `Foreign teammate ${index + 1}`,
+        title: "",
+        description: "",
+        soul: "",
+        soulHash: createHash("sha256").update("").digest("hex"),
+        notifications: true,
+        color: "purple",
+        unread: false,
+        modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
+        resumeCursors: {},
+        createdAt: 2 + index,
+        ownerUserId: FOREIGN_OWNER,
+        tasks: [{
+          threadId: `${id}-thread`,
+          title: `Foreign teammate ${index + 1}`,
+          createdAt: 2 + index,
+          updatedAt: 2 + index,
+          resumeCursors: {},
+          modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
+          unread: false,
+        }],
+      })),
       {
         id: "test-bot-a",
         threadId: "test-bot-a-thread",
@@ -2536,7 +2577,13 @@ describe("harness HTTP API", () => {
         return { status: response.status, body };
       };
 
-      // Below Full Access the specialist waits on one review card.
+      // 2026-10-26 (#1138): at Approve for me (the new-bot default), the
+      // person's own turn creates the specialist at once...
+      const applied = await createOperator(chief.threadId, "Applied Task Operator");
+      expect(applied).toMatchObject({ status: 201, body: { state: "applied" } });
+      expect(applied.body.detail).toContain('Section: "Channel creation test"');
+      // ...and at Ask every time the specialist waits on one review card.
+      expect((await api("PATCH", `/api/bots/${chief.id}`, { approvalMode: "ask" })).status).toBe(200);
       const direct = await createOperator(chief.threadId, "Direct Task Operator");
       expect(direct).toMatchObject({ status: 201, body: { state: "pending" } });
       expect(direct.body.detail).toContain('Section: "Channel creation test"');
@@ -2928,12 +2975,14 @@ describe("harness HTTP API", () => {
 
   it("keeps Chief room changes behind pending user approvals", async () => {
     const bot = (await api("POST", "/api/bots", { name: "Pending Chief", section: "Pending room" })).body.bot;
-    const peer = (await api("POST", "/api/bots", { name: "Pending peer", section: "Pending room" })).body.bot;
+    // a teammate of another person: a change for it keeps its card (#1138)
+    const peer = await foreignTeammate("test-foreign-room", { name: "Pending peer", section: "Pending room" });
     await api("PATCH", `/api/bots/${bot.id}`, { chiefOfStaff: true });
     const room = (await api("POST", "/api/groups", { name: "Pending room", memberIds: [bot.id], section: "Pending room" })).body.group;
     try {
       const roomToken = await mintTestCapability(BASE, bot.id, room.threadId);
-      // A change for a teammate waits for the person (one to itself applies).
+      // A change for another person's teammate waits for the person (one to
+      // itself, or to another bot of the same person, applies).
       const proposed = await fetch(`${BASE}/api/internal/profile-requests`, {
         method: "POST", headers: { authorization: `Bearer ${roomToken}`, "content-type": "application/json" },
         body: JSON.stringify({ fromBotId: bot.id, fromThreadId: room.threadId, forBotId: peer.id, changes: { description: "Only after approval" }, reason: "Fixture check" }),
@@ -8109,25 +8158,70 @@ describe("harness HTTP API", () => {
   });
 
   // 2026-10-26: on Full access a bot's server is saved switched on (solo:
-  // the operator's own machine, a command included).
+  // the operator's own machine, a command included). Full is a trusted
+  // desktop transition that loopback HTTP cannot make, so the bot is seeded
+  // on Full in an isolated server, as the trusted-mode model test does.
   it("saves a bot's MCP server switched on when the bot is on Full access", async () => {
-    const bot = (await api("POST", "/api/bots")).body.bot;
-    const configFile = join(home, ".sagax", "config.json");
-    try {
-      const full = await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: "full", confirmFullAccess: true });
-      expect(full.status, JSON.stringify(full.body)).toBe(200);
-      const token = await mintTestCapability(BASE, bot.id, bot.threadId);
-      const filed = await fetch(`${BASE}/api/internal/mcp-servers`, {
+    const isolatedHome = mkdtempSync(join(tmpdir(), "omb-full-mcp-"));
+    const isolatedData = join(isolatedHome, ".sagax");
+    const isolatedStatic = join(isolatedHome, "static");
+    const isolatedPort = await freePortBlock([0, 1]);
+    mkdirSync(join(isolatedStatic, "assets"), { recursive: true });
+    mkdirSync(isolatedData, { recursive: true });
+    writeFileSync(join(isolatedStatic, "index.html"), "<!doctype html><title>Full access MCP test</title>");
+    writeFileSync(join(isolatedStatic, "assets", "smoke.css"), "body{}");
+    writeFileSync(join(isolatedData, "config.json"), JSON.stringify({
+      instances: { claude: { driver: "claudeAgent", displayName: "Fixture Claude", config: { cli: FAKE_CLAUDE_CLI } } },
+    }));
+    const seeded = (approvalMode: "full" | "ask", index: number) => ({
+      id: `${approvalMode}-mcp-bot`, threadId: `${approvalMode}-mcp-thread`, name: `${approvalMode} MCP bot`,
+      title: "", description: "", notifications: true, color: "blue", unread: false,
+      modelSelection: { instanceId: "claude", model: "claude-sonnet-5" }, resumeCursors: {},
+      createdAt: index + 1, approvalMode, autoApprove: false, alwaysAllow: [],
+    });
+    const full = seeded("full", 0);
+    const ask = seeded("ask", 1);
+    writeFileSync(join(isolatedData, "bots.json"), JSON.stringify([full, ask]));
+    let isolatedStderr = "";
+    const isolatedChild = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
+      cwd: ROOT,
+      env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+        ...(process.env.PATHEXT ? { PATHEXT: process.env.PATHEXT } : {}),
+        ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
+        HOME: isolatedHome, USERPROFILE: isolatedHome,
+        SAGAX_PORT: String(isolatedPort), SAGAX_WEBHOOK_PORT: String(isolatedPort + 1),
+        SAGAX_STATIC_DIR: isolatedStatic,
+        FAKE_CLAUDE_MODE: "hang",
+        SAGAX_TEST_INTERNAL_CAPABILITY_KEY: TEST_CAPABILITY_KEY,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    isolatedChild.stderr!.on("data", (chunk) => (isolatedStderr += chunk));
+    const isolatedBase = `http://127.0.0.1:${isolatedPort}`;
+    const file = async (bot: { id: string; threadId: string }, name: string) => {
+      const token = await mintTestCapability(isolatedBase, bot.id, bot.threadId);
+      return fetch(`${isolatedBase}/api/internal/mcp-servers`, {
         method: "POST",
         headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-        body: JSON.stringify({ name: "botfull", command: "npx", args: ["-y", "notes-mcp"] }),
+        body: JSON.stringify({ name, command: "npx", args: ["-y", "notes-mcp"] }),
       });
-      expect(filed.status).toBe(201);
+    };
+    try {
+      await waitForIsolatedServer(isolatedChild, isolatedPort, () => isolatedStderr);
+      const filed = await file(full, "botfull");
+      expect(filed.status, isolatedStderr.slice(-2000)).toBe(201);
       expect(await filed.json()).toMatchObject({ name: "botfull", enabled: true, transport: "command" });
+      const configFile = join(isolatedData, "config.json");
       expect(JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botfull.enabled).toBe(true);
+      // below Full the server is saved switched off until the person turns it on
+      const below = await file(ask, "botask");
+      expect(below.status).toBe(201);
+      expect(await below.json()).toMatchObject({ name: "botask", enabled: false, transport: "command" });
+      expect(JSON.parse(readFileSync(configFile, "utf8")).mcpServers.botask.enabled).not.toBe(true);
     } finally {
-      await api("DELETE", "/api/mcp/servers/botfull").catch(() => undefined);
-      await api("DELETE", `/api/bots/${bot.id}`).catch(() => undefined);
+      await waitForExit(isolatedChild, { signal: "SIGTERM" });
+      await removeTempDir(isolatedHome);
     }
   });
 
@@ -10001,6 +10095,8 @@ describe("harness HTTP API", () => {
   });
 
   it("applies a bot's own chat-created routine at once and keeps a teammate's behind its card", async () => {
+    // (2026-10-26, #1138: "a teammate" is a bot of another person; a bot of
+    // the same person applies at once, checked below)
     const bot = (await api("POST", "/api/bots", {})).body.bot;
     let routineId = "";
     let orphanRoutineId = "";
@@ -10133,7 +10229,27 @@ describe("harness HTTP API", () => {
       expect(badTarget.status).toBe(404);
       expect(z.object({ error: z.string() }).parse(await badTarget.json()).error).toMatch(/list_bots/);
 
-      const teammate = (await api("POST", "/api/bots", {})).body.bot;
+      // Another bot of the same person: its routine applies at once too.
+      const samePerson = (await api("POST", "/api/bots", {})).body.bot;
+      try {
+        const samePersonProposed = await fetch(`${BASE}/api/internal/routine-requests`, {
+          method: "POST",
+          headers: internalHeaders,
+          body: JSON.stringify({
+            fromBotId: bot.id, fromThreadId: bot.threadId, action: "create", forBotId: samePerson.id,
+            routine: { name: "Same person brief", instructions: "Summarize for the other bot.", schedule: { type: "weekly", time: "08:00", weekdays: ["monday"] }, runOn: "maus" },
+          }),
+        });
+        expect(samePersonProposed.status).toBe(201);
+        const samePersonProposal = await samePersonProposed.json() as { state: string; appliedBy?: string; result?: { resultId?: string } };
+        expect(samePersonProposal).toMatchObject({ state: "applied", appliedBy: "self" });
+        expect((await api("GET", "/api/routines")).body.routines.find((routine: { id: string }) => routine.id === samePersonProposal.result?.resultId))
+          .toMatchObject({ botId: samePerson.id, sourceThreadId: bot.threadId });
+      } finally {
+        await api("DELETE", `/api/bots/${samePerson.id}`);
+      }
+
+      const teammate = await foreignTeammate("test-foreign-routine");
       const crossProposed = await fetch(`${BASE}/api/internal/routine-requests`, {
         method: "POST",
         headers: internalHeaders,
@@ -10434,7 +10550,8 @@ describe("harness HTTP API", () => {
     let teammateId = "";
     let outsiderId = "";
     try {
-      const teammate = (await api("POST", "/api/bots", { name: "Ops helper" })).body.bot;
+      // a teammate of another person, whose routine actions keep a card (#1138)
+      const teammate = await foreignTeammate("test-foreign-gates", { name: "Ops helper" });
       const outsider = (await api("POST", "/api/bots", { name: "Other section", section: "Routine elsewhere" })).body.bot;
       teammateId = teammate.id;
       outsiderId = outsider.id;
@@ -10548,7 +10665,8 @@ describe("harness HTTP API", () => {
 
   it("lets a bot change its own routines while 8 cards for a teammate are open", async () => {
     const bot = (await api("POST", "/api/bots", {})).body.bot;
-    const teammate = (await api("POST", "/api/bots", {})).body.bot;
+    // a teammate of another person, whose routines keep a card (#1138)
+    const teammate = await foreignTeammate("test-foreign-budget");
     try {
       const token = await mintTestCapability(BASE, bot.id, bot.threadId);
       const post = (body: Record<string, unknown>) => fetch(`${BASE}/api/internal/routine-requests`, {
@@ -10671,7 +10789,9 @@ describe("harness HTTP API", () => {
 
   it("only lets a section's Chief of Staff propose (and hold) a change to another bot's profile", async () => {
     const a = (await api("POST", "/api/bots", { name: "Ari" })).body.bot;
-    const b = (await api("POST", "/api/bots", { name: "Bo" })).body.bot;
+    // another person's bot: a Chief's change for it keeps its card (one for
+    // a bot of the same person applies at once, #1138)
+    const b = await foreignTeammate("test-foreign-profile", { name: "Bo" });
     try {
       await api("PATCH", `/api/bots/${a.id}`, { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } });
 

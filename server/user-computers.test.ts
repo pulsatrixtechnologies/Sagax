@@ -170,8 +170,12 @@ describe("the server's own machine on an organization server", () => {
     expect(source).toMatch(/const hostVmRefusal = action === "stop" \|\| action === "remove" \? undefined : hostComputerRefusal\(\);/);
     expect(source).toMatch(/const botVmRefusal = action === "run" \|\| action === "start" \? hostComputerRefusal\(\) : undefined;/);
     // the internal route answers the proven requester's computers on an organization server
-    expect(source).toMatch(/userComputers\.list\(personSpeaker\(principal\)\)/);
-    expect(source).toMatch(/userComputers\.request\(personSpeaker\(principal\), parsed\.data, active\)/);
+    // (2026-10-26, #1138: with no person speaking, the turn's own speaker and
+    // the bot's owner and routine trigger, so the person's own routine reaches
+    // the computer they lent; userComputers decides, see the routine cases above)
+    expect(source).toMatch(/function userComputerSpeaking\(principal: string \| null[\s\S]{0,300}?\{\s*if \(principal\) return \{ speaker: personSpeaker\(principal\), context: \{\} \};/);
+    expect(source).toMatch(/const \{ speaker: computerSpeaker, context: computerContext \} = userComputerSpeaking\(principal, internalCapability\);\s*return json\(res, 200, \{ computers: userComputers\.list\(computerSpeaker, computerContext\)/);
+    expect(source).toMatch(/userComputers\.request\(computerSpeaker, parsed\.data, active, computerContext\)/);
     // only a person may lend a computer to an organization server
     expect(source).toMatch(/IDENTITY\.kind === "perspicax" && !auth\.session\.principalId\) return json\(res, 403/);
   });

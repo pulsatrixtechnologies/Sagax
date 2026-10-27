@@ -213,7 +213,9 @@ it("a routine acts for nobody, even one the lender created: it sees and uses no 
     expect(JSON.parse((await call("list_shared_computers")).content[0].text).computers).toEqual([]);
     const refused = await call("shared_computer", { computer_id: storedGrant().id, folder_id: folder.id, action: "read_file", path: "brief.txt" });
     expect(refused.isError).toBe(true);
-    expect(refused.content[0].text).toContain("only a conversation started by the person who shared it");
+    // #1138 reworded the refusal (the organization server's routine rule);
+    // here no person speaks, so the routine still reaches nothing
+    expect(refused.content[0].text).toContain("This conversation cannot use a shared computer: only the person who shared it can");
   } finally { routine.kill(); }
   evidence.push("fail-closed principal: a routine turn (created by the lender) sees no computers");
 }, 45_000);

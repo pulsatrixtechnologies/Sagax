@@ -66,7 +66,7 @@ async function boot() {
 }
 
 describe("bot zip routes", () => {
-  it("exports, previews and imports; a member's copy drops host settings", async () => {
+  it("exports, previews and imports; a member's copy keeps its computer and browser and drops the working folder", async () => {
     const { store, bot, owner, base, audit } = await boot();
     const refused = await fetch(`${base}/api/bots/${bot.id}/export.zip`, { headers: { "x-person": "pr_stranger" } });
     expect(refused.status).toBe(404);
@@ -84,6 +84,8 @@ describe("bot zip routes", () => {
     const staged = await upload.json() as { id: string; preview: { importName: string; skipped: Array<{ part: string }> } };
     expect(staged.preview.importName).toBe("Atlas 2");
     expect(staged.preview.skipped.some((line) => line.part === "host")).toBe(true);
+    // #1138: the computer and browser work in the member's own environment
+    expect((staged.preview as { created?: Array<{ part: string; detail?: string }> }).created?.find((line) => line.part === "host")?.detail).toContain("Browser");
 
     // the staged file is the uploader's alone
     const other = await fetch(`${base}/api/bots/import/${staged.id}`, { method: "POST", headers: { "x-person": owner, "content-type": "application/json" }, body: "{}" });
@@ -96,7 +98,10 @@ describe("bot zip routes", () => {
     expect(imported.status).toBe(201);
     const result = await imported.json() as { botId: string; name: string };
     expect(result.name).toBe("Mine");
-    expect(store.bot(result.botId)).toMatchObject({ ownerUserId: member, computer: "off", browser: false, soul: "Be brief." });
+    expect(store.bot(result.botId)).toMatchObject({ ownerUserId: member, browser: true, soul: "Be brief." });
+    // Workspace is always Auto: only Off travels, so the computer is the default
+    expect(store.bot(result.botId)!.computer).toBeUndefined();
+    // the working folder stays an admin's on the shared server
     expect(store.bot(result.botId)!.cwd).toBeUndefined();
     expect(audit.at(-1)).toMatchObject({ action: "bot.import", target: { id: result.botId, name: "Mine" }, after: { memberDefaults: true } });
     // used once
