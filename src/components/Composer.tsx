@@ -1341,7 +1341,7 @@ export function Composer({
           <MentionTextarea
           wrapperClassName="@max-[30rem]/composer:order-first @max-[30rem]/composer:basis-full"
           inputRef={inputRef}
-          peers={group ? members ?? [] : storeBots.filter((member) => member.id !== bot?.id)}
+          peers={group ? [...(members ?? []), ...roomPeople.map((person) => ({ name: person.name, person: true as const }))] : storeBots.filter((member) => member.id !== bot?.id)}
           everyone={Boolean(group && !group.dm)}
           // the message is composed in the writer's language, not the UI's
           dir="auto"

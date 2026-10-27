@@ -170,11 +170,17 @@ public struct MentionPeer: Hashable, Sendable {
     public var hidden: Bool
     /// A palette name (`MausColors`); anything else draws the neutral tint.
     public var color: String?
+    /// A person of the room, not a bot (#1130): drawn as a chip.
+    public var person: Bool
+    /// That person is the viewer: their chip stands out.
+    public var me: Bool
 
-    public init(name: String, hidden: Bool = false, color: String? = nil) {
+    public init(name: String, hidden: Bool = false, color: String? = nil, person: Bool = false, me: Bool = false) {
         self.name = name
         self.hidden = hidden
         self.color = color
+        self.person = person
+        self.me = me
     }
 }
 
@@ -184,6 +190,9 @@ public struct MentionRange: Hashable, Sendable {
     public var end: Int
     /// The peer's palette name, nil for @everyone or an unknown colour.
     public var colorName: String?
+    /// The tag names a person of the room; `me` when that is the viewer.
+    public var person = false
+    public var me = false
 
     /// The palette hex (`#RRGGBB`) the desktop tints with.
     public var colorHex: String? { colorName.flatMap { MausColors.hex[$0] } }
@@ -237,7 +246,12 @@ public enum Mentions {
             guard all || peer != nil else { continue }
             let length = all ? 8 : peer!.name.count
             let name = all ? nil : peer?.color.flatMap { MausColors.hex[$0] != nil ? $0 : nil }
-            ranges.append(MentionRange(start: at, end: at + length + 1, colorName: name))
+            var range = MentionRange(start: at, end: at + length + 1, colorName: name)
+            if let peer, peer.person {
+                range.person = true
+                range.me = peer.me
+            }
+            ranges.append(range)
             at += length
         }
         return ranges

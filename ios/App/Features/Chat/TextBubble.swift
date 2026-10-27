@@ -352,6 +352,12 @@ enum MentionTint {
             if attributed[span].runs.contains(where: { $0.link != nil || $0.inlinePresentationIntent?.contains(.code) == true }) {
                 continue
             }
+            if range.person {
+                // A person tagged: a tinted chip, bold and stronger when it is the viewer.
+                attributed[span].backgroundColor = Theme.accent.opacity(range.me ? 0.55 : 0.28)
+                attributed[span].inlinePresentationIntent = range.me ? .stronglyEmphasized : nil
+                continue
+            }
             let color = range.colorName.map(MausPalette.color) ?? Theme.textSecondary
             attributed[span].backgroundColor = color.opacity(0.24)
             attributed[span].underlineStyle = Text.LineStyle(pattern: .solid, color: color)

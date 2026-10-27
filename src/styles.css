@@ -41,6 +41,30 @@
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+/* A person tagged with @ in a room (#1130): a chip in the accent colour, and a
+   stronger one when the viewer is the person tagged. The composer's mirror
+   keeps the plain tint: padding or weight there would shift the caret. */
+.mention-person {
+  --mention-color: var(--color-accent);
+
+  background: color-mix(in srgb, var(--mention-color) 34%, var(--color-inset));
+  padding: 0 0.3em;
+  border-radius: 9999px;
+  text-decoration: none;
+  font-weight: 500;
+}
+.mention-person.mention-me {
+  color: var(--color-ink);
+  background: color-mix(in srgb, var(--color-accent) 55%, var(--color-inset));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  font-weight: 600;
+}
+.mention-editor-mirror .mention-person {
+  padding: 0;
+  border-radius: 3px;
+  font-weight: inherit;
+  text-decoration: underline;
+}
 ::highlight(search-result-text) {
   color: var(--color-ink);
   background-color: color-mix(in srgb, var(--color-accent) 35%, transparent);
