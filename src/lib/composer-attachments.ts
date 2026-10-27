@@ -134,6 +134,25 @@ export const FILE_MAX_BYTES = 25 * 1024 * 1024;
 /** Matches the server's ARCHIVE_MAX_BYTES. */
 export const ARCHIVE_MAX_BYTES = 90 * 1024 * 1024;
 
+// #1098: the ceilings above are an organization server's (the shared host).
+// A solo server gives a picture and a document the archive ceiling, as the
+// server does (server/attachments.ts imageMaxBytes). Shared until the app
+// knows (src/lib/perspicax-org.ts loadPerspicaxOrg sets it).
+let sharedAttachmentHost = true;
+export function setAttachmentHostShared(shared: boolean): void {
+  sharedAttachmentHost = shared;
+}
+/** Whether the lifted (solo server) ceilings apply. */
+export function soloAttachmentCeilings(): boolean {
+  return !sharedAttachmentHost;
+}
+export function imageMaxBytes(): number {
+  return sharedAttachmentHost ? IMAGE_MAX_BYTES : ARCHIVE_MAX_BYTES;
+}
+export function fileMaxBytes(): number {
+  return sharedAttachmentHost ? FILE_MAX_BYTES : ARCHIVE_MAX_BYTES;
+}
+
 const DOCUMENT_MIMES: Readonly<Record<string, string>> = {
   txt: "text/plain",
   md: "text/markdown",
@@ -455,7 +474,7 @@ function canonicalImageName(originalName: string, path: string, mime: string): s
  * with the path; the prompt references that path so every CLI can open it. */
 export function optimisticImageAttachment(file: File): ImageAttachment | null {
   if (!isImageFile(file)) return null;
-  if (file.size > IMAGE_MAX_BYTES) throw Object.assign(new Error(`${file.name} exceeds ${IMAGE_MAX_BYTES / (1024 * 1024)} MB`), { status: 413 });
+  if (file.size > imageMaxBytes()) throw Object.assign(new Error(`${file.name} exceeds ${imageMaxBytes() / (1024 * 1024)} MB`), { status: 413 });
   const mime = file.type.split(";", 1)[0]!.trim().toLowerCase();
   const previewUrl = typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : undefined;
   return {
@@ -475,7 +494,7 @@ export async function imageAttachmentFromFile(
   optimistic?: Pick<ImageAttachment, "id" | "previewUrl">,
 ): Promise<ImageAttachment | null> {
   if (!isImageFile(file)) return null;
-  if (file.size > IMAGE_MAX_BYTES) throw Object.assign(new Error(`${file.name} exceeds ${IMAGE_MAX_BYTES / (1024 * 1024)} MB`), { status: 413 });
+  if (file.size > imageMaxBytes()) throw Object.assign(new Error(`${file.name} exceeds ${imageMaxBytes() / (1024 * 1024)} MB`), { status: 413 });
   const bytes = new Uint8Array(await file.arrayBuffer());
   const uploadId = newUploadId();
   const saved = await uploadWithRetry<{ path: string; mime: string; bytes: number }>(
@@ -510,8 +529,8 @@ export async function fileAttachmentFromFile(file: File): Promise<FileAttachment
   if (archive && file.size > ARCHIVE_MAX_BYTES) {
     throw Object.assign(new Error(`${file.name} is ${formatSize(file.size)}; archives can be at most 90 MB`), { status: 413 });
   }
-  if (!archive && file.size > FILE_MAX_BYTES) {
-    throw Object.assign(new Error(`${file.name} exceeds 25 MB`), { status: 413 });
+  if (!archive && file.size > fileMaxBytes()) {
+    throw Object.assign(new Error(`${file.name} exceeds ${fileMaxBytes() / (1024 * 1024)} MB`), { status: 413 });
   }
   const uploadId = newUploadId();
   const saved = await uploadWithRetry<{ path: string; name: string; bytes: number; archive?: ArchiveSummary }>(

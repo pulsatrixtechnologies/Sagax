@@ -3858,6 +3858,17 @@
       "approval.details.more": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "fr": {
+      "botPanel.turnLimits.title": "35696e37e777cad0dc06cfa324dc49ef445287e54d0eba6f80d6ba90e2611858",
+      "botPanel.turnLimits.help": "8b8e5db9ed51f8fdb3040928d25f6f2b37a2209e629253cec33f704096722050",
+      "botPanel.turnLimits.roomPosts": "6add9a6441bbbc074cbbee6d98d1b4a236d3070fa94a0bd8eef0cef11d9fb489",
+      "botPanel.turnLimits.roomPostsHelp": "98cb55a2f510931495e365e65720f1e98e6eaa6a87c783cc3d45ad0afa06b54b",
+      "botPanel.turnLimits.threadsOpened": "f071e9a1e0a0265f062a4fd73cca64dd86c5e10385288b0b2a89e3c4008b98ea",
+      "botPanel.turnLimits.threadsOpenedHelp": "0a5570a6fe23d535e01e866d224c2f1854c2d7bf1c52be33e1afa5dc4c3a5b5a",
+      "botPanel.turnLimits.roomsCreated": "f1336e5b54be5739b64944d3bb171e19ad31f4d3406d39f7fbf2d31223a649a7",
+      "botPanel.turnLimits.roomsCreatedHelp": "71c722e5c87cbd920a469b969fae668388f5ce985fa3c7600b726f4098c7a3e7",
+      "attach.fileTooLargeSolo": "ba8e5ffcb84a1aae6db0cf0488029b1bebe041eb1b515effe3618335fac609b5",
+      "attach.videoHintSolo": "6441de8064d05cdba4002819c2aae689d43b56201a39eba1a6f8999f0eddf690",
+      "pdf.tooLargeSolo": "fcb661fe7a2d78f98774a361e130a69578aef2bf5cb34f90ee8601d01eaf5548",
       "achievements.panel.all": "e2adb0c3b5f28a7c9d5bdac240382201b39376dd11671aedc93e8a73b6468f19",
       "achievements.panel.points": "b97032ae39c127aa5497bfdb7598db43b231478a0a001498444e2e4a3c24a179",
       "achievements.panel.toUnlock": "1431a1bf3021245c5962234ac71151586a72256bc7f2918358e2f7dc9fd22eaa",

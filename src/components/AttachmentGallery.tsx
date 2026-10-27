@@ -4,7 +4,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { Check, ChevronDown, ChevronUp, Download, FileText, Film, LoaderCircle, Music, Play, RotateCcw, X } from "lucide-react";
-import { attachmentBasename, FILE_MAX_BYTES, type TranscriptFileAttachment, type TranscriptImageAttachment } from "@/lib/composer-attachments";
+import { attachmentBasename, fileMaxBytes, soloAttachmentCeilings, type TranscriptFileAttachment, type TranscriptImageAttachment } from "@/lib/composer-attachments";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { isVoiceNoteName } from "@/lib/voice-note";
@@ -191,9 +191,9 @@ export async function loadMessageVideo(
     throw new Error(t("attach.videoUnavailable"));
   }
   const declared = Number(response.headers.get("content-length"));
-  if (declared > FILE_MAX_BYTES) {
+  if (declared > fileMaxBytes()) {
     await response.body?.cancel();
-    throw new Error(t("attach.fileTooLarge"));
+    throw new Error(t(soloAttachmentCeilings() ? "attach.fileTooLargeSolo" : "attach.fileTooLarge"));
   }
   // Keep this bounded even if a reverse proxy omits Content-Length.
   const reader = response.body?.getReader();
@@ -206,7 +206,7 @@ export async function loadMessageVideo(
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > FILE_MAX_BYTES) throw new Error(t("attach.fileTooLarge"));
+      if (size > fileMaxBytes()) throw new Error(t(soloAttachmentCeilings() ? "attach.fileTooLargeSolo" : "attach.fileTooLarge"));
       chunks.push(new Uint8Array(value));
     }
   } finally {
@@ -282,7 +282,7 @@ function VideoAttachment({ file, message }: { file: GalleryFile; message: Messag
           >
             {loading ? <LoaderCircle size={24} className="animate-spin" /> : <Play size={24} />}
             <span className="text-[12px]">{loading ? t("attach.videoLoading") : error ? t("chat.retry") : t("attach.loadVideo")}</span>
-            {!error && !loading && <span className="text-[10.5px]">{t("attach.videoHint")}</span>}
+            {!error && !loading && <span className="text-[10.5px]">{t(soloAttachmentCeilings() ? "attach.videoHintSolo" : "attach.videoHint")}</span>}
           </button>
         )}
         {(preview || loading || error) && (
@@ -314,9 +314,9 @@ export async function loadMessageAudio(
     throw new Error(t("attach.audioUnavailable"));
   }
   const declared = Number(response.headers.get("content-length"));
-  if (declared > FILE_MAX_BYTES) {
+  if (declared > fileMaxBytes()) {
     await response.body?.cancel();
-    throw new Error(t("attach.fileTooLarge"));
+    throw new Error(t(soloAttachmentCeilings() ? "attach.fileTooLargeSolo" : "attach.fileTooLarge"));
   }
   const reader = response.body?.getReader();
   if (!reader) throw new Error(t("attach.audioUnavailable"));
@@ -328,7 +328,7 @@ export async function loadMessageAudio(
       const { value, done } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > FILE_MAX_BYTES) throw new Error(t("attach.fileTooLarge"));
+      if (size > fileMaxBytes()) throw new Error(t(soloAttachmentCeilings() ? "attach.fileTooLargeSolo" : "attach.fileTooLarge"));
       chunks.push(new Uint8Array(value));
     }
   } finally {

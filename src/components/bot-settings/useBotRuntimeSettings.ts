@@ -12,7 +12,7 @@ export function useBotRuntimeSettings(bot: Bot) {
   const [error, setError] = useState("");
   const inFlight = useRef(false);
   // A newer bot frame (this save's, or someone else's change) wins.
-  const signature = JSON.stringify([bot.maxConcurrentThreads, bot.maxParallelPerPerson, bot.busySend, bot.automaticRecovery, bot.turnPayer]);
+  const signature = JSON.stringify([bot.maxConcurrentThreads, bot.maxParallelPerPerson, bot.busySend, bot.automaticRecovery, bot.turnPayer, bot.turnLimits]);
   useEffect(() => { setSaved({}); }, [signature]);
   // a cleared turnPayer (null) shows the default again
   const { turnPayer: savedPayer, ...savedRest } = saved;

@@ -19,7 +19,7 @@ const admin: RequestAuth = { kind: "loopback", scopes: ["admin"] };
 const session = (principalId: string, admin = false): RequestAuth =>
   ({ kind: "session", scopes: admin ? ["admin", "client"] : ["client"], session: { id: `s-${principalId}`, principalId } } as unknown as RequestAuth);
 
-async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Record<string, unknown>; turnPayerDefault?: "owner" | "speaker" } = {}) {
+async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Record<string, unknown>; turnPayerDefault?: "owner" | "speaker"; sharedHost?: boolean } = {}) {
   const bots = new Map<string, { id: string; name: string; owner: string; turnPayer?: "owner" | "speaker" } & BotRuntimeSettings>([
     ["bot-1", { id: "bot-1", name: "One", owner: "pr_owner" }],
     ["bot-2", { id: "bot-2", name: "Two", owner: "pr_other" }],
@@ -36,6 +36,7 @@ async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Re
     checkBackup: (selection) => selection.instanceId === "codex" ? { ok: true, selection } : { ok: false, status: 400, error: "unavailable" },
     save: (id, patch) => { const bot = bots.get(id); if (!bot) return null; Object.assign(bot, patch); return bot; },
     ...(opts.turnPayerDefault ? { turnPayerDefault: () => opts.turnPayerDefault! } : {}),
+    ...(opts.sharedHost !== undefined ? { sharedHost: () => opts.sharedHost! } : {}),
     grants,
     audit: (action, _a, _r, detail) => audits.push({ action, detail }),
     now: () => NOW,
@@ -54,10 +55,31 @@ async function serve(auth: RequestAuth, opts: { global?: BotRuntimeSettings & Re
 }
 
 describe("a bot's runtime settings (JC 2026-10-15)", () => {
+  it("#1098: the owner sets the bot's turn limits, merged into what it has", async () => {
+    const { send, bots } = await serve(session("pr_owner"));
+    expect((await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnLimits: { roomPosts: 10 } })).status).toBe(200);
+    const res = await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnLimits: { roomsCreated: 8 } });
+    const body = await res.json() as { settings: { turnLimits: Record<string, number> } };
+    expect(bots.get("bot-1")!.turnLimits).toEqual({ roomPosts: 10, roomsCreated: 8 });
+    expect(body.settings.turnLimits).toEqual({ roomPosts: 10, threadsOpened: 5, roomsCreated: 8 });
+    expect((await send("PATCH", "/api/bots/bot-1/runtime-settings", { turnLimits: { roomPosts: 0 } })).status).toBe(400);
+  });
+
+  it("#1098: parallel tasks per person go to 16 on a solo server, at most 10 on a shared host", async () => {
+    const solo = await serve(session("pr_owner"), { sharedHost: false });
+    expect((await solo.send("PATCH", "/api/bots/bot-1/runtime-settings", { maxParallelPerPerson: 16 })).status).toBe(200);
+    expect(solo.bots.get("bot-1")!.maxParallelPerPerson).toBe(16);
+    const shared = await serve(session("pr_owner"), { sharedHost: true });
+    const refused = await shared.send("PATCH", "/api/bots/bot-1/runtime-settings", { maxParallelPerPerson: 11 });
+    expect(refused.status).toBe(400);
+    expect(((await refused.json()) as { code: string }).code).toBe("parallel_ceiling");
+  });
+
   it("reads the effective values: the server default until the bot has its own", async () => {
     const { send } = await serve(admin);
     const body = await (await send("GET", "/api/bots/bot-1/runtime-settings")).json() as { settings: Record<string, unknown>; stored: Record<string, unknown> };
-    expect(body.settings).toEqual({ maxConcurrentThreads: 4, maxParallelPerPerson: 3, busySend: null, automaticRecovery: { enabled: false }, turnPayer: "speaker" });
+    expect(body.settings).toEqual({ maxConcurrentThreads: 4, maxParallelPerPerson: 3, busySend: null, automaticRecovery: { enabled: false }, turnPayer: "speaker",
+      turnLimits: { roomPosts: 3, threadsOpened: 5, roomsCreated: 4 }, maxParallelPerPersonCeiling: 10 });
     expect(body.stored).toEqual({});
   });
 

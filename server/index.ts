@@ -142,7 +142,7 @@ import {
   cleanupStaleAttachmentPartials,
   deleteAttachment,
   extensionForMime,
-  IMAGE_MAX_BYTES,
+  imageMaxBytes,
   isArchiveAttachment,
   maxBytesForFileMime,
   parseAudioRange,
@@ -1080,6 +1080,8 @@ import {
   RUNTIME_SETTINGS_MIGRATION_MARKER,
   withoutRemovedBackup,
 } from "./bot-runtime-settings.ts";
+import { botTurnLimit } from "../shared/turn-limits.ts";
+import { setSharedHost } from "./host-kind.ts";
 import { createBotWorkspaceRoutes } from "./routes/bot-workspace.ts";
 import { createBotRulesRoutes } from "./routes/bot-rules.ts";
 import { createBotSkillUploadRoutes } from "./routes/bot-skill-upload.ts";
@@ -1344,6 +1346,9 @@ process.once("exit", () => serverLog.flush());
 // in with Pulsatrix only (Perspicax owns accounts), so the list is empty
 // there and a legacy email session ends at its next request.
 const IDENTITY = identityConfigFromEnv();
+// #1098: an organization server keeps the shared host's ceilings (parallel
+// tasks, attachment sizes); a solo server lifts them (server/host-kind.ts).
+setSharedHost(IDENTITY.kind === "perspicax");
 /** A model on an engine the organization's admin does not allow (allowedEngines). */
 const ORG_ENGINE_NOT_ALLOWED = "Your organization does not allow this model provider.";
 /** Organization server: Perspicax owns each signed-in person's name and email. */
@@ -3888,7 +3893,8 @@ type InternalCapability = {
   externalRuntime?: ExternalRuntimeGrant;
 };
 const MAX_ATTACHED_FILES_PER_TURN = 10;
-const MAX_ROOM_POSTS_PER_TURN = 3;
+// Room posts, threads opened and rooms created per turn: the bot's own
+// limits, set by its owner (#1098, shared/turn-limits.ts botTurnLimit).
 // A refused group memory update gets one re-read and one corrected retry,
 // not a loop: the third refusal in a turn closes the tool for that turn.
 const MAX_MEMORY_REFUSALS_PER_TURN = 3;
@@ -19056,9 +19062,9 @@ async function deliverLateQuestionAnswer(
   return receipt;
 }
 
-/** How many start_thread calls one turn may make. Same spirit as the
- * create-bot ceiling above: a handful is a plan, more is a fan-out. */
-const MAX_THREADS_OPENED_PER_TURN = 5;
+// How many start_thread calls one turn may make: the bot's own limit
+// (#1098, shared/turn-limits.ts, 5 by default). Same spirit as the
+// create-bot ceiling above: a handful is a plan, more is a fan-out.
 
 /** A thread a bot opened on itself gets its first turn exactly the way a
  * person's message would: it runs now if the bot has a free slot, and
@@ -32433,6 +32439,11 @@ function personDirectTurn(bot: BotRecord, threadId: string): boolean {
     unattended: isUnattended(bot.id, threadId),
   }) === "owner";
 }
+/** #1098: the handoffs one turn may queue (6) are an anti-loop limit for
+ * automated turns; the owner's own direct request has no per-turn cap. */
+function delegationQueueOptions(bot: BotRecord, threadId: string): { maxQueued?: number } {
+  return personDirectTurn(bot, threadId) ? { maxQueued: Number.POSITIVE_INFINITY } : {};
+}
 function botCreationTurnOrigin(bot: BotRecord, threadId: string): "owner" | "other" {
   // only the person's own words: never their routine or a hop between bots
   return ownEnvironmentTurnOrigin({
@@ -40832,6 +40843,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               ...externalCompletion(internalCapability), origin: turnOrigin(internalCapability) },
             MAX_COMMS_DEPTH,
             fromThreadId,
+            delegationQueueOptions(from, fromThreadId),
           );
           if ((queued.result !== "ok" || !queued.id) && guestThread) store.deleteTask(toBotId, guestThread);
           if (queued.result !== "ok" || !queued.id) return json(res, 200, { busy: true, receipt: peerDeliveryReceipt({
@@ -41232,6 +41244,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             origin: turnOrigin(internalCapability) },
           MAX_COMMS_DEPTH,
           fromThreadId,
+          delegationQueueOptions(from, fromThreadId),
         );
         if ((queued.result !== "ok" || !queued.id) && guestThread) store.deleteTask(toBotId, guestThread);
         if (queued.result !== "ok" || !queued.id) {
@@ -41487,8 +41500,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // One turn's worth of posts is a handful; past it the turn has
         // stopped reporting and started broadcasting. Counted per turn, on
         // top of the room's own budget below.
-        if ((internalCapability.roomPosts ?? 0) >= MAX_ROOM_POSTS_PER_TURN) {
-          return json(res, 429, { error: `You have already posted ${MAX_ROOM_POSTS_PER_TURN} times this turn, which is the limit. Do not retry — finish your turn and say anything further to the user directly.` });
+        const roomPostLimit = botTurnLimit(from, "roomPosts");
+        if ((internalCapability.roomPosts ?? 0) >= roomPostLimit) {
+          return json(res, 429, { error: `You have already posted ${roomPostLimit} times this turn, which is the limit. Do not retry: finish your turn and say anything further to the user directly.` });
         }
         if (message.length > ROOM_POST_MAX_CHARS) {
           return json(res, 400, {
@@ -41665,8 +41679,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (title.length > 80) return json(res, 400, { error: "title must be at most 80 characters" });
         // the title is quoted into chips and the sidebar, one line each
         if (!fitsOnOneLine(title)) return json(res, 400, { error: "title must fit on one line" });
-        if (internalCapability.openedThreads >= MAX_THREADS_OPENED_PER_TURN) {
-          return json(res, 429, { error: `You have already opened ${MAX_THREADS_OPENED_PER_TURN} threads this turn, which is the limit. Do not retry — finish your turn and tell the person which threads you still wanted to open, so they can open them or ask you again.` });
+        const threadLimit = botTurnLimit(from, "threadsOpened");
+        if (internalCapability.openedThreads >= threadLimit) {
+          return json(res, 429, { error: `You have already opened ${threadLimit} threads this turn, which is the limit. Do not retry: finish your turn and tell the person which threads you still wanted to open, so they can open them or ask you again.` });
         }
         const toBotId = typeof body.toBotId === "string" && body.toBotId.trim() ? body.toBotId.trim() : from.id;
         const target = store.bot(toBotId);
@@ -41880,7 +41895,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           { toBotId: target.id, message: handed, depth, targetThreadId: task.threadId, oneWay, origin },
           MAX_COMMS_DEPTH,
           fromThreadId,
-          { front: wakePlan.queueFront },
+          { front: wakePlan.queueFront, ...delegationQueueOptions(from, fromThreadId) },
         );
         if (queued.result !== "ok" || !queued.id) {
           if (wakePlan.reported === "now") releasePriorityNow(from.id);
@@ -42113,8 +42128,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           return json(res, 403, { error: "rooms must stay in your own section; ask the user to move them" });
         }
         if (path === "/api/internal/create-room") {
-          if ((internalCapability.createdRooms ?? 0) >= 4) {
-            return json(res, 429, { error: "you can create at most 4 rooms in one turn" });
+          const roomLimit = botTurnLimit(chief, "roomsCreated");
+          if ((internalCapability.createdRooms ?? 0) >= roomLimit) {
+            return json(res, 429, { error: `you can create at most ${roomLimit} rooms in one turn` });
           }
           const parsed = z.object({
             fromBotId: z.string().optional(), fromThreadId: z.string().optional(),
@@ -43381,9 +43397,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         req.resume();
         return json(res, 400, { error: "content-length must be a non-negative integer" });
       }
-      if (declaredLength !== undefined && declaredLength > IMAGE_MAX_BYTES) {
+      const imageCeiling = imageMaxBytes();
+      if (declaredLength !== undefined && declaredLength > imageCeiling) {
         req.resume();
-        return json(res, 413, { error: `image exceeds ${IMAGE_MAX_BYTES} bytes` });
+        return json(res, 413, { error: `image exceeds ${imageCeiling} bytes` });
       }
       const saved = await new Promise<SavedAttachment>((resolve, reject) => {
         const chunks: Buffer[] = [];
@@ -43397,7 +43414,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         req.on("data", (chunk: Buffer) => {
           if (settled) return;
           received += chunk.byteLength;
-          if (received > IMAGE_MAX_BYTES) return fail(413, `image exceeds ${IMAGE_MAX_BYTES} bytes`);
+          if (received > imageCeiling) return fail(413, `image exceeds ${imageCeiling} bytes`);
           chunks.push(chunk);
         });
         req.on("end", async () => {

@@ -10,8 +10,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { fromMarkdown } from "mdast-util-from-markdown";
 
 import { windowsPathDestinations } from "../shared/markdown-windows-paths.ts";
+import { isSharedHost } from "./host-kind.ts";
 
+/** The shared host's ceiling (an organization server). #1098: a solo
+ * server opens files up to the archive ceiling (attachments.ts). */
 export const MESSAGE_FILE_MAX_BYTES = 25 * 1024 * 1024;
+const SOLO_MESSAGE_FILE_MAX_BYTES = 90 * 1024 * 1024;
+export function messageFileMaxBytes(sharedHost = isSharedHost()): number {
+  return sharedHost ? MESSAGE_FILE_MAX_BYTES : SOLO_MESSAGE_FILE_MAX_BYTES;
+}
 
 export interface OpenedMessageFile {
   handle: FileHandle;
@@ -452,8 +459,8 @@ export async function openMessageFile(href: string, roots: readonly string[]): P
       const opened = await handle.stat();
       if (opened.isDirectory()) throw statusError(400, "the link points to a folder, not a file", "directory");
       if (!opened.isFile()) throw statusError(400, "the link does not point to a regular file");
-      if (opened.size > MESSAGE_FILE_MAX_BYTES) {
-        throw statusError(413, `file exceeds ${MESSAGE_FILE_MAX_BYTES} bytes`);
+      if (opened.size > messageFileMaxBytes()) {
+        throw statusError(413, `file exceeds ${messageFileMaxBytes()} bytes`);
       }
 
       const canonicalAfter = await realpath(candidate);

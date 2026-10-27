@@ -38,6 +38,7 @@ import { OwnerPermissionsCard } from "./OwnerPermissionsCard";
 import { CustomRulesCard } from "./CustomRulesCard";
 import { BotToolAccess } from "./BotToolAccess";
 import { BotParallelSettings } from "./BotParallelSettings";
+import { BotTurnLimitsSettings } from "./BotTurnLimitsSettings";
 import { ProposalStatus } from "./ProposalStatus";
 import { PaneSection } from "./PaneSection";
 import { AdvancedFold } from "./AdvancedFold";
@@ -268,6 +269,7 @@ export function PermissionsSection({
 
       {showToolAccess && <BotToolAccess key={`tools:${bot.id}`} bot={bot} />}
       {showParallel && <BotParallelSettings key={`parallel:${bot.id}`} bot={bot} />}
+      {showParallel && <BotTurnLimitsSettings key={`turn-limits:${bot.id}`} bot={bot} />}
 
       {commandAllowlistTarget && <CommandAllowlistDialog
         key={`command-allowlist:${commandAllowlistTarget.botId}`}

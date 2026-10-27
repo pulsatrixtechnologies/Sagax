@@ -472,8 +472,12 @@ export interface WireBot {
   /** Per bot since 2026-10-15 (server/bot-runtime-settings.ts): its
    * conversations that may work at once (1..10). Absent: the server default. */
   maxConcurrentThreads?: number;
-  /** Parallel tasks one person may have running on this bot (1..10). */
+  /** Parallel tasks one person may have running on this bot (1..10 on an
+   * organization server, 1..16 on a solo server, #1098). */
   maxParallelPerPerson?: number;
+  /** #1098: this bot's per-turn anti-loop limits, set by its owner
+   * (shared/turn-limits.ts). Absent: the defaults. */
+  turnLimits?: { roomPosts?: number; threadsOpened?: number; roomsCreated?: number };
   /** What a message sent while this bot works does by default. Absent: each
    * person's own default (shared/parallel-tasks.ts BusySendPreference). */
   busySend?: "ask" | "steer" | "parallel" | "after";

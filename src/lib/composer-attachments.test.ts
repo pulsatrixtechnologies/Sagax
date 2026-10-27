@@ -29,6 +29,9 @@ import {
   composerTakesFocusOnOpen,
   replyTargetTakesFocus,
   dataContextFor,
+  fileMaxBytes,
+  imageMaxBytes,
+  setAttachmentHostShared,
 } from "./composer-attachments";
 
 describe("the viewed Data result and the words", () => {
@@ -668,6 +671,25 @@ describe("private document intake", () => {
       await expect(fileAttachmentFromFile(file)).rejects.toMatchObject({ status: 413 });
       expect(fetch).not.toHaveBeenCalled();
     } finally {
+      fetch.mockRestore();
+    }
+  });
+
+  it("#1098: a solo server takes documents and pictures up to 90 MB; a shared host keeps 25 and 32", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({
+      path: "/private/attachments/report.pdf", name: "report.pdf", bytes: 3,
+    }), { status: 201, headers: { "content-type": "application/json" } }));
+    const report = { name: "report.pdf", type: "application/pdf", size: 60 * 1024 * 1024 } as File;
+    try {
+      expect(fileMaxBytes()).toBe(25 * 1024 * 1024);
+      await expect(fileAttachmentFromFile(report)).rejects.toMatchObject({ status: 413 });
+      expect(fetch).not.toHaveBeenCalled();
+      setAttachmentHostShared(false);
+      expect([fileMaxBytes(), imageMaxBytes()]).toEqual([ARCHIVE_MAX_BYTES, ARCHIVE_MAX_BYTES]);
+      await fileAttachmentFromFile(report);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      setAttachmentHostShared(true);
       fetch.mockRestore();
     }
   });

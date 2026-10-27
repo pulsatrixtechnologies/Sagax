@@ -10,6 +10,10 @@
 // - Tool access: the bot's grants in server/tool-grants.ts (subject
 //   { kind: "bot", id }), through server/routes/bot-runtime-settings.ts.
 //
+// - Turn limits (#1098, 2026-10-27): `turnLimits`, the bot's per-turn
+//   anti-loop limits (room posts, threads opened, rooms created,
+//   shared/turn-limits.ts). Absent: the defaults.
+//
 // The global values of config.json (`threads.maxConcurrentPerBot`,
 // `threads.maxParallelPerPerson`, `automaticRecovery`) are no longer edited
 // in the app. They stay readable as the server default for a bot that has
@@ -19,7 +23,9 @@
 import { z } from "zod";
 
 import { isModelVariant, type ModelSelection } from "./contracts.ts";
-import { DEFAULT_MAX_PARALLEL_PER_PERSON, MAX_PARALLEL_PER_PERSON, type BusySendPreference } from "../shared/parallel-tasks.ts";
+import { DEFAULT_MAX_PARALLEL_PER_PERSON, maxParallelPerPersonFor, SOLO_MAX_PARALLEL_PER_PERSON, type BusySendPreference } from "../shared/parallel-tasks.ts";
+import { MAX_TURN_LIMIT, type BotTurnLimits } from "../shared/turn-limits.ts";
+import { isSharedHost } from "./host-kind.ts";
 import { EFFORT_LEVELS } from "../shared/wire.ts";
 
 /** Same bounds as config.ts (DEFAULT_ / MAX_CONCURRENT_BOT_THREADS). */
@@ -36,6 +42,7 @@ export interface BotRuntimeSettings {
   maxParallelPerPerson?: number;
   busySend?: BusySendPreference;
   automaticRecovery?: BotAutomaticRecovery;
+  turnLimits?: BotTurnLimits;
 }
 
 /** The global values as config.json keeps them. */
@@ -60,12 +67,22 @@ export const botAutomaticRecoverySchema = z.object({
 
 export const busySendSchema = z.enum(["ask", "steer", "parallel", "after"]);
 
+const turnLimit = z.number().int().min(1).max(MAX_TURN_LIMIT);
+export const botTurnLimitsSchema = z.object({
+  roomPosts: turnLimit.optional(),
+  threadsOpened: turnLimit.optional(),
+  roomsCreated: turnLimit.optional(),
+}).strict();
+
 /** The fields as a bot template (New bot defaults) or a patch may carry them. */
 export const botRuntimeSettingsShape = {
   maxConcurrentThreads: z.number().int().min(1).max(MAX_BOT_CONCURRENT_THREADS).optional(),
-  maxParallelPerPerson: z.number().int().min(1).max(MAX_PARALLEL_PER_PERSON).optional(),
+  // #1098: up to the solo ceiling here; an organization server keeps its
+  // own (the route refuses more, botMaxParallelPerPerson clamps).
+  maxParallelPerPerson: z.number().int().min(1).max(SOLO_MAX_PARALLEL_PER_PERSON).optional(),
   busySend: busySendSchema.optional(),
   automaticRecovery: botAutomaticRecoverySchema.optional(),
+  turnLimits: botTurnLimitsSchema.optional(),
 };
 
 /** #1137: who pays for the bot's replies (shared/turn-payer.ts); null goes
@@ -86,8 +103,9 @@ export function botMaxConcurrentThreads(bot: BotLike, global: GlobalRuntimeSetti
 }
 
 /** Parallel tasks one person may have running on this bot at once. */
-export function botMaxParallelPerPerson(bot: BotLike, global: GlobalRuntimeSettings): number {
-  return bot?.maxParallelPerPerson ?? global.threads?.maxParallelPerPerson ?? DEFAULT_MAX_PARALLEL_PER_PERSON;
+export function botMaxParallelPerPerson(bot: BotLike, global: GlobalRuntimeSettings, sharedHost = isSharedHost()): number {
+  const value = bot?.maxParallelPerPerson ?? global.threads?.maxParallelPerPerson ?? DEFAULT_MAX_PARALLEL_PER_PERSON;
+  return Math.min(value, maxParallelPerPersonFor(sharedHost));
 }
 
 /** Whether automatic recovery is on for this bot, and its backup model. */
@@ -108,7 +126,7 @@ export function botRecoveryBackups(
 }
 
 /** The effective values a client reads (GET /api/bots/:id/runtime-settings). */
-export function effectiveBotRuntimeSettings(bot: BotLike, global: GlobalRuntimeSettings): Required<Omit<BotRuntimeSettings, "busySend">> & { busySend: BusySendPreference | null } {
+export function effectiveBotRuntimeSettings(bot: BotLike, global: GlobalRuntimeSettings): Required<Omit<BotRuntimeSettings, "busySend" | "turnLimits">> & { busySend: BusySendPreference | null } {
   return {
     maxConcurrentThreads: botMaxConcurrentThreads(bot, global),
     maxParallelPerPerson: botMaxParallelPerPerson(bot, global),
