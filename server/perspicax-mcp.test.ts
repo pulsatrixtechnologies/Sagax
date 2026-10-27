@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { McpAuditRecord } from "./mcp-permissions.ts";
 import type { SubjectTokenOutcome } from "./idp-session.ts";
 import type { ExchangeResult } from "./perspicax-link.ts";
-import { PERSPICAX_ACCESS_ENDED, PERSPICAX_SESSION_RESET, PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, parseMcpBody, perspicaxReplayable, perspicaxSessionLost, perspicaxUnavailableRow, type PerspicaxMcpLink, type PerspicaxMcpOptions } from "./perspicax-mcp.ts";
+import { PERSPICAX_ACCESS_ENDED, PERSPICAX_SESSION_RESET, PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, parseMcpBody, perspicaxReplayable, reviewedReadsOf, perspicaxSessionLost, perspicaxUnavailableRow, type PerspicaxMcpLink, type PerspicaxMcpOptions } from "./perspicax-mcp.ts";
 
 const ISS = "https://px.example.test";
 const ALICE = "pr_alice";
@@ -721,5 +721,43 @@ describe("PerspicaxMcp remote support answers", () => {
       args: { code: "BQDHS7" },
       result: { content: [{ type: "text", text: JSON.stringify({ state: "connected", fetch_ip_count: 1 }) }] },
     }]);
+  });
+});
+
+describe("reviewedReadsOf", () => {
+  it("keeps the APIs api_list marks as reviewed and a group whose every member is marked", () => {
+    const value = { apis: [
+      { id: "acme_desk_service", group: "acme_desk", reviewed_reads: true },
+      { id: "acme_desk_time", group: "acme_desk", reviewed_reads: true },
+      { id: "Example_Wiki", reviewed_reads: true },
+      { id: "vpn_api", reviewed_reads: false },
+      { id: "mixed_one", group: "mixed", reviewed_reads: true },
+      { id: "mixed_two", group: "mixed" },
+      { id: "  ", reviewed_reads: true },
+      { reviewed_reads: true },
+    ] };
+    expect([...reviewedReadsOf(value)].sort()).toEqual(["acme_desk", "acme_desk_service", "acme_desk_time", "example_wiki", "mixed_one"]);
+  });
+  it("marks nothing for an answer that declares no mark (an older Perspicax) or no list", () => {
+    expect(reviewedReadsOf({ apis: [{ id: "acme_desk", display_name: "Desk" }] }).size).toBe(0);
+    expect(reviewedReadsOf(null).size).toBe(0);
+    expect(reviewedReadsOf({ apis: "x" }).size).toBe(0);
+  });
+});
+
+describe("PerspicaxMcp reviewedReads", () => {
+  const answering = (value: unknown) => ({ mcp: ({ body }: { body: any }) => new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id,
+    result: body.method === "tools/call" ? { content: [{ type: "text", text: JSON.stringify(value) }] } : {} }),
+  { status: 200, headers: { "content-type": "application/json", "mcp-session-id": "s" } }) });
+
+  it("reads the marks of api_list per bot, and answers false before the list is read", async () => {
+    const h = harness(answering({ apis: [{ id: "acme_desk_service", group: "acme_desk", reviewed_reads: true }, { id: "vpn_api" }] }));
+    await h.mcp.prepareTurn({ ...turn, bot, speakerPrincipalId: BOB, speakerOrigin: "person" });
+    expect(h.mcp.reviewedReads("x", "acme_desk")).toBe(false);
+    await h.mcp.refreshApiNames({ ...turn, botId: "x" });
+    expect(h.mcp.reviewedReads("x", "acme_desk")).toBe(true);
+    expect(h.mcp.reviewedReads("x", "ACME_DESK_SERVICE")).toBe(true);
+    expect(h.mcp.reviewedReads("x", "vpn_api")).toBe(false);
+    expect(h.mcp.reviewedReads("y", "acme_desk")).toBe(false);
   });
 });

@@ -15200,7 +15200,7 @@ bus.subscribe((event: RuntimeEvent) => {
       // never past the owner's own deny or ask rule; a lease at any turn.
       const perspicaxCandidate = permission && asker && event.requestId && !guestDriven
         && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
-        ? perspicaxSelfAnswer(event.mcpTool ?? event.tool) : null;
+        ? perspicaxSelfAnswer(event.mcpTool ?? event.tool, (api) => perspicaxMcp?.reviewedReads(asker.id, api) ?? false) : null;
       const perspicaxOwnerRule = perspicaxCandidate && asker
         ? matchOwnerRule(ownerApprovals.rulesOf(approvalOwnerId(asker, event.threadId), asker.id), {
           ownerId: approvalOwnerId(asker, event.threadId), botId: asker.id, tool: event.mcpTool ?? event.tool,
