@@ -350,6 +350,7 @@ describe("RICH_OUTPUT_PROMPT", () => {
   it("tells the bot a bare YouTube link plays inline, outside any fence", () => {
     expect(RICH_OUTPUT_PROMPT).toContain("To show a YouTube video the person wants to watch, put its link alone on its own line: it plays inline (any other time, keep the link inside a sentence); never wrap it in an ```artifact or ```widget fence.");
     expect(RICH_OUTPUT_PROMPT).toContain("Views only on request");
+    expect(RICH_OUTPUT_PROMPT).toContain("put each on its own line or in a list");
     expect(richOutputPrompt(false)).toContain("Email drafts are turned off");
     expect(richOutputPrompt(false)).not.toContain("put it in one ```email fence");
     expect(RICH_OUTPUT_PROMPT).toContain("Never add a view on your own initiative.");

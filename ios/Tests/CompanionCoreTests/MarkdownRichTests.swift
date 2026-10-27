@@ -42,7 +42,7 @@ final class MarkdownRichTests: XCTestCase {
         XCTAssertEqual(Markdown.blocks("Here: ![a](https://x.y/a.png \"t\") and then\nmore."), [
             .paragraph("Here:"),
             .image(MarkdownImage(alt: "a", source: "https://x.y/a.png")),
-            .paragraph("and then more."),
+            .paragraph("and then\nmore."),
         ])
         XCTAssertEqual(Markdown.blocks("[![logo](/a/logo.png)](https://example.com)"), [
             .image(MarkdownImage(alt: "logo", source: "/a/logo.png", link: "https://example.com")),

@@ -113,7 +113,7 @@ final class MarkdownTableTests: XCTestCase {
 
     func testWhatIsNotATable() {
         XCTAssertEqual(Markdown.blocks("Pros | Cons\n---"), [.paragraph("Pros | Cons"), .rule])
-        XCTAssertEqual(Markdown.blocks("Pros | Cons\n-"), [.paragraph("Pros | Cons -")])
+        XCTAssertEqual(Markdown.blocks("Pros | Cons\n-"), [.paragraph("Pros | Cons\n-")])
         XCTAssertEqual(Markdown.blocks("Example: | A | B | |---|---| | 1 | 2 |"), [
             .paragraph("Example: | A | B | |---|---| | 1 | 2 |"),
         ])
@@ -140,16 +140,16 @@ final class MarkdownTableTests: XCTestCase {
         ])
         XCTAssertEqual(
             Markdown.blocks("    | A | B |\n    | --- | --- |\n    | 1 | 2 |"),
-            [.paragraph("| A | B | | --- | --- | | 1 | 2 |")]
+            [.paragraph("| A | B |\n| --- | --- |\n| 1 | 2 |")]
         )
         XCTAssertEqual(Markdown.blocks("- intro\n  | A | B |\n  | --- | --- |\n  | 1 | 2 |"), [
             .bullet(indent: 0, text: "intro"),
-            .paragraph("| A | B | | --- | --- | | 1 | 2 |"),
+            .paragraph("| A | B |\n| --- | --- |\n| 1 | 2 |"),
         ])
         XCTAssertEqual(Markdown.blocks("- parent\n  - child\n  | A | B |\n  | - | - |"), [
             .bullet(indent: 0, text: "parent"),
             .bullet(indent: 1, text: "child"),
-            .paragraph("| A | B | | - | - |"),
+            .paragraph("| A | B |\n| - | - |"),
         ])
         XCTAssertEqual(Markdown.blocks("> | A | B |\n> | --- | --- |\n> | 1 | 2 |"), [
             .quote("| A | B |"),
@@ -185,12 +185,12 @@ final class MarkdownTableTests: XCTestCase {
             .paragraph("| 1 | 2 |"),
         ])
         XCTAssertEqual(Markdown.blocks("| A | B |\n\t| --- | --- |\n| 1 | 2 |"), [
-            .paragraph("| A | B | | --- | --- | | 1 | 2 |"),
+            .paragraph("| A | B |\n| --- | --- |\n| 1 | 2 |"),
         ])
         XCTAssertEqual(Markdown.blocks("- intro\n  > note\n  | A | B |\n  | --- | --- |"), [
             .bullet(indent: 0, text: "intro"),
             .quote("note"),
-            .paragraph("| A | B | | --- | --- |"),
+            .paragraph("| A | B |\n| --- | --- |"),
         ])
     }
 

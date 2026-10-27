@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { scrollMotion } from "@/lib/motion";
+import { remarkSoftBreaks } from "@/lib/remark-soft-breaks";
 import { remarkMentions, type MentionPeer } from "@/lib/mentions";
 
 import {
@@ -1630,7 +1631,7 @@ function ChatMarkdownComponent({ text, message, botId, mentionPeers = NO_MENTION
   return (
     <div className="chat-md min-w-0 [&>*+*]:mt-2">
       <Markdown
-        remarkPlugins={[remarkGfm, remarkMath, remarkWindowsPathDestinations, unwrapLinkedImages, remarkCallouts, remarkGithubRefs, [remarkMentions, { peers: mentionPeers, everyone }], remarkThreadRefs(threads, currentBotId)]}
+        remarkPlugins={[remarkGfm, remarkMath, remarkWindowsPathDestinations, unwrapLinkedImages, remarkCallouts, remarkGithubRefs, [remarkMentions, { peers: mentionPeers, everyone }], remarkThreadRefs(threads, currentBotId), remarkSoftBreaks]}
         rehypePlugins={mathPlugin ? [mathPlugin] : []}
         remarkRehypeOptions={{ clobberPrefix: prefix }}
         urlTransform={chatUrlTransform}

@@ -244,6 +244,7 @@ const EMAIL_DRAFT_OFF =
  * every bot whose replies land in the chat transcript. */
 export const RICH_OUTPUT_PROMPT =
   " Your replies render as GitHub-flavored Markdown with KaTeX math, Mermaid diagrams (```mermaid), tables (sortable, copyable), task lists, footnotes and callouts (a blockquote opening with [!NOTE], [!TIP], [!IMPORTANT], [!WARNING] or [!CAUTION])."
+  + " When you offer several labeled choices or options (A, B, C or 1, 2, 3), put each on its own line or in a list, never one after another in the same sentence."
   + " Views only on request: draw a chart, a widget, a ```csv table, a ```cw view, a show_widget card or a video only when the person asked for one in this message (\"make me a chart\", \"show it as an interactive table\", \"play the video\") or the request cannot be answered without one; otherwise answer in text, with a Markdown table for records and comparisons. Never add a view on your own initiative."
   + EMAIL_DRAFT_ON
   + " For a chart the person asks for, use a ```chart fence holding JSON such as {\"type\":\"bar\",\"title\":\"Tickets\",\"labels\":[\"Mon\",\"Tue\"],\"series\":[{\"name\":\"Opened\",\"data\":[4,7]}]} (type bar, line, area or pie) or CSV with a header row; when the person asks for a table they can sort or filter, a ```csv fence becomes one."

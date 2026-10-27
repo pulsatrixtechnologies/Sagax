@@ -92,10 +92,10 @@ public enum Markdown {
 
         func flushParagraph() {
             guard !paragraph.isEmpty else { return }
-            // GFM: a single newline inside a paragraph is a soft break, which
-            // renders as a space. The desktop does not enable `breaks`, so
-            // neither does this — the two should wrap the same way.
-            let text = paragraph.joined(separator: " ")
+            // A single newline inside a paragraph stays a line break, as in
+            // chat apps and on the desktop (remarkSoftBreaks): options written
+            // "A. ...\nB. ..." must each keep their own line.
+            let text = paragraph.joined(separator: "\n")
             paragraph.removeAll()
             if text.contains("![") {
                 blocks.append(contentsOf: splitImages(text))

@@ -22,13 +22,12 @@ final class MarkdownTests: XCTestCase {
         XCTAssertEqual(Markdown.blocks("\n\n  \n"), [])
     }
 
-    /// GFM without `breaks`, which is how the desktop is configured: a lone
-    /// newline is a soft break and renders as a space. Joining with "\n"
-    /// instead would wrap differently on the two clients for the same text.
-    func testSoftBreaksBecomeSpaces() {
+    /// A lone newline is a line break on both clients (desktop uses
+    /// remarkSoftBreaks), so options on separate lines stay separate.
+    func testSoftBreaksStayLineBreaks() {
         XCTAssertEqual(
             Markdown.blocks("one line\nand its continuation"),
-            [.paragraph("one line and its continuation")]
+            [.paragraph("one line\nand its continuation")]
         )
     }
 
