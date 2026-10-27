@@ -243,19 +243,29 @@ posixOnly("an organization member's identity and bots", () => {
     expect((await api("DELETE", `/api/bots/${id}`, { as: "zara" })).status).toBe(200);
   });
 
-  it("refuses a member's bot the settings that stay with server admins", async () => {
+  // 2026-10-26 (no admin gating, #1107/#1138): where a member's bot works in
+  // her own environment, its approval level, its team and a preset the server
+  // offers are hers. What stays refused reaches the shared server: a working
+  // folder on the server's own disk (folders.botWorkingFolder), and a
+  // preset the server does not offer.
+  it("lets a member set her own bot's environment, and keeps the server's own folder an admin's", async () => {
+    const mine: string[] = [];
     for (const body of [
       { name: "Shell", settings: { computer: "local" } },
-      { name: "Folder", settings: { cwd: "/" } },
       { name: "Loose", settings: { approvalMode: "auto" } },
       { name: "Team", section: "Ops" },
-      { name: "Preset", preset: "researcher" },
     ]) {
-      const refused = await api("POST", "/api/bots", { as: "zara", body });
-      expect(refused.status, `${JSON.stringify(body)}: ${refused.text}`).toBe(403);
+      const created = await api("POST", "/api/bots", { as: "zara", body });
+      expect(created.status, `${JSON.stringify(body)}: ${created.text}`).toBe(201);
+      mine.push(created.body.bot.id);
     }
+    const folder = await api("POST", "/api/bots", { as: "zara", body: { name: "Folder", settings: { cwd: "/" } } });
+    expect(folder.status, folder.text).toBe(403);
+    expect((await api("POST", "/api/bots", { as: "zara", body: { name: "Preset", preset: "no-such-preset" } })).status).toBe(404);
     expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { cwd: "/" } })).status).toBe(403);
-    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "auto" } })).status).toBe(403);
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "auto" } })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${zaraBot}`, { as: "zara", body: { approvalMode: "ask" } })).status).toBe(200);
+    for (const id of mine) expect((await api("DELETE", `/api/bots/${id}`, { as: "zara" })).status).toBe(200);
   });
 
   // JC 2026-10-09: a member manages her own bot's Rules and Docs like its
@@ -274,7 +284,9 @@ posixOnly("an organization member's identity and bots", () => {
     expect((await api("DELETE", `/api/bots/${zaraBot}/workspace/file?path=docs/clients.md`, { as: "zara" })).status).toBe(200);
     // only rules and documents: memory stays on the admin routes
     expect((await api("PUT", `/api/bots/${zaraBot}/workspace/file`, { as: "zara", body: { path: "MEMORY.md", text: "x" } })).status).toBe(400);
-    expect((await api("PUT", `/api/bots/${zaraBot}/memory/file`, { as: "zara", body: { path: "RULES.md", text: "x" } })).status).toBe(403);
+    // 2026-10-26 (#1107): the memory of her own bot is hers too; only the
+    // route's owner check keeps it from another member (below)
+    expect((await api("PUT", `/api/bots/${zaraBot}/memory/file`, { as: "zara", body: { path: "MEMORY.md", text: "# Memory\n" } })).status).toBe(200);
     // another member is refused: 404 when she cannot see the bot (the
     // server's visibility gate answers first), 403 when she can
     for (const [method, path, body] of [
@@ -283,6 +295,7 @@ posixOnly("an organization member's identity and bots", () => {
       ["PUT", `/api/bots/${zaraBot}/workspace/file`, { path: "RULES.md", text: "# Hijacked\n" }],
       ["DELETE", `/api/bots/${zaraBot}/workspace/file?path=RULES.md`, undefined],
       ["GET", `/api/bots/${zaraBot}/workspace/download?path=RULES.md`, undefined],
+      ["PUT", `/api/bots/${zaraBot}/memory/file`, { path: "MEMORY.md", text: "# Hijacked\n" }],
     ] as const) {
       expect([403, 404], `${method} ${path}`).toContain((await api(method, path, { as: "max", body })).status);
     }
@@ -333,12 +346,17 @@ posixOnly("an organization member's identity and bots", () => {
       ["POST", "/api/auth/pairing", { label: "x", scopes: ["admin"] }],
       ["POST", "/api/org/invites", { email: "eve@example.test" }],
       ["PATCH", "/api/instances/claude", { cli: "" }],
-      ["GET", "/api/mcp/servers", undefined],
+      ["POST", "/api/mcp/servers", { name: "x", command: "echo" }],
       ["POST", "/api/org-library/add", { packageId: "00000000-0000-4000-8000-000000000000" }],
     ] as const) {
       const res = await api(method, path, { as: "zara", ...(body !== undefined ? { body } : {}) });
       expect(res.status, `${method} ${path}: ${res.text}`).toBe(403);
     }
+    // the MCP list is names and state only: a member's bot picks from it,
+    // and no command, URL or header of the server's own comes with it
+    const servers = await api("GET", "/api/mcp/servers", { as: "zara" });
+    expect(servers.status, servers.text).toBe(200);
+    for (const row of servers.body.servers) expect(Object.keys(row).sort().filter((key) => ["command", "args", "url", "headers", "env"].includes(key))).toEqual([]);
     expect((await api("GET", "/api/config")).body.profile.name).toBe(OWNER_NAME);
     // the engines list is theirs to read (Model providers, the model
     // picker) without anything of the server's own account or install

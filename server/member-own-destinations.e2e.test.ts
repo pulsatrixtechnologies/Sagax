@@ -157,11 +157,34 @@ posixOnly("organization server: a member's own destinations", () => {
       return got && got.length === 2;
     });
     // Bob's Windows desktop app (a Windows 8.3 short name in the profile path).
-    desktop = await connectFakeDesktop({
+    desktop = await connectBobDesktop();
+  }, 60_000);
+
+  // Waits for the tunnel so a later close() never races its opening.
+  const connectBobDesktop = async () => {
+    const connected = await connectFakeDesktop({
       base: BASE, cookie: bob.cookie!, name: "Bob's PC", platform: "win32", attachmentsDir: BOB_ATTACHMENTS,
       handle: async (operation) => ({ content: [{ type: "text", text: `desktop:${operation.action}` }] }),
     });
-  }, 60_000);
+    await connected.tunnelOpen;
+    return connected;
+  };
+
+  /** 2026-10-22 (#990): a member's host shell on the shared server waits for
+   * an admin's card only when his bot has no computer of its own this turn.
+   * With his desktop app connected (the default place is This computer) the
+   * shell is refused and the bot is told to use its own computer, so the admin
+   * card tests run with the app closed and a bot pinned to This computer
+   * (the turn is pinned to a computer that is not connected: nothing runs
+   * there, so the shell has no computer of its own). */
+  async function withoutOwnComputer<T>(run: () => Promise<T>): Promise<T> {
+    await desktop.close();
+    try {
+      return await run();
+    } finally {
+      desktop = await connectBobDesktop();
+    }
+  }
 
   afterAll(async () => {
     await desktop?.close();
@@ -210,11 +233,17 @@ posixOnly("organization server: a member's own destinations", () => {
     return { ask, cardOf, noCard, respond, end, mcpServers: Object.keys(mcp) };
   }
 
-  async function bobBot(name: string) {
+  /** `pinnedToComputer`: the bot works on This computer, so with his desktop
+   * app closed it has no computer of its own this turn (withoutOwnComputer). */
+  async function bobBot(name: string, pinnedToComputer = false) {
     const created = await api("POST", "/api/bots", bob, { name });
     expect(created.status, created.text).toBe(201);
     const bot = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
     expect((await api("PATCH", `/api/bots/${bot.id}`, bob, { modelSelection: { instanceId: "hold", model: "fake-model" } })).status).toBe(200);
+    if (pinnedToComputer) {
+      const pinned = await api("PATCH", `/api/bots/${bot.id}`, bob, { computer: "local" });
+      expect(pinned.status, pinned.text).toBe(200);
+    }
     return bot;
   }
 
@@ -402,11 +431,12 @@ posixOnly("organization server: a member's own destinations", () => {
   // host.commands on his own card. The bot's owner and an admin see it in
   // the bot's rules and may remove it.
   it("Always allow on a member's server command keeps the program for this bot only, owner and admin see and remove it", async () => {
+    await withoutOwnComputer(async () => {
     const rulesOfBot = async (who: Auth, botId: string) =>
       ((await api("GET", `/api/approval-rules?botId=${botId}`, who)).body.rules ?? []) as Array<{ id: string; botId: string | null; from?: string; scope: Record<string, string>; byOther?: boolean; savedBy?: string }>;
     // the admin's card
-    const fern = await bobBot("Fern");
-    const birch = await bobBot("Birch");
+    const fern = await bobBot("Fern", true);
+    const birch = await bobBot("Birch", true);
     let turn = await heldTurn(bob, fern, "lance les tests");
     try {
       const first = await turn.ask("Bash", { command: "npm test", description: "Run the test suite" });
@@ -486,6 +516,7 @@ posixOnly("organization server: a member's own destinations", () => {
     expect((await rulesOfBot(bob, fern.id)).some((row) => row.id === aliceSees!.id)).toBe(false);
     idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
     await waitFor(async () => !(await listed()).some((row) => (row.scope ?? "server") === "server"), 30_000);
+    });
   }, 240_000);
 
   // Review of #938 (finding 3): a held admin card (here Claude's
@@ -493,7 +524,8 @@ posixOnly("organization server: a member's own destinations", () => {
   // additional permissions) keeps the whole request: the admin's Always
   // allow on `npm install` never lets `npm run deploy` through.
   it("a held admin card keeps the whole request: npm install kept, npm run deploy still asks", async () => {
-    const hazel = await bobBot("Hazel");
+    await withoutOwnComputer(async () => {
+    const hazel = await bobBot("Hazel", true);
     const turn = await heldTurn(bob, hazel, "installe");
     try {
       const held = await turn.ask("Bash", { command: "npm install", dangerouslyDisableSandbox: true, description: "Install" });
@@ -509,11 +541,14 @@ posixOnly("organization server: a member's own destinations", () => {
     } finally {
       await turn.end();
     }
+    });
   }, 120_000);
 
   it("the organization's server: an admin's, until an admin gives the permission in Perspicax; an admin is unchanged", async () => {
-    const otto = await bobBot("Otto");
-    let turn = await heldTurn(bob, otto, "commande serveur");
+    const otto = await bobBot("Otto", true);
+    let turn!: Awaited<ReturnType<typeof heldTurn>>;
+    await withoutOwnComputer(async () => {
+    turn = await heldTurn(bob, otto, "commande serveur");
     try {
       const shell = await turn.ask("Bash", { command: "cat /etc/hostname" });
       const card = await turn.cardOf(shell.id);
@@ -551,6 +586,7 @@ posixOnly("organization server: a member's own destinations", () => {
     } finally {
       await turn.end();
     }
+    });
     // terminal: his own destinations are listed; the server's test host is not
     const listed = async (auth: Auth, bot: { id: string; threadId: string }) =>
       ((await api("GET", `/api/terminal/resources?botId=${bot.id}&threadId=${bot.threadId}`, auth)).body.resources ?? []) as Array<{ provider: string; scope?: string }>;
@@ -592,4 +628,20 @@ posixOnly("organization server: a member's own destinations", () => {
       idp.directoryPeople = [ALICE, BOB].map((user) => idp.personOf(user));
     }
   }, 150_000);
+
+  // 2026-10-22 (#990): with a computer of his own this turn (his server
+  // environment, or his desktop app connected), a host shell on the shared
+  // server is refused with the way out, and no admin card waits in a dead end.
+  it("a host shell on the organization's server is refused when his bot has its own computer", async () => {
+    const ivy = await bobBot("Ivy");
+    const turn = await heldTurn(bob, ivy, "commande serveur");
+    try {
+      const shell = await turn.ask("Bash", { command: "cat /etc/hostname" });
+      await waitFor(async () => shell.answer()?.behavior === "deny");
+      expect(String(shell.answer().message)).toContain("own computer");
+      expect(await turn.noCard(shell.id)).toBe(true);
+    } finally {
+      await turn.end();
+    }
+  }, 60_000);
 });

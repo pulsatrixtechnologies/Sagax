@@ -175,7 +175,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
   beforeAll(async () => {
     chmodSync(FAKE_CLAUDE, 0o755);
     idp = await startFakeOidcProvider({ user: ALICE });
-    // Zoe's profiles grant bots.create and nothing for AI clients.
+    // Zoe's profiles grant bots.create and nothing else (a member's own things are held anyway).
     idp.directoryPeople = [idp.personOf(ALICE), idp.personOf(BOB), { ...idp.personOf(ZOE), permissions: ["bots.create"] }];
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
@@ -247,22 +247,20 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     const thread = await api("GET", `/api/threads/${sent.body.threadId}/messages?limit=50`, bob);
     const mine = (thread.body.messages as Array<any>).find((m) => m.id === sent.body.messageId);
     expect(mine).toMatchObject({ role: "user", text: "count the open tickets" });
-    // #291: an AI client works in a hidden conversation. Bob's chat with
-    // Orion did not move to it, his bot list does not list it, it left no
-    // unread dot, and the client's next send continues it.
+    // 2026-10-26 (#1170, #1207): an AI client no longer works in a hidden
+    // conversation: the message lands in the person's single chat with the bot
+    // (the one the bot list shows), stamped as the AI client's, and the
+    // client's next send continues it.
+    expect(mine.aiClient).toBe(true);
     const after = await api("GET", "/api/bots?messages=0", bob);
     const orion2 = (after.body.bots as Array<any>).find((bot) => bot.id === bots.orion!.id);
-    expect(orion2.threadId).not.toBe(sent.body.threadId);
-    expect((orion2.tasks as Array<any>).some((task) => task.threadId === sent.body.threadId)).toBe(false);
-    expect(orion2.unread).toBe(false);
+    expect(orion2.threadId).toBe(sent.body.threadId);
+    expect((orion2.tasks as Array<any>).some((task) => task.threadId === sent.body.threadId)).toBe(true);
     const again = await member("POST", `bots/${bots.orion!.id}/messages`, BOB, { text: "and the closed ones", wait: 30 });
     expect(again.status, again.text).toBe(200);
     expect(again.body.threadId).toBe(sent.body.threadId);
-    // and it never buzzed Bob, while his own chat with Orion still does
-    const own = await api("POST", `/api/bots/${bots.orion!.id}/messages`, bob, { text: "my own question", threadId: orion2.threadId });
-    expect(own.status, own.text).toBeLessThan(300);
-    await waitFor(async () => notifiedThreads(events.text()).includes(orion2.threadId), 30_000);
-    expect(notifiedThreads(events.text())).not.toContain(sent.body.threadId);
+    // the chat is Bob's own, so a reply there reaches him
+    await waitFor(async () => notifiedThreads(events.text()).includes(sent.body.threadId), 30_000);
     events.close();
   }, 60_000);
 
@@ -284,12 +282,21 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
   }, 60_000);
 
   it("M3: a missing permission is refused by name; a bot out of reach stays out; an unknown actor is refused", async () => {
+    // 2026-10-26 (#1107): the keys about a person's own things (bots, routines,
+    // agents of AI clients) are always held, whatever Perspicax sends: Zoe's
+    // profile grants bots.create only, and she still lists her own bots.
+    await signIn(ZOE);
     const zoe = await member("GET", "bots", ZOE);
-    expect(zoe.status, zoe.text).toBe(403);
-    expect(zoe.body).toMatchObject({ code: "forbidden_permission", permission: "clients.botsRead" });
+    expect(zoe.status, zoe.text).toBe(200);
+    expect(zoe.body.bots).toEqual([]);
+    // Alice's routine is not Bob's to run: it does not exist for him
     const run = await member("POST", `routines/${routineId}/run`, BOB, {});
-    expect(run.status).toBe(403);
-    expect(run.body).toMatchObject({ code: "forbidden_permission", permission: "clients.routinesRun" });
+    expect(run.status).toBe(404);
+    expect(run.body).toMatchObject({ code: "not_found" });
+    // what reaches other people is still a permission of its own, named in the refusal
+    const zoeNudge = await member("POST", `people/${ALICE.sub}/nudge`, ZOE, {});
+    expect(zoeNudge.status, zoeNudge.text).toBe(403);
+    expect(zoeNudge.body).toMatchObject({ code: "forbidden_permission", permission: "clients.peopleNudge" });
     const nudge = await member("POST", `people/${ALICE.sub}/nudge`, BOB, {});
     expect(nudge.body.permission).toBe("clients.peopleNudge");
     // Bob may message, but not a bot that is not his to see
@@ -427,15 +434,19 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect(readFileSync(join(home, ".sagax", "workspaces", bots.orion!.id, "inbox", "bob", "invoices.txt"), "utf8")).toBe("42\n");
     const cold = await member("POST", "agents/read_transcript_cold", BOB, { agent_id: bots.orion!.id });
     expect(cold.status, cold.text).toBe(200);
-    // the AI client's conversation stays hidden (#302)
+    // the AI client's turn runs in the person's single chat with the bot (#1170)
     const after = await api("GET", "/api/bots?messages=0", bob);
     const orion = (after.body.bots as Array<any>).find((bot) => bot.id === bots.orion!.id);
-    expect(orion.threadId).not.toBe(threadId);
+    expect(orion.threadId).toBe(threadId);
 
-    // scopes: create needs clients.agentsCreate (off for members); Zoe holds no client key
-    expect((await member("POST", "agents/create_agent", BOB, { name: "Nova" })).body).toMatchObject({ code: "forbidden_scope", scope: "agents.create" });
-    expect((await member("POST", "agents/list_agents", ZOE, {})).body).toMatchObject({ code: "forbidden_scope" });
-    expect((await member("POST", "agents/delete_agent", BOB, {})).body).toMatchObject({ code: "forbidden_scope", scope: "agents.create" });
+    // 2026-10-26: creating her own agents is a member's own thing (clients.agentsCreate
+    // is always held): Bob creates a temporary agent and archives it; Zoe lists none
+    const nova = await member("POST", "agents/create_agent", BOB, { name: "Nova" });
+    expect(nova.status, nova.text).toBe(200);
+    expect(nova.body.agent).toMatchObject({ name: "Nova", temporary: true });
+    expect((await member("POST", "agents/delete_agent", BOB, { agent_id: nova.body.agent.id })).status).toBe(200);
+    expect((await member("POST", "agents/list_agents", ZOE, {})).body).toEqual({ agents: [] });
+    expect((await member("POST", "agents/delete_agent", BOB, {})).body).toMatchObject({ code: "bad_request" });
 
     const audit = await api("GET", "/api/org/admin/audit?category=client", { bearer: idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin" }) });
     const rows = (audit.body.rows as Array<any>).filter((row) => String(row.action).startsWith("agents."));

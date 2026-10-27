@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { MEMBER_ALWAYS_PERMISSIONS } from "../shared/permissions.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -79,7 +80,8 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 
 /** Sign in until the viewer carries the permissions Perspicax sends. */
 async function signInWith(user: FakeOidcUser): Promise<Auth> {
-  const expected = [...(PERMS[user.sub] ?? [])].sort();
+  // Every member also holds the keys about their own things (since 2026-10-26).
+  const expected = [...new Set([...(PERMS[user.sub] ?? []), ...MEMBER_ALWAYS_PERMISSIONS])].sort();
   return waitFor(async () => {
     const auth = await signIn(user);
     const viewer = (await api("GET", "/api/config", auth)).body.viewer;
