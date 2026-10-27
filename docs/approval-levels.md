@@ -447,6 +447,13 @@ card for a person. What differs per engine is only how the ask travels:
 | ACP engines (Cursor, Antigravity, Gemini CLI, Qwen Code, OpenCode, …) | Option-match round-trip on the ACP permission request | One at a time — the request carries one choice set |
 | Pi | Free-text round-trip over `extension_ui_request` | One at a time |
 
+Whatever the engine, a bot is told to ask through its interactive question
+tool, with the recommended option first, and never to put a list of choices in
+its reply text. An engine with no question tool of its own (Gemini CLI,
+Hermes, OpenCode, Pi, Grok Build on an organization server) gets the Sagax
+`ask_choice` tool from the agents server: a card with 2-6 clickable options
+and an Other field, whose answer arrives as the next message.
+
 Older conversations may still hold a question the removed Computer engine
 parsed out of model-authored output rather than a real tool call. Those
 cards keep their "Agent-composed question" badge, and their decision-log

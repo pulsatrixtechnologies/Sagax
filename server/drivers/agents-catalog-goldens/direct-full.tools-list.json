@@ -1,6 +1,44 @@
 {
   "tools": [
     {
+      "name": "ask_choice",
+      "description": "Ask the person to choose, with clickable options, when you need a decision and your engine has no question tool of its own (or yours is not offered). Put the option you recommend first. The card also has an Other field for a typed answer. Call it instead of writing the question or a list of choices in your reply, then end your turn: the person's click arrives as their next message. For an open question that does not reduce to choices, write it in your reply.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "The question, with enough context to answer at a glance."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Optional short heading for the card."
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 6,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "description": "2-6 short answers, the recommended one first."
+          }
+        },
+        "required": [
+          "question",
+          "options"
+        ]
+      }
+    },
+    {
       "name": "tool_result_read",
       "description": "Read a missing portion of an oversized agents-tool result using the saved id and next offset from its notice. Returns at most 16,000 characters, only from this bot in this conversation. Use only when the preview is insufficient; do not load every page by default. Results expire after one hour, on app restart, or under cache pressure. This never reruns the original action.",
       "inputSchema": {
@@ -1380,114 +1418,6 @@
         },
         "required": [
           "target"
-        ]
-      }
-    },
-    {
-      "name": "publish_remote_session",
-      "description": "Post the connected Tailcat remote-support session into this chat. A session you opened with remote_support_open is posted by itself once remote_support_status says connected: call this only for a session a Flow skill opened, or to refresh the facts. Never pass an address, a key or a token: the tunnel is read from the session folder on this host. A later call with the same flow_session_id refreshes the card.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "flow_session_id": {
-            "type": "string",
-            "description": "12 lowercase hex id of the session folder."
-          },
-          "code": {
-            "type": "string",
-            "description": "The 6-character support code."
-          },
-          "os": {
-            "type": "string",
-            "enum": [
-              "windows",
-              "macos",
-              "linux"
-            ]
-          },
-          "rights": {
-            "type": "string",
-            "enum": [
-              "standard",
-              "elevated"
-            ]
-          },
-          "end_at": {
-            "type": "string",
-            "description": "ISO-8601 end time, within a day."
-          },
-          "hostname": {
-            "type": "string"
-          },
-          "user": {
-            "type": "string"
-          },
-          "model": {
-            "type": "string"
-          },
-          "serial": {
-            "type": "string"
-          },
-          "cpu": {
-            "type": "string"
-          },
-          "ram": {
-            "type": "string"
-          },
-          "disk": {
-            "type": "string"
-          },
-          "os_name": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "flow_session_id",
-          "code",
-          "os",
-          "rights",
-          "end_at"
-        ]
-      }
-    },
-    {
-      "name": "remote_session_snapshot",
-      "description": "Read the connected Tailcat remote computer in one call: OS, uptime, CPU, memory, disks, top processes. No card.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "session": {
-            "type": "string",
-            "description": "Support code; default: this chat's session."
-          }
-        }
-      }
-    },
-    {
-      "name": "remote_session_exec",
-      "description": "Run one command on the connected Tailcat remote computer (sh on macOS/Linux, PowerShell on Windows); returns exit code and output. A read-only command runs at once, any other asks the person.",
-      "inputSchema": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "command": {
-            "type": "string",
-            "maxLength": 8000
-          },
-          "session": {
-            "type": "string",
-            "description": "Support code; default: this chat's session."
-          },
-          "timeout_seconds": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120
-          }
-        },
-        "required": [
-          "command"
         ]
       }
     },

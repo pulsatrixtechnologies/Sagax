@@ -6,7 +6,7 @@
 // All three post to the one internal card route. server/chat-widgets.ts
 // (createAgentCard) tells them apart by the body's `tool` and is where a
 // widget is stored; the checks here only save a round trip.
-import { parseOptionsCardInput, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
+import { ASK_CHOICE_TOOL, parseAskChoiceInput, parseOptionsCardInput, WATCHER_OPTIONS_CARD_BOT_ID } from "../../shared/options-card.ts";
 import { parsePageProposal } from "../../shared/published-pages.ts";
 import { parseWidgetInput, widgetAdvice } from "../../shared/widget.ts";
 import { parseAppInput } from "../../shared/app.ts";
@@ -15,12 +15,18 @@ import { PLACE_PHONE_CALL_TOOL } from "../../shared/outbound-call.ts";
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
 
-export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", "check_widget", "show_widget", "update_widget", "show_html", "update_html", "propose_page", PLACE_PHONE_CALL_TOOL]);
+export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", ASK_CHOICE_TOOL, "check_widget", "show_widget", "update_widget", "show_html", "update_html", "propose_page", PLACE_PHONE_CALL_TOOL]);
 
 const CARD_ROUTE = "/api/internal/options-card";
 
 export async function callCardTool(name: string, args: Json, context: ToolCallContext): Promise<ToolCallResult> {
   const { api, apiResponse } = context.client;
+  if (name === ASK_CHOICE_TOOL) {
+    const parsed = parseAskChoiceInput(args);
+    if (!parsed.ok) return { text: parsed.error, isError: true };
+    await api(CARD_ROUTE, { method: "POST", body: JSON.stringify({ tool: ASK_CHOICE_TOOL, ...args }) });
+    return { text: "The question card is on the person's screen with your options. End your turn now with no further text: their click, or the answer they type under Other, arrives as their next message." };
+  }
   if (name === "create_options_card") {
     if (context.botId !== WATCHER_OPTIONS_CARD_BOT_ID) {
       return { text: "create_options_card is not enabled for this bot.", isError: true };

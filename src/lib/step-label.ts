@@ -93,6 +93,7 @@ const BARE: Record<string, Kind> = {
   attach_file: "attachFile",
   react_to_message: "react", remove_reaction: "react",
   create_options_card: "card",
+  ask_choice: "card",
   send_voice_note: "voiceNote",
   // the person's own iPhone (server/drivers/agents-phone-tools.ts): approved there
   phone_tool: "phone",

@@ -46,6 +46,7 @@ export const MEMBER_OWN_SCOPE_AGENT_TOOLS: Readonly<Record<string, MemberToolFam
   close_thread: "conversation",
   retry_thread: "conversation",
   create_options_card: "conversation",
+  ask_choice: "conversation",
   // the person's own rights decide through act; a nudge is rate limited
   run_routine: "conversation",
   answer_approval: "conversation",

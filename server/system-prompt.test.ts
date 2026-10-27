@@ -425,7 +425,11 @@ describe("verify-first rule (2026-10-19)", () => {
     expect(VERIFY_FIRST_PROMPT).toContain("Verify before you conclude");
     expect(VERIFY_FIRST_PROMPT).toContain("I could not see X");
     expect(VERIFY_FIRST_PROMPT).toContain("Never invent names, people, tools, commands, IDs or results");
-    expect(VERIFY_FIRST_PROMPT).toContain("question card (ask_user or its equivalent)");
+    expect(VERIFY_FIRST_PROMPT).toContain("Always ask through the interactive question tool, never in your reply text");
+    expect(VERIFY_FIRST_PROMPT).toContain("AskUserQuestion, ask_user_question, request_user_input or ask_user");
+    expect(VERIFY_FIRST_PROMPT).toContain("the Sagax tool ask_choice");
+    expect(VERIFY_FIRST_PROMPT).toContain("the one you recommend first");
+    expect(VERIFY_FIRST_PROMPT).toContain("Never put the question or a list of choices");
     expect(VERIFY_FIRST_PROMPT).toContain("never how far you check");
     expect(VERIFY_FIRST_PROMPT).toContain("call sagax_help before you answer or say it is impossible");
     expect(VERIFY_FIRST_PROMPT).not.toMatch(/[\u2013\u2014]/);

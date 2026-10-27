@@ -1,6 +1,11 @@
 /** The one bot allowed to create passive choice cards for the Watcher flow. */
 export const WATCHER_OPTIONS_CARD_BOT_ID = "f08dd8e3-f942-4eb4-8783-df32b26b88a4";
 
+/** The Sagax tool that gives every engine a clickable question: a card with
+ * 2-6 choices (the recommended one first) and the card's own "Other" field. */
+export const ASK_CHOICE_TOOL = "ask_choice";
+export const ASK_CHOICE_LIMITS = { question: 1_000, title: 120 } as const;
+
 /** Keep agent-authored cards small enough to remain useful on desktop and mobile. */
 export const OPTIONS_CARD_LIMITS = {
   title: 120,
@@ -55,4 +60,19 @@ export function parseOptionsCardInput(value: unknown): ParsedOptionsCardInput {
     options.push(option);
   }
   return { ok: true, value: { title, subtitle, options } };
+}
+
+/** ask_choice input -> the passive card it draws. The click comes back as the
+ * person's next message; the card authorizes nothing. */
+export function parseAskChoiceInput(value: unknown): ParsedOptionsCardInput {
+  if (!record(value)) return { ok: false, error: "ask_choice needs an object." };
+  const question = boundedText(value.question, "question", ASK_CHOICE_LIMITS.question);
+  if (typeof question !== "string") return { ok: false, error: question.error };
+  let title = "Your bot has a question";
+  if (value.title !== undefined) {
+    const given = boundedText(value.title, "title", ASK_CHOICE_LIMITS.title);
+    if (typeof given !== "string") return { ok: false, error: given.error };
+    title = given;
+  }
+  return parseOptionsCardInput({ title, subtitle: question, options: value.options });
 }

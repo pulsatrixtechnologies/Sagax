@@ -220,6 +220,7 @@ public enum StepLabel {
         "attach_file": .attachFile,
         "react_to_message": .react, "remove_reaction": .react,
         "create_options_card": .card,
+        "ask_choice": .card,
         "send_voice_note": .voiceNote,
         "tool_result_read": .readResult,
         "todo_write": .todo,
