@@ -53,6 +53,11 @@ export interface GrokLeftOut {
   name: string;
   reason: string;
   original?: string;
+  /** The catalog keys of `name` and `reason` (src/locales, `leftOut.*`), so the app shows them in the person's language; the English stays the fallback. */
+  nameKey?: string;
+  reasonKey?: string;
+  /** Values for both keys' placeholders ({name}, {max}, {bytes}, {parts}). */
+  params?: Record<string, string | number>;
 }
 
 export class GrokImportError extends Error {
@@ -315,7 +320,7 @@ function looksLikeCron(value: string): boolean {
   return fields.length === 5 && fields.slice(0, 2).every((field) => /^[\d*/,-]+$/.test(field));
 }
 
-function routineSchedule(routine: GrokExport["routines"][number], timeZone: string): { schedule: PackageRoutineSchedule } | { reason: string } {
+function routineSchedule(routine: GrokExport["routines"][number], timeZone: string): { schedule: PackageRoutineSchedule } | { reason: string; reasonKey: string } {
   const expression = routine.cron || (looksLikeCron(routine.schedule) ? routine.schedule : "");
   // A zone Sagax cannot read falls back to the person's own; a cron it cannot read falls back to the plain words.
   for (const zone of expression ? [routine.timeZone || timeZone, timeZone] : []) {
@@ -327,8 +332,10 @@ function routineSchedule(routine: GrokExport["routines"][number], timeZone: stri
   }
   const daily = simpleDaily(routine.schedule);
   if (daily) return { schedule: daily };
-  if (EVENT_WORDS.test(routine.schedule)) return { reason: "it starts on an event, not a clock" };
-  return { reason: routine.schedule || routine.cron ? "its schedule could not be read" : "the export gave no schedule for it" };
+  if (EVENT_WORDS.test(routine.schedule)) return { reason: "it starts on an event, not a clock", reasonKey: "leftOut.reason.eventRoutine" };
+  return routine.schedule || routine.cron
+    ? { reason: "its schedule could not be read", reasonKey: "leftOut.reason.unreadableSchedule" }
+    : { reason: "the export gave no schedule for it", reasonKey: "leftOut.reason.noSchedule" };
 }
 
 function skillEntry(skill: GrokExport["skills"][number], name: string): { name: string; description: string; instructions: string } | null {
@@ -366,20 +373,23 @@ export function grokExportToPackage(
   let soul = x.instructions.trim();
   if (utf8Bytes(soul) > BOT_PROFILE_LIMITS.soul) {
     soul = fitBytes(soul, BOT_PROFILE_LIMITS.soul);
-    skip({ kind: "instructions", name: "Standing instructions", reason: `they were longer than ${BOT_PROFILE_LIMITS.soul.toLocaleString("en-US")} bytes, so the end was cut. Check them after adding the bot` });
+    skip({ kind: "instructions", name: "Standing instructions", reason: `they were longer than ${BOT_PROFILE_LIMITS.soul.toLocaleString("en-US")} bytes, so the end was cut. Check them after adding the bot`,
+      nameKey: "leftOut.name.instructions", reasonKey: "leftOut.reason.instructionsCut", params: { bytes: BOT_PROFILE_LIMITS.soul } });
   }
 
   const skillNames = new Set<string>();
   const skills: Array<NonNullable<ReturnType<typeof skillEntry>>> = [];
   for (const [index, skill] of x.skills.entries()) {
-    const label = `Skill “${oneLine(skill.name) || index + 1}”`;
+    const skillLabel = oneLine(skill.name) || String(index + 1);
+    const label = `Skill “${skillLabel}”`;
+    const named = { nameKey: "leftOut.name.skill", params: { name: skillLabel, max: AGENT_MAX_SKILLS } };
     if (skills.length >= AGENT_MAX_SKILLS) {
-      skip({ kind: "skill", name: label, reason: `a bot holds at most ${AGENT_MAX_SKILLS} skills`, ...(skill.body ? { original: skill.body } : {}) });
+      skip({ kind: "skill", name: label, reason: `a bot holds at most ${AGENT_MAX_SKILLS} skills`, ...(skill.body ? { original: skill.body } : {}), ...named, reasonKey: "leftOut.reason.maxSkills" });
       continue;
     }
     const entry = skillEntry(skill, uniqueSlug(skill.name, `skill-${index + 1}`, skillNames));
     if (entry) skills.push(entry);
-    else skip({ kind: "skill", name: label, reason: skill.body ? "its text could not be read as a skill" : "the export had no text for it" });
+    else skip({ kind: "skill", name: label, reason: skill.body ? "its text could not be read as a skill" : "the export had no text for it", ...named, reasonKey: skill.body ? "leftOut.reason.unreadableSkill" : "leftOut.reason.noSkillText" });
   }
 
   const routineKeys = new Set<string>();
@@ -388,12 +398,14 @@ export function grokExportToPackage(
     const item = {
       kind: "routine" as const,
       name: `Routine “${label}”`,
+      nameKey: "leftOut.name.routine",
+      params: { name: label, max: MAX_ROUTINES },
       original: [routine.schedule && `When: ${routine.schedule}`, routine.cron && `Cron: ${routine.cron}`, routine.prompt].filter(Boolean).join("\n"),
     };
-    if (index >= MAX_ROUTINES) return skip({ ...item, reason: `a package holds at most ${MAX_ROUTINES} routines` });
-    if (!routine.prompt) return skip({ ...item, reason: "the export had no prompt for it" });
+    if (index >= MAX_ROUTINES) return skip({ ...item, reason: `a package holds at most ${MAX_ROUTINES} routines`, reasonKey: "leftOut.reason.maxRoutines" });
+    if (!routine.prompt) return skip({ ...item, reason: "the export had no prompt for it", reasonKey: "leftOut.reason.noPrompt" });
     const timing = routineSchedule(routine, timeZone);
-    if ("reason" in timing) return skip({ ...item, reason: timing.reason });
+    if ("reason" in timing) return skip({ ...item, reason: timing.reason, reasonKey: timing.reasonKey });
     return [{
       key: uniqueSlug(label, `routine-${index + 1}`, routineKeys),
       name: label,
@@ -411,7 +423,7 @@ export function grokExportToPackage(
     const label = clip(plugin.name, 100);
     const appSlug = slug(label, 60);
     if (!appSlug || appSlugs.has(appSlug)) return [];
-    if (appSlugs.size >= MAX_APPS) return skip({ kind: "app", name: `App “${label}”`, reason: `a package lists at most ${MAX_APPS} apps` });
+    if (appSlugs.size >= MAX_APPS) return skip({ kind: "app", name: `App “${label}”`, reason: `a package lists at most ${MAX_APPS} apps`, nameKey: "leftOut.name.app", reasonKey: "leftOut.reason.maxApps", params: { name: label, max: MAX_APPS } });
     appSlugs.add(appSlug);
     return [{ slug: appSlug, label, reason: clip(oneLine(plugin.note) || `${name} used ${label} in ${from}.`, 240) }];
   });
@@ -420,7 +432,7 @@ export function grokExportToPackage(
   if (x.memories.length) {
     const notes = `# Notes from ${from}\n\n${x.memories.map((memory) => `- ${memory.replace(/\s*\n\s*/g, " ")}`).join("\n")}\n`;
     if (utf8Bytes(notes) <= SEED_FILE_MAX_BYTES) seed = { memory: { "MEMORY.md": notes } };
-    else skip({ kind: "memories", name: "Memories", reason: "they were larger than 256 KB" });
+    else skip({ kind: "memories", name: "Memories", reason: "they were larger than 256 KB", nameKey: "leftOut.name.memories", reasonKey: "leftOut.reason.memoriesTooLarge" });
   }
 
   const summary = clip(description || `${name}, brought over from ${from}.`, 2_000);
@@ -455,7 +467,7 @@ export function grokExportToPackage(
     },
   };
   const { document, redacted } = redactPackageSecrets(draft);
-  if (redacted.length) skip({ kind: "secrets", name: "Keys and passwords", reason: `text that looked like a key or password was replaced in ${redacted.join(", ")}` });
+  if (redacted.length) skip({ kind: "secrets", name: "Keys and passwords", reason: `text that looked like a key or password was replaced in ${redacted.join(", ")}`, nameKey: "leftOut.name.secrets", reasonKey: "leftOut.reason.secretsReplaced", params: { parts: redacted.join(", ") } });
   try {
     return { document: parsePackageDocument(document, { trust: "file" }), leftOut };
   } catch (error) {

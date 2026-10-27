@@ -34,6 +34,8 @@ struct CreateBotSheet: View {
     @State private var showingOptions = false
     /// "Import from zip" (#271).
     @State private var importingZip = false
+    /// "Import from Grok Bot" (desktop AgentImport.tsx).
+    @State private var importingAgent = false
     @State private var presets: [BotPreset] = []
     /// The administrator lets this person use shared bots only (NB6).
     @State private var readOnly = false
@@ -48,6 +50,16 @@ struct CreateBotSheet: View {
     /// Card top on the 874 pt screen; the card ends 8 pt above the bottom.
     static let cardTop: CGFloat = 123.67
     private static let cardRadius: CGFloat = Theme.continuous(36)
+
+    /// The parity harness's pasted reply (DEBUG `-parityScreen create-bot-import`).
+    private static var parityReply: String {
+        #if DEBUG
+        if ParityLaunch.current?.screen == .createBotImport {
+            return #"{"format":"openmaus.grok/1","name":"Scout","description":"Finds leads.","instructions":"Find five new leads every weekday.","skills":[{"name":"lead-research","description":"Research a company","body":"Read the site."}],"routines":[{"name":"Morning leads","schedule":"Weekdays at 9am","cron":"0 9 * * 1-5","timeZone":"America/Toronto","prompt":"Find five leads."},{"name":"On reply","schedule":"When a lead replies by email","cron":"","timeZone":"","prompt":"Summarise the reply."}],"plugins":["Gmail"],"memories":[]}"#
+        }
+        #endif
+        return ""
+    }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var canCreate: Bool { !trimmedName.isEmpty && !creating }
@@ -78,6 +90,9 @@ struct CreateBotSheet: View {
             keyboardHeight = 0
         }
         .task {
+            #if DEBUG
+            if ParityLaunch.current?.screen == .createBotImport { importingAgent = true }
+            #endif
             if session.isDemo { unlocks = .demo }
             readOnly = NewBotRules.readOnly(await session.configStatus())
             presets = await session.botPresets()
@@ -91,6 +106,12 @@ struct CreateBotSheet: View {
                 importingZip = false
                 if let bot { created(bot) } else { close() }
             }
+        }
+        .sheet(isPresented: $importingAgent) {
+            AgentImportSheet(close: { importingAgent = false }, imported: { bot in
+                importingAgent = false
+                if let bot { created(bot) } else { close() }
+            }, initialReply: Self.parityReply)
         }
         .sheet(isPresented: $showingOptions) {
             NewBotOptionsForm(
@@ -213,6 +234,21 @@ struct CreateBotSheet: View {
                         .buttonStyle(.plain)
                         .padding(.bottom, 12)
                         .accessibilityIdentifier("create-bot-import-zip")
+                        // Import an agent from Grok Bot (desktop AgentImport.tsx): inert, anyone who may create bots.
+                        if !readOnly {
+                            Button {
+                                nameFocused = false
+                                importingAgent = true
+                            } label: {
+                                Label("Import from Grok Bot", systemImage: "square.and.arrow.down")
+                                    .font(Theme.Font.bodyMedium)
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .frame(maxWidth: .infinity, minHeight: 36)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.bottom, 12)
+                            .accessibilityIdentifier("create-bot-import-agent")
+                        }
                     }
                 }
                 .modifier(FlashScrollIndicators())

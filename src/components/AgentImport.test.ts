@@ -129,6 +129,24 @@ describe("import a Grok Bot", () => {
   });
 });
 
+describe("left out in French", () => {
+  it("shows the reasons in the person's language", async () => {
+    const { setLocale } = await import("@/lib/i18n");
+    setLocale("fr");
+    try {
+      fixture.api.mockResolvedValue({ id: STAGED, preview: legacyPreview("p") });
+      act(() => { root.render(createElement(AgentImportPanel, { initialSource: "claude" })); });
+      const input = container.querySelector("[data-agent-import-folder]") as HTMLInputElement;
+      Object.defineProperty(input, "files", { value: [picked("p/CLAUDE.md", "Hi."), picked("p/.env", "x")], configurable: true });
+      await act(async () => { input.dispatchEvent(new Event("change", { bubbles: true })); });
+      await flush();
+      expect(container.querySelector("[data-grok-left-out]")?.textContent).toContain(".env : il peut contenir une clé ou un mot de passe");
+    } finally {
+      setLocale("en");
+    }
+  });
+});
+
 describe("readClaudeCodeFolder", () => {
   it("names secret files at the top or under .claude, and skips the rest of the tree", async () => {
     const folder = await readClaudeCodeFolder([

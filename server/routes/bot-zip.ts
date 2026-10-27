@@ -9,12 +9,17 @@
 //   POST   /api/bots/import/:id           { name?, conversations?, sharing? }
 //          201 { botId, name, warnings }. Audited bot.import.
 //   DELETE /api/bots/import/:id           forget a staged file
+//   GET    /api/bots/import/agent         { prompt }: the export prompt to send to the person's bot on x.ai
+//   POST   /api/bots/import/agent         { text, timeZone? }: that bot's reply, made into a Sagax
+//          package here (shared/grok-import.ts) and staged like an upload:
+//          { id, preview, leftOut }. For the phone, which has no copy of the
+//          converter; the desktop makes the package itself (AgentImport.tsx).
 //
 // Import needs the right to create bots. An organization member's copy
 // drops host settings (memberImportReset). Member scope (request-auth.ts
 // CLIENT_ALLOW); every rule is checked here.
 import { randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { BOT_ZIP_MAX_BYTES, type BotZipExportOptions } from "../../shared/bot-zip.ts";
@@ -29,6 +34,7 @@ import {
   writeBotZip,
   type BotZipHost,
 } from "../bot-zip.ts";
+import { GROK_EXPORT_PROMPT, GrokImportError, grokExportToPackage, parseGrokExport } from "../../shared/grok-import.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -70,7 +76,8 @@ interface Staged {
   expires: number;
 }
 
-const ROUTE = /^\/api\/bots\/(?:([\w-]+)\/export\.zip|import\/(upload|[0-9a-f-]{36})(?:\/(preview))?)$/;
+const ROUTE = /^\/api\/bots\/(?:([\w-]+)\/export\.zip|import\/(upload|agent|[0-9a-f-]{36})(?:\/(preview))?)$/;
+const AGENT_TEXT_MAX = 4 * 1024 * 1024;
 
 function flag(value: string | null): boolean {
   return value === "1" || value === "true";
@@ -142,6 +149,36 @@ export function createBotZipRoutes(deps: BotZipRouteDeps): RouteHandler {
     const importer = deps.importer(auth);
     if (!importer) return json(res, 403, { error: "forbidden: importing a bot is for a person" });
     if (!importer.canCreate) return json(res, 403, { error: "You cannot create bots on this server.", code: "bots_read_only" });
+
+    if (importId === "agent" && !preview) {
+      if (method === "GET") return json(res, 200, { prompt: GROK_EXPORT_PROMPT });
+      if (method !== "POST") return json(res, 405, { error: "GET or POST only" });
+      const body = await readBody(req, AGENT_TEXT_MAX + 4_096).catch(() => null) as { text?: unknown; timeZone?: unknown } | null;
+      if (typeof body?.text !== "string" || !body.text.trim()) return json(res, 400, { error: "Paste the reply your bot on x.ai wrote." });
+      let made;
+      try {
+        made = grokExportToPackage(parseGrokExport(body.text), { timeZone: typeof body.timeZone === "string" ? body.timeZone : undefined });
+      } catch (error) {
+        if (error instanceof GrokImportError) return json(res, 400, { error: error.message, code: "invalid_export" });
+        throw error;
+      }
+      const id = randomUUID();
+      const file = join(deps.stagingDir, `${id}.upload`);
+      try {
+        writeFileSync(file, JSON.stringify(made.document), { mode: 0o600, flag: "wx" });
+        const inspected = inspectBotZip(file);
+        try {
+          const answer = await previewBotZip(deps.host, inspected, { asMember: importer.asMember });
+          staged.set(id, { key: importer.key, path: file, expires: now() + BOT_ZIP_STAGE_MS });
+          return json(res, 200, { id, preview: answer, leftOut: made.leftOut });
+        } finally {
+          closeInspected(inspected);
+        }
+      } catch (error) {
+        rmSync(file, { force: true });
+        return fail(error, json, res);
+      }
+    }
 
     if (importId === "upload") {
       if (method !== "POST") return json(res, 405, { error: "POST only" });

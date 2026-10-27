@@ -8,7 +8,7 @@
 import { useRef, useState } from "react";
 import { Copy, FileUp } from "lucide-react";
 import { api } from "@/state/store";
-import { t } from "@/lib/i18n";
+import { t, tFromServer } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
 import {
@@ -114,6 +114,13 @@ export function GrokImportBox({ onPreview }: { onPreview: (pending: PendingTeamI
   );
 }
 
+/** A left-out line's text in the person's language; the English it came with when this build has no key. */
+export function leftOutText(key: string | undefined, english: string, params: Record<string, string | number> = {}): string {
+  const template = tFromServer(key, undefined);
+  if (template === undefined) return english;
+  return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+}
+
 /** What the import could not carry, with the original text to redo it by hand. */
 export function GrokLeftOutList({ leftOut }: { leftOut: GrokLeftOut[] }) {
   if (!leftOut.length) return null;
@@ -123,7 +130,7 @@ export function GrokLeftOutList({ leftOut }: { leftOut: GrokLeftOut[] }) {
       <ul className="mt-1 space-y-1.5">
         {leftOut.map((item, index) => (
           <li key={`${item.kind}-${index}`} className="text-[12px] text-ink-secondary">
-            <span className="text-ink">{item.name}</span>: {item.reason}
+            <span className="text-ink">{leftOutText(item.nameKey, item.name, item.params)}</span>{t("leftOut.separator")}{leftOutText(item.reasonKey, item.reason, item.params)}
             {item.original ? <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-inset px-2 py-1 text-[11px]">{item.original}</pre> : null}
           </li>
         ))}

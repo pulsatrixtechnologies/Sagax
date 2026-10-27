@@ -125,7 +125,7 @@ function inlineImports(text: string, files: Map<string, string>, leftOut: GrokLe
     const path = claudeCodeRelativePath(ref);
     const imported = files.get(path);
     if (imported === undefined || seen.has(path)) {
-      if (imported === undefined) leftOut.push({ kind: "instructions", name: `@${ref}`, reason: "CLAUDE.md imports this file, but it is not one the import reads; add what it says by hand if the bot needs it" });
+      if (imported === undefined) leftOut.push({ kind: "instructions", name: `@${ref}`, reason: "CLAUDE.md imports this file, but it is not one the import reads; add what it says by hand if the bot needs it", reasonKey: "leftOut.reason.importNotRead" });
       return line;
     }
     seen.add(path);
@@ -173,18 +173,19 @@ function subagentsFrom(files: ClaudeCodeFile[], skillNames: Map<string, string>,
     const { fields, body } = frontmatter(file.text);
     const name = clip(oneLine(fields.name || match[2]!), 100);
     const label = `Subagent “${name}”`;
+    const named = { nameKey: "leftOut.name.subagent", params: { name, max: MAX_SUBAGENTS, bytes: BOT_PROFILE_LIMITS.soul } };
     if (agents.length >= MAX_SUBAGENTS) {
-      leftOut.push({ kind: "instructions", name: label, reason: `an import brings at most ${MAX_SUBAGENTS} subagents`, original: file.text.slice(0, 4_000) });
+      leftOut.push({ kind: "instructions", name: label, reason: `an import brings at most ${MAX_SUBAGENTS} subagents`, original: file.text.slice(0, 4_000), ...named, reasonKey: "leftOut.reason.maxSubagents" });
       continue;
     }
     let soul = body.trim();
     if (!soul) {
-      leftOut.push({ kind: "instructions", name: label, reason: "it has no instructions" });
+      leftOut.push({ kind: "instructions", name: label, reason: "it has no instructions", ...named, reasonKey: "leftOut.reason.noInstructions" });
       continue;
     }
     if (utf8Bytes(soul) > BOT_PROFILE_LIMITS.soul) {
       soul = fitBytes(soul, BOT_PROFILE_LIMITS.soul);
-      leftOut.push({ kind: "instructions", name: label, reason: `its instructions were longer than ${BOT_PROFILE_LIMITS.soul.toLocaleString("en-US")} bytes, so the end was cut` });
+      leftOut.push({ kind: "instructions", name: label, reason: `its instructions were longer than ${BOT_PROFILE_LIMITS.soul.toLocaleString("en-US")} bytes, so the end was cut`, ...named, reasonKey: "leftOut.reason.subagentCut" });
     }
     // Skills the subagent names (frontmatter `skills: a, b` or `[a, b]`) that came over.
     const wanted = (fields.skills ?? "").replace(/^\[|\]$/g, "").split(",").map((value) => value.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
@@ -211,7 +212,7 @@ function connectionsFrom(raw: string | undefined, leftOut: GrokLeftOut[]): Packa
   try {
     parsed = JSON.parse(raw);
   } catch {
-    leftOut.push({ kind: "app", name: ".mcp.json", reason: "it is not valid JSON" });
+    leftOut.push({ kind: "app", name: ".mcp.json", reason: "it is not valid JSON", reasonKey: "leftOut.reason.invalidJson" });
     return [];
   }
   const servers = isRecord(parsed) && isRecord(parsed.mcpServers) ? parsed.mcpServers : {};
@@ -220,12 +221,14 @@ function connectionsFrom(raw: string | undefined, leftOut: GrokLeftOut[]): Packa
   for (const [name, value] of Object.entries(servers)) {
     if (!isRecord(value)) continue;
     const label = `App “${clip(oneLine(name), 80)}”`;
+    const named = { nameKey: "leftOut.name.app", params: { name: clip(oneLine(name), 80), max: PACKAGE_MAX_CONNECTIONS } };
     if (typeof value.command === "string") {
       // A command is never carried by a package: it would run on the person's computer.
       const envNames = isRecord(value.env) ? Object.keys(value.env).filter((key) => HEADER_NAME.test(key)) : [];
       leftOut.push({
         kind: "app", name: label,
         reason: "it runs a program on your computer; add it yourself in Connect apps",
+        ...named, reasonKey: "leftOut.reason.runsProgram",
         original: [`Program: ${oneLine(value.command).split(" ")[0]}`, envNames.length ? `Values it needs: ${envNames.join(", ")}` : ""].filter(Boolean).join("\n"),
       });
       continue;
@@ -241,11 +244,11 @@ function connectionsFrom(raw: string | undefined, leftOut: GrokLeftOut[]): Packa
       usable = false;
     }
     if (!usable) {
-      leftOut.push({ kind: "app", name: label, reason: "its address is not a plain https:// address; add it yourself in Connect apps" });
+      leftOut.push({ kind: "app", name: label, reason: "its address is not a plain https:// address; add it yourself in Connect apps", ...named, reasonKey: "leftOut.reason.notHttps" });
       continue;
     }
     if (connections.length >= PACKAGE_MAX_CONNECTIONS) {
-      leftOut.push({ kind: "app", name: label, reason: `an import brings at most ${PACKAGE_MAX_CONNECTIONS} apps` });
+      leftOut.push({ kind: "app", name: label, reason: `an import brings at most ${PACKAGE_MAX_CONNECTIONS} apps`, ...named, reasonKey: "leftOut.reason.maxConnections" });
       continue;
     }
     // Header names only: their values (tokens, keys) never come over.
@@ -301,7 +304,7 @@ export function claudeCodeToPackage(
   const subagents = subagentsFrom(files, skillNames, main.key, leftOut);
   const connections = connectionsFrom(byPath.get(".mcp.json"), leftOut);
   for (const secret of options.skippedSecrets ?? []) {
-    leftOut.push({ kind: "secrets", name: secret, reason: "it may hold a key or a password, so it was not opened. Add what the bot needs in Connect apps or the vault" });
+    leftOut.push({ kind: "secrets", name: secret, reason: "it may hold a key or a password, so it was not opened. Add what the bot needs in Connect apps or the vault", reasonKey: "leftOut.reason.secretFile" });
   }
   const draft: PackageDocument = {
     ...base.document,
@@ -316,7 +319,7 @@ export function claudeCodeToPackage(
     },
   };
   const { document, redacted } = redactPackageSecrets(draft);
-  if (redacted.length) leftOut.push({ kind: "secrets", name: "Keys and passwords", reason: `text that looked like a key or password was replaced in ${redacted.join(", ")}` });
+  if (redacted.length) leftOut.push({ kind: "secrets", name: "Keys and passwords", reason: `text that looked like a key or password was replaced in ${redacted.join(", ")}`, nameKey: "leftOut.name.secrets", reasonKey: "leftOut.reason.secretsReplaced", params: { parts: redacted.join(", ") } });
   try {
     return { document: parsePackageDocument(document, { trust: "file" }), leftOut };
   } catch (error) {

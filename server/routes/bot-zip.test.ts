@@ -113,3 +113,36 @@ describe("bot zip routes", () => {
     expect((await junk.json() as { code: string }).code).toBe("invalid_zip");
   });
 });
+
+describe("the phone's agent import (POST /api/bots/import/agent)", () => {
+  const reply = JSON.stringify({
+    format: "openmaus.grok/1", name: "Scout", description: "Finds leads.", instructions: "Find leads.",
+    skills: [], routines: [{ name: "Daily", schedule: "every day at 9am", cron: "0 9 * * *", timeZone: "UTC", prompt: "Find leads." },
+      { name: "On reply", schedule: "When a lead replies", cron: "", timeZone: "", prompt: "Read it." }],
+    plugins: [], memories: [],
+  });
+
+  it("gives the export prompt, stages the reply as a package for this person, and lists what was left out", async () => {
+    const { base } = await boot();
+    const prompt = await fetch(`${base}/api/bots/import/agent`, { headers: { "x-person": "pr_member" } }).then((r) => r.json()) as { prompt: string };
+    expect(prompt.prompt).toContain("openmaus.grok/1");
+    const staged = await fetch(`${base}/api/bots/import/agent`, {
+      method: "POST", headers: { "x-person": "pr_member", "content-type": "application/json" }, body: JSON.stringify({ text: reply, timeZone: "UTC" }),
+    });
+    expect(staged.status).toBe(200);
+    const body = await staged.json() as { id: string; preview: { kind: string; name: string; includes: { routines: number } }; leftOut: Array<{ reasonKey?: string }> };
+    expect(body.preview).toMatchObject({ kind: "legacy", name: "Scout", includes: { routines: 1 } });
+    expect(body.leftOut.map((item) => item.reasonKey)).toEqual(["leftOut.reason.eventRoutine"]);
+    // staged for this person only
+    const other = await fetch(`${base}/api/bots/import/${body.id}/preview`, { method: "POST", headers: { "x-person": "pr_other", "content-type": "application/json" }, body: "{}" });
+    expect(other.status).toBe(404);
+  });
+
+  it("refuses a reply that is not an export, and a person who may not create bots", async () => {
+    const { base } = await boot();
+    const bad = await fetch(`${base}/api/bots/import/agent`, { method: "POST", headers: { "x-person": "pr_member", "content-type": "application/json" }, body: JSON.stringify({ text: "hello" }) });
+    expect(bad.status).toBe(400);
+    const readOnly = await fetch(`${base}/api/bots/import/agent`, { method: "POST", headers: { "x-person": "pr_readonly", "content-type": "application/json" }, body: JSON.stringify({ text: reply }) });
+    expect(readOnly.status).toBe(403);
+  });
+});

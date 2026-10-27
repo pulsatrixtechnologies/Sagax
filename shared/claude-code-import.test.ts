@@ -118,3 +118,18 @@ describe("which files are read", () => {
     expect(frontmatter("no frontmatter").body).toBe("no frontmatter");
   });
 });
+
+describe("left out, in the person's language", () => {
+  it("names a catalog key for every line, whose English is the line itself", async () => {
+    const en = (await import("../src/locales/en.json")).default as Record<string, string>;
+    const fill = (template: string, params: Record<string, string | number> = {}) =>
+      template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match));
+    const { leftOut } = claudeCodeToPackage(project, { folderName: "acme-app", skippedSecrets: [".env"] });
+    expect(leftOut.length).toBeGreaterThan(2);
+    for (const item of leftOut) {
+      expect(en[item.reasonKey!], item.reason).toBeDefined();
+      expect(fill(en[item.reasonKey!]!, item.params)).toBe(item.reason);
+      if (item.nameKey) expect(fill(en[item.nameKey]!, item.params)).toBe(item.name);
+    }
+  });
+});

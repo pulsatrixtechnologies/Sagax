@@ -861,6 +861,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // manage, import the right to create bots; both checked in the handler.
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/export\.zip$/ },
   { methods: ["POST"], path: /^\/api\/bots\/import\/(?:upload|[0-9a-f-]{36}(?:\/preview)?)$/ },
+  // An x.ai bot's export reply made into a package on the server and staged
+  // (the phone's agent import); GET is the export prompt. Same rights as upload.
+  { methods: ["GET", "POST"], path: /^\/api\/bots\/import\/agent$/ },
   { methods: ["DELETE"], path: /^\/api\/bots\/import\/[0-9a-f-]{36}$/ },
   // Slice 8: a person copies their own bots from a solo Sagax (the handler
   // checks the session, the caller's right to create bots and the copy).
