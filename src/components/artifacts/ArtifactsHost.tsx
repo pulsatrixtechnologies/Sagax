@@ -2,7 +2,7 @@
 // the floating windows of popped-out artifacts, kept matching the server
 // (artifact-windows.ts), and the artifact the palette asked for, popped out.
 import { useCallback, useEffect, useState } from "react";
-import { LoaderCircle, PanelBottomClose, RefreshCw } from "lucide-react";
+import { AppWindow, LoaderCircle, PanelBottomClose, RefreshCw } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -12,7 +12,7 @@ import { refreshArtifact, useAllArtifacts, useArtifact, useArtifactWatch } from 
 import { ArtifactFrame } from "./ArtifactFrame";
 import { ArtifactStatusLine } from "./ArtifactsSection";
 import {
-  ARTIFACT_WINDOW_KIND, artifactWindowData, closeArtifactWindow, dockArtifact, dockArtifactWindow, popOutArtifact, reconcileArtifactWindows, type ArtifactWindowData,
+  ARTIFACT_WINDOW_KIND, artifactWindowData, canOpenArtifactInOwnWindow, closeArtifactWindow, dockArtifact, dockArtifactWindow, openArtifactInOwnWindow, ownArtifactWindowClosed, popOutArtifact, reconcileArtifactWindows, type ArtifactWindowData,
 } from "./artifact-windows";
 
 const TOOL = "flex size-7 items-center justify-center rounded-md text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:opacity-40";
@@ -41,6 +41,18 @@ export function ArtifactWindowBody({ data }: { data: ArtifactWindowData }) {
             }}
           >
             <RefreshCw size={13} aria-hidden="true" className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
+          </button>
+        )}
+        {canOpenArtifactInOwnWindow() && artifact && (
+          <button
+            type="button"
+            className={TOOL}
+            data-artifact-own-window
+            aria-label={t("artifacts.ownWindow")}
+            title={t("artifacts.ownWindow")}
+            onClick={() => void openArtifactInOwnWindow({ id: data.artifactId, botId: data.botId, title: artifact.title })}
+          >
+            <AppWindow size={13} aria-hidden="true" />
           </button>
         )}
         <button type="button" className={TOOL} aria-label={t("artifacts.dock")} title={t("artifacts.dock")} onClick={() => void dockArtifactWindow({ id: data.artifactId, botId: data.botId }).catch(() => {})}>
@@ -74,6 +86,8 @@ export function ArtifactsHost() {
   useEffect(() => {
     if (artifacts) reconcileArtifactWindows(artifacts, dockArtifact);
   }, [artifacts]);
+  // The person closed an artifact's window of its own (desktop app): docked.
+  useEffect(() => window.ogb?.artifactWindow?.onClosed(ownArtifactWindowClosed), []);
   const onOpen = useCallback((event: Event) => {
     const detail = (event as CustomEvent<OpenArtifactDetail>).detail;
     if (!detail?.botId || !detail.artifactId) return;

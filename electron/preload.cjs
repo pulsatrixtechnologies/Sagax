@@ -64,7 +64,7 @@ const REMOTE_SAFE = new Set(["platform", "windowControls", "getCapabilities", "o
 // every one of these channels again (local-origin.cjs desktopUiOnly, and
 // sharingUiOnly for the server-mode server only). Nothing that reads this
 // computer's files, screen, logins or secrets is handed to the page.
-const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences", "localModels"]);
+const BUNDLED_EXTRA = new Set(["floatingBots", "dataWindow", "artifactWindow", "retroAssistant", "windowControls", "onOpenAppSettings", "openExternal", "openConnectorSetup", "confirm", "updater", "serverMode", "computerSharing", "appIcon", "orgMemory", "securityKey", "onChatLink", "desktopLanguage", "openPdf", "shellPreferences", "localModels"]);
 let bundledPage = false;
 // main.mjs always answers this channel: a sendSync nobody answers would
 // block this page for good (a test harness must answer it too).
@@ -624,6 +624,26 @@ const bridge = {
       title: String(request?.title ?? ""),
       ...(request?.cardId ? { cardId: String(request.cardId) } : {}),
     }),
+  },
+  /** A popped-out artifact in a desktop window of its own, outside the app's
+   * frame, one per artifact (electron/artifact-window.mjs). Main opens it only
+   * for this app's own window; closing it tells this page, which docks it. */
+  artifactWindow: {
+    open: (request) => ipcRenderer.invoke("artifact-window:open", {
+      botId: String(request?.botId ?? ""),
+      artifactId: String(request?.artifactId ?? ""),
+      title: String(request?.title ?? ""),
+      ...(Number.isFinite(request?.width) ? { width: Number(request.width) } : {}),
+      ...(Number.isFinite(request?.height) ? { height: Number(request.height) } : {}),
+    }),
+    close: (artifactId) => ipcRenderer.invoke("artifact-window:close", { artifactId: String(artifactId ?? "") }),
+    onClosed: cb => {
+      const handler = (_event, value) => {
+        if (value && typeof value.artifactId === "string" && typeof value.botId === "string") cb({ botId: value.botId, artifactId: value.artifactId });
+      };
+      ipcRenderer.on("artifact-window:closed", handler);
+      return () => ipcRenderer.removeListener("artifact-window:closed", handler);
+    },
   },
   /** Floating bots: a bot on its own always-on-top window, one per bot. This
    * page is the brain; the windows only draw and report clicks
