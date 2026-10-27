@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { permissionPaths, withAbsolutePaths } from "./permission-command.ts";
+import { permissionPaths, permissionPathsFromInput, withAbsolutePaths } from "./permission-command.ts";
 
 describe("permissionPaths", () => {
   const cwd = resolve("/data/task-workspaces/bot-1/thread-1");
@@ -22,6 +22,16 @@ describe("permissionPaths", () => {
   it("names nothing for any other tool", () => {
     expect(permissionPaths("Bash", { command: "ls", path: "/" }, cwd)).toBeUndefined();
     expect(permissionPaths("WebFetch", { url: "https://example.test" }, cwd)).toBeUndefined();
+  });
+  it("reads MCP file leaves, and does not treat a bare list as the working folder (#1169)", () => {
+    expect(permissionPaths("mcp__sagax-desktop__read_file", { path: "inbox/nova/note.txt" }, cwd)).toEqual([resolve(cwd, "inbox/nova/note.txt")]);
+    expect(permissionPaths("read_file", { path: "/data/workspaces/bot-1/inbox/a.txt" }, cwd)).toEqual([resolve("/data/workspaces/bot-1/inbox/a.txt")]);
+    expect(permissionPaths("list_files", {}, cwd)).toBeUndefined();
+    expect(permissionPaths("search_files", { path: "inbox" }, cwd)).toEqual([resolve(cwd, "inbox")]);
+    expect(permissionPaths("mcp__x__read", { path: "/etc/passwd" }, cwd)).toBeUndefined();
+    expect(permissionPaths("Glob", { pattern: "**/*" }, cwd)).toEqual([cwd]);
+    expect(permissionPathsFromInput("write_file", JSON.stringify({ path: "out/a.ts" }), cwd)).toEqual([resolve(cwd, "out/a.ts")]);
+    expect(permissionPathsFromInput("read_file", "not json", cwd)).toBeUndefined();
   });
 });
 

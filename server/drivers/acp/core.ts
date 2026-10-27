@@ -89,7 +89,7 @@ import { supportsApprovalMode } from "../../../shared/approval-mode.ts";
 import { MAX_QUESTION_TEXT, parseAskQuestions, parseChoices, questionAnswersByQuestion } from "../../../shared/ask-question.ts";
 
 import { appendNative } from "../native.ts";
-import { acpPermissionCommand, permissionLaunchCwd } from "../permission-command.ts";
+import { acpPermissionCommand, permissionLaunchCwd, permissionPaths, permissionPathsFromInput } from "../permission-command.ts";
 import { commandSummary, cwToolResult, toolDetailPreview } from "../../tool-summary.ts";
 import { acpWrittenFiles, filesField } from "../../thread-files.ts";
 import { acpToolEndEvents } from "./tool-items.ts";
@@ -1082,6 +1082,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             }, 15 * 60_000);
             timer.unref?.();
             current.asks.set(requestId, finish);
+            const gateInput = typeof ask.review === "string" && ask.review ? ask.review.slice(0, 2000) : undefined;
+            const gatePaths = gateInput ? permissionPathsFromInput(mcpTool, gateInput, undefined) : undefined;
             emit({
               ...base(threadId, current.turnId),
               type: "request.opened",
@@ -1090,7 +1092,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               tool: "other",
               summary: `${mcpTool}${preview}`.slice(0, 200),
               mcpTool,
-              ...(typeof ask.review === "string" && ask.review ? { input: ask.review.slice(0, 2000) } : {}),
+              ...(gateInput ? { input: gateInput } : {}),
+              ...(gatePaths?.length ? { paths: gatePaths } : {}),
               sagaxGate: true,
               approvalScope: current.controlsHost ? "local-computer" : undefined,
               // never a session-wide grant: every call is its own card
@@ -1604,6 +1607,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           const mcpTool = !isQuestion && !["execute", "edit", "delete", "move"].includes(kind) && /^(?:mcp__)?[a-z][\w-]{0,63}__[a-z][a-z0-9_]{0,63}$/i.test(mcpTitle)
             ? mcpTitle
             : undefined;
+          const openedPaths = isQuestion ? undefined : permissionPaths(mcpTool ?? tool, toolCall.rawInput, commandCwd);
           // An engine's own connector (Grok's use_tool to the xAI account's
           // cloud connectors): its arguments for the card, and whether it
           // acts outside the app, fail closed (connector-ask.ts).
@@ -1703,6 +1707,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             tool,
             summary,
             ...(mcpTool ? { mcpTool } : {}),
+            ...(openedPaths?.length ? { paths: openedPaths } : {}),
             command: isShellCommand ? acpPermissionCommand(toolCall.rawInput, commandCwd) : undefined,
             requiresExplicitApproval: isShellCommand && (
               toolCall.rawInput?.dangerouslyDisableSandbox === true || toolCall.rawInput?.sandbox_permissions === "require_escalated"

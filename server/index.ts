@@ -1219,6 +1219,7 @@ import { OFFICE_IMAGE_MAX_COUNT, OFFICE_IMAGES_MAX_TOTAL_BYTES, officeKind, offi
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
 import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type TurnSpeaker } from "./engine-access.ts";
+import { permissionPathsFromInput } from "./drivers/permission-command.ts";
 import {
   channelTurnGate,
   createWorkerRoutes,
@@ -14807,14 +14808,34 @@ bus.subscribe((event: RuntimeEvent) => {
       // ownComputerChoiceCall).
       const ownComputerChoice = Boolean(permission && asker && event.requestId && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
         && ownComputerChoiceRequest(asker, event.threadId, event.mcpTool ?? event.tool, cardAnswerer, guestDriven));
+      // A Full turn may read the bot's own workspace (inbox included) and its
+      // task folders without an admin card. MCP reads stay an admin card at
+      // every other level. Another thread's confidential folder stays an
+      // admin card. Paths the event did not carry are read from the tool
+      // input; a missing path stays an admin card.
+      const fileTool = event.mcpTool ?? event.tool;
+      const filePaths = event.paths?.length
+        ? event.paths
+        : permissionPathsFromInput(fileTool, event.input, event.command?.cwd);
+      if (!event.paths?.length && filePaths?.length) event.paths = filePaths;
+      const confidentialElsewhere = memberAsker && asker
+        ? (store.bot(asker.id)?.tasks ?? [])
+          .filter((task) => task.confidential === true && task.threadId !== event.threadId && /^[A-Za-z0-9_-]{1,128}$/.test(task.threadId))
+          .map((task) => join(TASK_WORKSPACES_DIR, asker.id, task.threadId))
+        : [];
       const serverLevelCard = Boolean(memberAsker && asker && memberBotAdminApproval({
-        tool: event.mcpTool ?? event.tool, command: event.command, paths: event.paths,
+        tool: fileTool,
+        command: event.command,
+        paths: filePaths,
         workspaceRoot: join(realpathSync(DATA_DIR), "task-workspaces", asker.id),
         ownerScopedMcpServer: ownerScopedMcpServerFor(asker, event.threadId),
         ownEnvironment,
         ownDestination,
         ownComputerChoice,
         foreignMcpServers: foreignServers,
+        fullRootReads: effectiveApprovalMode === "full",
+        readRoots: [workspaceDir(asker.id)],
+        excludedPrefixes: confidentialElsewhere,
       }));
       // Security review 2026-10-19: a holder of host.commands answers a
       // server-level card of their own bot only for their own turn, when the

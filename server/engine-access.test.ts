@@ -197,6 +197,44 @@ describe("the admin gate on a member's bot", () => {
   it("sends every MCP tool to an admin when nothing says which servers are the owner's", () => {
     expect(gate("mcp__perspicax_quasar__cw_psa__query")).toBe(true);
   });
+
+  it("lets Full read the bot's own workspace and inbox, and keeps every other read an admin card (#1169)", () => {
+    const workspace = join(data, "workspaces", "bot-1");
+    mkdirSync(join(workspace, "inbox", "nova"), { recursive: true });
+    mkdirSync(join(root, "secret-thread"), { recursive: true });
+    const inbox = join(workspace, "inbox", "nova", "note.txt");
+    writeFileSync(inbox, "hi");
+    const secret = join(root, "secret-thread", "notes.md");
+    writeFileSync(secret, "private");
+    const fullGate = (tool: string, paths?: string[], command?: unknown) => memberBotAdminApproval({
+      tool, paths, command, workspaceRoot: root, fullRootReads: true,
+      readRoots: [workspace], excludedPrefixes: [join(root, "secret-thread")],
+    });
+    expect(fullGate("Read", [inbox])).toBe(false);
+    expect(fullGate("mcp__sagax-desktop__read_file", [inbox])).toBe(false);
+    expect(fullGate("sagax-desktop__read_file", [inbox])).toBe(false);
+    expect(fullGate("read_file", [inbox])).toBe(false);
+    expect(fullGate("list_files", [workspace])).toBe(false);
+    expect(fullGate("search_files", [join(workspace, "inbox")])).toBe(false);
+    expect(fullGate("Read", [join(root, "thread-1", "src")])).toBe(false);
+    expect(fullGate("write_file", [join(root, "thread-1", "a.ts")])).toBe(false);
+    // a native read inside the task workspace stays the owner's, confidential folder included
+    expect(fullGate("Read", [secret])).toBe(false);
+    // Ask still asks: MCP reads of the inbox are an admin card without Full
+    expect(gate("read_file", [inbox])).toBe(true);
+    expect(gate("mcp__sagax-desktop__read_file", [inbox])).toBe(true);
+    expect(gate("list_files", [workspace])).toBe(true);
+    expect(fullGate("Read", ["/etc/passwd"])).toBe(true);
+    expect(fullGate("read_file", [join(data, "workspaces", "bot-2", "inbox", "x.txt")])).toBe(true);
+    expect(fullGate("Read", [join(workspace, "inbox", ".ssh", "id")])).toBe(true);
+    expect(fullGate("Read", [inbox], { command: "ls" })).toBe(true);
+    expect(fullGate("Write", [inbox])).toBe(true);
+    expect(fullGate("write_file", [inbox])).toBe(true);
+    expect(fullGate("read_file", [secret])).toBe(true);
+    expect(fullGate("Read", [join(root, "thread-1", ".git", "config")])).toBe(true);
+    expect(fullGate("mcp__x__read", [inbox])).toBe(true);
+    expect(fullGate("list_files")).toBe(true);
+  });
 });
 
 describe("the key_refused card", () => {

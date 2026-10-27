@@ -113,6 +113,9 @@ export function serverCommandApproval(input: { tool?: string; command?: unknown 
 const WORKSPACE_FILE_TOOLS = new Set(["read", "write", "edit", "multiedit", "notebookedit", "notebookread", "glob", "grep", "ls"]);
 /** The ones that only read. */
 const READ_ONLY_FILE_TOOLS = new Set(["read", "notebookread", "glob", "grep", "ls"]);
+/** MCP file tools, matched on the leaf after the last `__`. A read of these
+ * is the owner's only at Full, and only inside the bot's own roots. */
+const MCP_FILE_LEAVES = new Set(["read_file", "list_files", "search_files", "write_file"]);
 
 /** A path's real location: the deepest existing ancestor resolved through
  * its symlinks, then the part that does not exist yet. */
@@ -209,6 +212,16 @@ export function memberBotAdminApproval(input: {
   /** 2026-10-19: the owner holds `host.commands` (given in Perspicax): the
    * server commands of their own bots are theirs to approve. */
   ownerRunsServerCommands?: boolean;
+  /** The turn's effective level is Full. Reads (native and MCP
+   * read_file, list_files, search_files) may then stay inside readRoots
+   * as well as the task workspace, inbox included. Writes do not. */
+  fullRootReads?: boolean;
+  /** Extra roots a Full read may enter, usually workspaces/<bot>. */
+  readRoots?: string[];
+  /** Folders a widened or MCP read must not enter (a confidential
+   * thread's own folder). A native read inside the task workspace is
+   * unchanged. */
+  excludedPrefixes?: string[];
 }): boolean {
   if (input.ownEnvironment || input.ownDestination || input.ownComputerChoice || input.ownerRunsServerCommands) return false;
   const builtin = !foreignToolSpelling(input.tool, input.foreignMcpServers ?? []);
@@ -223,19 +236,42 @@ export function memberBotAdminApproval(input: {
   if (builtin && dataToolName(input.tool)) return false;
   if (ownerScopedTool(input.tool?.trim() ?? "", input.ownerScopedMcpServer)) return false;
   const tool = input.tool?.trim().toLowerCase() ?? "";
-  if (!WORKSPACE_FILE_TOOLS.has(tool)) return true;
+  const nativeFile = WORKSPACE_FILE_TOOLS.has(tool);
+  const leaf = tool.includes("__") ? tool.slice(tool.lastIndexOf("__") + 2) : tool;
+  const mcpFile = !nativeFile && MCP_FILE_LEAVES.has(leaf);
+  if (!nativeFile && !mcpFile) return true;
   if (!input.paths?.length) return true;
-  const root = realLocation(input.workspaceRoot);
   // 2026-10-19 (bot quality, cause A): a read may open the bot's own skill
   // revisions and plugin manifests (READABLE_HIDDEN_SEGMENTS); every other
   // dot folder, and any write into a dot folder, still waits for an admin.
-  const reads = READ_ONLY_FILE_TOOLS.has(tool);
-  return !input.paths.every((path) => {
+  const reads = nativeFile ? READ_ONLY_FILE_TOOLS.has(tool) : leaf !== "write_file";
+  // MCP reads stay an admin card until the level is Full. write_file inside
+  // the task workspace is the owner's at any level, the same as Write.
+  const widened = reads && input.fullRootReads === true;
+  if (mcpFile && reads && !widened) return true;
+  const inside = (path: string, root: string, allowHiddenReads: boolean): boolean => {
     if (typeof path !== "string" || !isAbsolute(path)) return false;
-    const rel = relative(root, realLocation(path));
+    const rel = relative(realLocation(root), realLocation(path));
     if (rel === "") return true;
     if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
-    return !rel.split(sep).some((segment) => segment.startsWith(".") && !(reads && READABLE_HIDDEN_SEGMENTS.has(segment)));
+    return !rel.split(sep).some((segment) => segment.startsWith(".") && !(allowHiddenReads && READABLE_HIDDEN_SEGMENTS.has(segment)));
+  };
+  const excluded = (path: string): boolean => {
+    const loc = realLocation(path);
+    return (input.excludedPrefixes ?? []).some((prefix) => {
+      const base = realLocation(prefix);
+      return loc === base || loc.startsWith(base.endsWith(sep) ? base : `${base}${sep}`);
+    });
+  };
+  return !input.paths.every((path) => {
+    if (typeof path !== "string") return false;
+    // A native read or write inside the task workspace is the owner's,
+    // a confidential folder included. The widened roots do not change that.
+    if (nativeFile && inside(path, input.workspaceRoot, reads)) return true;
+    if (mcpFile && !reads && inside(path, input.workspaceRoot, false)) return true;
+    if (!widened || excluded(path)) return false;
+    if (mcpFile && inside(path, input.workspaceRoot, true)) return true;
+    return (input.readRoots ?? []).some((root) => inside(path, root, true));
   });
 }
 
