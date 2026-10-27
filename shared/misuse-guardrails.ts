@@ -152,10 +152,8 @@ const BLOCK_RULES: ReadonlyArray<{ category: MisuseCategory; pattern: RegExp; ow
 const DEFENSIVE_RULES: ReadonlyArray<RegExp> = [
   // an endpoint agent's own control command (protection off, quarantine)
   /\b[a-z0-9]+ctl\s+(?:unprotect|quarantine|unquarantine)\b/,
-  /falcon sensor/,
   /\b(edr|xdr|siem)\b/,
   /endpoint (?:protection|security|detection)|protection des (?:postes|points de terminaison)/,
-  /microsoft defender|windows defender/,
   /threat hunting|chasse aux menaces/,
   /mise en quarantaine/,
   /isole(?:r)? l['’]h[ôo]te/,
