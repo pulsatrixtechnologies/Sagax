@@ -84,7 +84,9 @@ spec:
 # scheduler evict it the moment a sandbox needs the room: the person starts
 # on a warm node that already has the image, and the autoscaler adds a node
 # for the reserve in the background. Without it, a pool with one node per
-# person makes each arrival wait for a new node.
+# person makes each arrival wait for a new node. The provisioner sets the
+# count from the people active right now (SAGAX_SANDBOX_K8S_SPARE): none
+# when nobody is active, so an idle pool costs nothing.
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:
@@ -105,9 +107,9 @@ metadata:
     {{- include "sandboxes.labels" . | nindent 4 }}
     app.kubernetes.io/name: sagax-sandbox-spare
 spec:
-  {{- /* Same rule as the warmer: the CronJobs own the count once installed. */}}
+  {{- /* The provisioner owns the count once installed. */}}
   {{- $liveSpare := lookup "apps/v1" "Deployment" .Values.systemNamespace "sagax-sandbox-spare" }}
-  replicas: {{ if and $liveSpare $liveSpare.spec }}{{ $liveSpare.spec.replicas | default 0 }}{{ else }}{{ .Values.warmNode.spare.offHoursReplicas }}{{ end }}
+  replicas: {{ if and $liveSpare $liveSpare.spec }}{{ $liveSpare.spec.replicas | default 0 }}{{ else }}0{{ end }}
   selector:
     matchLabels:
       app.kubernetes.io/name: sagax-sandbox-spare
@@ -179,6 +181,36 @@ spec:
             limits:
               cpu: {{ .Values.warmNode.spare.cpu | quote }}
               memory: {{ .Values.warmNode.spare.memory | quote }}
+---
+# The provisioner scales the reserve and nothing else here.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sagax-sandbox-spare-scaler
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: ["sagax-sandbox-spare"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sagax-sandbox-spare-scaler
+  namespace: {{ .Values.systemNamespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sagax-sandbox-spare-scaler
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.warmNode.spare.scaler.name | quote }}
+    namespace: {{ .Values.warmNode.spare.scaler.namespace | default .Values.sandboxNamespace | quote }}
 {{- end }}
 ---
 apiVersion: batch/v1
@@ -234,30 +266,6 @@ spec:
                 limits:
                   cpu: 200m
                   memory: 128Mi
-            {{- if .Values.warmNode.spare.enabled }}
-            - name: scale-spare
-              image: {{ .Values.warmNode.kubectlImage | quote }}
-              imagePullPolicy: IfNotPresent
-              command:
-                - kubectl
-                - scale
-                - deployment/sagax-sandbox-spare
-                - --replicas={{ .Values.warmNode.spare.businessHoursReplicas }}
-                - -n
-                - {{ .Values.systemNamespace | quote }}
-              securityContext:
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
-              resources:
-                requests:
-                  cpu: 20m
-                  memory: 64Mi
-                limits:
-                  cpu: 200m
-                  memory: 128Mi
-            {{- end }}
 ---
 apiVersion: batch/v1
 kind: CronJob
@@ -312,28 +320,4 @@ spec:
                 limits:
                   cpu: 200m
                   memory: 128Mi
-            {{- if .Values.warmNode.spare.enabled }}
-            - name: scale-spare
-              image: {{ .Values.warmNode.kubectlImage | quote }}
-              imagePullPolicy: IfNotPresent
-              command:
-                - kubectl
-                - scale
-                - deployment/sagax-sandbox-spare
-                - --replicas={{ .Values.warmNode.spare.offHoursReplicas }}
-                - -n
-                - {{ .Values.systemNamespace | quote }}
-              securityContext:
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
-              resources:
-                requests:
-                  cpu: 20m
-                  memory: 64Mi
-                limits:
-                  cpu: 200m
-                  memory: 128Mi
-            {{- end }}
 {{- end }}

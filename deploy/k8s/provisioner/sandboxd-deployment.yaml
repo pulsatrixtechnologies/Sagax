@@ -76,6 +76,11 @@ spec:
               value: ""
             - name: SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB
               value: ""
+            # Reserve Deployment (chart warmNode.spare) as namespace/name; empty: none.
+            - name: SAGAX_SANDBOX_K8S_SPARE
+              value: ""
+            - name: SAGAX_SANDBOX_K8S_SPARE_MAX
+              value: "2"
             - name: SAGAX_SANDBOXD_TLS_CERT
               value: /var/run/sagax-tls/tls.crt
             - name: SAGAX_SANDBOXD_TLS_KEY

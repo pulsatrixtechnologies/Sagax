@@ -67,6 +67,24 @@ export interface K8sDedicatedConfig {
    * shared SAGAX_SANDBOX_CPUS / SAGAX_SANDBOX_MEMORY_MB sizes. */
   nanoCpus?: number;
   memoryBytes?: number;
+  /** The reserve Deployment the provisioner scales (warmNode.spare). */
+  spare?: K8sSpareConfig;
+}
+
+export interface K8sSpareConfig {
+  namespace: string;
+  deployment: string;
+  /** Reserve nodes at most. */
+  max: number;
+}
+
+/** One reserve per active person, up to max; none when nobody is active.
+ * With max 2: nobody active costs nothing, the first person's arrival
+ * starts one reserve, a second at the same time starts the second, and
+ * every later arrival still finds a warm node while two are held. */
+export function spareReplicas(active: number, max: number): number {
+  if (!Number.isFinite(active) || active <= 0) return 0;
+  return Math.min(max, Math.floor(active));
 }
 
 export interface K8sToleration {
@@ -177,10 +195,23 @@ export function dedicatedFromEnv(env: NodeJS.ProcessEnv): K8sDedicatedConfig | u
     if (!Number.isInteger(value) || value <= 0 || value > 65536) throw new Error("SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB must be a whole number of MiB up to 65536");
     memoryBytes = value * MiB;
   }
+  const spareRaw = env.SAGAX_SANDBOX_K8S_SPARE?.trim();
+  let spare: K8sSpareConfig | undefined;
+  if (spareRaw) {
+    const [spareNs, spareName, extra] = spareRaw.split("/");
+    if (extra !== undefined || !spareNs || !spareName || !DNS_NAME.test(spareNs) || !DNS_NAME.test(spareName)) {
+      throw new Error("SAGAX_SANDBOX_K8S_SPARE must be namespace/deployment");
+    }
+    const maxRaw = env.SAGAX_SANDBOX_K8S_SPARE_MAX?.trim() || "2";
+    const max = Number(maxRaw);
+    if (!Number.isInteger(max) || max < 0 || max > 64) throw new Error("SAGAX_SANDBOX_K8S_SPARE_MAX must be a whole number from 0 to 64");
+    spare = { namespace: spareNs, deployment: spareName, max };
+  }
   return {
     keys,
     userNamespace,
     ownNode,
+    ...(spare ? { spare } : {}),
     ...(nodeSelector ? { nodeSelector } : {}),
     ...(tolerations ? { tolerations } : {}),
     ...(nanoCpus ? { nanoCpus } : {}),
@@ -373,7 +404,11 @@ export function podFromDockerSpec(spec: Obj, k8s: K8sSandboxConfig): Obj {
       name: names.container,
       namespace: k8s.namespace,
       labels,
-      annotations: { [PIDS_ANNOTATION]: String(pids || 0) },
+      annotations: {
+        [PIDS_ANNOTATION]: String(pids || 0),
+        // Aggressive node scale-down never takes a node from under a person.
+        ...(dedicated?.ownNode ? { "cluster-autoscaler.kubernetes.io/safe-to-evict": "false" } : {}),
+      },
     },
     spec: {
       restartPolicy: "Never",

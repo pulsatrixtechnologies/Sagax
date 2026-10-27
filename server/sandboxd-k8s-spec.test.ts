@@ -10,6 +10,7 @@ import {
   kubernetesSandboxConfigFromEnv,
   parseCpuQuantity,
   parseDedicatedKeys,
+  spareReplicas,
   parseExecStatus,
   parseMemoryQuantity,
   parseNodeSelector,
@@ -188,6 +189,11 @@ describe("one node and one user namespace per person", () => {
     expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_DEDICATED_NODE: "1" })).toThrow(/DEDICATED_NODE_SELECTOR/);
     expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_CPUS: "0" })).toThrow(/DEDICATED_CPUS/);
     expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_DEDICATED_MEMORY_MB: "1.5" })).toThrow(/DEDICATED_MEMORY_MB/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_SPARE: "only-a-name" })).toThrow(/SPARE must/);
+    expect(() => dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_SPARE: "ns/spare", SAGAX_SANDBOX_K8S_SPARE_MAX: "-1" })).toThrow(/SPARE_MAX/);
+    expect(dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false", SAGAX_SANDBOX_K8S_SPARE: "ns/spare" })?.spare).toEqual({ namespace: "ns", deployment: "spare", max: 2 });
+    expect([0, 1, 2, 3, 4].map((active) => spareReplicas(active, 2))).toEqual([0, 1, 2, 2, 2]);
+    expect(spareReplicas(3, 0)).toBe(0);
     const userOnly = dedicatedFromEnv({ SAGAX_SANDBOX_K8S_HOST_USERS: "false" });
     expect(userOnly).toEqual({ keys: "*", userNamespace: true, ownNode: false });
   });

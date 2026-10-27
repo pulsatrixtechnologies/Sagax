@@ -91,7 +91,7 @@ fi
 helm template sandboxes "$chart" --set warmNode.spare.enabled=true --set admission.dedicated.enabled=true \
   --set 'warmNode.spare.nodeSelector.sagax\.io/isolation=dedicated' > "$tmp/dedicated.yaml"
 for want in "kind: PriorityClass" "preemptionPolicy: Never" "priorityClassName: sagax-sandbox-spare" \
-  "deployment/sagax-sandbox-spare" "name: sandboxes-dedicated" "sagax.io/isolation: dedicated" "sagax.io/pool: sandboxes"; do
+  "name: sagax-sandbox-spare-scaler" "name: sandboxes-dedicated" "sagax.io/isolation: dedicated" "sagax.io/pool: sandboxes"; do
   if ! grep -q "$want" "$tmp/dedicated.yaml"; then
     echo "dedicated render is missing $want" >&2
     exit 1

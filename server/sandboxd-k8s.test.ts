@@ -18,7 +18,7 @@ import { kubernetesApi, withExecEnv } from "./sandboxd-k8s.ts";
 import { PAUSED_ANNOTATION, kubernetesSandboxConfigFromEnv } from "./sandboxd-k8s-spec.ts";
 import { FakeDocker } from "./testing/fake-docker.ts";
 import { sandboxdClient } from "./user-sandbox-client.ts";
-import { SANDBOX_INSTANCE_LABEL, SANDBOX_LABEL, SANDBOX_USER_LABEL, sandboxKeyForPrincipal, sandboxNames, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
+import { SANDBOX_INSTANCE_LABEL, SANDBOX_LABEL, SANDBOX_USER_LABEL, sandboxContainerSpec, sandboxKeyForPrincipal, sandboxNames, sandboxdConfigFromEnv } from "./user-sandbox-spec.ts";
 import { callUserSandboxTool, type ToolExec } from "./user-sandbox-tools.ts";
 
 const DIGEST = "cd".repeat(32);
@@ -102,7 +102,7 @@ function memoryCluster(exec?: K8sClient["exec"]): { client: K8sClient; objects: 
   return { client, objects };
 }
 
-function harness(dir: string, exec?: K8sClient["exec"]) {
+function harness(dir: string, exec?: K8sClient["exec"], extraEnv: Record<string, string> = {}) {
   const auditFile = join(dir, "audit.jsonl");
   const processEnv = {
     SAGAX_SANDBOX_IMAGE: IMAGE,
@@ -112,6 +112,7 @@ function harness(dir: string, exec?: K8sClient["exec"]) {
     SAGAX_SANDBOX_K8S_SECRETS_ENCRYPTED: "true",
     SAGAX_SANDBOX_K8S_NETWORK_POLICY: "enforced",
     SAGAX_SANDBOX_AUDIT_LOG: auditFile,
+    ...extraEnv,
   };
   const sandbox = sandboxdConfigFromEnv(processEnv);
   const { k8s } = kubernetesSandboxConfigFromEnv(processEnv, sandbox);
@@ -132,6 +133,55 @@ describe("kubernetes client auth", () => {
       KUBECONFIG: "/tmp/k",
     }, "/home/me/.kube/config")).toBe("/tmp/explicit");
     expect(kubeconfigFileFromEnv({}, "/home/me/.kube/config")).toBe("");
+  });
+});
+
+describe("reserve nodes for the dedicated pool", () => {
+  const SCALE = "/apis/apps/v1/namespaces/sagax-sandbox-system/deployments/sagax-sandbox-spare/scale";
+  const dedicatedEnv = {
+    SAGAX_SANDBOX_K8S_HOST_USERS: "false",
+    SAGAX_SANDBOX_K8S_DEDICATED_NODE: "1",
+    SAGAX_SANDBOX_K8S_DEDICATED_NODE_SELECTOR: "example.com/isolation=dedicated",
+    SAGAX_SANDBOX_K8S_SPARE: "sagax-sandbox-system/sagax-sandbox-spare",
+    SAGAX_SANDBOX_K8S_SPARE_MAX: "2",
+  };
+  const replicas = (objects: Map<string, Obj>) => ((objects.get(SCALE)?.spec ?? {}) as Obj).replicas;
+
+  it("holds one reserve per active person up to the max, and none when nobody is active", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-k8s-"));
+    const { api, sandbox, objects } = harness(dir, undefined, dedicatedEnv);
+    objects.set(SCALE, { spec: { replicas: 0 } });
+    const people = ["cc", "dd", "ee"].map((tail) => sandboxKeyForPrincipal("default", `pr_00000000-0000-4000-8000-0000000000${tail}`));
+    await api.syncSpare();
+    expect(replicas(objects)).toBe(0);
+    await api.createContainer(sandboxNames(people[0]!).container, sandboxContainerSpec(sandbox, people[0]!));
+    await api.syncSpare();
+    expect(replicas(objects)).toBe(1);
+    const pod = objects.get(`/api/v1/namespaces/sandboxes/pods/${sandboxNames(people[0]!).container}`) as Obj;
+    expect(((pod.metadata as Obj).annotations as Obj)["cluster-autoscaler.kubernetes.io/safe-to-evict"]).toBe("false");
+    await api.createContainer(sandboxNames(people[1]!).container, sandboxContainerSpec(sandbox, people[1]!));
+    await api.createContainer(sandboxNames(people[2]!).container, sandboxContainerSpec(sandbox, people[2]!));
+    await api.syncSpare();
+    expect(replicas(objects)).toBe(2);
+    for (const key of people) await api.removeContainer(sandboxNames(key).container);
+    await api.syncSpare();
+    expect(replicas(objects)).toBe(0);
+  });
+
+  it("counts only people on the dedicated pool and never blocks a sandbox when scaling fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-k8s-"));
+    const listed = sandboxKeyForPrincipal("default", "pr_00000000-0000-4000-8000-0000000000cc");
+    const { api, sandbox, objects } = harness(dir, undefined, { ...dedicatedEnv, SAGAX_SANDBOX_K8S_DEDICATED_KEYS: listed });
+    // No scale object: the PATCH fails (404) and the create still succeeds.
+    await api.createContainer(sandboxNames(person).container, sandboxContainerSpec(sandbox, person));
+    await api.syncSpare();
+    expect(objects.has(`/api/v1/namespaces/sandboxes/pods/${sandboxNames(person).container}`)).toBe(true);
+    objects.set(SCALE, { spec: { replicas: 5 } });
+    await api.syncSpare();
+    expect(replicas(objects)).toBe(0);
+    await api.createContainer(sandboxNames(listed).container, sandboxContainerSpec(sandbox, listed));
+    await api.syncSpare();
+    expect(replicas(objects)).toBe(1);
   });
 });
 
